@@ -27,6 +27,7 @@ from core_pdf.impl.extract.contracts import PRIMARY_OCR_PIXELS
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import ImagePaintItem, RenderOptions
 from core_pdf.impl.render.page import RenderedPage, compose_page
+from core_pdf.impl.spec.s_08_graphics.image_decode import SoftMask
 from tests.helpers.paths import FIXTURES
 
 TEXT_PDF = FIXTURES / "pypdf" / "resources" / "crazyones.pdf"
@@ -83,25 +84,27 @@ def internal_image_page(*, soft_mask: bool = False) -> RenderedPage:
         "ColorSpace": "DeviceRGB",
         "BitsPerComponent": 8,
     }
-    if soft_mask:
-        dictionary.update(
+    mask = (
+        SoftMask(
+            internal_soft_mask_raw(),
             {
-                "__soft_mask_raw_data__": internal_soft_mask_raw(),
-                "__soft_mask_dictionary__": {
-                    "Filter": "FlateDecode",
-                    "Width": SOFT_MASK_WIDTH,
-                    "Height": SOFT_MASK_HEIGHT,
-                    "ColorSpace": "DeviceGray",
-                    "BitsPerComponent": 8,
-                },
-            }
+                "Filter": "FlateDecode",
+                "Width": SOFT_MASK_WIDTH,
+                "Height": SOFT_MASK_HEIGHT,
+                "ColorSpace": "DeviceGray",
+                "BitsPerComponent": 8,
+            },
         )
+        if soft_mask
+        else None
+    )
     display_list = DisplayList(width=IMAGE_WIDTH, height=IMAGE_HEIGHT)
     display_list.append(
         "image",
         1,
         raw_data=internal_image_raw(),
         dictionary=dictionary,
+        soft_mask=mask,
         bbox=(0, 0, IMAGE_WIDTH, IMAGE_HEIGHT),
         items=[
             (

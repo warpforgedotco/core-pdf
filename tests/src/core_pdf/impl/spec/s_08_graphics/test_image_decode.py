@@ -13,6 +13,7 @@ from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.spec.s_08_graphics.image_decode import (
     ImageSource,
+    SoftMask,
     decode_pdf_image,
 )
 
@@ -86,14 +87,16 @@ def test_image_source_applies_soft_mask_once() -> None:
             "Height": 1,
             "ColorSpace": "DeviceRGB",
             "BitsPerComponent": 8,
-            "__soft_mask_raw_data__": bytes((0, 255)),
-            "__soft_mask_dictionary__": {
+        },
+        soft_mask=SoftMask(
+            bytes((0, 255)),
+            {
                 "Width": 2,
                 "Height": 1,
                 "ColorSpace": "DeviceGray",
                 "BitsPerComponent": 8,
             },
-        },
+        ),
     )
 
     raster = source.decode()
@@ -111,14 +114,16 @@ def test_image_source_prepares_native_soft_mask_and_reports_all_bytes() -> None:
             "Height": 1,
             "ColorSpace": "DeviceRGB",
             "BitsPerComponent": 8,
-            "__soft_mask_raw_data__": bytes((0, 64, 128, 255)),
-            "__soft_mask_dictionary__": {
+        },
+        soft_mask=SoftMask(
+            bytes((0, 64, 128, 255)),
+            {
                 "Width": 2,
                 "Height": 2,
                 "ColorSpace": "DeviceGray",
                 "BitsPerComponent": 8,
             },
-        },
+        ),
     )
 
     prepared = source.prepare()

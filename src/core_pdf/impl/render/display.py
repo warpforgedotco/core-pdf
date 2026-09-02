@@ -16,7 +16,7 @@ from core_pdf.impl.render.model import (
     PathPaintKind,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_display_metadata,
     pdf_number,
@@ -73,9 +73,11 @@ class DisplayList:
                 dictionary = data.get("dictionary")
                 raw = data.get("raw_data", data.get("data"))
                 if isinstance(dictionary, dict) and isinstance(raw, (bytes, bytearray, memoryview)):
+                    soft_mask = data.get("soft_mask")
                     source = ImageSource(
                         memoryview(raw).cast("B") if isinstance(raw, bytearray) else raw,
                         dictionary,
+                        soft_mask=soft_mask if isinstance(soft_mask, SoftMask) else None,
                     )
                 else:
                     source = None

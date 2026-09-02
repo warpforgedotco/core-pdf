@@ -96,7 +96,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import (
     DecodedGlyph,
@@ -765,17 +765,6 @@ class TextState:
             self.char_space_scale = 0.0
             self.word_space_scale = 0.0
 
-    def update_char_space_scale(self) -> None:
-        fs = self.font_size
-        self.char_space_scale = self.char_space * 1000.0 / fs if fs else 0.0
-
-    def update_word_space_scale(self) -> None:
-        fs = self.font_size
-        self.word_space_scale = self.word_space * 1000.0 / fs if fs else 0.0
-
-    def update_horizontal_text_scale(self) -> None:
-        self.text_advance_scale = self.font_size * self.horizontal_scale / 100000.0
-
     def update_font_metrics(self) -> None:
         decoder = self.current_decoder
         if decoder is None:
@@ -1375,9 +1364,11 @@ class TextState:
                                 ).sum(dtype=numpy.uint64)
                                 smask_alpha = int(smask_sum) / (255.0 * total)
                 drawing_dictionary = dict(xobj_dict)
-                if soft_mask_raw_data is not None:
-                    drawing_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
-                    drawing_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
+                soft_mask = (
+                    SoftMask(soft_mask_raw_data, soft_mask_dictionary or {})
+                    if soft_mask_raw_data is not None
+                    else None
+                )
                 source_dictionary = dict(drawing_dictionary)
                 # The colour manager reads the palette and base space straight
                 # off this dictionary, so an indirect /ColorSpace (or one whose
@@ -1407,6 +1398,7 @@ class TextState:
                             stream_key or ("object", id(xobj)),
                             getattr(xobj, "raw_data", b""),
                             source_dictionary,
+                            soft_mask=soft_mask,
                         ),
                         image_clip=self.clip_bbox,
                         items=[("quad", quad)] if quad is not None else [],
@@ -3030,7 +3022,7 @@ class TextState:
 
     def op_Tc_values(self, char_space: float) -> None:
         self.char_space = char_space
-        self.update_char_space_scale()
+        self.update_text_scales()
 
     def op_Tw(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3045,7 +3037,7 @@ class TextState:
         if self.word_space == word_space:
             return
         self.word_space = word_space
-        self.update_word_space_scale()
+        self.update_text_scales()
 
     def op_Tr(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3062,7 +3054,7 @@ class TextState:
             self.horizontal_scale = self.as_float(operands[0])
         except (TypeError, ValueError):
             return
-        self.update_horizontal_text_scale()
+        self.update_text_scales()
 
     def op_Ts(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3089,8 +3081,7 @@ class TextState:
             return
         self.word_space = word_space
         self.char_space = char_space
-        self.update_char_space_scale()
-        self.update_word_space_scale()
+        self.update_text_scales()
         if not self.document.legacy_pdfminer_text_operators:
             self.internal_move_text(0.0, -self.leading)
             self.pending_line_break = True
@@ -3108,12 +3099,7 @@ class TextState:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             data = getattr(image, "data", b"")
-            source = ImageSource(
-                data,
-                dictionary,
-                cache=self.image_cache,
-                cache_key=("inline", self.sequence),
-            )
+            source = self.internal_image_source(self.sequence, data, dictionary, prefix="inline")
             self.inline_images.append(
                 CapturedInlineImage(
                     seqno=self.sequence,
@@ -3147,12 +3133,16 @@ class TextState:
         key: object,
         raw: bytes | memoryview,
         dictionary: dict[Any, Any],
+        *,
+        soft_mask: SoftMask | None = None,
+        prefix: str = "xobject",
     ) -> ImageSource:
         return ImageSource(
             raw,
             dictionary,
+            soft_mask=soft_mask,
             cache=self.image_cache,
-            cache_key=("xobject", key),
+            cache_key=(prefix, key),
         )
 
     def op_BDC(self, operands: OperandWindow, depth: int) -> None:

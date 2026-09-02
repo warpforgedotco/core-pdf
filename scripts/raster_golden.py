@@ -244,10 +244,11 @@ def internal_scan_jpx_policy(items: Iterable[object]) -> JpxPolicyScan:
                 unclassified.append(location)
             irreversible |= result is True
 
-        if not isinstance(dictionary, dict):
+        soft_mask = data.get("soft_mask")
+        if soft_mask is None:
             continue
-        mask_dictionary = dictionary.get("__soft_mask_dictionary__")
-        mask_raw = dictionary.get("__soft_mask_raw_data__")
+        mask_dictionary = getattr(soft_mask, "dictionary", None)
+        mask_raw = getattr(soft_mask, "raw", None)
         if not isinstance(mask_dictionary, dict) or not isinstance(
             mask_raw, (bytes, bytearray, memoryview)
         ):

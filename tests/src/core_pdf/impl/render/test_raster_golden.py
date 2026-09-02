@@ -11,6 +11,7 @@ import numpy
 import pytest
 
 from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.spec.s_08_graphics.image_decode import SoftMask
 from scripts import raster_golden
 from scripts.raster_cover import greedy_cover
 from scripts.raster_golden import (
@@ -152,10 +153,8 @@ def test_jpx_policy_scans_filter_chains_nested_items_and_soft_masks() -> None:
     item = types.SimpleNamespace(
         data={
             "items": [nested],
-            "dictionary": {
-                "__soft_mask_raw_data__": compressed,
-                "__soft_mask_dictionary__": jpx_dictionary,
-            },
+            "dictionary": {},
+            "soft_mask": SoftMask(compressed, jpx_dictionary),
         }
     )
 

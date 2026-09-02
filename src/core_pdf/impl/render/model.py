@@ -129,6 +129,7 @@ class ImagePaintItem:
             "bbox": self.bbox,
             "raw_data": source.raw if source is not None else None,
             "dictionary": source.dictionary if source is not None else None,
+            "soft_mask": source.soft_mask if source is not None else None,
             "image_source": source,
             "items": [("quad", self.quad)] if self.quad is not None else [],
             "fill": self.fill,

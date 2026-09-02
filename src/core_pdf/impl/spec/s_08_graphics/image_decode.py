@@ -99,12 +99,26 @@ class PreparedImage:
         return self.raster.nbytes + (soft_mask.nbytes if soft_mask is not None else 0)
 
 
+@dataclass(frozen=True, slots=True)
+class SoftMask:
+    """The /SMask plane accompanying an image XObject.
+
+    Carried as its own field rather than smuggled through the image's PDF
+    dictionary: that dictionary is the real object dictionary and is exported
+    verbatim to display consumers, so private keys in it leak downstream.
+    """
+
+    raw: bytes | memoryview
+    dictionary: dict[Any, Any]
+
+
 class ImageSource:
     """Thread-safe lazy preparation owner for one embedded image source."""
 
     __slots__ = (
         "raw",
         "dictionary",
+        "soft_mask",
         "internal_lock",
         "internal_prepared",
         "internal_prepared_once",
@@ -117,11 +131,13 @@ class ImageSource:
         raw: bytes | memoryview,
         dictionary: dict[Any, Any],
         *,
+        soft_mask: SoftMask | None = None,
         cache: ImageCache | None = None,
         cache_key: tuple[object, ...] = (),
     ) -> None:
         self.raw = raw
         self.dictionary = dictionary
+        self.soft_mask = soft_mask
         self.internal_lock = threading.Lock()
         self.internal_prepared: PreparedImage | None = None
         self.internal_prepared_once = False
@@ -212,17 +228,16 @@ class ImageSource:
         return DecodedRaster(array, width, height, 2)
 
     def internal_decode_soft_mask(self) -> ImageRaster | None:
-        raw = self.dictionary.get("__soft_mask_raw_data__")
-        dictionary = self.dictionary.get("__soft_mask_dictionary__")
-        if not isinstance(raw, (bytes, memoryview)) or not isinstance(dictionary, dict):
+        soft_mask = self.soft_mask
+        if soft_mask is None:
             return None
-        mask_dictionary = dict(dictionary)
+        mask_dictionary = dict(soft_mask.dictionary)
         mask_dictionary.setdefault("ColorSpace", "DeviceGray")
         mask_dictionary.setdefault("BitsPerComponent", 8)
         # The parent PreparedImage owns this plane and reports its bytes to the
         # document cache. Caching a second nested PreparedImage would count the
         # same allocation twice and split preparation ownership again.
-        prepared = ImageSource(raw, mask_dictionary).prepare()
+        prepared = ImageSource(soft_mask.raw, mask_dictionary).prepare()
         if prepared is None:
             return None
         mask = prepared.raster

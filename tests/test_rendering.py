@@ -41,6 +41,7 @@ from core_pdf.impl.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import (
     ImageSource,
+    SoftMask,
 )
 
 
@@ -715,14 +716,16 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
         "Height": 1,
         "ColorSpace": "DeviceRGB",
         "BitsPerComponent": 8,
-        "__soft_mask_raw_data__": bytes((0, 255)),
-        "__soft_mask_dictionary__": {
+    }
+    soft_mask = SoftMask(
+        bytes((0, 255)),
+        {
             "Width": 2,
             "Height": 1,
             "ColorSpace": "DeviceGray",
             "BitsPerComponent": 8,
         },
-    }
+    )
     original = deepcopy(dictionary)
     page = rendered_page(width=2, height=1)
     page.display_list.append(
@@ -730,6 +733,7 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
         1,
         raw_data=bytes((10, 20, 30, 40, 50, 60)),
         dictionary=dictionary,
+        soft_mask=soft_mask,
         bbox=(0, 0, 2, 1),
     )
 
@@ -958,14 +962,16 @@ def test_soft_masked_image_blends_vectorized_samples() -> None:
             "Height": 2,
             "ColorSpace": "DeviceRGB",
             "BitsPerComponent": 8,
-            "__soft_mask_raw_data__": mask.tobytes(),
-            "__soft_mask_dictionary__": {
+        },
+        soft_mask=SoftMask(
+            mask.tobytes(),
+            {
                 "Width": 2,
                 "Height": 2,
                 "ColorSpace": "DeviceGray",
                 "BitsPerComponent": 8,
             },
-        },
+        ),
         items=[("quad", ((0, 0), (2, 0), (0, 2), (2, 2)))],
         bbox=(0, 0, 2, 2),
     )
@@ -984,15 +990,17 @@ def test_shared_image_preserves_higher_resolution_soft_mask() -> None:
         "Height": 1,
         "ColorSpace": "DeviceRGB",
         "BitsPerComponent": 8,
-        "__soft_mask_raw_data__": bytes((0, 255, 0, 255)),
-        "__soft_mask_dictionary__": {
+    }
+    soft_mask = SoftMask(
+        bytes((0, 255, 0, 255)),
+        {
             "Width": 2,
             "Height": 2,
             "ColorSpace": "DeviceGray",
             "BitsPerComponent": 8,
         },
-    }
-    source = ImageSource(bytes((0, 0, 0)), dictionary)
+    )
+    source = ImageSource(bytes((0, 0, 0)), dictionary, soft_mask=soft_mask)
     page = rendered_page(width=2, height=2)
     page.display_list.append(
         "image",
