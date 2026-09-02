@@ -7,6 +7,7 @@ from collections import deque
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.model.geometry import page_rotation_matrix, transform_bbox
 from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
@@ -21,8 +22,6 @@ from core_pdf.impl.spec.s_07_document.annotation_appearance import (
 from core_pdf.impl.spec.s_07_document.page_links import (
     link_target_direct,
     link_target_resolved,
-    pdf_box_direct,
-    pdf_name_direct,
     resolve_annotation_dict,
 )
 from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawLink
@@ -34,38 +33,9 @@ from core_pdf.impl.spec.s_07_syntax.types import (
     PdfDict,
     PdfObject,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
 from core_pdf.impl.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.types import Rectangle
-
-
-def document_recovery_enabled(document: Any) -> bool:
-    return bool(
-        getattr(document, "xref_was_recovered", False)
-        or getattr(document, "page_tree_was_recovered", False)
-    )
-
-
-if TYPE_CHECKING:
-    from core_pdf.impl.model.runs import TextRun
-
-
-def rotate_page_point(
-    x: float,
-    y: float,
-    *,
-    rotate: int,
-    page_width: float,
-    page_height: float,
-) -> tuple[float, float]:
-    match rotate:
-        case 90:
-            return (y, page_width - x)
-        case 180:
-            return (page_width - x, page_height - y)
-        case 270:
-            return (page_height - y, x)
-        case _:
-            return (x, y)
 
 
 def rotate_page_runs(
@@ -75,59 +45,24 @@ def rotate_page_runs(
     page_width: float,
     page_height: float,
 ) -> list[TextRun]:
+    """Text runs mapped into the frame the page displays at ``rotate`` degrees."""
     rotate %= 360
     if rotate == 0:
         return runs
 
+    matrix = page_rotation_matrix(rotate, page_width, page_height)
+    a, b, c, d, e, f = matrix
     transformed: list[TextRun] = []
     for run in runs:
-        points = [
-            rotate_page_point(
-                run.x0,
-                run.y0,
-                rotate=rotate,
-                page_width=page_width,
-                page_height=page_height,
-            ),
-            rotate_page_point(
-                run.x0,
-                run.y1,
-                rotate=rotate,
-                page_width=page_width,
-                page_height=page_height,
-            ),
-            rotate_page_point(
-                run.x1,
-                run.y0,
-                rotate=rotate,
-                page_width=page_width,
-                page_height=page_height,
-            ),
-            rotate_page_point(
-                run.x1,
-                run.y1,
-                rotate=rotate,
-                page_width=page_width,
-                page_height=page_height,
-            ),
-        ]
-        xs = [point[0] for point in points]
-        ys = [point[1] for point in points]
-        tx, ty = rotate_page_point(
-            run.tx,
-            run.ty,
-            rotate=rotate,
-            page_width=page_width,
-            page_height=page_height,
-        )
+        x0, y0, x1, y1 = transform_bbox((run.x0, run.y0, run.x1, run.y1), matrix)
         transformed.append(
             run.replace(
-                x0=min(xs),
-                y0=min(ys),
-                x1=max(xs),
-                y1=max(ys),
-                tx=tx,
-                ty=ty,
+                x0=x0,
+                y0=y0,
+                x1=x1,
+                y1=y1,
+                tx=run.tx * a + run.ty * c + e,
+                ty=run.tx * b + run.ty * d + f,
                 rotation_angle=(run.rotation_angle - rotate) % 360,
             )
         )
@@ -222,7 +157,7 @@ class PdfPage:
         return self._annotation_dicts(strict=False)
 
     def _annotation_dicts(self, *, strict: bool) -> list[PdfDict]:
-        recover_annotations = document_recovery_enabled(self.document)
+        recover_annotations = self.document.recovery_enabled
         raw_annots = self.document.resolver.resolve(self.inherited_values.get("Annots"))
         if raw_annots is None:
             return []
@@ -244,7 +179,7 @@ class PdfPage:
         return resolved_annots
 
     def get_annotations(self) -> list[RawAnnotation]:
-        recover_annotations = document_recovery_enabled(self.document)
+        recover_annotations = self.document.recovery_enabled
         results = []
         for annot in self._annotation_dicts(strict=True):
             subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
@@ -290,13 +225,11 @@ class PdfPage:
         resolve = self.document.resolve
         records: list[RawLink] = []
         for annot in annots:
-            subtype = pdf_name_direct(annot.get("Subtype"))
-            if subtype is None:
-                subtype = resolver.resolve_name(annot.get("Subtype"))
+            subtype = resolver.resolve_name(annot.get("Subtype"))
             if subtype != "Link":
                 continue
 
-            rect = pdf_box_direct(annot.get("Rect"))
+            rect = parse_box(annot.get("Rect"))
             if rect is None:
                 rect = resolver.resolve_box(annot.get("Rect"))
             if rect is None:
@@ -310,7 +243,7 @@ class PdfPage:
             if isinstance(action, dict):
                 action = cast(PdfDict, action)
                 raw_type = action.get("S")
-                link_type = pdf_name_direct(raw_type) or resolver.resolve_name(raw_type)
+                link_type = resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)
                 if url is None:
                     url = link_target_resolved(resolver, action, link_type)
@@ -399,7 +332,7 @@ class PdfPage:
         can_skip_bad_stream = (
             len(content_streams) > 1
             or isinstance(contents_obj, (list, tuple))
-            or document_recovery_enabled(self.document)
+            or self.document.recovery_enabled
         )
         if len(content_streams) > 1:
             try:

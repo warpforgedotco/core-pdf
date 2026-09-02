@@ -37,7 +37,7 @@ from core_pdf.impl.spec.s_07_document.fields import (
     field_widget_rect,
 )
 from core_pdf.impl.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
-from core_pdf.impl.spec.s_07_document.page import PAGE_INHERITED_KEYS, document_recovery_enabled
+from core_pdf.impl.spec.s_07_document.page import PAGE_INHERITED_KEYS
 from core_pdf.impl.spec.s_07_document.records import (
     RawEmbeddedFile,
     RawFormField,
@@ -286,7 +286,7 @@ class PdfDocument(
                 cached = resolve_metadata(
                     self.resolver,
                     self.trailer_dict,
-                    recover=document_recovery_enabled(self),
+                    recover=self.recovery_enabled,
                 )
                 self.metadata_cache = cached
             return cached
@@ -340,6 +340,11 @@ class PdfDocument(
                     page_cache = page.extraction_cache
                     if page_cache is not None:
                         page_cache.clear()
+
+    @property
+    def recovery_enabled(self) -> bool:
+        """Whether the document was reconstructed and so needs lenient traversal."""
+        return self.xref_was_recovered or self.page_tree_was_recovered
 
     def _initialize_document_caches(self) -> None:
         self.decoder_cache = {}
@@ -800,7 +805,7 @@ class PdfDocument(
         try:
             labels_root = self.resolve(self.catalog().get("PageLabels"))
         except ValueError:
-            if document_recovery_enabled(self):
+            if self.recovery_enabled:
                 return None
             raise
         if labels_root is None:
@@ -813,7 +818,7 @@ class PdfDocument(
             for page_index, spec in iter_number_tree_items(
                 labels_root,
                 self.resolve,
-                recover=document_recovery_enabled(self),
+                recover=self.recovery_enabled,
             )
             if isinstance(spec, dict)
         ]
@@ -821,7 +826,7 @@ class PdfDocument(
             return None
         specs.sort(key=lambda item: item[0])
         if specs[0][0] != 0:
-            if not document_recovery_enabled(self):
+            if not self.recovery_enabled:
                 raise ValueError("PageLabels is missing page index 0")
             specs.insert(0, (0, {}))
 
@@ -895,7 +900,7 @@ class PdfDocument(
         return self.walk_outlines(first, 0)
 
     def walk_outlines(self, item: object, level: int) -> list[RawOutlineItem]:
-        recover_outlines = document_recovery_enabled(self)
+        recover_outlines = self.recovery_enabled
         if level > 200:
             raise ValueError("invalid outline depth")
         if not isinstance(item, dict):
@@ -965,7 +970,7 @@ class PdfDocument(
             return 0
         current_count = self.resolver.resolve_int(raw_count)
         if current_count is None:
-            if document_recovery_enabled(self):
+            if self.recovery_enabled:
                 return 0
             raise ValueError("invalid outline count")
         return self.validate_outline_count(current_count)
@@ -1017,7 +1022,7 @@ class PdfDocument(
         args: PdfArray = []
         if len(resolved_list) >= 2:
             raw_type = resolved_list[1]
-            dest_type = self.resolver.resolve_name(raw_type) or self.resolver.resolve_str(raw_type)
+            dest_type = self.resolver.resolve_name_or_text(raw_type)
             if dest_type is None:
                 raise ValueError("invalid destination type")
             args = list(resolved_list[2:]) if len(resolved_list) > 2 else []
@@ -1108,7 +1113,7 @@ class PdfDocument(
                         dests_tree,
                         self.resolver.resolve,
                         self.resolver.resolve_str,
-                        recover=document_recovery_enabled(self),
+                        recover=self.recovery_enabled,
                     ):
                         targets[name] = value
 
@@ -1152,22 +1157,10 @@ class PdfDocument(
                 result = cast(PdfDict, acroform_val)
                 self.acroform_cache = result
                 return result
-            if document_recovery_enabled(self):
+            if self.recovery_enabled:
                 self.acroform_cache = None
                 return None
             raise ValueError("invalid AcroForm dictionary")
-
-    def internal_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
-        """A dictionary entry as a name, falling back to a text string.
-
-        ``name_like`` also accepts a non-name value whose text is a valid name,
-        which lenient readers allow for AcroForm field types.
-        """
-        resolver = self.resolver
-        text = resolver.resolve_name(value)
-        if text is None and name_like:
-            text = resolver.resolve_name_like_value(value)
-        return text or resolver.resolve_str(value)
 
     def collect_field_records(
         self,
@@ -1178,7 +1171,7 @@ class PdfDocument(
         depth: int = 0,
         seen: set[int] | None = None,
     ) -> list[RawFormField]:
-        recover = document_recovery_enabled(self)
+        recover = self.recovery_enabled
         if seen is None:
             seen = set()
         records: list[RawFormField] = []
@@ -1222,7 +1215,8 @@ class PdfDocument(
             )
 
             field_type = (
-                self.internal_name_or_text(current_node.get("FT"), name_like=True) or parent_type
+                self.resolver.resolve_name_or_text(current_node.get("FT"), name_like=True)
+                or parent_type
             )
 
             value = current_node.get("V")
@@ -1239,7 +1233,7 @@ class PdfDocument(
                 else:
                     raise ValueError("invalid AcroForm Kids array")
             kids = cast(list[PdfObject], kids)
-            subtype = self.internal_name_or_text(current_node.get("Subtype")) or ""
+            subtype = self.resolver.resolve_name_or_text(current_node.get("Subtype")) or ""
             current_node = cast(PdfDict, current_node)
             records.append(
                 RawFormField(
@@ -1261,10 +1255,10 @@ class PdfDocument(
                         continue
                     raise ValueError("invalid AcroForm kid entry")
                 resolved_kid = cast(PdfDict, resolved_kid)
-                subtype = self.internal_name_or_text(resolved_kid.get("Subtype")) or ""
+                subtype = self.resolver.resolve_name_or_text(resolved_kid.get("Subtype")) or ""
                 if subtype == "Widget":
                     widget_type = (
-                        self.internal_name_or_text(resolved_kid.get("FT"), name_like=True)
+                        self.resolver.resolve_name_or_text(resolved_kid.get("FT"), name_like=True)
                         or field_type
                     )
                     widget_title = self.resolver.resolve_str(resolved_kid.get("T"))
@@ -1315,7 +1309,7 @@ class PdfDocument(
                 if field_list is None:
                     field_list = []
                 elif not isinstance(field_list, list):
-                    if document_recovery_enabled(self):
+                    if self.recovery_enabled:
                         field_list = []
                     else:
                         raise ValueError("invalid AcroForm Fields array")
@@ -1328,7 +1322,7 @@ class PdfDocument(
             # document has none -- producers do ship filled forms that way.
             # Fall back to the pages when the tree tells us nothing, which also
             # keeps well-formed documents clear of a whole-page scan.
-            if not records or document_recovery_enabled(self):
+            if not records or self.recovery_enabled:
                 records.extend(self.discover_widget_field_records(records))
             self.fields_cache = records
             return records
@@ -1406,7 +1400,7 @@ class PdfDocument(
                     continue
                 if id(annot) in seen_widgets:
                     continue
-                subtype = self.internal_name_or_text(annot.get("Subtype")) or ""
+                subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
                 if subtype != "Widget":
                     continue
                 # A widget may be merged with its field or hang off one as a
@@ -1452,7 +1446,7 @@ class PdfDocument(
         if not isinstance(embedded_tree, dict):
             raise ValueError("invalid EmbeddedFiles name tree")
 
-        recover = document_recovery_enabled(self)
+        recover = self.recovery_enabled
         records: list[RawEmbeddedFile] = []
         for name, value in iter_name_tree_items(
             embedded_tree,
@@ -1504,7 +1498,7 @@ class PdfDocument(
 
     def internal_load_oc_layers(self) -> None:
         self.oc_layers = {}
-        recover = document_recovery_enabled(self)
+        recover = self.recovery_enabled
         try:
             catalog = self.catalog()
         except ValueError:

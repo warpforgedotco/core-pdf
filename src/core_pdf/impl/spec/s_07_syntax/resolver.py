@@ -354,6 +354,17 @@ class ObjectResolver:
             return decode_pdf_text_string(val.data)
         return None
 
+    def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
+        """A value as a name, falling back to a text string.
+
+        ``name_like`` also accepts a non-name value whose text is a valid name,
+        which lenient readers allow for AcroForm field types.
+        """
+        text = self.resolve_name(value)
+        if text is None and name_like:
+            text = self.resolve_name_like_value(value)
+        return text or self.resolve_str(value)
+
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         if type(value) is int:
             return value

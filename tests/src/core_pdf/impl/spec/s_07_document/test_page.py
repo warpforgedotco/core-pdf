@@ -18,6 +18,7 @@ SAMPLE_PDF = SCORE_BENCH / "g-325a.pdf"
 class FakeDocument:
     def __init__(self, fields: list[RawFormField]) -> None:
         self.internal_cache_lock = threading.RLock()
+        self.recovery_enabled = False
         self.internal_page_locks: dict[int, threading.RLock] = {}
         self.resolver = IdentityResolver()
         self.internal_fields = fields

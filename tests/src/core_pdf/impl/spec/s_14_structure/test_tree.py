@@ -13,8 +13,7 @@ from tests.helpers.resolvers import IdentityResolver
 
 class Document:
     resolver = IdentityResolver()
-    xref_was_recovered = False
-    page_tree_was_recovered = False
+    recovery_enabled = False
 
 
 def test_parent_tree_uses_shared_number_tree_walker() -> None:

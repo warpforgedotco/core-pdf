@@ -437,6 +437,21 @@ def overlap_ratio_of(subject: Sequence[float], container: Sequence[float]) -> fl
     return bbox_intersection_area(subject, container) / subject_area
 
 
+def page_rotation_matrix(
+    rotate: int, page_width: float, page_height: float
+) -> tuple[float, float, float, float, float, float]:
+    """PDF matrix mapping page space into the frame displayed at ``rotate`` degrees."""
+    match rotate % 360:
+        case 90:
+            return (0.0, -1.0, 1.0, 0.0, 0.0, page_width)
+        case 180:
+            return (-1.0, 0.0, 0.0, -1.0, page_width, page_height)
+        case 270:
+            return (0.0, 1.0, -1.0, 0.0, page_height, 0.0)
+        case _:
+            return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
 def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
     """Convert between bottom-left- and top-left-origin page coordinates."""
     return (

@@ -8,10 +8,6 @@ from typing import cast
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name, parse_box
-
-pdf_name_direct = normalize_pdf_name
-pdf_box_direct = parse_box
 
 
 def pdf_string_direct(value: object) -> str | None:
@@ -82,8 +78,6 @@ def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: 
 __all__ = (
     "link_target_direct",
     "link_target_resolved",
-    "pdf_box_direct",
-    "pdf_name_direct",
     "resolve_annotation_dict",
     "resolve_destination_value",
 )

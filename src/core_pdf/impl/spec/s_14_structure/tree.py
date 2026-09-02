@@ -352,9 +352,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
             return results
         if not isinstance(resolved, dict):
             raise ValueError("invalid parent tree dictionary")
-        recover_parent_tree = (
-            self.document.xref_was_recovered or self.document.page_tree_was_recovered
-        )
+        recover_parent_tree = self.document.recovery_enabled
 
         results.update(
             iter_number_tree_items(
@@ -490,7 +488,7 @@ def make_kids(
     document: PdfDocument,
     depth: int = 0,
 ) -> Iterator[StructureChild]:
-    recover_structure = document.xref_was_recovered or document.page_tree_was_recovered
+    recover_structure = document.recovery_enabled
     stack: list[tuple[Any, int]] = [(kid, depth)]
     while stack:
         current, depth = stack.pop()

@@ -4,7 +4,7 @@
 ``replace`` rebuilds a run from a hand-written list of ``kwargs.get(...)``
 lines, one per constructor parameter. A parameter missing from that list is
 silently dropped -- ``font_name`` was, so every run on a rotated page
-(``spec/s_07_document/page_boxes.py``) came back with ``font_name=None``.
+(``spec/s_07_document/page.py``) came back with ``font_name=None``.
 The signature check below fails when a new field is added to ``__init__``
 without being added here, and the round-trips then prove ``replace`` carries
 it both when defaulted and when passed explicitly.
