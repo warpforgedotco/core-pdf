@@ -67,6 +67,43 @@ def glyph_bitmap_dimensions(
     return (bitmap_w, bitmap_h)
 
 
+def internal_text_basis_rect(
+    x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
+) -> Rectangle:
+    """Axis-aligned device bounds of a text-space rect under ``text_basis``.
+
+    This is transform_bbox against (a, b, c, d, base_x, base_y), specialised
+    for the overwhelmingly common upright case where b and c are zero -- two
+    multiplies instead of eight, on a path that runs per glyph.
+    """
+    base_x, base_y, a, b, c, d = text_basis
+    if b == 0.0 and c == 0.0:
+        px0 = base_x + x0 * a
+        px1 = base_x + x1 * a
+        py0 = base_y + y0 * d
+        py1 = base_y + y1 * d
+        return (
+            px0 if px0 < px1 else px1,
+            py0 if py0 < py1 else py1,
+            px1 if px1 > px0 else px0,
+            py1 if py1 > py0 else py0,
+        )
+    p00_x = base_x + x0 * a + y0 * c
+    p00_y = base_y + x0 * b + y0 * d
+    p01_x = base_x + x0 * a + y1 * c
+    p01_y = base_y + x0 * b + y1 * d
+    p10_x = base_x + x1 * a + y0 * c
+    p10_y = base_y + x1 * b + y0 * d
+    p11_x = base_x + x1 * a + y1 * c
+    p11_y = base_y + x1 * b + y1 * d
+    return (
+        min(p00_x, p01_x, p10_x, p11_x),
+        min(p00_y, p01_y, p10_y, p11_y),
+        max(p00_x, p01_x, p10_x, p11_x),
+        max(p00_y, p01_y, p10_y, p11_y),
+    )
+
+
 def glyph_ink_rect(
     glyph_bbox: Rectangle | None,
     advance_start: float,
@@ -85,33 +122,7 @@ def glyph_ink_rect(
     text_x1 = advance_start + gx1 * text_advance_scale
     text_y0 = rise + gy0 * font_scale
     text_y1 = rise + gy1 * font_scale
-    base_x, base_y, a, b, c, d = text_basis
-    if b == 0.0 and c == 0.0:
-        px0 = base_x + text_x0 * a
-        px1 = base_x + text_x1 * a
-        py0 = base_y + text_y0 * d
-        py1 = base_y + text_y1 * d
-        rect = (
-            px0 if px0 < px1 else px1,
-            py0 if py0 < py1 else py1,
-            px1 if px1 > px0 else px0,
-            py1 if py1 > py0 else py0,
-        )
-    else:
-        p00_x = base_x + text_x0 * a + text_y0 * c
-        p00_y = base_y + text_x0 * b + text_y0 * d
-        p01_x = base_x + text_x0 * a + text_y1 * c
-        p01_y = base_y + text_x0 * b + text_y1 * d
-        p10_x = base_x + text_x1 * a + text_y0 * c
-        p10_y = base_y + text_x1 * b + text_y0 * d
-        p11_x = base_x + text_x1 * a + text_y1 * c
-        p11_y = base_y + text_x1 * b + text_y1 * d
-        rect = (
-            min(p00_x, p01_x, p10_x, p11_x),
-            min(p00_y, p01_y, p10_y, p11_y),
-            max(p00_x, p01_x, p10_x, p11_x),
-            max(p00_y, p01_y, p10_y, p11_y),
-        )
+    rect = internal_text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
     fallback_height = fallback_bbox[3] - fallback_bbox[1]
     fallback_width = fallback_bbox[2] - fallback_bbox[0]
     rect_x0, rect_y0, rect_x1, rect_y1 = rect
@@ -134,34 +145,12 @@ def transformed_text_rect(
     y1: float,
     text_basis: TextBasis,
 ) -> RectBox:
-    base_x, base_y, a, b, c, d = text_basis
-    if b == 0.0 and c == 0.0:
-        px0 = base_x + x0 * a
-        px1 = base_x + x1 * a
-        py0 = base_y + y0 * d
-        py1 = base_y + y1 * d
-        return RectBox(
-            px0 if px0 < px1 else px1,
-            py0 if py0 < py1 else py1,
-            px1 if px1 > px0 else px0,
-            py1 if py1 > py0 else py0,
-            seqno=state.sequence,
-            fill=state.fill_color,
-            fill_opacity=state.fill_opacity,
-        )
-    p00_x = base_x + x0 * a + y0 * c
-    p00_y = base_y + x0 * b + y0 * d
-    p01_x = base_x + x0 * a + y1 * c
-    p01_y = base_y + x0 * b + y1 * d
-    p10_x = base_x + x1 * a + y0 * c
-    p10_y = base_y + x1 * b + y0 * d
-    p11_x = base_x + x1 * a + y1 * c
-    p11_y = base_y + x1 * b + y1 * d
+    rect_x0, rect_y0, rect_x1, rect_y1 = internal_text_basis_rect(x0, y0, x1, y1, text_basis)
     return RectBox(
-        min(p00_x, p01_x, p10_x, p11_x),
-        min(p00_y, p01_y, p10_y, p11_y),
-        max(p00_x, p01_x, p10_x, p11_x),
-        max(p00_y, p01_y, p10_y, p11_y),
+        rect_x0,
+        rect_y0,
+        rect_x1,
+        rect_y1,
         seqno=state.sequence,
         fill=state.fill_color,
         fill_opacity=state.fill_opacity,
