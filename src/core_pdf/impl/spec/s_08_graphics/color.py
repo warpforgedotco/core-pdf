@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Any, TypeAlias, cast
 
@@ -45,6 +45,7 @@ from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_floats_to_srgb,
     internal_component_byte,
 )
+from core_pdf.impl.spec.s_08_graphics.shading import internal_compile_pdf_function
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
@@ -199,6 +200,37 @@ def internal_sampled_separation_rgb_lut(
 internal_separation_lut_cache: dict[
     tuple[object, ...], numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 ] = {}
+
+
+def internal_tint_components_evaluator(
+    tint_fn: object, error: str
+) -> Callable[[float], ColorComponents]:
+    """One-input tint transform as a callable, whatever form it arrived in.
+
+    Mirrors internal_evaluate_tint, which the *operand* path already uses, so a
+    Separation renders the same as a fill colour and as image samples. Before
+    this, a FunctionType 2 or 3 tint -- a plain dictionary, and the simplest
+    form the spec allows -- fell through to the identity and then failed the
+    component-count check, and image_decode swallowed that ValueError as if it
+    were a malformed ICCBased reference.
+    """
+    if tint_fn is None:
+        return lambda value: [value]
+    if isinstance(tint_fn, (list, tuple)):
+        if tint_fn and callable(tint_fn[0]):
+            tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
+
+            def call_python(value: float) -> ColorComponents:
+                try:
+                    return cast(ColorComponents, tint_callable(value))
+                except Exception as exc:
+                    raise ValueError(error) from exc
+
+            return call_python
+        constant = cast(ColorComponents, list(tint_fn))
+        return lambda value: constant
+    compiled = internal_compile_pdf_function(tint_fn)
+    return lambda value: list(compiled(value))
 
 
 def internal_build_sampled_separation_rgb_lut(
@@ -395,28 +427,20 @@ class ImageColorManager:
             inks[:, 0] = samples
             return cmyk_bytes_to_srgb(inks).reshape(-1)
 
-        fallback_result = bytearray()
-        for byte in raw:
-            v = byte / 255.0
-            if tint_fn is None:
-                components: ColorComponents = [v]
-            elif isinstance(tint_fn, (list, tuple)):
-                if len(tint_fn) >= 1 and callable(tint_fn[0]):
-                    tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
-                    try:
-                        components = cast(ColorComponents, tint_callable(v))
-                    except Exception as exc:
-                        raise ValueError("invalid separation tint function") from exc
-                else:
-                    components = cast(ColorComponents, list(tint_fn))
-            else:
-                components = [v]
+        # A Separation tint is a pure function of one 8-bit sample, so evaluate
+        # it 256 times and gather -- the same shape the sampled-stream path above
+        # already uses, instead of once per pixel.
+        evaluate = internal_tint_components_evaluator(tint_fn, "invalid separation tint function")
+        table = numpy.empty((256, 3), dtype=numpy.uint8)
+        for value in range(256):
+            components = evaluate(value / 255.0)
             if len(components) != expected:
                 raise ValueError("invalid separation tint function")
             rgb = ImageColorManager.apply_alt_color(components, alt_name)
-            if rgb is not None:
-                fallback_result.extend(rgb)
-        return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
+            if rgb is None:
+                raise ValueError("invalid Separation color space")
+            table[value] = tuple(rgb)
+        return table[uint8_view(raw)].reshape(-1)
 
     @staticmethod
     def convert_devicen(raw: ImageBuffer, color_space: ImageColorSpec) -> ImageBuffer | None:

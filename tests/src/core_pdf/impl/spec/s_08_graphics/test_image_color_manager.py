@@ -9,6 +9,7 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.color import (
     ImageColorManager,
     internal_sampled_separation_rgb_lut,
+    internal_tint_operands_to_srgb,
 )
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
 
@@ -96,3 +97,45 @@ def test_indexed_conversion_uses_rgb_lookup_entries() -> None:
         ImageColorManager.convert_indexed(bytes((3, 0, 2)), spec),
         numpy.asarray((3, 13, 23, 0, 10, 20, 2, 12, 22), dtype=numpy.uint8),
     )
+
+
+def test_separation_image_matches_the_same_tint_used_as_a_fill_colour() -> None:
+    """A FunctionType 2 or 3 tint must convert the same in both directions.
+
+    The image path only understood a sampled PdfStream, so a tint transform
+    given as a plain dictionary -- the simplest form ISO 32000-1 allows -- fell
+    through to the identity, failed the component-count check, and raised. That
+    ValueError was then absorbed by image_decode as if it were a malformed
+    ICCBased reference, so the image rendered with the tint transform silently
+    dropped while the identical colour space painted correctly as a fill.
+    """
+    for tint, alt in (
+        (
+            {
+                "FunctionType": 2,
+                "N": 1,
+                "C0": [0.0, 0.0, 0.0, 0.0],
+                "C1": [0.0, 0.9, 0.9, 0.1],
+            },
+            "DeviceCMYK",
+        ),
+        ({"FunctionType": 2, "N": 1, "C0": [1.0, 0.0, 0.0], "C1": [0.0, 0.0, 1.0]}, "DeviceRGB"),
+        (
+            {
+                "FunctionType": 3,
+                "Bounds": [0.5],
+                "Encode": [0, 1, 0, 1],
+                "Functions": [
+                    {"FunctionType": 2, "N": 1, "C0": [1, 0, 0], "C1": [0, 1, 0]},
+                    {"FunctionType": 2, "N": 1, "C0": [0, 1, 0], "C1": [0, 0, 1]},
+                ],
+            },
+            "DeviceRGB",
+        ),
+    ):
+        spec = ImageColorSpec(kind="Separation", params={}, alt=alt, channels=1, tint_fn=tint)
+        for byte in (0, 64, 128, 255):
+            operand = internal_tint_operands_to_srgb(spec, [byte / 255.0])
+            assert operand is not None
+            image = numpy.asarray(ImageColorManager.convert_separation(bytes([byte]), spec))[:3]
+            assert tuple(image) == tuple(round(value * 255.0) for value in operand)
