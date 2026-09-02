@@ -1,9 +1,13 @@
 import pytest
 
 from core_pdf.impl.model.glyphs import (
+    AUTHORITATIVE_UNICODE_SOURCES,
+    HEURISTIC_UNICODE_SOURCES,
+    UNICODE_SOURCE_CONFIDENCE,
     GlyphCluster,
     GlyphObservation,
     GlyphUnicodeSemantics,
+    UnicodeSource,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
     glyph_unicode_semantics,
@@ -138,3 +142,31 @@ def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:
     assert replacement.text == "B"
     assert replacement.glyph_clusters == ()
     assert repaired.glyph_clusters == (repaired_cluster,)
+
+
+def test_every_unicode_source_has_a_confidence() -> None:
+    """A source with no entry silently scores the 0.50 default.
+
+    That is not hypothetical: `undefined` was produced by the decoder and
+    absent from the table, so a glyph whose text had already been replaced by
+    U+FFFD scored 0.50 while `replacement` -- the same text, from the other
+    branch of the same decision -- scored 0.05.
+    """
+    missing = [source for source in UnicodeSource if source not in UNICODE_SOURCE_CONFIDENCE]
+    assert missing == []
+
+
+def test_unicode_source_classifications_are_drawn_from_the_enum() -> None:
+    for source in AUTHORITATIVE_UNICODE_SOURCES | HEURISTIC_UNICODE_SOURCES:
+        assert source in tuple(UnicodeSource)
+    assert not (AUTHORITATIVE_UNICODE_SOURCES & HEURISTIC_UNICODE_SOURCES)
+
+
+def test_placeholder_sources_share_the_lowest_confidence() -> None:
+    """UNDEFINED, FALLBACK_NUL and REPLACEMENT all mean "no real mapping"."""
+    placeholders = (
+        UnicodeSource.UNDEFINED,
+        UnicodeSource.FALLBACK_NUL,
+        UnicodeSource.REPLACEMENT,
+    )
+    assert {UNICODE_SOURCE_CONFIDENCE[source] for source in placeholders} == {0.05}

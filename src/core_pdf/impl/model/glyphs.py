@@ -13,36 +13,69 @@ from core_pdf.impl.types import Rectangle
 Matrix6 = tuple[float, float, float, float, float, float]
 
 
-UNICODE_SOURCE_CONFIDENCE = {
-    "actual_text": 1.0,
-    "to_unicode": 1.0,
-    "cff_glyph_repair": 0.96,
-    "ligature_override": 0.94,
-    "glyph_name": 0.92,
-    "truetype_cmap": 0.90,
-    "truetype_glyph_shape": 0.90,
-    "predefined_cmap": 0.94,
-    "learned_ocr": 0.93,
-    "cid_collection": 0.88,
-    "encoding": 0.84,
-    "identity": 0.58,
-    "fallback_nul": 0.05,
-    "replacement": 0.05,
+class UnicodeSource(StrEnum):
+    """Where a glyph's Unicode text came from.
+
+    A StrEnum so the value keeps comparing equal to the plain strings the
+    compatibility facades still test against, while every producer and every
+    classification table below is checked against one closed vocabulary. This
+    used to be a bare `str`: `undefined` was produced by the decoder but was
+    missing from the confidence table, so it silently scored the 0.50 default.
+    """
+
+    ACTUAL_TEXT = "actual_text"
+    TO_UNICODE = "to_unicode"
+    CFF_GLYPH_REPAIR = "cff_glyph_repair"
+    LIGATURE_OVERRIDE = "ligature_override"
+    PREDEFINED_CMAP = "predefined_cmap"
+    LEARNED_OCR = "learned_ocr"
+    GLYPH_NAME = "glyph_name"
+    TRUETYPE_CMAP = "truetype_cmap"
+    TRUETYPE_GLYPH_SHAPE = "truetype_glyph_shape"
+    CID_COLLECTION = "cid_collection"
+    ENCODING = "encoding"
+    IDENTITY = "identity"
+    UNDEFINED = "undefined"
+    FALLBACK_NUL = "fallback_nul"
+    REPLACEMENT = "replacement"
+
+
+UNICODE_SOURCE_CONFIDENCE: dict[str, float] = {
+    UnicodeSource.ACTUAL_TEXT: 1.0,
+    UnicodeSource.TO_UNICODE: 1.0,
+    UnicodeSource.CFF_GLYPH_REPAIR: 0.96,
+    UnicodeSource.LIGATURE_OVERRIDE: 0.94,
+    UnicodeSource.GLYPH_NAME: 0.92,
+    UnicodeSource.TRUETYPE_CMAP: 0.90,
+    UnicodeSource.TRUETYPE_GLYPH_SHAPE: 0.90,
+    UnicodeSource.PREDEFINED_CMAP: 0.94,
+    UnicodeSource.LEARNED_OCR: 0.93,
+    UnicodeSource.CID_COLLECTION: 0.88,
+    UnicodeSource.ENCODING: 0.84,
+    UnicodeSource.IDENTITY: 0.58,
+    # The decoder emits UNDEFINED with the text already replaced by U+FFFD, the
+    # same text REPLACEMENT carries, so it belongs at the same confidence. It
+    # was absent from this table and scored the 0.50 default instead.
+    UnicodeSource.UNDEFINED: 0.05,
+    UnicodeSource.FALLBACK_NUL: 0.05,
+    UnicodeSource.REPLACEMENT: 0.05,
 }
 
-AUTHORITATIVE_UNICODE_SOURCES = frozenset(
+AUTHORITATIVE_UNICODE_SOURCES: frozenset[str] = frozenset(
     {
-        "actual_text",
-        "to_unicode",
-        "cff_glyph_repair",
-        "ligature_override",
-        "glyph_name",
-        "truetype_cmap",
-        "truetype_glyph_shape",
-        "predefined_cmap",
+        UnicodeSource.ACTUAL_TEXT,
+        UnicodeSource.TO_UNICODE,
+        UnicodeSource.CFF_GLYPH_REPAIR,
+        UnicodeSource.LIGATURE_OVERRIDE,
+        UnicodeSource.GLYPH_NAME,
+        UnicodeSource.TRUETYPE_CMAP,
+        UnicodeSource.TRUETYPE_GLYPH_SHAPE,
+        UnicodeSource.PREDEFINED_CMAP,
     }
 )
-HEURISTIC_UNICODE_SOURCES = frozenset({"cid_collection", "encoding", "learned_ocr"})
+HEURISTIC_UNICODE_SOURCES: frozenset[str] = frozenset(
+    {UnicodeSource.CID_COLLECTION, UnicodeSource.ENCODING, UnicodeSource.LEARNED_OCR}
+)
 
 
 class GlyphUnicodeSemantics(StrEnum):

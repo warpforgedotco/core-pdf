@@ -14,6 +14,7 @@ from typing import Iterable
 
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
@@ -321,10 +322,17 @@ class DecodedGlyph:
     split_unicode: bool = False
 
 
+# A glyph whose text is a placeholder rather than a real mapping: the CFF
+# repair pass may overwrite these, and only these.
+internal_UNRESOLVED_UNICODE_SOURCES = frozenset(
+    {UnicodeSource.IDENTITY, UnicodeSource.REPLACEMENT, UnicodeSource.FALLBACK_NUL}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class UnicodeChoice:
     text: str
-    source: str
+    source: UnicodeSource
     alternates: tuple[str, ...] = ()
 
 
@@ -793,12 +801,12 @@ class FontDecoder:
             if visual_punctuation is not None:
                 return UnicodeChoice(
                     visual_punctuation,
-                    "truetype_glyph_shape",
+                    UnicodeSource.TRUETYPE_GLYPH_SHAPE,
                     dedupe_alternates(alternates, visual_punctuation),
                 )
             return UnicodeChoice(
                 to_unicode_text,
-                "to_unicode",
+                UnicodeSource.TO_UNICODE,
                 dedupe_alternates(alternates, to_unicode_text),
             )
 
@@ -806,7 +814,7 @@ class FontDecoder:
         if replacement is not None:
             return UnicodeChoice(
                 replacement,
-                "cff_glyph_repair",
+                UnicodeSource.CFF_GLYPH_REPAIR,
                 dedupe_alternates(alternates, replacement),
             )
 
@@ -815,7 +823,7 @@ class FontDecoder:
             if tt_text and not has_untrusted_unicode_semantics(tt_text):
                 return UnicodeChoice(
                     tt_text,
-                    "truetype_cmap",
+                    UnicodeSource.TRUETYPE_CMAP,
                     dedupe_alternates(alternates, tt_text),
                 )
 
@@ -824,7 +832,7 @@ class FontDecoder:
             if predefined_text is not None:
                 return UnicodeChoice(
                     predefined_text,
-                    "predefined_cmap",
+                    UnicodeSource.PREDEFINED_CMAP,
                     dedupe_alternates(alternates, predefined_text),
                 )
 
@@ -834,7 +842,7 @@ class FontDecoder:
             if encoding_text and not has_invalid_unicode_mapping(encoding_text):
                 return UnicodeChoice(
                     encoding_text,
-                    "encoding",
+                    UnicodeSource.ENCODING,
                     dedupe_alternates(alternates, encoding_text),
                 )
 
@@ -844,14 +852,16 @@ class FontDecoder:
             if cid_text is not None:
                 return UnicodeChoice(
                     cid_text,
-                    "cid_collection",
+                    UnicodeSource.CID_COLLECTION,
                     dedupe_alternates(alternates, cid_text),
                 )
 
         if fallback_code == 0:
-            return UnicodeChoice("\u0000", "fallback_nul", dedupe_alternates(alternates, "\u0000"))
+            return UnicodeChoice(
+                "\u0000", UnicodeSource.FALLBACK_NUL, dedupe_alternates(alternates, "\u0000")
+            )
         text = unicode_scalar_or_replacement(fallback_code)
-        source = "identity" if text != "\ufffd" else "replacement"
+        source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
     def internal_clear_cid_unicode_caches(self) -> None:
@@ -918,7 +928,7 @@ class FontDecoder:
                     and mapped
                     and text != mapped
                     and (
-                        choice.source in {"identity", "replacement", "fallback_nul"}
+                        choice.source in internal_UNRESOLVED_UNICODE_SOURCES
                         or should_prefer_glyph_name_mapping(
                             text,
                             mapped,
@@ -933,7 +943,7 @@ class FontDecoder:
                     code_bytes,
                     glyph_decode_table,
                     authoritative=self.glyph_decode_table_authoritative,
-                    fallback_mapping=choice.source in {"identity", "replacement", "fallback_nul"},
+                    fallback_mapping=choice.source in internal_UNRESOLVED_UNICODE_SOURCES,
                 )
         if self.ligature_overrides:
             lo = self.ligature_overrides
@@ -942,7 +952,7 @@ class FontDecoder:
             return choice
         return UnicodeChoice(
             text,
-            "glyph_name",
+            UnicodeSource.GLYPH_NAME,
             dedupe_alternates((choice.text, *choice.alternates), text),
         )
 
@@ -982,7 +992,7 @@ class FontDecoder:
                 )
                 choice = UnicodeChoice(
                     "\ufffd" if undefined else text,
-                    "undefined" if undefined else "encoding",
+                    UnicodeSource.UNDEFINED if undefined else UnicodeSource.ENCODING,
                 )
             else:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
@@ -1052,7 +1062,7 @@ class FontDecoder:
             if text != choice.text:
                 choice = UnicodeChoice(
                     text,
-                    "ligature_override",
+                    UnicodeSource.LIGATURE_OVERRIDE,
                     dedupe_alternates((choice.text, *choice.alternates), text),
                 )
         return DecodedGlyph(
