@@ -3195,7 +3195,7 @@ class TextState:
             source = ImageSource(
                 data,
                 dictionary,
-                cache=self.document.image_cache,
+                cache=self.image_cache,
                 cache_key=("inline", self.sequence),
             )
             self.inline_images.append(
@@ -3235,7 +3235,7 @@ class TextState:
         return ImageSource(
             raw,
             dictionary,
-            cache=self.document.image_cache,
+            cache=self.image_cache,
             cache_key=("xobject", key),
         )
 

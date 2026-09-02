@@ -23,6 +23,11 @@ class IdentityResolver:
     starts calling a resolver method it did not use before.
     """
 
+    def __init__(self) -> None:
+        # TextState reads this straight off the resolver: TextResolver declares
+        # it, so a double standing in for one has to carry it.
+        self.kw_cache: dict[bytes, object] = {}
+
     def resolve(self, ref: object) -> object:
         return ref
 
