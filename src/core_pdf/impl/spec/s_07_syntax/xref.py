@@ -16,6 +16,9 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int_strict,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+    matches_keyword_with_one_substitution,
+)
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE
 from core_pdf.impl.types import PdfByteBuffer
 
@@ -52,35 +55,16 @@ def key_for(obj_num: int, gen_num: int = 0) -> int:
 
 
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
+    """Parse a loosely formatted xref entry.
+
+    Only reached once parse_xref_entry_at's fixed-width form has failed on
+    these same bytes, so this does not retry it -- the entry is malformed in
+    some way and the whitespace-split form is what is left.
+    """
     if 11 in line:
         raise PdfParseError("invalid xref table entry")
-    n = len(line)
-    if n >= 18:
-        marker = line[17]
-        if line[10] in (9, 32) and line[16] in (9, 32) and marker in (102, 110):
-            try:
-                offset = int(line[:10])
-                generation = int(line[11:16])
-            except ValueError:
-                pass
-            else:
-                if offset < 0 or generation < 0:
-                    raise PdfParseError("invalid xref table entry")
-                if n > 18 and not WS_TABLE[line[18]]:
-                    raise PdfParseError("invalid xref table entry")
-                return offset, generation, marker == 110
-
     parts = line.strip().split()
-    if len(parts) == 2:
-        try:
-            offset = int(parts[0])
-            generation = int(parts[1])
-        except ValueError as exc:
-            raise PdfParseError("invalid xref table entry") from exc
-        if offset < 0 or generation < 0:
-            raise PdfParseError("invalid xref table entry")
-        return offset, generation, offset != 0
-    if len(parts) != 3:
+    if len(parts) not in (2, 3):
         raise PdfParseError("invalid xref table entry")
     try:
         offset = int(parts[0])
@@ -89,13 +73,15 @@ def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
         raise PdfParseError("invalid xref table entry") from exc
     if offset < 0 or generation < 0:
         raise PdfParseError("invalid xref table entry")
+    if len(parts) == 2:
+        # No f/n marker: a zero offset is the free-list head, anything else
+        # is an in-use object.
+        return offset, generation, offset != 0
     if parts[2] == b"n":
-        in_use = True
-    elif parts[2] == b"f":
-        in_use = False
-    else:
-        raise PdfParseError("invalid xref table entry")
-    return offset, generation, in_use
+        return offset, generation, True
+    if parts[2] == b"f":
+        return offset, generation, False
+    raise PdfParseError("invalid xref table entry")
 
 
 def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, int]:
@@ -559,15 +545,18 @@ class XRefScanner:
             if remaining_rows <= 0:
                 break
             rows_to_read = min(num_objs, remaining_rows)
+            type_end = w[0]
+            offset_end = type_end + w[1]
+            gen_end = offset_end + w[2]
             for j in range(rows_to_read):
                 if pos + row_size > len(data):
                     raise PdfParseError("xref stream length mismatch")
                 row = data[pos : pos + row_size]
                 pos += row_size
 
-                t_bytes = row[: w[0]]
-                o_bytes = row[w[0] : w[0] + w[1]]
-                g_bytes = row[w[0] + w[1] : w[0] + w[1] + w[2]]
+                t_bytes = row[:type_end]
+                o_bytes = row[type_end:offset_end]
+                g_bytes = row[offset_end:gen_end]
 
                 entry_type = int.from_bytes(t_bytes, "big") if w[0] else 1
                 val1 = int.from_bytes(o_bytes, "big") if w[1] else 0
@@ -576,10 +565,8 @@ class XRefScanner:
                 obj_num = start_obj + j
                 if obj_num >= effective_size:
                     continue
-                if entry_type == 0:
-                    entries[key_for(obj_num, val2)] = PdfXRefEntry(val1, val2, False)
-                elif entry_type == 1:
-                    entries[key_for(obj_num, val2)] = PdfXRefEntry(val1, val2, True)
+                if entry_type < 2:
+                    entries[key_for(obj_num, val2)] = PdfXRefEntry(val1, val2, entry_type == 1)
                 elif entry_type == 2:
                     entries[key_for(obj_num, 0)] = PdfXRefEntry(
                         0, 0, True, object_stream=val1, index_in_stream=val2
@@ -831,9 +818,7 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
             continue
         if data[marker : marker + 2] != b"%%":
             continue
-        token = data[marker + 2 : marker + 5]
-        mismatches = sum(1 for actual, expected in zip(token, b"EOF") if actual != expected)
-        if mismatches == 1:
+        if matches_keyword_with_one_substitution(data, marker + 2, b"EOF"):
             if raw_recovered < 0:
                 raw_recovered = marker
             if is_delimited(marker):

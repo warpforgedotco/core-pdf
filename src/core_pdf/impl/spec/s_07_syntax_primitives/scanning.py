@@ -5,6 +5,7 @@ import re
 from typing import Any, Protocol, cast
 
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
+from core_pdf.impl.types import PdfByteBuffer
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
 PDF_IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
@@ -197,7 +198,10 @@ def is_integer_word(value: memoryview | bytes) -> bool:
     return is_digit_bytes_from(value, 1)
 
 
-def matches_keyword_with_one_substitution(data: memoryview, pos: int, keyword: bytes) -> bool:
+def matches_keyword_with_one_substitution(
+    data: PdfByteBuffer | memoryview, pos: int, keyword: bytes
+) -> bool:
+    """Whether ``keyword`` sits at ``pos`` with exactly one byte substituted."""
     end = pos + len(keyword)
     if end > len(data):
         return False
