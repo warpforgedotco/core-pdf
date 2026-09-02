@@ -452,17 +452,9 @@ class PdfLexer:
                 assert next_token is not None
                 next_raw, next_end = next_token
                 if is_integer_word(next_raw):
-                    next_next = self.scan_word_at(next_end)
-                    if next_next is not None and next_next[0] == b"R":
-                        self.pos = next_next[1]
-                        try:
-                            obj_num = int(raw)
-                            gen_num = int(next_raw)
-                        except ValueError as exc:
-                            raise PdfParseError("invalid reference") from exc
-                        if obj_num < 0 or gen_num < 0:
-                            raise PdfParseError("invalid reference")
-                        return PdfReference(obj_num, gen_num)
+                    reference = self.internal_reference_at(raw, next_raw, next_end)
+                    if reference is not None:
+                        return reference
             return int(raw)
         return self.parse_keyword(raw)
 
@@ -626,6 +618,27 @@ class PdfLexer:
             values.append(value)
             pos = end
 
+    def internal_reference_at(
+        self, raw: bytes, next_raw: bytes, next_end: int
+    ) -> PdfReference | None:
+        """The ``R`` of an ``N G R`` reference, given the two integers already scanned.
+
+        Returns None -- leaving self.pos alone -- when the third token is not
+        ``R``, so the caller can fall back to treating ``raw`` as a number.
+        """
+        next_next = self.scan_word_at(next_end)
+        if next_next is None or next_next[0] != b"R":
+            return None
+        self.pos = next_next[1]
+        try:
+            obj_num = int(raw)
+            gen_num = int(next_raw)
+        except ValueError as exc:
+            raise PdfParseError("invalid reference") from exc
+        if obj_num < 0 or gen_num < 0:
+            raise PdfParseError("invalid reference")
+        return PdfReference(obj_num, gen_num)
+
     def parse_array(self) -> list[Any]:
         numeric_values = self.parse_numeric_array()
         if numeric_values is not None:
@@ -674,27 +687,20 @@ class PdfLexer:
             raw, end = scanned
             self.pos = end
             if is_number_word_bytes(raw):
-                raw_is_integer = 46 not in raw
-                next_token = self.scan_word_at(end)
-                if next_token is not None:
-                    next_raw, next_end = next_token
-                    if raw_is_integer and is_integer_word(next_raw):
-                        next_next = self.scan_word_at(next_end)
-                        if next_next is not None and next_next[0] == b"R":
-                            self.pos = next_next[1]
-                            try:
-                                obj_num = int(raw)
-                                gen_num = int(next_raw)
-                            except ValueError as exc:
-                                raise PdfParseError("invalid reference") from exc
-                            if obj_num < 0 or gen_num < 0:
-                                raise PdfParseError("invalid reference")
-                            values.append(PdfReference(obj_num, gen_num))
-                            continue
-                if not raw_is_integer:
+                if 46 in raw:
                     values.append(float(raw))
-                else:
-                    values.append(int(raw))
+                    continue
+                next_pos = self.skip_ignored_at(end)
+                if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
+                    next_token = self.scan_word_at(next_pos, skip_ignored=False)
+                    if next_token is not None:
+                        next_raw, next_end = next_token
+                        if is_integer_word(next_raw):
+                            reference = self.internal_reference_at(raw, next_raw, next_end)
+                            if reference is not None:
+                                values.append(reference)
+                                continue
+                values.append(int(raw))
                 continue
             values.append(self.parse_keyword(raw))
 
