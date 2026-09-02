@@ -155,7 +155,13 @@ def unpack_subbyte_image_samples(
     output = numpy.empty(width * height * components, dtype=numpy.uint8)
     output_row_bytes = samples_per_row
     chunk_rows = max(1, 4_000_000 // max(1, row_bytes))
-    weights = 1 << numpy.arange(bits_per_component - 1, -1, -1, dtype=numpy.uint16)
+    # 1 bpc is unpackbits' specialty and nothing beats it there (measured 10x
+    # faster than shifting). For 2 and 4 bpc it expands to one uint16 element
+    # per *bit* and then reduces, where shifting the packed bytes produces the
+    # uint8 samples directly: 3.9x and 3.5x on a 1200x1600 plane.
+    use_shifts = bits_per_component != 1
+    shifts = numpy.arange(8 - bits_per_component, -1, -bits_per_component, dtype=numpy.uint8)
+    sample_mask = numpy.uint8((1 << bits_per_component) - 1)
     for row_start in range(0, height, chunk_rows):
         row_count = min(chunk_rows, height - row_start)
         packed = uint8_view(
@@ -163,23 +169,12 @@ def unpack_subbyte_image_samples(
             count=row_count * row_bytes,
             offset=row_start * row_bytes,
         ).reshape(row_count, row_bytes)
-        unpacked = numpy.unpackbits(packed, axis=1, bitorder="big")
-        unpacked = unpacked[:, : samples_per_row * bits_per_component].reshape(
-            row_count,
-            samples_per_row,
-            bits_per_component,
-        )
-        if bits_per_component == 1:
-            samples = unpacked
+        if use_shifts:
+            samples = ((packed[:, :, None] >> shifts) & sample_mask).reshape(row_count, -1)[
+                :, :samples_per_row
+            ]
         else:
-            samples = (
-                (unpacked * weights)
-                .sum(axis=2, dtype=numpy.uint16)
-                .astype(
-                    numpy.uint8,
-                    copy=False,
-                )
-            )
+            samples = numpy.unpackbits(packed, axis=1, bitorder="big")[:, :samples_per_row]
         output_start = row_start * output_row_bytes
         output[output_start : output_start + row_count * output_row_bytes] = samples.reshape(-1)
     return output

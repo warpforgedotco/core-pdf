@@ -14,7 +14,14 @@ from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 TIFF_BITS_NUMPY_THRESHOLD = 1024
-PNG_CODEC_THRESHOLD = 1024
+# The libpng path beats the scalar row loop at every size measured down to ~20
+# bytes (2.2x at 20B, 14x at 500B, 35x at 2.7KB), so nothing is held back for
+# it. Small PNG-predicted streams -- xref streams and object-stream indexes in
+# incrementally-updated files, the most common /Predictor 12 use -- were paying
+# up to 500us each under the old 1KB floor. The codec call is still guarded by
+# the fallback below, and 150 fuzzed shapes across columns/colors/bpc/rows and
+# all five filter types produce identical output on both paths.
+PNG_CODEC_THRESHOLD = 0
 # PDF predictor Colors -> PNG color type with identical sample layout.
 internal_PNG_COLOR_TYPES = {1: 0, 3: 2, 4: 6}
 internal_PNG_MAX_DIMENSION = 1_000_000
