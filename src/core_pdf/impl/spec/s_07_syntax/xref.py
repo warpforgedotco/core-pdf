@@ -545,30 +545,37 @@ class XRefScanner:
             if remaining_rows <= 0:
                 break
             rows_to_read = min(num_objs, remaining_rows)
-            type_end = w[0]
-            offset_end = type_end + w[1]
-            gen_end = offset_end + w[2]
+            # Everything the row decode needs is loop-invariant: the field
+            # widths, their running offsets, and the buffer length. Slicing the
+            # three fields straight out of `data` also avoids materialising the
+            # whole row first -- four bytes objects per row rather than one.
+            # key_for is spelled out below for the same reason: this is the one
+            # loop where a call per row is measurable. Elsewhere, call it.
+            type_width = w[0]
+            offset_width = w[1]
+            gen_width = w[2]
+            data_len = len(data)
+            from_bytes = int.from_bytes
             for j in range(rows_to_read):
-                if pos + row_size > len(data):
+                row_end = pos + row_size
+                if row_end > data_len:
                     raise PdfParseError("xref stream length mismatch")
-                row = data[pos : pos + row_size]
-                pos += row_size
-
-                t_bytes = row[:type_end]
-                o_bytes = row[type_end:offset_end]
-                g_bytes = row[offset_end:gen_end]
-
-                entry_type = int.from_bytes(t_bytes, "big") if w[0] else 1
-                val1 = int.from_bytes(o_bytes, "big") if w[1] else 0
-                val2 = int.from_bytes(g_bytes, "big") if w[2] else 0
+                type_end = pos + type_width
+                offset_end = type_end + offset_width
+                entry_type = from_bytes(data[pos:type_end], "big") if type_width else 1
+                val1 = from_bytes(data[type_end:offset_end], "big") if offset_width else 0
+                val2 = (
+                    from_bytes(data[offset_end : offset_end + gen_width], "big") if gen_width else 0
+                )
+                pos = row_end
 
                 obj_num = start_obj + j
                 if obj_num >= effective_size:
                     continue
                 if entry_type < 2:
-                    entries[key_for(obj_num, val2)] = PdfXRefEntry(val1, val2, entry_type == 1)
+                    entries[(obj_num << 16) | val2] = PdfXRefEntry(val1, val2, entry_type == 1)
                 elif entry_type == 2:
-                    entries[key_for(obj_num, 0)] = PdfXRefEntry(
+                    entries[obj_num << 16] = PdfXRefEntry(
                         0, 0, True, object_stream=val1, index_in_stream=val2
                     )
                 else:
@@ -576,7 +583,7 @@ class XRefScanner:
                     # as a reference to the null object, thus permitting new
                     # entry types to be defined in the future." One forward-
                     # compatible row must not reject the whole section.
-                    entries[key_for(obj_num, 0)] = PdfXRefEntry(0, 0, False)
+                    entries[obj_num << 16] = PdfXRefEntry(0, 0, False)
 
         return entries, typing.cast(PdfDict, dict_obj)
 
