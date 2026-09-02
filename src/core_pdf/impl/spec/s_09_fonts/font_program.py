@@ -819,9 +819,16 @@ def internal_cubic_point(
     t: float,
 ) -> tuple[float, float]:
     mt = 1.0 - t
+    # Every coefficient is shared by the x and y line, so bind them once. Keep
+    # the ** form: mt**3 and mt*mt*mt disagree on about a quarter of random
+    # floats, which would move the golden rasters.
+    mt3 = mt**3
+    t3 = t**3
+    mt2t = 3.0 * mt * mt * t
+    mtt2 = 3.0 * mt * t * t
     return (
-        mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
-        mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
+        mt3 * p0[0] + mt2t * p1[0] + mtt2 * p2[0] + t3 * p3[0],
+        mt3 * p0[1] + mt2t * p1[1] + mtt2 * p2[1] + t3 * p3[1],
     )
 
 

@@ -62,6 +62,12 @@ class SparseFontWidthMap(FontWidthMap):
             return default
         return self.widths.get(key, default)
 
+    def width_for(self, code: int, default: float) -> float:
+        # The base implementation routes through get(), adding two frames to
+        # the hottest simple-font lookup. CompactCIDWidthMap already overrides
+        # this; every caller passes an int, so the guard in get() is moot here.
+        return self.widths.get(code, default)
+
 
 class CompactCIDWidthMap(FontWidthMap):
     __slots__ = ("start", "widths")
