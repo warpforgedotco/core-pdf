@@ -104,53 +104,46 @@ class PdfObjectStream:
         raise PdfParseError("invalid object stream object")
 
 
+def internal_scan_object_stream_pairs(
+    data: bytes | memoryview,
+    n: int,
+    kw_cache: dict[bytes, object] | None,
+) -> tuple[list[tuple[int, int]], int]:
+    """Scan up to ``n`` ``objnum offset`` pairs, with the end of the last one."""
+    lexer = PdfLexer(data, kw_cache=kw_cache)
+    pairs: list[tuple[int, int]] = []
+    last_end = 0
+    while len(pairs) < n:
+        first_token = lexer.scan_word(skip_ignored=True)
+        if first_token is None:
+            break
+        obj_num = parse_int(first_token[0], None)
+        if obj_num is None:
+            break
+        lexer.pos = first_token[1]
+        second_token = lexer.scan_word(skip_ignored=True)
+        if second_token is None:
+            break
+        offset = parse_int(second_token[0], None)
+        if offset is None:
+            break
+        lexer.pos = second_token[1]
+        last_end = second_token[1]
+        pairs.append((obj_num, offset))
+    return pairs, last_end
+
+
 def parse_object_stream_header(
     data: bytes | memoryview,
     first: int,
     n: int,
     kw_cache: dict[bytes, object] | None = None,
 ) -> list[tuple[int, int]]:
-    header = data[:first]
-    header_lexer = PdfLexer(header, kw_cache=kw_cache)
-    pairs: list[tuple[int, int]] = []
-    while len(pairs) < n:
-        token = header_lexer.scan_word(skip_ignored=True)
-        if token is None:
-            break
-        obj_num = parse_int(token[0], None)
-        header_lexer.pos = token[1]
-        token = header_lexer.scan_word(skip_ignored=True)
-        if token is None:
-            break
-        offset = parse_int(token[0], None)
-        header_lexer.pos = token[1]
-        if obj_num is None or offset is None:
-            break
-        pairs.append((obj_num, offset))
-    return pairs
+    return internal_scan_object_stream_pairs(data[:first], n, kw_cache)[0]
 
 
 def recover_object_stream_first(
     data: bytes | memoryview, n: int, kw_cache: dict[bytes, object] | None = None
 ) -> int | None:
-    lexer = PdfLexer(data, kw_cache=kw_cache)
-    pairs = 0
-    last_end = 0
-    while pairs < n:
-        token = lexer.scan_word(skip_ignored=True)
-        if token is None:
-            break
-        if parse_int(token[0], None) is None:
-            break
-        lexer.pos = token[1]
-        token = lexer.scan_word(skip_ignored=True)
-        if token is None:
-            break
-        if parse_int(token[0], None) is None:
-            break
-        lexer.pos = token[1]
-        last_end = token[1]
-        pairs += 1
-    if pairs == 0:
-        return None
-    return last_end
+    pairs, last_end = internal_scan_object_stream_pairs(data, n, kw_cache)
+    return last_end if pairs else None

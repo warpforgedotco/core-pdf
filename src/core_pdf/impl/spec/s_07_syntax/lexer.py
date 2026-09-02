@@ -189,7 +189,10 @@ class PdfLexer:
         byte = data[pos]
         if byte != 37 and not WS_TABLE[byte]:
             return pos
-        return skip_pdf_ignored(data, position, data_len)
+        # Only whitespace was consumed reaching `pos`, which skip_pdf_ignored
+        # would skip again anyway -- resume there rather than making it redo
+        # the peek above from `position`.
+        return skip_pdf_ignored(data, pos, data_len)
 
     def scan_word_at(self, position: int, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         data = self.raw_data

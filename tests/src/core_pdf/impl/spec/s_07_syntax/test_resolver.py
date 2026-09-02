@@ -68,6 +68,29 @@ def test_deep_cache_verifies_source_identity() -> None:
         assert resolver.deep_cache[id(source)] == (source, source)
 
 
+def test_deep_resolve_terminates_on_a_cyclic_reference_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A damaged file can encode 1 0 R -> 2 0 R -> 1 0 R.
+
+    deep_resolve used to recurse into itself for a PdfReference while only ever
+    recording container ids in ``seen``, so such a chain ran to RecursionError.
+    """
+    with closing(ObjectResolver(b"", {}, {})) as resolver:
+        monkeypatch.setattr(
+            type(resolver),
+            "resolve",
+            lambda self, ref: (
+                PdfReference(2, 0)
+                if type(ref) is PdfReference and ref.object_number == 1
+                else PdfReference(1, 0)
+                if type(ref) is PdfReference
+                else ref
+            ),
+        )
+        assert resolver.deep_resolve(PdfReference(1, 0)) == PdfReference(1, 0)
+
+
 def test_resolve_str_does_not_expand_composite_object_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

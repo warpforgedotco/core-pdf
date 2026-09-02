@@ -757,23 +757,15 @@ class XRefScanner:
             entries[key] = PdfXRefEntry(offset, gen_num, True)
             if isinstance(obj, PdfStream):
                 parsed_streams[key] = (offset, obj)
-        XRefScanner.recover_object_stream_entries(
-            data,
-            entries,
-            max_entries,
-            parsed_streams=parsed_streams,
-        )
+        XRefScanner.recover_object_stream_entries(entries, parsed_streams, max_entries)
         return entries
 
     @staticmethod
     def recover_object_stream_entries(
-        data: PdfByteBuffer,
         entries: XRefTable,
+        parsed_streams: dict[int, tuple[int, PdfStream]],
         max_entries: int = 100000,
-        *,
-        parsed_streams: dict[int, tuple[int, PdfStream]] | None = None,
     ) -> None:
-        lexer = PdfLexer(data)
         for key, entry in list(entries.items()):
             if len(entries) >= max_entries:
                 return
@@ -781,17 +773,10 @@ class XRefScanner:
                 continue
             obj_num = key >> 16
             gen_num = key & 0xFFFF
-            if parsed_streams is not None:
-                parsed = parsed_streams.get(key)
-                if parsed is None or parsed[0] != entry.offset:
-                    continue
-                obj = parsed[1]
-            else:
-                lexer.rewind(entry.offset)
-                try:
-                    obj = lexer.parse_indirect_object()
-                except Exception:
-                    continue
+            parsed = parsed_streams.get(key)
+            if parsed is None or parsed[0] != entry.offset:
+                continue
+            obj = parsed[1]
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary

@@ -230,8 +230,21 @@ class ObjectResolver:
             return value
 
         if t is PdfReference:
-            res = self.resolve(value)
-            if type(res) in (dict, list, PdfStream, tuple, PdfReference):
+            # Walk the chain iteratively with its own seen set, the way
+            # resolve_str does. Recursing through deep_resolve instead never
+            # recorded the reference keys -- `seen` is only populated for
+            # containers below -- so a cyclic chain (1 0 R -> 2 0 R -> 1 0 R)
+            # recursed until RecursionError. A cycle yields the reference
+            # unresolved, matching what resolve() itself returns for one.
+            res: object = value
+            chain: set[int] = set()
+            while type(res) is PdfReference:
+                reference_key = key_for(res.object_number, res.generation_number)
+                if reference_key in chain:
+                    return res
+                chain.add(reference_key)
+                res = self.resolve(res)
+            if type(res) in (dict, list, PdfStream, tuple):
                 return self.deep_resolve(res, seen)
             return res
 
@@ -257,16 +270,15 @@ class ObjectResolver:
             deep_cache[val_id] = (value, res)
             return res
 
-        marker = id(value)
-        if marker in seen:
+        if val_id in seen:
             return value
-        seen.add(marker)
+        seen.add(val_id)
 
         if t is list:
             items = cast(list[object], value)
-            if len(items) > 64 and set(map(type, items)).issubset(terminal_types):
-                deep_cache[val_id] = (value, cast(CachedPdfObject, items))
-                return items
+            # One short-circuiting scan, not two checks. A set(map(type, ...))
+            # pre-pass is ~23% faster for a long all-terminal array but ~18x
+            # slower for one that holds references, which bails on item zero.
             for item in items:
                 if type(item) not in terminal_types:
                     break
@@ -514,7 +526,7 @@ class ObjectResolver:
             if parsed is None:
                 continue
             offset, object_number, generation_number = parsed
-            key = (object_number << 16) | generation_number
+            key = key_for(object_number, generation_number)
             offsets.setdefault(key, []).append(offset)
         indexed = {key: tuple(values) for key, values in offsets.items()}
         with self.lock:
@@ -524,7 +536,7 @@ class ObjectResolver:
 
     def recover_missing_indirect_object(self, lexer: PdfLexer, ref: PdfReference) -> object:
         """Resolve a demanded object omitted by a damaged cross-reference table."""
-        key = (ref.object_number << 16) | ref.generation_number
+        key = key_for(ref.object_number, ref.generation_number)
         for offset in reversed(self.internal_recovery_offsets(lexer).get(key, ())):
             lexer.rewind(offset)
             try:
