@@ -31,9 +31,8 @@ from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples as internal_native_unpack_subbyte_image_samples,
 )
 from core_pdf.impl.spec.s_08_graphics.color_math import (
-    adapt_d50_to_d65,
+    d50_xyz_to_srgb,
     lab_to_xyz,
-    xyz_to_srgb,
 )
 from core_pdf.impl.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
@@ -45,10 +44,6 @@ from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_bytes_to_srgb,
     cmyk_floats_to_srgb,
     internal_component_byte,
-)
-from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
-    IccProfileError,
-    parse_icc_transform,
 )
 
 ImageDict: TypeAlias = dict[str, object]
@@ -239,8 +234,6 @@ class ImageColorManager:
     def convert_image_data(
         raw: ImageBuffer,
         image_dict: ImageDict | ImageColorSpec,
-        *,
-        prefer_embedded_icc: bool = False,
     ) -> ImageBuffer | None:
         current: ImageDict | ImageColorSpec = image_dict
         depth = 0
@@ -282,20 +275,6 @@ class ImageColorManager:
             if cs_kind == "Indexed":
                 return ImageColorManager.convert_indexed(samples, spec)
             if cs_kind == "ICCBased":
-                if prefer_embedded_icc and spec.icc_profile is not None:
-                    try:
-                        transform = parse_icc_transform(spec.icc_profile)
-                        array = uint8_view(samples).reshape(-1, transform.input_channels)
-                        normalized = array.astype(numpy.float32) / 255.0
-                        converted = numpy.rint(
-                            numpy.clip(transform.apply(normalized) * 255.0, 0.0, 255.0)
-                        ).astype(numpy.uint8)
-                        converted = converted.reshape(-1)
-                        if spec.channels == 1 and converted.size == len(samples):
-                            return ImageColorManager.convert_gray(converted)
-                        return converted
-                    except (IccProfileError, ValueError):
-                        pass
                 if spec.alt is not None:
                     current = ImageColorSpec(kind=spec.alt, params={})
                     raw = samples
@@ -571,7 +550,7 @@ class ImageColorManager:
                 values[:, index] = numpy.power(values[:, index], exponent)
         matrix_array, black_point_array = internal_calrgb_parameter_arrays(tuple(matrix), tuple(bp))
         xyz = (values @ matrix_array.T + black_point_array).astype(numpy.float32)
-        rgb = xyz_to_srgb(adapt_d50_to_d65(xyz))
+        rgb = d50_xyz_to_srgb(xyz)
         return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 
     @staticmethod
@@ -585,7 +564,7 @@ class ImageColorManager:
         lab[:, 1] = (lab[:, 1] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
         lab[:, 2] = (lab[:, 2] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
         xyz = lab_to_xyz(lab, (wp[0], wp[1], wp[2]))
-        rgb = xyz_to_srgb(adapt_d50_to_d65(xyz))
+        rgb = d50_xyz_to_srgb(xyz)
         return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 
     @staticmethod

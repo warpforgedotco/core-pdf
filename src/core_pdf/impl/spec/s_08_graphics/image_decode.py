@@ -11,6 +11,7 @@ import numpy
 
 from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.pipeline import (
     decode_stream_data,
@@ -203,8 +204,12 @@ class ImageSource:
             return None
         try:
             decoded = decode_stream_data(self.raw, self.dictionary)
-        except Exception:
-            decoded = self.raw
+        except FilterError:
+            # Falling back to self.raw here unpacked the still-encoded bytes as
+            # a bitmap, painting compressed noise into the alpha plane. A mask
+            # that cannot be decoded is dropped instead. An unfiltered stream
+            # does not reach this path -- decode_stream_data returns it as-is.
+            return None
         row_bytes = (width + 7) // 8
         if len(decoded) < row_bytes * height:
             return None
