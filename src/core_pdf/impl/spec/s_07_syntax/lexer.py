@@ -818,6 +818,12 @@ class PdfLexer:
     def parse_dictionary(self) -> PdfDict:
         values: PdfDict = {}
         contents_was_parsed_without_decipher = False
+        # The signature-Contents carve-out below is the only reason to inspect a
+        # value before parsing it, and it cannot apply when nothing is being
+        # deciphered. Deciding that once keeps the probe -- a skip_ignored_at the
+        # following parse_object immediately repeats, two buffer reads, and a
+        # PdfName-to-str compare -- off every key of every dictionary.
+        deciphering = self.decipher is not None and self.current_obj_num is not None
         self.advance(2)
         while True:
             self.pos = self.skip_ignored_at(self.pos)
@@ -852,30 +858,27 @@ class PdfLexer:
 
             key = PdfName_of(key_bytes)
             value_start = self.pos
-            value_pos = self.skip_ignored_at(value_start)
-            value_is_hex_string = (
-                value_pos < self.data_len
-                and self.raw_data[value_pos] == 60
-                and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
-            )
             try:
-                if (
-                    key == "Contents"
-                    and value_is_hex_string
-                    and self.decipher is not None
-                    and self.current_obj_num is not None
-                ):
-                    # ISO 32000-2:2020, 7.6.2 excludes a Signature dictionary's
-                    # hexadecimal Contents value from encryption. Parse it raw
-                    # until the whole dictionary identifies its type; Type may
-                    # follow Contents and defaults to Sig under Table 255.
-                    self.pos = value_pos
-                    values[key] = PdfString(self.read_hex_string(), is_literal=False)
-                    contents_was_parsed_without_decipher = True
+                if deciphering and key == "Contents":
+                    value_pos = self.skip_ignored_at(value_start)
+                    if (
+                        value_pos < self.data_len
+                        and self.raw_data[value_pos] == 60
+                        and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
+                    ):
+                        # ISO 32000-2:2020, 7.6.2 excludes a Signature
+                        # dictionary's hexadecimal Contents value from
+                        # encryption. Parse it raw until the whole dictionary
+                        # identifies its type; Type may follow Contents and
+                        # defaults to Sig under Table 255.
+                        self.pos = value_pos
+                        values[key] = PdfString(self.read_hex_string(), is_literal=False)
+                        contents_was_parsed_without_decipher = True
+                    else:
+                        values[key] = self.parse_object()
+                        contents_was_parsed_without_decipher = False
                 else:
                     values[key] = self.parse_object()
-                    if key == "Contents":
-                        contents_was_parsed_without_decipher = False
             except PdfParseError:
                 self.pos = value_start
                 if (
@@ -885,13 +888,13 @@ class PdfLexer:
                 ):
                     raise
 
-        signature_type = values.get("Type")
-        is_signature_dictionary = signature_type in ("Sig", "DocTimeStamp") or (
-            signature_type is None and "ByteRange" in values
-        )
-        if contents_was_parsed_without_decipher and not is_signature_dictionary:
+        if contents_was_parsed_without_decipher:
+            signature_type = values.get("Type")
+            is_signature_dictionary = signature_type in ("Sig", "DocTimeStamp") or (
+                signature_type is None and "ByteRange" in values
+            )
             raw_contents = values.get("Contents")
-            if type(raw_contents) is PdfString:
+            if not is_signature_dictionary and type(raw_contents) is PdfString:
                 values["Contents"] = PdfString(
                     self.apply_decipher(raw_contents.data),
                     is_literal=raw_contents.is_literal,
