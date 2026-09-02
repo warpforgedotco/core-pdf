@@ -32,6 +32,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_box,
     parse_float,
     parse_int,
+    parse_text_string,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     FindableSizedBuffer,
@@ -387,13 +388,7 @@ class ObjectResolver:
                 return None
             seen.add(reference_key)
             resolved = self.resolve(reference)
-        if type(resolved) is PdfString:
-            return decode_pdf_text_string(resolved.data)
-        if type(resolved) is bytes:
-            return decode_pdf_text_string(resolved)
-        if type(resolved) is str:
-            return resolved
-        return None
+        return parse_text_string(resolved)
 
     def internal_cached_object(self, ref: PdfReference) -> object:
         obj_num = ref.object_number
