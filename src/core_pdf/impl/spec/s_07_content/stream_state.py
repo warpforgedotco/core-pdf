@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
@@ -97,3 +98,13 @@ class ContentStreamFrame:
     old_state: StreamState | None = field(default=None, init=False)
     outer_group_alpha: float | None = field(default=None, init=False)
     entered: bool = field(default=False, init=False)
+
+
+# Every field except the two stack depths mirrors a TextState attribute of the
+# same name, so capture/restore drive off this list instead of two hand-written
+# copies that a new field can silently fall out of.
+STREAM_STATE_MIRRORED: tuple[str, ...] = tuple(
+    f.name
+    for f in dataclasses.fields(StreamState)
+    if f.name not in ("graphics_stack_len", "marked_content_stack_len")
+)

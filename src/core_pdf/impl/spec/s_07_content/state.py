@@ -70,6 +70,7 @@ from core_pdf.impl.spec.s_07_content.operator_tables import (
     build_operator_tables,
 )
 from core_pdf.impl.spec.s_07_content.stream_state import (
+    STREAM_STATE_MIRRORED,
     ContentStreamFrame,
     LayoutFormId,
     ResolvedResourceCache,
@@ -885,102 +886,17 @@ class TextState:
 
     def capture_stream_state(self) -> StreamState:
         return StreamState(
-            resources=self.resources,
-            resources_id=self.resources_id,
-            ctm=self.ctm,
-            text_matrix=self.text_matrix,
-            line_matrix=self.line_matrix,
-            font_size=self.font_size,
-            font_operand=self.font_operand,
-            font_size_operand=self.font_size_operand,
-            horizontal_scale=self.horizontal_scale,
-            char_space=self.char_space,
-            word_space=self.word_space,
-            rise=self.rise,
-            leading=self.leading,
-            render_mode=self.render_mode,
-            current_font=self.current_font,
-            current_decoder=self.current_decoder,
-            current_decoder_resources_id=self.current_decoder_resources_id,
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
-            fill_color=self.fill_color,
-            fill_pattern=self.fill_pattern,
-            fill_opacity=self.fill_opacity,
-            stroke_color=self.stroke_color,
-            stroke_pattern=self.stroke_pattern,
-            stroke_opacity=self.stroke_opacity,
-            line_width=self.line_width,
-            line_cap=self.line_cap,
-            line_join=self.line_join,
-            miter_limit=self.miter_limit,
-            dash_pattern=self.dash_pattern,
-            compatibility_depth=self.compatibility_depth,
-            fill_color_space=self.fill_color_space,
-            stroke_color_space=self.stroke_color_space,
-            blend_mode=self.blend_mode,
-            group_alpha=self.group_alpha,
-            flatness=self.flatness,
-            render_intent=self.render_intent,
-            clip_bbox=self.clip_bbox,
-            layout_form_bbox=self.layout_form_bbox,
-            layout_form_id=self.layout_form_id,
-            pending_line_break=self.pending_line_break,
-            compat_tj_cursor_x=self.compat_tj_cursor_x,
-            compat_tj_cursor_y=self.compat_tj_cursor_y,
-            xobject_depth=self.xobject_depth,
-            resource_cache=self.resource_cache,
-            resolved_resource_categories=self.resolved_resource_categories,
+            **{name: getattr(self, name) for name in STREAM_STATE_MIRRORED},
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
-        self.resources = state.resources
-        self.resources_id = state.resources_id
-        self.ctm = state.ctm
-        self.text_matrix = state.text_matrix
-        self.line_matrix = state.line_matrix
-        self.font_size = state.font_size
-        self.font_operand = state.font_operand
-        self.font_size_operand = state.font_size_operand
-        self.horizontal_scale = state.horizontal_scale
-        self.char_space = state.char_space
-        self.word_space = state.word_space
-        self.rise = state.rise
-        self.leading = state.leading
-        self.render_mode = state.render_mode
-        self.current_font = state.current_font
-        self.current_decoder = state.current_decoder
-        self.current_decoder_resources_id = state.current_decoder_resources_id
+        for name in STREAM_STATE_MIRRORED:
+            setattr(self, name, getattr(state, name))
         del self.stack[state.graphics_stack_len :]
         del self.clip_scope_stack[state.graphics_stack_len :]
         del self.marked_content_stack[state.marked_content_stack_len :]
-        self.fill_color = state.fill_color
-        self.fill_pattern = state.fill_pattern
-        self.fill_opacity = state.fill_opacity
-        self.stroke_color = state.stroke_color
-        self.stroke_pattern = state.stroke_pattern
-        self.stroke_opacity = state.stroke_opacity
-        self.line_width = state.line_width
-        self.line_cap = state.line_cap
-        self.line_join = state.line_join
-        self.miter_limit = state.miter_limit
-        self.dash_pattern = state.dash_pattern
-        self.fill_color_space = state.fill_color_space
-        self.stroke_color_space = state.stroke_color_space
-        self.compatibility_depth = state.compatibility_depth
-        self.blend_mode = state.blend_mode
-        self.group_alpha = state.group_alpha
-        self.flatness = state.flatness
-        self.render_intent = state.render_intent
-        self.clip_bbox = state.clip_bbox
-        self.layout_form_bbox = state.layout_form_bbox
-        self.layout_form_id = state.layout_form_id
-        self.pending_line_break = state.pending_line_break
-        self.compat_tj_cursor_x = state.compat_tj_cursor_x
-        self.compat_tj_cursor_y = state.compat_tj_cursor_y
-        self.xobject_depth = state.xobject_depth
-        self.resource_cache = state.resource_cache
-        self.resolved_resource_categories = state.resolved_resource_categories
         self.update_text_scales()
         self.update_font_metrics()
 
@@ -3273,9 +3189,12 @@ class TextState:
             self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3 and not self.type3_uncolored:
-            self.stroke_color_space = "DeviceRGB"
-            self.set_stroke_color(operands[0], operands[1], operands[2])
+        if len(operands) >= 3:
+            self.op_RG_values(
+                cast("int | float", operands[0]),
+                cast("int | float", operands[1]),
+                cast("int | float", operands[2]),
+            )
 
     def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None:
         if self.type3_uncolored:
@@ -3297,7 +3216,8 @@ class TextState:
     def op_w(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.line_width = max(0.0, self.as_float(operands[0]))
+                # op_w_value coerces via as_float; the except below covers non-numerics.
+                self.op_w_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
@@ -3307,7 +3227,8 @@ class TextState:
     def op_J(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.line_cap = self.as_int(operands[0])
+                # op_J_value coerces via as_int; the except below covers non-numerics.
+                self.op_J_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
@@ -3317,7 +3238,8 @@ class TextState:
     def op_j(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.line_join = self.as_int(operands[0])
+                # op_j_value coerces via as_int; the except below covers non-numerics.
+                self.op_j_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
@@ -3327,7 +3249,8 @@ class TextState:
     def op_M(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.miter_limit = max(1.0, self.as_float(operands[0]))
+                # op_M_value coerces via as_float; the except below covers non-numerics.
+                self.op_M_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
@@ -4180,9 +4103,12 @@ class TextState:
             self.set_fill_color(operands[0])
 
     def op_rg(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3 and not self.type3_uncolored:
-            self.fill_color_space = "DeviceRGB"
-            self.set_fill_color(operands[0], operands[1], operands[2])
+        if len(operands) >= 3:
+            self.op_rg_values(
+                cast("int | float", operands[0]),
+                cast("int | float", operands[1]),
+                cast("int | float", operands[2]),
+            )
 
     def op_k(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and not self.type3_uncolored:
