@@ -2,9 +2,10 @@
 """Recompute the covering subset used by ``tests/test_rendering_golden.py``.
 
 Traces which lines of ``render/`` each corpus document executes while its
-first page is rasterized, then greedily picks the smallest set of documents that
-between them reach every line the whole corpus reaches.  That subset is what the
-always-on golden layer renders, so it stays fast without losing reach.
+first page is rasterized, then greedily picks the smallest additional set of
+documents that, together with the always-on tolerant snapshot pages, reaches
+every line the whole corpus reaches. That subset keeps the exact-digest golden
+layer fast without duplicating the tolerant cases.
 
 Run it after the corpus changes, or after a rasterizer refactor moves enough
 code that the old subset may no longer cover::
@@ -31,13 +32,22 @@ from core_pdf.impl.render import (
     kernels,
     model,
     page,
+    path_fill_target,
+    path_shape_target,
+    path_stroke_target,
     path_target,
     paths,
     patterns,
     target,
 )
 
-CORPUS = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "SCORE-Bench" / "src"
+internal_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(internal_ROOT) not in sys.path:
+    sys.path.insert(0, str(internal_ROOT))
+
+from scripts.raster_golden import load_snapshot  # noqa: E402
+
+CORPUS = internal_ROOT / "tests" / "fixtures" / "SCORE-Bench" / "src"
 TARGET_FILES = frozenset(
     module.__file__
     for module in (
@@ -48,6 +58,9 @@ TARGET_FILES = frozenset(
         kernels,
         model,
         page,
+        path_fill_target,
+        path_shape_target,
+        path_stroke_target,
         path_target,
         paths,
         patterns,
@@ -82,17 +95,28 @@ def trace_document(pdf: pathlib.Path) -> set[RenderLine]:
     return hits
 
 
-def greedy_cover(per_document: dict[str, set[RenderLine]]) -> list[str]:
+def greedy_cover(
+    per_document: dict[str, set[RenderLine]],
+    *,
+    precovered_names: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Choose additions after seeding coverage from fixed always-on documents."""
+    missing = precovered_names.difference(per_document)
+    if missing:
+        raise ValueError(f"precovered documents are absent from the corpus: {sorted(missing)}")
     universe: set[RenderLine] = set().union(*per_document.values()) if per_document else set()
     chosen: list[str] = []
-    covered: set[RenderLine] = set()
+    covered: set[RenderLine] = set().union(*(per_document[name] for name in precovered_names))
+    candidates = {
+        name: lines for name, lines in per_document.items() if name not in precovered_names
+    }
     while covered != universe:
-        best = max(per_document, key=lambda name: len(per_document[name] - covered))
-        gain = len(per_document[best] - covered)
+        best = max(candidates, key=lambda name: len(candidates[name] - covered))
+        gain = len(candidates[best] - covered)
         if gain == 0:
             break
         chosen.append(best)
-        covered |= per_document[best]
+        covered |= candidates.pop(best)
     return chosen
 
 
@@ -104,10 +128,12 @@ def main() -> int:
     started = time.time()
     per_document = {pdf.name: trace_document(pdf) for pdf in pdfs}
     universe = set().union(*per_document.values()) if per_document else set()
-    chosen = greedy_cover(per_document)
+    tolerant_names = frozenset(load_snapshot().tolerant)
+    chosen = greedy_cover(per_document, precovered_names=tolerant_names)
     print(
         f"traced {len(pdfs)} documents in {time.time() - started:.0f}s; "
-        f"{len(universe)} lines reachable; {len(chosen)} documents cover them all\n"
+        f"{len(universe)} lines reachable; {len(tolerant_names)} tolerant documents plus "
+        f"{len(chosen)} exact documents cover them all\n"
     )
     print("COVERING_SUBSET = (")
     for name in chosen:

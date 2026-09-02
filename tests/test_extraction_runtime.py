@@ -10,6 +10,7 @@ import pytest
 
 from core_pdf.impl.document import PdfDocument
 from core_pdf.impl.extract import pipeline as parse_pipeline
+from core_pdf.impl.extract import selection as parse_selection
 from core_pdf.impl.extract.contracts import ParsedPage
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
@@ -457,7 +458,7 @@ def test_document_extraction_chunks_capture_and_parses_native_pages_inline() -> 
             f"Page {page_index}" for page_index in range(page_count)
         ]
         assert metrics.submitted == len(
-            parse_pipeline.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
+            parse_selection.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
         )
         assert metrics.submitted < page_count
     finally:

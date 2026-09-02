@@ -72,14 +72,17 @@ bytes → │ capture_page│ → plan_page ────────────
 | `layout/text_rules.py` | Owns pure spacing, script, formula, and text-repair decisions. |
 | `layout/grids.py` | Supplies ruled-grid geometry to table and OCR stages. |
 | `extract/emit.py` | Normalizes text and assembles the canonical output `Page`. |
-| `extract/pipeline.py` | Orchestrates stages, locking, and product caching. |
+| `extract/pipeline.py` | Owns the locked page-local stage lifecycle and product cache. |
+| `extract/selection.py` | Owns cross-page enrichment, scheduling, and document extraction. |
 
-OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition; `execution.py` owns pass
-admission, completion, diagnostics, and candidate-selection transitions; `candidates.py` verifies,
-merges, and ranks candidate batches; `grids.py` owns ruled-grid cell recognition; `raster.py`,
-`regions.py`, `tesseract.py`, `vector.py`, `strokes.py`, and `newstroke.py` own their respective
-mechanisms; and `types.py` holds their shared records. `internal_PageExtraction` remains the locked
-owner of page-local capture, recognition, fusion, layout, report, and assembly products.
+OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition and rescue; `pass_tasks.py`
+owns adaptive preflight, shared raster resources, and scope-specific task materialization;
+`execution.py` owns pass admission, completion, diagnostics, and candidate-selection transitions;
+`candidates.py` verifies, merges, and ranks candidate batches; `grids.py` owns ruled-grid cell
+recognition; `raster.py`, `regions.py`, `tesseract.py`, `vector.py`, `strokes.py`, and
+`newstroke.py` own their respective mechanisms; and `types.py` holds their shared records.
+`internal_PageExtraction` remains the locked owner of page-local capture, recognition, fusion,
+layout, report, and assembly products.
 
 Document extraction creates an immutable enrichment snapshot for the selected pages. Learned font
 and stroked-glyph mappings apply to selection-local captures without mutating page caches or font
@@ -122,11 +125,12 @@ src/core_pdf/
 
 Rendering uses direct module owners rather than a barrel module: `render/model.py` owns display
 records, render options, plans, and the raster value object. `images.py` and `paths.py` own pure
-sampling and rasterization kernels; `image_target.py` and `path_target.py` own the corresponding
-stateful target behaviors. `blend.py` and `patterns.py` retain their focused operations and target
-behaviors, `kernels.py` retains only cross-cutting page-coordinate helpers, and `clipping.py` owns
-clip-mask operations. `target.py` composes those behaviors around the mutable buffer state, while
-`page.py` owns page composition.
+sampling and rasterization kernels, while `image_target.py` owns stateful image painting. Stateful
+path painting is divided among `path_shape_target.py`, `path_fill_target.py`, and
+`path_stroke_target.py`; `path_target.py` is their typed-item facade. `blend.py` and `patterns.py`
+retain their focused operations and target behaviors, `kernels.py` retains only cross-cutting
+page-coordinate helpers, and `clipping.py` owns clip-mask operations. `target.py` composes those
+behaviors around the mutable buffer state, while `page.py` owns page composition.
 
 Layout follows the same ownership rule. `blocks.py` owns line grouping and block classification;
 `regions.py` owns geometric partitioning; `order.py` owns block ordering and its evidence;

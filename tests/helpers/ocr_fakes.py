@@ -20,10 +20,12 @@ from core_pdf.impl.extract.contracts import (
     RecognitionResult,
     WorkPlan,
 )
+from core_pdf.impl.extract.ocr import pass_tasks as ocr_pass_tasks
 from core_pdf.impl.extract.ocr import pipeline as ocr
 from core_pdf.impl.extract.ocr import raster as ocr_raster
 from core_pdf.impl.extract.ocr import regions as ocr_regions
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
+from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
 from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import TaskScope
@@ -40,18 +42,25 @@ def patch_ocr_helper(monkeypatch: pytest.MonkeyPatch, name: str, value: object) 
     own namespace, so patching one module intercepts only that module's calls.
     Tests mean "make this helper behave differently wherever it runs".
     """
-    for module in (ocr, ocr_raster, ocr_regions, ocr_stroked_vector, ocr_tesseract):
+    for module in (
+        ocr,
+        ocr_pass_tasks,
+        ocr_raster,
+        ocr_regions,
+        ocr_stroked_vector,
+        ocr_tesseract,
+    ):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
 
 
 def patch_dominant_region(
     monkeypatch: pytest.MonkeyPatch,
-    raster: ocr.internal_Raster | None,
+    raster: ocr_types.internal_Raster | None,
     box: Box = (0.0, 0.0, 10.0, 10.0),
 ) -> None:
     """Make the dominant page image resolve to ``raster`` over ``box`` (or to nothing)."""
-    region = None if raster is None else ocr.internal_RasterRegion(raster, box)
+    region = None if raster is None else ocr_types.internal_RasterRegion(raster, box)
     patch_ocr_helper(
         monkeypatch,
         "internal_dominant_image_region",

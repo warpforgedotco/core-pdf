@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfContractError, PdfDocumentClosedError
 from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
-from core_pdf.impl.extract.pipeline import extract_document, extract_page, page_extraction
+from core_pdf.impl.extract.pipeline import extract_page, page_extraction
+from core_pdf.impl.extract.selection import extract_document
 from core_pdf.impl.layout.diagnostics import (
     LayoutGeometrySummary,
     page_layout_geometry_issues,

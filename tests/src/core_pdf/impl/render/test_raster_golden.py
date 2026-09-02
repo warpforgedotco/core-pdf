@@ -12,6 +12,7 @@ import pytest
 
 from core_pdf.impl.render.model import RasterImage
 from scripts import raster_golden
+from scripts.raster_cover import greedy_cover
 from scripts.raster_golden import (
     CANONICAL_SOURCE,
     RasterSnapshot,
@@ -30,6 +31,21 @@ from scripts.raster_golden import (
 def internal_raster(samples: numpy.ndarray) -> RasterImage:
     height, width, channels = samples.shape
     return RasterImage(samples, width, height, channels)
+
+
+def test_raster_cover_seeds_fixed_documents_without_choosing_them() -> None:
+    line_a = ("render.py", 1)
+    line_b = ("render.py", 2)
+    line_c = ("render.py", 3)
+    per_document = {
+        "tolerant.pdf": {line_a},
+        "first.pdf": {line_a, line_b},
+        "second.pdf": {line_c},
+    }
+
+    chosen = greedy_cover(per_document, precovered_names=frozenset({"tolerant.pdf"}))
+
+    assert chosen == ["first.pdf", "second.pdf"]
 
 
 def test_raster_difference_accepts_each_limit_at_its_boundary() -> None:
