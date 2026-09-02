@@ -243,8 +243,22 @@ layers = [
     "document",
     "extract",
     "render",
-    "output",
+    "output : layout",
     "model",
+]
+
+[[tool.importlinter.contracts]]
+name = "Serialization stays below processing and the specification"
+type = "forbidden"
+source_modules = ["core_pdf.impl.serialize"]
+forbidden_modules = [
+    "core_pdf.impl.document",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.render",
+    "core_pdf.impl.runtime",
+    "core_pdf.impl.spec",
+    "core_pdf.api",
 ]
 
 [[tool.importlinter.contracts]]

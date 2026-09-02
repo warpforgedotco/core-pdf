@@ -24,8 +24,6 @@ from core_pdf.impl.extract.contracts import (
     ObservationSource,
     RecognitionReport,
     internal_bbox_tuple,
-    internal_Candidate,
-    internal_candidate,
 )
 from core_pdf.impl.extract.ocr.strokes import (
     StrokedTextDecode,
@@ -44,9 +42,10 @@ from core_pdf.impl.extract.ocr.types import (
     internal_RasterRegion,
     internal_StrokedTextCell,
 )
+from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
 from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area, rect_tuple
+from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
-    DisplayList,
     PathPaintItem,
     PathPaintKind,
 )

@@ -22,7 +22,6 @@ from core_pdf.impl.extract.contracts import (
     RecognitionReport,
     RecognitionResult,
     WorkPlan,
-    internal_Candidate,
 )
 from core_pdf.impl.extract.grids import (
     internal_detect_ruling_grid,
@@ -45,11 +44,9 @@ from core_pdf.impl.extract.ocr.pass_tasks import (
     internal_region_tasks,
 )
 from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
-from core_pdf.impl.extract.ocr.regions import (
-    internal_adaptive_rescue_decision,
-    internal_dominant_image_region,
-    internal_ocr_task_groups,
-)
+from core_pdf.impl.extract.ocr.region_tasks import internal_ocr_task_groups
+from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
+from core_pdf.impl.extract.ocr.rescue import internal_adaptive_rescue_decision
 from core_pdf.impl.extract.ocr.strokes import StrokedTextDecode
 from core_pdf.impl.extract.ocr.tesseract import (
     internal_recognize_group,
@@ -64,6 +61,7 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_remap_stroked_vector_candidate,
     internal_stroked_vector_text_raster,
 )
+from core_pdf.impl.extract.quality import internal_Candidate
 from core_pdf.impl.runtime.execution import TaskScope, WorkStage
 
 

@@ -24,8 +24,8 @@ from core_pdf.impl.extract.contracts import (
     PagePlanReason,
     PageRoute,
     WorkPlan,
-    internal_candidate,
 )
+from core_pdf.impl.extract.quality import internal_candidate
 from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.text import compact_text, text_tokens

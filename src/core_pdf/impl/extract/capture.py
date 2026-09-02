@@ -24,9 +24,9 @@ from core_pdf.impl.extract.contracts import (
     PageEvidence,
     StrokedVectorTextEvidence,
     TextQualityStats,
-    internal_analyze_text,
 )
 from core_pdf.impl.extract.ocr.newstroke import NewstrokeDecode, decode_newstroke_drawings
+from core_pdf.impl.extract.quality import internal_analyze_text
 from core_pdf.impl.model.geometry import (
     SpatialIndex,
     bbox_intersection_area,

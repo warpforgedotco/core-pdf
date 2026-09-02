@@ -16,7 +16,6 @@ from core_pdf.impl.extract.contracts import (
     OcrPassScope,
     RecognitionReport,
     WorkPlan,
-    internal_Candidate,
 )
 from core_pdf.impl.extract.ocr.raster import (
     internal_adaptive_ocr_raster,
@@ -24,18 +23,20 @@ from core_pdf.impl.extract.ocr.raster import (
     internal_rendered_page_raster,
     internal_safe_image_crop,
 )
-from core_pdf.impl.extract.ocr.regions import (
-    internal_candidate_ocr_regions,
+from core_pdf.impl.extract.ocr.region_tasks import (
     internal_candidate_region_tasks,
     internal_direct_scan_allowed,
-    internal_dominant_image_region,
     internal_estimated_text_height,
-    internal_has_distributed_outline_text,
     internal_high_resolution_weak_region_tasks,
-    internal_ocr_region_batch,
-    internal_page_image_regions,
     internal_tile_tasks,
     internal_weak_region_tasks,
+)
+from core_pdf.impl.extract.ocr.regions import (
+    internal_candidate_ocr_regions,
+    internal_dominant_image_region,
+    internal_has_distributed_outline_text,
+    internal_ocr_region_batch,
+    internal_page_image_regions,
 )
 from core_pdf.impl.extract.ocr.types import (
     internal_OcrRegion,
@@ -48,6 +49,7 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_full_stroked_vector_text_raster,
     internal_stroked_vector_text_raster,
 )
+from core_pdf.impl.extract.quality import internal_Candidate
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import RenderedPage, compose_page
 

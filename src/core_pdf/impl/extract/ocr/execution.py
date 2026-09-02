@@ -11,15 +11,15 @@ from core_pdf.impl.extract.contracts import (
     OcrPass,
     OcrPassScope,
     RecognitionReport,
-    internal_Candidate,
 )
 from core_pdf.impl.extract.ocr.candidates import (
     internal_augment_candidate,
     internal_candidate_timing_record,
     internal_record_candidates,
 )
-from core_pdf.impl.extract.ocr.regions import internal_primary_text_is_sufficient
+from core_pdf.impl.extract.ocr.rescue import internal_primary_text_is_sufficient
 from core_pdf.impl.extract.ocr.types import internal_OcrTask
+from core_pdf.impl.extract.quality import internal_Candidate
 
 internal_PageBox = tuple[float, float, float, float]
 

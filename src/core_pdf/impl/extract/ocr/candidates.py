@@ -18,12 +18,14 @@ from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     RecognitionReport,
     internal_bbox_tuple,
+)
+from core_pdf.impl.extract.observations import maximum_candidate_coverage
+from core_pdf.impl.extract.ocr.tesseract import internal_normalized_ocr_token_key
+from core_pdf.impl.extract.quality import (
     internal_Candidate,
     internal_candidate,
     internal_text_utility_stats,
 )
-from core_pdf.impl.extract.observations import maximum_candidate_coverage
-from core_pdf.impl.extract.ocr.tesseract import internal_normalized_ocr_token_key
 from core_pdf.impl.model.geometry import overlap_ratio_min
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.text import search_key, text_tokens

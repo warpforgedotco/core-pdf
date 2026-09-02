@@ -24,7 +24,8 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.extract.contracts import PRIMARY_OCR_PIXELS
-from core_pdf.impl.render.model import DisplayList, ImagePaintItem, RenderOptions
+from core_pdf.impl.render.display import DisplayList
+from core_pdf.impl.render.model import ImagePaintItem, RenderOptions
 from core_pdf.impl.render.page import RenderedPage, compose_page
 from tests.helpers.paths import FIXTURES
 

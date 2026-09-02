@@ -33,8 +33,6 @@ from core_pdf.impl.extract.contracts import (
     PRIMARY_OCR_PIXELS,
     ObservationBatch,
     ObservationSource,
-    internal_Candidate,
-    internal_candidate,
 )
 from core_pdf.impl.extract.ocr.types import (
     internal_map_ocr_box,
@@ -42,6 +40,7 @@ from core_pdf.impl.extract.ocr.types import (
     internal_Raster,
     internal_raster_rectangle_page_box,
 )
+from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import contiguous_bytes, finite_median, resample_smooth
 from core_pdf.impl.runtime.execution import RUNTIME

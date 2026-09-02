@@ -14,10 +14,9 @@ from core_pdf.impl.render.blend import (
     internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
 from core_pdf.impl.render.model import (
-    CompiledRenderPlan,
     DisplayItem,
-    DisplayList,
     DisplayListItem,
     ImagePaintItem,
     PathPaintItem,

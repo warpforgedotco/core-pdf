@@ -25,7 +25,6 @@ from core_pdf.impl.extract.contracts import (
     RecognitionReport,
     RecognitionResult,
     internal_bbox_tuple,
-    internal_candidate,
 )
 from core_pdf.impl.extract.ocr.strokes import (
     GlyphSignature,
@@ -33,6 +32,7 @@ from core_pdf.impl.extract.ocr.strokes import (
     decode_stroked_text_profile_with_alphabet,
 )
 from core_pdf.impl.extract.pipeline import internal_PageExtraction, page_extraction
+from core_pdf.impl.extract.quality import internal_candidate
 from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output import SCHEMA_VERSION, Diagnostic, Document
 from core_pdf.impl.runtime.execution import TaskScope, WorkStage

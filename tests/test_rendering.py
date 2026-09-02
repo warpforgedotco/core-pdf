@@ -11,9 +11,8 @@ from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.glyph_table import GlyphTable
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
 from core_pdf.impl.render.model import (
-    CompiledRenderPlan,
-    DisplayList,
     ImagePaintItem,
     PathPaintItem,
     RenderOptions,
