@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import pytest
 
+from core_pdf.impl.extract.block_layout import layout_blocks
 from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
@@ -14,7 +15,6 @@ from core_pdf.impl.extract.contracts import (
 )
 from core_pdf.impl.extract.emit import assemble_page as emit_page
 from core_pdf.impl.extract.emit import internal_line_decoration_flags
-from core_pdf.impl.layout.blocks import layout_blocks
 from core_pdf.impl.output import BlockKind, Table, TableCell
 from core_pdf.impl.records import TextWord
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing

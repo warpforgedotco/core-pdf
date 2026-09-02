@@ -10,7 +10,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.render.blend import internal_color_rgba
-from core_pdf.impl.render.images import (
+from core_pdf.impl.render.kernels import (
     internal_box_downsample,
     internal_soft_mask_alpha_at,
 )

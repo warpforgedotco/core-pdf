@@ -12,10 +12,10 @@ import pytest
 
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.blend import internal_color_component
-from core_pdf.impl.render.images import internal_soft_mask_alpha_at
 from core_pdf.impl.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
+    internal_soft_mask_alpha_at,
 )
 from core_pdf.impl.render.model import internal_image_quad
 from core_pdf.impl.render.paths import (

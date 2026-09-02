@@ -10,19 +10,18 @@ from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
 )
+from core_pdf.impl.extract.grids import internal_merge_grid_cells, internal_split_grid_component
 from core_pdf.impl.extract.table_cleanup import (
     internal_merge_adjacent_tables,
     internal_split_semantic_table,
     internal_table_character_spaced_prose,
 )
-from core_pdf.impl.extract.table_grid import internal_merge_grid_cells
-from core_pdf.impl.extract.table_stream import (
+from core_pdf.impl.extract.tables import (
+    extract_tables,
     internal_compact_stream_table,
     internal_stream_table,
     internal_stream_tables,
 )
-from core_pdf.impl.extract.tables import extract_tables
-from core_pdf.impl.layout.grids import internal_split_grid_component
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedLine

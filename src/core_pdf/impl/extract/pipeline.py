@@ -9,6 +9,7 @@ from contextlib import suppress
 from dataclasses import replace
 from typing import Any, TypeVar
 
+from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page
 from core_pdf.impl.extract.contracts import (
     CapturedPage,
@@ -31,7 +32,6 @@ from core_pdf.impl.extract.observations import (
 from core_pdf.impl.extract.tables import (
     extract_tables,
 )
-from core_pdf.impl.layout.blocks import layout_blocks_with_evidence
 from core_pdf.impl.output import (
     Annotation,
     Figure,

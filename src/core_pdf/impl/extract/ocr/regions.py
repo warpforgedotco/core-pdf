@@ -42,6 +42,11 @@ from core_pdf.impl.extract.contracts import (
     internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
     internal_text_utility_stats,
 )
+from core_pdf.impl.extract.grids import (
+    internal_axis_segments,
+    internal_grid_components,
+    internal_split_grid_component,
+)
 from core_pdf.impl.extract.ocr.raster import (
     DirectImageOrientation,
     internal_adaptive_ocr_raster,
@@ -60,13 +65,8 @@ from core_pdf.impl.extract.ocr.types import (
     internal_raster_rectangle_page_box,
     internal_RasterRegion,
 )
-from core_pdf.impl.layout.grids import (
-    internal_axis_segments,
-    internal_grid_components,
-    internal_split_grid_component,
-)
-from core_pdf.impl.layout.spatial import SpatialIndex
 from core_pdf.impl.model.geometry import (
+    SpatialIndex,
     bbox_area,
     bbox_intersection_area,
     bbox_union,

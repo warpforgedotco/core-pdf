@@ -24,14 +24,7 @@ from core_pdf.impl.extract.contracts import (
     WorkPlan,
     internal_Candidate,
 )
-from core_pdf.impl.extract.ocr.candidates import (
-    internal_augment_candidate,
-    internal_candidate_timing_record,
-    internal_hidden_text_verification,
-    internal_merge_candidate_batches,
-)
-from core_pdf.impl.extract.ocr.execution import internal_OcrPassExecution, internal_OcrPassState
-from core_pdf.impl.extract.ocr.grids import (
+from core_pdf.impl.extract.grids import (
     internal_detect_ruling_grid,
     internal_grid_cell_tasks,
     internal_grid_is_regular_table,
@@ -39,6 +32,13 @@ from core_pdf.impl.extract.ocr.grids import (
     internal_grid_region_page_box,
     internal_grid_row_observations,
 )
+from core_pdf.impl.extract.ocr.candidates import (
+    internal_augment_candidate,
+    internal_candidate_timing_record,
+    internal_hidden_text_verification,
+    internal_merge_candidate_batches,
+)
+from core_pdf.impl.extract.ocr.execution import internal_OcrPassExecution, internal_OcrPassState
 from core_pdf.impl.extract.ocr.pass_tasks import (
     internal_OcrPassTaskResources,
     internal_raster_tasks,

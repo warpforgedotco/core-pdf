@@ -44,8 +44,7 @@ from core_pdf.impl.extract.ocr.types import (
     internal_RasterRegion,
     internal_StrokedTextCell,
 )
-from core_pdf.impl.layout.spatial import SpatialIndex
-from core_pdf.impl.model.geometry import bbox_intersection_area, rect_tuple
+from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area, rect_tuple
 from core_pdf.impl.render.model import (
     DisplayList,
     PathPaintItem,

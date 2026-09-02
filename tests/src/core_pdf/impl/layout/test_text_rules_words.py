@@ -1,6 +1,6 @@
 import random
 
-from core_pdf.impl.layout.words import (
+from core_pdf.impl.layout.text_rules import (
     english_word_frequencies,
     english_word_ranks,
     word_rank,

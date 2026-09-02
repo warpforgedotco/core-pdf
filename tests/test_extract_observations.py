@@ -10,8 +10,7 @@ from core_pdf.impl.extract.contracts import (
     PageRoute,
     WorkPlan,
 )
-from core_pdf.impl.extract.observations import fuse_observations
-from core_pdf.impl.layout.spatial import maximum_candidate_coverage
+from core_pdf.impl.extract.observations import fuse_observations, maximum_candidate_coverage
 from tests.helpers import extract_fakes
 
 

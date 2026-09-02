@@ -26,7 +26,7 @@ from core_pdf.impl.extract.contracts import (
     WorkPlan,
     internal_candidate,
 )
-from core_pdf.impl.layout.spatial import maximum_candidate_coverage
+from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.text import compact_text, text_tokens
 
@@ -54,6 +54,56 @@ STROKED_VECTOR_WORD_MIN_CONFIDENCE = 80.0
 # pass floor: a low pass floor only admits more candidate words, while this
 # gate decides whether recognized text replaces text the document carries.
 FUSION_NOISY_NATIVE_MIN_CONFIDENCE = 90.0
+
+COVERAGE_CHUNK = 256
+
+# Upper bound on elements materialized per vectorized overlap chunk. The chunked
+# path broadcasts COVERAGE_CHUNK candidates against the full native set, so only
+# the native box count bounds per-chunk memory.
+COVERAGE_VECTORIZED_ELEMENTS = 1_000_000
+
+
+def maximum_candidate_coverage(
+    candidate_boxes: numpy.ndarray,
+    native_boxes: numpy.ndarray,
+) -> numpy.ndarray:
+    """Return each candidate's maximum covered-area ratio in bounded chunks."""
+    if not len(candidate_boxes) or not len(native_boxes):
+        return numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
+    if len(native_boxes) * COVERAGE_CHUNK > COVERAGE_VECTORIZED_ELEMENTS:
+        native_index = SpatialIndex.from_boxes(native_boxes)
+        output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
+        for index, box in enumerate(candidate_boxes):
+            area = max(1.0, float((box[2] - box[0]) * (box[3] - box[1])))
+            maximum = 0.0
+            for hit in native_index.intersecting_hits(box):
+                maximum = max(maximum, bbox_intersection_area(box, hit.bbox))
+            output[index] = maximum / area
+        return output
+    output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
+    native_x0 = native_boxes[:, 0][None, :]
+    native_y0 = native_boxes[:, 1][None, :]
+    native_x1 = native_boxes[:, 2][None, :]
+    native_y1 = native_boxes[:, 3][None, :]
+    for start in range(0, len(candidate_boxes), COVERAGE_CHUNK):
+        stop = min(len(candidate_boxes), start + COVERAGE_CHUNK)
+        boxes = candidate_boxes[start:stop]
+        widths = numpy.maximum(
+            0.0,
+            numpy.minimum(boxes[:, None, 2], native_x1)
+            - numpy.maximum(boxes[:, None, 0], native_x0),
+        )
+        heights = numpy.maximum(
+            0.0,
+            numpy.minimum(boxes[:, None, 3], native_y1)
+            - numpy.maximum(boxes[:, None, 1], native_y0),
+        )
+        areas = numpy.maximum(
+            1.0,
+            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]),
+        )
+        output[start:stop] = numpy.max(widths * heights, axis=1) / areas
+    return output
 
 
 def internal_ocr_scale(capture: CapturedPage, *, schematic: bool, vector_complexity: int) -> float:

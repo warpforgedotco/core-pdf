@@ -27,8 +27,8 @@ from core_pdf.impl.extract.contracts import (
     internal_analyze_text,
 )
 from core_pdf.impl.extract.ocr.newstroke import NewstrokeDecode, decode_newstroke_drawings
-from core_pdf.impl.layout.spatial import SpatialIndex
 from core_pdf.impl.model.geometry import (
+    SpatialIndex,
     bbox_intersection_area,
     bbox_union,
     interval_overlap,

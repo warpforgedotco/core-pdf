@@ -10,6 +10,10 @@ from dataclasses import replace
 from statistics import fmean
 from typing import Any
 
+from core_pdf.impl.extract.block_layout import (
+    internal_has_repeated_block_columns,
+    layout_element_order,
+)
 from core_pdf.impl.extract.contracts import (
     ParsedLine,
     ParsedPage,
@@ -19,12 +23,8 @@ from core_pdf.impl.extract.table_reconcile import (
     internal_project_text_and_tables,
     internal_wordlike_token,
 )
-from core_pdf.impl.layout.blocks import layout_element_order
-from core_pdf.impl.layout.order import internal_has_repeated_block_columns
-from core_pdf.impl.layout.spatial import (
-    SpatialIndex,
-)
 from core_pdf.impl.model.geometry import (
+    SpatialIndex,
     horizontal_overlap_ratio,
     interval_overlap,
     rect_tuple,

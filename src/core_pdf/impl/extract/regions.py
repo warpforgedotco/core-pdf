@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import numpy
 
-from core_pdf.impl.layout.spatial import SpatialIndex
+from core_pdf.impl.model.geometry import SpatialIndex
 from core_pdf.impl.runtime.array_views import finite_median
 
 

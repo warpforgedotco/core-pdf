@@ -15,7 +15,7 @@ force that path stops resembling the pages this protects.
 
 from __future__ import annotations
 
-from core_pdf.impl.layout.blocks import layout_element_order
+from core_pdf.impl.extract.block_layout import layout_element_order
 
 
 def two_columns_around(banner: tuple[float, float, float, float] | None) -> list[tuple]:

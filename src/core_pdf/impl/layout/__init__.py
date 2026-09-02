@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Layout heuristics: blocks, regions, ordering, reconstruction, grids, and diagnostics.
+"""Text-line records, reconstruction rules, diagnostics, and packaged language data.
 
-Everything here runs *downstream* of content-stream interpretation and consumes the
-capture records in ``model/``. Import from the owning module rather than from
-this package; it deliberately re-exports nothing.
+Block construction, page partitioning, and reading order live with the extraction
+stages that consume them. Import from the owning module rather than from this package;
+it deliberately re-exports nothing.
 """

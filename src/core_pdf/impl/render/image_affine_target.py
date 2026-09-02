@@ -9,8 +9,8 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.model.geometry import points_bbox
-from core_pdf.impl.render.images import AFFINE_BLIT_SCRATCH_BYTES
 from core_pdf.impl.render.kernels import (
+    AFFINE_BLIT_SCRATCH_BYTES,
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
 )

@@ -14,13 +14,13 @@ from core_pdf.impl.exceptions import PdfContractError, PdfDocumentClosedError
 from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf.impl.extract.pipeline import extract_page, page_extraction
 from core_pdf.impl.extract.selection import extract_document
-from core_pdf.impl.layout.diagnostics import (
+from core_pdf.impl.layout.lines import (
     LayoutGeometrySummary,
+    LayoutLine,
     page_layout_geometry_issues,
     page_layout_geometry_summary,
     text_run_geometry_issues,
 )
-from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.output import DiagnosticTextRun, TextDiagnostics
 from core_pdf.impl.output import Document as StructuredDocument

@@ -1,4 +1,4 @@
-from core_pdf.impl.layout.diagnostics import (
+from core_pdf.impl.layout.lines import (
     text_run_geometry_issues,
 )
 from core_pdf.impl.model.glyphs import GlyphCluster
