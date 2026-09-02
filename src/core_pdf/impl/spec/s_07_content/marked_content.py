@@ -39,7 +39,6 @@ class MarkedContentEntry:
     ty: float = 0.0
     font_size: float = 0.0
     space_width: float = 0.0
-    order: int = 0
     stream_order: int = 0
     xobject_depth: int = 0
     font_name: str | None = None
@@ -50,7 +49,6 @@ class MarkedContentEntry:
     seqno: int = 0
     fill_color: tuple[float, ...] | None = None
     advance_bbox: Rectangle | None = None
-    ink_bbox: Rectangle | None = None
     baseline: Rectangle | None = None
     provenance: Provenance = ()
     confidence: float | None = None
@@ -71,7 +69,6 @@ class MarkedContentEntry:
         ty: float,
         font_size: float,
         space_width: float,
-        order: int,
         stream_order: int,
         xobject_depth: int,
         font_name: str | None,
@@ -82,7 +79,6 @@ class MarkedContentEntry:
         seqno: int,
         fill_color: tuple[float, ...] | None,
         advance_bbox: Rectangle | None = None,
-        ink_bbox: Rectangle | None = None,
         baseline: Rectangle | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
@@ -96,7 +92,6 @@ class MarkedContentEntry:
             self.x1 = max(self.x1, x1)
             self.y1 = max(self.y1, y1)
             self.advance_bbox = union_bbox(self.advance_bbox, advance_bbox)
-            self.ink_bbox = union_bbox(self.ink_bbox, ink_bbox)
             self.baseline = extend_baseline(self.baseline, baseline)
             self.confidence = min_optional_confidence(self.confidence, confidence)
             self.compatibility_text += compatibility_text
@@ -109,7 +104,6 @@ class MarkedContentEntry:
             self.ty = ty
             self.font_size = font_size
             self.space_width = space_width
-            self.order = order
             self.stream_order = stream_order
             self.xobject_depth = xobject_depth
             self.font_name = font_name
@@ -120,7 +114,6 @@ class MarkedContentEntry:
             self.seqno = seqno
             self.fill_color = fill_color
             self.advance_bbox = advance_bbox
-            self.ink_bbox = ink_bbox
             self.baseline = baseline
             self.provenance = provenance
             self.confidence = confidence
