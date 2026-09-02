@@ -7,6 +7,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
+from core_pdf.impl.spec.s_07_content.capture import PatternPaint
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
@@ -52,10 +53,10 @@ class StreamState:
     graphics_stack_len: int
     marked_content_stack_len: int
     fill_color: tuple[float, ...] | None
-    fill_pattern: PdfDict | None
+    fill_pattern: PatternPaint | None
     fill_opacity: float
     stroke_color: tuple[float, ...] | None
-    stroke_pattern: PdfDict | None
+    stroke_pattern: PatternPaint | None
     stroke_opacity: float
     line_width: float
     line_cap: int

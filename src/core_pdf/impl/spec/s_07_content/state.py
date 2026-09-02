@@ -41,8 +41,11 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedInlineImage,
     CapturedLine,
     CapturedPath,
+    PatternPaint,
     PdfminerCursor,
     RunGeometry,
+    ShadingPattern,
+    TilingPattern,
     glyph_bitmap_dimensions,
     glyph_ink_rect,
     glyph_text_space_boxes,
@@ -124,10 +127,10 @@ internal_GraphicsState: TypeAlias = tuple[
     float,
     float,
     tuple[float, ...] | None,
-    PdfDict | None,
+    PatternPaint | None,
     float,
     tuple[float, ...] | None,
-    PdfDict | None,
+    PatternPaint | None,
     float,
     str,
     str,
@@ -288,12 +291,12 @@ class TextState:
     stack: list[internal_GraphicsState]
     clip_scope_stack: list[bool]
     fill_color: tuple[float, ...] | None
-    fill_pattern: PdfDict | None
+    fill_pattern: PatternPaint | None
     # Always a real number: __init__ seeds 1.0, `gs` clamps into [0, 1], and a
     # restore only ever copies a value that came from here.
     fill_opacity: float
     stroke_color: tuple[float, ...] | None
-    stroke_pattern: PdfDict | None
+    stroke_pattern: PatternPaint | None
     stroke_opacity: float
     blend_mode: str | None
     group_alpha: float | None
@@ -3621,7 +3624,9 @@ class TextState:
             self.color_space_cache[cache_key] = resolved
         return resolved
 
-    def resolve_pattern_color(self, operands: tuple[Any, ...] | OperandWindow) -> PdfDict | None:
+    def resolve_pattern_color(
+        self, operands: tuple[Any, ...] | OperandWindow
+    ) -> PatternPaint | None:
         if not operands:
             return None
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -3645,7 +3650,7 @@ class TextState:
             )
             if not isinstance(shading_dict, dict):
                 return None
-            return cast(PdfDict, {"kind": "shading", "dictionary": dict(shading_dict)})
+            return ShadingPattern(dict(shading_dict))
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
         paint_type = parse_int(pattern_dict.get("PaintType"), 1)
@@ -3678,72 +3683,20 @@ class TextState:
             nested_state.consume_stream(pattern, resources, matrix, 0)
         except Exception:
             return None
-        return cast(
-            PdfDict,
-            {
-                "kind": "tiling",
-                "bbox": tuple(bbox),
-                "x_step": float(x_step),
-                "y_step": float(y_step),
-                "drawings": [
-                    {
-                        "kind": drawing.kind,
-                        "fill": (
-                            base_color if drawing.kind in {"fill", "fillstroke"} else drawing.fill
-                        ),
-                        "fill_pattern": drawing.fill_pattern,
-                        "fill_opacity": drawing.fill_opacity,
-                        "stroke_color": (
-                            base_color
-                            if drawing.kind in {"stroke", "fillstroke"}
-                            else drawing.stroke_color
-                        ),
-                        "stroke_pattern": drawing.stroke_pattern,
-                        "stroke_opacity": drawing.stroke_opacity,
-                        "line_width": drawing.line_width,
-                        "line_cap": drawing.line_cap,
-                        "line_join": drawing.line_join,
-                        "dash_pattern": drawing.dash_pattern,
-                        "fill_rule": drawing.fill_rule,
-                        "blend_mode": drawing.blend_mode,
-                        "soft_mask_alpha": drawing.soft_mask_alpha,
-                        "raw_data": drawing.raw_data,
-                        "dictionary": drawing.dictionary,
-                        "items": list(drawing.items),
-                        "path": drawing.path,
-                        "rect": drawing.rect,
-                    }
-                    for drawing in nested_state.drawings
-                ],
-                "runs": [
-                    {
-                        "text": run.text,
-                        "bbox": (run.x0, run.y0, run.x1, run.y1),
-                        "fill_color": run.fill_color,
-                        "visible": run.visible,
-                    }
-                    for run in nested_state.runs
-                ],
-                "glyphs": [
-                    {
-                        "text": glyph.text,
-                        "bbox": glyph.ink_bbox,
-                        "advance_bbox": glyph.advance_bbox,
-                        "fill_color": glyph.fill,
-                        "visible": glyph.visible,
-                        "code": glyph.cid,
-                        "gid": glyph.gid,
-                        "font_name": glyph.font_name,
-                        "unicode_source": glyph.unicode_source,
-                        "alternates": glyph.alternates,
-                        "bitmap": glyph.resolved_bitmap(),
-                        "bitmap_width": glyph.bitmap_width,
-                        "bitmap_height": glyph.bitmap_height,
-                    }
-                    for glyph in nested_state.glyphs
-                    if glyph.has_paint
-                ],
-            },
+        # The cell's drawings are owned by this pattern and painted nowhere
+        # else, so an uncoloured (PaintType 2) pattern recolours them in place
+        # rather than copying every field into a parallel record.
+        for drawing in nested_state.drawings:
+            if drawing.kind in {"fill", "fillstroke"}:
+                drawing.fill = base_color
+            if drawing.kind in {"stroke", "fillstroke"}:
+                drawing.stroke_color = base_color
+        return TilingPattern(
+            bbox=bbox,
+            x_step=float(x_step),
+            y_step=float(y_step),
+            drawings=nested_state.drawings,
+            glyphs=[glyph for glyph in nested_state.glyphs if glyph.has_paint],
         )
 
     def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:

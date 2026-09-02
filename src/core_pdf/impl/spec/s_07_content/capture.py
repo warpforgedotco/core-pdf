@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from math import ceil
-from typing import Any
+from typing import Any, TypeAlias
 
 from core_pdf.impl.model.geometry import RectBox, bbox_union
+from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
@@ -562,9 +563,9 @@ class CapturedDrawing:
     seqno: int
     fill: tuple[float, ...] | None
     fill_opacity: float | None
-    fill_pattern: Mapping[Any, object] | None = None
+    fill_pattern: PatternPaint | None = None
     stroke_color: tuple[float, ...] | None = None
-    stroke_pattern: Mapping[Any, object] | None = None
+    stroke_pattern: PatternPaint | None = None
     stroke_opacity: float | None = None
     line_width: float = 1.0
     line_cap: int = 0
@@ -642,10 +643,39 @@ class CapturedDrawing:
         return rect
 
 
+@dataclass(frozen=True, slots=True)
+class ShadingPattern:
+    """A PatternType 2 paint: the resolved /Shading dictionary."""
+
+    dictionary: dict[Any, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class TilingPattern:
+    """A PatternType 1 paint: one captured cell plus the step to repeat it by.
+
+    Holds the captured records themselves. This used to be a nested dict of
+    string keys cast to PdfDict, which meant the renderer re-parsed by key and
+    every projected field had to be listed by hand on both sides.
+    """
+
+    bbox: Rectangle
+    x_step: float
+    y_step: float
+    drawings: list[CapturedDrawing]
+    glyphs: list[GlyphObservation]
+
+
+PatternPaint: TypeAlias = ShadingPattern | TilingPattern
+
+
 __all__ = (
     "CapturedDrawing",
     "CapturedInlineImage",
     "CapturedLine",
     "CapturedPath",
     "CapturedSubpath",
+    "PatternPaint",
+    "ShadingPattern",
+    "TilingPattern",
 )
