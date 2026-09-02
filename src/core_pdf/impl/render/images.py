@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Image resampling, sampled-channel blits, and mask kernels."""
+"""Image resampling and mask kernels."""
 
 from __future__ import annotations
 
@@ -50,40 +50,6 @@ def internal_box_downsample(
     counts = numpy.diff(row_edges)[:, None, None] * numpy.diff(column_edges)[None, :, None]
     reduced = (totals // numpy.maximum(counts, 1)).astype(numpy.uint8)
     return reduced.reshape(-1), target_width, target_height
-
-
-def internal_blit_reshaped_channels(
-    target_region: numpy.ndarray[Any, Any],
-    sampled: numpy.ndarray[Any, Any],
-    valid: numpy.ndarray[Any, Any],
-    comps: int,
-) -> None:
-    """Copy gray/RGB(A) channels from a pre-reshaped source into ``target_region``."""
-    if comps == 1:
-        target_region[valid, 0:3] = sampled[valid, 0][:, None]
-    else:
-        target_region[valid, 0:3] = sampled[valid, :3]
-    target_region[..., 3][valid] = 255
-
-
-def internal_blit_indexed_channels(
-    target_region: numpy.ndarray[Any, Any],
-    source_bytes: numpy.ndarray[Any, Any],
-    safe_index: numpy.ndarray[Any, Any],
-    valid: numpy.ndarray[Any, Any],
-    comps: int,
-) -> None:
-    """Copy gray/RGB(A) channels looked up via ``safe_index`` into ``target_region``."""
-    if comps == 1:
-        gray_samples = source_bytes[safe_index]
-        target_region[:, :, 0][valid] = gray_samples[valid]
-        target_region[:, :, 1][valid] = gray_samples[valid]
-        target_region[:, :, 2][valid] = gray_samples[valid]
-    else:
-        target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
-        target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
-        target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
-    target_region[:, :, 3][valid] = 255
 
 
 def internal_soft_mask_alpha_at(

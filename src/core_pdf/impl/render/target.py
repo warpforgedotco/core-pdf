@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy
 
-from core_pdf.impl.render.blend import internal_BlendTargetMixin
+from core_pdf.impl.render.blend_target import internal_BlendTargetMixin
 from core_pdf.impl.render.clipping import internal_ClipState
 from core_pdf.impl.render.image_target import internal_ImageTargetMixin
 from core_pdf.impl.render.path_target import internal_PathTargetMixin

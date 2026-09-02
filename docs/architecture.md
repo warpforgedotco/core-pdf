@@ -125,12 +125,14 @@ src/core_pdf/
 
 Rendering uses direct module owners rather than a barrel module: `render/model.py` owns display
 records, render options, plans, and the raster value object. `images.py` and `paths.py` own pure
-sampling and rasterization kernels, while `image_target.py` owns stateful image painting. Stateful
+sampling and rasterization kernels. Stateful image painting is divided between
+`image_affine_target.py` and `image_axis_target.py`; `image_target.py` is their facade. Stateful
 path painting is divided among `path_shape_target.py`, `path_fill_target.py`, and
-`path_stroke_target.py`; `path_target.py` is their typed-item facade. `blend.py` and `patterns.py`
-retain their focused operations and target behaviors, `kernels.py` retains only cross-cutting
-page-coordinate helpers, and `clipping.py` owns clip-mask operations. `target.py` composes those
-behaviors around the mutable buffer state, while `page.py` owns page composition.
+`path_stroke_target.py`; `path_target.py` is their typed-item facade. `blend.py` owns pure colour
+and compositing kernels, while `blend_target.py` owns stateful blend behavior. `patterns.py` retains
+its focused operations and target behavior, `kernels.py` retains only cross-cutting page-coordinate
+helpers, and `clipping.py` owns clip-mask operations. `target.py` composes those behaviors around
+the mutable buffer state, while `page.py` owns page composition.
 
 Layout follows the same ownership rule. `blocks.py` owns line grouping and block classification;
 `regions.py` owns geometric partitioning; `order.py` owns block ordering and its evidence;

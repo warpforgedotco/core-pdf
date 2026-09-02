@@ -26,7 +26,10 @@ from typing import Any
 from core_pdf import PdfDocument
 from core_pdf.impl.render import (
     blend,
+    blend_target,
     clipping,
+    image_affine_target,
+    image_axis_target,
     image_target,
     images,
     kernels,
@@ -52,7 +55,10 @@ TARGET_FILES = frozenset(
     module.__file__
     for module in (
         blend,
+        blend_target,
         clipping,
+        image_affine_target,
+        image_axis_target,
         image_target,
         images,
         kernels,
