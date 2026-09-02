@@ -446,10 +446,20 @@ class ImageColorManager:
             inks[:, :carried] = samples[:, :carried]
             return cmyk_bytes_to_srgb(inks).reshape(-1)
 
-        fallback_result = bytearray()
-        step = n
-        for i in range(0, len(raw), step):
-            components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
+        if alt_name not in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+            raise ValueError("invalid DeviceN color space")
+        expected = internal_alternate_color_component_count(alt_name)
+
+        # The tint transform is a pure function of one ink tuple, and an image
+        # holds far fewer distinct tuples than pixels. Evaluating per distinct
+        # tuple and gathering turns a per-pixel Python call -- which also
+        # thrashed the 4096-entry CMYK cache behind apply_alt_color, since a
+        # 2-channel DeviceN has up to 65536 inputs -- into one call per colour.
+        samples = uint8_view(raw).reshape(-1, n)
+        distinct, inverse = numpy.unique(samples, axis=0, return_inverse=True)
+        tinted = numpy.empty((len(distinct), expected), dtype=numpy.float64)
+        for index, row in enumerate(distinct.tolist()):
+            components: ColorComponents = [value / 255.0 for value in row]
             if isinstance(tint_fn, (list, tuple)) and len(tint_fn) >= 1 and callable(tint_fn[0]):
                 tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
                 try:
@@ -458,23 +468,23 @@ class ImageColorManager:
                     raise ValueError("invalid DeviceN tint function") from exc
             elif isinstance(tint_fn, PdfStream):
                 components = internal_native_evaluate_sampled_tint_function(tint_fn, *components)
-            expected = (
-                1
-                if alt_name == "DeviceGray"
-                else 3
-                if alt_name == "DeviceRGB"
-                else 4
-                if alt_name == "DeviceCMYK"
-                else None
-            )
-            if expected is None:
-                raise ValueError("invalid DeviceN color space")
             if len(components) != expected:
                 raise ValueError("invalid DeviceN tint function")
-            rgb = ImageColorManager.apply_alt_color(components, alt_name)
-            if rgb is not None:
-                fallback_result.extend(rgb)
-        return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
+            tinted[index] = components
+
+        # apply_alt_color one colour at a time would drop back into the
+        # single-sample ICC path; the alternate spaces all convert a whole
+        # block at once. round-half-to-even matches int(round(...)), and the
+        # clamp order is the same, so this is byte-identical.
+        scaled = numpy.clip(numpy.rint(numpy.clip(tinted, 0.0, 1.0) * 255.0), 0.0, 255.0)
+        inks = scaled.astype(numpy.uint8)
+        if alt_name == "DeviceCMYK":
+            converted = cmyk_bytes_to_srgb(inks)
+        elif alt_name == "DeviceRGB":
+            converted = inks
+        else:
+            converted = numpy.repeat(inks, 3, axis=1)
+        return converted[numpy.asarray(inverse).reshape(-1)].reshape(-1)
 
     @staticmethod
     def convert_gray(raw: ImageBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
