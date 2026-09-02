@@ -252,8 +252,11 @@ class TextDocument(typing.Protocol):
     image_cache: ImageCache
     internal_cache_lock: Any
     raster_font_provider: Any
+    legacy_pdfminer_text_operators: bool
 
-    def resolve(self, value: object) -> object: ...
+    # TextState never calls this itself, but `detect_ligature_overrides` takes a
+    # FontResourceDocument, and a document only satisfies that protocol with it.
+    def resolve(self, value: object, /) -> object: ...
 
 
 # ISO 32000-1 Table 106: mode 3 is "neither fill nor stroke text (invisible)"
@@ -591,7 +594,7 @@ class TextState:
         self.text_scan_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.decoder_memo = {}
-        self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
+        self.kw_cache = self.document.resolver.kw_cache
         self.pending_line_break = False
         self.pending_run = None
         self.compat_tj_active = False
@@ -1253,12 +1256,12 @@ class TextState:
         glyphs = None
         if needs_decode:
             glyphs = decoder.decode_glyphs(data)
-            text = "".join(glyph.unicode for glyph in glyphs)
+            text = "".join([glyph.unicode for glyph in glyphs])
         if self.capture_glyphs:
             if glyphs is None:
                 glyphs = decoder.decode_glyphs(data)
             if text is None:
-                text = "".join(glyph.unicode for glyph in glyphs)
+                text = "".join([glyph.unicode for glyph in glyphs])
         if text is None:
             text = ""
         return text, data, glyphs
@@ -1285,7 +1288,7 @@ class TextState:
             return False
 
         for entry in self.marked_content_stack:
-            layer = getattr(entry, "layer", entry)
+            layer = entry.layer
             if layer and layer in self.hidden_layers:
                 return False
         return True
@@ -1310,7 +1313,7 @@ class TextState:
     def is_graphics_visible(self) -> bool:
         if self.marked_content_stack:
             for entry in self.marked_content_stack:
-                layer = getattr(entry, "layer", entry)
+                layer = entry.layer
                 if layer and layer in self.hidden_layers:
                     return False
         return True
@@ -1926,10 +1929,7 @@ class TextState:
         glyph_bbox_cache = decoder.glyph_bbox_cache
         vertical_position = decoder.vertical_glyph_position
         vertical_metric = decoder.vertical_glyph_metric
-        clusters = getattr(self, "glyph_clusters", None)
-        if clusters is None:
-            clusters = []
-            self.glyph_clusters = clusters
+        clusters = self.glyph_clusters
         cursor = 0
         is_vertical = decoder.is_vertical
         glyph_width = decoder.glyph_width
@@ -2040,20 +2040,22 @@ class TextState:
         run_geometry = RunGeometry()
         add_run_geometry = run_geometry.add
         for glyph in glyphs:
-            advance = (
-                chunk_advance(
+            if is_vertical:
+                advance = chunk_advance(
                     glyph.width_code,
                     decoder,
                     word_space=glyph.code_bytes == b" ",
                 )
-                if is_vertical
-                else (
-                    glyph_width(glyph.width_code)
+                glyph_width_units = 0.0
+            else:
+                # Reused by the compat cursor below. glyph_width is three frames
+                # deep, so calling it twice per glyph is pure overhead.
+                glyph_width_units = glyph_width(glyph.width_code)
+                advance = (
+                    glyph_width_units
                     + char_space_scale
                     + (word_space_scale if glyph.code_bytes == b" " else 0.0)
-                )
-                * advance_scale
-            )
+                ) * advance_scale
             chunk_text = glyph.unicode
             if not chunk_text:
                 chunk_text = text[cursor : cursor + 1]
@@ -2067,7 +2069,7 @@ class TextState:
                 width_units = (
                     float(vertical_metric(glyph.width_code)[0])
                     if is_vertical
-                    else glyph_width(glyph.width_code)
+                    else glyph_width_units
                 )
                 observation_provenance: tuple[tuple[str, Any], ...] = (
                     *glyph_provenance,
@@ -2404,7 +2406,7 @@ class TextState:
                 # consumers can retain the replacement marker, while legacy
                 # facades project the source code as their exact ``(cid:N)``
                 # spelling. Dropping them here also lost their cursor advance.
-                text = "".join(glyph.unicode for glyph in glyphs)
+                text = "".join([glyph.unicode for glyph in glyphs])
             else:
                 text = decoder.decode(bytes(data))
         else:
@@ -3173,7 +3175,7 @@ class TextState:
         self.char_space = char_space
         self.update_char_space_scale()
         self.update_word_space_scale()
-        if not getattr(self.document, "legacy_pdfminer_text_operators", False):
+        if not self.document.legacy_pdfminer_text_operators:
             self.internal_move_text(0.0, -self.leading)
             self.pending_line_break = True
         self.internal_show_text(operands[2])
@@ -3193,7 +3195,7 @@ class TextState:
             source = ImageSource(
                 data,
                 dictionary,
-                cache=getattr(self.document, "image_cache", None),
+                cache=self.document.image_cache,
                 cache_key=("inline", self.sequence),
             )
             self.inline_images.append(
@@ -3233,7 +3235,7 @@ class TextState:
         return ImageSource(
             raw,
             dictionary,
-            cache=getattr(self.document, "image_cache", None),
+            cache=self.document.image_cache,
             cache_key=("xobject", key),
         )
 

@@ -17,7 +17,7 @@ from core_pdf.impl.spec.s_09_fonts.helpers import strip_subset_tag
 
 
 class FontResourceDocument(Protocol):
-    def resolve(self, value: object) -> object: ...
+    def resolve(self, value: object, /) -> object: ...
 
 
 def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream | None:

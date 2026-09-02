@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import rotate_page_runs
@@ -328,7 +328,7 @@ class PdfPage:
             if program is not None:
                 return program
             state = TextState(
-                cast(Any, self.document),
+                self.document,
                 self.page_dict,
                 hidden_layers=self.document.oc_hidden_layers(),
                 decoder_cache=self.document.decoder_cache,
