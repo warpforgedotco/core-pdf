@@ -6,10 +6,7 @@ from __future__ import annotations
 from bisect import bisect_left
 from typing import Any
 
-from core_pdf.impl.render.kernels import (
-    RASTER_COORDINATE_CACHE_MAX_ENTRIES,
-    internal_make_page_geometry,
-)
+from core_pdf.impl.render.kernels import internal_make_page_geometry
 from core_pdf.impl.render.paths import (
     internal_fill_path_crossing_spans,
     internal_intersect_box,
@@ -31,7 +28,6 @@ class internal_ClipState:
     __slots__ = (
         "clip_path_stack",
         "path_edge_cache",
-        "clip_row_span_cache",
         "clip_visible_row_cache",
         "crop_x0",
         "crop_y1",
@@ -54,7 +50,6 @@ class internal_ClipState:
     ) -> None:
         self.clip_path_stack = clip_path_stack
         self.path_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
-        self.clip_row_span_cache: dict[tuple[int, int, str], tuple[tuple[int, int], ...]] = {}
         self.clip_visible_row_cache: dict[int, tuple[tuple[int, int], ...]] = {}
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
@@ -139,15 +134,8 @@ class internal_ClipState:
     def clip_path_row_spans(
         self, path: CapturedPath, py: int, fill_rule: str
     ) -> tuple[tuple[int, int], ...]:
-        clip_row_span_cache = self.clip_row_span_cache
-        cache_key = (id(path), py, fill_rule)
-        cached = clip_row_span_cache.get(cache_key)
-        if cached is not None:
-            return cached
         edges = self.path_edges(path)
         if not edges:
-            if len(clip_row_span_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                clip_row_span_cache[cache_key] = ()
             return ()
         page_y = self.crop_y1 - (py + 0.5) / self.scale
         crossings: list[tuple[float, int]] = []
@@ -161,8 +149,6 @@ class internal_ClipState:
             t = (page_y - y0) / (y1 - y0)
             crossings.append((x0 + t * (x1 - x0), 1 if y1 > y0 else -1))
         if not crossings:
-            if len(clip_row_span_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                clip_row_span_cache[cache_key] = ()
             return ()
         spans: list[tuple[int, int]] = []
         page_x_to_pixel_span = self.page_x_to_pixel_span
@@ -173,10 +159,7 @@ class internal_ClipState:
             span = page_x_to_pixel_span(start_x, end_x)
             if span is not None:
                 spans.append(span)
-        cached_spans = tuple(spans)
-        if len(clip_row_span_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-            clip_row_span_cache[cache_key] = cached_spans
-        return cached_spans
+        return tuple(spans)
 
     def pixel_in_clip(self, px: int, py: int) -> bool:
         spans = self.clip_row_visible_spans(py)

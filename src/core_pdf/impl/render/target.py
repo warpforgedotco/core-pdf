@@ -18,7 +18,6 @@ from core_pdf.impl.render.blend import (
 from core_pdf.impl.render.clipping import internal_ClipState
 from core_pdf.impl.render.image_affine_target import internal_ImageAffineTargetMixin
 from core_pdf.impl.render.image_axis_target import internal_ImageAxisTargetMixin
-from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.model import PathPaintItem, PathPaintKind
 from core_pdf.impl.render.path_fill_target import internal_PathFillTargetMixin
 from core_pdf.impl.render.path_shape_target import internal_PathShapeTargetMixin
@@ -70,7 +69,6 @@ class internal_RasterTarget(
         "clip_row_visible_spans",
         "pixel_in_clip",
         "crop_y0",
-        "color_cache",
         "mark_clip_metadata_dirty",
         "path_bbox",
         "clip_path_stack",
@@ -110,7 +108,6 @@ class internal_RasterTarget(
         self.clip_row_visible_spans = clip.clip_row_visible_spans
         self.pixel_in_clip = clip.pixel_in_clip
         self.crop_y0 = crop_y0
-        self.color_cache: dict[tuple[int, int], tuple[int, int, int, int]] = {}
         self.mark_clip_metadata_dirty = clip.mark_clip_metadata_dirty
         self.path_bbox = clip.path_bbox
         self.clip_path_stack = clip.clip_path_stack
@@ -327,7 +324,6 @@ class internal_RasterTarget(
         )
 
     def paint_typed_path(self, item: PathPaintItem) -> None:
-        color_cache = self.color_cache
         fill_path = self.fill_path
         stroke_path = self.stroke_path
         path = item.path
@@ -339,12 +335,7 @@ class internal_RasterTarget(
         soft_mask_alpha = item.soft_mask_alpha
         paint_kind = item.paint_kind
         if paint_kind is not PathPaintKind.STROKE:
-            color_key = (id(item.fill), id(item.fill_opacity))
-            rgba = color_cache.get(color_key)
-            if rgba is None:
-                rgba = internal_color_rgba(item.fill, item.fill_opacity)
-                if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                    color_cache[color_key] = rgba
+            rgba = internal_color_rgba(item.fill, item.fill_opacity)
             if pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
             fill_path(
@@ -354,12 +345,7 @@ class internal_RasterTarget(
                 item.fill_rule or "nonzero",
             )
         if paint_kind is not PathPaintKind.FILL:
-            color_key = (id(item.stroke_color), id(item.stroke_opacity))
-            stroke_rgba = color_cache.get(color_key)
-            if stroke_rgba is None:
-                stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
-                if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                    color_cache[color_key] = stroke_rgba
+            stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if pdf_number(soft_mask_alpha):
                 stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
             stroke_path(

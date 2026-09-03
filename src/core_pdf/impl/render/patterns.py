@@ -13,7 +13,7 @@ from core_pdf.impl.render.blend import (
     internal_color_component,
     internal_color_rgba,
 )
-from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
+from core_pdf.impl.render.kernels import RASTER_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.paths import internal_intersect_box, internal_translate_rect
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -190,7 +190,7 @@ class internal_PatternTargetMixin:
                         # diagonal or radial gradient can produce a near-unique
                         # unit_t per pixel, so an unbounded cache would grow to
                         # one entry per pixel on a large fill.
-                        if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                        if len(color_cache) < RASTER_CACHE_MAX_ENTRIES:
                             color_cache[unit_t] = rgba
                     if shading_alpha is not None:
                         rgba = (
