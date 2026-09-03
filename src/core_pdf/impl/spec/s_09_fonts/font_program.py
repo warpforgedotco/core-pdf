@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from math import inf, isfinite, sqrt
-from threading import RLock
 
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -15,15 +14,12 @@ from core_pdf._vendor.fontTools.cffLib import (
 )
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import (
-    FeatureArrays,
-    internal_feature_arrays,
-)
-from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import (
     feature_distance as compiled_feature_distance,
 )
 from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import (
     feature_distance_matrix as compiled_feature_distance_matrix,
 )
+from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import internal_feature_arrays
 from core_pdf.impl.spec.s_09_fonts.raster_kernel import rasterize_contours, transform_contours
 
 
@@ -1442,20 +1438,14 @@ def internal_repair_candidate(
 
 
 class CFFUnicodeRepairIndex:
-    """Resolve suspicious ToUnicode entries lazily against one CFF program."""
+    """Match suspicious ToUnicode entries against one CFF program."""
 
     __slots__ = (
         "internal_candidate_gids",
-        "internal_candidate_arrays",
         "internal_code_to_gid",
-        "internal_features",
         "internal_font",
-        "internal_gid_to_codes",
         "internal_labels",
-        "internal_lock",
         "internal_repairable_gids",
-        "internal_repairs",
-        "internal_resolved_gids",
     )
 
     def __init__(
@@ -1465,7 +1455,6 @@ class CFFUnicodeRepairIndex:
     ) -> None:
         glyph_count = len(font.charstrings)
         labels: dict[int, str] = {}
-        gid_to_codes: dict[int, list[bytes]] = {}
         code_to_gid: dict[bytes, int] = {}
         if glyph_count >= 2:
             for code_bytes, cid, value in mapping_items:
@@ -1473,12 +1462,10 @@ class CFFUnicodeRepairIndex:
                 if gid >= glyph_count:
                     continue
                 labels[gid] = value
-                gid_to_codes.setdefault(gid, []).append(code_bytes)
                 code_to_gid[code_bytes] = gid
 
         self.internal_font = font
         self.internal_labels = labels
-        self.internal_gid_to_codes = {gid: tuple(codes) for gid, codes in gid_to_codes.items()}
         self.internal_code_to_gid = code_to_gid
         self.internal_repairable_gids = frozenset(
             gid for gid, label in labels.items() if is_repairable_to_unicode_label(label)
@@ -1488,59 +1475,49 @@ class CFFUnicodeRepairIndex:
             for gid, label in labels.items()
             if len(label) == 1 and (label.isalnum() or label in ".-+")
         )
-        self.internal_candidate_arrays: FeatureArrays | None = None
-        self.internal_features: dict[int, CFFGlyphFeature] = {}
-        self.internal_repairs: dict[bytes, str] = {}
-        self.internal_resolved_gids: set[int] = set()
-        self.internal_lock = RLock()
 
     def repairs_for_codes(self, codes: Iterable[bytes]) -> dict[bytes, str]:
-        """Return repairs for ``codes``, resolving each target glyph at most once."""
+        """Return repairs for the requested content-stream codes."""
         requested_codes = tuple(dict.fromkeys(codes))
         if not requested_codes or not self.internal_repairable_gids:
             return {}
-        with self.internal_lock:
-            target_gids = tuple(
-                dict.fromkeys(
-                    gid
-                    for code in requested_codes
-                    if (gid := self.internal_code_to_gid.get(code)) in self.internal_repairable_gids
-                    and gid not in self.internal_resolved_gids
-                )
-            )
-            if target_gids:
-                self.internal_resolve_gids(target_gids)
-            return {
-                code: replacement
+        target_gids = tuple(
+            dict.fromkeys(
+                gid
                 for code in requested_codes
-                if (replacement := self.internal_repairs.get(code)) is not None
-            }
-
-    def internal_resolve_gids(self, requested_gids: tuple[int, ...]) -> None:
-        feature_gids = (*self.internal_candidate_gids, *requested_gids)
-        for gid in feature_gids:
-            if gid not in self.internal_features:
-                self.internal_features[gid] = self.internal_font.glyph_feature(gid)
-
-        candidate_gids = tuple(
-            gid for gid in self.internal_candidate_gids if self.internal_features[gid].cells
+                if (gid := self.internal_code_to_gid.get(code)) in self.internal_repairable_gids
+            )
         )
-        target_gids = tuple(gid for gid in requested_gids if self.internal_features[gid].cells)
+        if not target_gids:
+            return {}
+        repairs = self.internal_repairs_for_gids(target_gids)
+        return {
+            code: replacement
+            for code in requested_codes
+            if (gid := self.internal_code_to_gid.get(code)) is not None
+            and (replacement := repairs.get(gid)) is not None
+        }
+
+    def internal_repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
+        feature_gids = dict.fromkeys((*self.internal_candidate_gids, *requested_gids))
+        features = {gid: self.internal_font.glyph_feature(gid) for gid in feature_gids}
+
+        candidate_gids = tuple(gid for gid in self.internal_candidate_gids if features[gid].cells)
+        target_gids = tuple(gid for gid in requested_gids if features[gid].cells)
         distance_lookups: dict[int, dict[int, float]] = {}
         if (
             target_gids
             and candidate_gids
             and (len(self.internal_repairable_gids) * len(candidate_gids) >= 512)
         ):
-            target_features = [self.internal_features[gid] for gid in target_gids]
-            candidate_features = [self.internal_features[gid] for gid in candidate_gids]
-            if self.internal_candidate_arrays is None:
-                self.internal_candidate_arrays = internal_feature_arrays(
-                    [feature.cells for feature in candidate_features],
-                    [feature.bitmap for feature in candidate_features],
-                    [feature.aspect for feature in candidate_features],
-                    [feature.contours for feature in candidate_features],
-                )
+            target_features = [features[gid] for gid in target_gids]
+            candidate_features = [features[gid] for gid in candidate_gids]
+            candidate_arrays = internal_feature_arrays(
+                [feature.cells for feature in candidate_features],
+                [feature.bitmap for feature in candidate_features],
+                [feature.aspect for feature in candidate_features],
+                [feature.contours for feature in candidate_features],
+            )
             distance_matrix = compiled_feature_distance_matrix(
                 [feature.cells for feature in target_features],
                 [feature.bitmap for feature in target_features],
@@ -1550,7 +1527,7 @@ class CFFUnicodeRepairIndex:
                 [feature.bitmap for feature in candidate_features],
                 [feature.aspect for feature in candidate_features],
                 [feature.contours for feature in candidate_features],
-                internal_right_arrays=self.internal_candidate_arrays,
+                internal_right_arrays=candidate_arrays,
             )
             distance_lookups = {
                 target_gid: {
@@ -1560,19 +1537,19 @@ class CFFUnicodeRepairIndex:
                 for target_index, target_gid in enumerate(target_gids)
             }
 
+        repairs: dict[int, str] = {}
         for glyph_id in target_gids:
             label = self.internal_labels[glyph_id]
             replacement = internal_repair_candidate(
                 glyph_id,
                 label,
-                self.internal_features,
+                features,
                 self.internal_labels,
                 distance_lookups.get(glyph_id),
             )
             if replacement is not None and replacement != label:
-                for code_bytes in self.internal_gid_to_codes.get(glyph_id, ()):
-                    self.internal_repairs[code_bytes] = replacement
-        self.internal_resolved_gids.update(requested_gids)
+                repairs[glyph_id] = replacement
+        return repairs
 
 
 __all__ = (

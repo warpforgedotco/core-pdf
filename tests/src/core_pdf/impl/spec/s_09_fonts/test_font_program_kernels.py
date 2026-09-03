@@ -44,7 +44,7 @@ def test_feature_distance_matrix_matches_scalar_distance() -> None:
                 assert matrix[left_index, right_index] == pytest.approx(expected)
 
 
-def test_cff_unicode_repair_index_only_computes_requested_glyphs() -> None:
+def test_cff_unicode_repair_index_computes_only_requested_glyphs() -> None:
     feature = CFFGlyphFeature(((0, 0), (1, 1)), 1.0, 1, (3, 1))
 
     class FakeFont:
@@ -72,4 +72,4 @@ def test_cff_unicode_repair_index_only_computes_requested_glyphs() -> None:
     assert index.repairs_for_codes((b"\x01",)) == {b"\x01": "A"}
     assert sorted(font.feature_calls) == [1, 2]
     assert index.repairs_for_codes((b"\x01",)) == {b"\x01": "A"}
-    assert sorted(font.feature_calls) == [1, 2]
+    assert sorted(font.feature_calls) == [1, 1, 2, 2]
