@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
-from functools import lru_cache
 
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
@@ -183,7 +182,6 @@ class GlyphCluster:
             yield glyph.font_decoder, glyph.code_bytes, glyph.text
 
 
-@lru_cache(maxsize=512)
 def glyph_unicode_confidence(
     text: str,
     unicode_source: str,
@@ -204,7 +202,6 @@ def glyph_unicode_confidence(
     return confidence
 
 
-@lru_cache(maxsize=512)
 def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
     """Classify a decoded value without treating raw CIDs as real Unicode.
 
