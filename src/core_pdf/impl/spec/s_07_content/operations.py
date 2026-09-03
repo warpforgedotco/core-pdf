@@ -28,10 +28,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
 
 PdfName_of = PdfName.of
-FONT_DIGIT_NAMES = tuple(PdfName_of(b"F" + bytes((48 + i,))) for i in range(10))
-CS_DIGIT_NAMES = tuple(PdfName_of(b"CS" + bytes((48 + i,))) for i in range(10))
-TT_DIGIT_NAMES = tuple(PdfName_of(b"TT" + bytes((48 + i,))) for i in range(10))
-P_NAME = PdfName_of(b"P")
 
 ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
@@ -322,38 +318,17 @@ def dispatch_operations(
 
         lexer.pos = pos
         if byte == 91:
-            if target is not None and not target.capture_graphics and not target.capture_glyphs:
-                if pos + 1 < data_len and raw_bytes[pos + 1] == 93:
-                    append_operand(cast(ContentOperand, ()))
-                    pos += 2
+            operand_start = pos
+            try:
+                append_operand(cast(ContentOperand, lexer.parse_array()))
+            except PdfParseError as exc:
+                if str(exc) == "unterminated array" and lexer.pos >= data_len:
+                    pos = data_len
+                    break
+                if lexer.pos > operand_start:
+                    pos = lexer.pos
                     continue
-                simple_tj_array = lexer.parse_simple_tj_array()
-                if simple_tj_array is not None:
-                    append_operand(cast(ContentOperand, simple_tj_array))
-                else:
-                    operand_start = pos
-                    try:
-                        append_operand(cast(ContentOperand, lexer.parse_array()))
-                    except PdfParseError as exc:
-                        if str(exc) == "unterminated array" and lexer.pos >= data_len:
-                            pos = data_len
-                            break
-                        if lexer.pos > operand_start:
-                            pos = lexer.pos
-                            continue
-                        raise
-            else:
-                operand_start = pos
-                try:
-                    append_operand(cast(ContentOperand, lexer.parse_array()))
-                except PdfParseError as exc:
-                    if str(exc) == "unterminated array" and lexer.pos >= data_len:
-                        pos = data_len
-                        break
-                    if lexer.pos > operand_start:
-                        pos = lexer.pos
-                        continue
-                    raise
+                raise
             pos = lexer.pos
             continue
         if byte == 60:
@@ -418,43 +393,8 @@ def dispatch_operations(
             pos = lexer.pos
             continue
         if byte == 47:
-            if (
-                pos + 3 <= data_len
-                and raw_bytes[pos + 1] == 70
-                and 48 <= raw_bytes[pos + 2] <= 57
-                and (pos + 3 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 3]])
-            ):
-                append_operand(FONT_DIGIT_NAMES[raw_bytes[pos + 2] - 48])
-                pos += 3
-            elif (
-                pos + 4 <= data_len
-                and raw_bytes[pos + 1] == 67
-                and raw_bytes[pos + 2] == 83
-                and 48 <= raw_bytes[pos + 3] <= 57
-                and (pos + 4 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 4]])
-            ):
-                append_operand(CS_DIGIT_NAMES[raw_bytes[pos + 3] - 48])
-                pos += 4
-            elif (
-                pos + 4 <= data_len
-                and raw_bytes[pos + 1] == 84
-                and raw_bytes[pos + 2] == 84
-                and 48 <= raw_bytes[pos + 3] <= 57
-                and (pos + 4 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 4]])
-            ):
-                append_operand(TT_DIGIT_NAMES[raw_bytes[pos + 3] - 48])
-                pos += 4
-            elif (
-                pos + 2 <= data_len
-                and raw_bytes[pos + 1] == 80
-                and (pos + 2 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 2]])
-            ):
-                append_operand(P_NAME)
-                pos += 2
-            else:
-                name_value = PdfName_of(lexer.read_name())
-                append_operand(name_value)
-                pos = lexer.pos
+            append_operand(PdfName_of(lexer.read_name()))
+            pos = lexer.pos
             continue
         if byte == 62:
             pos = pos + 2 if pos + 1 < data_len and raw_bytes[pos + 1] == 62 else pos + 1
