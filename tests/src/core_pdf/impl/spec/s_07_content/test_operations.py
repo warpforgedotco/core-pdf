@@ -14,7 +14,7 @@ from core_pdf.impl.spec.s_07_content.operations import (
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import (
     OPERATOR_SPECS,
-    TEXT_ONLY_SKIP_SINGLE,
+    TEXT_ONLY_SKIP_OPERATORS,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
@@ -235,10 +235,10 @@ def test_text_only_skip_matches_the_operator_table(operator: str) -> None:
 
 
 def test_synthetic_skip_entry_has_no_operator_spec() -> None:
-    """`N` is in TEXT_ONLY_SKIP_SINGLE but is not a real operator.
+    """`N` is skipped in text-only mode but is not a real operator.
 
     It is a damaged-producer no-op with no handler, so it cannot be covered by
     the table-driven test above.
     """
     assert "N" not in OPERATOR_SPECS
-    assert TEXT_ONLY_SKIP_SINGLE[ord("N")]
+    assert b"N" in TEXT_ONLY_SKIP_OPERATORS

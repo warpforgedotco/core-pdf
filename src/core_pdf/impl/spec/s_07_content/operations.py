@@ -14,10 +14,7 @@ from core_pdf.impl.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import (
-    TEXT_ONLY_SKIP_DOUBLE,
-    TEXT_ONLY_SKIP_SINGLE,
-)
+from core_pdf.impl.spec.s_07_content.operator_tables import TEXT_ONLY_SKIP_OPERATORS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
@@ -403,27 +400,20 @@ def dispatch_operations(
 
                 # Skip irrelevant graphics operators before the normal handler lookup.
                 if text_only:
-                    if n_raw == 1:
-                        op0 = raw_bytes[pos - 1]
-                        if op0 == 113 and op_count == 0:
-                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
-                            if skipped_pos is not None:
-                                skipped_clip_q_count += 1
-                                pos = skipped_pos
-                                op_count = 0
-                                continue
-                        if op0 == 81 and skipped_clip_q_count:
-                            skipped_clip_q_count -= 1
+                    if raw_key == b"q" and op_count == 0:
+                        skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
+                        if skipped_pos is not None:
+                            skipped_clip_q_count += 1
+                            pos = skipped_pos
                             op_count = 0
                             continue
-                        if TEXT_ONLY_SKIP_SINGLE[op0]:
-                            op_count = 0
-                            continue
-                    elif n_raw == 2:
-                        op_code = (raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1]
-                        if TEXT_ONLY_SKIP_DOUBLE[op_code]:
-                            op_count = 0
-                            continue
+                    if raw_key == b"Q" and skipped_clip_q_count:
+                        skipped_clip_q_count -= 1
+                        op_count = 0
+                        continue
+                    if raw_key in TEXT_ONLY_SKIP_OPERATORS:
+                        op_count = 0
+                        continue
 
                 if raw_key in (
                     b"R",

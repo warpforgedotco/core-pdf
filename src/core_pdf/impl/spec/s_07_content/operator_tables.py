@@ -175,24 +175,17 @@ TYPE3_REPLAY_OPERATORS = frozenset(
     name for name, spec in OPERATOR_SPECS.items() if spec.type3_replay
 )
 
-internal_TEXT_ONLY_SKIP_OPS = {name for name, spec in OPERATOR_SPECS.items() if spec.text_only_skip}
 # Some damaged producers emit `N` as a path no-op. It has no normal handler,
 # but the text-only scanner historically skips it rather than parsing a keyword.
-internal_TEXT_ONLY_SKIP_OPS.add("N")
-TEXT_ONLY_SKIP_SINGLE = bytes(
-    [1 if chr(value) in internal_TEXT_ONLY_SKIP_OPS else 0 for value in range(256)]
+TEXT_ONLY_SKIP_OPERATORS = frozenset(
+    {b"N"}
+    | {name.encode("latin-1") for name, spec in OPERATOR_SPECS.items() if spec.text_only_skip}
 )
-TEXT_ONLY_SKIP_DOUBLE = bytearray(65536)
-for internal_op in internal_TEXT_ONLY_SKIP_OPS:
-    if len(internal_op) == 2:
-        TEXT_ONLY_SKIP_DOUBLE[(ord(internal_op[0]) << 8) | ord(internal_op[1])] = 1
-del internal_op
 
 
 __all__ = (
     "OPERATOR_SPECS",
-    "TEXT_ONLY_SKIP_DOUBLE",
-    "TEXT_ONLY_SKIP_SINGLE",
+    "TEXT_ONLY_SKIP_OPERATORS",
     "TYPE3_REPLAY_OPERATORS",
     "build_operator_handlers",
 )
