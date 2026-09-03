@@ -18,7 +18,7 @@ from core_pdf.impl.exceptions import (
     PdfUnsupportedError,
 )
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
-from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
+from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
@@ -95,20 +95,14 @@ class PdfDocument(
         "decipher",
         "resolver",
         "file_handle",
-        "catalog_cache",
-        "metadata_cache",
-        "structure_cache",
-        "mark_info_cache",
         "page_dicts_cache",
         "pages_cache",
         "page_index_cache",
         "named_destinations_cache",
         "embedded_files_cache",
         "oc_layers",
-        "acroform_cache",
         "fields_cache",
         "fields_by_page_cache",
-        "page_labels_cache",
         "internal_cache_lock",
         "internal_page_locks",
         "xref_was_recovered",
@@ -128,20 +122,14 @@ class PdfDocument(
     decipher: Decipher | None
     resolver: ObjectResolver
     file_handle: BinaryIO | None
-    catalog_cache: PdfDict | None
-    metadata_cache: MetadataRecord | None
-    structure_cache: StructureTree | None | MissingObject
-    mark_info_cache: PdfDict | None | MissingObject
     page_dicts_cache: list[PdfDict] | None
     pages_cache: LazyPageList[internal_PageT] | None
     page_index_cache: dict[int, int] | None
     named_destinations_cache: dict[str, RawNamedDestination] | None
     embedded_files_cache: list[RawEmbeddedFile] | None
     oc_layers: dict[str, bool] | None
-    acroform_cache: PdfDict | None | MissingObject
     fields_cache: list[RawFormField] | None
     fields_by_page_cache: dict[int, list[RawFormField]] | None
-    page_labels_cache: list[str] | None | MissingObject
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
     xref_was_recovered: bool
@@ -177,7 +165,7 @@ class PdfDocument(
         self.legacy_pdfminer_text_operators = legacy_pdfminer_text_operators
         self.raster_font_provider = raster_font_provider
         self.page_tree_was_recovered = False
-        self._initialize_document_caches()
+        self._clear_document_caches()
 
         try:
             self.raw_data = self.load_data(source)
@@ -253,31 +241,20 @@ class PdfDocument(
         return self.resolver.resolve(ref)
 
     def catalog(self) -> PdfDict:
-        with self.internal_cache_lock:
-            cached = self.catalog_cache
-            if cached is not None:
-                return cached
-            root_ref = self.trailer_dict.get("Root")
-            if root_ref is None:
-                raise ValueError("missing catalog root")
-            root = self.resolve(root_ref)
-            if not isinstance(root, dict):
-                raise ValueError("invalid catalog root")
-            cached = cast(PdfDict, root)
-            self.catalog_cache = cached
-            return cached
+        root_ref = self.trailer_dict.get("Root")
+        if root_ref is None:
+            raise ValueError("missing catalog root")
+        root = self.resolve(root_ref)
+        if not isinstance(root, dict):
+            raise ValueError("invalid catalog root")
+        return cast(PdfDict, root)
 
     def get_metadata(self) -> MetadataRecord:
-        with self.internal_cache_lock:
-            cached = self.metadata_cache
-            if cached is None:
-                cached = resolve_metadata(
-                    self.resolver,
-                    self.trailer_dict,
-                    recover=self.recovery_enabled,
-                )
-                self.metadata_cache = cached
-            return cached
+        return resolve_metadata(
+            self.resolver,
+            self.trailer_dict,
+            recover=self.recovery_enabled,
+        )
 
     def page_lock(self, page_number: int) -> threading.RLock:
         with self.internal_cache_lock:
@@ -300,38 +277,19 @@ class PdfDocument(
 
     @property
     def structure(self) -> StructureTree | None:
-        with self.internal_cache_lock:
-            structure = self.structure_cache
-            if structure is not MISSING:
-                return cast(StructureTree | None, structure)
-            root = self.internal_catalog_dict("StructTreeRoot")
-            structure = None if root is None else StructureTree(self, root)
-            self.structure_cache = structure
-            return structure
+        root = self.internal_catalog_dict("StructTreeRoot")
+        return None if root is None else StructureTree(self, root)
 
     @property
     def mark_info(self) -> PdfDict | None:
-        with self.internal_cache_lock:
-            mark_info = self.mark_info_cache
-            if mark_info is not MISSING:
-                return cast(PdfDict | None, mark_info)
-            mark_info = self.internal_catalog_dict("MarkInfo")
-            self.mark_info_cache = mark_info
-            return mark_info
+        return self.internal_catalog_dict("MarkInfo")
 
     @property
     def recovery_enabled(self) -> bool:
         """Whether the document was reconstructed and so needs lenient traversal."""
         return self.xref_was_recovered or self.page_tree_was_recovered
 
-    def _initialize_document_caches(self) -> None:
-        self._clear_document_caches()
-
     def _clear_document_caches(self) -> None:
-        # None means "not computed yet"; MISSING distinguishes that from a
-        # computed absence, for the four entries that may legitimately be None.
-        self.catalog_cache = None
-        self.metadata_cache = None
         self.page_dicts_cache = None
         self.pages_cache = None
         self.page_index_cache = None
@@ -340,10 +298,6 @@ class PdfDocument(
         self.oc_layers = None
         self.fields_cache = None
         self.fields_by_page_cache = None
-        self.structure_cache = MISSING
-        self.mark_info_cache = MISSING
-        self.acroform_cache = MISSING
-        self.page_labels_cache = MISSING
 
     # Source loading and security
 
@@ -755,12 +709,7 @@ class PdfDocument(
 
     @property
     def page_labels(self) -> list[str] | None:
-        with self.internal_cache_lock:
-            labels = self.page_labels_cache
-            if labels is MISSING:
-                labels = self.build_page_labels()
-                self.page_labels_cache = labels
-            return cast(list[str] | None, labels)
+        return self.build_page_labels()
 
     def page_label(self, page_index: int) -> str | None:
         labels = self.page_labels
@@ -1110,16 +1059,10 @@ class PdfDocument(
 
     @property
     def acroform(self) -> PdfDict | None:
-        with self.internal_cache_lock:
-            cached = self.acroform_cache
-            if cached is not MISSING:
-                return cast(PdfDict | None, cached)
-            # Unlike StructTreeRoot and MarkInfo, a recovered document keeps
-            # going with no form rather than failing: a damaged AcroForm costs
-            # the field list, not the page content every caller came for.
-            acroform = self.internal_catalog_dict("AcroForm", recoverable=True)
-            self.acroform_cache = acroform
-            return acroform
+        # Unlike StructTreeRoot and MarkInfo, a recovered document keeps going
+        # with no form rather than failing: a damaged AcroForm costs the field
+        # list, not the page content every caller came for.
+        return self.internal_catalog_dict("AcroForm", recoverable=True)
 
     def collect_field_records(
         self,

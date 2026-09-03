@@ -24,4 +24,6 @@ def test_structure_root_keeps_catalog_object_identity() -> None:
 
         assert structure is not None
         assert structure.props is root
-        assert document.structure is structure
+        rebuilt = document.structure
+        assert rebuilt is not None
+        assert rebuilt.props is root
