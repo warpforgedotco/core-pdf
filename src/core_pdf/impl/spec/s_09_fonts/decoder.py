@@ -20,7 +20,6 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_09_fonts.cid_unicode import resolve_cid_unicode_map
 from core_pdf.impl.spec.s_09_fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl.spec.s_09_fonts.cmap_encoding import BYTE_CACHE
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     code_in_ranges,
     unicode_scalar_or_replacement,
@@ -317,8 +316,7 @@ def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> l
     if not data:
         return []
     if cmap is None:
-        byte_cache = BYTE_CACHE
-        return [byte_cache[byte] for byte in data]
+        return [bytes((byte,)) for byte in data]
     lengths = getattr(cmap, "decode_lengths", None) or (1,)
     ranges = getattr(cmap, "code_space_ranges", None) or ()
     chunks: list[bytes] = []
@@ -329,7 +327,7 @@ def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> l
         for length in lengths:
             if pos + length > n:
                 continue
-            chunk = BYTE_CACHE[data[pos]] if length == 1 else data[pos : pos + length]
+            chunk = bytes((data[pos],)) if length == 1 else data[pos : pos + length]
             if ranges and not code_in_ranges(chunk, ranges):
                 continue
             chunks.append(chunk)
@@ -337,7 +335,7 @@ def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> l
             matched = True
             break
         if not matched:
-            chunks.append(BYTE_CACHE[data[pos]])
+            chunks.append(bytes((data[pos],)))
             pos += 1
     return chunks
 
@@ -851,9 +849,8 @@ class FontDecoder:
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
             table = self.encoding_decode_table
-        byte_cache = BYTE_CACHE
         for code in data:
-            chunk = byte_cache[code]
+            chunk = bytes((code,))
             gid = self.glyph_id_for_code(code)
             if self.to_unicode is not None:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)

@@ -56,7 +56,6 @@ class TrueTypeFontProgram:
         "cmap",
         "unicode_cmap",
         "glyph_to_unicode",
-        "internal_glyph_set",
     )
 
     def __init__(
@@ -79,7 +78,6 @@ class TrueTypeFontProgram:
             self.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
         else:
             self.cmap = {}
-        self.internal_glyph_set: Any | None = None
 
     def glyph_id_for_code(self, code: int) -> int:
         if self.cid_to_gid is not None:
@@ -143,10 +141,7 @@ class TrueTypeFontProgram:
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         try:
             glyph_name = self.font.getGlyphName(gid)
-            glyph_set = self.internal_glyph_set
-            if glyph_set is None:
-                glyph_set = self.font.getGlyphSet()
-                self.internal_glyph_set = glyph_set
+            glyph_set = self.font.getGlyphSet()
             glyph = glyph_set[glyph_name]
             pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
             glyph.draw(pen)

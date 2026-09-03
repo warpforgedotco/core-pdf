@@ -50,7 +50,6 @@ class internal_RasterTarget(
     __slots__ = (
         "pixels",
         "buffer_stack",
-        "pixel_views",
         "clip",
         "width",
         "height",
@@ -91,7 +90,6 @@ class internal_RasterTarget(
         self.buffer_stack: list[tuple[bytearray, float | None, str | None]] = [
             (pixels, group_alpha, None)
         ]
-        self.pixel_views: dict[int, numpy.ndarray[Any, Any]] = {id(pixels): page_view}
         self.clip = clip
         self.width = width
         self.height = height
@@ -122,14 +120,8 @@ class internal_RasterTarget(
         return child
 
     def pixel_view(self, buffer: bytearray | bytes) -> numpy.ndarray[Any, Any]:
-        """Return a reusable array view for an active RGBA byte buffer."""
-        pixel_views = self.pixel_views
-        key = id(buffer)
-        view = pixel_views.get(key)
-        if view is None:
-            view = uint8_image_view(buffer, (self.height, self.width, 4))
-            pixel_views[key] = view
-        return view
+        """Return an array view for an RGBA byte buffer."""
+        return uint8_image_view(buffer, (self.height, self.width, 4))
 
     def internal_resolved_blend(self, blend_mode: str | None) -> tuple[float | None, str | None]:
         """Resolve the half of `blend_px`'s arguments that is span-invariant.

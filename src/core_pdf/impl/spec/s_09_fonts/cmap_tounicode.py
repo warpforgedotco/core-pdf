@@ -6,7 +6,7 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from core_pdf.impl.spec.s_09_fonts.cmap_encoding import BYTE_CACHE, decode_utf16be
+from core_pdf.impl.spec.s_09_fonts.cmap_encoding import decode_utf16be
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
     CodeSpaceRanges,
@@ -279,8 +279,6 @@ class ToUnicodeCMap:
         out: list[str] = []
         out_append = out.append
         pos = 0
-        bc = BYTE_CACHE
-
         mappings_get = mappings.get
         while pos < n:
             match_found = False
@@ -289,7 +287,7 @@ class ToUnicodeCMap:
                     continue
 
                 if length == 1:
-                    chunk = bc[data[pos]]
+                    chunk = bytes((data[pos],))
                 else:
                     chunk = data[pos : pos + length]
 
@@ -303,7 +301,7 @@ class ToUnicodeCMap:
             if match_found:
                 continue
 
-            chunk1 = bc[data[pos]]
+            chunk1 = bytes((data[pos],))
             mapped1 = mappings_get(chunk1)
             if mapped1 is not None:
                 out_append(mapped1)

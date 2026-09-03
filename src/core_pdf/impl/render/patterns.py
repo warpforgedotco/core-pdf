@@ -121,9 +121,7 @@ class internal_PatternTargetMixin:
         scale = self.scale
         shading_box = self.shading_box
         width = self.width
-        shading = data.get("prepared_shading")
-        if not isinstance(shading, PreparedShading):
-            shading = prepare_shading(data.get("dictionary"))
+        shading = prepare_shading(data.get("dictionary"))
         if shading is None:
             return
         shading_type = shading.shading_type

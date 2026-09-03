@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any
 
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import DecomposingRecordingPen
@@ -22,7 +21,6 @@ class OpenTypeFontProgram:
     __slots__ = (
         "font",
         "glyph_count",
-        "internal_glyph_set",
         "reverse_glyph_map",
         "units_per_em",
     )
@@ -48,7 +46,6 @@ class OpenTypeFontProgram:
                 del self.font["fvar"]
         except FONT_PROGRAM_ERRORS as exc:
             raise ValueError("invalid OpenType CFF font program") from exc
-        self.internal_glyph_set: Any | None = None
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
         return self.reverse_glyph_map.get(glyph_name)
@@ -59,10 +56,7 @@ class OpenTypeFontProgram:
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
         try:
             glyph_name = self.font.getGlyphName(glyph_id)
-            glyph_set = self.internal_glyph_set
-            if glyph_set is None:
-                glyph_set = self.font.getGlyphSet()
-                self.internal_glyph_set = glyph_set
+            glyph_set = self.font.getGlyphSet()
             pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
             glyph_set[glyph_name].draw(pen)
             contours = internal_recording_to_contours(pen.value)
@@ -74,10 +68,7 @@ class OpenTypeFontProgram:
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
             glyph_name = self.font.getGlyphName(glyph_id)
-            glyph_set = self.internal_glyph_set
-            if glyph_set is None:
-                glyph_set = self.font.getGlyphSet()
-                self.internal_glyph_set = glyph_set
+            glyph_set = self.font.getGlyphSet()
             bounds_pen = BoundsPen(glyph_set)
             scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
             normalized_pen = TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0))

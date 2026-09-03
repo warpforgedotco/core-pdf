@@ -3,13 +3,11 @@
 
 from __future__ import annotations
 
-import threading
 import unicodedata
 
 from core_pdf.impl.spec.s_09_fonts.data.core14 import (
     COMMON_GLYPHS,
     GLYPH_DATA,
-    GLYPH_MAP,
     GLYPH_NAME_ALIASES,
     MODIFIER_NAMES,
     SYMBOL_GLYPH_NAME_ALIASES,
@@ -163,20 +161,10 @@ TEX_GLYPH_ALIASES = {
     # shape, following Adobe's reading of Delta. pypdf reports it the same way.
     "triangle": "\u2206",
 }
-internal_GLYPH_MAP_LOCK = threading.Lock()
 
 
 def ensure_glyph_map() -> dict[str, str]:
-    if GLYPH_MAP:
-        return GLYPH_MAP
-    with internal_GLYPH_MAP_LOCK:
-        if GLYPH_MAP:
-            return GLYPH_MAP
-        GLYPH_MAP.update(COMMON_GLYPHS)
-        GLYPH_MAP.update(GLYPH_NAME_ALIASES)
-        GLYPH_MAP.update(SYMBOL_GLYPH_NAME_ALIASES)
-        GLYPH_MAP.update(GLYPH_DATA)
-    return GLYPH_MAP
+    return COMMON_GLYPHS | GLYPH_NAME_ALIASES | SYMBOL_GLYPH_NAME_ALIASES | GLYPH_DATA
 
 
 def glyph_name_to_unicode(name: str) -> str:

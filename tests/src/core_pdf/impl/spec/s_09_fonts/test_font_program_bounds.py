@@ -49,12 +49,14 @@ class internal_FakeOpenTypeFont:
             raise IndexError(glyph_id)
         return "curve"
 
+    def getGlyphSet(self) -> dict[str, internal_CubicGlyph]:
+        return {"curve": internal_CubicGlyph()}
+
 
 def internal_opentype_curve_program() -> OpenTypeFontProgram:
     program = cast(Any, object.__new__(OpenTypeFontProgram))
     program.font = internal_FakeOpenTypeFont()
     program.glyph_count = 1
-    program.internal_glyph_set = {"curve": internal_CubicGlyph()}
     program.reverse_glyph_map = {"curve": 0}
     program.units_per_em = 2000.0
     return cast(OpenTypeFontProgram, program)

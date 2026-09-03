@@ -71,14 +71,12 @@ def test_glyph_contours_uses_one_glyph_set_and_returns_fresh_lists() -> None:
     font = object.__new__(TrueTypeFontProgram)
     fake_font = FakeFont()
     font.font = cast(Any, fake_font)
-    font.internal_glyph_set = None
-
     first = font.glyph_contours(0)
     second = font.glyph_contours(0)
 
     assert first == second
     assert first is not second
-    assert fake_font.glyph_set_calls == 1
+    assert fake_font.glyph_set_calls == 2
 
 
 def test_glyph_bbox_uses_scaled_glyf_bounds_without_decomposing_outline() -> None:

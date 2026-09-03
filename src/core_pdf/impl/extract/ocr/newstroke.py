@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from functools import cache
 from typing import Any, cast
 
 import numpy
@@ -105,7 +104,6 @@ class internal_Match:
     error: float
 
 
-@cache
 def internal_templates() -> internal_TemplateSet:
     templates: list[internal_Template] = []
     by_first_delta: dict[tuple[int, int], list[internal_Template]] = {}

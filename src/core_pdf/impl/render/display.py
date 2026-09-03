@@ -21,7 +21,6 @@ from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_display_metadata,
     pdf_number,
 )
-from core_pdf.impl.spec.s_08_graphics.shading import prepare_shading
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
@@ -99,8 +98,6 @@ class DisplayList:
                 )
             )
             return
-        if kind == "shading" and "prepared_shading" not in data:
-            data["prepared_shading"] = prepare_shading(data.get("dictionary"))
         paint_kind = PATH_PAINT_KINDS.get(kind)
         if (
             paint_kind is not None

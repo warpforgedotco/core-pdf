@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-BYTE_CACHE = [bytes([i]) for i in range(256)]
-
 
 def decode_utf16be(data: bytes) -> str:
     if not data:

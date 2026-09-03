@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from core_pdf.impl.spec.s_09_fonts.cmap_encoding import BYTE_CACHE
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     CIDRange,
     NotdefRange,
@@ -315,7 +314,7 @@ class CMapDecoder:
         ):
             start, end = self.code_space_ranges[0]
             if start == b"\x00" and end == b"\xff" and self.decode_lengths == (1,):
-                return [(BYTE_CACHE[value], value) for value in data]
+                return [(bytes((value,)), value) for value in data]
             if start == b"\x00\x00" and end == b"\xff\xff" and self.decode_lengths == (2,):
                 limit = len(data) - (len(data) & 1)
                 identity_result = [
@@ -326,7 +325,7 @@ class CMapDecoder:
                     for pos in range(0, limit, 2)
                 ]
                 if limit != len(data):
-                    identity_result.append((BYTE_CACHE[data[-1]], 0))
+                    identity_result.append((bytes((data[-1],)), 0))
                 return identity_result
         if (
             self.decode_lengths == (1,)
@@ -339,7 +338,7 @@ class CMapDecoder:
             default_to_identity = self.default_to_identity
             result: list[tuple[bytes, int]] = []
             for value in data:
-                code = BYTE_CACHE[value]
+                code = bytes((value,))
                 cid = cid_mappings.get(code)
                 if cid is None:
                     cid = notdef_mappings.get(code)
@@ -357,7 +356,7 @@ class CMapDecoder:
             for length in decode_lengths:
                 if length <= 0 or pos + length > n:
                     continue
-                chunk = BYTE_CACHE[data[pos]] if length == 1 else data[pos : pos + length]
+                chunk = bytes((data[pos],)) if length == 1 else data[pos : pos + length]
                 length_ranges = ranges.get(length)
                 if ranges and not length_ranges:
                     continue

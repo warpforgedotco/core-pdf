@@ -118,13 +118,7 @@ def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
 
 
 def internal_tessdata_path() -> str:
-    """Resolve English traineddata without relying on wheel build prefixes.
-
-    Success and failure are both memoized: ``functools.cache`` alone would not
-    store a raised error, so a machine without tessdata re-ran the full
-    resolution — directory probes plus a ``tesseract --list-langs``
-    subprocess — on every OCR attempt.
-    """
+    """Resolve English traineddata without relying on wheel build prefixes."""
     resolved_path, error_message = internal_resolve_tessdata_path()
     if resolved_path is None:
         raise RuntimeError(error_message)
