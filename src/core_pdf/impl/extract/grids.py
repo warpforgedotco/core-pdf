@@ -12,7 +12,7 @@ import numpy
 
 from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch, ObservationSource
 from core_pdf.impl.extract.ocr.types import internal_OcrTask, internal_pixel_box_to_page_box
-from core_pdf.impl.extract.table_cleanup import internal_cell_text, internal_CellTextMemo
+from core_pdf.impl.extract.table_cleanup import internal_cell_text
 from core_pdf.impl.model.geometry import SpatialIndex, bbox_union
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.render.model import RasterImage
@@ -344,8 +344,6 @@ def internal_table_from_component(
     vertical: numpy.ndarray[Any, Any],
     observations: ObservationBatch,
     observation_index: SpatialIndex[int] | None = None,
-    *,
-    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table | None:
     x_edges = internal_cluster_positions(vertical[:, 0])
     y_edges = internal_cluster_positions(horizontal[:, 2])[::-1]
@@ -415,7 +413,6 @@ def internal_table_from_component(
                     text=internal_cell_text(
                         observations,
                         cell_observations[(row, column)],
-                        cell_text_cache,
                     ),
                     bbox=bbox,
                 )

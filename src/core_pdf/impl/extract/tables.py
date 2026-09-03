@@ -28,7 +28,6 @@ from core_pdf.impl.extract.grids import (
 from core_pdf.impl.extract.table_cleanup import (
     internal_annotate_table_associations,
     internal_cell_text,
-    internal_CellTextMemo,
     internal_character_spaced_cell,
     internal_clean_table_cell_leader_runs,
     internal_collapse_character_spaced_cell,
@@ -153,8 +152,6 @@ def extract_chart_table(capture: CapturedPage, observations: ObservationBatch) -
 def internal_detect_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
-    *,
-    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> tuple[Table, ...]:
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
@@ -176,7 +173,6 @@ def internal_detect_tables(
                     *component_part,
                     observations,
                     observation_index,
-                    cell_text_cache=cell_text_cache,
                 )
                 if table is not None:
                     ruled_tables.append(table)
@@ -186,7 +182,6 @@ def internal_detect_tables(
         capture,
         observations,
         len(tables),
-        cell_text_cache=cell_text_cache,
     ):
         conflicts = [
             table
@@ -253,12 +248,7 @@ def extract_tables(
     # without another geometric pass.
     if capture.evidence.vector_text_trusted or capture.evidence.stroked_vector_text.trusted:
         return ()
-    cell_text_cache: internal_CellTextMemo = {}
-    tables = internal_detect_tables(
-        capture,
-        observations,
-        cell_text_cache=cell_text_cache,
-    )
+    tables = internal_detect_tables(capture, observations)
     chart_table = extract_chart_table(capture, observations)
     if chart_table is not None:
         tables = (*tables, chart_table)
@@ -271,7 +261,6 @@ def extract_tables(
                 replace(table, order=order) if table.order != order else table,
                 observations,
                 text_rows,
-                cell_text_cache=cell_text_cache,
             )
         )
         for order, table in enumerate(tables)
@@ -408,7 +397,6 @@ def internal_stream_table(
     columns: list[list[tuple[int, int]]],
     *,
     minimum_rows: int = 3,
-    cell_text_cache: internal_CellTextMemo | None = None,
     row_centers: list[float] | None = None,
 ) -> Table | None:
     support_set = set(support)
@@ -491,7 +479,7 @@ def internal_stream_table(
                     column = 0
             if 0 <= column < column_count and x0 <= right_edge_limit:
                 cells[column].append(index)
-        texts = [internal_cell_text(observations, cell, cell_text_cache) for cell in cells]
+        texts = [internal_cell_text(observations, cell) for cell in cells]
         if not any(texts):
             continue
         populated += sum(bool(text) for text in texts)
@@ -575,8 +563,6 @@ def internal_compact_stream_table(
     observations: ObservationBatch,
     rows: list[list[int]],
     page_width: float,
-    *,
-    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table | None:
     """Recover compact tables whose rows are interleaved with nearby prose."""
     candidates = [
@@ -609,9 +595,7 @@ def internal_compact_stream_table(
         for index in row:
             column = int(numpy.argmin(numpy.abs(anchors - observations.bbox[index, 0])))
             cell_indexes[column].append(index)
-        texts = [
-            internal_cell_text(observations, indexes, cell_text_cache) for indexes in cell_indexes
-        ]
+        texts = [internal_cell_text(observations, indexes) for indexes in cell_indexes]
         if not any(texts):
             continue
         numeric_cells += sum(
@@ -654,8 +638,6 @@ def internal_stream_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
     start_order: int,
-    *,
-    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> tuple[Table, ...]:
     horizontal = (observations.rotation % 180) == 0
     horizontal_count = int(numpy.count_nonzero(horizontal & observations.visible))
@@ -712,7 +694,6 @@ def internal_stream_tables(
                     group,
                     [columns[index] for index in component],
                     minimum_rows=minimum_rows,
-                    cell_text_cache=cell_text_cache,
                     row_centers=row_centers,
                 )
                 if table is not None:
@@ -723,7 +704,6 @@ def internal_stream_tables(
             observations,
             rows,
             float(capture.page.width),
-            cell_text_cache=cell_text_cache,
         )
         if compact is not None:
             tables.append(compact)

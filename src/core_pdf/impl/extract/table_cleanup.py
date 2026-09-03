@@ -33,19 +33,11 @@ from core_pdf.impl.text import (
 
 TABLE_MERGE_GAP = 36.0  # further increased to allow modestly wider table merges (conservative)
 
-internal_CellTextMemo = dict[tuple[int, ...], str]
-
 
 def internal_cell_text(
     observations: ObservationBatch,
     indexes: list[int],
-    cache: internal_CellTextMemo | None = None,
 ) -> str:
-    cache_key = tuple(indexes)
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
     boxes = observations.bbox[indexes]
     centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
     lefts = boxes[:, 0].tolist()
@@ -59,10 +51,7 @@ def internal_cell_text(
         part = collapse_ws(observations.text[indexes[position]])
         if part and not is_leader_run(part):
             parts.append(part)
-    result = " ".join(parts)
-    if cache is not None:
-        cache[cache_key] = result
-    return result
+    return " ".join(parts)
 
 
 def internal_clean_table_cell_leader_runs(text: str) -> str:
@@ -666,8 +655,6 @@ def internal_annotate_table_associations(
     table: Table,
     observations: ObservationBatch,
     text_rows: list[list[int]],
-    *,
-    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table:
     """Annotate spanning rows and nearby aligned text without changing cells."""
     title = table.title
@@ -700,7 +687,7 @@ def internal_annotate_table_associations(
             candidates.append((gap, tuple(row)))
     if candidates:
         _gap, title_row = min(candidates, key=lambda item: item[0])
-        text = internal_cell_text(observations, list(title_row), cell_text_cache)
+        text = internal_cell_text(observations, list(title_row))
         if text:
             title = TableAssociatedText(
                 text,
