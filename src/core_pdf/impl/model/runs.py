@@ -37,8 +37,14 @@ class TextRun:
         "has_text",
         "text_is_space",
         "text_is_upper",
-        "coords",
-        "height_value",
+        "x0",
+        "y0",
+        "x1",
+        "y1",
+        "tx",
+        "ty",
+        "font_size",
+        "space_width",
         "font_name",
         "order",
         "stream_order",
@@ -72,6 +78,14 @@ class TextRun:
     has_text: bool
     text_is_space: bool
     text_is_upper: bool
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    tx: float
+    ty: float
+    font_size: float
+    space_width: float
     font_name: str | None
     order: int
     stream_order: int
@@ -91,82 +105,24 @@ class TextRun:
     # A pending run may hold a list while merges accumulate; finalized runs
     # always carry the tuple form (see freeze_glyph_clusters).
     glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
-    coords: list[float]
-    height_value: float
 
     @property
-    def x0(self) -> float:
-        return self.coords[self.X0]
-
-    @x0.setter
-    def x0(self, v: float) -> None:
-        self.coords[self.X0] = v
-        self.internal_sync_advance_bbox()
-
-    @property
-    def y0(self) -> float:
-        return self.coords[self.Y0]
-
-    @y0.setter
-    def y0(self, v: float) -> None:
-        self.coords[self.Y0] = v
-        self.height_value = self.coords[self.Y1] - v
-        self.internal_sync_advance_bbox()
-
-    @property
-    def x1(self) -> float:
-        return self.coords[self.X1]
-
-    @x1.setter
-    def x1(self, v: float) -> None:
-        self.coords[self.X1] = v
-        self.internal_sync_advance_bbox()
-
-    @property
-    def y1(self) -> float:
-        return self.coords[self.Y1]
-
-    @y1.setter
-    def y1(self, v: float) -> None:
-        self.coords[self.Y1] = v
-        self.height_value = v - self.coords[self.Y0]
-        self.internal_sync_advance_bbox()
-
-    @property
-    def tx(self) -> float:
-        return self.coords[self.TX]
-
-    @tx.setter
-    def tx(self, v: float) -> None:
-        self.coords[self.TX] = v
-
-    @property
-    def ty(self) -> float:
-        return self.coords[self.TY]
-
-    @ty.setter
-    def ty(self, v: float) -> None:
-        self.coords[self.TY] = v
-
-    @property
-    def font_size(self) -> float:
-        return self.coords[self.FONT_SIZE]
-
-    @font_size.setter
-    def font_size(self, v: float) -> None:
-        self.coords[self.FONT_SIZE] = v
-
-    @property
-    def space_width(self) -> float:
-        return self.coords[self.SPACE_WIDTH]
-
-    @space_width.setter
-    def space_width(self, v: float) -> None:
-        self.coords[self.SPACE_WIDTH] = v
+    def coords(self) -> tuple[float, float, float, float, float, float, float, float]:
+        """Compatibility view of the former packed coordinate storage."""
+        return (
+            self.x0,
+            self.y0,
+            self.x1,
+            self.y1,
+            self.tx,
+            self.ty,
+            self.font_size,
+            self.space_width,
+        )
 
     @property
     def height(self) -> float:
-        return self.height_value
+        return self.y1 - self.y0
 
     def __init__(
         self,
@@ -198,8 +154,14 @@ class TextRun:
         glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
     ) -> None:
         self.inside_active_clip = inside_active_clip
-        self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
-        self.height_value = y1 - y0
+        self.x0 = x0
+        self.y0 = y0
+        self.x1 = x1
+        self.y1 = y1
+        self.tx = tx
+        self.ty = ty
+        self.font_size = font_size
+        self.space_width = space_width
         self.set_text(text)
         self.font_name = font_name
         self.order = order
@@ -219,10 +181,6 @@ class TextRun:
         self.confidence = confidence
         self.glyph_clusters = glyph_clusters
 
-    def internal_sync_advance_bbox(self) -> None:
-        c = self.coords
-        self.advance_bbox = (c[self.X0], c[self.Y0], c[self.X1], c[self.Y1])
-
     def union_ink_bbox(self, bbox: tuple[float, float, float, float]) -> None:
         x0, y0, x1, y1 = self.ink_bbox
         bx0, by0, bx1, by1 = bbox
@@ -237,8 +195,8 @@ class TextRun:
         self, clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
     ) -> None:
         # While a run is pending, accumulate clusters in a list so repeated
-        # merges stay linear; freeze_glyph_clusters restores the tuple form
-        # (and a fresh identity for id()-keyed caches) at finalization.
+        # merges stay linear; freeze_glyph_clusters restores the tuple form at
+        # finalization.
         if not clusters:
             return
         existing = self.glyph_clusters

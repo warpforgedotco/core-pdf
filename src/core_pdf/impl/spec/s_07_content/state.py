@@ -1674,10 +1674,7 @@ class TextState:
         return False
 
     def update_pending_run(self, new_run: TextRun) -> None:
-        nc = new_run.coords
-        if self.internal_is_clipped_away(
-            nc[TextRun.X0], nc[TextRun.Y0], nc[TextRun.X1], nc[TextRun.Y1]
-        ):
+        if self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
             return
 
         if not self.pending_run:
@@ -1685,11 +1682,10 @@ class TextState:
             return
 
         p = self.pending_run
-        pc = p.coords
         p_text = p.text
         new_text = new_run.text
-        p_font_size = pc[TextRun.FONT_SIZE]
-        p_space_width = pc[TextRun.SPACE_WIDTH]
+        p_font_size = p.font_size
+        p_space_width = p.space_width
         p_rotation = p.rotation_angle
         merge_threshold = max(p_space_width * 0.45, 2.0)
 
@@ -1697,7 +1693,7 @@ class TextState:
             p_rotation == new_run.rotation_angle
             and p.visible == new_run.visible
             and not new_run.line_break_before
-            and p_font_size == nc[TextRun.FONT_SIZE]
+            and p_font_size == new_run.font_size
             and (
                 p.font_name == new_run.font_name
                 or can_merge_cross_font_word(p_text, new_text)
@@ -1707,61 +1703,61 @@ class TextState:
         )
 
         if is_same_style and p_rotation == 90:
-            y_gap = nc[TextRun.Y0] - pc[TextRun.Y1]
+            y_gap = new_run.y0 - p.y1
             max_y_gap = max(p_space_width * 0.5, p_font_size * 0.8, 2.0)
             if abs(y_gap) > max_y_gap:
                 is_same_style = False
         elif is_same_style and p_rotation == 0:
-            if abs(pc[TextRun.Y0] - nc[TextRun.Y0]) > p_font_size * 0.5:
+            if abs(p.y0 - new_run.y0) > p_font_size * 0.5:
                 is_same_style = False
 
         merged = False
         if is_same_style:
             if p_rotation in (0, 90):
                 if p_rotation == 0:
-                    gap = nc[TextRun.X0] - pc[TextRun.X1]
+                    gap = new_run.x0 - p.x1
                     if -2.0 <= gap < merge_threshold:
                         separator = gap_separator(p_text, new_text, gap, p)
                         p.set_text(p_text + separator + new_text)
                         p.union_ink_bbox(new_run.ink_bbox)
-                        if nc[TextRun.X1] > pc[TextRun.X1]:
-                            p.x1 = nc[TextRun.X1]
+                        if new_run.x1 > p.x1:
+                            p.x1 = new_run.x1
                         merged = True
                     else:
-                        gap_rtl = pc[TextRun.X0] - nc[TextRun.X1]
+                        gap_rtl = p.x0 - new_run.x1
                         if -2.0 <= gap_rtl < merge_threshold:
                             separator = gap_separator(new_text, p_text, gap_rtl, p)
                             p.set_text(new_text + separator + p_text)
                             p.union_ink_bbox(new_run.ink_bbox)
-                            if nc[TextRun.X0] < pc[TextRun.X0]:
-                                p.x0 = nc[TextRun.X0]
+                            if new_run.x0 < p.x0:
+                                p.x0 = new_run.x0
                             merged = True
                 else:
-                    gap = nc[TextRun.Y0] - pc[TextRun.Y1]
+                    gap = new_run.y0 - p.y1
                     if -2.0 <= gap < merge_threshold:
                         separator = gap_separator(p_text, new_text, gap, p)
                         p.set_text(p_text + separator + new_text)
                         p.union_ink_bbox(new_run.ink_bbox)
-                        if nc[TextRun.Y1] > pc[TextRun.Y1]:
-                            p.y1 = nc[TextRun.Y1]
+                        if new_run.y1 > p.y1:
+                            p.y1 = new_run.y1
                         merged = True
             else:
-                h_gap_inv = pc[TextRun.X0] - nc[TextRun.X1]
+                h_gap_inv = p.x0 - new_run.x1
                 if -2.0 <= h_gap_inv < merge_threshold:
                     separator = gap_separator(p_text, new_text, h_gap_inv, p)
                     p.set_text(p_text + separator + new_text)
                     p.union_ink_bbox(new_run.ink_bbox)
-                    if nc[TextRun.X0] < pc[TextRun.X0]:
-                        p.x0 = nc[TextRun.X0]
+                    if new_run.x0 < p.x0:
+                        p.x0 = new_run.x0
                     merged = True
                 else:
-                    h_gap_inv_rtl = nc[TextRun.X0] - pc[TextRun.X1]
+                    h_gap_inv_rtl = new_run.x0 - p.x1
                     if -2.0 <= h_gap_inv_rtl < merge_threshold:
                         separator = gap_separator(new_text, p_text, h_gap_inv_rtl, p)
                         p.set_text(new_text + separator + p_text)
                         p.union_ink_bbox(new_run.ink_bbox)
-                        if nc[TextRun.X1] > pc[TextRun.X1]:
-                            p.x1 = nc[TextRun.X1]
+                        if new_run.x1 > p.x1:
+                            p.x1 = new_run.x1
                         merged = True
 
         if not merged:
@@ -1769,6 +1765,7 @@ class TextState:
             self.runs.append(p)
             self.pending_run = new_run
         else:
+            p.advance_bbox = (p.x0, p.y0, p.x1, p.y1)
             p.extend_glyph_clusters(new_run.glyph_clusters)
 
     def record_glyph_observations(

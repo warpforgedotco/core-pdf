@@ -234,26 +234,21 @@ def runs_are_left_to_right(runs: list[TextRun]) -> bool:
     if len(runs) < 2:
         return True
 
-    x0_idx = TextRun.X0
-    x1_idx = TextRun.X1
-
     previous = runs[0]
-    previous_coords = previous.coords
-    prev_x0 = previous_coords[x0_idx]
-    prev_x1 = previous_coords[x1_idx]
-    prev_height = previous.height_value
+    prev_x0 = previous.x0
+    prev_x1 = previous.x1
+    prev_height = previous.height
     prev_order = previous.order
 
     for idx in range(1, len(runs)):
         run = runs[idx]
-        coords = run.coords
-        x0 = coords[x0_idx]
+        x0 = run.x0
         if x0 < prev_x0:
             return False
         if x0 == prev_x0 and run.order < prev_order:
             return False
-        x1 = coords[x1_idx]
-        height = run.height_value
+        x1 = run.x1
+        height = run.height
         overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
         if overlap > (prev_height if prev_height < height else height) * 0.25:
             return False
@@ -278,10 +273,9 @@ def runs_are_right_to_left(runs: list[TextRun]) -> bool:
     stream_sorted = sorted(ordered, key=lambda r: (r.order, r.stream_order))
     decreases = 0
     increases = 0
-    text_run_x0 = TextRun.X0
-    prev_x0 = stream_sorted[0].coords[text_run_x0]
+    prev_x0 = stream_sorted[0].x0
     for idx in range(1, len(stream_sorted)):
-        x0 = stream_sorted[idx].coords[text_run_x0]
+        x0 = stream_sorted[idx].x0
         if x0 < prev_x0:
             decreases += 1
         elif x0 > prev_x0:
@@ -291,9 +285,6 @@ def runs_are_right_to_left(runs: list[TextRun]) -> bool:
 
 
 def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
-    x0_idx = TextRun.X0
-    x1_idx = TextRun.X1
-
     previous: TextRun | None = None
     prev_x0 = 0.0
     prev_x1 = 0.0
@@ -302,9 +293,8 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         run = runs[idx]
         if not run.has_text:
             continue
-        coords = run.coords
-        x0 = coords[x0_idx]
-        x1 = coords[x1_idx]
+        x0 = run.x0
+        x1 = run.x1
         space_width = run.space_width
         if previous is not None:
             overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
@@ -765,8 +755,8 @@ def stacked_formula_denominator(
         return False
     if denominator.rotation_angle != 0 or numerator.rotation_angle != 0:
         return False
-    denominator_height = denominator.height_value
-    numerator_height = numerator.height_value
+    denominator_height = denominator.height
+    numerator_height = numerator.height
     if denominator_height <= 0.0 or numerator_height <= 0.0:
         return False
     if numerator_height < denominator_height * 0.7 or numerator_height > denominator_height * 1.3:

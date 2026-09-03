@@ -394,7 +394,6 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
     font_size_values: list[float] = []
     line_break_values: list[bool] = []
     for i, run in enumerate(runs):
-        c = run.coords
         box_rows.append(internal_layout_bbox_for_run(run))
         conf = run.confidence
         confidence_values.append(conf if conf is not None else math.nan)
@@ -402,7 +401,7 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
         sequence_values.append(seq if seq >= 0 else i)
         visible_values.append(run.visible)
         rotation_values.append(run.rotation_angle)
-        font_size_values.append(c[6])
+        font_size_values.append(run.font_size)
         line_break_values.append(run.line_break_before)
 
     boxes = numpy.asarray(box_rows, dtype=numpy.float32)

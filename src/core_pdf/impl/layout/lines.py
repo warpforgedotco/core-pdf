@@ -69,30 +69,22 @@ class LayoutLine:
             return
 
         first_run = run_list[0]
-        first_coords = first_run.coords
-        x0 = first_coords[TextRun.X0]
-        y0 = first_coords[TextRun.Y0]
-        x1 = first_coords[TextRun.X1]
-        y1 = first_coords[TextRun.Y1]
+        x0 = first_run.x0
+        y0 = first_run.y0
+        x1 = first_run.x1
+        y1 = first_run.y1
         max_order = first_run.order
         min_order = first_run.order
         max_depth = first_run.xobject_depth
-        max_font_size = first_coords[TextRun.FONT_SIZE]
+        max_font_size = first_run.font_size
         is_all_caps_text = not first_run.has_text or first_run.text_is_upper
 
-        text_run_x0 = TextRun.X0
-        text_run_y0 = TextRun.Y0
-        text_run_x1 = TextRun.X1
-        text_run_y1 = TextRun.Y1
-        text_run_font_size = TextRun.FONT_SIZE
-
         for run in islice(run_list, 1, None):
-            coords = run.coords
-            run_x0 = coords[text_run_x0]
-            run_y0 = coords[text_run_y0]
-            run_x1 = coords[text_run_x1]
-            run_y1 = coords[text_run_y1]
-            font_size = coords[text_run_font_size]
+            run_x0 = run.x0
+            run_y0 = run.y0
+            run_x1 = run.x1
+            run_y1 = run.y1
+            font_size = run.font_size
             if run_x0 < x0:
                 x0 = run_x0
             if run_y0 < y0:

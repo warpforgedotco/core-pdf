@@ -10,7 +10,7 @@ def text_run() -> TextRun:
     return make_text_run("A", 0.0, 0.0, 10.0, 10.0, tx=0.0, ty=0.0)
 
 
-def test_text_run_geometry_issues_reflect_attributes_and_direct_coordinates() -> None:
+def test_text_run_geometry_issues_reflect_attribute_changes() -> None:
     run = text_run()
     run.confidence = 0.2
 
@@ -21,9 +21,9 @@ def test_text_run_geometry_issues_reflect_attributes_and_direct_coordinates() ->
     after_confidence_change = text_run_geometry_issues(run)
     assert not after_confidence_change
 
-    run.coords[TextRun.X1] = 0.0
-    after_direct_coordinate_change = text_run_geometry_issues(run)
-    assert "run_nonpositive_bbox" in {issue.code for issue in after_direct_coordinate_change}
+    run.x1 = 0.0
+    after_coordinate_change = text_run_geometry_issues(run)
+    assert "run_nonpositive_bbox" in {issue.code for issue in after_coordinate_change}
 
 
 def test_glyph_clusters_are_validated_against_canonical_advance_geometry() -> None:
