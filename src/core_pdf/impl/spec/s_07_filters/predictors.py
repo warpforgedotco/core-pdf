@@ -9,11 +9,9 @@ import zlib
 import imagecodecs
 import numpy
 
-from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
-TIFF_BITS_NUMPY_THRESHOLD = 1024
 # The libpng path beats the scalar row loop at every size measured down to ~20
 # bytes (2.2x at 20B, 14x at 500B, 35x at 2.7KB), so nothing is held back for
 # it. Small PNG-predicted streams -- xref streams and object-stream indexes in
@@ -26,21 +24,6 @@ PNG_CODEC_THRESHOLD = 0
 internal_PNG_COLOR_TYPES = {1: 0, 3: 2, 4: 6}
 internal_PNG_MAX_DIMENSION = 1_000_000
 internal_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-internal_TIFF_SAMPLE_LUTS = {
-    bits: numpy.asarray(
-        [
-            [
-                (value >> (shift * bits)) & ((1 << bits) - 1)
-                for shift in range(8 // bits - 1, -1, -1)
-            ]
-            for value in range(256)
-        ],
-        dtype=numpy.uint8,
-    )
-    for bits in (1, 2, 4)
-}
-for internal_table in internal_TIFF_SAMPLE_LUTS.values():
-    readonly(internal_table)
 
 
 class PredictorError(ValueError):
@@ -55,144 +38,67 @@ def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes
     bytes_per_row = colors * columns
     if bytes_per_row <= 0:
         return b""
-    n = len(data)
-    complete = (n // bytes_per_row) * bytes_per_row
+    complete = (len(data) // bytes_per_row) * bytes_per_row
     if complete == 0:
         return b""
-    rows = (
-        numpy.frombuffer(data, dtype=numpy.uint8, count=complete)
-        .copy()
-        .reshape(
-            -1,
-            columns,
-            colors,
-        )
+    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=complete).reshape(
+        -1,
+        columns,
+        colors,
     )
-    rows[:] = numpy.cumsum(rows, axis=1, dtype=numpy.uint16).astype(numpy.uint8)
-    return rows.tobytes()
+    return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
 
 
 def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
     bytes_per_row = colors * columns * 2
     if bytes_per_row <= 0:
         return b""
-    n = len(data)
-    complete = (n // bytes_per_row) * bytes_per_row
-    rows = (
-        numpy.frombuffer(data, dtype=">u2", count=complete // 2)
-        .copy()
-        .reshape(
-            -1,
-            columns,
-            colors,
-        )
+    complete = (len(data) // bytes_per_row) * bytes_per_row
+    if complete == 0:
+        return b""
+    # delta_decode preserves byte order, so the big-endian view accumulates and
+    # serializes without a pair of byte swaps around it.
+    rows = numpy.frombuffer(data, dtype=">u2", count=complete // 2).reshape(
+        -1,
+        columns,
+        colors,
     )
-    decoded = numpy.cumsum(rows, axis=1, dtype=numpy.uint32).astype(">u2", copy=False)
-    return decoded.tobytes()
+    return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
-    if len(data) >= TIFF_BITS_NUMPY_THRESHOLD:
-        return internal_tiff_predict_bits_numpy(data, columns, colors, bits)
+    """Undo TIFF prediction on sub-byte samples, byte-aligned per row.
 
-    return internal_tiff_predict_bits_scalar(data, columns, colors, bits)
-
-
-def internal_tiff_predict_bits_scalar(
-    data: bytes | memoryview, columns: int, colors: int, bits: int
-) -> bytes:
-    sample_count = colors * columns
-    sample_mask = (1 << bits) - 1
-    row_bit_length = sample_count * bits
-    row_byte_length = max(1, (row_bit_length + 7) // 8)
-    out = bytearray()
-    pos = 0
-    n = len(data)
-
-    def unpack_samples(row_bytes: bytes) -> list[int]:
-        samples: list[int] = []
-        bit_buffer = 0
-        bits_in_buffer = 0
-        for byte in row_bytes:
-            bit_buffer = (bit_buffer << 8) | byte
-            bits_in_buffer += 8
-            while bits_in_buffer >= bits and len(samples) < sample_count:
-                bits_in_buffer -= bits
-                samples.append((bit_buffer >> bits_in_buffer) & sample_mask)
-                if bits_in_buffer:
-                    bit_buffer &= (1 << bits_in_buffer) - 1
-                else:
-                    bit_buffer = 0
-        if len(samples) < sample_count:
-            samples.extend([0] * (sample_count - len(samples)))
-        return samples
-
-    def pack_samples(samples: list[int]) -> bytes:
-        packed = bytearray()
-        bit_buffer = 0
-        bits_in_buffer = 0
-        for sample in samples:
-            bit_buffer = (bit_buffer << bits) | (sample & sample_mask)
-            bits_in_buffer += bits
-            while bits_in_buffer >= 8:
-                bits_in_buffer -= 8
-                packed.append((bit_buffer >> bits_in_buffer) & 0xFF)
-                if bits_in_buffer:
-                    bit_buffer &= (1 << bits_in_buffer) - 1
-                else:
-                    bit_buffer = 0
-        if bits_in_buffer:
-            packed.append((bit_buffer << (8 - bits_in_buffer)) & 0xFF)
-        if len(packed) < row_byte_length:
-            packed.extend(b"\x00" * (row_byte_length - len(packed)))
-        return bytes(packed[:row_byte_length])
-
-    while pos < n:
-        if pos + row_byte_length > n:
-            break
-        row = bytes(data[pos : pos + row_byte_length])
-        pos += row_byte_length
-        samples = unpack_samples(row)
-        for i in range(colors, sample_count):
-            samples[i] = (samples[i] + samples[i - colors]) & sample_mask
-        out.extend(pack_samples(samples))
-    return bytes(out)
-
-
-def internal_tiff_predict_bits_numpy(
-    data: bytes | memoryview, columns: int, colors: int, bits: int
-) -> bytes:
+    imcd unpacks and repacks the MSB-first bitstream and accumulates the rows,
+    which is 5-21x the numpy lookup-table path this replaced and removes the
+    scalar bit-buffer loop it fell back to on short streams.
+    """
     sample_count = colors * columns
     row_byte_length = max(1, (sample_count * bits + 7) // 8)
     complete_rows = len(data) // row_byte_length
     if complete_rows == 0:
         return b""
-
     encoded = numpy.frombuffer(
         data,
         dtype=numpy.uint8,
         count=complete_rows * row_byte_length,
-    ).reshape(complete_rows, row_byte_length)
-    samples = internal_TIFF_SAMPLE_LUTS[bits][encoded].reshape(complete_rows, -1)[:, :sample_count]
-    decoded_samples = (
-        numpy.cumsum(
-            samples.reshape(complete_rows, columns, colors),
-            axis=1,
-            dtype=numpy.uint16,
-        )
-        & ((1 << bits) - 1)
-    ).reshape(complete_rows, -1)
-    # Pack samples arithmetically (samples-per-byte shifted and ORed) instead
-    # of expanding to one array element per bit for packbits.
+    )
+    samples = numpy.asarray(
+        imagecodecs.packints_decode(encoded, numpy.uint8, bits, runlen=sample_count)
+    ).reshape(complete_rows, columns, colors)
+    # uint8 accumulation wraps modulo 256, and 2**bits divides 256 for every
+    # width here, so masking once at the end agrees with masking every step.
+    accumulated = numpy.asarray(imagecodecs.delta_decode(samples, axis=1))
+    decoded = accumulated & numpy.uint8((1 << bits) - 1)
+    flat = decoded.reshape(complete_rows, sample_count)
+    # packints_encode packs the whole array as one bitstream, so pad each row
+    # out to a byte boundary first to keep rows byte-aligned as TIFF requires.
     samples_per_byte = 8 // bits
-    pad = (-decoded_samples.shape[1]) % samples_per_byte
-    if pad:
-        decoded_samples = numpy.pad(decoded_samples, ((0, 0), (0, pad)))
-    grouped = decoded_samples.reshape(complete_rows, -1, samples_per_byte)
-    packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint16)
-    for sample_index in range(samples_per_byte):
-        packed |= grouped[:, :, sample_index] << (bits * (samples_per_byte - 1 - sample_index))
-    return packed.astype(numpy.uint8).tobytes()
+    padding = (-sample_count) % samples_per_byte
+    if padding:
+        flat = numpy.pad(flat, ((0, 0), (0, padding)))
+    packed = imagecodecs.packints_encode(numpy.ascontiguousarray(flat), bits)
+    return numpy.asarray(packed).tobytes()
 
 
 def tiff_predict(

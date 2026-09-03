@@ -193,18 +193,30 @@ def test_tiff_predict_16_matches_scalar_reference() -> None:
 
 
 @pytest.mark.parametrize("bits", [1, 2, 4])
-def test_tiff_predict_bits_vector_path_matches_scalar_reference(bits: int) -> None:
-    columns = 257
+@pytest.mark.parametrize("columns", [1, 7, 257])
+def test_tiff_predict_bits_matches_scalar_reference(bits: int, columns: int) -> None:
     colors = 3
-    row_bytes = (columns * colors * bits + 7) // 8
-    rng = numpy.random.default_rng(bits)
+    sample_count = columns * colors
+    row_bytes = (sample_count * bits + 7) // 8
+    rng = numpy.random.default_rng(bits * 1000 + columns)
     encoded = rng.integers(0, 256, 7 * row_bytes, dtype=numpy.uint8).tobytes()
-    expected = tiff_predict_bits(encoded[:512], columns, colors, bits)
-    actual = tiff_predict_bits(encoded, columns, colors, bits)
 
-    # The short input exercises the scalar branch; the full input exercises the
-    # lookup-table/vectorized branch. Both must produce the same per-row result.
-    assert actual[: len(expected)] == expected
+    # Independent bit-at-a-time reference: unpack each row MSB-first, add each
+    # sample to the one `colors` positions earlier modulo 2**bits, repack. The
+    # columns cover byte-aligned rows and rows that leave padding bits behind.
+    mask = (1 << bits) - 1
+    expected = bytearray()
+    for row_start in range(0, len(encoded), row_bytes):
+        row = encoded[row_start : row_start + row_bytes]
+        row_bits = "".join(f"{byte:08b}" for byte in row)
+        samples = [int(row_bits[i * bits : (i + 1) * bits], 2) for i in range(sample_count)]
+        for index in range(colors, sample_count):
+            samples[index] = (samples[index] + samples[index - colors]) & mask
+        packed_bits = "".join(f"{sample:0{bits}b}" for sample in samples)
+        packed_bits += "0" * (-len(packed_bits) % 8)
+        expected.extend(int(packed_bits[i : i + 8], 2) for i in range(0, len(packed_bits), 8))
+
+    assert tiff_predict_bits(encoded, columns, colors, bits) == bytes(expected)
 
 
 def test_png_sub_predict_matches_scalar_reference() -> None:
