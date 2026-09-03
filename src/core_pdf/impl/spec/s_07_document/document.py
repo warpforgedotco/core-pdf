@@ -101,7 +101,6 @@ class PdfDocument(
         "file_handle",
         "page_dicts_cache",
         "pages_cache",
-        "oc_layers",
         "internal_cache_lock",
         "internal_page_locks",
         "xref_was_recovered",
@@ -123,7 +122,6 @@ class PdfDocument(
     file_handle: BinaryIO | None
     page_dicts_cache: list[PdfDict] | None
     pages_cache: LazyPageList[internal_PageT] | None
-    oc_layers: dict[str, bool] | None
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
     xref_was_recovered: bool
@@ -286,7 +284,6 @@ class PdfDocument(
     def _clear_document_caches(self) -> None:
         self.page_dicts_cache = None
         self.pages_cache = None
-        self.oc_layers = None
 
     # Source loading and security
 
@@ -1303,31 +1300,25 @@ class PdfDocument(
             return id(resolved)
         return None
 
-    def load_oc_layers(self) -> None:
-        with self.internal_cache_lock:
-            if self.oc_layers is None:
-                self.internal_load_oc_layers()
-
-    def internal_load_oc_layers(self) -> None:
-        self.oc_layers = {}
+    def oc_hidden_layers(self) -> frozenset[str]:
         recover = self.recovery_enabled
         try:
             catalog = self.catalog()
         except ValueError:
-            return
+            return frozenset()
         oc = self.resolver.resolve(catalog.get("OCProperties"))
         if oc is None:
-            return
+            return frozenset()
         if not isinstance(oc, dict):
             if recover:
-                return
+                return frozenset()
             raise ValueError("invalid OCProperties dictionary")
         ocgs = self.resolver.resolve(oc.get("OCGs"))
         if ocgs is None:
-            return
+            return frozenset()
         if not isinstance(ocgs, list):
             if recover:
-                return
+                return frozenset()
             raise ValueError("invalid OCProperties OCGs array")
 
         on_layers: set[tuple[int, int] | int] = set()
@@ -1384,6 +1375,7 @@ class PdfDocument(
                 if key is not None:
                     on_layers.discard(key)
 
+        hidden_layers: set[str] = set()
         for ocg_ref in ocgs:
             ocg_resolved = self.resolver.resolve(ocg_ref)
             if not isinstance(ocg_resolved, dict):
@@ -1396,9 +1388,6 @@ class PdfDocument(
                     continue
                 raise ValueError("invalid OCProperties OCG name")
             key = self.ocg_key(ocg_ref, ocg_resolved)
-            self.oc_layers[name] = key in on_layers if key is not None else False
-
-    def oc_hidden_layers(self) -> frozenset[str]:
-        if self.oc_layers is None:
-            self.load_oc_layers()
-        return frozenset(name for name, on in (self.oc_layers or {}).items() if not on)
+            if key is None or key not in on_layers:
+                hidden_layers.add(name)
+        return frozenset(hidden_layers)
