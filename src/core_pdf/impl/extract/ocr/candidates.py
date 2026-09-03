@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -16,7 +15,6 @@ from core_pdf.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP,
     HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP,
     ObservationBatch,
-    RecognitionReport,
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.observations import maximum_candidate_coverage
@@ -35,6 +33,8 @@ internal_OCR_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 @dataclass(frozen=True, slots=True)
 class internal_HiddenTextVerification:
+    """Operational result of comparing hidden text with a raster preview."""
+
     hidden_tokens: int
     preview_tokens: int
     matched_tokens: int
@@ -43,18 +43,6 @@ class internal_HiddenTextVerification:
     spatial_overlap: float
     accepted: bool
     reason: str
-
-    def as_record(self) -> dict[str, int | float | bool | str]:
-        return {
-            "hidden_tokens": self.hidden_tokens,
-            "preview_tokens": self.preview_tokens,
-            "matched_tokens": self.matched_tokens,
-            "spatially_matched_tokens": self.spatially_matched_tokens,
-            "token_overlap": self.token_overlap,
-            "spatial_overlap": self.spatial_overlap,
-            "accepted": self.accepted,
-            "reason": self.reason,
-        }
 
 
 def internal_hidden_text_verification(
@@ -297,50 +285,3 @@ def internal_augment_candidate(
         additions,
     )
     return internal_candidate(primary.mode, combined, symbols=primary.symbols), added
-
-
-def internal_candidate_timing_record(
-    candidates: tuple[internal_Candidate, ...],
-) -> dict[str, object]:
-    """Aggregate the per-candidate recognition timings shared by pass diagnostics."""
-    return {
-        "recognition_seconds": sum(candidate.recognition_seconds for candidate in candidates),
-        "setup_seconds": sum(candidate.setup_seconds for candidate in candidates),
-        "api_seconds": sum(candidate.api_seconds for candidate in candidates),
-        "iterator_seconds": sum(candidate.iterator_seconds for candidate in candidates),
-        "cleanup_seconds": sum(candidate.cleanup_seconds for candidate in candidates),
-        "candidate_seconds": sum(candidate.candidate_seconds for candidate in candidates),
-        "recognition_statuses": tuple(candidate.recognition_status for candidate in candidates),
-    }
-
-
-def internal_record_candidates(
-    candidates: tuple[tuple[str, internal_Candidate], ...],
-    selected_name: str,
-    report: RecognitionReport,
-) -> None:
-    report.candidates = tuple(
-        {
-            "name": name,
-            "mode": candidate.mode,
-            "selected": name == selected_name,
-            **candidate.metrics.as_record(),
-        }
-        for name, candidate in candidates
-    )
-    if os.environ.get("CORE_PDF_CANDIDATE_ANALYSIS", "").casefold() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        report.candidate_analysis = tuple(
-            {
-                "name": name,
-                "mode": candidate.mode,
-                "selected": name == selected_name,
-                "text": "\n".join(candidate.observations.text),
-                **candidate.metrics.as_record(),
-            }
-            for name, candidate in candidates
-        )

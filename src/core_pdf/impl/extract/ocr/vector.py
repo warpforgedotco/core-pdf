@@ -10,7 +10,6 @@ recognized characters back onto the original runs.
 from __future__ import annotations
 
 import math
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
@@ -22,7 +21,6 @@ from core_pdf.impl.extract.contracts import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
-    RecognitionReport,
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.ocr.strokes import (
@@ -163,7 +161,6 @@ def internal_stroked_vector_text_raster(
     *,
     max_pixels: int = MAX_OCR_PIXELS,
     variant: str = "seed",
-    report: RecognitionReport | None = None,
 ) -> internal_PackedStrokedTextRaster | None:
     """Pack vector words into a compact seed raster with piecewise page mapping."""
     evidence = capture.evidence.stroked_vector_text
@@ -207,7 +204,6 @@ def internal_stroked_vector_text_raster(
         scale = min(max(requested_scale, target_scale), safe_scale, 48.0)
     page = capture.page
 
-    compose_started = time.perf_counter()
     display_list = DisplayList(width=packed_width, height=packed_height)
     for cell in cells:
         tx = cell.packed_box[0] - cell.source_box[0]
@@ -264,8 +260,6 @@ def internal_stroked_vector_text_raster(
         rotate=0,
         display_list=display_list,
     )
-    compose_seconds = time.perf_counter() - compose_started
-    raster_started = time.perf_counter()
     # The Wu kernel draws one-pixel skeletons regardless of stroke width, so
     # the isolated variant must use the general renderer to honour the widened
     # strokes it just requested.
@@ -298,40 +292,15 @@ def internal_stroked_vector_text_raster(
             max_pixels=max_pixels,
             cache=False,
         )
-    raster_seconds = time.perf_counter() - raster_started
-    render_report: dict[str, object] = {
-        "compose_seconds": compose_seconds,
-        "rasterize_seconds": raster_seconds,
-        "raster_mode": "packed-stroked-vector-text",
-        "raster_kernel": "wu" if fast_path else "general",
-        "crop": (0.0, 0.0, packed_width, packed_height),
-        "raster_pixels": data.width * data.height,
-        "pixel_budget": max_pixels,
-        "include_native_text": False,
-        "image_timings": {},
-        "display_items": len(display_list.items),
-        "display_item_kinds": {"compact-stroke": len(display_list.items)},
-        "image_filters": (),
-        "packed_cells": len(cells),
-        "horizontal_padding": horizontal_padding,
-        "vertical_padding": vertical_padding,
-        "source_bbox": evidence.bbox,
-    }
     raster = internal_Raster(
         data,
         max(70, int(round(72.0 * scale))),
-        render_report,
     )
     packed = internal_PackedStrokedTextRaster(
         raster=raster,
         packed_box=(0.0, 0.0, packed_width, packed_height),
         cells=cells,
     )
-    # The isolated-glyph supplement uses the general renderer by design. Keep
-    # the pass-level timing tied to the seed atlas, matching the actual primary
-    # recognition path and preserving the Wu-kernel performance invariant.
-    if report is not None and variant == "seed":
-        report.render_timings = render_report
     return packed
 
 
@@ -340,7 +309,6 @@ def internal_full_stroked_vector_text_raster(
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
-    report: RecognitionReport | None = None,
 ) -> internal_RasterRegion | None:
     """Render the full compact-stroke layer when packed seed OCR is insufficient."""
     evidence = capture.evidence.stroked_vector_text
@@ -360,7 +328,6 @@ def internal_full_stroked_vector_text_raster(
     area = max(1.0, (crop[2] - crop[0]) * (crop[3] - crop[1]))
     safe_scale = math.sqrt(max_pixels / area) * 0.999
     scale = min(requested_scale, safe_scale)
-    compose_started = time.perf_counter()
     display_list = DisplayList(width=page_width, height=page_height)
     for index in evidence.drawing_indexes:
         drawing = capture.drawings[index]
@@ -388,8 +355,6 @@ def internal_full_stroked_vector_text_raster(
         rotate=0,
         display_list=display_list,
     )
-    compose_seconds = time.perf_counter() - compose_started
-    raster_started = time.perf_counter()
     data = rendered.rasterize(
         background=(255, 255, 255, 255),
         scale=scale,
@@ -397,28 +362,11 @@ def internal_full_stroked_vector_text_raster(
         crop=crop,
         cache=False,
     )
-    render_report: dict[str, object] = {
-        "compose_seconds": compose_seconds,
-        "rasterize_seconds": time.perf_counter() - raster_started,
-        "raster_mode": "stroked-vector-text-fallback",
-        "crop": crop,
-        "raster_pixels": data.width * data.height,
-        "pixel_budget": max_pixels,
-        "include_native_text": False,
-        "image_timings": {},
-        "display_items": len(display_list.items),
-        "display_item_kinds": {"compact-stroke": len(display_list.items)},
-        "image_filters": (),
-    }
     raster = internal_Raster(
         data,
         max(70, int(round(72.0 * scale))),
-        render_report,
     )
-    region = internal_RasterRegion(raster, crop)
-    if report is not None:
-        report.render_timings = render_report
-    return region
+    return internal_RasterRegion(raster, crop)
 
 
 def internal_remap_stroked_vector_observations(
@@ -545,12 +493,6 @@ def internal_remap_stroked_vector_candidate(
             candidate.mode,
             remapped,
             symbols=remapped_symbols,
-            api_seconds=candidate.api_seconds,
-            setup_seconds=candidate.setup_seconds,
-            recognition_seconds=candidate.recognition_seconds,
-            iterator_seconds=candidate.iterator_seconds,
-            cleanup_seconds=candidate.cleanup_seconds,
-            candidate_seconds=candidate.candidate_seconds,
             recognition_status=candidate.recognition_status,
             median_text_height=candidate.metrics.median_text_height,
         ),
@@ -717,7 +659,7 @@ def internal_decode_stroked_vector_text(
 def internal_packed_stroked_vector_decode_gate(
     decoded: StrokedTextDecode,
     cell_count: int,
-) -> tuple[bool, dict[str, int | bool]]:
+) -> bool:
     """Require enough learned geometry before skipping the full-layer OCR fallback."""
     aligned_required = min(
         STROKED_VECTOR_PACK_MIN_ALIGNED_SEEDS,
@@ -731,47 +673,30 @@ def internal_packed_stroked_vector_decode_gate(
         STROKED_VECTOR_PACK_MIN_DECODED_RUNS,
         max(8, cell_count // 3),
     )
-    accepted = bool(
+    return bool(
         decoded.aligned_seeds >= aligned_required
         and decoded.learned_signatures >= learned_required
         and len(decoded.observations) >= decoded_required
     )
-    return accepted, {
-        "accepted": accepted,
-        "cells": cell_count,
-        "aligned_seeds": decoded.aligned_seeds,
-        "aligned_required": aligned_required,
-        "learned_signatures": decoded.learned_signatures,
-        "learned_required": learned_required,
-        "decoded_runs": len(decoded.observations),
-        "decoded_required": decoded_required,
-    }
 
 
 def internal_recover_stroked_vector_text(
     capture: CapturedPage,
     ocr: ObservationBatch,
-    report: RecognitionReport | None = None,
     *,
-    cached_decode: tuple[int, StrokedTextDecode, float] | None = None,
-) -> ObservationBatch:
+    cached_decode: tuple[int, StrokedTextDecode] | None = None,
+) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
-        return ocr
-    report = report or RecognitionReport()
-    started = time.perf_counter()
+        return ocr, ()
     if cached_decode is not None and cached_decode[0] == id(ocr):
         decoded = cached_decode[1]
-        prior_decode_seconds = float(cached_decode[2])
     else:
         decoded = internal_decode_stroked_vector_text(capture, ocr)
-        prior_decode_seconds = 0.0
     ocr_index = SpatialIndex.from_boxes(ocr.bbox)
     replacements: set[int] = set()
     accepted: list[StrokedTextObservation] = []
-    additions = 0
-    corrections = 0
     for observation in decoded.observations:
         candidate_area = max(
             0.01,
@@ -788,7 +713,6 @@ def internal_recover_stroked_vector_text(
                 overlaps.append((overlap, int(hit.item)))
         if not overlaps:
             accepted.append(observation)
-            additions += 1
             continue
         best_overlap, best_index = max(overlaps)
         recognized_text = ocr.text[best_index].strip()
@@ -802,29 +726,14 @@ def internal_recover_stroked_vector_text(
         ):
             replacements.add(best_index)
             accepted.append(observation)
-            corrections += 1
-
-    report.stroked_vector_decode = {
-        "seconds": prior_decode_seconds + time.perf_counter() - started,
-        "eligible_seeds": decoded.eligible_seeds,
-        "aligned_seeds": decoded.aligned_seeds,
-        "accepted_seeds": decoded.accepted_seeds,
-        "initial_signatures": decoded.initial_signatures,
-        "learned_signatures": decoded.learned_signatures,
-        "approximate_signatures": decoded.approximate_signatures,
-        "candidate_runs": decoded.candidate_runs,
-        "decoded_candidate_runs": decoded.decoded_candidate_runs,
-        "candidate_run_coverage": decoded.candidate_run_coverage,
-        "candidate_glyph_coverage": decoded.candidate_glyph_coverage,
-        "decoded_runs": len(decoded.observations),
-        "additions": additions,
-        "corrections": corrections,
-    }
-    report.stroked_vector_alphabet = tuple(decoded.alphabet)
+    alphabet = tuple(decoded.alphabet)
     if not accepted:
-        return ocr
+        return ocr, alphabet
     retained = ocr.take(tuple(index for index in range(len(ocr)) if index not in replacements))
-    return ObservationBatch.concatenate(
-        retained,
-        internal_stroked_vector_decoded_batch(tuple(accepted)),
+    return (
+        ObservationBatch.concatenate(
+            retained,
+            internal_stroked_vector_decoded_batch(tuple(accepted)),
+        ),
+        alphabet,
     )

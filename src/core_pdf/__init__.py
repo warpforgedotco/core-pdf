@@ -43,9 +43,7 @@ if TYPE_CHECKING:
     )
     from core_pdf.impl.runtime.execution import (
         RuntimeConfig,
-        RuntimeMetrics,
         configure_runtime,
-        runtime_metrics,
         shutdown_runtime,
     )
     from core_pdf.impl.spec.s_09_fonts.fallback import (
@@ -99,10 +97,6 @@ internal_EXPORTS = {
         "core_pdf.impl.runtime.execution",
         "configure_runtime",
     ),
-    "RuntimeMetrics": (
-        "core_pdf.impl.runtime.execution",
-        "RuntimeMetrics",
-    ),
     "RuntimeConfig": (
         "core_pdf.impl.runtime.execution",
         "RuntimeConfig",
@@ -110,10 +104,6 @@ internal_EXPORTS = {
     "prewarm_runtime": (
         "core_pdf.impl.extract.ocr.tesseract",
         "prewarm_runtime",
-    ),
-    "runtime_metrics": (
-        "core_pdf.impl.runtime.execution",
-        "runtime_metrics",
     ),
     "shutdown_runtime": (
         "core_pdf.impl.runtime.execution",
@@ -160,8 +150,6 @@ __all__ = (
     "PdfRasterFontRequest",
     "configure_runtime",
     "RuntimeConfig",
-    "RuntimeMetrics",
     "prewarm_runtime",
-    "runtime_metrics",
     "shutdown_runtime",
 )

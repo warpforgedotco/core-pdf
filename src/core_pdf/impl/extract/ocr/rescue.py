@@ -88,8 +88,6 @@ def internal_observation_coverage_grid(
 class internal_RescueCoverage:
     raster_count: int = 0
     cell_count: int = 0
-    ink_cells: int = 0
-    weak_cells: int = 0
     ink: float = 0.0
     weak_ink: float = 0.0
 
@@ -101,16 +99,6 @@ class internal_RescueCoverage:
     def weak_ink_ratio(self) -> float:
         return self.weak_ink / max(1e-9, self.ink)
 
-    def as_record(self) -> dict[str, int | float]:
-        return {
-            "raster_count": self.raster_count,
-            "cell_count": self.cell_count,
-            "ink_cells": self.ink_cells,
-            "weak_cells": self.weak_cells,
-            "mean_ink": self.mean_ink,
-            "weak_ink_ratio": self.weak_ink_ratio,
-        }
-
 
 def internal_adaptive_rescue_coverage(
     source_tasks: tuple[internal_OcrTask, ...],
@@ -120,8 +108,6 @@ def internal_adaptive_rescue_coverage(
     """Measure ink not spatially explained by the primary OCR observations."""
     raster_count = 0
     cell_count = 0
-    ink_cells = 0
-    weak_cells = 0
     total_ink = 0.0
     weak_ink = 0.0
     seen: set[tuple[int, tuple[float, float, float, float], int]] = set()
@@ -139,15 +125,11 @@ def internal_adaptive_rescue_coverage(
         weak = occupied & (coverage < utility_limit)
         raster_count += 1
         cell_count += rows * columns
-        ink_cells += int(numpy.count_nonzero(occupied))
-        weak_cells += int(numpy.count_nonzero(weak))
         total_ink += float(numpy.sum(ink, dtype=numpy.float64))
         weak_ink += float(numpy.sum(ink[weak], dtype=numpy.float64))
     return internal_RescueCoverage(
         raster_count=raster_count,
         cell_count=cell_count,
-        ink_cells=ink_cells,
-        weak_cells=weak_cells,
         ink=total_ink,
         weak_ink=weak_ink,
     )
@@ -172,7 +154,7 @@ def internal_adaptive_rescue_decision(
     candidate: internal_Candidate,
     source_tasks: tuple[internal_OcrTask, ...],
     ocr_pass: OcrPass,
-) -> tuple[bool, dict[str, object]]:
+) -> bool:
     """Decide whether another raster pass has enough unresolved visual evidence."""
     metrics = candidate.metrics
     coverage_pass = replace(
@@ -187,11 +169,9 @@ def internal_adaptive_rescue_decision(
         coverage_pass,
         candidate.observations,
     )
-    reason = "unresolved-ink"
     run = True
     if internal_primary_text_is_sufficient(candidate):
         run = False
-        reason = "primary-text-already-large"
     elif coverage.mean_ink >= OCR_RESCUE_SATURATED_MEAN_INK and (
         (metrics.characters >= 1_000 and metrics.mean_confidence >= OCR_RESCUE_MIN_CONFIDENCE)
         or (
@@ -202,7 +182,6 @@ def internal_adaptive_rescue_decision(
         # A nearly solid source gives the coarse ink grid no useful localization
         # signal. Reprocessing arbitrary cells cannot target missing text.
         run = False
-        reason = "ink-map-saturated"
     elif (
         metrics.characters >= 300
         and metrics.mean_confidence >= OCR_RESCUE_MIN_CONFIDENCE
@@ -211,12 +190,4 @@ def internal_adaptive_rescue_decision(
         and (metrics.characters >= 600 or coverage.weak_ink_ratio == 0.0)
     ):
         run = False
-        reason = "primary-covers-ink"
-    return run, {
-        "run": run,
-        "reason": reason,
-        "characters": metrics.characters,
-        "mean_confidence": metrics.mean_confidence,
-        "median_text_height": metrics.median_text_height,
-        **coverage.as_record(),
-    }
+    return run

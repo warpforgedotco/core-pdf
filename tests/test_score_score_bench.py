@@ -4,16 +4,9 @@ from pathlib import Path
 from random import Random
 from runpy import run_path
 from threading import Barrier
-from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.extract.contracts import (
-    PageRoute,
-    ParseReport,
-    RecognitionReport,
-    WorkPlan,
-)
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from tests.helpers.paths import REPO_ROOT
 
@@ -125,27 +118,6 @@ def test_table_scores_tolerate_one_cell_grid_offset() -> None:
     assert content == 1.0
 
 
-def test_score_document_candidates_identifies_oracle_gap() -> None:
-    report = ParseReport(
-        plan=WorkPlan(PageRoute.OCR),
-        recognition=RecognitionReport(
-            candidate_analysis=(
-                {"name": "selected", "selected": True, "text": "alpha noise"},
-                {"name": "oracle", "selected": False, "text": "alpha beta"},
-            )
-        ),
-    )
-    page = SimpleNamespace(parse_report=report)
-    document = SimpleNamespace(pages=[page])
-
-    candidates = score_bench["score_document_candidates"](document, "alpha beta")
-
-    assert candidates[0]["content_f1"] == pytest.approx(0.5)
-    assert candidates[0]["cct"] < 1.0
-    assert candidates[1]["cct"] == 1.0
-    assert candidates[1]["wer"] == 0.0
-
-
 def test_metric_report_distinguishes_text_and_table_timings() -> None:
     score = score_bench["CaseScore"](
         stem="timing.pdf",
@@ -200,29 +172,6 @@ def test_json_scores_record_the_scoring_schema_version(tmp_path: Path) -> None:
     benchmark.internal_write_json([score_bench["NumberedCaseScore"](1, score)])
 
     assert json.loads(output_path.read_text(encoding="utf-8"))[0]["scoring_schema_version"] == "2"
-
-
-def test_collect_document_extraction_analysis_is_opt_in(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    collect = score_bench["collect_document_extraction_analysis"]
-    report = ParseReport(
-        plan=WorkPlan(PageRoute.OCR),
-        recognition=RecognitionReport(passes=({"name": "primary", "elapsed_seconds": 1.25},)),
-        metrics={"route": "ocr"},
-    )
-    page = SimpleNamespace(parse_report=report)
-    document = SimpleNamespace(pages=[page])
-
-    monkeypatch.delenv("CORE_PDF_EXTRACTION_ANALYSIS", raising=False)
-    assert collect(document) == []
-
-    monkeypatch.setenv("CORE_PDF_EXTRACTION_ANALYSIS", "1")
-    records = collect(document)
-    assert len(records) == 1
-    assert records[0]["page"] == 1
-    assert records[0]["metrics"] == {"route": "ocr"}
-    assert records[0]["recognition"]["passes"] == ({"name": "primary", "elapsed_seconds": 1.25},)
 
 
 BASE_CASE_SCORE = {
@@ -420,6 +369,10 @@ def test_cli_has_no_extraction_track_flags() -> None:
         score_bench["ScoreBench"].from_cli(["--ocr"])
     with pytest.raises(SystemExit):
         score_bench["ScoreBench"].from_cli(["--native"])
+    with pytest.raises(SystemExit):
+        score_bench["ScoreBench"].from_cli(["--candidate-analysis"])
+    with pytest.raises(SystemExit):
+        score_bench["ScoreBench"].from_cli(["--extraction-analysis"])
 
 
 def test_cli_can_disable_default_html_report() -> None:

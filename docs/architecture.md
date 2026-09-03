@@ -49,14 +49,12 @@ bytes → │ capture_page│ → plan_page ────────────
                                                   │
                                 layout_blocks_with_evidence (layout)
                                                   │
-                                  ParsedPage + ParseReport (parsed_page)
-                                                  │
                                     assemble_page → Page (extract_page)
 ```
 
 | Module | Role |
 | --- | --- |
-| `extract/contracts.py` | Shared evidence, plan, observation, result, and report records. |
+| `extract/contracts.py` | Shared evidence, plan, observation, and recognition result records. |
 | `extract/capture.py` | Runs the page program once and produces a cached `CapturedPage`. |
 | `extract/observations.py` | Chooses native extraction, OCR, or both, then fuses observations. |
 | `extract/ocr/` | Owns recognition orchestration, candidates, rasters, regions, backends, and stroked text. |

@@ -114,6 +114,8 @@ def internal_analyze_text(text: str) -> TextAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class internal_CandidateMetrics:
+    """Quality signals used to choose between extraction candidates."""
+
     characters: int
     alphanumeric_characters: int
     tokens: int
@@ -123,18 +125,6 @@ class internal_CandidateMetrics:
     utility: float
     median_text_height: float = 0.0
 
-    def as_record(self) -> dict[str, float | int]:
-        return {
-            "characters": self.characters,
-            "alphanumeric_characters": self.alphanumeric_characters,
-            "tokens": self.tokens,
-            "line_count": self.line_count,
-            "mean_confidence": self.mean_confidence,
-            "symbol_ratio": self.symbol_ratio,
-            "utility": self.utility,
-            "median_text_height": self.median_text_height,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class internal_Candidate:
@@ -142,12 +132,6 @@ class internal_Candidate:
     observations: ObservationBatch
     metrics: internal_CandidateMetrics
     symbols: ObservationBatch = field(default_factory=ObservationBatch.empty)
-    api_seconds: float = 0.0
-    setup_seconds: float = 0.0
-    recognition_seconds: float = 0.0
-    iterator_seconds: float = 0.0
-    cleanup_seconds: float = 0.0
-    candidate_seconds: float = 0.0
     recognition_status: str = "not-run"
 
 
@@ -185,12 +169,6 @@ def internal_candidate(
     observations: ObservationBatch,
     *,
     symbols: ObservationBatch | None = None,
-    api_seconds: float = 0.0,
-    setup_seconds: float = 0.0,
-    recognition_seconds: float = 0.0,
-    iterator_seconds: float = 0.0,
-    cleanup_seconds: float = 0.0,
-    candidate_seconds: float = 0.0,
     recognition_status: str = "not-run",
     median_text_height: float = 0.0,
 ) -> internal_Candidate:
@@ -231,11 +209,5 @@ def internal_candidate(
             median_text_height=median_text_height,
         ),
         symbols=symbols if symbols is not None else ObservationBatch.empty(),
-        api_seconds=api_seconds,
-        setup_seconds=setup_seconds,
-        recognition_seconds=recognition_seconds,
-        iterator_seconds=iterator_seconds,
-        cleanup_seconds=cleanup_seconds,
-        candidate_seconds=candidate_seconds,
         recognition_status=recognition_status,
     )

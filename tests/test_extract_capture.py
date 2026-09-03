@@ -259,9 +259,6 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
         plan = plan_page(capture)
         structured_text = document.extract().text
         tables = document.extract().table_view.tables
-        report = page.parse_report
-        assert report is not None
-        metrics = report.metrics
 
     assert capture.evidence.vector_complexity > 0
     assert capture.evidence.vector_text_trusted is True
@@ -275,7 +272,6 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
     assert not plan.ocr_passes
     assert "MCU ESP32 S3" in structured_text
     assert not tables
-    assert metrics["ocr_raster_pixels"] == 0
 
 
 def test_route_selects_embedded_image_supplement() -> None:

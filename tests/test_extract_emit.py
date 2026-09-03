@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
@@ -11,11 +12,9 @@ from core_pdf.impl.extract.contracts import (
     PageRoute,
     ParsedBlock,
     ParsedLine,
-    ParsedPage,
 )
-from core_pdf.impl.extract.emit import assemble_page as emit_page
-from core_pdf.impl.extract.emit import internal_line_decoration_flags
-from core_pdf.impl.output import BlockKind, Table, TableCell
+from core_pdf.impl.extract.emit import assemble_page, internal_line_decoration_flags
+from core_pdf.impl.output import BlockKind, Figure, Page, Table, TableCell
 from core_pdf.impl.records import TextWord
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from tests.helpers.extract_fakes import text_run
@@ -35,6 +34,20 @@ def block(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class PageInput:
+    page_number: int
+    width: float
+    height: float
+    rotation: int
+    route: PageRoute
+    blocks: tuple[ParsedBlock, ...]
+    tables: tuple[Table, ...] = ()
+    figures: tuple[Figure, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+    full_page_image: bool = False
+
+
 def page_of(
     *,
     route: PageRoute = PageRoute.NATIVE,
@@ -42,8 +55,8 @@ def page_of(
     width: float = 300.0,
     height: float = 400.0,
     **fields: Any,
-) -> ParsedPage:
-    return ParsedPage(
+) -> PageInput:
+    return PageInput(
         page_number=1,
         width=width,
         height=height,
@@ -58,9 +71,25 @@ def single_block_page(
     text: str,
     route: PageRoute = PageRoute.NATIVE,
     bbox: tuple[float, float, float, float] = (20.0, 120.0, 260.0, 150.0),
-) -> ParsedPage:
+) -> PageInput:
     source = "ocr" if route is PageRoute.OCR else "native"
     return page_of(route=route, blocks=(block(text, bbox, source=source),))
+
+
+def emit_page(parsed: PageInput, drawings: tuple[CapturedDrawing, ...] = ()) -> Page:
+    return assemble_page(
+        parsed.blocks,
+        page_number=parsed.page_number,
+        width=parsed.width,
+        height=parsed.height,
+        rotation=parsed.rotation,
+        route=parsed.route,
+        tables=parsed.tables,
+        figures=parsed.figures,
+        diagnostics=parsed.diagnostics,
+        full_page_image=parsed.full_page_image,
+        drawings=drawings,
+    )
 
 
 def test_emit_preserves_distinct_word_boxes_computed_by_layout() -> None:
@@ -155,7 +184,7 @@ def test_emit_attaches_caption_and_section_to_table() -> None:
 
 
 def test_emit_preserves_structured_reading_order_diagnostic() -> None:
-    parsed = ParsedPage(
+    parsed = PageInput(
         page_number=2,
         width=200.0,
         height=300.0,

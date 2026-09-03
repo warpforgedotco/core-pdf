@@ -18,7 +18,6 @@ from core_pdf.impl.render.model import RasterImage
 class internal_Raster:
     image: RasterImage
     resolution: int
-    render_report: dict[str, object] | None = None
 
     @property
     def width(self) -> int:
