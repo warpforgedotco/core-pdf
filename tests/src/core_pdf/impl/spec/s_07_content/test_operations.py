@@ -6,7 +6,6 @@ import pytest
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperands,
-    content_stream_may_show_text,
     dispatch_operations,
     iter_content_operations,
 )
@@ -22,54 +21,6 @@ def test_filter_operator_vocabulary_matches_content_operator_specs() -> None:
     expected = {name.encode("latin-1") for name in OPERATOR_SPECS} | {b"ID", b"EI"}
 
     assert expected == PDF_CONTENT_OPERATOR_BYTES
-
-
-@pytest.mark.parametrize(
-    "data",
-    [
-        b"(Tj TJ Do ' \\\" (nested Tj))",
-        b"<546a 544a 446f>",
-        b"% Tj TJ Do ' \\\"\nq Q",
-        b"/Tj /TJ /Do /' /\\\" gs",
-        b"[Tj TJ Do ' \\\"] q Q",
-        b"<< /Text Tj /XObject Do /Quote ' >> q Q",
-        b"prefixTjsuffix prefixDosuffix",
-        b"BI /F /A85 ID Tj TJ Do ' \\\"~>\nEI Q",
-    ],
-)
-def test_content_stream_may_show_text_ignores_operand_and_image_bytes(data: bytes) -> None:
-    assert not content_stream_may_show_text(data)
-
-
-@pytest.mark.parametrize(
-    "data",
-    [
-        b"(hello) Tj",
-        b"[(hello)] TJ",
-        b"/XObject Do",
-        b"() '",
-        b'0 0 () "',
-    ],
-)
-def test_content_stream_may_show_text_accepts_delimited_operators(data: bytes) -> None:
-    assert content_stream_may_show_text(data)
-
-
-def test_content_stream_may_show_text_supports_sliced_memoryview() -> None:
-    content = b"(embedded Tj) q Q"
-    data = memoryview(b"prefix" + content + b"suffix")[len(b"prefix") : -len(b"suffix")]
-
-    assert not content_stream_may_show_text(data)
-
-
-def test_content_stream_may_show_text_supports_reversed_memoryview() -> None:
-    content = b"(embedded Tj) q Q"
-
-    assert not content_stream_may_show_text(memoryview(content[::-1])[::-1])
-
-
-def test_content_stream_may_show_text_finds_operator_after_container() -> None:
-    assert content_stream_may_show_text(b"[(embedded Tj)] TJ")
 
 
 def test_content_operations_do_not_treat_vertical_tab_as_whitespace() -> None:

@@ -42,9 +42,7 @@ TEXT_CLIP_PREFIX_RE = re.compile(
     b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
     b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
 )
-TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
-CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
 
 
 def _advance_past_lexical_markers(
@@ -52,11 +50,8 @@ def _advance_past_lexical_markers(
     pos: int,
     data_len: int,
     container_depth: int,
-    container_re: re.Pattern[bytes],
 ) -> tuple[int, int, bytes, int, bool] | None:
-    while match := (container_re if container_depth else TEXT_OR_LEXICAL_MARKER_RE).search(
-        raw_bytes, pos
-    ):
+    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -97,43 +92,6 @@ def _advance_past_lexical_markers(
         )
         return marker, after, token, container_depth, delimited
     return None
-
-
-def content_stream_may_show_text(data: bytes | memoryview) -> bool:
-    data_len = len(data)
-    raw_bytes = full_source_bytes(data)
-    if raw_bytes is None:
-        raw_bytes = bytes(data)
-
-    if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
-        return False
-
-    pos = 0
-    container_depth = 0
-    inline_image_lexer: PdfLexer | None = None
-    while scan := _advance_past_lexical_markers(
-        raw_bytes, pos, data_len, container_depth, CONTAINER_LEXICAL_MARKER_RE
-    ):
-        marker, after, token, container_depth, delimited = scan
-        if not delimited:
-            pos = marker + 1
-            continue
-        if token != b"BI" and container_depth == 0:
-            return True
-        if container_depth:
-            pos = after
-            continue
-        if inline_image_lexer is None:
-            inline_image_lexer = PdfLexer(raw_bytes)
-        inline_image_lexer.pos = after
-        try:
-            parse_inline_image(inline_image_lexer)
-        except PdfParseError:
-            pos = after
-        else:
-            pos = inline_image_lexer.pos
-
-    return False
 
 
 def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
@@ -402,9 +360,7 @@ def validate_inline_images(data: bytes | memoryview) -> None:
     pos = 0
     container_depth = 0
     lexer = PdfLexer(raw_bytes)
-    while scan := _advance_past_lexical_markers(
-        raw_bytes, pos, data_len, container_depth, TEXT_OR_LEXICAL_MARKER_RE
-    ):
+    while scan := _advance_past_lexical_markers(raw_bytes, pos, data_len, container_depth):
         _marker, after, token, container_depth, delimited = scan
         if token != b"BI" or container_depth or not delimited:
             pos = after
@@ -418,7 +374,6 @@ __all__ = (
     "ContentOperand",
     "ContentOperands",
     "ContentOperation",
-    "content_stream_may_show_text",
     "dispatch_operations",
     "iter_content_operations",
     "validate_inline_images",

@@ -60,7 +60,6 @@ from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperands,
     NestedStreamRequest,
     OperationHandler,
-    content_stream_may_show_text,
     dispatch_operations,
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import build_operator_handlers
@@ -320,7 +319,6 @@ class TextState:
     color_normalization_cache: ColorNormalizationCache
     extgstate_cache: ExtGStateCache
     font_setting_cache: FontSettingCache
-    text_scan_cache: dict[StreamKey, bool]
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     decoder_memo: dict[tuple[int, str | None], FontDecoder]
     kw_cache: dict[bytes, object]
@@ -425,7 +423,6 @@ class TextState:
         "color_normalization_cache",
         "extgstate_cache",
         "font_setting_cache",
-        "text_scan_cache",
         "decoder_cache",
         "decoder_memo",
         "kw_cache",
@@ -582,7 +579,6 @@ class TextState:
         self.color_normalization_cache = {}
         self.extgstate_cache = {}
         self.font_setting_cache = {}
-        self.text_scan_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.decoder_memo = {}
         self.kw_cache = self.document.resolver.kw_cache
@@ -903,15 +899,6 @@ class TextState:
                 self.exit_stream_frame(frame)
                 continue
             try:
-                if (
-                    not self.capture_graphics
-                    and not self.capture_glyphs
-                    and not self.internal_stream_may_show_text(frame)
-                ):
-                    self.flush_run()
-                    self.exit_stream_frame(frame)
-                    continue
-
                 dispatch_operations(
                     lexer,
                     self.op_handlers.get,
@@ -1074,17 +1061,6 @@ class TextState:
             if layer and layer in self.hidden_layers:
                 return False
         return True
-
-    def internal_stream_may_show_text(self, frame: ContentStreamFrame) -> bool:
-        """Memoised text scan of an entered frame's stream, keyed by its execution key."""
-        key = frame.stream_key
-        if key is None:
-            return content_stream_may_show_text(frame.stream.data_view)
-        cached = self.text_scan_cache.get(key)
-        if cached is None:
-            cached = content_stream_may_show_text(frame.stream.data_view)
-            self.text_scan_cache[key] = cached
-        return cached
 
     def internal_records_path(self) -> bool:
         """True when path construction operators must record geometry."""
