@@ -18,10 +18,7 @@ from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_09_fonts.cid_unicode import (
-    CIDUnicodeMap,
-    resolve_cid_unicode_map,
-)
+from core_pdf.impl.spec.s_09_fonts.cid_unicode import resolve_cid_unicode_map
 from core_pdf.impl.spec.s_09_fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl.spec.s_09_fonts.cmap_encoding import BYTE_CACHE
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
@@ -364,8 +361,6 @@ class FontDecoder:
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
-    cid_unicode_map: Mapping[int, str] | CIDUnicodeMap | None
-    cid_unicode_map_resolved: bool
     cid_registry: str | None
     cid_ordering: str | None
     base_encoding: str | None
@@ -492,8 +487,6 @@ class FontDecoder:
 
         self.to_unicode = to_unicode
         self.cmap = cmap
-        self.cid_unicode_map = None
-        self.cid_unicode_map_resolved = not is_cid_font
         self.cid_registry, self.cid_ordering = self.internal_cid_system_info(font)
         self.base_encoding = base_encoding
         self.differences = differences
@@ -560,18 +553,6 @@ class FontDecoder:
         registry = cls.internal_cid_system_info_string(system_info.get("Registry"))
         ordering = cls.internal_cid_system_info_string(system_info.get("Ordering"))
         return registry, ordering
-
-    @classmethod
-    def internal_cid_unicode_map(
-        cls,
-        font: dict[str, Any],
-        *,
-        vertical: bool,
-    ) -> Mapping[int, str] | CIDUnicodeMap | None:
-        registry, ordering = cls.internal_cid_system_info(font)
-        if registry is None or ordering is None:
-            return None
-        return resolve_cid_unicode_map(registry, ordering, vertical=vertical)
 
     @property
     def fast_widths(self) -> tuple[float, ...]:
@@ -783,7 +764,13 @@ class FontDecoder:
                     dedupe_alternates(alternates, encoding_text),
                 )
 
-        cid_unicode_map = self.internal_resolved_cid_unicode_map()
+        registry = self.cid_registry
+        ordering = self.cid_ordering
+        cid_unicode_map = (
+            resolve_cid_unicode_map(registry, ordering, vertical=self.is_vertical)
+            if registry is not None and ordering is not None
+            else None
+        )
         if cid_unicode_map is not None:
             cid_text = cid_unicode_map.get(fallback_code)
             if cid_text is not None:
@@ -809,14 +796,6 @@ class FontDecoder:
         self.cff_unicode_repairs.update(repairs)
         self.glyph_cache.clear()
         return True
-
-    def internal_resolved_cid_unicode_map(self) -> Mapping[int, str] | CIDUnicodeMap | None:
-        if not self.cid_unicode_map_resolved:
-            self.cid_unicode_map = self.internal_cid_unicode_map(
-                self.font, vertical=self.is_vertical
-            )
-            self.cid_unicode_map_resolved = True
-        return self.cid_unicode_map
 
     def internal_true_type_unicode_for_gid(self, gid: int) -> str:
         match self.font_program:

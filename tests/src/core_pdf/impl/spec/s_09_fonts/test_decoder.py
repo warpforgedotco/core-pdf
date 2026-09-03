@@ -627,14 +627,14 @@ def test_cff_unicode_repair_refreshes_cid_glyphs_only_when_changed(
     assert decoder.glyph_cache[b"\x00A"] is changed
 
 
-def test_cid_collection_map_resolves_once_on_first_unmapped_code(
+def test_cid_collection_map_resolves_for_each_uncached_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, str, bool]] = []
 
     def resolve(registry: str, ordering: str, *, vertical: bool = False) -> dict[int, str]:
         calls.append((registry, ordering, vertical))
-        return {66: "fallback"}
+        return {66: "fallback", 67: "next"}
 
     monkeypatch.setattr(decoder_module, "resolve_cid_unicode_map", resolve)
     font = cid_type0_font("Identity-H")
@@ -642,8 +642,9 @@ def test_cid_collection_map_resolves_once_on_first_unmapped_code(
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"\x00B") == "fallback"
+    assert decoder.decode(b"\x00C") == "next"
     assert decoder.decode(b"\x00B") == "fallback"
-    assert calls == [("Adobe", "Japan1", False)]
+    assert calls == [("Adobe", "Japan1", False), ("Adobe", "Japan1", False)]
 
 
 def test_font_decoder_recovers_japanese_without_to_unicode() -> None:
