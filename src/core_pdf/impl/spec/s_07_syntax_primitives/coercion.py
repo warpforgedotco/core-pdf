@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import lru_cache
 from typing import overload
 
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -15,18 +14,13 @@ def is_pdf_null(value: object) -> bool:
     return value is None or type(value).__name__ == "NullObject"
 
 
-@lru_cache(maxsize=4096)
-def parse_name_bytes(value: bytes) -> str:
-    return value.decode("latin-1")
-
-
 def parse_name(value: object, default: str | None = None) -> str | None:
     if type(value) is PdfName:
         return str(value)
     if type(value) is str:
         return value
     if type(value) is bytes:
-        return parse_name_bytes(value)
+        return value.decode("latin-1")
     return default
 
 
@@ -220,6 +214,5 @@ __all__ = (
     "parse_int",
     "parse_int_strict",
     "parse_name",
-    "parse_name_bytes",
     "parse_text_string",
 )

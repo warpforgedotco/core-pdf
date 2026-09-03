@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any, TypeAlias
 
 import numpy
@@ -31,7 +30,6 @@ def finite_median(values: numpy.ndarray[Any, Any]) -> float:
     return (float(partitioned[middle - 1]) + float(partitioned[middle])) * 0.5
 
 
-@lru_cache(maxsize=256)
 def nearest_indices(output_count: int, source_count: int) -> numpy.ndarray[Any, Any]:
     """Return bounded nearest-neighbour source indexes for an output axis."""
     if output_count <= 0 or source_count <= 0:
@@ -41,7 +39,6 @@ def nearest_indices(output_count: int, source_count: int) -> numpy.ndarray[Any, 
     return readonly(result)
 
 
-@lru_cache(maxsize=256)
 def unit_sample_positions(output_count: int) -> numpy.ndarray[Any, Any]:
     """Return normalized pixel positions used for sampled-mask interpolation."""
     if output_count <= 0:
@@ -68,7 +65,6 @@ def resample_nearest(
     return numpy.ascontiguousarray(rows.take(x_indexes, axis=1))
 
 
-@lru_cache(maxsize=256)
 def internal_box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]:
     """Return per-output bin start offsets and sample counts for one axis."""
     edges = numpy.arange(output_count + 1, dtype=numpy.intp) * source_count // output_count
@@ -128,7 +124,6 @@ def resample_box(
     return numpy.ascontiguousarray(numpy.rint(reduced)).astype(samples.dtype, copy=False)
 
 
-@lru_cache(maxsize=256)
 def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, Any, Any]:
     """Return lower/upper source indexes and blend weights for one axis."""
     if source_count == 1:
