@@ -30,6 +30,28 @@ def parse_name(value: object, default: str | None = None) -> str | None:
     return default
 
 
+def internal_scalar_text(value: object) -> str | None:
+    """The text of a scalar that is not already a number, or None if it is not one.
+
+    A number reaches this layer as bytes from the lexer, or as a memoryview or
+    bytearray slice of the source buffer, so all three have to end up as str
+    before int()/float() sees them. bool is rejected rather than converted:
+    True would otherwise parse as 1 and silently stand in for a number.
+    """
+    if type(value) is bool:
+        return None
+    if type(value) is memoryview:
+        value = value.tobytes()
+    if type(value) is bytearray:
+        value = bytes(value)
+    if type(value) is bytes:
+        try:
+            value = value.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+    return value if type(value) is str else None
+
+
 @overload
 def parse_int(value: object, default: None = None) -> int | None: ...
 
@@ -41,21 +63,11 @@ def parse_int(value: object, default: int) -> int: ...
 def parse_int(value: object, default: int | None = None) -> int | None:
     if type(value) is int:
         return value
-    if type(value) is bool:
-        return default
-    if type(value) is memoryview:
-        value = value.tobytes()
-    if type(value) is bytearray:
-        value = bytes(value)
-    if type(value) is bytes:
-        try:
-            value = value.decode("ascii")
-        except UnicodeDecodeError:
-            return default
-    if type(value) is not str:
+    text = internal_scalar_text(value)
+    if text is None:
         return default
     try:
-        return int(value)
+        return int(text)
     except (ValueError, OverflowError):
         return default
 
@@ -83,21 +95,11 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
             return float(value)
         except OverflowError:
             return default
-    if type(value) is bool:
-        return default
-    if type(value) is memoryview:
-        value = value.tobytes()
-    if type(value) is bytearray:
-        value = bytes(value)
-    if type(value) is bytes:
-        try:
-            value = value.decode("ascii")
-        except UnicodeDecodeError:
-            return default
-    if type(value) is not str:
+    text = internal_scalar_text(value)
+    if text is None:
         return default
     try:
-        return float(value)
+        return float(text)
     except (ValueError, OverflowError):
         return default
 
