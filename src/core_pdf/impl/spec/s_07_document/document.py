@@ -98,7 +98,6 @@ class PdfDocument(
         "page_dicts_cache",
         "pages_cache",
         "page_index_cache",
-        "named_destinations_cache",
         "oc_layers",
         "internal_cache_lock",
         "internal_page_locks",
@@ -122,7 +121,6 @@ class PdfDocument(
     page_dicts_cache: list[PdfDict] | None
     pages_cache: LazyPageList[internal_PageT] | None
     page_index_cache: dict[int, int] | None
-    named_destinations_cache: dict[str, RawNamedDestination] | None
     oc_layers: dict[str, bool] | None
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
@@ -287,7 +285,6 @@ class PdfDocument(
         self.page_dicts_cache = None
         self.pages_cache = None
         self.page_index_cache = None
-        self.named_destinations_cache = None
         self.oc_layers = None
 
     # Source loading and security
@@ -898,9 +895,7 @@ class PdfDocument(
     def named_destinations(
         self,
     ) -> dict[str, RawNamedDestination]:
-        with self.internal_cache_lock:
-            self.populate_named_destinations()
-            return dict(self.named_destinations_cache or {})
+        return self.build_named_destinations()
 
     def resolve_named_destination(
         self, name: str, seen: set[str] | None = None
@@ -910,9 +905,7 @@ class PdfDocument(
         if name in seen:
             return None
         seen.add(name)
-        with self.internal_cache_lock:
-            self.populate_named_destinations()
-            return (self.named_destinations_cache or {}).get(name)
+        return self.build_named_destinations().get(name)
 
     def destination_from_list(self, resolved_list: PdfArray) -> RawNamedDestination:
         if not resolved_list:
@@ -998,53 +991,44 @@ class PdfDocument(
                 return nested
         raise ValueError("invalid destination")
 
-    def populate_named_destinations(self) -> None:
-        with self.internal_cache_lock:
-            if self.named_destinations_cache is not None:
-                return
-            targets: dict[str, object] = {}
-            dests = self.resolver.resolve(self.catalog().get("Dests"))
-            if isinstance(dests, dict):
-                for name, val in dests.items():
-                    resolved_name = self.resolver.resolve_name(name)
-                    if resolved_name is None:
-                        raise ValueError("invalid named destination key")
-                    targets[resolved_name] = self.resolver.resolve(val)
-            names = self.resolver.resolve(self.catalog().get("Names"))
-            if isinstance(names, dict):
-                dests_tree = self.resolver.resolve(names.get("Dests"))
-                if isinstance(dests_tree, dict):
-                    for name, value in iter_name_tree_items(
-                        dests_tree,
-                        self.resolver.resolve,
-                        self.resolver.resolve_str,
-                        recover=self.recovery_enabled,
-                    ):
-                        targets[name] = value
+    def build_named_destinations(self) -> dict[str, RawNamedDestination]:
+        targets: dict[str, object] = {}
+        dests = self.resolver.resolve(self.catalog().get("Dests"))
+        if isinstance(dests, dict):
+            for name, val in dests.items():
+                resolved_name = self.resolver.resolve_name(name)
+                if resolved_name is None:
+                    raise ValueError("invalid named destination key")
+                targets[resolved_name] = self.resolver.resolve(val)
+        names = self.resolver.resolve(self.catalog().get("Names"))
+        if isinstance(names, dict):
+            dests_tree = self.resolver.resolve(names.get("Dests"))
+            if isinstance(dests_tree, dict):
+                for name, value in iter_name_tree_items(
+                    dests_tree,
+                    self.resolver.resolve,
+                    self.resolver.resolve_str,
+                    recover=self.recovery_enabled,
+                ):
+                    targets[name] = value
 
-            normalized: dict[str, RawNamedDestination] = {}
-            resolving: set[str] = set()
-
-            for name in targets:
-                try:
-                    self.normalize_destination_value(
-                        name,
-                        targets=targets,
-                        normalized=normalized,
-                        resolving=resolving,
-                    )
-                except (PdfParseError, ValueError):
-                    # The entries of a name tree are independent, so one that
-                    # points at a page the document no longer contains says
-                    # nothing about the rest. Record it as unresolved and carry
-                    # on: 93 dangling destinations in the PDF 1.7 reference
-                    # otherwise took all 70,306 sound ones, and the entire
-                    # outline tree, down with them.
-                    normalized[name] = RawNamedDestination(
-                        page_index=None, type=None, args=[], raw=name
-                    )
-
-            object.__setattr__(self, "named_destinations_cache", normalized)
+        normalized: dict[str, RawNamedDestination] = {}
+        resolving: set[str] = set()
+        for name in targets:
+            try:
+                self.normalize_destination_value(
+                    name,
+                    targets=targets,
+                    normalized=normalized,
+                    resolving=resolving,
+                )
+            except (PdfParseError, ValueError):
+                # Entries in a name tree are independent. Keep a damaged or
+                # dangling destination unresolved without discarding the rest.
+                normalized[name] = RawNamedDestination(
+                    page_index=None, type=None, args=[], raw=name
+                )
+        return normalized
 
     # Forms
 
