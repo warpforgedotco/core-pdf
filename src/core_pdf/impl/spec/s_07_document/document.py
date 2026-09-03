@@ -5,11 +5,10 @@ from __future__ import annotations
 
 import contextlib
 import mmap
-import threading
 from collections.abc import Callable, Iterator, Sequence
 from os import PathLike
 from types import TracebackType
-from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Self, TypeVar, cast
 
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
@@ -23,10 +22,6 @@ from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
     resolve_page_tree_node_type,
-)
-from core_pdf.impl.spec.s_07_document.document_pages import (
-    LazyPageList,
-    PageListItem,
 )
 from core_pdf.impl.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.spec.s_07_document.fields import (
@@ -76,7 +71,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
-internal_PageT = TypeVar("internal_PageT", bound=PageListItem)
+internal_PageT = TypeVar("internal_PageT")
 
 
 def internal_unresolved_destination(name: str) -> RawNamedDestination:
@@ -99,10 +94,6 @@ class PdfDocument(
         "decipher",
         "resolver",
         "file_handle",
-        "page_dicts_cache",
-        "pages_cache",
-        "internal_cache_lock",
-        "internal_page_locks",
         "xref_was_recovered",
         "xref_recovery_reason",
         "recovery_scan_all_revisions",
@@ -120,10 +111,6 @@ class PdfDocument(
     decipher: Decipher | None
     resolver: ObjectResolver
     file_handle: BinaryIO | None
-    page_dicts_cache: list[PdfDict] | None
-    pages_cache: LazyPageList[internal_PageT] | None
-    internal_cache_lock: threading.RLock
-    internal_page_locks: dict[int, threading.RLock]
     xref_was_recovered: bool
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
@@ -142,8 +129,6 @@ class PdfDocument(
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_closed = False
-        self.internal_cache_lock = threading.RLock()
-        self.internal_page_locks = {}
         self.source = source
         self.password = password
         self.file_handle = None
@@ -157,8 +142,6 @@ class PdfDocument(
         self.legacy_pdfminer_text_operators = legacy_pdfminer_text_operators
         self.raster_font_provider = raster_font_provider
         self.page_tree_was_recovered = False
-        self._clear_document_caches()
-
         try:
             self.raw_data = self.load_data(source)
             self.scan_xref()
@@ -210,10 +193,6 @@ class PdfDocument(
             return
         self.internal_closed = True
 
-        self._clear_document_caches()
-        with self.internal_cache_lock:
-            self.internal_page_locks.clear()
-
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
             resolver.close()
@@ -248,10 +227,6 @@ class PdfDocument(
             recover=self.recovery_enabled,
         )
 
-    def page_lock(self, page_number: int) -> threading.RLock:
-        with self.internal_cache_lock:
-            return self.internal_page_locks.setdefault(page_number, threading.RLock())
-
     def internal_catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
         """A catalog entry that must be a dictionary when it is present at all.
 
@@ -280,10 +255,6 @@ class PdfDocument(
     def recovery_enabled(self) -> bool:
         """Whether the document was reconstructed and so needs lenient traversal."""
         return self.xref_was_recovered or self.page_tree_was_recovered
-
-    def _clear_document_caches(self) -> None:
-        self.page_dicts_cache = None
-        self.pages_cache = None
 
     # Source loading and security
 
@@ -567,22 +538,12 @@ class PdfDocument(
         return value
 
     def iter_page_dicts(self) -> Iterator[PdfDict]:
-        with self.internal_cache_lock:
-            if self.page_dicts_cache is not None:
-                yield from self.page_dicts_cache
-                return
-
-            page_dicts: list[PdfDict] = []
-            for page_dict in self.iter_page_dicts_stream():
-                page_dicts.append(page_dict)
-                yield page_dict
-            self.page_dicts_cache = page_dicts
+        yield from self.iter_page_dicts_stream()
 
     def internal_recovered_page_dicts(self) -> list[PdfDict]:
         discovered = list(self.discover_page_dicts())
         if discovered:
             self.page_tree_was_recovered = True
-            self.page_dicts_cache = discovered
         return discovered
 
     def iter_page_dicts_stream(self) -> Iterator[PdfDict]:
@@ -662,8 +623,6 @@ class PdfDocument(
             return
 
     def page_count(self) -> int:
-        if self.page_dicts_cache is not None:
-            return len(self.page_dicts_cache)
         if self.page_tree_was_recovered:
             return len(self.build_page_dicts())
         try:
@@ -685,13 +644,17 @@ class PdfDocument(
         return list(self.iter_page_dicts_stream())
 
     @property
-    def pages(self) -> LazyPageList[internal_PageT]:
-        with self.internal_cache_lock:
-            pages = self.pages_cache
-            if pages is None:
-                pages = LazyPageList(self)
-                self.pages_cache = pages
-            return pages
+    def pages(self) -> tuple[internal_PageT, ...]:
+        page_class = self.page_class
+        if page_class is None:
+            from core_pdf.impl.spec.s_07_document.page import PdfPage
+
+            page_class = PdfPage
+        factory = cast(Callable[[Any, PdfDict, int], internal_PageT], page_class)
+        return tuple(
+            factory(self, page_dict, page_number)
+            for page_number, page_dict in enumerate(self.iter_page_dicts(), 1)
+        )
 
     @property
     def page_labels(self) -> list[str] | None:
@@ -750,27 +713,23 @@ class PdfDocument(
             return page_obj.page_number - 1
         if not isinstance(page_obj, dict):
             return None
-        with self.internal_cache_lock:
-            page_dicts = self.page_dicts_cache
-            if page_dicts is None:
-                page_dicts = self.build_page_dicts()
-                self.page_dicts_cache = page_dicts
+        page_dicts = self.build_page_dicts()
+        for index, candidate in enumerate(page_dicts):
+            if candidate is page_obj:
+                return index
+        page_struct_parents = page_obj.get("StructParents")
+        if page_struct_parents is not None:
             for index, cached_page in enumerate(page_dicts):
-                if cached_page is page_obj:
+                if cached_page.get("StructParents") == page_struct_parents:
                     return index
-            page_struct_parents = page_obj.get("StructParents")
-            if page_struct_parents is not None:
-                for index, cached_page in enumerate(page_dicts):
-                    if cached_page.get("StructParents") == page_struct_parents:
-                        return index
-            for index, cached_page in enumerate(page_dicts):
-                if cached_page == page_obj:
-                    return index
-            signature = self.recovered_page_signature(cast(PdfDict, page_obj))
-            for index, cached_page in enumerate(page_dicts):
-                if self.recovered_page_signature(cached_page) == signature:
-                    return index
-            return None
+        for index, candidate in enumerate(page_dicts):
+            if candidate == page_obj:
+                return index
+        signature = self.recovered_page_signature(cast(PdfDict, page_obj))
+        for index, candidate in enumerate(page_dicts):
+            if self.recovered_page_signature(candidate) == signature:
+                return index
+        return None
 
     def selected_page_indexes(self, pages: PageSelection | None = None) -> list[int]:
         return resolve_page_selection(pages, len(self.pages))

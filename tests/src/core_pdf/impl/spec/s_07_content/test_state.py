@@ -1,4 +1,3 @@
-import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -21,7 +20,6 @@ def internal_consume(content: bytes) -> TextState:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            internal_cache_lock=threading.RLock(),
             legacy_pdfminer_text_operators=False,
         ),
     )

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import threading
 from typing import TypeAlias, cast
 
 from core_pdf.impl.spec.s_07_filters import decode_spec as stream_decode_spec
@@ -14,20 +13,17 @@ __all__ = ("PdfStream",)
 
 
 class PdfStream:
-    """PDF stream object: dictionary plus raw and lazily decoded bytes."""
+    """PDF stream object: dictionary plus source bytes."""
 
     __slots__ = (
         "dictionary",
         "raw_data",
         "spec",
-        "decoded_data",
-        "internal_lock",
     )
 
     dictionary: PdfStreamDictionary
     raw_data: bytes | memoryview
     spec: PdfStreamDecodeSpec
-    decoded_data: bytes | None
 
     def __init__(
         self,
@@ -45,10 +41,8 @@ class PdfStream:
         if decoded_data is not None and not isinstance(decoded_data, bytes):
             raise ValueError("invalid stream data")
         self.dictionary = cast(PdfStreamDictionary, dictionary) if dictionary is not None else {}
-        self.raw_data = raw_data
-        self.spec = cast(PdfStreamDecodeSpec, spec)
-        self.decoded_data = decoded_data
-        self.internal_lock = threading.RLock()
+        self.raw_data = decoded_data if decoded_data is not None else raw_data
+        self.spec = None if decoded_data is not None else cast(PdfStreamDecodeSpec, spec)
 
     def replace(self, **kwargs: object) -> "PdfStream":
         dictionary = kwargs.get("dictionary", self.dictionary)
@@ -59,28 +53,18 @@ class PdfStream:
             dictionary=cast(PdfStreamDictionary, dictionary),
             raw_data=cast(bytes | memoryview, kwargs.get("raw_data", self.raw_data)),
             spec=cast(PdfStreamDecodeSpec, spec),
-            decoded_data=cast(bytes | None, kwargs.get("decoded_data", self.decoded_data)),
+            decoded_data=cast(bytes | None, kwargs.get("decoded_data")),
         )
 
     @property
     def data(self) -> bytes:
-        decoded_data = self.decoded_data
-        if decoded_data is None:
-            with self.internal_lock:
-                decoded_data = self.decoded_data
-                if decoded_data is None:
-                    from core_pdf.impl.spec.s_07_filters import (
-                        pipeline as stream_pipeline,
-                    )
+        from core_pdf.impl.spec.s_07_filters import pipeline as stream_pipeline
 
-                    spec = self.spec
-                    if isinstance(spec, dict):
-                        spec = stream_decode_spec.normalize_stream_decode_spec(spec)
-                        self.spec = spec
-                    decoded_data = stream_pipeline.decode_stream_data(
-                        self.raw_data,
-                        spec,
-                        parent_dictionary=self.dictionary,
-                    )
-                    self.decoded_data = decoded_data
-        return decoded_data
+        spec = self.spec
+        if isinstance(spec, dict):
+            spec = stream_decode_spec.normalize_stream_decode_spec(spec)
+        return stream_pipeline.decode_stream_data(
+            self.raw_data,
+            spec,
+            parent_dictionary=self.dictionary,
+        )

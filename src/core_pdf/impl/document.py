@@ -83,9 +83,7 @@ class PdfPage(SpecPdfPage):
 
     def get_text_lines(self) -> list[LayoutLine]:
         with self.internal_page_lock:
-            if self.text_lines is None:
-                self.text_lines = [LayoutLine([run]) for run in self.chars if run.text]
-            return self.text_lines
+            return [LayoutLine([run]) for run in self.chars if run.text]
 
     def extract_geometry_issues(self) -> tuple[object, ...]:
         with self.internal_page_lock:

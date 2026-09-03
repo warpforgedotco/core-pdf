@@ -3,16 +3,13 @@
 
 from __future__ import annotations
 
+import threading
 from collections import deque
 from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import rotate_page_runs
-from core_pdf.impl.primitives import (
-    MISSING,
-    MissingObject,
-    PdfReference,
-)
+from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
@@ -48,7 +45,6 @@ PAGE_INHERITED_KEYS = (
 
 
 if TYPE_CHECKING:
-    from core_pdf.impl.layout.lines import LayoutLine
     from core_pdf.impl.model.runs import TextRun
     from core_pdf.impl.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.spec.s_07_document.records import RawFormField
@@ -59,9 +55,6 @@ class PdfPage:
     page_dict: PdfDict
     page_number: int
     contents: CachedPdfObject | None
-    page_program_cache: PageProgram | None
-    text_lines: list[LayoutLine] | None
-    links: list[RawLink] | MissingObject
 
     def __init__(
         self,
@@ -72,11 +65,8 @@ class PdfPage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        self.internal_page_lock = document.page_lock(page_number)
+        self.internal_page_lock = threading.RLock()
         self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
-        self.page_program_cache = None
-        self.links = MISSING
-        self.text_lines = None
 
     @property
     def inherited_values(self) -> InheritedValueMap:
@@ -158,12 +148,8 @@ class PdfPage:
         return results
 
     def get_links(self) -> list[RawLink]:
-        if self.links is not MISSING:
-            return cast(list[RawLink], self.links)
-
         annots = self._annotation_dicts(strict=False)
         if not annots:
-            self.links = []
             return []
 
         resolver = self.document.resolver
@@ -203,7 +189,6 @@ class PdfPage:
                 )
             )
 
-        self.links = records
         return records
 
     def get_fields(self) -> list[RawFormField]:
@@ -286,22 +271,16 @@ class PdfPage:
                 raise
 
     def get_page_program(self) -> PageProgram:
-        """Interpret the page once and return its canonical program."""
-        with self.internal_page_lock:
-            program = self.page_program_cache
-            if program is not None:
-                return program
-            state = TextState(
-                self.document,
-                self.page_dict,
-                hidden_layers=self.document.oc_hidden_layers(),
-                page_clip=self.effective_page_clip(),
-            )
-            self.consume_contents(state)
-            consume_annotation_appearances(self, state)
-            program = PageProgram.from_state(state)
-            self.page_program_cache = program
-            return program
+        """Interpret the page and return its immutable program."""
+        state = TextState(
+            self.document,
+            self.page_dict,
+            hidden_layers=self.document.oc_hidden_layers(),
+            page_clip=self.effective_page_clip(),
+        )
+        self.consume_contents(state)
+        consume_annotation_appearances(self, state)
+        return PageProgram.from_state(state)
 
     def collect_inherited_values(self) -> InheritedValueMap:
         return collect_inherited_values(

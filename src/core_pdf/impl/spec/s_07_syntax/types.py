@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, TypeAlias
 
-from core_pdf.impl.primitives import MissingObject, PdfName, PdfReference, PdfString
+from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 PdfNull: TypeAlias = None
@@ -36,9 +36,7 @@ CachedPdfObject: TypeAlias = (
 )
 
 ObjectCache: TypeAlias = dict[int, CachedPdfObject]
-DeepObjectCache: TypeAlias = dict[int, tuple[object, CachedPdfObject]]
 ResolvedObjectCache: TypeAlias = dict[tuple[int, int], CachedPdfObject]
-GenerationZeroObjectCache: TypeAlias = list[CachedPdfObject | MissingObject]
 InheritedValueMap: TypeAlias = dict[str, CachedPdfObject]
 
 
@@ -71,8 +69,6 @@ class PdfValueResolver(Protocol):
 __all__ = (
     "CachedPdfObject",
     "Decipher",
-    "DeepObjectCache",
-    "GenerationZeroObjectCache",
     "InheritedValueMap",
     "ObjectCache",
     "PdfArray",

@@ -39,35 +39,6 @@ def test_finds_header_from_sliced_memoryview_without_full_source_buffer() -> Non
     assert internal_find_indirect_object_header(data, 0, len(data)) == len(b"prefix\n")
 
 
-def test_sparse_high_object_numbers_use_dictionary_caches() -> None:
-    with closing(
-        ObjectResolver(
-            b"",
-            {key_for(999_999): PdfXRefEntry(offset=0)},
-            {},
-        )
-    ) as resolver:
-        assert resolver.objects_gen0 is None
-        assert resolver.xref_gen0 is None
-
-
-def test_dense_generation_zero_xref_uses_array_caches() -> None:
-    xref = {key_for(object_number): PdfXRefEntry(offset=0) for object_number in range(5_000)}
-    with closing(ObjectResolver(b"", xref, {})) as resolver:
-        assert resolver.objects_gen0 is not None
-        assert resolver.xref_gen0 is not None
-        assert len(resolver.objects_gen0) == 5_000
-
-
-def test_deep_cache_verifies_source_identity() -> None:
-    with closing(ObjectResolver(b"", {}, {})) as resolver:
-        source: list[object] = []
-        unrelated: list[object] = []
-        resolver.deep_cache[id(source)] = (unrelated, ["stale"])
-        assert resolver.deep_resolve(source) is source
-        assert resolver.deep_cache[id(source)] == (source, source)
-
-
 def test_deep_resolve_terminates_on_a_cyclic_reference_chain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

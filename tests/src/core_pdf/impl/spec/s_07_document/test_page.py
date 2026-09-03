@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import threading
 from typing import Any, cast
 
 from core_pdf.impl.document import PdfDocument
@@ -17,16 +16,10 @@ SAMPLE_PDF = SCORE_BENCH / "g-325a.pdf"
 
 class FakeDocument:
     def __init__(self, fields: list[RawFormField]) -> None:
-        self.internal_cache_lock = threading.RLock()
         self.recovery_enabled = False
-        self.internal_page_locks: dict[int, threading.RLock] = {}
         self.resolver = IdentityResolver()
         self.internal_fields = fields
         self.pages: list[Any] = []
-
-    def page_lock(self, page_number: int) -> threading.RLock:
-        with self.internal_cache_lock:
-            return self.internal_page_locks.setdefault(page_number, threading.RLock())
 
     def fields(self) -> list[RawFormField]:
         return self.internal_fields
