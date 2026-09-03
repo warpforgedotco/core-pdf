@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import typing
-from functools import lru_cache
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -69,7 +68,6 @@ from core_pdf.impl.spec.s_07_content.stream_state import (
     StreamState,
 )
 from core_pdf.impl.spec.s_07_content.text_helpers import (
-    cached_encode_latin1,
     can_merge_cross_font_word,
     gap_separator,
     is_garbage_text,
@@ -146,7 +144,6 @@ class internal_GraphicsStateSnapshot(typing.NamedTuple):
 MATRIX_TOLERANCE = 0.1
 
 
-@lru_cache(maxsize=128)
 def detect_rotation_from_linear(
     A: float, B: float, C: float, D: float, tolerance: float = MATRIX_TOLERANCE
 ) -> int:
@@ -184,44 +181,6 @@ def detect_rotation_from_linear(
     ):
         return 270
     return 0
-
-
-def internal_quad_bounds(
-    c0_x: float,
-    c0_y: float,
-    c1_x: float,
-    c1_y: float,
-    c2_x: float,
-    c2_y: float,
-    c3_x: float,
-    c3_y: float,
-) -> tuple[float, float, float, float]:
-    """Axis-aligned bounds of a text quad's four transformed corners.
-
-    Written as comparison chains rather than min()/max() so the hot text path
-    pays no builtin lookup per corner.
-    """
-    x0 = c0_x if c0_x < c1_x else c1_x
-    if c2_x < x0:
-        x0 = c2_x
-    if c3_x < x0:
-        x0 = c3_x
-    y0 = c0_y if c0_y < c1_y else c1_y
-    if c2_y < y0:
-        y0 = c2_y
-    if c3_y < y0:
-        y0 = c3_y
-    x1 = c0_x if c0_x > c1_x else c1_x
-    if c2_x > x1:
-        x1 = c2_x
-    if c3_x > x1:
-        x1 = c3_x
-    y1 = c0_y if c0_y > c1_y else c1_y
-    if c2_y > y1:
-        y1 = c2_y
-    if c3_y > y1:
-        y1 = c3_y
-    return x0, y0, x1, y1
 
 
 class TextDocument(typing.Protocol):
@@ -403,8 +362,6 @@ class TextState:
         "combined_B",
         "combined_C",
         "combined_D",
-        "cached_rotation",
-        "is_garbage",
         "inline_images",
     )
 
@@ -548,9 +505,6 @@ class TextState:
         self.combined_B = 0.0
         self.combined_C = 0.0
         self.combined_D = 1.0
-        self.cached_rotation = 0
-
-        self.is_garbage = is_garbage_text
         self.inline_images: list[CapturedInlineImage] = []
 
     def append_text(
@@ -611,26 +565,11 @@ class TextState:
         self.lm_a, self.lm_b, self.lm_c, self.lm_d, self.lm_e, self.lm_f = val
 
     def update_combined(self) -> None:
-        ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
-        ca, cb, cc, cd = self.ca, self.cb, self.cc, self.cd
-
-        if ta == 1.0 and tb == 0.0 and tc == 0.0 and td == 1.0:
-            A, B, C, D = ca, cb, cc, cd
-        else:
-            A = ta * ca + tb * cc
-            B = ta * cb + tb * cd
-            C = tc * ca + td * cc
-            D = tc * cb + td * cd
-
-        self.combined_A = A
-        self.combined_B = B
-        self.combined_C = C
-        self.combined_D = D
-
-        if A == 1.0 and B == 0.0 and C == 0.0 and D == 1.0:
-            self.cached_rotation = 0
-        else:
-            self.cached_rotation = detect_rotation_from_linear(A, B, C, D)
+        combined = self.text_matrix.multiply(self.ctm)
+        self.combined_A = combined.a
+        self.combined_B = combined.b
+        self.combined_C = combined.c
+        self.combined_D = combined.d
 
     def append_cubic_curve(
         self,
@@ -937,14 +876,14 @@ class TextState:
             needs_decode = True
             text = None
         elif type(operand) is str:
-            data = cached_encode_latin1(operand)
+            data = operand.encode("latin-1", "replace")
             needs_decode = False
             text = operand
         else:
             text = self.document.resolver.resolve_str(operand)
             if text is None:
                 return "", b"", None
-            data = cached_encode_latin1(text)
+            data = text.encode("latin-1", "replace")
             needs_decode = False
 
         glyphs = None
@@ -964,7 +903,7 @@ class TextState:
         if not text:
             return False
         first_code = ord(text[0])
-        if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and self.is_garbage(text):
+        if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
             return False
         if (
             not self.marked_content_stack
@@ -2155,9 +2094,12 @@ class TextState:
             c3_x = adv_A + c1_x
             c3_y = adv_B + c1_y
 
-        x0, y0, x1, y1 = internal_quad_bounds(c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y)
+        x0 = min(c0_x, c1_x, c2_x, c3_x)
+        y0 = min(c0_y, c1_y, c2_y, c3_y)
+        x1 = max(c0_x, c1_x, c2_x, c3_x)
+        y1 = max(c0_y, c1_y, c2_y, c3_y)
 
-        rot = self.cached_rotation
+        rot = detect_rotation_from_linear(A, B, C, D)
         seqno = self.sequence
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
         scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
@@ -3591,14 +3533,7 @@ class TextState:
         except (TypeError, ValueError):
             return
 
-        ca, cb, cc, cd, ce, cf = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
-        self.ca = m_a * ca + m_b * cc
-        self.cb = m_a * cb + m_b * cd
-        self.cc = m_c * ca + m_d * cc
-        self.cd = m_c * cb + m_d * cd
-        self.ce = m_e * ca + m_f * cc + ce
-        self.cf = m_e * cb + m_f * cd + cf
-        self.update_combined()
+        self.ctm = Matrix(m_a, m_b, m_c, m_d, m_e, m_f).multiply(self.ctm)
 
     def op_g(self, operands: ContentOperands, depth: int) -> None:
         if operands and not self.type3_uncolored:
