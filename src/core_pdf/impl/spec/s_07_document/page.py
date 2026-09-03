@@ -312,13 +312,11 @@ class PdfPage:
             return program
 
     def collect_inherited_values(self) -> InheritedValueMap:
-        with self.document.internal_cache_lock:
-            return collect_inherited_values(
-                self.page_dict,
-                PAGE_INHERITED_KEYS,
-                self.document.resolver.resolve,
-                self.document.inherited_values_cache,
-            )
+        return collect_inherited_values(
+            self.page_dict,
+            PAGE_INHERITED_KEYS,
+            self.document.resolver.resolve,
+        )
 
     def resolve_box(self, key: str) -> tuple[float, float, float, float] | None:
         try:

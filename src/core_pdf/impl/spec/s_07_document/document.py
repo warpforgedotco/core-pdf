@@ -59,7 +59,6 @@ from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
     Decipher,
     InheritedValueMap,
-    InheritedValuesCache,
     PdfArray,
     PdfDict,
     PdfObject,
@@ -110,7 +109,6 @@ class PdfDocument(
         "acroform_cache",
         "fields_cache",
         "fields_by_page_cache",
-        "inherited_values_cache",
         "page_labels_cache",
         "page_extraction_caches",
         "internal_cache_lock",
@@ -145,7 +143,6 @@ class PdfDocument(
     acroform_cache: PdfDict | None | MissingObject
     fields_cache: list[RawFormField] | None
     fields_by_page_cache: dict[int, list[RawFormField]] | None
-    inherited_values_cache: InheritedValuesCache
     page_labels_cache: list[str] | None | MissingObject
     page_extraction_caches: dict[int, ExtractionCache] | None
     internal_cache_lock: threading.RLock
@@ -345,7 +342,6 @@ class PdfDocument(
         return self.xref_was_recovered or self.page_tree_was_recovered
 
     def _initialize_document_caches(self) -> None:
-        self.inherited_values_cache = {}
         self._clear_document_caches()
 
     def _clear_document_caches(self) -> None:
@@ -366,7 +362,6 @@ class PdfDocument(
         self.mark_info_cache = MISSING
         self.acroform_cache = MISSING
         self.page_labels_cache = MISSING
-        self.inherited_values_cache.clear()
 
     # Source loading and security
 

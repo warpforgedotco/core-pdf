@@ -25,7 +25,6 @@ class FakeDocument:
         self.pages: list[Any] = []
         self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
         self.page_extraction_caches: dict[int, object] | None = None
-        self.inherited_values_cache = {}
 
     def page_lock(self, page_number: int) -> threading.RLock:
         with self.internal_cache_lock:

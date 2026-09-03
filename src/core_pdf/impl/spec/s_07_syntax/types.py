@@ -40,7 +40,6 @@ DeepObjectCache: TypeAlias = dict[int, tuple[object, CachedPdfObject]]
 ResolvedObjectCache: TypeAlias = dict[tuple[int, int], CachedPdfObject]
 GenerationZeroObjectCache: TypeAlias = list[CachedPdfObject | MissingObject]
 InheritedValueMap: TypeAlias = dict[str, CachedPdfObject]
-InheritedValuesCache: TypeAlias = dict[int, InheritedValueMap]
 
 
 class PdfValueResolver(Protocol):
@@ -75,7 +74,6 @@ __all__ = (
     "DeepObjectCache",
     "GenerationZeroObjectCache",
     "InheritedValueMap",
-    "InheritedValuesCache",
     "ObjectCache",
     "PdfArray",
     "PdfBoolean",
