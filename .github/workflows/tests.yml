@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 # A PR that is pushed to again supersedes its own in-flight run. Without this
-# every push kept four jobs alive, one of them on a macOS runner.
+# every push kept three jobs alive, one of them on a macOS runner.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -124,56 +124,6 @@ jobs:
           uv run --locked --package core-pdf --group test pytest
           tests/test_rendering_golden.py
           -k "irreversible_jpx or tolerant_raster_references"
-
-      - name: Prune uv cache
-        if: always()
-        run: uv cache prune --ci
-
-  codspeed:
-    name: High-impact CodSpeed benchmarks
-    needs: quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: "0.11.28"
-          python-version: "3.13"
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Install English Tesseract data
-        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
-
-      - name: Run high-impact CodSpeed benchmarks
-        uses: CodSpeedHQ/action@v3
-        env:
-          # CodSpeed counts instructions on a simulated CPU that serializes
-          # threads, so OpenBLAS's thread pool contributes its spin-wait loops
-          # to the measurement instead of overlapping with real work. The two
-          # ICC benchmarks call sgemm and were paying for it: three iterations
-          # of test_matrix_transform_benchmark measure 766M instructions with
-          # one thread and 42-159 billion with two to eight, varying by 2x
-          # between identical runs. That is what made them swing from 282ms to
-          # 2s on unchanged code while the other 24 benchmarks held to three
-          # significant figures. One thread measures our own code.
-          OPENBLAS_NUM_THREADS: "1"
-          OMP_NUM_THREADS: "1"
-        with:
-          run: >-
-            uv run --locked --package core-pdf --group benchmark pytest
-            $(grep -v '^#' .github/benchmark-paths.txt | tr '\n' ' ')
-            -m benchmark_high_impact
-            --codspeed
-          token: ${{ secrets.CODSPEED_TOKEN }}
 
       - name: Prune uv cache
         if: always()
