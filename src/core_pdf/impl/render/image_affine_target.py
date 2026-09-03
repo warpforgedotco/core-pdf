@@ -21,12 +21,6 @@ class internal_ImageAffineTargetMixin:
 
     __slots__ = ()
 
-    def page_x_coordinates(self: Any, start: int, stop: int) -> numpy.ndarray[Any, Any]:
-        return self.crop_x0 + (numpy.arange(start, stop) + 0.5) / self.scale
-
-    def page_y_coordinates(self: Any, start: int, stop: int) -> numpy.ndarray[Any, Any]:
-        return self.crop_y1 - (numpy.arange(start, stop) + 0.5) / self.scale
-
     def blit_opaque_sampled_tiles(
         self: Any,
         source_pixels: numpy.ndarray[Any, Any],
@@ -110,8 +104,6 @@ class internal_ImageAffineTargetMixin:
         crop_y1 = self.crop_y1
         current_clip = self.current_clip
         page_pixels = self.page_pixels
-        page_x_coordinates = self.page_x_coordinates
-        page_y_coordinates = self.page_y_coordinates
         pixel_view = self.pixel_view
         pixels = self.pixels
         scale = self.scale
@@ -205,8 +197,8 @@ class internal_ImageAffineTargetMixin:
             if u_from_x:
                 inv_ux = 1.0 / ux
                 inv_vy = 1.0 / vy
-                page_x = page_x_coordinates(ix0, ix1)
-                page_y = page_y_coordinates(iy0, iy1)
+                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
                 source_u = (page_x - p00[0]) * inv_ux
                 source_v = (page_y - p00[1]) * inv_vy
                 valid_x = (source_u >= 0.0) & (source_u <= 1.0)
@@ -224,8 +216,8 @@ class internal_ImageAffineTargetMixin:
             else:
                 inv_uy = 1.0 / uy
                 inv_vx = 1.0 / vx
-                page_x = page_x_coordinates(ix0, ix1)
-                page_y = page_y_coordinates(iy0, iy1)
+                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
                 source_v = (page_x - p00[0]) * inv_vx
                 source_u = (page_y - p00[1]) * inv_uy
                 valid_x = (source_v >= 0.0) & (source_v <= 1.0)
@@ -262,8 +254,8 @@ class internal_ImageAffineTargetMixin:
             source_samples = uint8_view(converted)[: width_px * height_px * comps].reshape(
                 height_px, width_px, comps
             )
-            general_page_x = page_x_coordinates(ix0, ix1)
-            general_page_y = page_y_coordinates(iy0, iy1)
+            general_page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+            general_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
             general_rel_x = general_page_x[None, :] - p00[0]
             general_rel_y = general_page_y[:, None] - p00[1]
             general_u = (general_rel_x * vy - general_rel_y * vx) * inv_det
