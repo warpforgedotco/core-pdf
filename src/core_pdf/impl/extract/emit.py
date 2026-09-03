@@ -432,6 +432,8 @@ def internal_normalize_emitted_text(text: str, source: str) -> str:
 def internal_line_decoration_flags(
     line: ParsedLine,
     drawings: tuple[Any, ...],
+    *,
+    decoration_boxes: tuple[tuple[float, float, float, float], ...] | None = None,
 ) -> dict[str, bool]:
     """Infer simple text decorations from nearby, thin PDF paths."""
     if line.bbox is None:
@@ -439,12 +441,14 @@ def internal_line_decoration_flags(
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
     flags = {"underline": False, "strikeout": False}
-    candidates = (
-        bbox
-        for drawing in drawings
-        if (bbox := internal_line_decoration_bbox(drawing)) is not None
-        and getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
-    )
+    candidates = decoration_boxes
+    if candidates is None:
+        candidates = tuple(
+            bbox
+            for drawing in drawings
+            if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+            and (bbox := internal_line_decoration_bbox(drawing)) is not None
+        )
     for bbox in candidates:
         dx0, dy0, dx1, dy1 = bbox
         width = dx1 - dx0
@@ -499,6 +503,12 @@ def internal_normalized_blocks(
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
     """Build the normalized text candidate projection from parsed lines."""
+    decoration_boxes = tuple(
+        bbox
+        for drawing in drawings
+        if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+        and (bbox := internal_line_decoration_bbox(drawing)) is not None
+    )
     blocks: list[Block] = []
     for index, parsed_block in enumerate(parsed_blocks):
         confidences = tuple(
@@ -512,7 +522,11 @@ def internal_normalized_blocks(
         )
         decorated_lines: list[ParsedLine] = []
         for line in parsed_block.lines:
-            flags = internal_line_decoration_flags(line, drawings)
+            flags = internal_line_decoration_flags(
+                line,
+                drawings,
+                decoration_boxes=decoration_boxes,
+            )
             decorated_lines.append(
                 replace(
                     line,
