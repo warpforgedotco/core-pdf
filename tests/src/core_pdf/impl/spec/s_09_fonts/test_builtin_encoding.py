@@ -14,7 +14,7 @@ import struct
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.spec.s_09_fonts.font_program import CFFFont, cff_font_for_data
+from core_pdf.impl.spec.s_09_fonts.font_program import CFFFont
 
 
 def index(items: list[bytes], off_size: int = 1) -> bytes:
@@ -75,14 +75,14 @@ def build_cff(encoding_bytes: bytes, glyph_names: list[str]) -> bytes:
 def test_reads_a_format_0_custom_encoding() -> None:
     # Format 0: code array, one entry per glyph starting at glyph 1.
     encoding = bytes([0, 3]) + bytes([0x41, 0x42, 0x43])
-    font = cff_font_for_data(build_cff(encoding, ["alpha", "beta", "gamma"]))
+    font = CFFFont(build_cff(encoding, ["alpha", "beta", "gamma"]))
     assert font.builtin_encoding() == {0x41: "alpha", 0x42: "beta", 0x43: "gamma"}
 
 
 def test_reads_a_format_1_range_encoding() -> None:
     # Format 1: one range of three sequential codes from 0x61.
     encoding = bytes([1, 1]) + bytes([0x61, 2])
-    font = cff_font_for_data(build_cff(encoding, ["alpha", "beta", "gamma"]))
+    font = CFFFont(build_cff(encoding, ["alpha", "beta", "gamma"]))
     assert font.builtin_encoding() == {0x61: "alpha", 0x62: "beta", 0x63: "gamma"}
 
 
@@ -92,7 +92,7 @@ def test_reads_supplements_appended_to_an_encoding() -> None:
     encoding = (
         bytes([0x80, 2]) + bytes([0x41, 0x42]) + bytes([1]) + bytes([0x5A]) + struct.pack(">H", 391)
     )
-    font = cff_font_for_data(build_cff(encoding, ["alpha", "beta"]))
+    font = CFFFont(build_cff(encoding, ["alpha", "beta"]))
     assert font.builtin_encoding() == {0x41: "alpha", 0x42: "beta", 0x5A: "alpha"}
 
 

@@ -37,18 +37,15 @@ from core_pdf.impl.spec.s_09_fonts.font_program import (
     LEGITIMATE_MULTI_CHAR_GLYPHS,
     CFFFont,
     CFFUnicodeRepairIndex,
-    cff_font_for_data,
     is_repairable_to_unicode_label,
 )
 from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     TrueTypeFontProgram,
-    tt_font_for_data,
 )
 from core_pdf.impl.spec.s_09_fonts.font_program_type1 import (
     Type1FontProgram,
-    type1_font_for_data,
 )
 from core_pdf.impl.spec.s_09_fonts.glyph_decode import (
     build_glyph_decode_table,
@@ -143,7 +140,7 @@ def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:
-        return tt_font_for_data(font_file.data, cid_to_gid, use_cmap=descendant is None)
+        return TrueTypeFontProgram(font_file.data, cid_to_gid, use_cmap=descendant is None)
     except ValueError:
         return None
 
@@ -192,7 +189,7 @@ def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
         if font_data is None:
             return None
     try:
-        return cff_font_for_data(font_data)
+        return CFFFont(font_data)
     except ValueError:
         return None
 
@@ -252,7 +249,7 @@ def type1_font_for_pdf_font(font: dict[str, object]) -> Type1FontProgram | None:
     length1_value = font_file.dictionary.get("Length1")
     length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
     try:
-        return type1_font_for_data(font_file.data, length1)
+        return Type1FontProgram(font_file.data, length1=length1)
     except (TypeError, ValueError):
         return None
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 from typing import Any
 
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
@@ -258,9 +257,4 @@ class Type1FontProgram:
             return ()
 
 
-@lru_cache(maxsize=64)
-def type1_font_for_data(data: bytes, length1: int | None = None) -> Type1FontProgram:
-    return Type1FontProgram(data, length1=length1)
-
-
-__all__ = ["Type1FontProgram", "type1_font_for_data"]
+__all__ = ["Type1FontProgram"]

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import struct
-from functools import lru_cache
 from io import BytesIO
 from typing import Any
 
@@ -463,16 +462,8 @@ def internal_flatten_cubic(
     return out
 
 
-@lru_cache(maxsize=64)
-def tt_font_for_data(
-    data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
-) -> TrueTypeFontProgram:
-    return TrueTypeFontProgram(data, cid_to_gid, use_cmap=use_cmap)
-
-
 __all__ = (
     "Point",
     "TrueTypeFontProgram",
     "rasterize_contours",
-    "tt_font_for_data",
 )

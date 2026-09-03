@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from functools import lru_cache
 from math import inf, isfinite, sqrt
 from threading import RLock
 
@@ -1442,11 +1441,6 @@ def internal_repair_candidate(
     return None
 
 
-@lru_cache(maxsize=64)
-def cff_font_for_data(font_data: bytes) -> CFFFont:
-    return CFFFont(font_data)
-
-
 class CFFUnicodeRepairIndex:
     """Resolve suspicious ToUnicode entries lazily against one CFF program."""
 
@@ -1586,7 +1580,6 @@ __all__ = (
     "CFFFont",
     "CFFGlyphFeature",
     "CFFUnicodeRepairIndex",
-    "cff_font_for_data",
     "glyph_feature_distance",
     "is_repairable_to_unicode_label",
 )
