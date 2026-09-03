@@ -62,49 +62,44 @@ class PdfPage(SpecPdfPage):
                 return extract_page(self, context)
 
     def text_diagnostics(self, *, include_invisible: bool = True) -> TextDiagnostics:
-        with self.internal_page_lock:
-            return TextDiagnostics(
-                runs=tuple(
-                    DiagnosticTextRun(
-                        text=run.text,
-                        bbox=(run.x0, run.y0, run.x1, run.y1),
-                        font_name=run.font_name,
-                        font_size=run.font_size,
-                        is_vertical=run.is_vertical,
-                        visible=run.visible,
-                        rotation=run.rotation_angle,
-                        seqno=run.seqno,
-                        geometry_issues=text_run_geometry_issues(run),
-                    )
-                    for run in self.get_page_program().runs
-                    if include_invisible or run.visible
+        return TextDiagnostics(
+            runs=tuple(
+                DiagnosticTextRun(
+                    text=run.text,
+                    bbox=(run.x0, run.y0, run.x1, run.y1),
+                    font_name=run.font_name,
+                    font_size=run.font_size,
+                    is_vertical=run.is_vertical,
+                    visible=run.visible,
+                    rotation=run.rotation_angle,
+                    seqno=run.seqno,
+                    geometry_issues=text_run_geometry_issues(run),
                 )
+                for run in self.get_page_program().runs
+                if include_invisible or run.visible
             )
+        )
 
     def get_text_lines(self) -> list[LayoutLine]:
-        with self.internal_page_lock:
-            return [LayoutLine([run]) for run in self.chars if run.text]
+        return [LayoutLine([run]) for run in self.chars if run.text]
 
     def extract_geometry_issues(self) -> tuple[object, ...]:
-        with self.internal_page_lock:
-            return page_layout_geometry_issues(self.get_text_lines())
+        return page_layout_geometry_issues(self.get_text_lines())
 
     def extract_geometry_summary(self) -> LayoutGeometrySummary:
-        with self.internal_page_lock:
-            return page_layout_geometry_summary(self.get_text_lines())
+        return page_layout_geometry_summary(self.get_text_lines())
 
     def get_drawings(self) -> tuple[DrawingRecord, ...]:
-        with self.internal_page_lock:
-            return tuple(
-                DrawingRecord.from_captured(
-                    drawing,
-                    raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
-                    image_clip=rect_tuple(drawing.image_clip),
-                    items=tuple(drawing.items),
-                    rect=rect_tuple(drawing.rect),
-                )
-                for drawing in self.get_page_program().drawings
+        return tuple(
+            DrawingRecord.from_captured(
+                drawing,
+                raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
+                image_clip=rect_tuple(drawing.image_clip),
+                items=tuple(drawing.items),
+                rect=rect_tuple(drawing.rect),
             )
+            for drawing in self.get_page_program().drawings
+        )
 
     def extract_images(
         self,
@@ -170,8 +165,7 @@ class PdfPage(SpecPdfPage):
 
     def render(self, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
-        with self.internal_page_lock:
-            return compose_page(self, options, page_program=self.get_page_program())
+        return compose_page(self, options, page_program=self.get_page_program())
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):

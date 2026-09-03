@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import threading
 from collections import deque
 from typing import TYPE_CHECKING, cast
 
@@ -65,7 +64,6 @@ class PdfPage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        self.internal_page_lock = threading.RLock()
         self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
 
     @property

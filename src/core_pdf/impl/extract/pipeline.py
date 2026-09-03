@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from contextlib import suppress
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, TypeVar
 
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
@@ -60,8 +60,16 @@ def internal_collected_records(
     return tuple(output)
 
 
+@dataclass(frozen=True, slots=True)
+class internal_PageProducts:
+    observations: ObservationBatch
+    tables: tuple[Table, ...]
+    blocks: tuple[ParsedBlock, ...]
+    order_evidence: ReadingOrderEvidence
+
+
 class internal_PageExtraction:
-    """Lazily materialized extraction products for one extraction operation."""
+    """Explicit inputs for deriving one page's extraction products."""
 
     def __init__(
         self,
@@ -72,181 +80,139 @@ class internal_PageExtraction:
         recognition: RecognitionResult | None = None,
     ) -> None:
         self.page = page
-        self.internal_capture = capture
-        self.internal_plan = plan
+        self.internal_capture = capture if capture is not None else capture_page(page)
+        self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
         self.internal_recognition = recognition
-        self.internal_observations: ObservationBatch | None = None
-        self.internal_tables: tuple[Table, ...] | None = None
-        self.internal_layout: tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence] | None = None
-        self.internal_assembled_page: Any | None = None
 
     def capture(self) -> CapturedPage:
-        with self.page.internal_page_lock:
-            if self.internal_capture is not None:
-                return self.internal_capture
-            capture = capture_page(self.page)
-            self.internal_capture = capture
-            return capture
+        return self.internal_capture
 
     def plan(self) -> WorkPlan:
-        with self.page.internal_page_lock:
-            if self.internal_plan is not None:
-                return self.internal_plan
-            plan = plan_page(self.capture())
-            self.internal_plan = plan
-            return plan
+        return self.internal_plan
 
     def recognition(self, context: ExtractionScope) -> RecognitionResult:
-        with self.page.internal_page_lock:
-            if self.internal_recognition is not None:
-                return self.internal_recognition
-            plan = self.plan()
-            if plan.ocr_passes:
-                from core_pdf.impl.extract.ocr.pipeline import recognize_page
+        if self.internal_recognition is not None:
+            return self.internal_recognition
+        plan = self.internal_plan
+        if plan.ocr_passes or plan.verify_hidden_text:
+            from core_pdf.impl.extract.ocr.pipeline import recognize_page
 
-                recognition = recognize_page(self.capture(), plan, context)
-            else:
-                # recognize_page() returns exactly this for a plan with no OCR
-                # passes. Short-circuiting keeps extract.ocr — and with it
-                # tesserocr, PIL and the rasterizer — off the native-text path.
-                recognition = RecognitionResult(ObservationBatch.empty())
-            self.internal_recognition = recognition
-            return recognition
+            return recognize_page(self.internal_capture, plan, context)
+        return RecognitionResult(ObservationBatch.empty())
+
+    def internal_products(self, context: ExtractionScope) -> internal_PageProducts:
+        capture = self.internal_capture
+        plan = self.internal_plan
+        observations = fuse_observations(
+            capture.observations,
+            self.recognition(context).observations,
+            plan,
+        )
+        tables = extract_tables(capture, observations)
+        table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
+        image_obstacles = tuple(
+            box
+            for box in capture.evidence.image_boxes
+            if 0.01 <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area < 0.65
+        )
+        use_xy_cut = not (
+            capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
+        )
+        blocks, order_evidence = layout_blocks_with_evidence(
+            observations,
+            obstacles=(*table_obstacles, *image_obstacles),
+            use_xy_cut=use_xy_cut,
+            rotation=int(getattr(self.page, "rotation", 0) or 0),
+            page_width=float(capture.page.width),
+            page_height=float(capture.page.height),
+        )
+        return internal_PageProducts(observations, tables, blocks, order_evidence)
 
     def observations(self, context: ExtractionScope) -> ObservationBatch:
-        with self.page.internal_page_lock:
-            if self.internal_observations is not None:
-                return self.internal_observations
-            capture = self.capture()
-            observations = fuse_observations(
-                capture.observations,
-                self.recognition(context).observations,
-                self.plan(),
-            )
-            self.internal_observations = observations
-            return observations
+        return self.internal_products(context).observations
 
     def tables(self, context: ExtractionScope) -> tuple[Table, ...]:
-        with self.page.internal_page_lock:
-            if self.internal_tables is not None:
-                return self.internal_tables
-            tables = extract_tables(self.capture(), self.observations(context))
-            self.internal_tables = tables
-            return tables
-
-    def internal_image_obstacles(self) -> tuple[tuple[float, float, float, float], ...]:
-        with self.page.internal_page_lock:
-            capture = self.capture()
-            return tuple(
-                box
-                for box in capture.evidence.image_boxes
-                if 0.01
-                <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area
-                < 0.65
-            )
+        return self.internal_products(context).tables
 
     def layout(self, context: ExtractionScope) -> tuple[ParsedBlock, ...]:
-        return self.internal_layout_result(context)[0]
+        return self.internal_products(context).blocks
 
     def internal_layout_result(
         self, context: ExtractionScope
     ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
-        with self.page.internal_page_lock:
-            if self.internal_layout is not None:
-                return self.internal_layout
-            observations = self.observations(context)
-            capture = self.capture()
-            table_obstacles = tuple(
-                table.bbox for table in self.tables(context) if table.bbox is not None
-            )
-            use_xy_cut = not (
-                capture.evidence.image_count >= 8
-                and 0.05 <= capture.evidence.image_area_ratio < 0.65
-            )
-            blocks, order_evidence = layout_blocks_with_evidence(
-                observations,
-                obstacles=(*table_obstacles, *self.internal_image_obstacles()),
-                use_xy_cut=use_xy_cut,
-                rotation=int(getattr(self.page, "rotation", 0) or 0),
-                page_width=float(capture.page.width),
-                page_height=float(capture.page.height),
-            )
-            result = (blocks, order_evidence)
-            self.internal_layout = result
-            return result
+        products = self.internal_products(context)
+        return products.blocks, products.order_evidence
 
     def assembled_page(self, context: ExtractionScope) -> Any:
-        with self.page.internal_page_lock:
-            if self.internal_assembled_page is not None:
-                return self.internal_assembled_page
-            capture = self.capture()
-            blocks, order_evidence = self.internal_layout_result(context)
-            figures = (
-                ()
-                if capture.evidence.full_page_image
-                else tuple(
-                    Figure(order=index, bbox=box, kind="image", metadata={"source": "capture"})
-                    for index, box in enumerate(capture.evidence.image_boxes)
-                )
+        capture = self.internal_capture
+        products = self.internal_products(context)
+        blocks = products.blocks
+        order_evidence = products.order_evidence
+        figures = (
+            ()
+            if capture.evidence.full_page_image
+            else tuple(
+                Figure(order=index, bbox=box, kind="image", metadata={"source": "capture"})
+                for index, box in enumerate(capture.evidence.image_boxes)
             )
-            assembled = assemble_page(
-                blocks,
-                page_number=int(self.page.page_number),
-                width=float(self.page.width),
-                height=float(self.page.height),
-                rotation=int(self.page.rotation),
-                route=self.plan().route,
-                tables=self.tables(context),
-                figures=figures,
-                diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
-                full_page_image=capture.evidence.full_page_image,
-                drawings=capture.drawings,
-            )
-            resolver = self.page.document.resolver
-            annotations = internal_collected_records(
-                self.page.get_annotations,
-                lambda _index, record: Annotation(
-                    subtype=record.subtype,
-                    bbox=record.rect,
-                    contents=record.contents,
-                    destination=resolve_destination_value(resolver, record.dest or record.action),
-                ),
-            )
-            links = internal_collected_records(
-                self.page.get_links,
-                lambda _index, record: Link(
-                    bbox=record.bbox,
-                    url=record.url,
-                    link_type=record.link_type,
-                    text="",
-                ),
-            )
-            fields = internal_collected_records(
-                self.page.get_fields,
-                lambda index, record: FormField(
-                    name=record.name,
-                    field_type=record.type,
-                    value_text=record.value_text,
-                    bbox=record.rect,
-                    field_index=index,
-                    required=record.is_required,
-                    read_only=record.is_read_only,
-                    no_export=record.no_export,
-                    options=record.options,
-                ),
-            )
-            cropbox = assembled.cropbox
-            with suppress(TypeError, ValueError):
-                cropbox = self.page.crop_box
-            assembled = replace(
-                assembled,
-                annotations=annotations,
-                links=links,
-                form_fields=fields,
-                cropbox=cropbox,
-            )
-            self.internal_assembled_page = assembled
-            return assembled
+        )
+        assembled = assemble_page(
+            blocks,
+            page_number=int(self.page.page_number),
+            width=float(self.page.width),
+            height=float(self.page.height),
+            rotation=int(self.page.rotation),
+            route=self.internal_plan.route,
+            tables=products.tables,
+            figures=figures,
+            diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
+            full_page_image=capture.evidence.full_page_image,
+            drawings=capture.drawings,
+        )
+        resolver = self.page.document.resolver
+        annotations = internal_collected_records(
+            self.page.get_annotations,
+            lambda _index, record: Annotation(
+                subtype=record.subtype,
+                bbox=record.rect,
+                contents=record.contents,
+                destination=resolve_destination_value(resolver, record.dest or record.action),
+            ),
+        )
+        links = internal_collected_records(
+            self.page.get_links,
+            lambda _index, record: Link(
+                bbox=record.bbox,
+                url=record.url,
+                link_type=record.link_type,
+                text="",
+            ),
+        )
+        fields = internal_collected_records(
+            self.page.get_fields,
+            lambda index, record: FormField(
+                name=record.name,
+                field_type=record.type,
+                value_text=record.value_text,
+                bbox=record.rect,
+                field_index=index,
+                required=record.is_required,
+                read_only=record.is_read_only,
+                no_export=record.no_export,
+                options=record.options,
+            ),
+        )
+        cropbox = assembled.cropbox
+        with suppress(TypeError, ValueError):
+            cropbox = self.page.crop_box
+        assembled = replace(
+            assembled,
+            annotations=annotations,
+            links=links,
+            form_fields=fields,
+            cropbox=cropbox,
+        )
+        return assembled
 
 
 def extract_page(page: Any, context: ExtractionScope) -> Any:

@@ -4,8 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from threading import RLock
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -176,10 +175,9 @@ def patch_engine(monkeypatch: pytest.MonkeyPatch, api: FakeTessApi | None = None
 
 @dataclass(slots=True)
 class FakeDocumentPage:
-    """The page attributes document-level enrichment reads and locks on."""
+    """The page attributes document-level enrichment reads."""
 
     page_number: int
-    internal_page_lock: RLock = field(default_factory=RLock)
 
 
 class RecordingExtraction:
