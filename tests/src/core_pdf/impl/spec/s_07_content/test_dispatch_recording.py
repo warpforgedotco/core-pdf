@@ -23,13 +23,22 @@ def dispatch_m_operands(source: bytes) -> list[object]:
     return received
 
 
-def test_leading_dot_number_is_passed_to_operator() -> None:
-    assert dispatch_m_operands(b".5 1 m") == [0.5, 1]
-
-
 @pytest.mark.parametrize(
     ("token", "expected"),
     [
+        (b"0", 0),
+        (b"12", 12),
+        (b"-5", -5),
+        (b"+5", 5),
+        (b"123", 123),
+        (b"-12", -12),
+        (b"1234", 1234),
+        (b"-123", -123),
+        (b"12345", 12345),
+        (b".5", 0.5),
+        (b"+.5", 0.5),
+        (b"-.5", -0.5),
+        (b"1.", 1.0),
         (b"0.123", 0.123),
         (b"-0.123", -0.123),
         (b"3.728", 3.728),
@@ -38,7 +47,7 @@ def test_leading_dot_number_is_passed_to_operator() -> None:
         (b"123.45", 123.45),
     ],
 )
-def test_three_decimal_number_is_passed_to_operator(token: bytes, expected: float) -> None:
+def test_number_is_passed_to_operator(token: bytes, expected: int | float) -> None:
     assert dispatch_m_operands(token + b" 1 m") == [expected, 1]
 
 

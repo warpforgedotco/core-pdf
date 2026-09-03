@@ -22,6 +22,7 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
+    is_number_word_bytes,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
@@ -345,110 +346,15 @@ def dispatch_operations(
             pos = end
 
             if n_raw > 0:
-                start_offset = pos - n_raw
-                first = raw_bytes[start_offset]
-                # If the token has a numeric prefix, parse it directly.
-                # This avoids slicing strings and allocating temporary objects.
-                if first == 46 or 48 <= first <= 57 or first == 45 or first == 43:
-                    # Fast path: Single digit number (e.g. '0', '5')
-                    if n_raw == 1 and 48 <= first <= 57:
-                        if op_count < max_operands:
-                            operands[op_count] = first - 48
-                        op_count += 1
-                        continue
+                raw = raw_bytes[pos - n_raw : pos]
+                raw_key = raw.tobytes() if type(raw) is memoryview else raw
+                if is_number_word_bytes(raw_key):
+                    if op_count < max_operands:
+                        operands[op_count] = float(raw_key) if b"." in raw_key else int(raw_key)
+                    op_count += 1
+                    continue
 
-                    # Fast path: Two-character numeric tokens (e.g. '12', '-5', '.5')
-                    if n_raw == 2:
-                        b1 = raw_bytes[start_offset + 1]
-                        if 48 <= first <= 57 and 48 <= b1 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = (first - 48) * 10 + (b1 - 48)
-                            op_count += 1
-                            continue
-                        if (first == 45 or first == 43) and 48 <= b1 <= 57:
-                            val = b1 - 48
-                            if op_count < max_operands:
-                                operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-                    # Fast path: Three-character numeric tokens (e.g. '123', '-12')
-                    elif n_raw == 3:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        if 48 <= first <= 57 and 48 <= b1 <= 57 and 48 <= b2 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
-                            op_count += 1
-                            continue
-                        if (first == 45 or first == 43) and 48 <= b1 <= 57 and 48 <= b2 <= 57:
-                            val = (b1 - 48) * 10 + (b2 - 48)
-                            if op_count < max_operands:
-                                operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-
-                    # Fast path: Four-character numeric tokens (e.g. '1234', '-123')
-                    elif n_raw == 4:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        if (
-                            48 <= first <= 57
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = (
-                                    (first - 48) * 1000
-                                    + (b1 - 48) * 100
-                                    + (b2 - 48) * 10
-                                    + (b3 - 48)
-                                )
-                            op_count += 1
-                            continue
-                        if (
-                            (first == 45 or first == 43)
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                        ):
-                            val = (b1 - 48) * 100 + (b2 - 48) * 10 + (b3 - 48)
-                            if op_count < max_operands:
-                                operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-
-                    # General fallback: validate syntax and parse longer integers or float values
-                    digit_start = 1 if first in (43, 45) else 0
-                    saw_digit = False
-                    saw_dot = False
-                    is_valid = True
-                    if digit_start == 0:
-                        if first == 46:
-                            saw_dot = True
-                        elif 48 <= first <= 57:
-                            saw_digit = True
-
-                    for i in range(1 if digit_start == 0 else digit_start, n_raw):
-                        b = raw_bytes[start_offset + i]
-                        if 48 <= b <= 57:
-                            saw_digit = True
-                        elif b == 46 and not saw_dot:
-                            saw_dot = True
-                        else:
-                            is_valid = False
-                            break
-
-                    if is_valid and saw_digit:
-                        raw = raw_bytes[start_offset:pos]
-                        raw_number = raw.tobytes() if type(raw) is memoryview else raw
-                        if op_count < max_operands:
-                            operands[op_count] = float(raw_number) if saw_dot else int(raw_number)
-                        op_count += 1
-                        continue
-
-                if n_raw == 2 and raw_bytes[pos - 2] == 66 and raw_bytes[pos - 1] == 73:
+                if raw_key == b"BI":
                     lexer.pos = pos
                     try:
                         image = parse_inline_image(lexer)
@@ -519,8 +425,6 @@ def dispatch_operations(
                             op_count = 0
                             continue
 
-                raw = raw_bytes[pos - n_raw : pos]
-                raw_key = raw.tobytes() if type(raw) is memoryview else raw
                 if raw_key in (
                     b"R",
                     b"obj",
