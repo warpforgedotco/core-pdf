@@ -472,7 +472,6 @@ class TextState:
         "cached_rotation",
         "is_garbage",
         "operands",
-        "run_pool",
         "inline_images",
     )
 
@@ -644,7 +643,6 @@ class TextState:
 
         self.is_garbage = is_garbage_text
         self.operands: list[ContentOperand] = [None] * 16
-        self.run_pool: list[TextRun] = []
         self.inline_images: list[CapturedInlineImage] = []
 
     def append_text(
@@ -1632,34 +1630,32 @@ class TextState:
         confidence: float | None = None,
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> TextRun:
-        existing = self.run_pool.pop() if self.capture_glyphs and self.run_pool else None
-        return TextRun.reinit(
-            existing,
-            normalize_extracted_text(text),
-            x0,
-            y0,
-            x1,
-            y1,
-            tx,
-            ty,
-            font_size,
-            space_width,
-            order,
-            stream_order,
-            xobject_depth,
-            font_name,
-            is_vertical,
-            rotation_angle,
-            visible,
-            line_break_before,
-            seqno,
-            fill_color,
-            advance_bbox,
-            ink_bbox,
-            baseline,
-            provenance,
-            confidence,
-            glyph_clusters,
+        return TextRun(
+            text=normalize_extracted_text(text),
+            x0=x0,
+            y0=y0,
+            x1=x1,
+            y1=y1,
+            tx=tx,
+            ty=ty,
+            font_size=font_size,
+            space_width=space_width,
+            order=order,
+            stream_order=stream_order,
+            xobject_depth=xobject_depth,
+            font_name=font_name,
+            is_vertical=is_vertical,
+            rotation_angle=rotation_angle,
+            visible=visible,
+            line_break_before=line_break_before,
+            seqno=seqno,
+            fill_color=fill_color,
+            advance_bbox=advance_bbox,
+            ink_bbox=ink_bbox,
+            baseline=baseline,
+            provenance=provenance,
+            confidence=confidence,
+            glyph_clusters=glyph_clusters,
         )
 
     def internal_is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
@@ -1682,8 +1678,6 @@ class TextState:
         if self.internal_is_clipped_away(
             nc[TextRun.X0], nc[TextRun.Y0], nc[TextRun.X1], nc[TextRun.Y1]
         ):
-            if self.capture_glyphs:
-                self.run_pool.append(new_run)
             return
 
         if not self.pending_run:
@@ -1776,8 +1770,6 @@ class TextState:
             self.pending_run = new_run
         else:
             p.extend_glyph_clusters(new_run.glyph_clusters)
-            if self.capture_glyphs:
-                self.run_pool.append(new_run)
 
     def record_glyph_observations(
         self,

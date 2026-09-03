@@ -10,32 +10,6 @@ def text_run() -> TextRun:
     return make_text_run("A", 0.0, 0.0, 10.0, 10.0, tx=0.0, ty=0.0)
 
 
-def recycle(existing: TextRun, text: str = "B", x1: float = 11.0) -> TextRun:
-    """Push a run back through the freelist the way alloc_prepared_run does."""
-    return TextRun.reinit(
-        existing,
-        text,
-        1.0,
-        1.0,
-        x1,
-        11.0,
-        0.0,
-        0.0,
-        10.0,
-        4.0,
-        1,
-        1,
-        1,
-        None,
-        False,
-        0,
-        True,
-        False,
-        1,
-        None,
-    )
-
-
 def test_text_run_geometry_issue_cache_tracks_attributes_and_direct_coordinates() -> None:
     run = text_run()
     run.confidence = 0.2
@@ -63,14 +37,3 @@ def test_glyph_clusters_are_validated_against_canonical_advance_geometry() -> No
     issues = text_run_geometry_issues(run)
 
     assert issues == ()
-
-
-def test_recycled_text_run_does_not_reuse_diagnostics_from_its_previous_life() -> None:
-    run = text_run()
-    run.confidence = 0.2
-    assert {issue.code for issue in text_run_geometry_issues(run)} == {"low_confidence_text_run"}
-
-    recycled = recycle(run, text="B", x1=10.0)
-
-    assert recycled is run
-    assert text_run_geometry_issues(recycled) == ()
