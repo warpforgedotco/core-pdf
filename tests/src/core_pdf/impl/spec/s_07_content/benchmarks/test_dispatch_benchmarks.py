@@ -48,7 +48,6 @@ def internal_dispatch(state: TextState, data: bytes) -> None:
         state.op_handlers.get,
         state,
         0,
-        operands=state.operands,
     )
 
 

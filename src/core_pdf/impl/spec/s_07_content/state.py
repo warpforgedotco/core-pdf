@@ -57,8 +57,8 @@ from core_pdf.impl.spec.s_07_content.capture import (
 from core_pdf.impl.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
+    ContentOperands,
     NestedStreamRequest,
-    OperandWindow,
     OperationHandler,
     content_stream_may_show_text,
     dispatch_operations,
@@ -446,7 +446,6 @@ class TextState:
         "combined_D",
         "cached_rotation",
         "is_garbage",
-        "operands",
         "inline_images",
     )
 
@@ -605,7 +604,6 @@ class TextState:
         self.cached_rotation = 0
 
         self.is_garbage = is_garbage_text
-        self.operands: list[ContentOperand] = [None] * 16
         self.inline_images: list[CapturedInlineImage] = []
 
     def append_text(
@@ -919,7 +917,6 @@ class TextState:
                     self.op_handlers.get,
                     self,
                     frame.depth,
-                    operands=self.operands,
                 )
 
                 self.flush_run()
@@ -1174,7 +1171,7 @@ class TextState:
             self.update_font_metrics()
         return decoder
 
-    def op_Do(self, operands: OperandWindow, depth: int) -> None:
+    def op_Do(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         self.append_xobject(operands[0], depth)
@@ -2688,7 +2685,7 @@ class TextState:
         self.compat_tj_cursor_y = 0.0
         self.update_combined()
 
-    def op_ET(self, operands: OperandWindow, depth: int) -> None:
+    def op_ET(self, operands: ContentOperands, depth: int) -> None:
         self.flush_run()
 
     def internal_move_text(self, tx: float, ty: float) -> None:
@@ -2714,14 +2711,14 @@ class TextState:
         else:
             self.append_text(operand, decoder=decoder)
 
-    def op_BT(self, operands: OperandWindow, depth: int) -> None:
+    def op_BT(self, operands: ContentOperands, depth: int) -> None:
         self.text_object_id += 1
         self.internal_begin_text()
 
-    def op_T_star(self, operands: OperandWindow, depth: int) -> None:
+    def op_T_star(self, operands: ContentOperands, depth: int) -> None:
         self.internal_move_text(0.0, -self.leading)
 
-    def op_Td(self, operands: OperandWindow, depth: int) -> None:
+    def op_Td(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 2:
             return
         try:
@@ -2731,7 +2728,7 @@ class TextState:
             return
         self.internal_move_text(tx, ty)
 
-    def op_TD(self, operands: OperandWindow, depth: int) -> None:
+    def op_TD(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 2:
             return
         try:
@@ -2742,7 +2739,7 @@ class TextState:
         self.leading = -ty
         self.internal_move_text(tx, ty)
 
-    def op_Tj(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tj(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         # Operators consume their operands from the top of the operand stack.
@@ -2751,11 +2748,11 @@ class TextState:
         # the text-showing operation.
         self.internal_show_text(operands[-1])
 
-    def op_TJ(self, operands: OperandWindow, depth: int) -> None:
+    def op_TJ(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             self.append_tj_array(operands[0])
 
-    def op_Tm(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tm(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 6:
             return
         try:
@@ -2778,7 +2775,7 @@ class TextState:
         self.compat_tj_cursor_y = 0.0
         self.update_combined()
 
-    def op_Tf(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tf(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 2:
             return
         font_operand = operands[0]
@@ -2834,7 +2831,7 @@ class TextState:
         self.current_decoder = self.get_decoder(update_metrics=False)
         self.update_font_metrics()
 
-    def op_TL(self, operands: OperandWindow, depth: int) -> None:
+    def op_TL(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         try:
@@ -2842,7 +2839,7 @@ class TextState:
         except (TypeError, ValueError):
             return
 
-    def op_Tc(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tc(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         try:
@@ -2852,7 +2849,7 @@ class TextState:
         self.char_space = char_space
         self.update_text_scales()
 
-    def op_Tw(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tw(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         try:
@@ -2864,7 +2861,7 @@ class TextState:
         self.word_space = word_space
         self.update_text_scales()
 
-    def op_Tr(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tr(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         try:
@@ -2872,7 +2869,7 @@ class TextState:
         except (TypeError, ValueError):
             return
 
-    def op_Tz(self, operands: OperandWindow, depth: int) -> None:
+    def op_Tz(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         try:
@@ -2881,7 +2878,7 @@ class TextState:
             return
         self.update_text_scales()
 
-    def op_Ts(self, operands: OperandWindow, depth: int) -> None:
+    def op_Ts(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         try:
@@ -2889,14 +2886,14 @@ class TextState:
         except (TypeError, ValueError):
             return
 
-    def op_quote(self, operands: OperandWindow, depth: int) -> None:
+    def op_quote(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         self.internal_move_text(0.0, -self.leading)
         self.pending_line_break = True
         self.internal_show_text(operands[0])
 
-    def op_double_quote(self, operands: OperandWindow, depth: int) -> None:
+    def op_double_quote(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 3:
             return
         try:
@@ -2912,7 +2909,7 @@ class TextState:
             self.pending_line_break = True
         self.internal_show_text(operands[2])
 
-    def op_BI(self, operands: OperandWindow, depth: int) -> None:
+    def op_BI(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         operand = operands[0]
@@ -2970,7 +2967,7 @@ class TextState:
             cache_key=(prefix, key),
         )
 
-    def op_BDC(self, operands: OperandWindow, depth: int) -> None:
+    def op_BDC(self, operands: ContentOperands, depth: int) -> None:
         tag = self.document.resolver.resolve_name(operands[0]) if operands else None
         layer: str | None = None
         actual_text: str | None = None
@@ -2991,57 +2988,57 @@ class TextState:
             MarkedContentEntry(layer=layer, actual_text=actual_text, mcid=mcid)
         )
 
-    def op_BMC(self, operands: OperandWindow, depth: int) -> None:
+    def op_BMC(self, operands: ContentOperands, depth: int) -> None:
         self.marked_content_stack.append(MarkedContentEntry())
 
-    def op_EMC(self, operands: OperandWindow, depth: int) -> None:
+    def op_EMC(self, operands: ContentOperands, depth: int) -> None:
         if self.marked_content_stack:
             self.emit_actual_text_span(self.marked_content_stack.pop())
 
-    def op_G(self, operands: OperandWindow, depth: int) -> None:
+    def op_G(self, operands: ContentOperands, depth: int) -> None:
         if operands and not self.type3_uncolored:
             self.stroke_color_space = "DeviceGray"
             self.set_stroke_color(operands[0])
 
-    def op_RG(self, operands: OperandWindow, depth: int) -> None:
+    def op_RG(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 3 and not self.type3_uncolored:
             self.stroke_color_space = "DeviceRGB"
             self.set_stroke_color(operands[0], operands[1], operands[2])
 
-    def op_K(self, operands: OperandWindow, depth: int) -> None:
+    def op_K(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 4 and not self.type3_uncolored:
             self.stroke_color_space = "DeviceCMYK"
             self.set_stroke_color(operands[0], operands[1], operands[2], operands[3])
 
-    def op_w(self, operands: OperandWindow, depth: int) -> None:
+    def op_w(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             try:
                 self.line_width = max(0.0, self.as_float(operands[0]))
             except (TypeError, ValueError):
                 return
 
-    def op_J(self, operands: OperandWindow, depth: int) -> None:
+    def op_J(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             try:
                 self.line_cap = self.as_int(operands[0])
             except (TypeError, ValueError):
                 return
 
-    def op_j(self, operands: OperandWindow, depth: int) -> None:
+    def op_j(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             try:
                 self.line_join = self.as_int(operands[0])
             except (TypeError, ValueError):
                 return
 
-    def op_M(self, operands: OperandWindow, depth: int) -> None:
+    def op_M(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             try:
                 self.miter_limit = max(1.0, self.as_float(operands[0]))
             except (TypeError, ValueError):
                 return
 
-    def op_d(self, operands: OperandWindow, depth: int) -> None:
+    def op_d(self, operands: ContentOperands, depth: int) -> None:
         if not operands or len(operands) < 2:
             return
         try:
@@ -3056,7 +3053,7 @@ class TextState:
             return
         self.dash_pattern = (dash_array, phase)
 
-    def op_m(self, operands: OperandWindow, depth: int) -> None:
+    def op_m(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 2:
             try:
                 point = (self.as_float(operands[0]), self.as_float(operands[1]))
@@ -3067,7 +3064,7 @@ class TextState:
             self.current_point = point
             self.subpath_start = point
 
-    def op_l(self, operands: OperandWindow, depth: int) -> None:
+    def op_l(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 2 and self.current_point is not None:
             try:
                 point = (self.as_float(operands[0]), self.as_float(operands[1]))
@@ -3077,7 +3074,7 @@ class TextState:
                 self.current_path.line_to(*point)
             self.current_point = point
 
-    def op_re(self, operands: OperandWindow, depth: int) -> None:
+    def op_re(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 4:
             try:
                 x, y = self.as_float(operands[0]), self.as_float(operands[1])
@@ -3089,13 +3086,13 @@ class TextState:
             self.current_point = (x, y)
             self.subpath_start = (x, y)
 
-    def op_h(self, operands: OperandWindow, depth: int) -> None:
+    def op_h(self, operands: ContentOperands, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
             if self.internal_records_path():
                 self.current_path.close()
             self.current_point = self.subpath_start
 
-    def op_c(self, operands: OperandWindow, depth: int) -> None:
+    def op_c(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 6:
             try:
                 x1 = self.as_float(operands[0])
@@ -3108,7 +3105,7 @@ class TextState:
                 return
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
-    def op_v(self, operands: OperandWindow, depth: int) -> None:
+    def op_v(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
             x0, y0 = self.current_point
             try:
@@ -3120,7 +3117,7 @@ class TextState:
                 return
             self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
-    def op_y(self, operands: OperandWindow, depth: int) -> None:
+    def op_y(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
             try:
                 x1 = self.as_float(operands[0])
@@ -3147,42 +3144,42 @@ class TextState:
         self.current_point = None
         self.subpath_start = None
 
-    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_stroke(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("stroke")
         self.internal_end_path()
 
-    def op_paint_close_stroke(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_close_stroke(self, operands: ContentOperands, depth: int) -> None:
         self.internal_close_current_subpath()
         self.flush_drawing("stroke")
         self.internal_end_path()
 
-    def op_paint_fill(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_fill(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fill", "nonzero")
         self.internal_end_path()
 
-    def op_paint_fill_evenodd(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_fill_evenodd(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fill", "evenodd")
         self.internal_end_path()
 
-    def op_paint_fillstroke(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_fillstroke(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fillstroke", "nonzero")
         self.internal_end_path()
 
-    def op_paint_fillstroke_evenodd(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fillstroke", "evenodd")
         self.internal_end_path()
 
-    def op_paint_close_fillstroke(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_close_fillstroke(self, operands: ContentOperands, depth: int) -> None:
         self.internal_close_current_subpath()
         self.flush_drawing("fillstroke", "nonzero")
         self.internal_end_path()
 
-    def op_paint_close_fillstroke_evenodd(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_close_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
         self.internal_close_current_subpath()
         self.flush_drawing("fillstroke", "evenodd")
         self.internal_end_path()
 
-    def op_paint_clear(self, operands: OperandWindow, depth: int) -> None:
+    def op_paint_clear(self, operands: ContentOperands, depth: int) -> None:
         self.current_path.clear()
         self.internal_end_path()
 
@@ -3199,7 +3196,7 @@ class TextState:
             )
         )
 
-    def op_W(self, operands: OperandWindow, depth: int) -> None:
+    def op_W(self, operands: ContentOperands, depth: int) -> None:
         self.internal_record_clip("nonzero")
 
     def internal_record_clip(self, fill_rule: str) -> None:
@@ -3235,7 +3232,7 @@ class TextState:
                 )
             )
 
-    def op_W_star(self, operands: OperandWindow, depth: int) -> None:
+    def op_W_star(self, operands: ContentOperands, depth: int) -> None:
         self.internal_record_clip("evenodd")
 
     def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
@@ -3273,8 +3270,7 @@ class TextState:
             self.fill_color = normalized
             self.fill_pattern = None
 
-    # `o` is an OperandWindow on the hot path and a plain list elsewhere, holding
-    # raw PDF operands, so `Any` is the honest annotation for it.
+    # `o` is a tuple or list of raw PDF operands, so `Any` is the honest annotation.
     def normalize_color_operands(self, o: Any) -> tuple[float, ...] | None:
         # Plain numeric operands (the overwhelming majority) clamp directly;
         # anything else -- strings, names, nulls -- goes through the resolver.
@@ -3398,9 +3394,7 @@ class TextState:
             self.color_space_cache[cache_key] = resolved
         return resolved
 
-    def resolve_pattern_color(
-        self, operands: tuple[Any, ...] | OperandWindow
-    ) -> PatternPaint | None:
+    def resolve_pattern_color(self, operands: tuple[Any, ...]) -> PatternPaint | None:
         if not operands:
             return None
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -3473,7 +3467,7 @@ class TextState:
             glyphs=[glyph for glyph in nested_state.glyphs if glyph.has_paint],
         )
 
-    def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
+    def internal_set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
         if self.type3_uncolored:
             # 9.6.5.2: every colour operator is ignored inside an uncoloured
             # Type 3 glyph, `cs`/`CS` included. The colour setters already
@@ -3506,17 +3500,17 @@ class TextState:
                     self.fill_color_space = color_space
                     self.fill_color_spec = spec
 
-    def op_CS(self, operands: OperandWindow, depth: int) -> None:
+    def op_CS(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
 
-    def op_cs(self, operands: OperandWindow, depth: int) -> None:
+    def op_cs(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=False)
 
-    def op_SC(self, operands: OperandWindow, depth: int) -> None:
+    def op_SC(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color(operands, stroke=True, allow_pattern=False)
 
     def internal_set_color(
-        self, operands: OperandWindow, *, stroke: bool, allow_pattern: bool
+        self, operands: ContentOperands, *, stroke: bool, allow_pattern: bool
     ) -> None:
         if self.type3_uncolored:
             return
@@ -3548,16 +3542,16 @@ class TextState:
                 self.fill_color = normalized
                 self.fill_pattern = None
 
-    def op_SCN(self, operands: OperandWindow, depth: int) -> None:
+    def op_SCN(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color(operands, stroke=True, allow_pattern=True)
 
-    def op_sc(self, operands: OperandWindow, depth: int) -> None:
+    def op_sc(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color(operands, stroke=False, allow_pattern=False)
 
-    def op_scN(self, operands: OperandWindow, depth: int) -> None:
+    def op_scN(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color(operands, stroke=False, allow_pattern=True)
 
-    def op_i(self, operands: OperandWindow, depth: int) -> None:
+    def op_i(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             try:
                 value = self.as_float(operands[0])
@@ -3565,18 +3559,18 @@ class TextState:
                 return
             self.flatness = max(0, min(100, int(value)))
 
-    def op_ri(self, operands: OperandWindow, depth: int) -> None:
+    def op_ri(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         value = self.document.resolver.resolve_name_like_value(operands[0])
         if isinstance(value, str):
             self.render_intent = value
 
-    def op_MP(self, operands: OperandWindow, depth: int) -> None:
+    def op_MP(self, operands: ContentOperands, depth: int) -> None:
         # A marked-content point is not a scope. Only BMC/BDC push and EMC pops.
         return
 
-    def op_DP(self, operands: OperandWindow, depth: int) -> None:
+    def op_DP(self, operands: ContentOperands, depth: int) -> None:
         # A property-bearing marked-content point likewise has no lasting state.
         return
 
@@ -3604,19 +3598,19 @@ class TextState:
 
         return self.document.resolver.resolve_name_or_text(value)
 
-    def op_BX(self, operands: OperandWindow, depth: int) -> None:
+    def op_BX(self, operands: ContentOperands, depth: int) -> None:
         self.compatibility_depth += 1
 
-    def op_EX(self, operands: OperandWindow, depth: int) -> None:
+    def op_EX(self, operands: ContentOperands, depth: int) -> None:
         self.compatibility_depth = max(0, self.compatibility_depth - 1)
 
-    def op_d0(self, operands: OperandWindow, depth: int) -> None:
+    def op_d0(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = False
 
-    def op_d1(self, operands: OperandWindow, depth: int) -> None:
+    def op_d1(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = True
 
-    def op_sh(self, operands: OperandWindow, depth: int) -> None:
+    def op_sh(self, operands: ContentOperands, depth: int) -> None:
         if not operands or not self.capture_graphics or not self.is_graphics_visible():
             return
         shading_ref = self.document.resolver.resolve_name(operands[0])
@@ -3674,7 +3668,7 @@ class TextState:
         self.extgstate_cache[cache_key] = extgstate
         return extgstate
 
-    def op_q(self, operands: OperandWindow, depth: int) -> None:
+    def op_q(self, operands: ContentOperands, depth: int) -> None:
         self.clip_scope_stack.append(False)
         self.stack.append(
             internal_GraphicsStateSnapshot(
@@ -3719,7 +3713,7 @@ class TextState:
             )
         )
 
-    def op_Q(self, operands: OperandWindow, depth: int) -> None:
+    def op_Q(self, operands: ContentOperands, depth: int) -> None:
         clip_scope_emitted = self.clip_scope_stack.pop() if self.clip_scope_stack else False
         if self.capture_graphics and clip_scope_emitted:
             self.drawings.append(
@@ -3779,7 +3773,7 @@ class TextState:
         self.update_text_scales()
         self.update_font_metrics()
 
-    def op_cm(self, operands: OperandWindow, depth: int) -> None:
+    def op_cm(self, operands: ContentOperands, depth: int) -> None:
         if not operands or len(operands) < 6:
             return
         try:
@@ -3803,22 +3797,22 @@ class TextState:
         self.cf = m_e * cb + m_f * cd + cf
         self.update_combined()
 
-    def op_g(self, operands: OperandWindow, depth: int) -> None:
+    def op_g(self, operands: ContentOperands, depth: int) -> None:
         if operands and not self.type3_uncolored:
             self.fill_color_space = "DeviceGray"
             self.set_fill_color(operands[0])
 
-    def op_rg(self, operands: OperandWindow, depth: int) -> None:
+    def op_rg(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 3 and not self.type3_uncolored:
             self.fill_color_space = "DeviceRGB"
             self.set_fill_color(operands[0], operands[1], operands[2])
 
-    def op_k(self, operands: OperandWindow, depth: int) -> None:
+    def op_k(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) >= 4 and not self.type3_uncolored:
             self.fill_color_space = "DeviceCMYK"
             self.set_fill_color(operands[0], operands[1], operands[2], operands[3])
 
-    def op_gs(self, operands: OperandWindow, depth: int) -> None:
+    def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         name = self.document.resolver.resolve_name(operands[0])

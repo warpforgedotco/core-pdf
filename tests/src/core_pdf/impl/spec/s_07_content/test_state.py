@@ -2,7 +2,6 @@ import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
-from core_pdf.impl.spec.s_07_content.operations import OperandWindow
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
@@ -60,12 +59,12 @@ def test_graphics_state_restore_recomputes_derived_text_scales() -> None:
     state.font_size = 9.0
     state.horizontal_scale = 80.0
     state.update_text_scales()
-    state.op_q(OperandWindow(()), 0)
+    state.op_q((), 0)
     state.font_size = 20.0
     state.horizontal_scale = 50.0
     state.update_text_scales()
 
-    state.op_Q(OperandWindow(()), 0)
+    state.op_Q((), 0)
 
     assert state.text_advance_scale == 0.0072
 
@@ -112,11 +111,11 @@ def test_graphics_state_save_restore_covers_every_snapshot_field() -> None:
     )
     before = tuple(getattr(state, name) for name in fields)
 
-    state.op_q(OperandWindow(()), 0)
+    state.op_q((), 0)
     sentinel = object()
     for name in fields:
         setattr(state, name, sentinel)
-    state.op_Q(OperandWindow(()), 0)
+    state.op_Q((), 0)
 
     assert tuple(getattr(state, name) for name in fields) == before
 
@@ -132,8 +131,8 @@ def test_pdfminer_double_quote_policy_omits_next_line_move() -> None:
 
     native = state(False)
     legacy = state(True)
-    native.op_double_quote(OperandWindow((2, 3, b""), 3), 0)
-    legacy.op_double_quote(OperandWindow((2, 3, b""), 3), 0)
+    native.op_double_quote((2, 3, b""), 0)
+    legacy.op_double_quote((2, 3, b""), 0)
 
     assert (native.tm_e, native.tm_f) == (10.0, 8.0)
     assert (legacy.tm_e, legacy.tm_f) == (10.0, 20.0)
@@ -142,7 +141,7 @@ def test_pdfminer_double_quote_policy_omits_next_line_move() -> None:
 def test_text_showing_consumes_the_top_operand_from_a_malformed_stack() -> None:
     state = internal_consume(b"")
 
-    state.op_Tj(OperandWindow((b"stale", b"visible"), 2), 0)
+    state.op_Tj((b"stale", b"visible"), 0)
 
     assert state.pending_run is not None
     assert state.pending_run.text == "visible"

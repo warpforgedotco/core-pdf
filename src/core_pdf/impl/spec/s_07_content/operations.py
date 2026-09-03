@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from typing import Protocol, TypeAlias, cast, overload
+from typing import Protocol, TypeAlias, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -149,51 +149,6 @@ def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None
     return match.end()
 
 
-class OperandWindow:
-    __slots__ = ("operands", "count")
-
-    operands: list[ContentOperand] | ContentOperands
-
-    def __init__(
-        self,
-        operands: list[ContentOperand] | ContentOperands,
-        count: int = 0,
-    ) -> None:
-        self.operands = operands
-        self.count = count
-
-    def __len__(self) -> int:
-        return self.count
-
-    def __bool__(self) -> bool:
-        return self.count > 0
-
-    @overload
-    def __getitem__(self, item: int) -> ContentOperand: ...
-
-    @overload
-    def __getitem__(self, item: slice) -> list[ContentOperand]: ...
-
-    def __getitem__(self, item: int | slice) -> ContentOperand | list[ContentOperand]:
-        if type(item) is int:
-            count = self.count
-            if 0 <= item < count:
-                return self.operands[item]
-            if item < 0:
-                item += count
-            if item < 0 or item >= count:
-                raise IndexError(item)
-            return self.operands[item]
-        if isinstance(item, slice):
-            start, stop, step = item.indices(self.count)
-            return [self.operands[index] for index in range(start, stop, step)]
-        raise TypeError("operand index must be int or slice")
-
-    def __iter__(self) -> Iterator[ContentOperand]:
-        for index in range(self.count):
-            yield self.operands[index]
-
-
 class NestedStreamRequest(Exception):
     """Internal control flow used to pause a content stream for a nested one."""
 
@@ -204,7 +159,7 @@ class OperationTarget(Protocol):
     capture_clipping: bool
 
 
-OperationHandler: TypeAlias = Callable[[OperandWindow, int], None]
+OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
 
 
 def dispatch_operations(
@@ -212,11 +167,13 @@ def dispatch_operations(
     get_handler: Callable[[str], OperationHandler | None],
     target: OperationTarget | None,
     depth: int,
-    operands: list[ContentOperand] | None = None,
 ) -> None:
-    if operands is None:
-        operands = [None] * 16
-    op_count = 0
+    operands: list[ContentOperand] = []
+
+    def append_operand(value: ContentOperand) -> None:
+        if len(operands) < 16:
+            operands.append(value)
+
     raw_data = lexer.raw_data
     data_len = lexer.data_len
     raw_bytes: bytes | memoryview
@@ -226,9 +183,6 @@ def dispatch_operations(
     word_break_or_ws = SEPARATOR_TABLE
     ws_table = WS_TABLE
     is_word_start = IS_WORD_START
-    max_operands = len(operands)
-
-    operand_window = OperandWindow(operands)
     text_only = (
         target is not None
         and not target.capture_graphics
@@ -291,9 +245,7 @@ def dispatch_operations(
                 raw = raw_bytes[pos - n_raw : pos]
                 raw_key = raw.tobytes() if type(raw) is memoryview else raw
                 if is_number_word_bytes(raw_key):
-                    if op_count < max_operands:
-                        operands[op_count] = float(raw_key) if b"." in raw_key else int(raw_key)
-                    op_count += 1
+                    append_operand(float(raw_key) if b"." in raw_key else int(raw_key))
                     continue
 
                 if raw_key == b"BI":
@@ -321,36 +273,33 @@ def dispatch_operations(
                                     break
                                 raise
                             pos = recovered_pos
-                            op_count = 0
+                            operands.clear()
                             continue
                         raise
                     pos = lexer.pos
-                    if op_count < max_operands:
-                        operands[op_count] = image
-                    op_count += 1
+                    append_operand(image)
                     handler = get_handler("BI")
                     if handler is not None:
-                        operand_window.count = min(op_count, max_operands)
                         lexer.pos = pos
-                        handler(operand_window, depth)
-                    op_count = 0
+                        handler(tuple(operands), depth)
+                    operands.clear()
                     continue
 
                 # Skip irrelevant graphics operators before the normal handler lookup.
                 if text_only:
-                    if raw_key == b"q" and op_count == 0:
+                    if raw_key == b"q" and not operands:
                         skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
                         if skipped_pos is not None:
                             skipped_clip_q_count += 1
                             pos = skipped_pos
-                            op_count = 0
+                            operands.clear()
                             continue
                     if raw_key == b"Q" and skipped_clip_q_count:
                         skipped_clip_q_count -= 1
-                        op_count = 0
+                        operands.clear()
                         continue
                     if raw_key in TEXT_ONLY_SKIP_OPERATORS:
-                        op_count = 0
+                        operands.clear()
                         continue
 
                 if raw_key in (
@@ -360,38 +309,31 @@ def dispatch_operations(
                     b"stream",
                     b"endstream",
                 ):
-                    op_count = 0
+                    operands.clear()
                     continue
                 op_name = cast(str, lexer.parse_keyword(raw_key))
                 handler = get_handler(op_name)
 
                 if handler is not None:
-                    operand_window.count = min(op_count, max_operands)
                     lexer.pos = pos
-                    handler(operand_window, depth)
-                op_count = 0
+                    handler(tuple(operands), depth)
+                operands.clear()
                 continue
 
         lexer.pos = pos
         if byte == 91:
             if target is not None and not target.capture_graphics and not target.capture_glyphs:
                 if pos + 1 < data_len and raw_bytes[pos + 1] == 93:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, ())
+                    append_operand(cast(ContentOperand, ()))
                     pos += 2
-                    op_count += 1
                     continue
                 simple_tj_array = lexer.parse_simple_tj_array()
                 if simple_tj_array is not None:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, simple_tj_array)
+                    append_operand(cast(ContentOperand, simple_tj_array))
                 else:
                     operand_start = pos
                     try:
-                        if op_count < max_operands:
-                            operands[op_count] = cast(ContentOperand, lexer.parse_array())
-                        else:
-                            lexer.parse_array()
+                        append_operand(cast(ContentOperand, lexer.parse_array()))
                     except PdfParseError as exc:
                         if str(exc) == "unterminated array" and lexer.pos >= data_len:
                             pos = data_len
@@ -403,10 +345,7 @@ def dispatch_operations(
             else:
                 operand_start = pos
                 try:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, lexer.parse_array())
-                    else:
-                        lexer.parse_array()
+                    append_operand(cast(ContentOperand, lexer.parse_array()))
                 except PdfParseError as exc:
                     if str(exc) == "unterminated array" and lexer.pos >= data_len:
                         pos = data_len
@@ -416,7 +355,6 @@ def dispatch_operations(
                         continue
                     raise
             pos = lexer.pos
-            op_count += 1
             continue
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
@@ -431,10 +369,7 @@ def dispatch_operations(
                     if legacy_pdfminer_mode:
                         lexer.recover_malformed_objects = False
                     try:
-                        if op_count < max_operands:
-                            operands[op_count] = cast(ContentOperand, parse_dictionary())
-                        else:
-                            parse_dictionary()
+                        append_operand(cast(ContentOperand, parse_dictionary()))
                     finally:
                         lexer.recover_malformed_objects = previous_recovery
                 except PdfParseError as exc:
@@ -457,10 +392,8 @@ def dispatch_operations(
                 if should_decipher:
                     raw_string = lexer.apply_decipher(raw_string)
                 value = PdfString(raw_string, is_literal=False)
-                if op_count < max_operands:
-                    operands[op_count] = value
+                append_operand(value)
             pos = lexer.pos
-            op_count += 1
             continue
         if byte == 40:
             literal_start = lexer.pos
@@ -481,10 +414,8 @@ def dispatch_operations(
                     compatibility_data=compatibility_string,
                 )
             )
-            if op_count < max_operands:
-                operands[op_count] = string_value
+            append_operand(string_value)
             pos = lexer.pos
-            op_count += 1
             continue
         if byte == 47:
             if (
@@ -493,8 +424,7 @@ def dispatch_operations(
                 and 48 <= raw_bytes[pos + 2] <= 57
                 and (pos + 3 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 3]])
             ):
-                if op_count < max_operands:
-                    operands[op_count] = FONT_DIGIT_NAMES[raw_bytes[pos + 2] - 48]
+                append_operand(FONT_DIGIT_NAMES[raw_bytes[pos + 2] - 48])
                 pos += 3
             elif (
                 pos + 4 <= data_len
@@ -503,8 +433,7 @@ def dispatch_operations(
                 and 48 <= raw_bytes[pos + 3] <= 57
                 and (pos + 4 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 4]])
             ):
-                if op_count < max_operands:
-                    operands[op_count] = CS_DIGIT_NAMES[raw_bytes[pos + 3] - 48]
+                append_operand(CS_DIGIT_NAMES[raw_bytes[pos + 3] - 48])
                 pos += 4
             elif (
                 pos + 4 <= data_len
@@ -513,23 +442,19 @@ def dispatch_operations(
                 and 48 <= raw_bytes[pos + 3] <= 57
                 and (pos + 4 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 4]])
             ):
-                if op_count < max_operands:
-                    operands[op_count] = TT_DIGIT_NAMES[raw_bytes[pos + 3] - 48]
+                append_operand(TT_DIGIT_NAMES[raw_bytes[pos + 3] - 48])
                 pos += 4
             elif (
                 pos + 2 <= data_len
                 and raw_bytes[pos + 1] == 80
                 and (pos + 2 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 2]])
             ):
-                if op_count < max_operands:
-                    operands[op_count] = P_NAME
+                append_operand(P_NAME)
                 pos += 2
             else:
                 name_value = PdfName_of(lexer.read_name())
-                if op_count < max_operands:
-                    operands[op_count] = name_value
+                append_operand(name_value)
                 pos = lexer.pos
-            op_count += 1
             continue
         if byte == 62:
             pos = pos + 2 if pos + 1 < data_len and raw_bytes[pos + 1] == 62 else pos + 1
@@ -547,8 +472,8 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     results: list[ContentOperation] = []
 
     def get_handler(op_name: str) -> OperationHandler:
-        def collect(operands: OperandWindow, _depth: int) -> None:
-            results.append((op_name, tuple(operands)))
+        def collect(operands: ContentOperands, _depth: int) -> None:
+            results.append((op_name, operands))
 
         return collect
 
@@ -586,7 +511,6 @@ __all__ = (
     "ContentOperand",
     "ContentOperands",
     "ContentOperation",
-    "OperandWindow",
     "content_stream_may_show_text",
     "dispatch_operations",
     "iter_content_operations",

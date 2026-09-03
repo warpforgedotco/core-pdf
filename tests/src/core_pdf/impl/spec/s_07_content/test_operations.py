@@ -5,7 +5,7 @@ import pytest
 
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import (
-    OperandWindow,
+    ContentOperands,
     content_stream_may_show_text,
     dispatch_operations,
     iter_content_operations,
@@ -142,7 +142,7 @@ def internal_dispatch_with_handlers(
         target = internal_DispatchTarget()
 
     def make(name: str):
-        def handler(window: OperandWindow, depth: int) -> None:
+        def handler(window: ContentOperands, depth: int) -> None:
             seen.append((name, tuple(window), depth))
 
         return handler
