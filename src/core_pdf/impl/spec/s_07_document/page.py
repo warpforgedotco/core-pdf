@@ -13,7 +13,6 @@ from core_pdf.impl.primitives import (
     MissingObject,
     PdfReference,
 )
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
@@ -63,7 +62,6 @@ class PdfPage:
     page_program_cache: PageProgram | None
     text_lines: list[LayoutLine] | None
     links: list[RawLink] | MissingObject
-    extraction_cache: ExtractionCache | None
 
     def __init__(
         self,
@@ -79,12 +77,6 @@ class PdfPage:
         self.page_program_cache = None
         self.links = MISSING
         self.text_lines = None
-        with document.internal_cache_lock:
-            page_caches = document.page_extraction_caches
-            if page_caches is None:
-                page_caches = {}
-                document.page_extraction_caches = page_caches
-            self.extraction_cache = page_caches.setdefault(page_number, ExtractionCache())
 
     @property
     def inherited_values(self) -> InheritedValueMap:

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from core_pdf.impl.extract.contracts import (
@@ -15,7 +15,6 @@ from core_pdf.impl.extract.contracts import (
 )
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 
 Box = tuple[float, float, float, float]
@@ -28,7 +27,6 @@ class FakePage:
     width: float = 600.0
     height: float = 800.0
     page_number: int = 1
-    extraction_cache: ExtractionCache = field(default_factory=ExtractionCache)
 
 
 def page_evidence(**overrides: Any) -> PageEvidence:

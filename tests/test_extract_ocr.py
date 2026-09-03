@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -38,6 +39,7 @@ from core_pdf.impl.extract.ocr.strokes import (
     StrokedTextRun,
     StrokedTextSeed,
 )
+from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model import geometry as model_geometry
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.model import RasterImage
@@ -1685,10 +1687,8 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
     assert observations.text == ("full fallback",)
 
 
-def stroked_document(
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[
-    tuple[FakeDocumentPage, ...],
+def stroked_document() -> tuple[
+    tuple[RecordingExtraction, ...],
     tuple[CapturedPage, ...],
     tuple[tuple[parse_selection.GlyphSignature, str], ...],
     list[int],
@@ -1714,20 +1714,19 @@ def stroked_document(
     )
     ocr_calls: list[int] = []
     plan_calls: list[int] = []
-    extractions = {
-        id(page): RecordingExtraction(
+    extractions = tuple(
+        RecordingExtraction(
             page, capture, alphabet=alphabet, plan_calls=plan_calls, ocr_calls=ocr_calls
         )
         for page, capture in zip(pages, captures, strict=True)
-    }
-    monkeypatch.setattr(parse_selection, "page_extraction", lambda page: extractions[id(page)])
-    return pages, captures, alphabet, ocr_calls, plan_calls
+    )
+    return extractions, captures, alphabet, ocr_calls, plan_calls
 
 
 def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pages, captures, alphabet, ocr_calls, plan_calls = stroked_document(monkeypatch)
+    extractions, captures, alphabet, ocr_calls, plan_calls = stroked_document()
     decoded = StrokedTextDecode(
         observations=tuple(
             StrokedTextObservation(
@@ -1751,7 +1750,7 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     )
 
     enrichment = parse_selection.internal_prepare_document_stroked_mappings(
-        pages,
+        cast(tuple[internal_PageExtraction, ...], extractions),
         captures,
         inline_scope(),
     )
@@ -1774,7 +1773,7 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
 def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pages, captures, alphabet, ocr_calls, plan_calls = stroked_document(monkeypatch)
+    extractions, captures, alphabet, ocr_calls, plan_calls = stroked_document()
     monkeypatch.setattr(
         parse_selection,
         "decode_stroked_text_profile_with_alphabet",
@@ -1789,7 +1788,7 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     )
 
     enrichment = parse_selection.internal_prepare_document_stroked_mappings(
-        pages,
+        cast(tuple[internal_PageExtraction, ...], extractions),
         captures,
         inline_scope(),
     )

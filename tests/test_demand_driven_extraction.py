@@ -9,10 +9,10 @@ from tests.helpers.paths import SCORE_BENCH
 FIXTURE = SCORE_BENCH / "Employee_Health_Benefits_Assess-p006.pdf"
 
 
-def test_repeated_extract_reuses_the_cached_table_stage(
+def test_repeated_extract_materializes_the_table_stage_each_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Repeated extraction reuses both the emitted page and its table-stage result."""
+    """Repeated direct extraction remains deterministic without retained page state."""
     calls = 0
 
     def counted_extract_tables(
@@ -29,6 +29,6 @@ def test_repeated_extract_reuses_the_cached_table_stage(
         first = page.extract()
         second = page.extract()
 
-    assert first is second
+    assert first == second
     assert first.tables == ()
-    assert calls == 1
+    assert calls == 2

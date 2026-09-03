@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Orchestration and per-page caching."""
+"""Page extraction orchestration."""
 
 from __future__ import annotations
 
@@ -38,8 +38,6 @@ from core_pdf.impl.output import (
 from core_pdf.impl.runtime.execution import TaskScope
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
 
-PAGE_EXTRACTION_CACHE_KEY = "page_extraction_v3"
-
 internal_T = TypeVar("internal_T")
 
 
@@ -63,7 +61,7 @@ def internal_collected_records(
 
 
 class internal_PageExtraction:
-    """Lazily materialized extraction products for one page."""
+    """Lazily materialized extraction products for one extraction operation."""
 
     def __init__(
         self,
@@ -81,21 +79,6 @@ class internal_PageExtraction:
         self.internal_tables: tuple[Table, ...] | None = None
         self.internal_layout: tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence] | None = None
         self.internal_assembled_page: Any | None = None
-
-    def internal_invalidate_after_capture(self) -> None:
-        """Drop every product downstream of the capture, in pipeline order."""
-        self.internal_plan = None
-        self.internal_recognition = None
-        self.internal_observations = None
-        self.internal_tables = None
-        self.internal_layout = None
-        self.internal_assembled_page = None
-
-    def replace_capture(self, capture: CapturedPage) -> None:
-        """Install a capture and atomically invalidate every dependent product."""
-        with self.page.internal_page_lock:
-            self.internal_capture = capture
-            self.internal_invalidate_after_capture()
 
     def capture(self) -> CapturedPage:
         with self.page.internal_page_lock:
@@ -266,16 +249,6 @@ class internal_PageExtraction:
             return assembled
 
 
-def page_extraction(page: Any) -> internal_PageExtraction:
-    cache = page.extraction_cache
-    with page.internal_page_lock:
-        extraction = cache.get(PAGE_EXTRACTION_CACHE_KEY)
-        if not isinstance(extraction, internal_PageExtraction):
-            extraction = internal_PageExtraction(page)
-            cache[PAGE_EXTRACTION_CACHE_KEY] = extraction
-        return extraction
-
-
 def extract_page(page: Any, context: TaskScope) -> Any:
-    """Return the canonical emitted page, parsing and emitting at most once."""
-    return page_extraction(page).assembled_page(context)
+    """Extract and emit one page."""
+    return internal_PageExtraction(page).assembled_page(context)

@@ -28,7 +28,6 @@ from core_pdf.impl.extract.ocr import rescue as ocr_rescue
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import TaskScope
 
 Box = tuple[float, float, float, float]
@@ -197,7 +196,6 @@ class FakeDocumentPage:
     """The page attributes document-level enrichment reads and locks on."""
 
     page_number: int
-    extraction_cache: ExtractionCache = field(default_factory=ExtractionCache)
     internal_page_lock: RLock = field(default_factory=RLock)
 
 

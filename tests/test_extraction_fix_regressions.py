@@ -27,7 +27,7 @@ from core_pdf.impl.extract.emit import (
     internal_corrupt_native_block,
     internal_symbol_characters,
 )
-from core_pdf.impl.extract.pipeline import page_extraction
+from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.extract.regions import internal_peel_spanning_band
 from core_pdf.impl.extract.table_cleanup import (
     internal_merge_wrapped_cell_rows,
@@ -314,7 +314,7 @@ def test_cell_background_does_not_paint_over_its_text() -> None:
     fixture = score_bench_pdf("fhhd0346-p009.pdf")
     scale = 2.0
     with PdfDocument.open(fixture) as document:
-        capture = page_extraction(document.pages[0]).capture()
+        capture = internal_PageExtraction(document.pages[0]).capture()
         header = next(run for run in capture.runs if (run.text or "").strip() == "Material")
         raster = document.pages[0].render().rasterize(scale=scale)
 

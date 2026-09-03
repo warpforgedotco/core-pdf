@@ -20,7 +20,7 @@ from core_pdf.impl.extract.contracts import (
     WorkPlan,
 )
 from core_pdf.impl.extract.observations import plan_page
-from core_pdf.impl.extract.pipeline import page_extraction
+from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -218,13 +218,14 @@ def test_vector_complexity_ignores_graphics_state_control_records() -> None:
     assert internal_vector_complexity(drawings, (object(), object())) == 5
 
 
-def test_page_extraction_owns_and_reuses_canonical_capture() -> None:
+def test_page_extraction_reuses_capture_within_one_operation() -> None:
     fixture = SCORE_BENCH / "Employee_Health_Benefits_Assess-p006.pdf"
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         program = page.get_page_program()
-        first = page_extraction(page).capture()
-        second = page_extraction(page).capture()
+        extraction = internal_PageExtraction(page)
+        first = extraction.capture()
+        second = extraction.capture()
 
     assert first is second
     assert first.program is program

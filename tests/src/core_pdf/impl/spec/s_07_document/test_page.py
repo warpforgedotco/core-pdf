@@ -24,7 +24,6 @@ class FakeDocument:
         self.internal_fields = fields
         self.pages: list[Any] = []
         self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
-        self.page_extraction_caches: dict[int, object] | None = None
 
     def page_lock(self, page_number: int) -> threading.RLock:
         with self.internal_cache_lock:

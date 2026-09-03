@@ -38,7 +38,7 @@ def test_ocr_extraction_can_start_in_an_application_worker() -> None:
         from concurrent.futures import ThreadPoolExecutor
         from pathlib import Path
         from core_pdf import PdfDocument
-        from core_pdf.impl.extract.pipeline import page_extraction
+        from core_pdf.impl.extract.pipeline import internal_PageExtraction
 
         def extract(fixture):
             with PdfDocument.open(Path(fixture)) as document:
@@ -47,7 +47,7 @@ def test_ocr_extraction_can_start_in_an_application_worker() -> None:
                     "characters": len(extracted.text),
                     "passes": [
                         item.name
-                        for item in page_extraction(document.pages[0]).plan().ocr_passes
+                        for item in internal_PageExtraction(document.pages[0]).plan().ocr_passes
                     ],
                     "worker": threading.current_thread() is not threading.main_thread(),
                 }}
@@ -464,51 +464,21 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
         assert (PdfName.of("Type"), PdfName.of("Catalog")) in value.items()
 
 
-def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
-    original = parse_pipeline.internal_PageExtraction.assembled_page
-    calls = 0
-    calls_lock = threading.Lock()
-
-    def counted_assembly(
-        extraction: parse_pipeline.internal_PageExtraction,
-        context: TaskScope,
-    ) -> Page:
-        nonlocal calls
-        with extraction.page.internal_page_lock:
-            if extraction.internal_assembled_page is None:
-                with calls_lock:
-                    calls += 1
-                time.sleep(0.05)
-        return original(extraction, context)
-
-    monkeypatch.setattr(
-        parse_pipeline.internal_PageExtraction,
-        "assembled_page",
-        counted_assembly,
-    )
-    with PdfDocument.open(SAMPLE_PDF) as document:
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            results = list(executor.map(lambda internal_index: document.extract().text, range(4)))
-
-    assert results[0]
-    assert results == [results[0]] * 4
-    assert calls == 1
-
-
-def test_document_and_page_share_the_emitted_page() -> None:
-    with PdfDocument.open(SAMPLE_PDF) as document:
-        extracted_document = document.extract()
-        extracted_page = document.pages[0].extract()
-
-    assert extracted_document.pages[0] is extracted_page
-
-
-def test_concurrent_document_extracts_share_the_emitted_document() -> None:
+def test_concurrent_same_document_extractions_are_consistent() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda internal_index: document.extract(), range(4)))
 
-    assert all(result is results[0] for result in results)
+    assert results[0].text
+    assert results == [results[0]] * 4
+
+
+def test_document_and_page_emit_the_same_page() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        extracted_document = document.extract()
+        extracted_page = document.pages[0].extract()
+
+    assert extracted_document.pages[0] == extracted_page
 
 
 def internal_multi_page_pdf() -> bytes:
@@ -533,9 +503,7 @@ def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.Mon
     )
     with PdfDocument.open(internal_multi_page_pdf()) as document:
         selected = document.extract(pages=2)
-        cached = document.extract(pages=[2])
 
-    assert selected is cached
     assert tuple(page.page_number for page in selected.pages) == (2,)
     assert "page 2 payload" in selected.text
     assert "page 1 payload" not in selected.text
@@ -569,7 +537,7 @@ def test_distinct_page_selections_can_extract_concurrently(
     assert [page.pages[0].page_number for page in results] == [1, 2]
 
 
-def test_overlapping_page_selections_share_base_capture(
+def test_overlapping_page_selections_extract_independently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original = parse_pipeline.capture_page
@@ -595,4 +563,4 @@ def test_overlapping_page_selections_share_base_capture(
         (1, 2),
         (2, 3),
     ]
-    assert calls == {1: 1, 2: 1, 3: 1}
+    assert calls == {1: 1, 2: 2, 3: 1}

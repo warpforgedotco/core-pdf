@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Iterable
-from concurrent.futures import Future
 from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -214,10 +213,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         self.internal_operation_cancelled = threading.Event()
         self.internal_active_operations = 0
         self.internal_closing = False
-        self.internal_document_extract_lock = threading.RLock()
-        self.internal_extraction_generation = 0
-        self.internal_extracted_documents: dict[tuple[int, ...], Any] = {}
-        self.internal_extraction_flights: dict[tuple[int, tuple[int, ...]], Future[Any]] = {}
         super().__init__(
             source,
             password=password,
@@ -284,12 +279,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
                 return
         super().close()
 
-    def invalidate_document_extraction_cache(self) -> None:
-        with self.internal_document_extract_lock:
-            self.internal_extraction_generation += 1
-            self.internal_extracted_documents.clear()
-            super().invalidate_document_extraction_cache()
-
     def extract(
         self,
         *,
@@ -298,57 +287,25 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         context: TaskScope | None = None,
     ) -> Any:
         with self.acquire_operation() as operation:
-            leader = False
-            flight: Future[Any] | None = None
-            selected_pages: tuple[Any, ...] = ()
-            with self.internal_document_extract_lock:
-                selected = tuple(self.selected_page_indexes(pages))
-                generation = self.internal_extraction_generation
-                flight_key = generation, selected
-                result = self.internal_extracted_documents.get(selected)
-                if result is None:
-                    flight = self.internal_extraction_flights.get(flight_key)
-                    if flight is None:
-                        selected_pages = tuple(self.pages[index] for index in selected)
-                        flight = Future()
-                        self.internal_extraction_flights[flight_key] = flight
-                        leader = True
-            if result is None:
-                assert flight is not None
-                active_flight = flight
-                if not leader:
-                    result = active_flight.result()
-                else:
-                    try:
-                        if context is None:
-                            with RUNTIME.task_scope(
-                                cancelled=lambda: operation.cancelled,
-                            ) as active_context:
-                                result = extract_document(self, active_context, selected_pages)
-                        else:
-                            result = extract_document(
-                                self,
-                                context.with_cancellation(lambda: operation.cancelled),
-                                selected_pages,
-                            )
-                    except BaseException as exc:
-                        active_flight.set_exception(exc)
-                        raise
-                    else:
-                        with self.internal_document_extract_lock:
-                            if generation == self.internal_extraction_generation:
-                                self.internal_extracted_documents[selected] = result
-                        active_flight.set_result(result)
-                    finally:
-                        with self.internal_document_extract_lock:
-                            self.internal_extraction_flights.pop(flight_key, None)
+            selected_pages = tuple(self.pages[index] for index in self.selected_page_indexes(pages))
+            if context is None:
+                with RUNTIME.task_scope(
+                    cancelled=lambda: operation.cancelled,
+                ) as active_context:
+                    result = extract_document(self, active_context, selected_pages)
+            else:
+                result = extract_document(
+                    self,
+                    context.with_cancellation(lambda: operation.cancelled),
+                    selected_pages,
+                )
         for adapter in adapters:
             result = adapter.apply(result)
         return result
 
     @property
     def structured_document(self) -> StructuredDocument:
-        """Return the cached high-level structured view owned by this document."""
+        """Return the high-level structured view of this document."""
         if self.page_count() == 0:
             return StructuredDocument(metadata=self.metadata)
         return cast(StructuredDocument, self.extract())

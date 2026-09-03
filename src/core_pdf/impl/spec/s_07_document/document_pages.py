@@ -14,13 +14,11 @@ from typing import (
     overload,
 )
 
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 
 
 class PageListItem(Protocol):
     page_dict: PdfDict
-    extraction_cache: ExtractionCache | None
 
 
 internal_PageT = TypeVar("internal_PageT", bound=PageListItem)

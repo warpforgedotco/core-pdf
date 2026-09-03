@@ -4,7 +4,6 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.spec.s_07_document.document_pages import LazyPageList
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 
@@ -17,7 +16,6 @@ class FakePage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        self.extraction_cache: ExtractionCache | None = None
 
 
 class FakeDocument:

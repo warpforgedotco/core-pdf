@@ -19,7 +19,6 @@ from core_pdf.impl.exceptions import (
 )
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
@@ -110,7 +109,6 @@ class PdfDocument(
         "fields_cache",
         "fields_by_page_cache",
         "page_labels_cache",
-        "page_extraction_caches",
         "internal_cache_lock",
         "internal_page_locks",
         "xref_was_recovered",
@@ -144,7 +142,6 @@ class PdfDocument(
     fields_cache: list[RawFormField] | None
     fields_by_page_cache: dict[int, list[RawFormField]] | None
     page_labels_cache: list[str] | None | MissingObject
-    page_extraction_caches: dict[int, ExtractionCache] | None
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
     xref_was_recovered: bool
@@ -322,20 +319,6 @@ class PdfDocument(
             self.mark_info_cache = mark_info
             return mark_info
 
-    def invalidate_document_extraction_cache(self) -> None:
-        """Clear every per-page extraction cache; the single home of page-cache clearing."""
-        with self.internal_cache_lock:
-            if self.page_extraction_caches is not None:
-                for cache in self.page_extraction_caches.values():
-                    cache.clear()
-            self.page_extraction_caches = None
-            pages_cache = self.pages_cache
-            if pages_cache is not None:
-                for page in tuple(pages_cache):
-                    page_cache = page.extraction_cache
-                    if page_cache is not None:
-                        page_cache.clear()
-
     @property
     def recovery_enabled(self) -> bool:
         """Whether the document was reconstructed and so needs lenient traversal."""
@@ -357,7 +340,6 @@ class PdfDocument(
         self.oc_layers = None
         self.fields_cache = None
         self.fields_by_page_cache = None
-        self.page_extraction_caches = None
         self.structure_cache = MISSING
         self.mark_info_cache = MISSING
         self.acroform_cache = MISSING
@@ -660,11 +642,7 @@ class PdfDocument(
         discovered = list(self.discover_page_dicts())
         if discovered:
             self.page_tree_was_recovered = True
-            # Publish the recovered page set before invalidating dependent
-            # extraction state. A LazyPageList consults page_count while it is
-            # cleared; without this cache, that re-enters page-tree recovery.
             self.page_dicts_cache = discovered
-            self.invalidate_document_extraction_cache()
         return discovered
 
     def iter_page_dicts_stream(self) -> Iterator[PdfDict]:
