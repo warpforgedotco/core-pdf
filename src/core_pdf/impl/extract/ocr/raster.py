@@ -490,7 +490,6 @@ def internal_rendered_page_raster(
     *,
     crop: tuple[float, float, float, float] | None = None,
     rendered: Any | None = None,
-    cache: bool = True,
     max_pixels: int = MAX_OCR_PIXELS,
     include_native_text: bool = False,
 ) -> internal_Raster | None:
@@ -513,7 +512,6 @@ def internal_rendered_page_raster(
             scale=scale,
             max_pixels=max_pixels,
             crop=crop,
-            cache=cache,
         )
     except IndexError:
         # A malformed embedded image can produce a source sample outside its

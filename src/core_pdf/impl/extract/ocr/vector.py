@@ -268,7 +268,6 @@ def internal_stroked_vector_text_raster(
             background=(255, 255, 255, 255),
             scale=scale,
             max_pixels=max_pixels,
-            cache=False,
         )
     raster = internal_Raster(
         data,
@@ -338,7 +337,6 @@ def internal_full_stroked_vector_text_raster(
         scale=scale,
         max_pixels=max_pixels,
         crop=crop,
-        cache=False,
     )
     raster = internal_Raster(
         data,

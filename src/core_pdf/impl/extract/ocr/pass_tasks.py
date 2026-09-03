@@ -139,7 +139,6 @@ class internal_OcrPassTaskFactory:
             preview_raster = internal_rendered_page_raster(
                 self.capture,
                 ocr_pass.scale,
-                cache=True,
                 max_pixels=OCR_PREFLIGHT_PIXELS,
                 include_native_text=ocr_pass.include_native_text,
             )

@@ -29,7 +29,7 @@ def test_embedded_type3_raster_matches_poppler_foreground_mask() -> None:
     pdf = FIXTURES / "PyMuPDF" / "tests" / "resources" / "type3font.pdf"
 
     with PdfDocument.open(pdf) as document:
-        raster = document.pages[0].render().rasterize(scale=2.0, cache=False)
+        raster = document.pages[0].render().rasterize(scale=2.0)
 
     pixels = numpy.asarray(raster.pixels).reshape(raster.height, raster.width, 4)
     foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
@@ -63,7 +63,7 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
         page = document.pages[0]
         program = page.get_page_program()
         glyphs = program.glyphs
-        raster = page.render(RenderOptions(include_annotations=False)).rasterize(cache=False)
+        raster = page.render(RenderOptions(include_annotations=False)).rasterize()
 
     assert len(glyphs) == 119
     assert "".join(glyph.text for glyph in glyphs) == (

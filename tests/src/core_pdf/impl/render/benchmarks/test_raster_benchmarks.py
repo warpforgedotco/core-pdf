@@ -72,7 +72,6 @@ def internal_rasterize(rendered, scale: float) -> object:
         background=(255, 255, 255, 255),
         scale=scale,
         max_pixels=MAX_PIXELS,
-        cache=False,
     )
 
 

@@ -83,9 +83,7 @@ def trace_document(pdf: pathlib.Path) -> set[RenderLine]:
     sys.settrace(tracer)
     try:
         with PdfDocument.open(pdf) as document:
-            document.pages[0].render().rasterize(
-                scale=1.0, background=(255, 255, 255, 255), cache=False
-            )
+            document.pages[0].render().rasterize(scale=1.0, background=(255, 255, 255, 255))
     except Exception as error:  # a document that fails to render still tells us nothing
         print(f"  ! {pdf.name}: {type(error).__name__}: {error}", file=sys.stderr)
     finally:

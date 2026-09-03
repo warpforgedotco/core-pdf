@@ -406,7 +406,6 @@ def internal_candidate_region_tasks(
                 ocr_pass.scale,
                 crop=region.page_box,
                 rendered=rendered,
-                cache=True,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,
             )
@@ -499,7 +498,6 @@ def internal_high_resolution_weak_region_tasks(
             ocr_pass.scale,
             crop=region.page_box,
             rendered=rendered,
-            cache=True,
             max_pixels=ocr_pass.pixel_budget,
             include_native_text=ocr_pass.include_native_text,
         )

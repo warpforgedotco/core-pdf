@@ -28,7 +28,6 @@ from core_pdf.impl.render.target import internal_RasterTarget
 from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
-from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -56,11 +55,8 @@ class RenderedPage:
     height: float
     rotate: int
     display_list: DisplayList
-    image_cache: ImageCache | None = field(default=None, repr=False)
-    cache_identity: tuple[object, ...] = field(default=(), repr=False)
     render_plan: CompiledRenderPlan | None = field(default=None, repr=False)
     metadata: dict[str, Any] = field(default_factory=dict)
-    raster_cache: dict[tuple[Any, ...], RasterImage] = field(default_factory=dict, repr=False)
 
     def internal_render_items(
         self,
@@ -140,27 +136,10 @@ class RenderedPage:
         scale: float = 1.0,
         max_pixels: int | None = None,
         crop: tuple[float, float, float, float] | None = None,
-        cache: bool = True,
     ) -> RasterImage:
         scale = max(0.01, float(scale))
         self.validate_raster_size(scale, max_pixels, crop=crop)
         crop = self.internal_effective_crop(crop)
-        raster_options = (
-            tuple(background),
-            scale,
-            tuple(crop) if isinstance(crop, (list, tuple)) else None,
-            self.rotate,
-        )
-        cache_key = ImageCacheKey("page-raster", self.cache_identity or (id(self),), raster_options)
-        cached = (
-            self.image_cache.get(cache_key)
-            if cache and self.image_cache is not None
-            else self.raster_cache.get(raster_options)
-            if cache
-            else None
-        )
-        if cached is not None:
-            return cached
         if crop is not None:
             crop_x0, crop_y0, internal_crop_x1, crop_y1 = crop
         else:
@@ -376,11 +355,6 @@ class RenderedPage:
             # A rotation that is not a multiple of 90 rasterizes unrotated; the
             # reported dimensions match the buffer's unrotated layout.
             result = RasterImage(raster_target.pixels, width, height, 4)
-        if cache:
-            if self.image_cache is not None:
-                self.image_cache.put(cache_key, result)
-            else:
-                self.raster_cache[raster_options] = result
         return result
 
     def to_dict(self) -> dict[str, Any]:
@@ -696,17 +670,6 @@ def compose_page(
         height=height,
         rotate=(getattr(page, "rotation", 0) + options.rotate) % 360,
         display_list=display_list,
-        image_cache=getattr(getattr(page, "document", None), "image_cache", None),
-        cache_identity=(
-            "page",
-            getattr(page, "page_number", 0),
-            id(page_program),
-            options.rotate,
-            options.include_annotations,
-            options.include_layers,
-            options.include_text,
-            options.crop,
-        ),
         metadata={
             "crop": options.crop,
             "group_alpha": (
