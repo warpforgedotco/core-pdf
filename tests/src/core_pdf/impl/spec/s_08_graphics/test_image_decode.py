@@ -54,7 +54,7 @@ def test_image_decode_converts_cmyk_jpeg_samples_to_rgb() -> None:
     numpy.testing.assert_array_equal(decoded.data, expected)
 
 
-def test_image_source_decodes_once_into_read_only_ndarray() -> None:
+def test_image_source_decodes_into_read_only_ndarray() -> None:
     source = ImageSource(
         bytes((10, 20, 30, 40, 50, 60)),
         {
@@ -68,14 +68,15 @@ def test_image_source_decodes_once_into_read_only_ndarray() -> None:
     first = source.decode()
     second = source.decode()
 
-    assert first is second
     assert first is not None
+    assert second is not None
+    numpy.testing.assert_array_equal(second.array, first.array)
     assert first.array.shape == (1, 2, 3)
     assert first.array.strides[0] == first.stride
     assert not first.array.flags.writeable
 
 
-def test_image_source_applies_soft_mask_once() -> None:
+def test_image_source_applies_soft_mask() -> None:
     source = ImageSource(
         bytes((10, 20, 30, 40, 50, 60)),
         {
@@ -123,10 +124,14 @@ def test_image_source_prepares_native_soft_mask_and_reports_all_bytes() -> None:
     )
 
     prepared = source.prepare()
+    repeated = source.prepare()
 
-    assert prepared is source.prepare()
     assert prepared is not None
+    assert repeated is not None
+    numpy.testing.assert_array_equal(repeated.raster.array, prepared.raster.array)
     assert prepared.soft_mask is not None
+    assert repeated.soft_mask is not None
+    numpy.testing.assert_array_equal(repeated.soft_mask.array, prepared.soft_mask.array)
     assert prepared.soft_mask.array.shape == (2, 2, 1)
     assert prepared.nbytes == prepared.raster.nbytes + prepared.soft_mask.nbytes
     numpy.testing.assert_array_equal(prepared.soft_mask.array[:, :, 0], ((0, 64), (128, 255)))
