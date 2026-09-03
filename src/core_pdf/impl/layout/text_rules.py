@@ -10,7 +10,6 @@ import struct
 import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from importlib.resources import files
 from statistics import median_low
 
@@ -110,7 +109,6 @@ class WordRankIndex(Mapping[str, int]):
         return self.internal_count
 
 
-@lru_cache(maxsize=1)
 def english_word_frequencies() -> dict[str, WordFrequency]:
     frequencies: dict[str, WordFrequency] = {}
     load_norvig_counts(frequencies)
@@ -118,7 +116,6 @@ def english_word_frequencies() -> dict[str, WordFrequency]:
     return frequencies
 
 
-@lru_cache(maxsize=1)
 def english_word_ranks() -> Mapping[str, int]:
     """Open the packaged rank index without inflating source word lists."""
     import os

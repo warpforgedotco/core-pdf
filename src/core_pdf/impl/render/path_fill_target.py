@@ -269,7 +269,6 @@ class internal_PathFillTargetMixin:
         fill_path_scanlines = self.fill_path_scanlines
         fill_rect = self.fill_rect
         path_bbox = clip.path_bbox
-        path_edges = clip.path_edges
         pixel_in_clip = self.pixel_in_clip
         pixel_view = self.pixel_view
         pixels = self.pixels
@@ -279,7 +278,7 @@ class internal_PathFillTargetMixin:
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
             return
-        edges = path_edges(path)
+        edges = path.fill_edges()
         if not edges:
             return
         bbox = path_bbox(path)

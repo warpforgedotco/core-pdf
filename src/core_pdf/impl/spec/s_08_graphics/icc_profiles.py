@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cached_property, lru_cache
 from typing import Any, TypedDict
 
 import numpy
 
-from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_08_graphics.color_math import (
     d50_xyz_to_srgb,
     lab_to_xyz,
@@ -48,13 +46,13 @@ class IccSampleError(ValueError):
     """Raised when sample arrays do not match an ICC transform."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IccCurve:
     kind: str
     values: tuple[float, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IccMatrixProfile:
     color_space: str
     pcs: str
@@ -62,12 +60,8 @@ class IccMatrixProfile:
     matrix: tuple[tuple[float, float, float], ...]
     curves: tuple[IccCurve, ...]
 
-    @cached_property
-    def matrix_array(self) -> numpy.ndarray[Any, Any]:
-        return readonly(numpy.asarray(self.matrix, dtype=numpy.float32))
 
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IccLutProfile:
     color_space: str
     pcs: str
@@ -80,33 +74,6 @@ class IccLutProfile:
     output_tables: tuple[tuple[float, ...], ...]
     legacy_lab: bool = False
     black_point: tuple[float, float, float] | None = None
-
-    # These arrays were previously rebuilt through module-level lru_caches keyed
-    # on the tuples themselves. A tuple does not memoize its hash, so every
-    # cache *hit* re-walked the key: 2055us for an 83521x3 CLUT, of which 1950us
-    # was hash(). The profile is already cached on its own bytes, so the derived
-    # arrays belong on it. cached_property writes through __dict__ and so works
-    # on a frozen dataclass.
-
-    @cached_property
-    def matrix_array(self) -> numpy.ndarray[Any, Any]:
-        return readonly(numpy.asarray(self.matrix, dtype=numpy.float32))
-
-    @cached_property
-    def clut_array(self) -> numpy.ndarray[Any, Any]:
-        return readonly(numpy.asarray(self.clut, dtype=numpy.float32))
-
-    @cached_property
-    def input_table_arrays(self) -> tuple[tuple[Any, Any], ...]:
-        return tuple(internal_curve_table_arrays(table) for table in self.input_tables)
-
-    @cached_property
-    def output_table_arrays(self) -> tuple[tuple[Any, Any], ...]:
-        return tuple(internal_curve_table_arrays(table) for table in self.output_tables[:3])
-
-    @cached_property
-    def byte_input_curves(self) -> tuple[numpy.ndarray[Any, Any], ...]:
-        return internal_byte_input_curves(self.input_tables)
 
 
 class IccLutTag(TypedDict):
@@ -194,6 +161,11 @@ class IccTransform:
                 # fails on the way back in and this recurses exactly once.
                 return self.apply_uint8(distinct)[inverse]
         profile = self.profile
+        byte_input_curves = (
+            internal_byte_input_curves(profile.input_tables)
+            if isinstance(profile, IccLutProfile)
+            else ()
+        )
         rows = len(samples)
         result = numpy.empty((rows, 3), dtype=numpy.uint8)
         for start in range(0, rows, INTERNAL_TRANSFORM_BLOCK_ROWS):
@@ -205,9 +177,8 @@ class IccTransform:
                     numpy.ascontiguousarray(block, dtype=numpy.float32) / numpy.float32(255.0),
                 )
             else:
-                curves = profile.byte_input_curves
                 values = numpy.column_stack(
-                    [curve[block[:, index]] for index, curve in enumerate(curves)]
+                    [curve[block[:, index]] for index, curve in enumerate(byte_input_curves)]
                 ).astype(numpy.float32, copy=False)
                 rgb = internal_lut_transform_from_curved(profile, values)
             numpy.rint(rgb * numpy.float32(255.0), out=rgb)
@@ -215,30 +186,51 @@ class IccTransform:
         return result
 
 
-@lru_cache(maxsize=256)
 def internal_curve_table_arrays(
     values: tuple[float, ...],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    axis = readonly(numpy.linspace(0.0, 1.0, len(values), dtype=numpy.float32))
-    table = readonly(numpy.asarray(values, dtype=numpy.float32))
+    axis = numpy.linspace(0.0, 1.0, len(values), dtype=numpy.float32)
+    table = numpy.asarray(values, dtype=numpy.float32)
     return axis, table
 
 
-def internal_readonly_float32(
-    values: tuple[tuple[float, ...], ...],
-) -> numpy.ndarray[Any, Any]:
-    """Cache one read-only float32 array per distinct matrix or CLUT."""
-    return readonly(numpy.asarray(values, dtype=numpy.float32))
-
-
-@lru_cache(maxsize=128)
 def parse_icc_transform(profile: bytes) -> IccTransform:
-    lut_profile = parse_icc_lut_profile(profile)
-    if lut_profile is not None:
-        if lut_profile.output_channels < 3:
-            raise IccProfileError("ICC LUT has fewer than three output channels")
-        return IccTransform(lut_profile)
-    matrix_profile = parse_icc_matrix_profile(profile)
+    if len(profile) < 132:
+        raise IccProfileError("unsupported or malformed ICC profile")
+    color_space_signature = profile[16:20]
+    pcs_signature = profile[20:24]
+    tags = parse_icc_tags(profile)
+    color_space = icc_color_space_name(color_space_signature)
+    pcs = icc_pcs_name(pcs_signature)
+    if color_space is not None and pcs is not None:
+        lut = parse_icc_lut_tag(select_icc_lut_tag(tags, b"A2B"))
+        if lut is not None:
+            if lut["output_channels"] < 3:
+                raise IccProfileError("ICC LUT has fewer than three output channels")
+            lut_profile = IccLutProfile(
+                color_space=color_space,
+                pcs=pcs,
+                input_channels=lut["input_channels"],
+                output_channels=lut["output_channels"],
+                grid_points=lut["grid_points"],
+                matrix=lut["matrix"],
+                input_tables=lut["input_tables"],
+                clut=lut["clut"],
+                output_tables=lut["output_tables"],
+                legacy_lab=pcs == "Lab" and profile[8] < 4,
+                black_point=internal_detect_black_point(
+                    tags,
+                    lut,
+                    pcs,
+                    pcs == "Lab" and profile[8] < 4,
+                ),
+            )
+            return IccTransform(lut_profile)
+    matrix_profile = internal_parse_icc_matrix_profile(
+        color_space_signature,
+        pcs_signature,
+        tags,
+    )
     if matrix_profile is not None:
         return IccTransform(matrix_profile)
     raise IccProfileError("unsupported or malformed ICC profile")
@@ -271,7 +263,7 @@ def apply_matrix_transform(profile: IccMatrixProfile, samples: ColorSamples) -> 
     if profile.color_space == "GRAY":
         xyz = curves * numpy.asarray(profile.white_point, dtype=numpy.float32)
     else:
-        xyz = curves @ profile.matrix_array
+        xyz = curves @ numpy.asarray(profile.matrix, dtype=numpy.float32)
     return numpy.clip(d50_xyz_to_srgb(xyz), 0.0, 1.0).astype(
         numpy.float32,
         copy=False,
@@ -338,7 +330,7 @@ def apply_parametric_curve_array(
 
 
 def apply_lut_transform(profile: IccLutProfile, samples: ColorSamples) -> ColorSamples:
-    input_table_arrays = profile.input_table_arrays
+    input_table_arrays = tuple(internal_curve_table_arrays(table) for table in profile.input_tables)
     values = numpy.column_stack(
         [
             numpy.interp(
@@ -359,16 +351,18 @@ def internal_lut_transform_from_curved(
     """Finish a LUT transform whose input curves have already been applied."""
     if profile.color_space == "XYZ" and profile.input_channels == 3:
         values = numpy.clip(
-            values @ profile.matrix_array.T,
+            values @ numpy.asarray(profile.matrix, dtype=numpy.float32).T,
             0.0,
             1.0,
         )
     clut = interpolate_lut_array(
-        profile.clut_array,
+        numpy.asarray(profile.clut, dtype=numpy.float32),
         profile.grid_points,
         values,
     )
-    output_table_arrays = profile.output_table_arrays
+    output_table_arrays = tuple(
+        internal_curve_table_arrays(table) for table in profile.output_tables[:3]
+    )
     output = numpy.column_stack(
         [
             numpy.interp(
@@ -446,7 +440,7 @@ def internal_byte_input_curves(
     curves: list[numpy.ndarray[Any, Any]] = []
     for table in input_tables:
         axis, values = internal_curve_table_arrays(table)
-        curves.append(readonly(numpy.interp(positions, axis, values).astype(numpy.float32)))
+        curves.append(numpy.interp(positions, axis, values).astype(numpy.float32))
     return tuple(curves)
 
 
@@ -487,13 +481,11 @@ def interpolate_lut_array(
     return result
 
 
-@lru_cache(maxsize=128)
-def parse_icc_matrix_profile(profile: bytes) -> IccMatrixProfile | None:
-    if len(profile) < 132:
-        return None
-    color_space = profile[16:20]
-    pcs = profile[20:24]
-    tags = parse_icc_tags(profile)
+def internal_parse_icc_matrix_profile(
+    color_space: bytes,
+    pcs: bytes,
+    tags: dict[bytes, bytes],
+) -> IccMatrixProfile | None:
     if color_space == b"GRAY" and pcs == b"XYZ ":
         white_point = parse_icc_xyz_tag(tags.get(b"wtpt")) or (0.9642, 1.0, 0.8249)
         curve = parse_icc_curve_tag(tags.get(b"kTRC"))
@@ -531,34 +523,6 @@ def parse_icc_matrix_profile(profile: bytes) -> IccMatrixProfile | None:
             curves=(red_trc, green_trc, blue_trc),
         )
     return None
-
-
-@lru_cache(maxsize=128)
-def parse_icc_lut_profile(profile: bytes) -> IccLutProfile | None:
-    if len(profile) < 132:
-        return None
-    color_space = icc_color_space_name(profile[16:20])
-    pcs = icc_pcs_name(profile[20:24])
-    if color_space is None or pcs is None:
-        return None
-    tags = parse_icc_tags(profile)
-    lut = parse_icc_lut_tag(select_icc_lut_tag(tags, b"A2B"))
-    if lut is None:
-        return None
-    legacy_lab = pcs == "Lab" and profile[8] < 4
-    return IccLutProfile(
-        color_space=color_space,
-        pcs=pcs,
-        input_channels=lut["input_channels"],
-        output_channels=lut["output_channels"],
-        grid_points=lut["grid_points"],
-        matrix=lut["matrix"],
-        input_tables=lut["input_tables"],
-        clut=lut["clut"],
-        output_tables=lut["output_tables"],
-        legacy_lab=legacy_lab,
-        black_point=internal_detect_black_point(tags, lut, pcs, legacy_lab),
-    )
 
 
 def internal_detect_black_point(
@@ -622,7 +586,7 @@ def internal_evaluate_lut_tag(tag: IccLutTag, values: ColorSamples) -> ColorSamp
         ]
     ).astype(numpy.float32)
     clut = interpolate_lut_array(
-        internal_readonly_float32(tag["clut"]),
+        numpy.asarray(tag["clut"], dtype=numpy.float32),
         tag["grid_points"],
         curved,
     )

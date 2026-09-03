@@ -69,7 +69,6 @@ class internal_RasterTarget(
         "clip_row_visible_spans",
         "pixel_in_clip",
         "crop_y0",
-        "mark_clip_metadata_dirty",
         "path_bbox",
         "clip_path_stack",
     )
@@ -108,7 +107,6 @@ class internal_RasterTarget(
         self.clip_row_visible_spans = clip.clip_row_visible_spans
         self.pixel_in_clip = clip.pixel_in_clip
         self.crop_y0 = crop_y0
-        self.mark_clip_metadata_dirty = clip.mark_clip_metadata_dirty
         self.path_bbox = clip.path_bbox
         self.clip_path_stack = clip.clip_path_stack
 

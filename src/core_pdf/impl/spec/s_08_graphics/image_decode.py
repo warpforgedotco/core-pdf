@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,13 +74,13 @@ class ImageRaster:
 
 @dataclass(frozen=True, slots=True)
 class PreparedImage:
-    """Consumer-ready image data owned and cached by :class:`ImageSource`.
+    """Consumer-ready image data produced by :class:`ImageSource`.
 
     ``raster`` preserves the existing shared-image contract: when a colour image
     carries a soft mask it includes a same-resolution alpha channel.  Renderers
     additionally need the mask at its native resolution so a high-resolution
     scan mask is not reduced to the colour image's dimensions.  Keeping that
-    immutable plane here gives every consumer one preparation and cache owner.
+    immutable plane here keeps both representations together for each consumer.
     """
 
     raster: ImageRaster
@@ -113,15 +112,12 @@ class SoftMask:
 
 
 class ImageSource:
-    """Thread-safe lazy preparation owner for one embedded image source."""
+    """Raw inputs and preparation logic for one embedded image source."""
 
     __slots__ = (
         "raw",
         "dictionary",
         "soft_mask",
-        "internal_lock",
-        "internal_prepared",
-        "internal_prepared_once",
     )
 
     def __init__(
@@ -134,23 +130,13 @@ class ImageSource:
         self.raw = raw
         self.dictionary = dictionary
         self.soft_mask = soft_mask
-        self.internal_lock = threading.Lock()
-        self.internal_prepared: PreparedImage | None = None
-        self.internal_prepared_once = False
 
     def prepare(self) -> PreparedImage | None:
-        """Return the immutable prepared image, decoding this source at most once."""
-        if self.internal_prepared_once:
-            return self.internal_prepared
-        with self.internal_lock:
-            if self.internal_prepared_once:
-                return self.internal_prepared
-            self.internal_prepared = self.internal_prepare()
-            self.internal_prepared_once = True
-            return self.internal_prepared
+        """Decode and return an immutable prepared image."""
+        return self.internal_prepare()
 
     def decode(self) -> ImageRaster | None:
-        """Return the canonical raster retained for extraction API compatibility."""
+        """Decode and return the canonical raster for extraction consumers."""
         prepared = self.prepare()
         return prepared.raster if prepared is not None else None
 

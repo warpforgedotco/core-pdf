@@ -19,7 +19,7 @@ class internal_ClipState:
 
     Lifted out of ``RenderedPage.rasterize``. ``clip_path_stack`` is shared by
     reference with the rasterizer, which pushes and pops it as the content
-    stream nests; mutations clear the cached visible rows.
+    stream nests.
 
     Instance attributes are hoisted into locals inside the hot methods, matching
     the convention the content-stream dispatch loop already uses.
@@ -27,8 +27,6 @@ class internal_ClipState:
 
     __slots__ = (
         "clip_path_stack",
-        "path_edge_cache",
-        "clip_visible_row_cache",
         "crop_x0",
         "crop_y1",
         "scale",
@@ -49,8 +47,6 @@ class internal_ClipState:
         height: int,
     ) -> None:
         self.clip_path_stack = clip_path_stack
-        self.path_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
-        self.clip_visible_row_cache: dict[int, tuple[tuple[int, int], ...]] = {}
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
         self.scale = scale
@@ -78,9 +74,6 @@ class internal_ClipState:
             if clip is None:
                 break
         return clip, rectangular
-
-    def mark_clip_metadata_dirty(self) -> None:
-        self.clip_visible_row_cache.clear()
 
     def current_clip(self) -> tuple[float, float, float, float] | None:
         return self.clip_metadata()[0]
@@ -121,20 +114,10 @@ class internal_ClipState:
     def axis_aligned_rect_box(self, path: CapturedPath) -> tuple[float, float, float, float] | None:
         return path.axis_aligned_rect()
 
-    def path_edges(self, path: CapturedPath) -> list[tuple[float, float, float, float]]:
-        path_edge_cache = self.path_edge_cache
-        cache_key = id(path)
-        cached = path_edge_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        edges = path.fill_edges()
-        path_edge_cache[cache_key] = edges
-        return edges
-
     def clip_path_row_spans(
         self, path: CapturedPath, py: int, fill_rule: str
     ) -> tuple[tuple[int, int], ...]:
-        edges = self.path_edges(path)
+        edges = path.fill_edges()
         if not edges:
             return ()
         page_y = self.crop_y1 - (py + 0.5) / self.scale
@@ -172,21 +155,14 @@ class internal_ClipState:
         return start <= px < end
 
     def clip_row_visible_spans(self, py: int) -> tuple[tuple[int, int], ...]:
-        clip_visible_row_cache = self.clip_visible_row_cache
-        cache_key = py
-        cached = clip_visible_row_cache.get(cache_key)
-        if cached is not None:
-            return cached
         clip_path_stack = self.clip_path_stack
         if not clip_path_stack:
-            clip_visible_row_cache[cache_key] = ((0, self.width),)
-            return clip_visible_row_cache[cache_key]
+            return ((0, self.width),)
         spans: tuple[tuple[int, int], ...] | None = None
         clip_path_row_spans = self.clip_path_row_spans
         for path, fill_rule in clip_path_stack:
             path_spans = clip_path_row_spans(path, py, fill_rule)
             if not path_spans:
-                clip_visible_row_cache[cache_key] = ()
                 return ()
             if spans is None:
                 spans = path_spans
@@ -207,8 +183,5 @@ class internal_ClipState:
                     right_index += 1
             spans = tuple(merged)
             if not spans:
-                clip_visible_row_cache[cache_key] = ()
                 return ()
-        result = spans or ()
-        clip_visible_row_cache[cache_key] = result
-        return result
+        return spans or ()

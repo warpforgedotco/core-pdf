@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import typing
 from collections.abc import Callable, Sequence
-from functools import lru_cache
 from typing import Any, TypeAlias, cast
 
 import numpy
@@ -152,54 +151,12 @@ def internal_alternate_color_component_count(alt_name: str) -> int:
     raise ValueError("invalid Separation color space")
 
 
-def internal_sampled_separation_lut_key(
-    tint_fn: PdfStream,
-    alt_name: str,
-) -> tuple[object, ...] | None:
-    """A value key for the LUT, or ``None`` when the function is not cacheable.
-
-    Keying the cache on the ``PdfStream`` itself pinned the stream -- and with it
-    the ``memoryview`` into the document's source buffer -- for the lifetime of
-    the process, so the buffer outlived the document that owned it. These are the
-    only entries ``evaluate_sampled_tint_function`` reads, so together with the
-    decoded samples they determine the LUT exactly.
-    """
-    dictionary = tint_fn.dictionary
-    key: list[object] = [alt_name]
-    for name in ("FunctionType", "BitsPerSample", "Size", "Domain", "Range", "Encode"):
-        value = dictionary.get(name)
-        if isinstance(value, (list, tuple)):
-            if not all(isinstance(item, (int, float)) for item in value):
-                return None
-            key.append(tuple(value))
-        elif isinstance(value, (int, float)) or value is None:
-            key.append(value)
-        else:
-            return None
-    key.append(bytes(tint_fn.data))
-    return tuple(key)
-
-
 def internal_sampled_separation_rgb_lut(
     tint_fn: PdfStream,
     alt_name: str,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
     """Compile an 8-bit sampled Separation function to a read-only RGB LUT."""
-    cache_key = internal_sampled_separation_lut_key(tint_fn, alt_name)
-    if cache_key is not None:
-        cached = internal_separation_lut_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        lut = internal_build_sampled_separation_rgb_lut(tint_fn, alt_name)
-        if len(internal_separation_lut_cache) < 256:
-            internal_separation_lut_cache[cache_key] = lut
-        return lut
     return internal_build_sampled_separation_rgb_lut(tint_fn, alt_name)
-
-
-internal_separation_lut_cache: dict[
-    tuple[object, ...], numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
-] = {}
 
 
 def internal_tint_components_evaluator(
@@ -251,13 +208,12 @@ def internal_build_sampled_separation_rgb_lut(
     return readonly(table)
 
 
-@lru_cache(maxsize=256)
 def internal_calrgb_parameter_arrays(
     matrix: tuple[float, ...],
     black_point: tuple[float, ...],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    matrix_array = readonly(numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3))
-    black_point_array = readonly(numpy.asarray(black_point, dtype=numpy.float64))
+    matrix_array = numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3)
+    black_point_array = numpy.asarray(black_point, dtype=numpy.float64)
     return matrix_array, black_point_array
 
 

@@ -192,9 +192,6 @@ class RenderedPage:
         rotate = self.rotate % 360
 
         clip_state_stack: list[int] = []
-        # Bound methods in locals: call sites below stay unchanged and keep the
-        # single LOAD_FAST + CALL they had as closures.
-        mark_clip_metadata_dirty = clip_state.mark_clip_metadata_dirty
 
         for item in self.internal_render_items(crop):
             if type(item) is PathPaintItem:
@@ -218,13 +215,11 @@ class RenderedPage:
                     del clip_path_stack[clip_state_stack.pop() :]
                 else:
                     clip_path_stack.clear()
-                mark_clip_metadata_dirty()
                 continue
             if generic_item.kind == "clip":
                 path = data.get("path")
                 if type(path) is CapturedPath and path.has_segments():
                     clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
-                    mark_clip_metadata_dirty()
                 continue
             if generic_item.kind == "group-begin":
                 # A transparency group starts from a transparent backdrop, not

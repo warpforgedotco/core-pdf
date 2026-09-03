@@ -346,7 +346,6 @@ class internal_PatternTargetMixin:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
         clip_path_stack = self.clip_path_stack
-        mark_clip_metadata_dirty = self.mark_clip_metadata_dirty
         paint_shading = self.paint_shading
         paint_tiling_pattern = self.paint_tiling_pattern
         path_bbox = self.path_bbox
@@ -357,7 +356,6 @@ class internal_PatternTargetMixin:
         pushed_clip = False
         if type(path) is CapturedPath and path.has_segments():
             clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
-            mark_clip_metadata_dirty()
             pushed_clip = True
         try:
             if isinstance(pattern, ShadingPattern):
@@ -376,5 +374,4 @@ class internal_PatternTargetMixin:
         finally:
             if pushed_clip:
                 clip_path_stack.pop()
-                mark_clip_metadata_dirty()
         return False
