@@ -57,18 +57,13 @@ from core_pdf.impl.spec.s_07_content.capture import (
 from core_pdf.impl.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
-    ContentOperands,
     NestedStreamRequest,
     OperandWindow,
     OperationHandler,
     content_stream_may_show_text,
     dispatch_operations,
-    iter_content_operations,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import (
-    TYPE3_REPLAY_OPERATORS,
-    build_operator_handlers,
-)
+from core_pdf.impl.spec.s_07_content.operator_tables import build_operator_handlers
 from core_pdf.impl.spec.s_07_content.stream_state import (
     STREAM_STATE_MIRRORED,
     ContentStreamFrame,
@@ -98,11 +93,7 @@ from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf.impl.spec.s_09_fonts.decoder import (
-    DecodedGlyph,
-    FontDecoder,
-    Type3CharProcProgram,
-)
+from core_pdf.impl.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
 
@@ -163,9 +154,6 @@ class internal_GraphicsStateSnapshot(typing.NamedTuple):
     render_mode: int
     current_font: str | None
     current_decoder: FontDecoder | None
-
-
-TYPE3_REPLAY_OPERAND_TYPES = (int, float, PdfName, PdfString)
 
 
 MATRIX_TOLERANCE = 0.1
@@ -777,100 +765,6 @@ class TextState:
         self.font_descent = decoder.descent * self.font_scale
         self.font_space_width = decoder.glyph_width(32) * self.font_size * 0.001
         self.font_widths = decoder.fast_widths
-
-    def compile_type3_char_proc(self, stream: PdfStream) -> Type3CharProcProgram:
-        compiled: list[tuple[OperationHandler, ContentOperands]] = []
-        graphics_depth = 0
-        try:
-            for operator, operands in iter_content_operations(
-                PdfLexer(stream.data_view, kw_cache=self.kw_cache)
-            ):
-                if operator not in TYPE3_REPLAY_OPERATORS:
-                    return Type3CharProcProgram(stream, None)
-                if any(type(operand) not in TYPE3_REPLAY_OPERAND_TYPES for operand in operands):
-                    return Type3CharProcProgram(stream, None)
-                if operator == "q":
-                    graphics_depth += 1
-                elif operator == "Q":
-                    if graphics_depth == 0:
-                        return Type3CharProcProgram(stream, None)
-                    graphics_depth -= 1
-                handler = self.op_handlers.get(operator)
-                if handler is None:
-                    return Type3CharProcProgram(stream, None)
-                compiled.append((handler, operands))
-        except (PdfParseError, TypeError, ValueError):
-            return Type3CharProcProgram(stream, None)
-        if graphics_depth:
-            return Type3CharProcProgram(stream, None)
-        return Type3CharProcProgram(stream, tuple(compiled))
-
-    def type3_char_proc_program(
-        self,
-        code: int,
-        decoder: FontDecoder,
-        glyph_names: dict[int, str],
-        char_procs: PdfDict,
-    ) -> Type3CharProcProgram:
-        cache = decoder.type3_charproc_cache
-        cached = cache[code]
-        if cached is not None:
-            decoder.type3_charproc_cache_hits += 1
-            return cached
-
-        decoder.type3_charproc_cache_misses += 1
-        glyph_name = glyph_names.get(code)
-        char_proc: object = char_procs.get(glyph_name) if glyph_name else None
-        char_proc = self.document.resolver.resolve(char_proc)
-        candidate = (
-            self.compile_type3_char_proc(char_proc)
-            if isinstance(char_proc, PdfStream)
-            else Type3CharProcProgram(None, None)
-        )
-        with self.document.internal_cache_lock:
-            cached = cache[code]
-            if cached is not None:
-                return cached
-            cache[code] = candidate
-            operations = candidate.operations
-            if operations is not None:
-                decoder.type3_charproc_compiled_programs += 1
-                decoder.type3_charproc_compiled_operations += len(operations)
-        return candidate
-
-    def consume_compiled_type3_char_proc(
-        self,
-        program: Type3CharProcProgram,
-        resources: PdfDict,
-        ctm: Matrix,
-        depth: int,
-    ) -> None:
-        stream = program.stream
-        operations = program.operations
-        if stream is None or operations is None:
-            return
-        frame = ContentStreamFrame(stream, resources, ctm, depth, None)
-        if not self.enter_stream_frame(frame, initialize_lexer=False):
-            return
-        try:
-            if (
-                not self.capture_graphics
-                and not self.capture_glyphs
-                and not self.internal_stream_may_show_text(frame)
-            ):
-                self.flush_run()
-            else:
-                operand_window = OperandWindow(())
-                for handler, operands in operations:
-                    operand_window.operands = operands
-                    operand_window.count = len(operands)
-                    handler(self, operand_window, depth)
-                self.flush_run()
-        except Exception:
-            self.exit_stream_frame(frame)
-            raise
-        else:
-            self.exit_stream_frame(frame)
 
     def capture_stream_state(self) -> StreamState:
         return StreamState(
@@ -2582,9 +2476,11 @@ class TextState:
         scale = self.text_advance_scale
 
         for code in data:
-            program = self.type3_char_proc_program(code, decoder, glyph_names, char_procs)
-            char_proc = program.stream
-            if char_proc is not None:
+            glyph_name = glyph_names.get(code)
+            char_proc = self.document.resolver.resolve(
+                char_procs.get(glyph_name) if glyph_name else None
+            )
+            if isinstance(char_proc, PdfStream):
                 # ISO 32000-1 9.6.5: when the glyph description begins, the CTM
                 # is "the concatenation of the font matrix ... and the text space
                 # that was in effect at the time the text-showing operator was
@@ -2618,16 +2514,7 @@ class TextState:
                 previous_type3_uncolored = self.type3_uncolored
                 self.type3_uncolored = False
                 try:
-                    if program.operations is None:
-                        decoder.type3_charproc_unsafe_fallbacks += 1
-                        self.consume_stream(char_proc, resources, glyph_ctm, self.xobject_depth + 1)
-                    else:
-                        self.consume_compiled_type3_char_proc(
-                            program,
-                            resources,
-                            glyph_ctm,
-                            self.xobject_depth + 1,
-                        )
+                    self.consume_stream(char_proc, resources, glyph_ctm, self.xobject_depth + 1)
                 finally:
                     self.type3_uncolored = previous_type3_uncolored
 

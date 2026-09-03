@@ -336,14 +336,6 @@ class UnicodeChoice:
     alternates: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class Type3CharProcProgram:
-    """A resolved Type3 CharProc and its optional safe replay program."""
-
-    stream: PdfStream | None
-    operations: tuple[tuple[Any, tuple[Any, ...]], ...] | None
-
-
 def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> list[bytes]:
     if not data:
         return []
@@ -412,12 +404,6 @@ class FontDecoder:
     glyph_decode_table: tuple[str, ...] | None
     glyph_decode_table_authoritative: bool
     type3_glyph_names: dict[int, str] | None
-    type3_charproc_cache: list[Type3CharProcProgram | None]
-    type3_charproc_cache_hits: int
-    type3_charproc_cache_misses: int
-    type3_charproc_compiled_programs: int
-    type3_charproc_compiled_operations: int
-    type3_charproc_unsafe_fallbacks: int
     cff_unicode_repair_index: CFFUnicodeRepairIndex | None
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
@@ -440,12 +426,6 @@ class FontDecoder:
         self.glyph_bbox_cache = {}
         self.glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
         self.type3_glyph_names = None
-        self.type3_charproc_cache = [None] * 256
-        self.type3_charproc_cache_hits = 0
-        self.type3_charproc_cache_misses = 0
-        self.type3_charproc_compiled_programs = 0
-        self.type3_charproc_compiled_operations = 0
-        self.type3_charproc_unsafe_fallbacks = 0
         self.internal_initialize()
 
     def internal_initialize(self) -> None:
