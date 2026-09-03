@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 # A PR that is pushed to again supersedes its own in-flight run. Without this
-# every push kept four jobs alive, one of them on a macOS runner.
+# every push kept three jobs alive, one of them on a macOS runner.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -124,55 +124,6 @@ jobs:
           uv run --locked --package core-pdf --group test pytest
           tests/test_rendering_golden.py
           -k "irreversible_jpx or tolerant_raster_references"
-
-      - name: Prune uv cache
-        if: always()
-        run: uv cache prune --ci
-
-  codspeed:
-    name: CodSpeed benchmarks
-    needs: quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: "0.11.28"
-          python-version: "3.13"
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Install English Tesseract data
-        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
-
-      - name: Run CodSpeed benchmarks
-        uses: CodSpeedHQ/action@v3
-        env:
-          # CodSpeed counts instructions on a simulated CPU that serializes
-          # threads, so any thread pool contributes its spin-wait loops to the
-          # measurement instead of overlapping with real work. Left unpinned,
-          # OpenBLAS made the numpy-backed benchmarks vary by orders of
-          # magnitude between identical runs. One thread measures our own code.
-          # The extraction benchmarks pin core-pdf's own worker pool for the
-          # same reason; see tests/.../extract/benchmarks.
-          OPENBLAS_NUM_THREADS: "1"
-          OMP_NUM_THREADS: "1"
-        with:
-          # No path list and no marker: --codspeed deselects every test that
-          # is not a benchmark, so this runs all of them wherever they live and
-          # picks up new ones automatically.
-          run: >-
-            uv run --locked --package core-pdf --group benchmark pytest
-            --codspeed
-          token: ${{ secrets.CODSPEED_TOKEN }}
 
       - name: Prune uv cache
         if: always()
