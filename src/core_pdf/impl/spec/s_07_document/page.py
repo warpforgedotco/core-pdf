@@ -35,7 +35,6 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
 from core_pdf.impl.spec.s_14_structure.tree import PageStructure
-from core_pdf.impl.types import Rectangle
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -55,22 +54,15 @@ if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.spec.s_07_document.records import RawFormField
 
-PageBoxCacheValue = Rectangle | None | MissingObject
-
 
 class PdfPage:
     document: PdfDocument
     page_dict: PdfDict
     page_number: int
-    inherited_values_cache: InheritedValueMap | None
     contents: CachedPdfObject | None
-    content_streams_cache: tuple[PdfStream, ...] | None
     page_program_cache: PageProgram | None
     text_lines: list[LayoutLine] | None
     links: list[RawLink] | MissingObject
-    page_box_cache: dict[str, PageBoxCacheValue]
-    rotation_cache: int | MissingObject
-    resources_cache: PdfDict | MissingObject
     extraction_cache: ExtractionCache | None
 
     def __init__(
@@ -83,15 +75,10 @@ class PdfPage:
         self.page_dict = page_dict
         self.page_number = page_number
         self.internal_page_lock = document.page_lock(page_number)
-        self.inherited_values_cache = None
         self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
-        self.content_streams_cache = None
         self.page_program_cache = None
         self.links = MISSING
         self.text_lines = None
-        self.page_box_cache = {}
-        self.rotation_cache = MISSING
-        self.resources_cache = MISSING
         with document.internal_cache_lock:
             page_caches = document.page_extraction_caches
             if page_caches is None:
@@ -101,25 +88,23 @@ class PdfPage:
 
     @property
     def inherited_values(self) -> InheritedValueMap:
-        if self.inherited_values_cache is None:
-            self.inherited_values_cache = self.collect_inherited_values()
-        return self.inherited_values_cache
+        return self.collect_inherited_values()
 
     @property
     def media_box(self) -> tuple[float, float, float, float] | None:
-        return self._cached_page_box("MediaBox")
+        return self.resolve_box("MediaBox")
 
     @property
     def crop_box(self) -> tuple[float, float, float, float] | None:
-        return self._cached_page_box("CropBox")
+        return self.resolve_box("CropBox")
 
     @property
     def bleed_box(self) -> tuple[float, float, float, float] | None:
-        return self._cached_page_box("BleedBox")
+        return self.resolve_box("BleedBox")
 
     @property
     def trim_box(self) -> tuple[float, float, float, float] | None:
-        return self._cached_page_box("TrimBox")
+        return self.resolve_box("TrimBox")
 
     def annotation_dicts(self) -> list[PdfDict]:
         return self._annotation_dicts(strict=False)
@@ -234,20 +219,11 @@ class PdfPage:
 
     @property
     def art_box(self) -> tuple[float, float, float, float] | None:
-        return self._cached_page_box("ArtBox")
-
-    def _cached_page_box(self, key: str) -> tuple[float, float, float, float] | None:
-        value = self.page_box_cache.get(key, MISSING)
-        if value is MISSING:
-            value = self.resolve_box(key)
-            self.page_box_cache[key] = value
-        return cast(tuple[float, float, float, float] | None, value)
+        return self.resolve_box("ArtBox")
 
     @property
     def rotation(self) -> int:
-        if self.rotation_cache is MISSING:
-            self.rotation_cache = self.resolve_rotation()
-        return cast(int, self.rotation_cache)
+        return self.resolve_rotation()
 
     @property
     def label(self) -> str | None:
@@ -255,15 +231,11 @@ class PdfPage:
 
     @property
     def cached_resources(self) -> PdfDict:
-        if self.resources_cache is MISSING:
-            self.resources_cache = self.resolve_resources()
-        return cast(PdfDict, self.resources_cache)
+        return self.resolve_resources()
 
     @property
     def content_streams(self) -> tuple[PdfStream, ...]:
-        if self.content_streams_cache is None:
-            self.content_streams_cache = self.collect_content_streams()
-        return self.content_streams_cache
+        return self.collect_content_streams()
 
     def collect_content_streams(self) -> tuple[PdfStream, ...]:
         queue: deque[object] = deque()

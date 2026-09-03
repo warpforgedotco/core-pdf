@@ -25,6 +25,7 @@ class FakeDocument:
         self.pages: list[Any] = []
         self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
         self.page_extraction_caches: dict[int, object] | None = None
+        self.inherited_values_cache = {}
 
     def page_lock(self, page_number: int) -> threading.RLock:
         with self.internal_cache_lock:
@@ -74,7 +75,6 @@ def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> 
     )
     document = FakeDocument([field, unrelated])
     page = PdfPage(cast(Any, document), {"Annots": [widget]}, 1)
-    page.inherited_values_cache = {"Annots": [widget]}
     document.pages = [page]
 
     assert page.get_fields() == [field]
@@ -112,7 +112,6 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
     )
     document = FakeDocument([field, unrelated])
     page = PdfPage(cast(Any, document), {"Annots": [widget]}, 1)
-    page.inherited_values_cache = {"Annots": [widget]}
     document.pages = [page]
 
     assert page.get_fields() == [field]
