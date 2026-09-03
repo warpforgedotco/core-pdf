@@ -9,6 +9,36 @@ from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.spec.s_09_fonts.helpers import cached_decode_table
 from core_pdf.impl.text import is_neutral_character, is_rtl_character
 
+# pypdf's _predefined_cmap, which is what both legacy projections have to
+# agree with: the pypdf facade emulates pypdf directly, and the LlamaIndex one
+# emulates llama_index's PDFReader, which wraps pypdf. The codec choices are
+# pypdf's rather than the specification's -- GBK for GB-EUC, cp950 for Big5 --
+# so they are transcribed, not derived.
+internal_PREDEFINED_ENCODING_CODECS = {
+    "Identity-H": "utf-16-be",
+    "Identity-V": "utf-16-be",
+    "GB-EUC-H": "gbk",
+    "GB-EUC-V": "gbk",
+    "GBpc-EUC-H": "gb2312",
+    "GBpc-EUC-V": "gb2312",
+    "GBK-EUC-H": "gbk",
+    "GBK-EUC-V": "gbk",
+    "GBK2K-H": "gb18030",
+    "GBK2K-V": "gb18030",
+    "ETen-B5-H": "cp950",
+    "ETen-B5-V": "cp950",
+    "ETenms-B5-H": "cp950",
+    "ETenms-B5-V": "cp950",
+    "UniCNS-UTF16-H": "utf-16-be",
+    "UniCNS-UTF16-V": "utf-16-be",
+    "UniGB-UTF16-H": "gb18030",
+    "UniGB-UTF16-V": "gb18030",
+    "90ms-RKSJ-H": "cp932",
+    "90ms-RKSJ-V": "cp932",
+    "UniJIS-UTF16-H": "utf-16-be",
+    "UniJIS-UTF16-V": "utf-16-be",
+}
+
 
 def internal_orientation(matrix: Sequence[float]) -> int:
     """Return the legacy extraction orientation for an affine matrix."""

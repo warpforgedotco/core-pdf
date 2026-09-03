@@ -15,7 +15,6 @@ from core_pdf.impl.render.kernels import (
     internal_soft_mask_alpha_at,
 )
 from core_pdf.impl.render.model import ImagePaintItem
-from core_pdf.impl.render.paths import internal_intersect_box
 from core_pdf.impl.runtime.array_views import (
     nearest_indices,
     uint8_image_view,
@@ -37,6 +36,7 @@ class internal_ImageAxisTargetMixin:
     ) -> None:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
+        clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_px = self.blend_px
         blit_affine_image = self.blit_affine_image
@@ -45,8 +45,6 @@ class internal_ImageAxisTargetMixin:
         clip_path_stack = clip.clip_path_stack
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip_row_visible_spans
-        current_clip = self.current_clip
-        page_box_to_pixels = self.page_box_to_pixels
         raster_metrics = self.raster_metrics
         width = self.width
         box = item.bbox
@@ -171,17 +169,10 @@ class internal_ImageAxisTargetMixin:
         # changes which sampler paints the image and therefore its raster.
         if soft_mask is not None:
             source_alpha = None
-        x0, y0, x1, y1 = box
-        clip_box = current_clip()
-        if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
-            if clipped is None:
-                return
-            x0, y0, x1, y1 = clipped
-        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
-        if pixel_box is None:
+        clipped_box = clipped_pixel_box(box)
+        if clipped_box is None:
             return
-        ix0, iy0, ix1, iy1 = pixel_box
+        ix0, iy0, ix1, iy1 = clipped_box[1]
         x_span = max(1, ix1 - ix0)
         y_span = max(1, iy1 - iy0)
         src_x_map = nearest_indices(x_span, width_px)
@@ -330,6 +321,7 @@ class internal_ImageAxisTargetMixin:
         black applies, which is what every mask in the corpus resolves to."""
 
         # Captured target state hoisted into locals, as elsewhere in this class.
+        clipped_pixel_box = self.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
@@ -338,8 +330,6 @@ class internal_ImageAxisTargetMixin:
         clip_path_stack = self.clip_path_stack
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip_row_visible_spans
-        current_clip = self.current_clip
-        page_box_to_pixels = self.page_box_to_pixels
         pixel_view = self.pixel_view
         pixels = self.pixels
         width = self.width
@@ -356,17 +346,10 @@ class internal_ImageAxisTargetMixin:
         box = item.bbox
         if box is None or len(mask) == 0:
             return
-        x0, y0, x1, y1 = box
-        clip_box = current_clip()
-        if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
-            if clipped is None:
-                return
-            x0, y0, x1, y1 = clipped
-        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
-        if pixel_box is None:
+        clipped_box = clipped_pixel_box(box)
+        if clipped_box is None:
             return
-        ix0, iy0, ix1, iy1 = pixel_box
+        ix0, iy0, ix1, iy1 = clipped_box[1]
         x_span = max(1, ix1 - ix0)
         y_span = max(1, iy1 - iy0)
         src_x_map = nearest_indices(x_span, width_px)

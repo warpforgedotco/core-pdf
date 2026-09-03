@@ -38,22 +38,13 @@ class internal_PathShapeTargetMixin:
         # The scanline loop below hoists the rest when it is actually reached.
         if box is None:
             return
-        clip = self.clip
         buffer_stack = self.buffer_stack
-        clip_path_stack = clip.clip_path_stack
         if blend_mode == "Normal" and rgba[3] == 255 and buffer_stack[-1][1] is None:
             blend_mode = None
-        x0, y0, x1, y1 = box
-        clip_box = self.current_clip() if clip_path_stack else None
-        if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
-            if clipped is None:
-                return
-            x0, y0, x1, y1 = clipped
-        pixel_box = self.page_box_to_pixels(x0, y0, x1, y1)
-        if pixel_box is None:
+        clipped_box = self.clipped_pixel_box(box)
+        if clipped_box is None:
             return
-        ix0, iy0, ix1, iy1 = pixel_box
+        (x0, y0, x1, y1), (ix0, iy0, ix1, iy1) = clipped_box
         rectangular_clip = self.clip_paths_are_axis_aligned_rects()
         pixels = self.pixels
         # page_box_to_pixels expands outward (floor left/top, ceil right/bottom),

@@ -71,6 +71,7 @@ class internal_RasterTarget(
         # attribute load; going through `self.clip.<name>` would allocate a fresh
         # bound method on every call, and fill_rect alone makes ~1.8M of them.
         "page_box_to_pixels",
+        "clipped_pixel_box",
         "current_clip",
         "clip_paths_are_axis_aligned_rects",
         "clip_row_visible_spans",
@@ -120,6 +121,7 @@ class internal_RasterTarget(
         self.raster_x_sample_cache: dict[int, tuple[float, ...]] = {}
         self.raster_y_sample_cache: dict[int, tuple[float, ...]] = {}
         self.page_box_to_pixels = clip.page_box_to_pixels
+        self.clipped_pixel_box = clip.clipped_pixel_box
         self.current_clip = clip.current_clip
         self.clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         self.clip_row_visible_spans = clip.clip_row_visible_spans

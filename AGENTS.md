@@ -59,21 +59,6 @@ calls: mypy reports them as redundant while `ty` requires them. Because of that,
 mypy's `warn_redundant_casts` is deliberately left off. Run both before assuming
 a typing change is an improvement.
 
-For performance-sensitive changes, capture a benchmark baseline first:
-
-```sh
-uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
-  --benchmark-save=baseline
-uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
-  --benchmark-compare=baseline
-```
-
-The `benchmark_high_impact` tier is the routine pull-request suite. Run the complete benchmark
-inventory explicitly with `uv run --group benchmark pytest --benchmark-only`; CI also runs it
-weekly.
-
-Timings on the heavy page-program and OCR benchmarks are noisy — several vary by more than 5% between runs of identical code — so treat a single run as weak evidence and rely on the invariants those benchmarks assert. See `docs/architecture.md` for details.
-
 ## Dependency Management
 
 Never edit `pyproject.toml` or `uv.lock` manually when adding or removing dependencies. Use `uv add --group <group> <package>` or `uv remove --group <group> <package>`; these commands update project metadata and the lockfile, and both generated changes should be reviewed and committed. Use the existing groups for their intended purpose: `test` for pytest and test fixtures, `lint` for Ruff, mypy, and ty, `benchmark` for benchmark tooling, and `vendor` for vendoring tooling. For example, add a test dependency with `uv add --group test pytest-xdist`; do not create a new group when an existing group fits.

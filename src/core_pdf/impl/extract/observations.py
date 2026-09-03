@@ -221,6 +221,36 @@ def internal_vector_native_text_is_trusted(evidence: PageEvidence) -> bool:
     )
 
 
+def internal_fallback_pass(
+    *,
+    schematic: bool,
+    scale: float,
+    modes: tuple[int, ...],
+    minimum_confidence: float,
+    run_if_characters_below: int,
+    include_native_text: bool,
+) -> OcrPass:
+    """The second-chance pass an OCR route ends with.
+
+    Whether the page is schematic settles the pass's name, its scope and its
+    tiling together -- a schematic retries weak regions in four tiles, anything
+    else retries the whole page once -- so those move as one decision rather
+    than three parallel conditionals repeated at each call site. Confidence and
+    the native-text and character thresholds are what actually differ by route.
+    """
+    return OcrPass(
+        "fallback-regions" if schematic else "fallback-page",
+        OcrPassScope.WEAK_REGIONS if schematic else OcrPassScope.PAGE,
+        scale,
+        modes,
+        tiles=4 if schematic else 1,
+        minimum_confidence=minimum_confidence,
+        run_if_characters_below=run_if_characters_below,
+        region_first=False,
+        include_native_text=include_native_text,
+    )
+
+
 def plan_page(capture: CapturedPage) -> WorkPlan:
     evidence = capture.evidence
     total_characters = evidence.native_characters
@@ -272,15 +302,12 @@ def plan_page(capture: CapturedPage) -> WorkPlan:
                     recognize_words=high_resolution_vector,
                     parallel_tiles=2,
                 ),
-                OcrPass(
-                    "fallback-regions" if schematic else "fallback-page",
-                    OcrPassScope.WEAK_REGIONS if schematic else OcrPassScope.PAGE,
-                    scale,
-                    (6,),
-                    tiles=4 if schematic else 1,
+                internal_fallback_pass(
+                    schematic=schematic,
+                    scale=scale,
+                    modes=(6,),
                     minimum_confidence=(NATIVE_UNAVAILABLE_MIN_CONFIDENCE if schematic else 45.0),
                     run_if_characters_below=weak_threshold,
-                    region_first=False,
                     include_native_text=True,
                 ),
             ),
@@ -619,19 +646,16 @@ def plan_page(capture: CapturedPage) -> WorkPlan:
                     recognize_words=high_resolution_vector,
                     parallel_tiles=2,
                 ),
-                OcrPass(
-                    "fallback-regions" if schematic else "fallback-page",
-                    OcrPassScope.WEAK_REGIONS if schematic else OcrPassScope.PAGE,
-                    scale,
-                    (6,),
-                    tiles=4 if schematic else 1,
+                internal_fallback_pass(
+                    schematic=schematic,
+                    scale=scale,
+                    modes=(6,),
                     minimum_confidence=(
                         55.0
                         if (characters < 10 and evidence.image_count > 0)
                         else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
                     ),
                     run_if_characters_below=weak_threshold,
-                    region_first=False,
                     include_native_text=bool(characters),
                 ),
             ),
@@ -651,15 +675,14 @@ def plan_page(capture: CapturedPage) -> WorkPlan:
                 pixel_budget=PRIMARY_OCR_PIXELS,
                 include_native_text=True,
             ),
-            OcrPass(
-                "fallback-regions" if schematic else "fallback-page",
-                OcrPassScope.WEAK_REGIONS if schematic else OcrPassScope.PAGE,
-                scale,
-                image_modes if (schematic or evidence.image_count > 0) else (PSM_SPARSE_TEXT,),
-                tiles=4 if schematic else 1,
+            internal_fallback_pass(
+                schematic=schematic,
+                scale=scale,
+                modes=(
+                    image_modes if (schematic or evidence.image_count > 0) else (PSM_SPARSE_TEXT,)
+                ),
                 minimum_confidence=(55.0 if characters < 10 else RASTER_TEXT_MIN_CONFIDENCE),
                 run_if_characters_below=300 if schematic else 32,
-                region_first=False,
                 include_native_text=True,
             ),
         ),
