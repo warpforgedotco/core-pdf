@@ -11,7 +11,7 @@ import pytest
 from core_pdf.impl.document import PdfDocument
 from core_pdf.impl.extract import pipeline as parse_pipeline
 from core_pdf.impl.extract import selection as parse_selection
-from core_pdf.impl.extract.contracts import ParsedPage
+from core_pdf.impl.output import Page
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 from tests.helpers.paths import SCORE_BENCH
@@ -38,15 +38,17 @@ def test_ocr_extraction_can_start_in_an_application_worker() -> None:
         from concurrent.futures import ThreadPoolExecutor
         from pathlib import Path
         from core_pdf import PdfDocument
+        from core_pdf.impl.extract.pipeline import page_extraction
 
         def extract(fixture):
             with PdfDocument.open(Path(fixture)) as document:
                 extracted = document.extract()
-                report = document.pages[0].parse_report
-                assert report is not None
                 return {{
                     "characters": len(extracted.text),
-                    "passes": [item["name"] for item in report.recognition.passes],
+                    "passes": [
+                        item.name
+                        for item in page_extraction(document.pages[0]).plan().ocr_passes
+                    ],
                     "worker": threading.current_thread() is not threading.main_thread(),
                 }}
 
@@ -225,12 +227,9 @@ def test_stage_budget_limits_ocr_without_blocking_page_workers() -> None:
         return value
 
     values = list(runtime.map_ordered(work, range(8), stage=WorkStage.OCR))
-    metrics = runtime.metrics()
 
     assert values == list(range(8))
     assert peak == 2
-    assert metrics.ocr_capacity == 2
-    assert metrics.ocr_active == 0
     runtime.shutdown()
 
 
@@ -388,44 +387,25 @@ def test_page_workers_waiting_on_ocr_do_not_nest_page_work_holding_raster_leases
     runtime.shutdown()
 
 
-def test_context_tracks_scheduler_metrics_and_worker_state() -> None:
-    runtime = ExecutionRuntime()
-    runtime.configure(RuntimeConfig(parent_workers=2))
-
-    with runtime.task_scope(metrics=True) as context:
-        values = list(context.map_ordered(lambda value: (value, runtime.in_worker), range(4)))
-        metrics = context.metrics()
-
-    assert [value for value, internal_in_worker in values] == [0, 1, 2, 3]
-    assert all(in_worker for internal_value, in_worker in values)
-    assert metrics.submitted == 4
-    assert metrics.completed == 4
-    assert metrics.peak_workers > 0
-    runtime.shutdown()
-
-
-def test_runtime_does_not_classify_same_message_runtime_error_as_cancellation() -> None:
+def test_runtime_preserves_same_message_runtime_error() -> None:
     runtime = ExecutionRuntime(RuntimeConfig(parent_workers=1))
 
     def fail() -> None:
         raise RuntimeError("PDF extraction was cancelled")
 
-    with runtime.task_scope(metrics=True) as context:
+    with runtime.task_scope() as context:
         future = context.submit(fail)
         with pytest.raises(RuntimeError, match="PDF extraction was cancelled"):
             future.result(timeout=2)
-        metrics = context.metrics()
 
-    assert metrics.completed == 1
-    assert metrics.cancelled == 0
     runtime.shutdown()
 
 
-def test_child_cancellation_is_immutable_and_shares_parent_metrics() -> None:
+def test_child_cancellation_is_immutable_and_shares_parent_queue() -> None:
     runtime = ExecutionRuntime(RuntimeConfig(parent_workers=1))
     stop = threading.Event()
 
-    with runtime.task_scope(metrics=True) as parent:
+    with runtime.task_scope() as parent:
         child = parent.with_cancellation(stop.is_set)
         assert not parent.cancelled()
         assert not child.cancelled()
@@ -435,11 +415,7 @@ def test_child_cancellation_is_immutable_and_shares_parent_metrics() -> None:
         future = child.submit(lambda: None)
         with pytest.raises(RuntimeError, match="PDF extraction was cancelled"):
             future.result(timeout=2)
-        metrics = parent.metrics()
 
-    assert metrics.submitted == 1
-    assert metrics.completed == 1
-    assert metrics.cancelled == 1
     runtime.shutdown()
 
 
@@ -449,18 +425,15 @@ def test_document_extraction_chunks_capture_and_parses_native_pages_inline() -> 
         page_count = 128
         pages = tuple(f"Page {page_index}" for page_index in range(page_count))
         with PdfDocument.open(text_pages_pdf(pages)) as document:
-            with runtime.task_scope(metrics=True) as context:
+            with runtime.task_scope() as context:
                 extracted = document.extract(context=context)
-                metrics = context.metrics()
 
         assert len(extracted.pages) == page_count
         assert [page.text for page in extracted.pages] == [
             f"Page {page_index}" for page_index in range(page_count)
         ]
-        assert metrics.submitted == len(
-            parse_selection.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
-        )
-        assert metrics.submitted < page_count
+        chunks = parse_selection.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
+        assert len(chunks) < page_count
     finally:
         runtime.shutdown()
 
@@ -492,24 +465,26 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
 
 
 def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
-    original = parse_pipeline.internal_PageExtraction.internal_build_parsed_page
+    original = parse_pipeline.internal_PageExtraction.assembled_page
     calls = 0
     calls_lock = threading.Lock()
 
-    def counted_parse(
+    def counted_assembly(
         extraction: parse_pipeline.internal_PageExtraction,
         context: TaskScope,
-    ) -> ParsedPage:
+    ) -> Page:
         nonlocal calls
-        with calls_lock:
-            calls += 1
-        time.sleep(0.05)
+        with extraction.page.internal_page_lock:
+            if extraction.internal_assembled_page is None:
+                with calls_lock:
+                    calls += 1
+                time.sleep(0.05)
         return original(extraction, context)
 
     monkeypatch.setattr(
         parse_pipeline.internal_PageExtraction,
-        "internal_build_parsed_page",
-        counted_parse,
+        "assembled_page",
+        counted_assembly,
     )
     with PdfDocument.open(SAMPLE_PDF) as document:
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -541,20 +516,20 @@ def internal_multi_page_pdf() -> bytes:
 
 
 def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    original = parse_pipeline.internal_PageExtraction.internal_build_parsed_page
+    original = parse_pipeline.internal_PageExtraction.assembled_page
     parsed_page_numbers: list[int] = []
 
-    def counted_parse(
+    def counted_assembly(
         extraction: parse_pipeline.internal_PageExtraction,
         context: TaskScope,
-    ) -> ParsedPage:
+    ) -> Page:
         parsed_page_numbers.append(extraction.page.page_number)
         return original(extraction, context)
 
     monkeypatch.setattr(
         parse_pipeline.internal_PageExtraction,
-        "internal_build_parsed_page",
-        counted_parse,
+        "assembled_page",
+        counted_assembly,
     )
     with PdfDocument.open(internal_multi_page_pdf()) as document:
         selected = document.extract(pages=2)
@@ -570,20 +545,20 @@ def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.Mon
 def test_distinct_page_selections_can_extract_concurrently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = parse_pipeline.internal_PageExtraction.internal_build_parsed_page
+    original = parse_pipeline.internal_PageExtraction.assembled_page
     rendezvous = threading.Barrier(2)
 
-    def concurrent_parse(
+    def concurrent_assembly(
         extraction: parse_pipeline.internal_PageExtraction,
         context: TaskScope,
-    ) -> ParsedPage:
+    ) -> Page:
         rendezvous.wait(timeout=3)
         return original(extraction, context)
 
     monkeypatch.setattr(
         parse_pipeline.internal_PageExtraction,
-        "internal_build_parsed_page",
-        concurrent_parse,
+        "assembled_page",
+        concurrent_assembly,
     )
     with PdfDocument.open(internal_multi_page_pdf()) as document:
         with ThreadPoolExecutor(max_workers=2) as executor:

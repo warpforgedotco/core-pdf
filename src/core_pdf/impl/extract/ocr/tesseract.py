@@ -457,10 +457,7 @@ def internal_recognize(
     image_prepared: bool = False,
 ) -> internal_Candidate:
     tesserocr = internal_ensure_tesserocr()
-    api_started = time.perf_counter()
     api = api_override if api_override is not None else internal_api(task.mode)
-    api_seconds = time.perf_counter() - api_started if api_override is None else 0.0
-    setup_started = time.perf_counter()
     if not image_prepared:
         api.SetImageBytes(
             task.image.tesseract_bytes(),
@@ -484,19 +481,17 @@ def internal_recognize(
         with internal_suppress_c_stderr():
             api.SetRectangle(x0, y0, w, h)
     api.SetSourceResolution(task.resolution)
-    setup_seconds = time.perf_counter() - setup_started
     timeout_milliseconds = internal_recognition_timeout(task)
     recognition_started = time.perf_counter()
     with internal_suppress_c_stderr():
         recognized = api.Recognize(timeout=timeout_milliseconds)
-    recognition_seconds = time.perf_counter() - recognition_started
+    recognition_elapsed = time.perf_counter() - recognition_started
     if recognized:
         recognition_status = "ok"
-    elif recognition_seconds >= timeout_milliseconds / 1000.0 * 0.9:
+    elif recognition_elapsed >= timeout_milliseconds / 1000.0 * 0.9:
         recognition_status = "timeout"
     else:
         recognition_status = "failed"
-    iterator_started = time.perf_counter()
     iterator = api.GetIterator() if recognized else None
     level = tesserocr.RIL.WORD if task.recognize_words else tesserocr.RIL.TEXTLINE
     filtered_lines = (
@@ -579,13 +574,9 @@ def internal_recognize(
         if recognized and task.collect_symbols
         else ObservationBatch.empty()
     )
-    iterator_seconds = time.perf_counter() - iterator_started
-    cleanup_started = time.perf_counter()
     clear_adaptive = getattr(api, "ClearAdaptiveClassifier", None)
     if callable(clear_adaptive):
         clear_adaptive()
-    cleanup_seconds = time.perf_counter() - cleanup_started
-    candidate_started = time.perf_counter()
     median_text_height = (
         finite_median(numpy.asarray(text_heights, dtype=numpy.float64)) if text_heights else 0.0
     )
@@ -602,16 +593,9 @@ def internal_recognize(
         task.mode,
         observations,
         symbols=symbols,
-        api_seconds=api_seconds,
-        setup_seconds=setup_seconds,
-        recognition_seconds=recognition_seconds,
-        iterator_seconds=iterator_seconds,
-        cleanup_seconds=cleanup_seconds,
         recognition_status=recognition_status,
         median_text_height=median_text_height,
     )
-    candidate_seconds = time.perf_counter() - candidate_started
-    candidate = replace(candidate, candidate_seconds=candidate_seconds)
     if task.character_confidence_threshold is None:
         return candidate
     filtered_observations = ObservationBatch.from_columns(
@@ -627,12 +611,6 @@ def internal_recognize(
         task.mode,
         filtered_observations,
         symbols=symbols,
-        api_seconds=api_seconds,
-        setup_seconds=setup_seconds,
-        recognition_seconds=recognition_seconds,
-        iterator_seconds=iterator_seconds,
-        cleanup_seconds=cleanup_seconds,
-        candidate_seconds=candidate_seconds,
         recognition_status=recognition_status,
         median_text_height=median_text_height,
     )

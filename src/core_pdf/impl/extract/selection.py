@@ -4,12 +4,11 @@
 from __future__ import annotations
 
 import math
-import time
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import Future
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, cast
 
@@ -20,9 +19,6 @@ from core_pdf.impl.extract.capture import (
 from core_pdf.impl.extract.contracts import (
     CapturedPage,
     ObservationBatch,
-    OcrPassScope,
-    ParsedPage,
-    RecognitionReport,
     RecognitionResult,
     internal_bbox_tuple,
 )
@@ -32,9 +28,8 @@ from core_pdf.impl.extract.ocr.strokes import (
     decode_stroked_text_profile_with_alphabet,
 )
 from core_pdf.impl.extract.pipeline import internal_PageExtraction, page_extraction
-from core_pdf.impl.extract.quality import internal_candidate
 from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
-from core_pdf.impl.output import SCHEMA_VERSION, Diagnostic, Document
+from core_pdf.impl.output import SCHEMA_VERSION, Document, Page
 from core_pdf.impl.runtime.execution import TaskScope, WorkStage
 
 DOCUMENT_FONT_SEED_LIMIT = 4
@@ -56,8 +51,6 @@ class internal_FontEnrichment:
 class internal_StrokedEnrichment:
     """Selection-local recognition replacements learned across compatible pages."""
 
-    seed_count: int = 0
-    reused_pages: int = 0
     recognition_by_index: Mapping[int, RecognitionResult] = field(
         default_factory=lambda: MappingProxyType({})
     )
@@ -266,19 +259,12 @@ def internal_apply_font_enrichment(
         ):
             extractions.append(base)
             continue
-        started = time.perf_counter()
         enriched_capture = internal_capture_from_program(
             page,
             capture.program,
             learned_unicode=font.learned_unicode,
         )
-        extractions.append(
-            internal_PageExtraction(
-                page,
-                capture=enriched_capture,
-                capture_seconds=time.perf_counter() - started,
-            )
-        )
+        extractions.append(internal_PageExtraction(page, capture=enriched_capture))
     return tuple(extractions)
 
 
@@ -308,105 +294,13 @@ def internal_document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -
 
 
 def internal_document_stroked_recognition(
-    capture: CapturedPage,
     decoded: StrokedTextDecode,
-    *,
-    seconds: float,
-    seed_pages: tuple[int, ...],
-    alphabet_size: int,
 ) -> RecognitionResult:
     """Build a selection-local zero-raster recognition result."""
     from core_pdf.impl.extract.ocr.vector import internal_stroked_vector_decoded_batch
 
     observations = internal_stroked_vector_decoded_batch(decoded.observations)
-    candidate = internal_candidate(-1, observations)
-    bbox = capture.evidence.stroked_vector_text.bbox
-    pass_report: dict[str, object] = {
-        "name": "document-stroked-glyphs",
-        "scope": OcrPassScope.STROKED_VECTOR_TEXT.value,
-        "scale": 0.0,
-        "modes": (),
-        "recognize_words": False,
-        "character_confidence_threshold": None,
-        "task_count": 0,
-        "raster_pixels": 0,
-        "skipped_raster_pixels": 0,
-        "image_text_preflight": (),
-        "region_stage": "document-glyph-alphabet",
-        "region_boxes": (bbox,) if bbox is not None else (),
-        "skipped_region_boxes": (),
-        "full_page_fallback": False,
-        "elapsed_seconds": seconds,
-        "render_timings": {},
-        "recognition_seconds": 0.0,
-        "setup_seconds": 0.0,
-        "api_seconds": 0.0,
-        "iterator_seconds": 0.0,
-        "cleanup_seconds": 0.0,
-        "candidate_seconds": 0.0,
-        "recognition_statuses": (),
-        "accepted_additions": len(observations),
-        "adaptive_retry_scale": None,
-        "adaptive_preflight": None,
-        "adaptive_rescue_decision": None,
-        "adaptive_rescue": None,
-        "pixel_budget": 0,
-        "rectangles": (),
-        "selected": True,
-        **candidate.metrics.as_record(),
-    }
-    stroked_vector_decode = {
-        "seconds": seconds,
-        "eligible_seeds": 0,
-        "aligned_seeds": 0,
-        "accepted_seeds": 0,
-        "initial_signatures": decoded.initial_signatures,
-        "learned_signatures": decoded.learned_signatures,
-        "approximate_signatures": decoded.approximate_signatures,
-        "candidate_runs": decoded.candidate_runs,
-        "decoded_candidate_runs": decoded.decoded_candidate_runs,
-        "candidate_run_coverage": decoded.candidate_run_coverage,
-        "candidate_glyph_coverage": decoded.candidate_glyph_coverage,
-        "decoded_runs": len(decoded.observations),
-        "additions": len(decoded.observations),
-        "corrections": 0,
-        "document_reuse": True,
-    }
-    stroked_vector_packed = {
-        "accepted": True,
-        "cells": 0,
-        "raster_pixels": 0,
-        "unmapped_observations": 0,
-        "fallback_used": False,
-        "document_reuse": True,
-    }
-    document_stroked_glyphs = {
-        "role": "reuse",
-        "seed_pages": seed_pages,
-        "alphabet_size": alphabet_size,
-        "candidate_run_coverage": decoded.candidate_run_coverage,
-        "candidate_glyph_coverage": decoded.candidate_glyph_coverage,
-        "decoded_runs": len(decoded.observations),
-        "seconds": seconds,
-    }
-    return RecognitionResult(
-        observations,
-        RecognitionReport(
-            passes=(pass_report,),
-            candidates=(
-                {
-                    "name": "document-stroked-glyphs",
-                    "mode": -1,
-                    "selected": True,
-                    **candidate.metrics.as_record(),
-                },
-            ),
-            stroked_vector_decode=stroked_vector_decode,
-            stroked_vector_packed=stroked_vector_packed,
-            document_stroked_glyphs=document_stroked_glyphs,
-            stroked_vector_alphabet=decoded.alphabet,
-        ),
-    )
+    return RecognitionResult(observations, stroked_vector_alphabet=decoded.alphabet)
 
 
 def internal_prepare_document_stroked_mappings(
@@ -436,8 +330,6 @@ def internal_prepare_document_stroked_mappings(
     )
     alphabet: dict[GlyphSignature, str] = {}
     ambiguous: set[GlyphSignature] = set()
-    seed_indexes: list[int] = []
-    reused_pages = 0
     recognition_by_index: dict[int, RecognitionResult] = {}
     if extractions is None:
         extractions = tuple(page_extraction(page) for page in pages)
@@ -449,46 +341,25 @@ def internal_prepare_document_stroked_mappings(
             recognition = extraction.internal_recognition
         if recognition is None and alphabet:
             extraction.plan()
-            started = time.perf_counter()
             decoded = decode_stroked_text_profile_with_alphabet(
                 internal_stroked_text_profile(capture),
                 alphabet,
             )
-            seconds = time.perf_counter() - started
             if internal_document_stroked_decode_is_sufficient(decoded):
-                recognition_by_index[page_index] = internal_document_stroked_recognition(
-                    capture,
-                    decoded,
-                    seconds=seconds,
-                    seed_pages=tuple(int(pages[index].page_number) for index in seed_indexes),
-                    alphabet_size=len(alphabet),
-                )
-                reused_pages += 1
+                recognition_by_index[page_index] = internal_document_stroked_recognition(decoded)
                 continue
 
         if recognition is None:
             recognition = extraction.recognition(context)
-        learned = recognition.report.stroked_vector_alphabet
+        learned = recognition.stroked_vector_alphabet
         if learned:
             internal_merge_document_stroked_alphabet(
                 alphabet,
                 ambiguous,
                 cast(tuple[tuple[GlyphSignature, str], ...], learned),
             )
-        seed_indexes.append(page_index)
-        seed_report = {
-            "role": "seed",
-            "seed_pages": tuple(int(pages[index].page_number) for index in seed_indexes),
-            "alphabet_size": len(alphabet),
-            "ambiguous_signatures": len(ambiguous),
-        }
-        recognition_by_index[page_index] = replace(
-            recognition,
-            report=replace(recognition.report, document_stroked_glyphs=seed_report),
-        )
+        recognition_by_index[page_index] = recognition
     return internal_StrokedEnrichment(
-        seed_count=len(seed_indexes),
-        reused_pages=reused_pages,
         recognition_by_index=MappingProxyType(recognition_by_index),
     )
 
@@ -507,9 +378,6 @@ def internal_apply_stroked_enrichment(
             capture=base.capture(),
             plan=base.plan(),
             recognition=recognition,
-            capture_seconds=base.internal_capture_seconds,
-            planning_seconds=base.internal_planning_seconds,
-            ocr_seconds=base.internal_ocr_seconds,
         )
     return tuple(enriched)
 
@@ -548,12 +416,12 @@ def internal_capture_document_pages(
     return tuple(capture for capture in captures_by_index if capture is not None)
 
 
-def internal_parse_document_pages(
+def internal_assemble_document_pages(
     extractions: tuple[internal_PageExtraction, ...],
     context: TaskScope,
-) -> tuple[ParsedPage, ...]:
-    parsed_by_index: list[ParsedPage | None] = [None] * len(extractions)
-    futures: dict[int, Future[ParsedPage]] = {}
+) -> tuple[Page, ...]:
+    pages_by_index: list[Page | None] = [None] * len(extractions)
+    futures: dict[int, Future[Page]] = {}
     direct_indexes: list[int] = []
     for index, extraction in enumerate(extractions):
         plan = extraction.plan()
@@ -562,7 +430,7 @@ def internal_parse_document_pages(
         )
         if requires_ocr:
             futures[index] = context.submit(
-                extraction.parsed_page,
+                extraction.assembled_page,
                 context,
                 stage=WorkStage.PAGE,
             )
@@ -571,13 +439,13 @@ def internal_parse_document_pages(
     try:
         for index in direct_indexes:
             context.raise_if_cancelled()
-            parsed_by_index[index] = extractions[index].parsed_page(context)
+            pages_by_index[index] = extractions[index].assembled_page(context)
         for index, future in futures.items():
-            parsed_by_index[index] = future.result()
+            pages_by_index[index] = future.result()
     finally:
         for future in futures.values():
             future.cancel()
-    return tuple(page for page in parsed_by_index if page is not None)
+    return tuple(page for page in pages_by_index if page is not None)
 
 
 def internal_prepare_selection_state(
@@ -603,26 +471,20 @@ def extract_document(
     pages: Sequence[Any],
 ) -> Document:
     pages = tuple(pages)
-    parsed_pages: tuple[ParsedPage, ...]
     extractions: tuple[internal_PageExtraction, ...]
     if len(pages) == 1:
         extractions = (page_extraction(pages[0]),)
-        parsed_pages = (extractions[0].parsed_page(context),)
     else:
         captures = internal_capture_document_pages(pages, context)
         if len(captures) == len(pages):
             extractions = internal_prepare_selection_state(pages, captures, context)
         else:
             extractions = tuple(page_extraction(page) for page in pages)
-        parsed_pages = internal_parse_document_pages(extractions, context)
-    diagnostics = tuple(
-        Diagnostic("parse", message, page_number=page.page_number)
-        for page in parsed_pages
-        for message in page.diagnostics
-    )
+    assembled_pages = internal_assemble_document_pages(extractions, context)
+    diagnostics = tuple(diagnostic for page in assembled_pages for diagnostic in page.diagnostics)
     metadata = document.get_metadata()
     return Document(
-        pages=tuple(extraction.assembled_page(context) for extraction in extractions),
+        pages=assembled_pages,
         metadata=metadata,
         diagnostics=diagnostics,
         schema_version=SCHEMA_VERSION,

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 
 import pytest
 
@@ -20,7 +19,6 @@ from core_pdf.impl.extract.contracts import (
     OcrPassScope,
     PagePlanReason,
     PageRoute,
-    RecognitionReport,
     StrokedVectorTextEvidence,
     WorkPlan,
 )
@@ -91,24 +89,17 @@ def token_observations(
     )
 
 
-def internal_recognize_with_report(
+def internal_recognize(
     capture: CapturedPage,
     plan: WorkPlan,
     context: TaskScope,
-) -> tuple[ObservationBatch, RecognitionReport]:
-    report = RecognitionReport()
+) -> ObservationBatch:
     observations, _ = ocr.internal_recognize_page_with_reserved_raster(
         capture,
         plan,
         context,
-        report=report,
     )
-    return observations, report
-
-
-def internal_report_mapping(value: object) -> Mapping[str, object]:
-    assert isinstance(value, Mapping)
-    return cast(Mapping[str, object], value)
+    return observations
 
 
 @pytest.fixture
@@ -481,7 +472,6 @@ def test_raster_text_signal_rejects_blank_image() -> None:
     )
 
     assert signal.likely_text is False
-    assert signal.reason == "low-edge-density"
 
 
 def test_raster_text_signal_rejects_continuous_tone_image() -> None:
@@ -497,7 +487,6 @@ def test_raster_text_signal_rejects_continuous_tone_image() -> None:
     signal = ocr_raster.internal_raster_text_signal(RasterImage(pixels, width, height, 3))
 
     assert signal.likely_text is False
-    assert signal.reason == "continuous-tone-image"
 
 
 def test_raster_text_signal_preserves_repeated_glyph_edges() -> None:
@@ -513,7 +502,6 @@ def test_raster_text_signal_preserves_repeated_glyph_edges() -> None:
     signal = ocr_raster.internal_raster_text_signal(RasterImage(pixels, width, height, 1))
 
     assert signal.likely_text is True
-    assert signal.reason == "text-structure"
 
 
 def test_single_ocr_candidate_skips_merge_rescan() -> None:
@@ -691,38 +679,6 @@ def test_candidate_merge_prefers_complete_overlapping_text() -> None:
     assert merged.observations.text == ("column transformation",)
 
 
-def test_candidate_diagnostics_are_typed_and_identify_selection() -> None:
-    first = ocr_quality.internal_candidate(
-        3,
-        candidate_observations("alpha + beta", 80.0),
-    )
-    second = ocr_quality.internal_candidate(
-        11,
-        candidate_observations("noise", 40.0),
-    )
-    report = RecognitionReport()
-
-    ocr_candidates.internal_record_candidates(
-        (("primary", first), ("fallback", second)),
-        "primary",
-        report,
-    )
-
-    diagnostics = report.candidates
-    assert diagnostics[0]["selected"] is True
-    assert diagnostics[0]["characters"] == len("alpha + beta")
-    assert diagnostics[0]["mean_confidence"] == 80.0
-    assert diagnostics[1]["selected"] is False
-
-
-def test_recognition_report_serializes_learned_stroked_vector_alphabet() -> None:
-    alphabet = (("signature", "A"),)
-
-    record = RecognitionReport(stroked_vector_alphabet=alphabet).as_record()
-
-    assert record["stroked_vector_alphabet"] == alphabet
-
-
 def test_hidden_text_verification_requires_semantic_and_spatial_agreement() -> None:
     tokens = tuple(f"cell{index:02d}" for index in range(30))
     hidden = token_observations(tokens, source=ObservationSource.NATIVE)
@@ -811,7 +767,7 @@ def test_verified_hidden_text_bypasses_full_ocr(
         verify_hidden_text=True,
     )
 
-    result, report = internal_recognize_with_report(
+    result = internal_recognize(
         capture,
         plan,
         inline_scope(),
@@ -821,10 +777,6 @@ def test_verified_hidden_text_bypasses_full_ocr(
     assert result.text == tokens
     assert result.visible.tolist() == [True] * len(tokens)
     assert result.source.tolist() == [int(ObservationSource.NATIVE)] * len(tokens)
-    assert report.hidden_text_verification["accepted"] is True
-    diagnostics = report.passes
-    assert [item["name"] for item in diagnostics] == ["hidden-text-verification"]
-    assert diagnostics[0]["raster_pixels"] == 100
 
 
 def test_candidate_utility_rejects_larger_low_confidence_symbol_noise() -> None:
@@ -930,11 +882,9 @@ def test_adaptive_rescue_skips_when_primary_covers_visual_ink() -> None:
     )
     ocr_pass = OcrPass("primary", OcrPassScope.PAGE, 1.0, (3,), adaptive_scale=True)
 
-    run, decision = ocr_rescue.internal_adaptive_rescue_decision(candidate, (task,), ocr_pass)
+    run = ocr_rescue.internal_adaptive_rescue_decision(candidate, (task,), ocr_pass)
 
     assert run is False
-    assert decision["reason"] == "primary-covers-ink"
-    assert decision["weak_ink_ratio"] == 0.0
 
 
 def test_adaptive_rescue_skips_saturated_ink_for_dense_reliable_text() -> None:
@@ -959,11 +909,9 @@ def test_adaptive_rescue_skips_saturated_ink_for_dense_reliable_text() -> None:
     )
     ocr_pass = OcrPass("primary", OcrPassScope.PAGE, 1.0, (3,), adaptive_scale=True)
 
-    run, decision = ocr_rescue.internal_adaptive_rescue_decision(candidate, (task,), ocr_pass)
+    run = ocr_rescue.internal_adaptive_rescue_decision(candidate, (task,), ocr_pass)
 
     assert run is False
-    assert decision["reason"] == "ink-map-saturated"
-    assert decision["mean_ink"] == 1.0
 
 
 def test_estimated_text_height_uses_repeated_horizontal_bands() -> None:
@@ -1048,13 +996,10 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
     )
 
     context = inline_scope()
-    observations, report = internal_recognize_with_report(capture, plan, context)
+    observations = internal_recognize(capture, plan, context)
 
     assert executed_modes == [3, 6]
     assert observations.text[0] == "strong fallback"
-    diagnostics = report.passes
-    assert diagnostics[0]["selected"] is False
-    assert diagnostics[1]["selected"] is True
 
 
 def test_large_high_confidence_primary_skips_full_page_fallback(
@@ -1092,7 +1037,7 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
         ),
     )
 
-    observations, report = internal_recognize_with_report(
+    observations = internal_recognize(
         capture,
         plan,
         inline_scope(),
@@ -1100,7 +1045,6 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
 
     assert executed_modes == [3]
     assert observations.text == ("large heading",)
-    assert [item["name"] for item in report.passes] == ["primary"]
 
 
 def test_weak_region_pass_augments_instead_of_replacing_primary(
@@ -1139,7 +1083,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
             page_box=(0.0, 0.0, 10.0, 10.0),
             resolution=raster.resolution,
         )
-        return (task,), 100, None, ((0.0, 0.0, 10.0, 10.0),)
+        return (task,), None
 
     patch_ocr_helper(monkeypatch, "internal_high_resolution_weak_region_tasks", weak_region_crops)
 
@@ -1160,16 +1104,13 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
         ),
     )
 
-    observations, report = internal_recognize_with_report(
+    observations = internal_recognize(
         capture,
         plan,
         inline_scope(),
     )
 
     assert observations.text == ("x", "recovered")
-    diagnostics = report.passes
-    assert diagnostics[1]["accepted_additions"] == 1
-    assert diagnostics[1]["region_stage"] == "weak-region-crops"
 
 
 def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
@@ -1230,7 +1171,7 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
         ),
     )
 
-    result, report = internal_recognize_with_report(
+    result = internal_recognize(
         capture,
         plan,
         inline_scope(),
@@ -1239,12 +1180,6 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
     assert "recovered" in result.text
     assert render_budgets
     assert set(render_budgets) == {ocr_contracts.MAX_OCR_PIXELS}
-    diagnostic = report.passes[0]
-    rescue_decision = internal_report_mapping(diagnostic["adaptive_rescue_decision"])
-    rescue = internal_report_mapping(diagnostic["adaptive_rescue"])
-    assert rescue_decision["run"] is True
-    assert rescue["scope"] == "weak-regions"
-    assert rescue["region_boxes"]
 
 
 def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
@@ -1288,17 +1223,13 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
         ),
     )
 
-    result, report = internal_recognize_with_report(
+    result = internal_recognize(
         capture,
         plan,
         inline_scope(),
     )
 
     assert result.text == ("heading",)
-    diagnostic = report.passes[0]
-    assert diagnostic["adaptive_rescue"] is None
-    rescue_decision = internal_report_mapping(diagnostic["adaptive_rescue_decision"])
-    assert rescue_decision["reason"] == "primary-text-already-large"
 
 
 def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
@@ -1350,7 +1281,7 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
         ),
     )
 
-    result, report = internal_recognize_with_report(
+    result = internal_recognize(
         capture,
         plan,
         inline_scope(),
@@ -1358,9 +1289,6 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
 
     assert executed_modes == [12, 11]
     assert result.text == ("complete fallback text",)
-    diagnostics = report.passes
-    assert diagnostics[0]["adaptive_rescue"] is None
-    assert diagnostics[1]["selected"] is True
 
 
 def test_vector_preflight_skips_known_undersampled_primary_pass(
@@ -1417,16 +1345,13 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
         ),
     )
 
-    _, report = internal_recognize_with_report(
+    internal_recognize(
         capture,
         plan,
         inline_scope(),
     )
 
     assert render_budgets == [ocr_contracts.OCR_PREFLIGHT_PIXELS, ocr_contracts.MAX_OCR_PIXELS]
-    diagnostic = report.passes[0]
-    adaptive_preflight = internal_report_mapping(diagnostic["adaptive_preflight"])
-    assert adaptive_preflight["source"] == "vector-render"
 
 
 def test_candidate_regions_combine_images_vectors_and_sparse_labels() -> None:
@@ -1545,14 +1470,13 @@ def test_stroked_vector_decoder_corrects_one_character_ocr_error(
         confidence=(95.0,),
     )
 
-    report = RecognitionReport()
-    recovered = ocr_stroked_vector.internal_recover_stroked_vector_text(
-        capture, observations, report
+    recovered, alphabet = ocr_stroked_vector.internal_recover_stroked_vector_text(
+        capture, observations
     )
 
     assert recovered.text == ("D7",)
     assert recovered.source.tolist() == [int(ObservationSource.STRUCTURE)]
-    assert report.stroked_vector_decode["corrections"] == 1
+    assert alphabet == decoded.alphabet
 
 
 def test_stroked_vector_substitution_repairs_only_anchored_low_confidence_edits() -> None:
@@ -1689,8 +1613,8 @@ def test_packed_stroked_vector_decode_gate_requires_reusable_alphabet() -> None:
         learned_signatures=16,
     )
 
-    assert not ocr_stroked_vector.internal_packed_stroked_vector_decode_gate(weak, 60)[0]
-    assert ocr_stroked_vector.internal_packed_stroked_vector_decode_gate(strong, 60)[0]
+    assert not ocr_stroked_vector.internal_packed_stroked_vector_decode_gate(weak, 60)
+    assert ocr_stroked_vector.internal_packed_stroked_vector_decode_gate(strong, 60)
 
 
 def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
@@ -1756,7 +1680,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
         ocr_passes=(OcrPass("stroked", OcrPassScope.STROKED_VECTOR_TEXT, 6.0, (11,)),),
     )
 
-    observations, report = internal_recognize_with_report(
+    observations = internal_recognize(
         capture,
         plan,
         inline_scope(),
@@ -1764,11 +1688,6 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
 
     assert recognized == [True, False]
     assert observations.text == ("full fallback",)
-    diagnostic = report.passes[0]
-    assert diagnostic["region_stage"] == "stroked-vector-text-fallback"
-    assert diagnostic["task_count"] == 2
-    assert diagnostic["raster_pixels"] == 200
-    assert report.stroked_vector_packed["fallback_used"] is True
 
 
 def stroked_document(
@@ -1842,16 +1761,16 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
         inline_scope(),
     )
 
-    assert (enrichment.seed_count, enrichment.reused_pages) == (1, 1)
     assert ocr_calls == [2]
     assert plan_calls == [1]
     seed_recognition = enrichment.recognition_by_index[1]
     reused_recognition = enrichment.recognition_by_index[0]
     assert seed_recognition is not None
     assert reused_recognition is not None
-    assert seed_recognition.report.document_stroked_glyphs["role"] == "seed"
-    assert reused_recognition.report.document_stroked_glyphs["role"] == "reuse"
-    assert reused_recognition.report.passes[0]["raster_pixels"] == 0
+    assert seed_recognition.observations.text == ("seed",)
+    assert seed_recognition.stroked_vector_alphabet == alphabet
+    assert reused_recognition.observations.text == ("A",) * 20
+    assert reused_recognition.stroked_vector_alphabet == alphabet
     assert not parse_selection.internal_document_stroked_decode_is_sufficient(
         replace(decoded, decoded_candidate_runs=19)
     )
@@ -1880,14 +1799,11 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
         inline_scope(),
     )
 
-    assert (enrichment.seed_count, enrichment.reused_pages) == (2, 0)
     assert ocr_calls == [2, 1]
     assert plan_calls == [1]
-    roles = [
-        enrichment.recognition_by_index[index].report.document_stroked_glyphs["role"]
-        for index in range(2)
-    ]
-    assert tuple(roles) == ("seed", "seed")
+    assert tuple(
+        enrichment.recognition_by_index[index].observations.text for index in range(2)
+    ) == (("seed",), ("seed",))
 
 
 def test_document_stroked_alphabet_blacklists_conflicting_signatures() -> None:
@@ -1981,7 +1897,7 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
     target = ocr_types.internal_OcrRegion((0.0, 0.0, 100.0, 100.0), 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (3,))
 
-    tasks, pixels, _, boxes = ocr_region_tasks.internal_candidate_region_tasks(
+    tasks, _ = ocr_region_tasks.internal_candidate_region_tasks(
         capture,
         (target,),
         ocr_pass,
@@ -1990,9 +1906,7 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
     )
 
     assert rendered_crops == [target.page_box]
-    assert boxes == (target.page_box,)
     assert tasks[0].page_box == target.page_box
-    assert pixels == 10_000
 
 
 def test_candidate_region_defers_layered_images_to_compositor(
@@ -2026,7 +1940,7 @@ def test_candidate_region_defers_layered_images_to_compositor(
     target = ocr_types.internal_OcrRegion(page_box, 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (11,))
 
-    tasks, pixels, _, boxes = ocr_region_tasks.internal_candidate_region_tasks(
+    tasks, _ = ocr_region_tasks.internal_candidate_region_tasks(
         capture,
         (target,),
         ocr_pass,
@@ -2035,10 +1949,8 @@ def test_candidate_region_defers_layered_images_to_compositor(
     )
 
     assert rendered_crops == [page_box]
-    assert boxes == (page_box,)
     assert tasks[0].image is rendered_raster.image
     assert tasks[0].recognize_words is True
-    assert pixels == 10_000
 
 
 def test_distributed_outline_text_requires_many_small_paths_across_both_axes() -> None:
@@ -2091,7 +2003,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
             page_box=regions[0].page_box,
             resolution=raster.resolution,
         )
-        return (task,), raster.width * raster.height, None, (regions[0].page_box,)
+        return (task,), None
 
     patch_ocr_helper(monkeypatch, "internal_candidate_region_tasks", candidate_tasks)
     monkeypatch.setattr(
@@ -2119,7 +2031,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
         ),
     )
 
-    observations, report = internal_recognize_with_report(
+    observations = internal_recognize(
         capture,
         plan,
         inline_scope(),
@@ -2131,9 +2043,6 @@ def test_distributed_outline_text_uses_one_full_page_region(
         (ocr_types.internal_OcrRegion(page_box, float("inf"), ("distributed-outline-text",)),)
     ]
     assert requested_budgets == [ocr_contracts.PRIMARY_OCR_PIXELS]
-    diagnostic = report.passes[0]
-    assert diagnostic["region_stage"] == "distributed-outline-page"
-    assert diagnostic["region_boxes"] == (page_box,)
 
 
 def test_candidate_regions_cover_low_coverage_hybrid_schematics() -> None:

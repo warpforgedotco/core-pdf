@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import math
 import re
-import time
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
@@ -919,11 +918,8 @@ def internal_capture_from_program(
         ),
     )
     newstroke_decode: NewstrokeDecode | None = None
-    newstroke_seconds = 0.0
     if not captured.runs and internal_requires_high_resolution_vector_ocr(captured):
-        newstroke_started = time.perf_counter()
         newstroke_decode = decode_newstroke_drawings(captured.drawings)
-        newstroke_seconds = time.perf_counter() - newstroke_started
         if newstroke_decode.trusted:
             captured = internal_capture_with_newstroke_text(captured, newstroke_decode)
     if not captured.evidence.vector_text_trusted:
@@ -936,21 +932,6 @@ def internal_capture_from_program(
         captured = replace(
             captured,
             evidence=replace(captured.evidence, stroked_vector_text=stroked_vector_text),
-        )
-    if newstroke_decode is not None:
-        captured = replace(
-            captured,
-            newstroke_report={
-                "accepted": newstroke_decode.trusted,
-                "candidate_segments": newstroke_decode.candidate_segments,
-                "matched_segments": newstroke_decode.matched_segments,
-                "matched_coverage": newstroke_decode.matched_coverage,
-                "glyphs": newstroke_decode.glyphs,
-                "characters": newstroke_decode.characters,
-                "sequences": newstroke_decode.sequences,
-                "maximum_error": newstroke_decode.maximum_error,
-                "seconds": newstroke_seconds,
-            },
         )
     return captured
 

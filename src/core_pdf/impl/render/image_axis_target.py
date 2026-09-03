@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-import time
 from typing import Any
 
 import numpy
@@ -45,7 +44,6 @@ class internal_ImageAxisTargetMixin:
         clip_path_stack = clip.clip_path_stack
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip_row_visible_spans
-        raster_metrics = self.raster_metrics
         width = self.width
         box = item.bbox
         if box is None:
@@ -57,12 +55,10 @@ class internal_ImageAxisTargetMixin:
         if blend_mode == "Normal":
             blend_mode = None
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        decode_started = time.perf_counter()
         try:
             prepared = source.prepare()
         except Exception:
             prepared = None
-        raster_metrics.image_decode_seconds += time.perf_counter() - decode_started
         if prepared is None:
             return
         if prepared.is_stencil:
@@ -147,9 +143,7 @@ class internal_ImageAxisTargetMixin:
         constant_alpha_value = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
         quad = item.quad
         comps = source_channels
-        raster_metrics.image_count += 1
         if quad is not None and source_alpha is None:
-            blit_started = time.perf_counter()
             affine_blit = blit_affine_image(
                 quad,
                 converted,
@@ -159,7 +153,6 @@ class internal_ImageAxisTargetMixin:
                 constant_alpha_value,
                 blend_mode,
             )
-            raster_metrics.image_blit_seconds += time.perf_counter() - blit_started
             if affine_blit:
                 return
         # Preserve the established sampling choice for soft-masked images.
@@ -296,13 +289,6 @@ class internal_ImageAxisTargetMixin:
                             max(0, min(255, int(round(rgba[3] * constant_alpha)))),
                         )
                     blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
-
-    def record_image_timings(self: Any) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        page = self.page
-        raster_metrics = self.raster_metrics
-        page.metadata["__core_pdf_raster_image_timings__"] = raster_metrics.as_metadata()
 
     def blit_image_mask(
         self: Any,

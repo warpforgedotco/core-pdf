@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from collections import deque
 from collections.abc import Callable, Generator, Iterable, Iterator
 from concurrent.futures import (
@@ -15,7 +14,7 @@ from concurrent.futures import (
     wait,
 )
 from contextlib import AbstractContextManager, suppress
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import partial
 from typing import Any, Generic, TypeVar
@@ -81,25 +80,6 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeMetrics:
-    submitted: int = 0
-    completed: int = 0
-    cancelled: int = 0
-    peak_workers: int = 0
-    queue_seconds: float = 0.0
-    execution_seconds: float = 0.0
-    parent_workers: int = 0
-    active_workers: int = 0
-    queued_tasks: int = 0
-    raster_capacity_bytes: int = 0
-    raster_available_bytes: int = 0
-    page_capacity: int = 0
-    page_active: int = 0
-    ocr_capacity: int = 0
-    ocr_active: int = 0
-
-
-@dataclass(frozen=True, slots=True)
 class CompletedResult(Generic[internal_ResultT]):
     index: int
     value: internal_ResultT
@@ -112,7 +92,6 @@ class internal_QueuedWork:
     args: tuple[object, ...]
     kwargs: dict[str, object]
     context: TaskScope | None
-    submitted_at: float
     stage: WorkStage
 
 
@@ -139,11 +118,6 @@ class internal_ResourceBudget:
             self.internal_available = min(self.capacity, self.internal_available + amount)
             self.internal_condition.notify_all()
 
-    @property
-    def available(self) -> int:
-        with self.internal_condition:
-            return self.internal_available
-
 
 class internal_ResourceLease(AbstractContextManager["internal_ResourceLease"]):
     def __init__(
@@ -169,30 +143,15 @@ class internal_ResourceLease(AbstractContextManager["internal_ResourceLease"]):
             self.internal_acquired = 0
 
 
-@dataclass(slots=True)
-class internal_TaskMetricsState:
-    enabled: bool
-    lock: threading.Lock = field(default_factory=threading.Lock)
-    submitted: int = 0
-    completed: int = 0
-    cancelled: int = 0
-    active: int = 0
-    peak: int = 0
-    queue_seconds: float = 0.0
-    execution_seconds: float = 0.0
-
-
 class TaskScope(AbstractContextManager["TaskScope"]):
-    """Cancellation and metrics scope sharing the process-wide executor."""
+    """Cancellation scope sharing the process-wide executor."""
 
     def __init__(
         self,
         runtime: ExecutionRuntime,
         *,
         cancelled: Callable[[], bool] | None = None,
-        metrics: bool = False,
         internal_cancellations: tuple[Callable[[], bool], ...] | None = None,
-        internal_metrics_state: internal_TaskMetricsState | None = None,
         internal_queue_key: object | None = None,
         internal_owns_queue: bool = True,
     ) -> None:
@@ -200,7 +159,6 @@ class TaskScope(AbstractContextManager["TaskScope"]):
         if internal_cancellations is None:
             internal_cancellations = (cancelled,) if cancelled is not None else ()
         self.internal_cancellations = internal_cancellations
-        self.internal_metrics_state = internal_metrics_state or internal_TaskMetricsState(metrics)
         self.internal_queue_key = internal_queue_key if internal_queue_key is not None else object()
         self.internal_owns_queue = internal_owns_queue
 
@@ -212,11 +170,10 @@ class TaskScope(AbstractContextManager["TaskScope"]):
             self.runtime.internal_close_context(self)
 
     def with_cancellation(self, cancelled: Callable[[], bool]) -> TaskScope:
-        """Return an immutable child sharing this scope's queue and metrics."""
+        """Return an immutable child sharing this scope's queue."""
         return TaskScope(
             self.runtime,
             internal_cancellations=(*self.internal_cancellations, cancelled),
-            internal_metrics_state=self.internal_metrics_state,
             internal_queue_key=self.internal_queue_key,
             internal_owns_queue=False,
         )
@@ -259,42 +216,6 @@ class TaskScope(AbstractContextManager["TaskScope"]):
     def reserve_raster(self, amount: int) -> AbstractContextManager[object]:
         return internal_ResourceLease(self.runtime.internal_raster_budget, amount, self.cancelled)
 
-    def metrics(self) -> RuntimeMetrics:
-        state = self.internal_metrics_state
-        with state.lock:
-            return replace(
-                self.runtime.metrics(),
-                submitted=state.submitted,
-                completed=state.completed,
-                cancelled=state.cancelled,
-                peak_workers=state.peak,
-                queue_seconds=state.queue_seconds,
-                execution_seconds=state.execution_seconds,
-            )
-
-    def internal_record_submit(self) -> None:
-        state = self.internal_metrics_state
-        if state.enabled:
-            with state.lock:
-                state.submitted += 1
-
-    def internal_record_start(self) -> None:
-        state = self.internal_metrics_state
-        if state.enabled:
-            with state.lock:
-                state.active += 1
-                state.peak = max(state.peak, state.active)
-
-    def internal_record_done(self, queue: float, execution: float, cancelled: bool) -> None:
-        state = self.internal_metrics_state
-        if state.enabled:
-            with state.lock:
-                state.active = max(0, state.active - 1)
-                state.completed += 1
-                state.cancelled += int(cancelled)
-                state.queue_seconds += queue
-                state.execution_seconds += execution
-
 
 class ExecutionRuntime:
     """Fair bounded threads shared by parsing, rendering, and native OCR."""
@@ -329,12 +250,6 @@ class ExecutionRuntime:
         self.internal_raster_budget = internal_ResourceBudget(
             self.internal_config.raster_budget_bytes
         )
-        self.internal_submitted = 0
-        self.internal_completed = 0
-        self.internal_cancelled_count = 0
-        self.internal_peak = 0
-        self.internal_queue_seconds = 0.0
-        self.internal_execution_seconds = 0.0
         if self.internal_config.prewarm:
             self.prewarm()
 
@@ -361,9 +276,8 @@ class ExecutionRuntime:
         self,
         *,
         cancelled: Callable[[], bool] | None = None,
-        metrics: bool = False,
     ) -> TaskScope:
-        return TaskScope(self, cancelled=cancelled, metrics=metrics)
+        return TaskScope(self, cancelled=cancelled)
 
     def configure(self, config: RuntimeConfig) -> None:
         self.shutdown(wait=True)
@@ -437,35 +351,17 @@ class ExecutionRuntime:
         args: tuple[object, ...],
         kwargs: dict[str, object],
         context: TaskScope | None,
-        submitted_at: float,
         stage: WorkStage,
     ) -> internal_ResultT:
-        started = time.perf_counter()
         previous = self.in_worker
         previous_stage = self.current_stage
         self.internal_local.in_worker = True
         self.internal_local.stage = stage
-        if context is not None:
-            context.internal_record_start()
-        with self.internal_lock:
-            self.internal_peak = max(self.internal_peak, self.internal_active)
-        cancelled = False
         try:
             if context is not None:
                 context.raise_if_cancelled()
             return function(*args, **kwargs)
-        except internal_ExtractionCancelled:
-            cancelled = True
-            raise
         finally:
-            finished = time.perf_counter()
-            if context is not None:
-                context.internal_record_done(started - submitted_at, finished - started, cancelled)
-            with self.internal_lock:
-                self.internal_completed += 1
-                self.internal_cancelled_count += int(cancelled)
-                self.internal_queue_seconds += started - submitted_at
-                self.internal_execution_seconds += finished - started
             self.internal_local.in_worker = previous
             self.internal_local.stage = previous_stage
 
@@ -478,9 +374,6 @@ class ExecutionRuntime:
         stage: WorkStage = WorkStage.GENERAL,
         **kwargs: object,
     ) -> Future[internal_ResultT]:
-        if context is not None:
-            context.internal_record_submit()
-        submitted_at = time.perf_counter()
         future: Future[internal_ResultT] = Future()
         work = internal_QueuedWork(
             future=future,
@@ -488,14 +381,12 @@ class ExecutionRuntime:
             args=args,
             kwargs=dict(kwargs),
             context=context,
-            submitted_at=submitted_at,
             stage=stage,
         )
         key: object = (
             context.internal_queue_key if context is not None else self.internal_anonymous_context
         )
         with self.internal_lock:
-            self.internal_submitted += 1
             queue = self.internal_pending.get(key)
             if queue is None:
                 queue = deque()
@@ -595,7 +486,6 @@ class ExecutionRuntime:
                 work.args,
                 work.kwargs,
                 work.context,
-                work.submitted_at,
                 work.stage,
             )
         except BaseException as exc:
@@ -746,26 +636,6 @@ class ExecutionRuntime:
             for future in pending:
                 future.cancel()
 
-    def metrics(self) -> RuntimeMetrics:
-        with self.internal_lock:
-            return RuntimeMetrics(
-                submitted=self.internal_submitted,
-                completed=self.internal_completed,
-                cancelled=self.internal_cancelled_count,
-                peak_workers=self.internal_peak,
-                queue_seconds=self.internal_queue_seconds,
-                execution_seconds=self.internal_execution_seconds,
-                parent_workers=self.internal_max_workers,
-                active_workers=self.internal_active,
-                queued_tasks=sum(len(queue) for queue in self.internal_pending.values()),
-                raster_capacity_bytes=self.internal_raster_budget.capacity,
-                raster_available_bytes=self.internal_raster_budget.available,
-                page_capacity=self.internal_stage_limits[WorkStage.PAGE],
-                page_active=self.internal_stage_active[WorkStage.PAGE],
-                ocr_capacity=self.internal_stage_limits[WorkStage.OCR],
-                ocr_active=self.internal_stage_active[WorkStage.OCR],
-            )
-
     def shutdown(self, *, wait: bool = True) -> None:
         with self.internal_lock:
             executor = self.internal_executor
@@ -790,19 +660,13 @@ def shutdown_runtime(*, wait: bool = True) -> None:
     RUNTIME.shutdown(wait=wait)
 
 
-def runtime_metrics() -> RuntimeMetrics:
-    return RUNTIME.metrics()
-
-
 __all__ = (
     "CompletedResult",
     "ExecutionRuntime",
     "RUNTIME",
     "RuntimeConfig",
-    "RuntimeMetrics",
     "TaskScope",
     "WorkStage",
     "configure_runtime",
-    "runtime_metrics",
     "shutdown_runtime",
 )

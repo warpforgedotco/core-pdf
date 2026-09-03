@@ -10,8 +10,6 @@ upright, and judging from the pixels alone whether a raster carries text at all.
 from __future__ import annotations
 
 import math
-import time
-from collections import Counter
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -22,7 +20,6 @@ from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     MAX_OCR_PIXELS,
     CapturedPage,
-    RecognitionReport,
 )
 from core_pdf.impl.extract.ocr.types import internal_Raster
 from core_pdf.impl.model.geometry import bbox_union, points_bbox
@@ -193,23 +190,7 @@ OCR_IMAGE_TEXT_MIN_HORIZONTAL_EDGE_SHARE = 0.85
 @dataclass(frozen=True, slots=True)
 class internal_RasterTextSignal:
     likely_text: bool
-    reason: str
-    sampled_pixels: int
-    white_ratio: float
-    grayscale_entropy: float
     horizontal_edge_ratio: float
-    vertical_edge_ratio: float
-
-    def as_record(self) -> dict[str, bool | float | int | str]:
-        return {
-            "likely_text": self.likely_text,
-            "reason": self.reason,
-            "sampled_pixels": self.sampled_pixels,
-            "white_ratio": self.white_ratio,
-            "grayscale_entropy": self.grayscale_entropy,
-            "horizontal_edge_ratio": self.horizontal_edge_ratio,
-            "vertical_edge_ratio": self.vertical_edge_ratio,
-        }
 
 
 def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal:
@@ -260,10 +241,8 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
     entropy = float(-numpy.sum(histogram[occupied] * numpy.log2(histogram[occupied])))
 
     likely_text = True
-    reason = "text-structure"
     if horizontal_edges < OCR_IMAGE_TEXT_MIN_HORIZONTAL_EDGES:
         likely_text = False
-        reason = "low-edge-density"
     else:
         horizontal_edge_share = horizontal_edges / max(1e-9, vertical_edges)
         strongly_structured = bool(
@@ -276,15 +255,9 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
             and not strongly_structured
         ):
             likely_text = False
-            reason = "continuous-tone-image"
     return internal_RasterTextSignal(
         likely_text=likely_text,
-        reason=reason,
-        sampled_pixels=int(gray.size),
-        white_ratio=white_ratio,
-        grayscale_entropy=entropy,
         horizontal_edge_ratio=horizontal_edges,
-        vertical_edge_ratio=vertical_edges,
     )
 
 
@@ -314,7 +287,6 @@ def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
     return internal_Raster(
         RasterImage(contiguous_bytes(binary), raster.width, raster.height, 1),
         raster.resolution,
-        raster.render_report,
     )
 
 
@@ -542,25 +514,20 @@ def internal_rendered_page_raster(
     cache: bool = True,
     max_pixels: int = MAX_OCR_PIXELS,
     include_native_text: bool = False,
-    report: RecognitionReport | None = None,
 ) -> internal_Raster | None:
     page = capture.page
-    compose_started = time.perf_counter()
     if rendered is None:
         rendered = compose_page(
             page,
             RenderOptions(include_text=include_native_text),
             page_program=capture.program,
         )
-    compose_seconds = time.perf_counter() - compose_started
     if crop is None:
         raster_area = max(1.0, float(page.width) * float(page.height))
     else:
         raster_area = max(1.0, (crop[2] - crop[0]) * (crop[3] - crop[1]))
     safe_scale = math.sqrt(max_pixels / raster_area) * 0.999
     scale = min(requested_scale, safe_scale)
-    raster_started = time.perf_counter()
-    width, height = rendered.raster_size(scale)
     try:
         data = rendered.rasterize(
             background=(255, 255, 255, 255),
@@ -569,41 +536,14 @@ def internal_rendered_page_raster(
             crop=crop,
             cache=cache,
         )
-    except IndexError as error:
+    except IndexError:
         # A malformed embedded image can produce a source sample outside its
         # decoded raster during compositing.  Keep native extraction usable and
         # let OCR continue without the rendered-page fallback.
-        if report is not None:
-            report.render_error = str(error)
         return None
-    render_report: dict[str, object] = {
-        "compose_seconds": compose_seconds,
-        "rasterize_seconds": time.perf_counter() - raster_started,
-        "raster_mode": "region" if crop is not None else "page",
-        "crop": crop,
-        "raster_pixels": width * height,
-        "pixel_budget": max_pixels,
-        "include_native_text": include_native_text,
-        "image_timings": rendered.metadata.get("__core_pdf_raster_image_timings__", {}),
-        "display_items": len(rendered.display_list.items),
-        "display_item_kinds": dict(
-            Counter(
-                str(getattr(item, "kind", type(item).__name__))
-                for item in rendered.display_list.items
-            )
-        ),
-        "image_filters": tuple(
-            str(((getattr(item, "data", None) or {}).get("dictionary") or {}).get("Filter"))
-            for item in rendered.display_list.items
-            if getattr(item, "kind", None) in {"image", "inline-image"}
-        ),
-    }
-    if report is not None:
-        report.render_timings = render_report
     return internal_Raster(
         data,
         max(70, int(round(72.0 * scale))),
-        render_report,
     )
 
 
