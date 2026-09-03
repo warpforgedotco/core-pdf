@@ -10,7 +10,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_annotate_table_associations,
     internal_table_with_bands,
 )
-from core_pdf.impl.extract.tables import (
+from core_pdf.impl.extract.table_detection import (
     extract_chart_table,
     internal_detect_tables,
     internal_text_rows,

@@ -205,7 +205,7 @@ class PdfPage:
         return self.document.page_label(self.page_number - 1)
 
     @property
-    def cached_resources(self) -> PdfDict:
+    def resources(self) -> PdfDict:
         return self.resolve_resources()
 
     @property
@@ -238,7 +238,7 @@ class PdfPage:
     def consume_contents(self, state: TextState) -> None:
         if self.contents is None:
             return
-        resources = self.cached_resources
+        resources = self.resources
         content_streams = self.content_streams
         try:
             contents_obj = self.document.resolver.resolve(self.contents)

@@ -18,12 +18,12 @@ from core_pdf.impl.extract.contracts import (
     RecognitionResult,
     WorkPlan,
 )
-from core_pdf.impl.extract.ocr import pass_tasks as ocr_pass_tasks
 from core_pdf.impl.extract.ocr import pipeline as ocr
 from core_pdf.impl.extract.ocr import raster as ocr_raster
 from core_pdf.impl.extract.ocr import region_tasks as ocr_region_tasks
 from core_pdf.impl.extract.ocr import regions as ocr_regions
 from core_pdf.impl.extract.ocr import rescue as ocr_rescue
+from core_pdf.impl.extract.ocr import session as ocr_pass_tasks
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector

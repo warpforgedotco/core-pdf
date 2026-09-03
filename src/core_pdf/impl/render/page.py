@@ -606,7 +606,7 @@ def compose_page(
             getattr(page, "page_dict", {}),
         )
         resources = (
-            page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.cached_resources
+            page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.resources
         )
         state.consume_stream(normal, resources, nested_ctm, 0)
         append_capture(state)

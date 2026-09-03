@@ -159,9 +159,7 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
                 if isinstance(raw_resources, dict)
                 else document.resolver.resolve_dict(raw_resources)
             )
-            resources = cast(
-                PdfDict, resolved_resources if resolved_resources else page.cached_resources
-            )
+            resources = cast(PdfDict, resolved_resources if resolved_resources else page.resources)
 
             previous_source = state.capture_source
             state.capture_source = "annotation_appearance"

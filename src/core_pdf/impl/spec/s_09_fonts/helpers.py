@@ -143,10 +143,6 @@ def build_decode_table(
     return tuple(table)
 
 
-# Compatibility facade alias.
-cached_decode_table = build_decode_table
-
-
 def parse_differences(
     value: Any, resolve_name: Callable[[Any], str | None] | None = None
 ) -> dict[int, str]:

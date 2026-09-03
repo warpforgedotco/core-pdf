@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adaptive OCR pass preparation and scope-specific task materialization."""
+"""Page-scoped OCR task construction and synchronous recognition."""
 
 from __future__ import annotations
 

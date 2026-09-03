@@ -34,16 +34,16 @@ from core_pdf.impl.extract.ocr.candidates import (
     internal_hidden_text_verification,
     internal_merge_candidate_batches,
 )
-from core_pdf.impl.extract.ocr.pass_tasks import (
-    internal_OcrSession,
-    internal_raster_tasks,
-    internal_region_tasks,
-)
 from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
 from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
 from core_pdf.impl.extract.ocr.rescue import (
     internal_adaptive_rescue_decision,
     internal_primary_text_is_sufficient,
+)
+from core_pdf.impl.extract.ocr.session import (
+    internal_OcrSession,
+    internal_raster_tasks,
+    internal_region_tasks,
 )
 from core_pdf.impl.extract.ocr.types import internal_OcrTask
 from core_pdf.impl.extract.ocr.vector import (
