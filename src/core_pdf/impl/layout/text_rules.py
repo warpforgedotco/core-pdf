@@ -208,19 +208,14 @@ def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
         frequencies[word] = WordFrequency(0, rank)
 
 
-@lru_cache(maxsize=262_144)
-def normalized_word_rank(normalized: str) -> int | None:
+def word_rank(word: str) -> int | None:
+    normalized = word.casefold()
     if not normalized or not normalized.isalpha():
         return None
     ranks = english_word_ranks()
     if isinstance(ranks, WordRankIndex):
         return ranks.lookup(normalized)
     return ranks.get(normalized)
-
-
-@lru_cache(maxsize=65536)
-def word_rank(word: str) -> int | None:
-    return normalized_word_rank(word.casefold())
 
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
@@ -440,14 +435,6 @@ def should_use_estimated_word_spacing(previous: str, current: str) -> bool:
     return not (not previous[-1].isalpha() or not current[0].isalpha())
 
 
-@lru_cache(maxsize=4096)
-def ranked_alpha_word(text: str) -> int | None:
-    normalized = text.casefold()
-    if not normalized.isalpha():
-        return None
-    return word_rank(normalized)
-
-
 def repair_table_split_word_boundaries(text: str) -> str:
     """Join dictionary-backed fragments split by table glyph spacing."""
     tokens = text.split(" ")
@@ -471,11 +458,11 @@ def table_split_word_join_is_plausible(left: str, right: str) -> bool:
     if not left.isalpha() or not right.isalpha():
         return False
     joined = left + right
-    joined_rank = ranked_alpha_word(joined)
+    joined_rank = word_rank(joined)
     if joined_rank is None or len(joined) < 3:
         return False
-    left_rank = ranked_alpha_word(left)
-    right_rank = ranked_alpha_word(right)
+    left_rank = word_rank(left)
+    right_rank = word_rank(right)
     if left_rank is None or right_rank is None:
         return True
     if joined_rank < min(left_rank, right_rank):
@@ -499,7 +486,7 @@ def leading_alpha_token(text: str) -> str:
 
 
 def is_high_frequency_boundary_word(text: str) -> bool:
-    rank = ranked_alpha_word(text.strip())
+    rank = word_rank(text.strip())
     return rank is not None and rank <= 250
 
 
@@ -545,11 +532,11 @@ def should_join_plausible_split_word(
         # keep only tight, lowercase joins in this opt-in path.
         return x_gap <= max(1.8, min(space_width, height) * 0.25)
     joined = f"{tail}{head}"
-    joined_rank = ranked_alpha_word(joined)
+    joined_rank = word_rank(joined)
     if joined_rank is None or joined_rank > 150_000:
         return False
-    tail_rank = ranked_alpha_word(tail)
-    head_rank = ranked_alpha_word(head)
+    tail_rank = word_rank(tail)
+    head_rank = word_rank(head)
     if tail_rank is None:
         return True
     if head_rank is None and joined_rank <= 75_000 and len(tail) <= 5:
@@ -803,7 +790,6 @@ def chemical_subscript_prefix_text(text: str) -> bool:
     return bool(stripped) and stripped[-1:].isalpha() and stripped[-1:].isupper()
 
 
-@lru_cache(maxsize=1024)
 def is_private_use_or_control(ch: str) -> bool:
     codepoint = ord(ch)
     if ch in "\t\n\r":
