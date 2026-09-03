@@ -22,7 +22,6 @@ STRING_ESCAPE: dict[int, bytes] = {
     92: b"\\",
 }
 
-R_SENTINEL = object()
 STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
 HEX_VALUE = bytes(
     [
@@ -291,7 +290,6 @@ __all__ = (
     "EMPTY_TRANSLATE_TABLE",
     "FindableSizedBuffer",
     "HEX_VALUE",
-    "R_SENTINEL",
     "STRING_ESCAPE",
     "STRING_SPECIAL_TABLE",
     "full_source_buffer",

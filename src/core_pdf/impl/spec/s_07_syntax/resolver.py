@@ -98,7 +98,6 @@ class ObjectResolver:
         "objects_gen0",
         "object_streams",
         "deep_cache",
-        "kw_cache",
         "lexer_stack",
         "lock",
         "thread_state",
@@ -153,7 +152,6 @@ class ObjectResolver:
 
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.deep_cache: DeepObjectCache = {}
-        self.kw_cache: dict[bytes, object] = {}
         self.lexer_stack: list[PdfLexer] = []
         self.lock = threading.RLock()
         self.thread_state = threading.local()
@@ -168,7 +166,6 @@ class ObjectResolver:
             self.data,
             reference_resolver=self.resolve,
             decipher=self.decipher,
-            kw_cache=dict(self.kw_cache),
         )
 
     def release_lexer(self, lexer: PdfLexer) -> None:
@@ -186,7 +183,6 @@ class ObjectResolver:
         self.xref_gen0 = None
         self.object_streams.clear()
         self.deep_cache.clear()
-        self.kw_cache.clear()
         self.decipher = None
         self.recovery_offsets = None
         with contextlib.suppress(ValueError):
@@ -458,7 +454,7 @@ class ObjectResolver:
                 if container is None:
                     stream_obj = self.resolve(PdfReference(stream_num))
                     if type(stream_obj) is PdfStream:
-                        candidate = PdfObjectStream(stream_obj, kw_cache=dict(self.kw_cache))
+                        candidate = PdfObjectStream(stream_obj)
                         with self.lock:
                             container = self.object_streams.setdefault(stream_num, candidate)
                 resolved = container.get(obj_num) if container is not None else None

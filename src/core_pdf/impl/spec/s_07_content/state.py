@@ -224,13 +224,9 @@ def internal_quad_bounds(
     return x0, y0, x1, y1
 
 
-class TextResolver(PdfValueResolver, typing.Protocol):
-    kw_cache: dict[bytes, object]
-
-
 class TextDocument(typing.Protocol):
     @property
-    def resolver(self) -> TextResolver: ...
+    def resolver(self) -> PdfValueResolver: ...
 
     image_cache: ImageCache
     raster_font_provider: Any
@@ -298,7 +294,6 @@ class TextState:
     queued_stream: ContentStreamFrame | None
     type3_uncolored: bool
     resources: PdfDict
-    kw_cache: dict[bytes, object]
     pending_run: TextRun | None
     op_handlers: dict[str, OperationHandler]
 
@@ -393,7 +388,6 @@ class TextState:
         "resources_id",
         "hidden_layers",
         "image_cache",
-        "kw_cache",
         "pending_line_break",
         "pending_run",
         "compat_tj_active",
@@ -539,7 +533,6 @@ class TextState:
             with contextlib.suppress(AttributeError):
                 document.image_cache = image_cache
         self.image_cache = image_cache
-        self.kw_cache = self.document.resolver.kw_cache
         self.pending_line_break = False
         self.pending_run = None
         self.compat_tj_active = False
@@ -813,7 +806,7 @@ class TextState:
         self.pending_line_break = False
         self.stream_order += 1
         if initialize_lexer:
-            frame.lexer = PdfLexer(frame.stream.data_view, kw_cache=self.kw_cache)
+            frame.lexer = PdfLexer(frame.stream.data_view)
         frame.entered = True
         return True
 

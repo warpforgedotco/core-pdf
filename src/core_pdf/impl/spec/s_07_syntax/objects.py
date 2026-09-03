@@ -22,7 +22,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 class PdfObjectStream:
     __slots__ = ("stream", "objects", "raw_body", "index", "lexer", "lock")
 
-    def __init__(self, stream: PdfStream, kw_cache: dict[bytes, object] | None = None) -> None:
+    def __init__(self, stream: PdfStream) -> None:
         type_name = normalize_pdf_name(stream.dictionary.get("Type"))
         if type_name is not None and type_name != "ObjStm":
             raise PdfParseError("stream is not an object stream")
@@ -31,17 +31,15 @@ class PdfObjectStream:
         if n < 0 or first < 0:
             raise PdfParseError("invalid object stream dictionary")
         if first > len(stream.data):
-            recovered_first = recover_object_stream_first(stream.data, n, kw_cache)
+            recovered_first = recover_object_stream_first(stream.data, n)
             if recovered_first is None:
                 raise PdfParseError("invalid object stream dictionary")
             first = recovered_first
-        pairs = parse_object_stream_header(stream.data, first, n, kw_cache)
+        pairs = parse_object_stream_header(stream.data, first, n)
         if len(pairs) < n:
-            recovered_first = recover_object_stream_first(stream.data, n, kw_cache)
+            recovered_first = recover_object_stream_first(stream.data, n)
             if recovered_first is not None and recovered_first != first:
-                recovered_pairs = parse_object_stream_header(
-                    stream.data, recovered_first, n, kw_cache
-                )
+                recovered_pairs = parse_object_stream_header(stream.data, recovered_first, n)
                 if len(recovered_pairs) > len(pairs):
                     first = recovered_first
                     pairs = recovered_pairs
@@ -62,7 +60,7 @@ class PdfObjectStream:
         self.objects: ObjectCache = {}
         self.raw_body = body
         self.index = index_map
-        self.lexer = PdfLexer(body, kw_cache=kw_cache)
+        self.lexer = PdfLexer(body)
         self.lock = threading.RLock()
 
     def get(self, reference: int | PdfReference, default: Any = None) -> Any:
@@ -107,10 +105,9 @@ class PdfObjectStream:
 def internal_scan_object_stream_pairs(
     data: bytes | memoryview,
     n: int,
-    kw_cache: dict[bytes, object] | None,
 ) -> tuple[list[tuple[int, int]], int]:
     """Scan up to ``n`` ``objnum offset`` pairs, with the end of the last one."""
-    lexer = PdfLexer(data, kw_cache=kw_cache)
+    lexer = PdfLexer(data)
     pairs: list[tuple[int, int]] = []
     last_end = 0
     while len(pairs) < n:
@@ -137,13 +134,10 @@ def parse_object_stream_header(
     data: bytes | memoryview,
     first: int,
     n: int,
-    kw_cache: dict[bytes, object] | None = None,
 ) -> list[tuple[int, int]]:
-    return internal_scan_object_stream_pairs(data[:first], n, kw_cache)[0]
+    return internal_scan_object_stream_pairs(data[:first], n)[0]
 
 
-def recover_object_stream_first(
-    data: bytes | memoryview, n: int, kw_cache: dict[bytes, object] | None = None
-) -> int | None:
-    pairs, last_end = internal_scan_object_stream_pairs(data, n, kw_cache)
+def recover_object_stream_first(data: bytes | memoryview, n: int) -> int | None:
+    pairs, last_end = internal_scan_object_stream_pairs(data, n)
     return last_end if pairs else None

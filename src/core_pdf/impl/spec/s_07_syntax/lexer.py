@@ -21,7 +21,6 @@ from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
-    R_SENTINEL,
     STRING_ESCAPE,
     STRING_SPECIAL_TABLE,
     FindableSizedBuffer,
@@ -78,7 +77,6 @@ class PdfLexer:
         "decipher",
         "current_obj_num",
         "current_gen_num",
-        "kw_cache",
         "recover_malformed_objects",
         "recover_dictionary_structure",
     )
@@ -91,7 +89,6 @@ class PdfLexer:
     decipher: Decipher | None
     current_obj_num: int | None
     current_gen_num: int | None
-    kw_cache: dict[bytes, object]
     recover_malformed_objects: bool
     recover_dictionary_structure: bool
 
@@ -101,7 +98,6 @@ class PdfLexer:
         *,
         reference_resolver: Callable[[PdfReference], object] | None = None,
         decipher: Decipher | None = None,
-        kw_cache: dict[bytes, object] | None = None,
         recover_malformed_objects: bool = True,
         recover_dictionary_structure: bool = True,
     ) -> None:
@@ -123,20 +119,6 @@ class PdfLexer:
         self.current_gen_num = None
         self.recover_malformed_objects = recover_malformed_objects
         self.recover_dictionary_structure = recover_dictionary_structure
-
-        if kw_cache is not None:
-            self.kw_cache = kw_cache
-            self.kw_cache[b"true"] = True
-            self.kw_cache[b"false"] = False
-            self.kw_cache[b"null"] = None
-            self.kw_cache[b"R"] = R_SENTINEL
-        else:
-            self.kw_cache = {
-                b"true": True,
-                b"false": False,
-                b"null": None,
-                b"R": R_SENTINEL,
-            }
 
     def close(self) -> None:
         self.source_buffer = None
@@ -223,17 +205,15 @@ class PdfLexer:
 
     def parse_keyword(self, value: memoryview | bytes) -> Any:
         key: bytes = value.tobytes() if type(value) is memoryview else value
-
-        if key in self.kw_cache:
-            cached = self.kw_cache[key]
-            if cached is R_SENTINEL:
-                raise PdfParseError("unexpected indirect reference marker")
-            return cached
-
-        decoded = key.decode("latin-1")
-        if len(self.kw_cache) < 1024:
-            self.kw_cache[key] = decoded
-        return decoded
+        if key == b"true":
+            return True
+        if key == b"false":
+            return False
+        if key == b"null":
+            return None
+        if key == b"R":
+            raise PdfParseError("unexpected indirect reference marker")
+        return key.decode("latin-1")
 
     def read_string(self, *, drop_unknown_escapes: bool = False) -> bytes:
         data = self.raw_data
