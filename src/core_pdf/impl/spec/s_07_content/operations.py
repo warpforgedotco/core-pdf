@@ -279,7 +279,12 @@ class OperationTarget(Protocol):
 
     def op_cm(self, operands: OperandWindow, depth: int) -> None: ...
 
-    def op_cm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None: ...
+    # Positional-only: the fast path always calls these with computed
+    # positionals, and pinning the parameter *names* would force every
+    # implementation to spell them identically for no benefit.
+    def op_cm_values(
+        self, a: float, b: float, c: float, d_: float, e: float, f: float, /
+    ) -> None: ...
 
     def op_q(self, operands: OperandWindow, depth: int) -> None: ...
 
@@ -628,6 +633,33 @@ def dispatch_operations(
                     op_count = 0
                     continue
 
+                # The text-only skip stage runs before every fast-path stage, so
+                # no fast-path branch needs its own text-only guard. `re` used to
+                # carry one, because Stage C ran first and would otherwise have
+                # swallowed it.
+                if text_only:
+                    if n_raw == 1:
+                        op0 = raw_bytes[pos - 1]
+                        if op0 == 113 and op_count == 0:
+                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
+                            if skipped_pos is not None:
+                                skipped_clip_q_count += 1
+                                pos = skipped_pos
+                                op_count = 0
+                                continue
+                        if op0 == 81 and skipped_clip_q_count:
+                            skipped_clip_q_count -= 1
+                            op_count = 0
+                            continue
+                        if TEXT_ONLY_SKIP_SINGLE[op0]:
+                            op_count = 0
+                            continue
+                    elif n_raw == 2:
+                        op_code = (raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1]
+                        if TEXT_ONLY_SKIP_DOUBLE[op_code]:
+                            op_count = 0
+                            continue
+
                 if handler_target is not None and n_raw == 2:
                     op0 = raw_bytes[pos - 2]
                     op1 = raw_bytes[pos - 1]
@@ -800,32 +832,29 @@ def dispatch_operations(
                                         op_count = 0
                                         continue
                                 case 101:  # 'e'
-                                    if (
-                                        handler_target.capture_graphics
-                                        or handler_target.capture_glyphs
-                                        or handler_target.capture_clipping
-                                    ):
-                                        if op_count >= 4:
-                                            rect_x, rect_y = operands[0], operands[1]
-                                            rect_width, rect_height = operands[2], operands[3]
-                                            if (
-                                                type(rect_x) in exact_number_types
-                                                and type(rect_y) in exact_number_types
-                                                and type(rect_width) in exact_number_types
-                                                and type(rect_height) in exact_number_types
-                                            ):
-                                                handler_target.op_re_values(
-                                                    cast(int | float, rect_x),
-                                                    cast(int | float, rect_y),
-                                                    cast(int | float, rect_width),
-                                                    cast(int | float, rect_height),
-                                                )
-                                            else:
-                                                set_operand_count(op_count)
-                                                handler_target.op_re(operand_window, depth)
+                                    # Unguarded: in text-only mode the skip stage
+                                    # above has already consumed `re`.
+                                    if op_count >= 4:
+                                        rect_x, rect_y = operands[0], operands[1]
+                                        rect_width, rect_height = operands[2], operands[3]
+                                        if (
+                                            type(rect_x) in exact_number_types
+                                            and type(rect_y) in exact_number_types
+                                            and type(rect_width) in exact_number_types
+                                            and type(rect_height) in exact_number_types
+                                        ):
+                                            handler_target.op_re_values(
+                                                cast(int | float, rect_x),
+                                                cast(int | float, rect_y),
+                                                cast(int | float, rect_width),
+                                                cast(int | float, rect_height),
+                                            )
                                         else:
                                             set_operand_count(op_count)
                                             handler_target.op_re(operand_window, depth)
+                                    else:
+                                        set_operand_count(op_count)
+                                        handler_target.op_re(operand_window, depth)
                                     op_count = 0
                                     continue
                                 # no case _: here either -- e.g. `op1 == 103` with
@@ -859,29 +888,6 @@ def dispatch_operations(
                             op_count = 0
                             continue
                         # no case _: at the outer level either.
-
-                if text_only:
-                    if n_raw == 1:
-                        op0 = raw_bytes[pos - 1]
-                        if op0 == 113 and op_count == 0:
-                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
-                            if skipped_pos is not None:
-                                skipped_clip_q_count += 1
-                                pos = skipped_pos
-                                op_count = 0
-                                continue
-                        if op0 == 81 and skipped_clip_q_count:
-                            skipped_clip_q_count -= 1
-                            op_count = 0
-                            continue
-                        if TEXT_ONLY_SKIP_SINGLE[op0]:
-                            op_count = 0
-                            continue
-                    elif n_raw == 2:
-                        op_code = (raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1]
-                        if TEXT_ONLY_SKIP_DOUBLE[op_code]:
-                            op_count = 0
-                            continue
 
                 if handler_target is not None and n_raw == 1:
                     op0 = raw_bytes[pos - 1]

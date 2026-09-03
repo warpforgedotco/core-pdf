@@ -12,7 +12,10 @@ from core_pdf.impl.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import OPERATOR_SPECS
+from core_pdf.impl.spec.s_07_content.operator_tables import (
+    OPERATOR_SPECS,
+    TEXT_ONLY_SKIP_SINGLE,
+)
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
 
@@ -365,3 +368,67 @@ def test_stage_c_re_calls_nothing_when_not_capturing() -> None:
     )
 
     assert target.calls == []
+
+
+def internal_dispatch_with_real_tables(
+    data: bytes, target: internal_RecordingOperationTarget
+) -> list[str]:
+    """Dispatch against the *real* handler tables, recording what fired.
+
+    `internal_run_dispatch` deliberately passes empty tables, so a token that
+    no fast path takes reaches Stage F and is dropped. That is the wrong shape
+    for asking "was this operator skipped?", because a skip and a missing
+    handler look identical. Here every table entry records the operator name,
+    so silence means the skip stage consumed it.
+    """
+    seen: list[str] = []
+
+    def make(name: str):
+        def handler(_target: object, _window: object, _depth: int) -> None:
+            seen.append(name)
+
+        return handler
+
+    handlers = {name: make(name) for name in OPERATOR_SPECS}
+    single: list[object] = [None] * 256
+    double: dict[int, object] = {}
+    for name in OPERATOR_SPECS:
+        raw = name.encode("latin-1")
+        if len(raw) == 1:
+            single[raw[0]] = make(name)
+        elif len(raw) == 2:
+            double[(raw[0] << 8) | raw[1]] = make(name)
+    cast(Any, dispatch_operations)(PdfLexer(data), handlers, None, single, double, target, 0)
+    return seen
+
+
+# BI opens an inline image and consumes the bytes that follow, so it cannot
+# be probed with a synthetic operand-only stream.
+@pytest.mark.parametrize("operator", sorted(set(OPERATOR_SPECS) - {"BI"}))
+def test_text_only_skip_matches_the_operator_table(operator: str) -> None:
+    """Every operator is skipped in text-only mode iff its spec says so.
+
+    This is what keeps the hand-written fast paths and OPERATOR_SPECS from
+    disagreeing. `re` previously needed a hand-copied text-only guard because
+    Stage C ran before the skip stage; the stages are now ordered so no
+    fast-path branch carries its own guard, and this test fails if either the
+    ordering or a spec flag drifts.
+    """
+    target = internal_RecordingOperationTarget(
+        capture_graphics=False, capture_glyphs=False, capture_clipping=False
+    )
+    fired = internal_dispatch_with_real_tables(
+        b"0 0 0 0 0 0 " + operator.encode("latin-1") + b"\n", target
+    )
+    skipped = not fired and not target.calls
+    assert skipped == OPERATOR_SPECS[operator].text_only_skip
+
+
+def test_synthetic_skip_entry_has_no_operator_spec() -> None:
+    """`N` is in TEXT_ONLY_SKIP_SINGLE but is not a real operator.
+
+    It is a damaged-producer no-op with no handler, so it cannot be covered by
+    the table-driven test above.
+    """
+    assert "N" not in OPERATOR_SPECS
+    assert TEXT_ONLY_SKIP_SINGLE[ord("N")]
