@@ -263,9 +263,6 @@ internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
 class TextState:
-    # Built once per class from the handler methods; shared by every instance.
-    shared_operator_handlers: typing.ClassVar[dict[str, Any] | None] = None
-
     document: TextDocument
     page: PdfDict
     capture_glyphs: bool
@@ -599,14 +596,7 @@ class TextState:
         self.compat_tj_origin_f = 0.0
         self.compat_tj_decoder = None
         self.compat_tj_need_charspace = False
-        cls = type(self)
-        # Read the class's own entry, not an inherited one: `cls.shared_operator_handlers`
-        # would find the base class's mapping and skip building the subclass's, so an
-        # overridden `op_*` would never be dispatched.
-        shared = cls.__dict__.get("shared_operator_handlers")
-        if shared is None:
-            shared = cls.shared_operator_handlers = build_operator_handlers(cls)
-        self.op_handlers = shared
+        self.op_handlers = build_operator_handlers(self)
 
         self.combined_A = 1.0
         self.combined_B = 0.0

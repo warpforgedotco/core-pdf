@@ -204,7 +204,7 @@ class OperationTarget(Protocol):
     capture_clipping: bool
 
 
-OperationHandler: TypeAlias = Callable[[OperationTarget | None, OperandWindow, int], None]
+OperationHandler: TypeAlias = Callable[[OperandWindow, int], None]
 
 
 def dispatch_operations(
@@ -332,7 +332,7 @@ def dispatch_operations(
                     if handler is not None:
                         operand_window.count = min(op_count, max_operands)
                         lexer.pos = pos
-                        handler(target, operand_window, depth)
+                        handler(operand_window, depth)
                     op_count = 0
                     continue
 
@@ -368,7 +368,7 @@ def dispatch_operations(
                 if handler is not None:
                     operand_window.count = min(op_count, max_operands)
                     lexer.pos = pos
-                    handler(target, operand_window, depth)
+                    handler(operand_window, depth)
                 op_count = 0
                 continue
 
@@ -547,11 +547,7 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     results: list[ContentOperation] = []
 
     def get_handler(op_name: str) -> OperationHandler:
-        def collect(
-            _target: OperationTarget | None,
-            operands: OperandWindow,
-            _depth: int,
-        ) -> None:
+        def collect(operands: OperandWindow, _depth: int) -> None:
             results.append((op_name, tuple(operands)))
 
         return collect

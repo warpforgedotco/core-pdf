@@ -142,7 +142,7 @@ def internal_dispatch_with_handlers(
         target = internal_DispatchTarget()
 
     def make(name: str):
-        def handler(_target: object, window: OperandWindow, depth: int) -> None:
+        def handler(window: OperandWindow, depth: int) -> None:
             seen.append((name, tuple(window), depth))
 
         return handler

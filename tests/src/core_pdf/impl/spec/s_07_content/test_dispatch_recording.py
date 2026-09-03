@@ -13,11 +13,7 @@ def dispatch_m_operands(source: bytes) -> list[object]:
     """Run ``source`` through the dispatcher and return what the ``m`` operator received."""
     received: list[object] = []
 
-    def move_to(
-        _target: object,
-        operands: OperandWindow,
-        internal_depth: int,
-    ) -> None:
+    def move_to(operands: OperandWindow, internal_depth: int) -> None:
         received.extend(operands)
 
     dispatch_operations(PdfLexer(source), {"m": move_to}.get, None, 0)

@@ -102,6 +102,6 @@ __all__ = (
 )
 
 
-def build_operator_handlers(target: type[Any]) -> dict[str, Any]:
+def build_operator_handlers(target: Any) -> dict[str, Any]:
     """Bind each content operator name to its target method."""
     return {name: getattr(target, spec.handler) for name, spec in OPERATOR_SPECS.items()}
