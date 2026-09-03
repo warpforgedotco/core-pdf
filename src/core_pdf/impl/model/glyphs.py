@@ -149,11 +149,7 @@ class GlyphObservation:
         )
 
     def resolved_bitmap(self) -> tuple[int, ...]:
-        """Resolve a glyph shape only when a text-inclusive renderer needs it.
-
-        FontDecoder owns a per-font/glyph/size cache, so repeated glyph occurrences
-        share one rasterized shape without page capture eagerly touching the cache.
-        """
+        """Resolve a glyph shape when a text-inclusive renderer needs it."""
         if self.bitmap:
             return self.bitmap
         decoder = self.font_decoder

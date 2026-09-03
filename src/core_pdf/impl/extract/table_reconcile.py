@@ -368,12 +368,14 @@ def internal_remove_table_duplicate_blocks(
 ) -> list[Block]:
     if not blocks or not tables:
         return blocks
-    table_boxes = [
-        (table.bbox, internal_table_profile(table).token_set)
-        for table in tables
-        if table.bbox is not None
+    table_profiles = [
+        (table.bbox, internal_table_profile(table)) for table in tables if table.bbox is not None
     ]
-    if not table_boxes:
+    table_boxes = [(box, profile.token_set) for box, profile in table_profiles]
+    table_token_counts: Counter[str] = Counter()
+    for ignored_box, profile in table_profiles:
+        table_token_counts.update(profile.token_counts)
+    if not table_boxes and not table_token_counts:
         return blocks
     deduplicated: list[Block] = []
     for block in blocks:
@@ -383,6 +385,14 @@ def internal_remove_table_duplicate_blocks(
         block_tokens = internal_emitted_text_tokens(block.text)
         if not block_tokens:
             deduplicated.append(block)
+            continue
+        if (
+            block.provenance == ("ocr",)
+            and len(block_tokens) <= 3
+            and all(
+                table_token_counts[token] >= count for token, count in Counter(block_tokens).items()
+            )
+        ):
             continue
         duplicate = False
         contained_line_boxes: list[tuple[float, float, float, float]] = []
@@ -412,30 +422,6 @@ def internal_remove_table_duplicate_blocks(
     return deduplicated
 
 
-def internal_remove_tiny_table_duplicate_blocks(
-    blocks: list[Block],
-    tables: tuple[Table, ...],
-) -> list[Block]:
-    if not blocks or not tables:
-        return blocks
-    table_token_counts: Counter[str] = Counter()
-    for table in tables:
-        table_token_counts.update(internal_table_profile(table).token_counts)
-    if not table_token_counts:
-        return blocks
-    filtered: list[Block] = []
-    for block in blocks:
-        tokens = internal_emitted_text_tokens(block.text)
-        if (
-            block.provenance == ("ocr",)
-            and 0 < len(tokens) <= 3
-            and all(table_token_counts[token] >= count for token, count in Counter(tokens).items())
-        ):
-            continue
-        filtered.append(block)
-    return filtered
-
-
 def internal_project_text_and_tables(
     blocks: list[Block],
     parsed_tables: tuple[Table, ...],
@@ -445,6 +431,5 @@ def internal_project_text_and_tables(
         internal_remove_block_duplicate_tables(blocks, parsed_tables),
     )
     text_blocks = internal_remove_table_duplicate_blocks(blocks, tables)
-    text_blocks = internal_remove_tiny_table_duplicate_blocks(text_blocks, tables)
     tables = internal_remove_block_duplicate_table_rows(text_blocks, tables)
     return text_blocks, tables

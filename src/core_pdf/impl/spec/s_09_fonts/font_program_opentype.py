@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
-from core_pdf._vendor.fontTools.pens.recordingPen import DecomposingRecordingPen
-from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
-    internal_recording_to_contours,
+    internal_fonttools_bbox,
+    internal_fonttools_contours,
 )
 from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours, scale_contours
 
@@ -55,11 +53,7 @@ class OpenTypeFontProgram:
 
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
         try:
-            glyph_name = self.font.getGlyphName(glyph_id)
-            glyph_set = self.font.getGlyphSet()
-            pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
-            glyph_set[glyph_name].draw(pen)
-            contours = internal_recording_to_contours(pen.value)
+            contours = internal_fonttools_contours(self.font, glyph_id)
             scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
             return scale_contours(contours, scale)
         except FONT_PROGRAM_ERRORS:
@@ -67,19 +61,10 @@ class OpenTypeFontProgram:
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
-            glyph_name = self.font.getGlyphName(glyph_id)
-            glyph_set = self.font.getGlyphSet()
-            bounds_pen = BoundsPen(glyph_set)
             scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
-            normalized_pen = TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0))
-            glyph_set[glyph_name].draw(normalized_pen)
+            return internal_fonttools_bbox(self.font, glyph_id, scale)
         except FONT_PROGRAM_ERRORS:
             return None
-        bounds = bounds_pen.bounds
-        if bounds is None:
-            return None
-        x_min, y_min, x_max, y_max = bounds
-        return (float(x_min), float(y_min), float(x_max), float(y_max))
 
     def glyph_bitmap_for_gid(
         self, glyph_id: int, *, width: int = 24, height: int = 32

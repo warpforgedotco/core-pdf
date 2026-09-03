@@ -143,7 +143,7 @@ def build_decode_table(
     return tuple(table)
 
 
-# Kept as an import alias for compatibility facades; table construction is direct.
+# Compatibility facade alias.
 cached_decode_table = build_decode_table
 
 

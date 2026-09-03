@@ -26,7 +26,6 @@ from core_pdf.impl.extract.grids import (
     internal_table_from_component,
 )
 from core_pdf.impl.extract.table_cleanup import (
-    internal_annotate_table_associations,
     internal_cell_text,
     internal_character_spaced_cell,
     internal_clean_table_cell_leader_runs,
@@ -42,14 +41,8 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_table_character_spaced_prose,
     internal_table_is_single_column_prose,
     internal_table_quality,
-    internal_table_with_bands,
 )
-from core_pdf.impl.model.geometry import (
-    SpatialIndex,
-    bbox_union,
-    interval_overlap,
-    overlap_ratio_min,
-)
+from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.runtime.array_views import finite_median
 
@@ -158,21 +151,13 @@ def internal_detect_tables(
     vertical = internal_merge_collinear_segments(vertical, coordinate=0, start=1, end=2)
     components = internal_grid_components(horizontal, vertical)
     ruled_tables: list[Table] = []
-    # Only the ruled-grid loop consults this index, and a page with fewer than two
-    # segments on either axis yields no components at all.  Building it over every
-    # visible observation before that check is wasted on any page without a ruled grid.
     if components:
-        visible_indices = numpy.flatnonzero(observations.visible)
-        observation_index = SpatialIndex(
-            (int(idx), observations.bbox[idx]) for idx in visible_indices
-        )
         for component in components:
             for component_part in internal_split_grid_component(*component):
                 table = internal_table_from_component(
                     len(ruled_tables),
                     *component_part,
                     observations,
-                    observation_index,
                 )
                 if table is not None:
                     ruled_tables.append(table)
@@ -242,29 +227,10 @@ def extract_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
 ) -> tuple[Table, ...]:
-    """Run the complete table stage and return one annotated table product."""
-    # Dense schematic wiring creates large false ruled tables. Vector decoders
-    # already supply text geometry, and normal layout preserves those labels
-    # without another geometric pass.
-    if capture.evidence.vector_text_trusted or capture.evidence.stroked_vector_text.trusted:
-        return ()
-    tables = internal_detect_tables(capture, observations)
-    chart_table = extract_chart_table(capture, observations)
-    if chart_table is not None:
-        tables = (*tables, chart_table)
-    if not tables:
-        return ()
-    text_rows = internal_text_rows(observations)
-    return tuple(
-        internal_table_with_bands(
-            internal_annotate_table_associations(
-                replace(table, order=order) if table.order != order else table,
-                observations,
-                text_rows,
-            )
-        )
-        for order, table in enumerate(tables)
-    )
+    """Compatibility import for the table-stage coordinator."""
+    from core_pdf.impl.extract.table_pipeline import extract_tables as run_table_pipeline
+
+    return run_table_pipeline(capture, observations)
 
 
 # Whitespace-aligned stream table inference.

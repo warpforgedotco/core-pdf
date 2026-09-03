@@ -27,6 +27,7 @@ from core_pdf.impl.extract.ocr.region_tasks import (
     internal_direct_scan_allowed,
     internal_estimated_text_height,
     internal_high_resolution_weak_region_tasks,
+    internal_ocr_task_groups,
     internal_tile_tasks,
     internal_weak_region_tasks,
 )
@@ -36,6 +37,10 @@ from core_pdf.impl.extract.ocr.regions import (
     internal_has_distributed_outline_text,
     internal_ocr_region_batch,
     internal_page_image_regions,
+)
+from core_pdf.impl.extract.ocr.tesseract import (
+    internal_recognize_group,
+    internal_recover_timed_out_tasks,
 )
 from core_pdf.impl.extract.ocr.types import (
     internal_OcrRegion,
@@ -49,6 +54,7 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_stroked_vector_text_raster,
 )
 from core_pdf.impl.extract.quality import internal_Candidate
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 internal_PageBox = tuple[float, float, float, float]
 
@@ -96,12 +102,30 @@ class internal_OcrPassTasks:
 
 
 @dataclass(frozen=True, slots=True)
-class internal_OcrPassTaskFactory:
-    """Materialize the tasks belonging to scheduled OCR passes."""
+class internal_OcrSession:
+    """Own task construction and synchronous recognition for one page."""
 
     capture: CapturedPage
     plan: WorkPlan
     compact_image: bool | str
+    context: ExtractionScope
+
+    def recognize_batch(
+        self, tasks: tuple[internal_OcrTask, ...]
+    ) -> tuple[internal_Candidate, ...]:
+        groups = internal_ocr_task_groups(tasks)
+        return tuple(
+            candidate for group in map(internal_recognize_group, groups) for candidate in group
+        )
+
+    def recognize_tasks(
+        self, tasks: tuple[internal_OcrTask, ...]
+    ) -> tuple[internal_Candidate, ...]:
+        candidates = self.recognize_batch(tasks)
+        if any(candidate.recognition_status == "timeout" for candidate in candidates):
+            self.context.raise_if_cancelled()
+            return internal_recover_timed_out_tasks(tasks, candidates, self.recognize_batch)
+        return candidates
 
     @property
     def page_box(self) -> internal_PageBox:

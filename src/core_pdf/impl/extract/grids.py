@@ -343,7 +343,6 @@ def internal_table_from_component(
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
     observations: ObservationBatch,
-    observation_index: SpatialIndex[int] | None = None,
 ) -> Table | None:
     x_edges = internal_cluster_positions(vertical[:, 0])
     y_edges = internal_cluster_positions(horizontal[:, 2])[::-1]
@@ -354,16 +353,8 @@ def internal_table_from_component(
     x0, x1 = float(x_edges[0]), float(x_edges[-1])
     y0, y1 = float(y_edges[-1]), float(y_edges[0])
     cell_observations: dict[tuple[int, int], list[int]] = defaultdict(list)
-    if observation_index is not None:
-        candidate_indexes = [
-            int(index) for index in observation_index.intersecting((x0, y0, x1, y1))
-        ]
-    else:
-        visible = observations.visible.tolist()
-        candidate_indexes = [index for index in range(len(observations)) if visible[index]]
-    # Compute centers vectorized (keeping the bbox dtype's rounding) and search
-    # edges with bisect on plain lists; scalar numpy searchsorted costs a full
-    # dispatch per call.
+    visible = observations.visible.tolist()
+    candidate_indexes = [index for index in range(len(observations)) if visible[index]]
     candidate_boxes = observations.bbox[candidate_indexes]
     center_xs = ((candidate_boxes[:, 0] + candidate_boxes[:, 2]) * 0.5).tolist()
     center_ys = ((candidate_boxes[:, 1] + candidate_boxes[:, 3]) * 0.5).tolist()

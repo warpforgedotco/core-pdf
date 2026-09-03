@@ -7,9 +7,11 @@ import struct
 from io import BytesIO
 from typing import Any
 
+from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
+from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.model.geometry import transform_bbox
 from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours, scale_contours
@@ -20,6 +22,29 @@ from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contour
 # failure from the parser as "this font program is unusable" instead of trying
 # to enumerate what a corrupt one can raise.
 FONT_PROGRAM_ERRORS = Exception
+
+
+def internal_fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
+    glyph_set[glyph_name].draw(pen)
+    return tuple(tuple(contour) for contour in internal_recording_to_contours(pen.value))
+
+
+def internal_fonttools_bbox(
+    font: Any,
+    glyph_id: int,
+    scale: float,
+) -> tuple[float, float, float, float] | None:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    bounds_pen = BoundsPen(glyph_set)
+    glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
+    if bounds_pen.bounds is None:
+        return None
+    x_min, y_min, x_max, y_max = bounds_pen.bounds
+    return float(x_min), float(y_min), float(x_max), float(y_max)
 
 
 class internal_RecoverableFontTableWarningFilter(logging.Filter):
@@ -140,12 +165,7 @@ class TrueTypeFontProgram:
 
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         try:
-            glyph_name = self.font.getGlyphName(gid)
-            glyph_set = self.font.getGlyphSet()
-            glyph = glyph_set[glyph_name]
-            pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
-            glyph.draw(pen)
-            return tuple(tuple(contour) for contour in internal_recording_to_contours(pen.value))
+            return internal_fonttools_contours(self.font, gid)
         except FONT_PROGRAM_ERRORS:
             return ()
 

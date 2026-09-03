@@ -27,6 +27,19 @@ from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
 
+internal_CLIP_MEMBERS = frozenset(
+    {
+        "page_box_to_pixels",
+        "clipped_pixel_box",
+        "current_clip",
+        "clip_paths_are_axis_aligned_rects",
+        "clip_row_visible_spans",
+        "pixel_in_clip",
+        "path_bbox",
+        "clip_path_stack",
+    }
+)
+
 
 class internal_RasterTarget(
     internal_ImageAffineTargetMixin,
@@ -43,8 +56,8 @@ class internal_RasterTarget(
     goes to, and ``group-end`` pops it and composites it back down. That is why
     this is an object with explicit push/pop rather than a plain buffer.
 
-    Every method hoists ``self.pixels`` into a local before touching it — these
-    run per pixel and per span, where a repeated attribute load is not free.
+    Painting helpers operate against this target instead of capturing duplicate
+    renderer state in closures.
     """
 
     __slots__ = (
@@ -58,18 +71,7 @@ class internal_RasterTarget(
         "crop_y1",
         "page_pixels",
         "page_buffer",
-        # Bound clip methods cached at construction. Reading them back is a plain
-        # attribute load; going through `self.clip.<name>` would allocate a fresh
-        # bound method on every call, and fill_rect alone makes ~1.8M of them.
-        "page_box_to_pixels",
-        "clipped_pixel_box",
-        "current_clip",
-        "clip_paths_are_axis_aligned_rects",
-        "clip_row_visible_spans",
-        "pixel_in_clip",
         "crop_y0",
-        "path_bbox",
-        "clip_path_stack",
     )
 
     def __init__(
@@ -98,15 +100,13 @@ class internal_RasterTarget(
         self.crop_y1 = crop_y1
         self.page_pixels = page_view
         self.page_buffer = pixels
-        self.page_box_to_pixels = clip.page_box_to_pixels
-        self.clipped_pixel_box = clip.clipped_pixel_box
-        self.current_clip = clip.current_clip
-        self.clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-        self.clip_row_visible_spans = clip.clip_row_visible_spans
-        self.pixel_in_clip = clip.pixel_in_clip
         self.crop_y0 = crop_y0
-        self.path_bbox = clip.path_bbox
-        self.clip_path_stack = clip.clip_path_stack
+
+    def __getattr__(self, name: str) -> Any:
+        """Expose clip operations through the single raster target boundary."""
+        if name in internal_CLIP_MEMBERS:
+            return getattr(self.clip, name)
+        raise AttributeError(name)
 
     def push_group(
         self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None

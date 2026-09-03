@@ -35,20 +35,15 @@ from core_pdf.impl.extract.ocr.candidates import (
     internal_merge_candidate_batches,
 )
 from core_pdf.impl.extract.ocr.pass_tasks import (
-    internal_OcrPassTaskFactory,
+    internal_OcrSession,
     internal_raster_tasks,
     internal_region_tasks,
 )
 from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
-from core_pdf.impl.extract.ocr.region_tasks import internal_ocr_task_groups
 from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
 from core_pdf.impl.extract.ocr.rescue import (
     internal_adaptive_rescue_decision,
     internal_primary_text_is_sufficient,
-)
-from core_pdf.impl.extract.ocr.tesseract import (
-    internal_recognize_group,
-    internal_recover_timed_out_tasks,
 )
 from core_pdf.impl.extract.ocr.types import internal_OcrTask
 from core_pdf.impl.extract.ocr.vector import (
@@ -214,25 +209,14 @@ def internal_recognize_page_with_reserved_raster(
         image_filters = capture.evidence.image_filters
         if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
             compact_image = "grayscale"
-    task_factory = internal_OcrPassTaskFactory(
+    session = internal_OcrSession(
         capture,
         plan,
         compact_image,
+        context,
     )
     pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
-
-    def recognize_batch(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
-        groups = internal_ocr_task_groups(tasks)
-        results = map(internal_recognize_group, groups)
-        return tuple(candidate for group in results for candidate in group)
-
-    def recognize_tasks(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
-        candidates = recognize_batch(tasks)
-        if any(candidate.recognition_status == "timeout" for candidate in candidates):
-            context.raise_if_cancelled()
-            candidates = internal_recover_timed_out_tasks(tasks, candidates, recognize_batch)
-        return candidates
 
     if plan.verify_hidden_text:
         context.raise_if_cancelled()
@@ -253,7 +237,7 @@ def internal_recognize_page_with_reserved_raster(
         verification_tasks = internal_region_tasks(
             verification_region, verification_pass, compact_image=compact_image
         )
-        verification_candidates = recognize_tasks(verification_tasks)
+        verification_candidates = session.recognize_tasks(verification_tasks)
         verification_candidate = internal_merge_candidate_batches(verification_candidates)
         verification = internal_hidden_text_verification(
             capture.observations,
@@ -273,7 +257,7 @@ def internal_recognize_page_with_reserved_raster(
         selected = pass_state.selected
         selected_tasks = pass_state.selected_tasks
         context.raise_if_cancelled()
-        pass_tasks = task_factory.materialize(
+        pass_tasks = session.materialize(
             ocr_pass,
             selected=selected,
             selected_tasks=selected_tasks,
@@ -287,7 +271,7 @@ def internal_recognize_page_with_reserved_raster(
             continue
 
         candidate_source_tasks = tasks
-        task_candidates = recognize_tasks(tasks)
+        task_candidates = session.recognize_tasks(tasks)
         if packed_stroked is not None:
             remapped_with_counts = tuple(
                 internal_remap_stroked_vector_candidate(candidate, packed_stroked)
@@ -337,7 +321,7 @@ def internal_recognize_page_with_reserved_raster(
                             isolated_packed,
                             digit_bearing_only=True,
                         )
-                        for candidate in recognize_tasks(isolated_tasks)
+                        for candidate in session.recognize_tasks(isolated_tasks)
                     )
                     isolated_candidates = tuple(item[0] for item in isolated_remapped)
                     task_candidates = (*task_candidates, *isolated_candidates)
@@ -356,7 +340,7 @@ def internal_recognize_page_with_reserved_raster(
                     compact_image=compact_image,
                 )
                 if fallback_tasks:
-                    fallback_candidates = recognize_tasks(fallback_tasks)
+                    fallback_candidates = session.recognize_tasks(fallback_tasks)
                     task_candidates = (*task_candidates, *fallback_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
                     tasks = (*tasks, *fallback_tasks)
@@ -425,7 +409,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_columns=max(3, retry_pass.region_columns),
                     max_regions=max(8, retry_pass.max_regions),
                 )
-                retry_regions = task_factory.internal_high_resolution_weak_region_tasks(
+                retry_regions = session.internal_high_resolution_weak_region_tasks(
                     tasks,
                     retry_pass,
                     candidate.observations,
@@ -433,7 +417,7 @@ def internal_recognize_page_with_reserved_raster(
                 retry_tasks = retry_regions
             if retry_tasks:
                 candidate_source_tasks = (*candidate_source_tasks, *retry_tasks)
-                retry_candidates = recognize_tasks(retry_tasks)
+                retry_candidates = session.recognize_tasks(retry_tasks)
                 retry_candidate = internal_merge_candidate_batches(retry_candidates)
                 augmented_candidate, _rescue_additions = internal_augment_candidate(
                     candidate,
@@ -472,7 +456,9 @@ def internal_recognize_page_with_reserved_raster(
                 source_task, x_lines, y_lines, source_samples, slope
             )
             if len(cell_tasks) >= internal_GRID_MIN_CELLS:
-                cell_candidate = internal_merge_candidate_batches(recognize_tasks(cell_tasks))
+                cell_candidate = internal_merge_candidate_batches(
+                    session.recognize_tasks(cell_tasks)
+                )
                 cell_observations = internal_grid_row_observations(cell_candidate.observations)
                 if len(cell_observations):
                     grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)

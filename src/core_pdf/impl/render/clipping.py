@@ -21,8 +21,8 @@ class internal_ClipState:
     reference with the rasterizer, which pushes and pops it as the content
     stream nests.
 
-    Instance attributes are hoisted into locals inside the hot methods, matching
-    the convention the content-stream dispatch loop already uses.
+    All clip queries remain owned by this state object and are exposed through
+    the raster target.
     """
 
     __slots__ = (
