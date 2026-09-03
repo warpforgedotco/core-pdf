@@ -150,7 +150,7 @@ def internal_group_text_and_words(
         runs = cast(list[TextRun], list(references))
         line = LayoutLine(runs)
         text = line.reconstructed_text().text.strip()
-        layout_words = line.cached_text_and_words()[1]
+        layout_words = line.text_and_words()[1]
         return text, internal_reconcile_text_words(text, layout_words)
     parts: list[str] = []
     candidate_words: list[TextWord] = []

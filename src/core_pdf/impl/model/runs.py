@@ -1,17 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""The capture text-run records: TextRun and its revision-tracked subclass.
-
-TextRun memoizes two results the layout heuristics compute
-(``internal_layout_reconstruction_cache``, ``internal_layout_words_cache``). Their
-record types live here too, so the model layer never names a type from ``layout/``.
-"""
+"""Text-run records emitted by content capture."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
-
-from core_pdf.impl.records import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster
@@ -39,10 +32,6 @@ Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 class TextRun:
     __slots__ = (
-        "internal_layout_reconstruction_cache",
-        "internal_layout_words_cache",
-        "internal_geometry_issues_cache",
-        "internal_revision",
         "text",
         "stripped_text",
         "has_text",
@@ -104,10 +93,6 @@ class TextRun:
     glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
     coords: list[float]
     height_value: float
-    internal_revision: int
-    internal_layout_reconstruction_cache: tuple[object, LayoutLineText] | None
-    internal_layout_words_cache: tuple[object, tuple[str, tuple[TextWord, ...]]] | None
-    internal_geometry_issues_cache: tuple[object, tuple[object, ...]] | None
 
     @property
     def x0(self) -> float:
@@ -154,7 +139,6 @@ class TextRun:
     @tx.setter
     def tx(self, v: float) -> None:
         self.coords[self.TX] = v
-        self.internal_revision += 1
 
     @property
     def ty(self) -> float:
@@ -163,7 +147,6 @@ class TextRun:
     @ty.setter
     def ty(self, v: float) -> None:
         self.coords[self.TY] = v
-        self.internal_revision += 1
 
     @property
     def font_size(self) -> float:
@@ -172,7 +155,6 @@ class TextRun:
     @font_size.setter
     def font_size(self, v: float) -> None:
         self.coords[self.FONT_SIZE] = v
-        self.internal_revision += 1
 
     @property
     def space_width(self) -> float:
@@ -181,7 +163,6 @@ class TextRun:
     @space_width.setter
     def space_width(self, v: float) -> None:
         self.coords[self.SPACE_WIDTH] = v
-        self.internal_revision += 1
 
     @property
     def height(self) -> float:
@@ -216,11 +197,7 @@ class TextRun:
         confidence: float | None = None,
         glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
     ) -> None:
-        self.internal_revision = 0
         self.inside_active_clip = inside_active_clip
-        self.internal_layout_reconstruction_cache = None
-        self.internal_layout_words_cache = None
-        self.internal_geometry_issues_cache = None
         self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
         self.height_value = y1 - y0
         self.set_text(text)
@@ -350,26 +327,3 @@ class TextRun:
             glyph_clusters=glyph_clusters,
         )
         return r
-
-
-class TrackedTextRun(TextRun):
-    """A ``TextRun`` that maintains ``internal_revision`` for memo invalidation.
-
-    Promoted into, never instantiated directly: ``__setattr__`` reads
-    ``internal_revision``, which only exists on an already-initialized run.
-    """
-
-    __slots__ = ()
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        object.__setattr__(self, name, value)
-        if name == "internal_revision":
-            return
-        revision = object.__getattribute__(self, "internal_revision")
-        object.__setattr__(self, "internal_revision", revision + 1)
-
-
-def internal_track_text_run(run: TextRun) -> None:
-    """Promote a run so later attribute writes bump ``internal_revision``."""
-    if type(run) is TextRun:
-        run.__class__ = TrackedTextRun

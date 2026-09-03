@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Concurrency guards for the layout/geometry memos stored on shared TextRuns."""
+"""Concurrency guards for layout and geometry queries on shared pages."""
 
 from __future__ import annotations
 
