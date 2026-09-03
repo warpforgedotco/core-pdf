@@ -14,7 +14,6 @@ from core_pdf.impl.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
 )
-from core_pdf.impl.render.paths import internal_intersect_box
 from core_pdf.impl.runtime.array_views import (
     ByteBuffer,
     uint8_view,
@@ -136,6 +135,7 @@ class internal_ImageAffineTargetMixin:
     ) -> bool:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
+        clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -149,7 +149,6 @@ class internal_ImageAffineTargetMixin:
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         current_clip = self.current_clip
-        page_box_to_pixels = self.page_box_to_pixels
         page_pixels = self.page_pixels
         page_x_coordinates = self.page_x_coordinates
         page_y_coordinates = self.page_y_coordinates
@@ -167,18 +166,11 @@ class internal_ImageAffineTargetMixin:
         quad_box = points_bbox(quad)
         if quad_box is None:
             return False
-        x0, y0, x1, y1 = quad_box
-        clip_box = current_clip()
-        rectangular_clip = clip_box is not None and clip_paths_are_axis_aligned_rects()
-        if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
-            if clipped is None:
-                return True
-            x0, y0, x1, y1 = clipped
-        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
-        if pixel_box is None:
+        rectangular_clip = current_clip() is not None and clip_paths_are_axis_aligned_rects()
+        clipped_box = clipped_pixel_box(quad_box)
+        if clipped_box is None:
             return True
-        ix0, iy0, ix1, iy1 = pixel_box
+        ix0, iy0, ix1, iy1 = clipped_box[1]
         ux = p10[0] - p00[0]
         uy = p10[1] - p00[1]
         vx = p01[0] - p00[0]

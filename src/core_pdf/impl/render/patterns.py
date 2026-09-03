@@ -111,6 +111,7 @@ class internal_PatternTargetMixin:
     def paint_shading(self: Any, data: dict[str, Any], blend_mode: str | None) -> None:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
+        clipped_pixel_box = self.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
@@ -118,8 +119,6 @@ class internal_PatternTargetMixin:
         clip_row_visible_spans = self.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        current_clip = self.current_clip
-        page_box_to_pixels = self.page_box_to_pixels
         scale = self.scale
         shading_box = self.shading_box
         width = self.width
@@ -133,17 +132,10 @@ class internal_PatternTargetMixin:
         domain = shading.domain
         extend0 = shading.extend_start
         extend1 = shading.extend_end
-        x0, y0, x1, y1 = shading_box(data, shading)
-        clip_box = current_clip()
-        if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
-            if clipped is None:
-                return
-            x0, y0, x1, y1 = clipped
-        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
-        if pixel_box is None:
+        clipped_box = clipped_pixel_box(shading_box(data, shading))
+        if clipped_box is None:
             return
-        ix0, iy0, ix1, iy1 = pixel_box
+        ix0, iy0, ix1, iy1 = clipped_box[1]
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
         normal_fast = can_blend_normal_fast(blend_mode)

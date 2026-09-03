@@ -37,6 +37,7 @@ class internal_PathStrokeTargetMixin:
     ) -> None:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
+        clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -46,11 +47,9 @@ class internal_PathStrokeTargetMixin:
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        current_clip = self.current_clip
         fill_circle = self.fill_circle
         fill_line = self.fill_line
         fill_rect = self.fill_rect
-        page_box_to_pixels = self.page_box_to_pixels
         page_pixels = self.page_pixels
         pixel_in_clip = self.pixel_in_clip
         pixels = self.pixels
@@ -171,16 +170,10 @@ class internal_PathStrokeTargetMixin:
             max(x0, x1) + half + abs(ux) * cap_extension,
             max(y0, y1) + half + abs(uy) * cap_extension,
         )
-        clip_box = current_clip() if clip_path_stack else None
-        if clip_box is not None:
-            clipped = internal_intersect_box(box, clip_box)
-            if clipped is None:
-                return
-            box = clipped
-        pixel_box = page_box_to_pixels(*box)
-        if pixel_box is None:
+        clipped_box = clipped_pixel_box(box)
+        if clipped_box is None:
             return
-
+        box, pixel_box = clipped_box
         ix0, iy0, ix1, iy1 = pixel_box
         samples = 4
         sample_total = samples * samples

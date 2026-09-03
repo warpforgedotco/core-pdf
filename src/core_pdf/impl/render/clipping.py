@@ -116,6 +116,37 @@ class internal_ClipState:
         self.refresh_clip_metadata()
         return self.cached_is_rectangular
 
+    def clipped_pixel_box(
+        self, box: tuple[float, float, float, float]
+    ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
+        """Narrow a page box to the clip, then convert it to pixel bounds.
+
+        Returns the clipped page box together with its pixel bounds, or None
+        when the box is clipped away entirely or lands outside the raster.
+        Every painter opens this way; only the sentinel each hands back to its
+        own caller differs, so that part stays at the call site.
+
+        An empty clip stack leaves ``refresh_clip_metadata`` with the ``None``
+        it starts from, so testing the stack first is exactly ``current_clip()``
+        without the refresh.
+        """
+        if self.clip_path_stack:
+            # current_clip() inlined: reading the flag its own body tests first
+            # skips both a bound-method allocation and a frame on the clean
+            # path, which is the one every painter takes.
+            if self.metadata_dirty:
+                self.refresh_clip_metadata()
+            clip_box = self.cached_box
+            if clip_box is not None:
+                clipped = internal_intersect_box(box, clip_box)
+                if clipped is None:
+                    return None
+                box = clipped
+        pixel_box = self.page_box_to_pixels(*box)
+        if pixel_box is None:
+            return None
+        return box, pixel_box
+
     def path_bbox(self, path: Any) -> tuple[float, float, float, float] | None:
         if type(path) is not CapturedPath:
             return None

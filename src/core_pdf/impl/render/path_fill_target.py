@@ -253,6 +253,7 @@ class internal_PathFillTargetMixin:
     ) -> None:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
+        clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         axis_aligned_rect_box = clip.axis_aligned_rect_box
         blend_normal_pixel = self.blend_normal_pixel
@@ -267,7 +268,6 @@ class internal_PathFillTargetMixin:
         fast_fill_path = self.fast_fill_path
         fill_path_scanlines = self.fill_path_scanlines
         fill_rect = self.fill_rect
-        page_box_to_pixels = self.page_box_to_pixels
         path_bbox = clip.path_bbox
         path_edges = clip.path_edges
         pixel_in_clip = self.pixel_in_clip
@@ -301,16 +301,10 @@ class internal_PathFillTargetMixin:
             and fast_fill_path(edges, fast_bbox)
         ):
             return
-        x0, y0, x1, y1 = bbox
-        clip_box = current_clip()
-        if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
-            if clipped is None:
-                return
-            x0, y0, x1, y1 = clipped
-        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
-        if pixel_box is None:
+        clipped_box = clipped_pixel_box(bbox)
+        if clipped_box is None:
             return
+        pixel_box = clipped_box[1]
         ix0, iy0, ix1, iy1 = pixel_box
         pixel_area = (ix1 - ix0) * (iy1 - iy0)
         rectangular_clip = clip_paths_are_axis_aligned_rects()
