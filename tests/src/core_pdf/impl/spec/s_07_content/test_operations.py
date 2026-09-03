@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import Any, cast
-
 import pytest
 
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -150,7 +148,7 @@ def internal_dispatch_with_handlers(
         return handler
 
     handlers = {name: make(name) for name in OPERATOR_SPECS}
-    cast(Any, dispatch_operations)(PdfLexer(data), handlers, target, 0)
+    dispatch_operations(PdfLexer(data), handlers.get, target, 0)
     return seen
 
 

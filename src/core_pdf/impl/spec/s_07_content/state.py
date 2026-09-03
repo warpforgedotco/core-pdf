@@ -60,8 +60,7 @@ from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperands,
     NestedStreamRequest,
     OperandWindow,
-    OperationTarget,
-    StateOperationHandler,
+    OperationHandler,
     content_stream_may_show_text,
     dispatch_operations,
     iter_content_operations,
@@ -107,7 +106,6 @@ from core_pdf.impl.spec.s_09_fonts.decoder import (
 from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
 
-OperationHandler: TypeAlias = StateOperationHandler
 # Each resource cache stores MISSING for "not yet computed", so its value type
 # carries the sentinel and readers cast it away after the identity check --
 # the same idiom the page-box caches use in s_07_document/page.py.
@@ -863,11 +861,10 @@ class TextState:
                 self.flush_run()
             else:
                 operand_window = OperandWindow(())
-                target = typing.cast(OperationTarget, self)
                 for handler, operands in operations:
                     operand_window.operands = operands
                     operand_window.count = len(operands)
-                    handler(target, operand_window, depth)
+                    handler(self, operand_window, depth)
                 self.flush_run()
         except Exception:
             self.exit_stream_frame(frame)
@@ -1033,10 +1030,10 @@ class TextState:
                     self.exit_stream_frame(frame)
                     continue
 
-                typing.cast(typing.Any, dispatch_operations)(
+                dispatch_operations(
                     lexer,
-                    self.op_handlers,
-                    typing.cast(OperationTarget, self),
+                    self.op_handlers.get,
+                    self,
                     frame.depth,
                     operands=self.operands,
                 )

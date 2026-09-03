@@ -43,10 +43,10 @@ def internal_state() -> TextState:
 def internal_dispatch(state: TextState, data: bytes) -> None:
     from core_pdf.impl.spec.s_07_content.operations import dispatch_operations
 
-    cast(Any, dispatch_operations)(
+    dispatch_operations(
         PdfLexer(data),
-        state.op_handlers,
-        cast(Any, state),
+        state.op_handlers.get,
+        state,
         0,
         operands=state.operands,
     )

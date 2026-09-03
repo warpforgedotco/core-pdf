@@ -3,12 +3,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, cast
-
 import pytest
 
-from core_pdf.impl.spec.s_07_content.operations import dispatch_operations
+from core_pdf.impl.spec.s_07_content.operations import OperandWindow, dispatch_operations
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 
 
@@ -16,10 +13,14 @@ def dispatch_m_operands(source: bytes) -> list[object]:
     """Run ``source`` through the dispatcher and return what the ``m`` operator received."""
     received: list[object] = []
 
-    def move_to(operands: Sequence[object], internal_depth: int) -> None:
+    def move_to(
+        _target: object,
+        operands: OperandWindow,
+        internal_depth: int,
+    ) -> None:
         received.extend(operands)
 
-    cast(Any, dispatch_operations)(PdfLexer(source), {"m": move_to}, None, 0)
+    dispatch_operations(PdfLexer(source), {"m": move_to}.get, None, 0)
     return received
 
 

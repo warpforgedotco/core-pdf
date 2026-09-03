@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from typing import Protocol, TypeAlias, TypeVar, cast, overload
+from typing import Protocol, TypeAlias, cast, overload
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -204,15 +204,8 @@ class OperationTarget(Protocol):
     capture_clipping: bool
 
 
-BoundOperationHandler: TypeAlias = Callable[[OperandWindow, int], None]
-StateOperationHandler: TypeAlias = Callable[[OperationTarget, OperandWindow, int], None]
+OperationHandler: TypeAlias = Callable[[OperationTarget | None, OperandWindow, int], None]
 OperationCollector: TypeAlias = Callable[[OperandWindow, int, str], None]
-
-internal_HandlerT = TypeVar("internal_HandlerT", covariant=True)
-
-
-class StringHandlerMap(Protocol[internal_HandlerT]):
-    def get(self, key: str) -> internal_HandlerT | None: ...
 
 
 class CollectedOperationHandler:
@@ -222,7 +215,12 @@ class CollectedOperationHandler:
         self.callback = callback
         self.op_name = op_name
 
-    def __call__(self, operands: OperandWindow, depth: int) -> None:
+    def __call__(
+        self,
+        target: OperationTarget | None,
+        operands: OperandWindow,
+        depth: int,
+    ) -> None:
         self.callback(operands, depth, self.op_name)
 
 
@@ -231,9 +229,9 @@ class CollectedStringHandlers:
 
     def __init__(self, callback: OperationCollector) -> None:
         self.callback = callback
-        self.handlers: dict[str, BoundOperationHandler] = {}
+        self.handlers: dict[str, OperationHandler] = {}
 
-    def get(self, key: str) -> BoundOperationHandler:
+    def get(self, key: str) -> OperationHandler:
         handler = self.handlers.get(key)
         if handler is None:
             handler = CollectedOperationHandler(self.callback, key)
@@ -241,30 +239,10 @@ class CollectedStringHandlers:
         return handler
 
 
-@overload
 def dispatch_operations(
     lexer: PdfLexer,
-    op_handlers: StringHandlerMap[StateOperationHandler],
-    handler_target: OperationTarget,
-    depth: int,
-    operands: list[ContentOperand] | None = None,
-) -> None: ...
-
-
-@overload
-def dispatch_operations(
-    lexer: PdfLexer,
-    op_handlers: StringHandlerMap[BoundOperationHandler],
-    handler_target: None,
-    depth: int,
-    operands: list[ContentOperand] | None = None,
-) -> None: ...
-
-
-def dispatch_operations(
-    lexer: PdfLexer,
-    op_handlers: StringHandlerMap[StateOperationHandler] | StringHandlerMap[BoundOperationHandler],
-    handler_target: OperationTarget | None,
+    get_handler: Callable[[str], OperationHandler | None],
+    target: OperationTarget | None,
     depth: int,
     operands: list[ContentOperand] | None = None,
 ) -> None:
@@ -280,23 +258,22 @@ def dispatch_operations(
     word_break_or_ws = SEPARATOR_TABLE
     ws_table = WS_TABLE
     is_word_start = IS_WORD_START
-    op_get = op_handlers.get
     max_operands = len(operands)
 
     operand_window = OperandWindow(operands)
     text_only = (
-        handler_target is not None
-        and not handler_target.capture_graphics
-        and not handler_target.capture_glyphs
-        and not handler_target.capture_clipping
+        target is not None
+        and not target.capture_graphics
+        and not target.capture_glyphs
+        and not target.capture_clipping
     )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
     # Fixed when the document is opened, but it was previously resolved by a
     # double getattr chain on every ``<<`` token of every content stream.
     legacy_pdfminer_mode = bool(
-        handler_target is not None
+        target is not None
         and getattr(
-            getattr(handler_target, "document", None),
+            getattr(target, "document", None),
             "legacy_pdfminer_text_operators",
             False,
         )
@@ -366,8 +343,8 @@ def dispatch_operations(
                             recovered_pos = recover_inline_image_position(
                                 lexer,
                                 pos,
-                                (lambda token: op_get(token.decode("latin-1")) is not None)
-                                if handler_target is not None
+                                (lambda token: get_handler(token.decode("latin-1")) is not None)
+                                if target is not None
                                 else None,
                             )
                             if recovered_pos is None:
@@ -383,18 +360,11 @@ def dispatch_operations(
                     if op_count < max_operands:
                         operands[op_count] = image
                     op_count += 1
-                    handler = op_get("BI")
+                    handler = get_handler("BI")
                     if handler is not None:
                         operand_window.count = min(op_count, max_operands)
                         lexer.pos = pos
-                        if handler_target is None:
-                            cast(BoundOperationHandler, handler)(operand_window, depth)
-                        else:
-                            cast(StateOperationHandler, handler)(
-                                handler_target,
-                                operand_window,
-                                depth,
-                            )
+                        handler(target, operand_window, depth)
                     op_count = 0
                     continue
 
@@ -425,25 +395,18 @@ def dispatch_operations(
                     op_count = 0
                     continue
                 op_name = cast(str, lexer.parse_keyword(raw_key))
-                handler = op_get(op_name)
+                handler = get_handler(op_name)
 
                 if handler is not None:
                     operand_window.count = min(op_count, max_operands)
                     lexer.pos = pos
-                    if handler_target is None:
-                        cast(BoundOperationHandler, handler)(operand_window, depth)
-                    else:
-                        cast(StateOperationHandler, handler)(handler_target, operand_window, depth)
+                    handler(target, operand_window, depth)
                 op_count = 0
                 continue
 
         lexer.pos = pos
         if byte == 91:
-            if (
-                handler_target is not None
-                and not handler_target.capture_graphics
-                and not handler_target.capture_glyphs
-            ):
+            if target is not None and not target.capture_graphics and not target.capture_glyphs:
                 if pos + 1 < data_len and raw_bytes[pos + 1] == 93:
                     if op_count < max_operands:
                         operands[op_count] = cast(ContentOperand, ())
@@ -621,7 +584,7 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
 
     dispatch_operations(
         lexer,
-        CollectedStringHandlers(collector),
+        CollectedStringHandlers(collector).get,
         None,
         0,
     )
