@@ -13,7 +13,6 @@ from core_pdf.impl.render.blend import (
     internal_color_component,
     internal_color_rgba,
 )
-from core_pdf.impl.render.kernels import RASTER_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.paths import internal_intersect_box, internal_translate_rect
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -146,12 +145,6 @@ class internal_PatternTargetMixin:
         # page_x only depends on the column, so it is identical on every row;
         # computing it once here avoids redoing the same division per pixel.
         page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
-        # A gradient function is evaluated purely from unit_t, and real pages
-        # spend most of their pixels in a clamped extend region or an
-        # axis-aligned band where unit_t repeats exactly -- cache per call so
-        # evaluate_pdf_function (which can run an arbitrary PDF function,
-        # including a PostScript calculator) is not repeated for the same t.
-        color_cache: dict[float, tuple[int, int, int, int]] = {}
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -178,20 +171,12 @@ class internal_PatternTargetMixin:
                         if not extend1:
                             continue
                         unit_t = 1.0
-                    rgba = color_cache.get(unit_t)
-                    if rgba is None:
-                        value = domain[0] + unit_t * domain_span
-                        rgba = internal_shading_color_rgba(
-                            shading.color_model,
-                            shading.evaluate(value),
-                            fill_opacity,
-                        )
-                        # Bounded like the raster coordinate caches below: a
-                        # diagonal or radial gradient can produce a near-unique
-                        # unit_t per pixel, so an unbounded cache would grow to
-                        # one entry per pixel on a large fill.
-                        if len(color_cache) < RASTER_CACHE_MAX_ENTRIES:
-                            color_cache[unit_t] = rgba
+                    value = domain[0] + unit_t * domain_span
+                    rgba = internal_shading_color_rgba(
+                        shading.color_model,
+                        shading.evaluate(value),
+                        fill_opacity,
+                    )
                     if shading_alpha is not None:
                         rgba = (
                             rgba[0],

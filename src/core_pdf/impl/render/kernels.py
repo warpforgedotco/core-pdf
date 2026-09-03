@@ -9,7 +9,6 @@ from typing import Any
 
 import numpy
 
-RASTER_CACHE_MAX_ENTRIES = 256
 AFFINE_BLIT_SCRATCH_BYTES = 1 << 20
 
 
