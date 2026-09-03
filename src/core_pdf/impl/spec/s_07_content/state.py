@@ -28,7 +28,6 @@ from core_pdf.impl.model.glyphs import (
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
     MISSING,
-    MissingObject,
     PdfName,
     PdfReference,
     PdfString,
@@ -96,14 +95,6 @@ from core_pdf.impl.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
 
-# Each resource cache stores MISSING for "not yet computed", so its value type
-# carries the sentinel and readers cast it away after the identity check --
-# the same idiom the page-box caches use in s_07_document/page.py.
-ColorSpaceCache: TypeAlias = dict[object, str | None | MissingObject]
-ColorSpecCache: TypeAlias = dict[object, "ImageColorSpec | None | MissingObject"]
-ColorNormalizationCache: TypeAlias = dict[object, tuple[float, ...] | None | MissingObject]
-ExtGStateCache: TypeAlias = dict[object, "dict[str, Any] | None | MissingObject"]
-FontSettingCache: TypeAlias = dict[object, tuple[str | None, float] | MissingObject]
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
 
 
@@ -314,11 +305,6 @@ class TextState:
     resources: PdfDict
     resolved_resource_categories: ResolvedResourceCache
     resource_cache: ResourceCache
-    color_space_cache: ColorSpaceCache
-    color_spec_cache: ColorSpecCache
-    color_normalization_cache: ColorNormalizationCache
-    extgstate_cache: ExtGStateCache
-    font_setting_cache: FontSettingCache
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     decoder_memo: dict[tuple[int, str | None], FontDecoder]
     kw_cache: dict[bytes, object]
@@ -418,11 +404,6 @@ class TextState:
         "resolved_resource_categories",
         "resource_cache",
         "image_cache",
-        "color_space_cache",
-        "color_spec_cache",
-        "color_normalization_cache",
-        "extgstate_cache",
-        "font_setting_cache",
         "decoder_cache",
         "decoder_memo",
         "kw_cache",
@@ -574,11 +555,6 @@ class TextState:
                 document.image_cache = image_cache
         self.image_cache = image_cache
         self.resource_cache = {}
-        self.color_space_cache = {}
-        self.color_spec_cache = {}
-        self.color_normalization_cache = {}
-        self.extgstate_cache = {}
-        self.font_setting_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.decoder_memo = {}
         self.kw_cache = self.document.resolver.kw_cache
@@ -2773,19 +2749,13 @@ class TextState:
                     self.update_font_metrics()
                 self.font_size_operand = font_size_operand
             return
-        cache_key = (self.resources_id, font_operand, font_size_operand)
-        cached = self.font_setting_cache.get(cache_key)
-        if cached is None:
-            font_name = self.document.resolver.resolve_name(font_operand)
-            if font_name is None:
-                return
-            try:
-                font_size = self.as_float(font_size_operand)
-            except (TypeError, ValueError):
-                return
-            self.font_setting_cache[cache_key] = (font_name, font_size)
-        else:
-            font_name, font_size = cast(tuple[str | None, float], cached)
+        font_name = self.document.resolver.resolve_name(font_operand)
+        if font_name is None:
+            return
+        try:
+            font_size = self.as_float(font_size_operand)
+        except (TypeError, ValueError):
+            return
         if (
             self.current_font == font_name
             and self.current_decoder is not None
@@ -3212,23 +3182,15 @@ class TextState:
         self.internal_record_clip("evenodd")
 
     def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
-        cache_key = components
-        cached = self.color_normalization_cache.get(cache_key, MISSING)
-        if cached is not MISSING:
-            return cast(tuple[float, ...] | None, cached)
         values: list[float] = []
         for component in components:
             try:
                 values.append(max(0.0, min(1.0, self.as_float(component))))
             except ValueError:
-                self.color_normalization_cache[cache_key] = None
                 return None
         if not values:
-            self.color_normalization_cache[cache_key] = None
             return None
-        normalized = tuple(values)
-        self.color_normalization_cache[cache_key] = normalized
-        return normalized
+        return tuple(values)
 
     def set_stroke_color(self, *components: Any) -> None:
         if self.type3_uncolored:
@@ -3277,24 +3239,14 @@ class TextState:
     def internal_resolve_color_spec(self, name_obj: Any) -> ImageColorSpec | None:
         """Resolve a `cs`/`CS` operand to its full colour space, not just a name.
 
-        Cached per resource dictionary like the name is: the parse walks the
-        colour-space array and, for Indexed, pulls the palette out of a stream.
+        The parse walks the colour-space array and, for Indexed, pulls the
+        palette out of a stream.
         """
-        try:
-            cache_key = (self.resources_id, name_obj)
-            cached = self.color_spec_cache.get(cache_key, MISSING)
-            if cached is not MISSING:
-                return cast("ImageColorSpec | None", cached)
-        except TypeError:
-            cache_key = None
         value = self.internal_color_space_value(name_obj)
         try:
-            spec = color_spec_from_value(value) if value is not None else None
+            return color_spec_from_value(value) if value is not None else None
         except (ValueError, TypeError):
-            spec = None
-        if cache_key is not None:
-            self.color_spec_cache[cache_key] = spec
-        return spec
+            return None
 
     def internal_color_from_operands(
         self, operands: Any, spec: ImageColorSpec | None
@@ -3325,50 +3277,27 @@ class TextState:
         return values or None
 
     def resolve_color_space(self, name_obj: Any, *, default_fallback: bool = False) -> str | None:
-        try:
-            cache_key = (self.resources_id, name_obj, default_fallback)
-            cached = self.color_space_cache.get(cache_key, MISSING)
-            if cached is not MISSING:
-                return cast(str | None, cached)
-        except TypeError:
-            cache_key = None
-
         name = self.document.resolver.resolve_name(name_obj)
         if name is None:
-            resolved_color_space = "DeviceGray" if default_fallback else None
-            if cache_key is not None:
-                self.color_space_cache[cache_key] = resolved_color_space
-            return resolved_color_space
+            return "DeviceGray" if default_fallback else None
 
         color_space: object = self.lookup_page_resource("ColorSpace", name)
         if color_space is None:
-            resolved = name if default_fallback else None
-            if cache_key is not None:
-                self.color_space_cache[cache_key] = resolved
-            return resolved
+            return name if default_fallback else None
 
         color_space_name = normalize_pdf_name(color_space)
         if color_space_name is not None:
-            if cache_key is not None:
-                self.color_space_cache[cache_key] = color_space_name
             return color_space_name
         if isinstance(color_space, (list, tuple)) and color_space:
             base = color_space[0]
             base_name = normalize_pdf_name(base)
             if base_name is not None:
-                if cache_key is not None:
-                    self.color_space_cache[cache_key] = base_name
                 return base_name
 
         if isinstance(name, str) and not name.startswith("/"):
-            if cache_key is not None:
-                self.color_space_cache[cache_key] = name
             return name
 
-        resolved = name if default_fallback else None
-        if cache_key is not None:
-            self.color_space_cache[cache_key] = resolved
-        return resolved
+        return name if default_fallback else None
 
     def resolve_pattern_color(self, operands: tuple[Any, ...]) -> PatternPaint | None:
         if not operands:
@@ -3452,20 +3381,6 @@ class TextState:
             return
         if operands:
             name_obj = operands[0]
-            try:
-                cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
-            except TypeError:
-                cached = MISSING
-            if cached is not MISSING:
-                if cached is not None:
-                    spec = self.internal_resolve_color_spec(name_obj)
-                    if stroke:
-                        self.stroke_color_space = cast("str", cached)
-                        self.stroke_color_spec = spec
-                    else:
-                        self.fill_color_space = cast("str", cached)
-                        self.fill_color_spec = spec
-                return
             color_space = self.resolve_color_space(name_obj, default_fallback=True)
             if color_space is not None:
                 spec = self.internal_resolve_color_spec(name_obj)
@@ -3632,17 +3547,10 @@ class TextState:
         return parse_int_strict(value, "invalid numeric operand")
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
-        cache_key = (self.resources_id, name)
-        cached = self.extgstate_cache.get(cache_key, MISSING)
-        if cached is not MISSING:
-            return cast("dict[str, Any] | None", cached)
         resolved = self.lookup_page_resource("ExtGState", name)
         if not isinstance(resolved, dict):
-            self.extgstate_cache[cache_key] = None
             return None
-        extgstate = cast("dict[str, Any]", resolved)
-        self.extgstate_cache[cache_key] = extgstate
-        return extgstate
+        return cast("dict[str, Any]", resolved)
 
     def op_q(self, operands: ContentOperands, depth: int) -> None:
         self.clip_scope_stack.append(False)
