@@ -675,6 +675,40 @@ def internal_decode_with_mapping(
     )
 
 
+def internal_decoded_profile(
+    profile: StrokedTextProfile,
+    mapping: dict[GlyphSignature, str],
+    *,
+    eligible_seeds: int = 0,
+    aligned_seeds: int = 0,
+    accepted_seeds: int = 0,
+    initial_signatures: int = 0,
+) -> StrokedTextDecode:
+    """Decode ``profile`` under ``mapping`` and report it with the seed counters.
+
+    The three entry points differ only in how they arrive at the mapping and
+    which seed counters they have to report; everything from the decode onward
+    is the same, and used to be written out three times.
+    """
+    observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
+        internal_decode_with_mapping(profile, mapping)
+    )
+    return StrokedTextDecode(
+        observations=observations,
+        eligible_seeds=eligible_seeds,
+        aligned_seeds=aligned_seeds,
+        accepted_seeds=accepted_seeds,
+        initial_signatures=initial_signatures,
+        learned_signatures=len(mapping),
+        approximate_signatures=approximate,
+        alphabet=tuple(mapping.items()),
+        candidate_runs=candidates,
+        decoded_candidate_runs=decoded_candidates,
+        candidate_glyphs=glyphs,
+        decoded_candidate_glyphs=decoded_glyphs,
+    )
+
+
 def decode_stroked_text_profile(
     profile: StrokedTextProfile,
     seeds: tuple[StrokedTextSeed, ...],
@@ -692,24 +726,13 @@ def decode_stroked_text_profile(
             eligible_seeds=eligible,
             aligned_seeds=len(samples),
         )
-    learned = len(mapping)
-    alphabet = tuple(mapping.items())
-    observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
-        internal_decode_with_mapping(profile, mapping)
-    )
-    return StrokedTextDecode(
-        observations=observations,
+    return internal_decoded_profile(
+        profile,
+        mapping,
         eligible_seeds=eligible,
         aligned_seeds=len(samples),
         accepted_seeds=accepted,
         initial_signatures=initial,
-        learned_signatures=learned,
-        approximate_signatures=approximate,
-        alphabet=alphabet,
-        candidate_runs=candidates,
-        decoded_candidate_runs=decoded_candidates,
-        candidate_glyphs=glyphs,
-        decoded_candidate_glyphs=decoded_glyphs,
     )
 
 
@@ -758,24 +781,13 @@ def decode_stroked_text_profile_with_supplemental_seeds(
             aligned_seeds=len(samples),
         )
 
-    learned = len(mapping)
-    alphabet = tuple(mapping.items())
-    observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
-        internal_decode_with_mapping(profile, mapping)
-    )
-    return StrokedTextDecode(
-        observations=observations,
+    return internal_decoded_profile(
+        profile,
+        mapping,
         eligible_seeds=eligible,
         aligned_seeds=len(samples),
         accepted_seeds=accepted,
         initial_signatures=initial,
-        learned_signatures=learned,
-        approximate_signatures=approximate,
-        alphabet=alphabet,
-        candidate_runs=candidates,
-        decoded_candidate_runs=decoded_candidates,
-        candidate_glyphs=glyphs,
-        decoded_candidate_glyphs=decoded_glyphs,
     )
 
 
@@ -787,19 +799,6 @@ def decode_stroked_text_profile_with_alphabet(
     mapping = dict(alphabet)
     if not profile.records or not mapping:
         return StrokedTextDecode()
-    exact_alphabet = tuple(mapping.items())
-    learned = len(mapping)
-    observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
-        internal_decode_with_mapping(profile, mapping)
-    )
-    return StrokedTextDecode(
-        observations=observations,
-        initial_signatures=learned,
-        learned_signatures=learned,
-        approximate_signatures=approximate,
-        alphabet=exact_alphabet,
-        candidate_runs=candidates,
-        decoded_candidate_runs=decoded_candidates,
-        candidate_glyphs=glyphs,
-        decoded_candidate_glyphs=decoded_glyphs,
-    )
+    # An exact alphabet is its own initial signature set: nothing was learned
+    # from seeds here, so there are no seed counters to report.
+    return internal_decoded_profile(profile, mapping, initial_signatures=len(mapping))
