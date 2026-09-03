@@ -3,11 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from types import SimpleNamespace
 
-import numpy
-
-from core_pdf.impl.extract.ocr.raster import internal_decoded_image_raster
 from core_pdf.impl.extract.ocr.types import internal_Raster
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
@@ -96,59 +92,6 @@ def test_image_cache_single_flights_concurrent_factory() -> None:
     assert values == [b"shared"] * 4
     assert calls == 1
     assert cache.stats().hits == workers - 1
-
-
-def test_decoded_ocr_raster_fill_is_single_flight() -> None:
-    cache = ImageCache(max_bytes=100)
-    workers = 4
-    start = threading.Barrier(workers + 1)
-    release_decode = threading.Event()
-    decode_started = threading.Event()
-    calls = 0
-    calls_lock = threading.Lock()
-
-    class Source:
-        cache_key = ("shared-image", 1)
-
-        def decode(self) -> SimpleNamespace:
-            nonlocal calls
-            with calls_lock:
-                calls += 1
-            decode_started.set()
-            assert release_decode.wait(timeout=2)
-            return SimpleNamespace(
-                array=numpy.arange(4, dtype=numpy.uint8).reshape((2, 2, 1)),
-                width=2,
-                height=2,
-                channels=1,
-            )
-
-    image = SimpleNamespace(image_source=Source())
-
-    def load() -> internal_Raster | None:
-        start.wait()
-        return internal_decoded_image_raster(
-            image,
-            4.0,
-            image_cache=cache,
-            max_pixels=4,
-            upscale=False,
-        )
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(load) for _ in range(workers)]
-        start.wait()
-        assert decode_started.wait(timeout=2)
-        deadline = time.monotonic() + 2.0
-        while cache.stats().misses < workers and time.monotonic() < deadline:
-            time.sleep(0.001)
-        release_decode.set()
-        values = [future.result(timeout=2) for future in futures]
-
-    assert calls == 1
-    assert values[0] is not None
-    assert all(value is values[0] for value in values)
-    assert cache.stats().bytes == 4
 
 
 def test_image_cache_invalidate_prefix() -> None:

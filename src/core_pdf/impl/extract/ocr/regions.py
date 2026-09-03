@@ -24,7 +24,6 @@ from core_pdf.impl.extract.grids import (
     internal_split_grid_component,
 )
 from core_pdf.impl.extract.ocr.raster import (
-    DirectImageOrientation,
     internal_decoded_image_raster,
     internal_direct_image_orientation,
     internal_orient_direct_image_raster,
@@ -32,7 +31,6 @@ from core_pdf.impl.extract.ocr.raster import (
 from core_pdf.impl.extract.ocr.types import (
     internal_ocr_region_box,
     internal_OcrRegion,
-    internal_Raster,
     internal_RasterRegion,
 )
 from core_pdf.impl.model.geometry import (
@@ -42,7 +40,6 @@ from core_pdf.impl.model.geometry import (
     bbox_union,
     rect_tuple,
 )
-from core_pdf.impl.runtime.image_cache import ImageCacheKey
 
 
 def internal_page_image_regions(
@@ -90,42 +87,15 @@ def internal_page_image_regions(
         raster = internal_decoded_image_raster(
             image,
             display_area,
-            image_cache=getattr(getattr(capture.page, "document", None), "image_cache", None),
             max_pixels=max_pixels,
             upscale=upscale,
         )
         if raster is not None:
-            oriented = raster
-            if orientation is not DirectImageOrientation.IDENTITY:
-                source = getattr(image, "image_source", None)
-                source_key = getattr(source, "cache_key", None)
-                if not isinstance(source_key, tuple):
-                    source_key = ("image", id(image))
-                oriented_key = ImageCacheKey(
-                    "ocr-oriented-raster",
-                    tuple(source_key),
-                    (orientation.value, float(display_area), int(max_pixels), upscale),
-                )
-                cache = getattr(getattr(capture.page, "document", None), "image_cache", None)
-                if cache is not None:
-                    cached_oriented = cache.get_or_create(
-                        oriented_key,
-                        lambda image=image, raster=raster, orientation=orientation: (
-                            internal_orient_direct_image_raster(
-                                image,
-                                raster,
-                                orientation=orientation,
-                            )
-                        ),
-                    )
-                    if isinstance(cached_oriented, internal_Raster):
-                        oriented = cached_oriented
-                else:
-                    oriented = internal_orient_direct_image_raster(
-                        image,
-                        raster,
-                        orientation=orientation,
-                    )
+            oriented = internal_orient_direct_image_raster(
+                image,
+                raster,
+                orientation=orientation,
+            )
             regions.append(
                 internal_RasterRegion(
                     oriented,

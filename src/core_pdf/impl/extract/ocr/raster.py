@@ -31,7 +31,6 @@ from core_pdf.impl.runtime.array_views import (
     resample_nearest,
     uint8_image_view,
 )
-from core_pdf.impl.runtime.image_cache import ImageCacheKey
 from core_pdf.impl.spec.s_08_graphics.image_decode import decode_pdf_image
 
 # Tesseract's LSTM was trained near 300-400 DPI. Scans below that are enlarged to
@@ -294,30 +293,10 @@ def internal_decoded_image_raster(
     image: Any,
     display_area: float,
     *,
-    image_cache: Any | None = None,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
 ) -> internal_Raster | None:
     source = getattr(image, "image_source", None)
-    source_key = getattr(source, "cache_key", None)
-    if not isinstance(source_key, tuple):
-        source_key = ("image", id(image))
-    shared_key = ImageCacheKey(
-        "ocr-raster",
-        tuple(source_key),
-        (float(display_area), int(max_pixels), upscale),
-    )
-    if image_cache is not None:
-        cached = image_cache.get_or_create(
-            shared_key,
-            lambda: internal_decoded_image_raster(
-                image,
-                display_area,
-                max_pixels=max_pixels,
-                upscale=upscale,
-            ),
-        )
-        return cached if isinstance(cached, internal_Raster) else None
     shared = source.decode() if source is not None and hasattr(source, "decode") else None
     samples: numpy.ndarray[Any, Any] | None
     data: bytes | memoryview | None
