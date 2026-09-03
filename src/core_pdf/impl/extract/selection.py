@@ -7,7 +7,6 @@ import math
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from concurrent.futures import Future
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, cast
@@ -30,7 +29,7 @@ from core_pdf.impl.extract.ocr.strokes import (
 from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output import SCHEMA_VERSION, Document, Page
-from core_pdf.impl.runtime.execution import TaskScope, WorkStage
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 DOCUMENT_FONT_SEED_LIMIT = 4
 DOCUMENT_FONT_SEEDS_PER_DECODER = 2
@@ -211,18 +210,15 @@ def internal_resolve_document_font_mappings(
 def internal_prepare_document_font_mappings(
     extractions: tuple[internal_PageExtraction, ...],
     captures: tuple[CapturedPage, ...],
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> internal_FontEnrichment:
     seed_indexes = internal_document_font_seed_indexes(captures)
     if not seed_indexes:
         return internal_FontEnrichment()
     ocr_by_index: dict[int, ObservationBatch] = {}
-    for completed in context.map_completed(
-        lambda page_index: extractions[page_index].recognition(context).observations,
-        seed_indexes,
-        stage=WorkStage.PAGE,
-    ):
-        ocr_by_index[seed_indexes[completed.index]] = completed.value
+    for page_index in seed_indexes:
+        context.raise_if_cancelled()
+        ocr_by_index[page_index] = extractions[page_index].recognition(context).observations
     votes: dict[object, dict[bytes, Counter[str]]] = {}
     for page_index, ocr in ocr_by_index.items():
         internal_merge_font_mapping_votes(
@@ -305,7 +301,7 @@ def internal_document_stroked_recognition(
 def internal_prepare_document_stroked_mappings(
     extractions: tuple[internal_PageExtraction, ...],
     captures: tuple[CapturedPage, ...],
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> internal_StrokedEnrichment:
     """OCR the richest flattened-font page, then decode compatible pages structurally."""
     indexes = tuple(
@@ -378,76 +374,32 @@ def internal_apply_stroked_enrichment(
     return tuple(enriched)
 
 
-def internal_page_chunks(
-    pages: tuple[Any, ...],
-    worker_count: int,
-) -> tuple[tuple[int, tuple[Any, ...]], ...]:
-    """Bound scheduler overhead while retaining enough chunks for load balancing."""
-    chunk_size = max(1, min(32, math.ceil(len(pages) / max(1, worker_count * 4))))
-    return tuple(
-        (start, pages[start : start + chunk_size]) for start in range(0, len(pages), chunk_size)
-    )
-
-
 def internal_capture_document_pages(
     extractions: tuple[internal_PageExtraction, ...],
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> tuple[CapturedPage, ...]:
-    captures_by_index: list[CapturedPage | None] = [None] * len(extractions)
-
-    def capture_chunk(
-        indexed_extractions: tuple[int, tuple[internal_PageExtraction, ...]],
-    ) -> tuple[int, tuple[CapturedPage, ...]]:
-        start, chunk = indexed_extractions
-        captures: list[CapturedPage] = []
-        for extraction in chunk:
-            context.raise_if_cancelled()
-            captures.append(extraction.capture())
-        return start, tuple(captures)
-
-    chunks = internal_page_chunks(extractions, context.runtime.max_workers)
-    for completed in context.map_completed(capture_chunk, chunks, stage=WorkStage.PAGE):
-        start, captures = completed.value
-        captures_by_index[start : start + len(captures)] = captures
-    return tuple(capture for capture in captures_by_index if capture is not None)
+    captures: list[CapturedPage] = []
+    for extraction in extractions:
+        context.raise_if_cancelled()
+        captures.append(extraction.capture())
+    return tuple(captures)
 
 
 def internal_assemble_document_pages(
     extractions: tuple[internal_PageExtraction, ...],
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> tuple[Page, ...]:
-    pages_by_index: list[Page | None] = [None] * len(extractions)
-    futures: dict[int, Future[Page]] = {}
-    direct_indexes: list[int] = []
-    for index, extraction in enumerate(extractions):
-        plan = extraction.plan()
-        requires_ocr = extraction.internal_recognition is None and (
-            bool(plan.ocr_passes) or plan.verify_hidden_text
-        )
-        if requires_ocr:
-            futures[index] = context.submit(
-                extraction.assembled_page,
-                context,
-                stage=WorkStage.PAGE,
-            )
-        else:
-            direct_indexes.append(index)
-    try:
-        for index in direct_indexes:
-            context.raise_if_cancelled()
-            pages_by_index[index] = extractions[index].assembled_page(context)
-        for index, future in futures.items():
-            pages_by_index[index] = future.result()
-    finally:
-        for future in futures.values():
-            future.cancel()
-    return tuple(page for page in pages_by_index if page is not None)
+    pages: list[Page] = []
+    for extraction in extractions:
+        context.raise_if_cancelled()
+        pages.append(extraction.assembled_page(context))
+    return tuple(pages)
 
 
 def internal_prepare_selection_state(
     extractions: tuple[internal_PageExtraction, ...],
     captures: tuple[CapturedPage, ...],
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> tuple[internal_PageExtraction, ...]:
     """Page pipelines enriched with everything learned across one exact selection."""
     font = internal_prepare_document_font_mappings(extractions, captures, context)
@@ -462,7 +414,7 @@ def internal_prepare_selection_state(
 
 def extract_document(
     document: Any,
-    context: TaskScope,
+    context: ExtractionScope,
     pages: Sequence[Any],
 ) -> Document:
     pages = tuple(pages)

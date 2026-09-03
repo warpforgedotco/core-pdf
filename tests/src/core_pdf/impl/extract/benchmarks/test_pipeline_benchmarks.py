@@ -29,7 +29,6 @@ from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page
 from core_pdf.impl.extract.observations import plan_page
 from core_pdf.impl.extract.tables import extract_tables
-from core_pdf.impl.runtime.execution import RUNTIME, RuntimeConfig, configure_runtime
 from tests.helpers.benchmark_pages import (
     DENSE_PDF,
     MIXED_PDF,
@@ -73,24 +72,6 @@ def internal_stage(page: Any) -> Staged:
         *internal_image_obstacles(capture),
     )
     return Staged(page, capture, plan, observations, obstacles)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def single_worker_runtime() -> Iterator[None]:
-    """Pin the shared runtime to one worker for the whole module.
-
-    ``PdfDocument.extract`` fans pages out across the runtime pool. CodSpeed
-    counts instructions on a simulated CPU that serializes threads, so a pooled
-    run there measures workers spin-waiting on each other rather than the
-    extraction itself -- the same reason CI pins ``OPENBLAS_NUM_THREADS``. One
-    worker keeps the measurement on our own code and makes it reproducible.
-    """
-    previous = RUNTIME.internal_config
-    configure_runtime(RuntimeConfig(parent_workers=1, ocr_workers=1))
-    try:
-        yield
-    finally:
-        configure_runtime(previous)
 
 
 @pytest.fixture(scope="module")

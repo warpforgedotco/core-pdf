@@ -35,7 +35,7 @@ from core_pdf.impl.output import (
     Link,
     Table,
 )
-from core_pdf.impl.runtime.execution import TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
 
 internal_T = TypeVar("internal_T")
@@ -96,7 +96,7 @@ class internal_PageExtraction:
             self.internal_plan = plan
             return plan
 
-    def recognition(self, context: TaskScope) -> RecognitionResult:
+    def recognition(self, context: ExtractionScope) -> RecognitionResult:
         with self.page.internal_page_lock:
             if self.internal_recognition is not None:
                 return self.internal_recognition
@@ -113,7 +113,7 @@ class internal_PageExtraction:
             self.internal_recognition = recognition
             return recognition
 
-    def observations(self, context: TaskScope) -> ObservationBatch:
+    def observations(self, context: ExtractionScope) -> ObservationBatch:
         with self.page.internal_page_lock:
             if self.internal_observations is not None:
                 return self.internal_observations
@@ -126,7 +126,7 @@ class internal_PageExtraction:
             self.internal_observations = observations
             return observations
 
-    def tables(self, context: TaskScope) -> tuple[Table, ...]:
+    def tables(self, context: ExtractionScope) -> tuple[Table, ...]:
         with self.page.internal_page_lock:
             if self.internal_tables is not None:
                 return self.internal_tables
@@ -145,11 +145,11 @@ class internal_PageExtraction:
                 < 0.65
             )
 
-    def layout(self, context: TaskScope) -> tuple[ParsedBlock, ...]:
+    def layout(self, context: ExtractionScope) -> tuple[ParsedBlock, ...]:
         return self.internal_layout_result(context)[0]
 
     def internal_layout_result(
-        self, context: TaskScope
+        self, context: ExtractionScope
     ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
         with self.page.internal_page_lock:
             if self.internal_layout is not None:
@@ -175,7 +175,7 @@ class internal_PageExtraction:
             self.internal_layout = result
             return result
 
-    def assembled_page(self, context: TaskScope) -> Any:
+    def assembled_page(self, context: ExtractionScope) -> Any:
         with self.page.internal_page_lock:
             if self.internal_assembled_page is not None:
                 return self.internal_assembled_page
@@ -249,6 +249,6 @@ class internal_PageExtraction:
             return assembled
 
 
-def extract_page(page: Any, context: TaskScope) -> Any:
+def extract_page(page: Any, context: ExtractionScope) -> Any:
     """Extract and emit one page."""
     return internal_PageExtraction(page).assembled_page(context)

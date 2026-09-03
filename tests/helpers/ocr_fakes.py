@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from threading import RLock
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -28,7 +28,7 @@ from core_pdf.impl.extract.ocr import rescue as ocr_rescue
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
-from core_pdf.impl.runtime.execution import TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 Box = tuple[float, float, float, float]
 PixelBox = tuple[int, int, int, int]
@@ -70,25 +70,8 @@ def patch_dominant_region(
     )
 
 
-class InlineTaskScope:
-    """A ``TaskScope`` that runs everything on the calling thread."""
-
-    def raise_if_cancelled(self) -> None:
-        pass
-
-    def map_ordered(
-        self,
-        function: Callable[[Any], Any],
-        values: Iterable[Any],
-        *,
-        stage: object = None,
-        **internal_kwargs: object,
-    ) -> Iterator[Any]:
-        return map(function, values)
-
-
-def inline_scope() -> TaskScope:
-    return cast(TaskScope, InlineTaskScope())
+def inline_scope() -> ExtractionScope:
+    return ExtractionScope()
 
 
 class FakeResultIterator:
@@ -249,7 +232,6 @@ __all__ = (
     "FakeDocumentPage",
     "FakeResultIterator",
     "FakeTessApi",
-    "InlineTaskScope",
     "RecordingExtraction",
     "inline_scope",
     "patch_dominant_region",

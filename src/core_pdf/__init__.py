@@ -17,7 +17,6 @@ if TYPE_CHECKING:
         PdfSourceError,
         PdfUnsupportedError,
     )
-    from core_pdf.impl.extract.ocr.tesseract import prewarm_runtime
     from core_pdf.impl.output import (
         ContentNode,
         DiagnosticTextRun,
@@ -40,11 +39,6 @@ if TYPE_CHECKING:
         ImageRecord,
         PageScoped,
         TextWord,
-    )
-    from core_pdf.impl.runtime.execution import (
-        RuntimeConfig,
-        configure_runtime,
-        shutdown_runtime,
     )
     from core_pdf.impl.spec.s_09_fonts.fallback import (
         PdfRasterFontFace,
@@ -93,22 +87,6 @@ internal_EXPORTS = {
     "PdfRasterTooLargeError": ("core_pdf.impl.exceptions", "PdfRasterTooLargeError"),
     "PdfSourceError": ("core_pdf.impl.exceptions", "PdfSourceError"),
     "PdfUnsupportedError": ("core_pdf.impl.exceptions", "PdfUnsupportedError"),
-    "configure_runtime": (
-        "core_pdf.impl.runtime.execution",
-        "configure_runtime",
-    ),
-    "RuntimeConfig": (
-        "core_pdf.impl.runtime.execution",
-        "RuntimeConfig",
-    ),
-    "prewarm_runtime": (
-        "core_pdf.impl.extract.ocr.tesseract",
-        "prewarm_runtime",
-    ),
-    "shutdown_runtime": (
-        "core_pdf.impl.runtime.execution",
-        "shutdown_runtime",
-    ),
 }
 
 
@@ -148,8 +126,4 @@ __all__ = (
     "PdfRasterFontFace",
     "PdfRasterFontProvider",
     "PdfRasterFontRequest",
-    "configure_runtime",
-    "RuntimeConfig",
-    "prewarm_runtime",
-    "shutdown_runtime",
 )

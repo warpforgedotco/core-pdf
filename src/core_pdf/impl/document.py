@@ -32,7 +32,7 @@ from core_pdf.impl.records import (
 )
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.execution import RUNTIME, TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
@@ -56,7 +56,7 @@ class PdfPage(SpecPdfPage):
 
     def extract(self) -> Any:
         with self.document.acquire_operation() as operation:
-            with RUNTIME.task_scope(
+            with ExtractionScope(
                 cancelled=lambda: operation.cancelled,
             ) as context:
                 return extract_page(self, context)
@@ -284,21 +284,11 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         *,
         pages: PageSelection | None = None,
         adapters: Iterable[Any] = (),
-        context: TaskScope | None = None,
     ) -> Any:
         with self.acquire_operation() as operation:
             selected_pages = tuple(self.pages[index] for index in self.selected_page_indexes(pages))
-            if context is None:
-                with RUNTIME.task_scope(
-                    cancelled=lambda: operation.cancelled,
-                ) as active_context:
-                    result = extract_document(self, active_context, selected_pages)
-            else:
-                result = extract_document(
-                    self,
-                    context.with_cancellation(lambda: operation.cancelled),
-                    selected_pages,
-                )
+            with ExtractionScope(cancelled=lambda: operation.cancelled) as context:
+                result = extract_document(self, context, selected_pages)
         for adapter in adapters:
             result = adapter.apply(result)
         return result

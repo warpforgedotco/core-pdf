@@ -1,9 +1,7 @@
 import json
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from random import Random
 from runpy import run_path
-from threading import Barrier
 
 import pytest
 
@@ -381,7 +379,7 @@ def test_cli_can_disable_default_html_report() -> None:
     assert benchmark.html_output is None
 
 
-def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_backend_is_created_for_each_session(monkeypatch: pytest.MonkeyPatch) -> None:
     import tesserocr
 
     class FakeApi:
@@ -394,21 +392,10 @@ def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
         def SetPageSegMode(self, internal_mode: int) -> None:
             pass
 
-    ocr_tesseract.internal_OCR_LOCAL.__dict__.clear()
     monkeypatch.setattr(tesserocr, "PyTessBaseAPI", FakeApi)
-    # Identity per thread is the claim; resolving real tessdata is not part of it.
+    # Resolving real tessdata is not part of this lifecycle test.
     monkeypatch.setattr(ocr_tesseract, "internal_tessdata_path", lambda: "")
-    barrier = Barrier(2)
+    first = ocr_tesseract.internal_api(3)
+    second = ocr_tesseract.internal_api(3)
 
-    def worker() -> tuple[int, int]:
-        first = ocr_tesseract.internal_api(3)
-        second = ocr_tesseract.internal_api(3)
-        barrier.wait(timeout=5)
-        return (id(first), id(second))
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(lambda internal_index: worker(), range(2)))
-
-    assert results[0][0] == results[0][1]
-    assert results[1][0] == results[1][1]
-    assert results[0][0] != results[1][0]
+    assert first is not second

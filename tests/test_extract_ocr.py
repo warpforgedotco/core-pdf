@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -43,7 +42,7 @@ from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model import geometry as model_geometry
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.execution import TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import drawing, page_evidence, text_run
@@ -94,20 +93,11 @@ def token_observations(
 def internal_recognize(
     capture: CapturedPage,
     plan: WorkPlan,
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> ObservationBatch:
     return ocr.internal_recognize_page_with_reserved_raster(capture, plan, context)
 
 
-@pytest.fixture
-def clear_tessdata_cache() -> Iterator[None]:
-    """Resolve tessdata afresh for the test and leave no stale memo behind."""
-    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
-    yield
-    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
-
-
-@pytest.mark.usefixtures("clear_tessdata_cache")
 def test_tessdata_prefix_takes_precedence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -120,7 +110,6 @@ def test_tessdata_prefix_takes_precedence(
     assert ocr_tesseract.internal_tessdata_path() == str(tessdata)
 
 
-@pytest.mark.usefixtures("clear_tessdata_cache")
 def test_invalid_tessdata_prefix_has_an_actionable_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -131,7 +120,6 @@ def test_invalid_tessdata_prefix_has_an_actionable_error(
         ocr_tesseract.internal_tessdata_path()
 
 
-@pytest.mark.usefixtures("clear_tessdata_cache")
 def test_tessdata_path_falls_back_to_tesseract_cli(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -154,30 +142,6 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
     )
 
     assert ocr_tesseract.internal_tessdata_path() == str(tessdata)
-
-
-def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A worker that builds its Tesseract API lazily pays the model load on the
-    first page it recognizes; prewarming moves that off the critical path."""
-    import threading
-
-    threads: list[str] = []
-    lock = threading.Lock()
-
-    def record(mode: int) -> object:
-        with lock:
-            threads.append(threading.current_thread().name)
-        return SimpleNamespace(SetPageSegMode=lambda internal_mode: None)
-
-    monkeypatch.setattr(ocr_tesseract, "internal_api", record)
-
-    ocr_tesseract.internal_prepare_ocr()
-
-    assert "MainThread" in threads
-    pooled = {name for name in threads if name != "MainThread"}
-    assert len(pooled) == ocr_tesseract.RUNTIME.max_workers
 
 
 def test_low_confidence_standalone_punctuation_is_rejected() -> None:

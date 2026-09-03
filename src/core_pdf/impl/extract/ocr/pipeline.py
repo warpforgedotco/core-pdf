@@ -12,7 +12,6 @@ from core_pdf.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
     HIDDEN_TEXT_VERIFY_PIXELS,
     MAX_OCR_PIXELS,
-    MAX_OCR_RASTER_BYTES,
     PSM_SPARSE_TEXT,
     CapturedPage,
     ObservationBatch,
@@ -58,19 +57,18 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_stroked_vector_text_raster,
 )
 from core_pdf.impl.extract.quality import internal_Candidate
-from core_pdf.impl.runtime.execution import TaskScope, WorkStage
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 
 def recognize_page(
     capture: CapturedPage,
     plan: WorkPlan,
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> RecognitionResult:
     if not plan.ocr_passes:
         return RecognitionResult(ObservationBatch.empty())
-    with context.reserve_raster(MAX_OCR_RASTER_BYTES):
-        context.raise_if_cancelled()
-        observations = internal_recognize_page_with_reserved_raster(capture, plan, context)
+    context.raise_if_cancelled()
+    observations = internal_recognize_page_with_reserved_raster(capture, plan, context)
     observations, alphabet = internal_recover_stroked_vector_text(capture, observations)
     return RecognitionResult(observations, stroked_vector_alphabet=alphabet)
 
@@ -78,7 +76,7 @@ def recognize_page(
 def internal_recognize_page_with_reserved_raster(
     capture: CapturedPage,
     plan: WorkPlan,
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> ObservationBatch:
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
@@ -97,7 +95,7 @@ def internal_recognize_page_with_reserved_raster(
 
     def recognize_batch(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
         groups = internal_ocr_task_groups(tasks)
-        results = context.map_ordered(internal_recognize_group, groups, stage=WorkStage.OCR)
+        results = map(internal_recognize_group, groups)
         return tuple(candidate for group in results for candidate in group)
 
     def recognize_tasks(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
