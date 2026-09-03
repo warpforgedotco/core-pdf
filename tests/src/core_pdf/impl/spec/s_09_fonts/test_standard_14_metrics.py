@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from tests.helpers.pdf_bytes import first_page_runs, one_page_pdf
 
@@ -87,3 +88,46 @@ def test_explicit_encoding_still_wins_for_type1() -> None:
     )
     assert decoder.base_encoding == "WinAnsiEncoding"
     assert decoder.decode(bytes([0xD0])) == "Ð"
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    [
+        ("Arial", "Helvetica"),
+        ("Arial,Bold", "Helvetica-Bold"),
+        ("Arial,BoldItalic", "Helvetica-BoldOblique"),
+        ("Arial,Italic", "Helvetica-Oblique"),
+        ("CourierNew", "Courier"),
+        ("CourierNew,Bold", "Courier-Bold"),
+        ("CourierNew,BoldItalic", "Courier-BoldOblique"),
+        ("CourierNew,Italic", "Courier-Oblique"),
+        ("TimesNewRoman", "Times-Roman"),
+        ("TimesNewRoman,Bold", "Times-Bold"),
+        ("TimesNewRoman,BoldItalic", "Times-BoldItalic"),
+        ("TimesNewRoman,Italic", "Times-Italic"),
+    ],
+)
+def test_metric_clones_lay_out_as_their_standard_14_record(alias: str, canonical: str) -> None:
+    """Arial, CourierNew and TimesNewRoman are metric clones of the fonts they
+    stand in for, so a PDF naming one must advance exactly as the Standard-14
+    font does. ``FONT_DATA`` shares one record between the pair rather than
+    holding two copies, and this pins the pairing that sharing encodes.
+    """
+    assert FONT_DATA[alias] is FONT_DATA[canonical]
+    text = b"Wij. 1"
+    assert run_width(one_line_pdf(alias.encode(), text)) == pytest.approx(
+        run_width(one_line_pdf(canonical.encode(), text)), abs=0.05
+    )
+
+
+def test_every_standard_14_name_carries_widths_and_props() -> None:
+    """Nine width tables are shared across the fourteen records; every name the
+    table exposes must still resolve to a complete entry.
+    """
+    assert len(FONT_DATA) == 26
+    assert len({id(entry) for entry in FONT_DATA.values()}) == 14
+    assert len({id(entry["widths"]) for entry in FONT_DATA.values()}) == 9
+    for name, entry in FONT_DATA.items():
+        assert entry["widths"], name
+        assert entry["props"]["FontName"], name
+        assert all(isinstance(width, int) for width in entry["widths"].values()), name
