@@ -10,7 +10,7 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.exceptions import PdfContractError, PdfDocumentClosedError
+from core_pdf.impl.exceptions import PdfDocumentClosedError
 from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf.impl.extract.pipeline import extract_page
 from core_pdf.impl.extract.selection import extract_document
@@ -33,7 +33,6 @@ from core_pdf.impl.records import (
 )
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import RUNTIME, TaskScope
 from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
@@ -55,14 +54,6 @@ class PdfPage(SpecPdfPage):
     def structured_view(self) -> Any:
         """Return this page's canonical high-level structured representation."""
         return self.extract()
-
-    def internal_cache(self) -> ExtractionCache:
-        cache = self.extraction_cache
-        if cache is None:
-            # The spec page always registers a cache at construction; a missing one
-            # would silently escape document-level invalidation, so fail loudly.
-            raise PdfContractError("page extraction cache was not initialized")
-        return cache
 
     def extract(self) -> Any:
         with self.document.acquire_operation() as operation:
@@ -106,13 +97,8 @@ class PdfPage(SpecPdfPage):
             return page_layout_geometry_summary(self.get_text_lines())
 
     def get_drawings(self) -> tuple[DrawingRecord, ...]:
-        cache_key = "page_drawing_records_v2"
         with self.internal_page_lock:
-            cache = self.internal_cache()
-            cached = cache.get_as(cache_key, tuple)
-            if cached is not None:
-                return cached
-            result = tuple(
+            return tuple(
                 DrawingRecord.from_captured(
                     drawing,
                     raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
@@ -122,8 +108,6 @@ class PdfPage(SpecPdfPage):
                 )
                 for drawing in self.get_page_program().drawings
             )
-            cache[cache_key] = result
-            return result
 
     def extract_images(
         self,
@@ -189,21 +173,8 @@ class PdfPage(SpecPdfPage):
 
     def render(self, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
-        key = (
-            "rendered_page_v2",
-            options.rotate,
-            options.crop,
-            options.include_text,
-            options.include_annotations,
-            options.include_layers,
-        )
         with self.internal_page_lock:
-            cache = self.internal_cache()
-            cached = cache.get(key)
-            if cached is None:
-                cached = compose_page(self, options, page_program=self.get_page_program())
-                cache[key] = cached
-            return cached
+            return compose_page(self, options, page_program=self.get_page_program())
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
