@@ -160,7 +160,6 @@ class Type1FontProgram:
         "font_matrix",
         "glyph_names",
         "glyph_name_to_id",
-        "internal_contour_cache",
         "subrs",
     )
 
@@ -202,7 +201,6 @@ class Type1FontProgram:
             if matrix_match is not None
             else (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
         )
-        self.internal_contour_cache: dict[str, tuple[tuple[Point, ...], ...]] = {}
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
         glyph_id = self.glyph_name_to_id.get(glyph_name)
@@ -248,9 +246,6 @@ class Type1FontProgram:
         return rasterize_contours(contours, width=width, height=height) if contours else ()
 
     def glyph_contours(self, glyph_name: str) -> tuple[tuple[Point, ...], ...]:
-        cached = self.internal_contour_cache.get(glyph_name)
-        if cached is not None:
-            return cached
         charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
         if charstring is None:
             return ()
@@ -258,13 +253,9 @@ class Type1FontProgram:
             pen = RecordingPen()
             charstring.draw(pen)
             contours = internal_recording_to_contours(pen.value)
-            result = transform_contours(contours, self.font_matrix)
+            return transform_contours(contours, self.font_matrix)
         except Exception:
-            result = ()
-        if len(self.internal_contour_cache) >= 512:
-            self.internal_contour_cache.pop(next(iter(self.internal_contour_cache)))
-        self.internal_contour_cache[glyph_name] = result
-        return result
+            return ()
 
 
 @lru_cache(maxsize=64)

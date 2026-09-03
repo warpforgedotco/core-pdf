@@ -42,20 +42,17 @@ def test_type1_cold_program_parse_benchmark(benchmark) -> None:
     data, length1 = internal_type1_data()
     program = benchmark(Type1FontProgram, data, length1=length1)
     assert program.charstrings
-    assert len(program.internal_contour_cache) == 0
 
 
 @pytest.mark.benchmark_high_impact
-def test_type1_cached_glyph_reuse_benchmark(benchmark) -> None:
+def test_type1_glyph_outline_benchmark(benchmark) -> None:
     data, length1 = internal_type1_data()
     program = Type1FontProgram(data, length1=length1)
     expected = program.glyph_contours("H")
     result = benchmark(program.glyph_contours, "H")
-    assert result is expected
-    assert len(program.internal_contour_cache) == 1
+    assert result == expected
 
 
 def test_cff2_cold_program_parse_benchmark(benchmark) -> None:
     program = benchmark(OpenTypeFontProgram, internal_cff2_data())
     assert program.glyph_id_for_name("A") is not None
-    assert len(program.internal_contour_cache) == 0
