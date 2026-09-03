@@ -1,4 +1,3 @@
-import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -17,8 +16,6 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            decoder_cache={},
-            internal_cache_lock=threading.RLock(),
             legacy_pdfminer_text_operators=False,
         ),
     )
@@ -55,8 +52,6 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            decoder_cache={},
-            internal_cache_lock=threading.RLock(),
             legacy_pdfminer_text_operators=False,
         ),
     )

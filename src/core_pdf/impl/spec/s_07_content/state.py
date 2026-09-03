@@ -27,7 +27,6 @@ from core_pdf.impl.model.glyphs import (
 )
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
-    MISSING,
     PdfName,
     PdfReference,
     PdfString,
@@ -233,9 +232,7 @@ class TextDocument(typing.Protocol):
     @property
     def resolver(self) -> TextResolver: ...
 
-    decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     image_cache: ImageCache
-    internal_cache_lock: Any
     raster_font_provider: Any
     legacy_pdfminer_text_operators: bool
 
@@ -1038,32 +1035,17 @@ class TextState:
                 self.update_font_metrics()
             return decoder
 
-        cache_key = (
-            (font_obj_ref.object_number, font_obj_ref.generation_number)
-            if isinstance(font_obj_ref, PdfReference)
-            else id(font_obj_ref)
+        font_dict = typing.cast(PdfDict, font_obj)
+        resolved_font = self.document.resolver.resolve_font_dict(font_dict)
+        decoder = FontDecoder(
+            typing.cast(dict[str, object], resolved_font),
+            ligature_overrides=detect_ligature_overrides(
+                self.document, self.resources, resolved_font
+            ),
+            raster_font_provider=self.document.raster_font_provider,
         )
-        doc_cache = self.document.decoder_cache
-        with self.document.internal_cache_lock:
-            cached_decoder = doc_cache.get(cache_key, MISSING)
-            if cached_decoder is not MISSING:
-                decoder = typing.cast("FontDecoder", cached_decoder)
-                self.current_decoder = decoder
-                self.current_decoder_resources_id = self.resources_id
-                return decoder
-
-            font_dict = typing.cast(PdfDict, font_obj)
-            resolved_font = self.document.resolver.resolve_font_dict(font_dict)
-            self.current_decoder = FontDecoder(
-                typing.cast(dict[str, object], resolved_font),
-                ligature_overrides=detect_ligature_overrides(
-                    self.document, self.resources, resolved_font
-                ),
-                raster_font_provider=self.document.raster_font_provider,
-            )
-            decoder = self.current_decoder
-            self.current_decoder_resources_id = self.resources_id
-            doc_cache[cache_key] = decoder
+        self.current_decoder = decoder
+        self.current_decoder_resources_id = self.resources_id
         if update_metrics:
             self.update_font_metrics()
         return decoder
