@@ -624,7 +624,10 @@ def decode_newstroke_drawings(drawings: tuple[Any, ...]) -> NewstrokeDecode:
         if first is None:
             position += 1
             continue
-        candidates: list[tuple[tuple[int, int, float], tuple[internal_Match, ...]]] = []
+        # Seeds come from a transform already learned for this style; only when
+        # none of those fit here is it worth fitting the robust templates from
+        # scratch. What happens to a seed afterwards is the same either way.
+        seeds: list[internal_Match] = []
         for transform in known_transforms.get(first.style, ()):
             seed = internal_fixed_match(
                 segments,
@@ -636,8 +639,18 @@ def decode_newstroke_drawings(drawings: tuple[Any, ...]) -> NewstrokeDecode:
                 point_data,
                 style_data,
             )
-            if seed is None:
-                continue
+            if seed is not None:
+                seeds.append(seed)
+        if not seeds:
+            for template in templates.robust:
+                size = len(template.segments)
+                if continuity[position : position + size - 1] != template.continuity:
+                    continue
+                seed = internal_fit_match(segments, position, template, point_data, style_data)
+                if seed is not None:
+                    seeds.append(seed)
+        candidates: list[tuple[tuple[int, int, float], tuple[internal_Match, ...]]] = []
+        for seed in seeds:
             decoded = internal_decode_around(
                 segments,
                 continuity,
@@ -651,27 +664,6 @@ def decode_newstroke_drawings(drawings: tuple[Any, ...]) -> NewstrokeDecode:
             candidates.append(
                 ((span, len(decoded), -sum(match.error for match in decoded)), decoded)
             )
-        if not candidates:
-            for template in templates.robust:
-                size = len(template.segments)
-                if continuity[position : position + size - 1] != template.continuity:
-                    continue
-                seed = internal_fit_match(segments, position, template, point_data, style_data)
-                if seed is None:
-                    continue
-                decoded = internal_decode_around(
-                    segments,
-                    continuity,
-                    templates,
-                    seed,
-                    available_start,
-                    point_data,
-                    style_data,
-                )
-                span = decoded[-1].stop - decoded[0].start
-                candidates.append(
-                    ((span, len(decoded), -sum(match.error for match in decoded)), decoded)
-                )
         if not candidates:
             position += 1
             continue
