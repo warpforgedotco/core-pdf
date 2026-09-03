@@ -386,10 +386,7 @@ class FontDecoder:
     is_vertical: bool
     ascent: float
     descent: float
-    fast_widths_cache: tuple[float, ...] | None
     glyph_cache: dict[bytes, DecodedGlyph]
-    glyph_bbox_cache: dict[int, Rectangle | None]
-    glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]]
     font_name: str | None
     glyph_decode_table: tuple[str, ...] | None
     glyph_decode_table_authoritative: bool
@@ -409,9 +406,6 @@ class FontDecoder:
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
         self.glyph_cache: dict[bytes, DecodedGlyph] = {}
-        self.fast_widths_cache = None
-        self.glyph_bbox_cache = {}
-        self.glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
         self.type3_glyph_names = None
         self.internal_initialize()
 
@@ -581,13 +575,9 @@ class FontDecoder:
 
     @property
     def fast_widths(self) -> tuple[float, ...]:
-        widths = self.fast_widths_cache
-        if widths is None:
-            widths = self.widths.fast_256(
-                self.internal_width_fallback, self.internal_space_width_fallback
-            )
-            self.fast_widths_cache = widths
-        return widths
+        return self.widths.fast_256(
+            self.internal_width_fallback, self.internal_space_width_fallback
+        )
 
     def parse_encoding(
         self, font: dict[str, Any]
@@ -1051,23 +1041,12 @@ class FontDecoder:
     def glyph_bbox(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
-        cache = self.glyph_bbox_cache
-        bbox = cache.get(code)
-        if bbox is not None:
-            return bbox
-        if code in cache:
-            return None
         program = self.font_program
         if program is None:
             width = self.glyph_width(code)
-            bbox = None if width <= 0 else (0.0, self.descent, width, self.ascent)
-        else:
-            glyph_id = self.glyph_id_for_code(code)
-            bbox = program.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
-        if len(cache) >= 4096:
-            cache.pop(next(iter(cache)))
-        cache[code] = bbox
-        return bbox
+            return None if width <= 0 else (0.0, self.descent, width, self.ascent)
+        glyph_id = self.glyph_id_for_code(code)
+        return program.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
 
     def vertical_glyph_metric(self, code: int) -> tuple[float, float, float]:
         """Return the explicit W2 metric or the DW2/width-derived fallback."""
@@ -1088,21 +1067,13 @@ class FontDecoder:
     def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         if code < 0:
             return ()
-        cache_key = (code, width, height)
-        cached = self.glyph_bitmap_cache.get(cache_key)
-        if cached is not None:
-            return cached
         glyph_id = self.glyph_id_for_code(code)
         program = self.font_program
-        bitmap = (
+        return (
             program.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
             if program is not None and glyph_id is not None
             else ()
         )
-        if len(self.glyph_bitmap_cache) >= 512:
-            self.glyph_bitmap_cache.pop(next(iter(self.glyph_bitmap_cache)))
-        self.glyph_bitmap_cache[cache_key] = bitmap
-        return bitmap
 
     def glyph_outline(
         self, code: int, gid: int | None = None, text: str = ""

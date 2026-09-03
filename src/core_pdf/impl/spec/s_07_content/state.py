@@ -1496,7 +1496,6 @@ class TextState:
         append_glyph = self.glyphs.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
-        glyph_bbox_cache = decoder.glyph_bbox_cache
         vertical_position = decoder.vertical_glyph_position
         vertical_metric = decoder.vertical_glyph_metric
         clusters = self.glyph_clusters
@@ -1712,10 +1711,7 @@ class TextState:
             if is_vertical:
                 glyph_bbox = None
             else:
-                glyph_code = glyph.bitmap_code
-                glyph_bbox = glyph_bbox_cache.get(glyph_code)
-                if glyph_bbox is None and glyph_code not in glyph_bbox_cache:
-                    glyph_bbox = glyph_bbox_for_code(glyph_code)
+                glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code)
             if (
                 axis_aligned_horizontal
                 and glyph_bbox is not None

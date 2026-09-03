@@ -263,7 +263,7 @@ def test_cid_font_decoder_reuses_glyphs_across_distinct_long_operands() -> None:
     assert all(glyph is first[0] for glyph in second if glyph.cid == ord("A"))
 
 
-def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
+def test_font_decoder_derives_cff_glyph_bboxes_directly() -> None:
     class FakeCFFFont(CFFFont):
         def __init__(self) -> None:
             self.bbox_calls: list[int] = []
@@ -284,7 +284,7 @@ def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None
     assert decoder.glyph_bbox(65) == (0.0, -2.0, 5.0, 8.0)
     assert decoder.glyph_bbox(66) is None
     assert decoder.glyph_bbox(66) is None
-    assert cff_font.bbox_calls == [7, 8]
+    assert cff_font.bbox_calls == [7, 7, 8, 8]
 
 
 @pytest.mark.parametrize(
