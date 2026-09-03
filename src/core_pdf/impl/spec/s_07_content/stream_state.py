@@ -16,9 +16,6 @@ if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
     from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 
-ResourceCategoryCache = dict[str, object]
-ResourceCache = dict[tuple[int, str], ResourceCategoryCache]
-ResolvedResourceCache = dict[tuple[int, str], object]
 StreamKey = tuple[str, int, int]
 # An entry records one Form XObject invocation. Either half can be absent --
 # a direct (non-reference) XObject has no stream key, and a form without a
@@ -77,8 +74,6 @@ class StreamState:
     compat_tj_cursor_x: float
     compat_tj_cursor_y: float
     xobject_depth: int
-    resource_cache: ResourceCache
-    resolved_resource_categories: ResolvedResourceCache
 
 
 @dataclass(slots=True)

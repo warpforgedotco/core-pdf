@@ -66,8 +66,6 @@ from core_pdf.impl.spec.s_07_content.stream_state import (
     STREAM_STATE_MIRRORED,
     ContentStreamFrame,
     LayoutFormId,
-    ResolvedResourceCache,
-    ResourceCache,
     StreamKey,
     StreamState,
 )
@@ -303,8 +301,6 @@ class TextState:
     queued_stream: ContentStreamFrame | None
     type3_uncolored: bool
     resources: PdfDict
-    resolved_resource_categories: ResolvedResourceCache
-    resource_cache: ResourceCache
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     decoder_memo: dict[tuple[int, str | None], FontDecoder]
     kw_cache: dict[bytes, object]
@@ -401,8 +397,6 @@ class TextState:
         "resources",
         "resources_id",
         "hidden_layers",
-        "resolved_resource_categories",
-        "resource_cache",
         "image_cache",
         "decoder_cache",
         "decoder_memo",
@@ -545,7 +539,6 @@ class TextState:
         self.resources = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
-        self.resolved_resource_categories = {}
         # Image XObjects can be referenced by multiple pages. Keep their lazy
         # decoders document-scoped so expensive JPEG2000/JBIG2 work is shared.
         image_cache = getattr(document, "image_cache", None)
@@ -554,7 +547,6 @@ class TextState:
             with contextlib.suppress(AttributeError):
                 document.image_cache = image_cache
         self.image_cache = image_cache
-        self.resource_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.decoder_memo = {}
         self.kw_cache = self.document.resolver.kw_cache
@@ -904,48 +896,25 @@ class TextState:
     def lookup_page_resource(
         self, category: str, name: str, parent_category: str | None = None
     ) -> object:
-
-        cache_key = (self.resources_id, category)
-        cat_cache = self.resource_cache.get(cache_key)
-        if cat_cache is None:
-            self.resource_cache[cache_key] = cat_cache = {}
-        else:
-            res = cat_cache.get(name, MISSING)
-            if res is not MISSING:
-                return res
-
-        category_res = self.resolved_resource_categories.get(cache_key, MISSING)
-        if category_res is MISSING:
-            raw_category = self.resources.get(category)
-            category_res = (
-                self.document.resolver.resolve_dict(raw_category)
-                if raw_category is not None
-                else None
-            )
-            self.resolved_resource_categories[cache_key] = category_res
+        raw_category = self.resources.get(category)
+        category_res = (
+            self.document.resolver.resolve_dict(raw_category) if raw_category is not None else None
+        )
 
         if isinstance(category_res, dict):
             res = category_res.get(name)
             if res is not None:
-                resolved = self.document.resolver.resolve(res)
-                cat_cache[name] = resolved
-                return resolved
+                return self.document.resolver.resolve(res)
 
         if parent_category:
-            parent_key = (self.resources_id, parent_category)
-            parent_res = self.resolved_resource_categories.get(parent_key, MISSING)
-            if parent_res is MISSING:
-                raw_parent = self.resources.get(parent_category)
-                parent_res = (
-                    self.document.resolver.resolve_dict(raw_parent)
-                    if raw_parent is not None
-                    else None
-                )
-                self.resolved_resource_categories[parent_key] = parent_res
+            raw_parent = self.resources.get(parent_category)
+            parent_res = (
+                self.document.resolver.resolve_dict(raw_parent) if raw_parent is not None else None
+            )
 
             if isinstance(parent_res, dict):
-                sub_res_dict = None
                 for p_val in parent_res.values():
+                    sub_res_dict = None
                     if isinstance(p_val, dict):
                         sub_res_dict = p_val.get("Resources")
                     if isinstance(sub_res_dict, dict):
@@ -953,11 +922,8 @@ class TextState:
                         if isinstance(sub_cat, dict):
                             found = sub_cat.get(name)
                             if found is not None:
-                                resolved = self.document.resolver.resolve(found)
-                                cat_cache[name] = resolved
-                                return resolved
+                                return self.document.resolver.resolve(found)
 
-        cat_cache[name] = None
         return None
 
     def chunk_advance(
