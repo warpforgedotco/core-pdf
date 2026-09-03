@@ -103,7 +103,7 @@ def test_standard_glyph_names_resolve_to_their_charset_glyph(name: str, sid: int
     assert font.glyph_id_for_name(name) == 7
 
 
-def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
+def test_cff_geometry_is_derived_for_bbox_feature_and_bitmap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     charstring = bytes([239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 14])
@@ -142,7 +142,7 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
     assert font.glyph_feature(0).contours == 1
     assert font.glyph_bitmap_for_gid(0, width=4, height=4)
     assert font.normalized_glyph_contours(0) == font.glyph_contours_for_gid(0)
-    assert calls == 1
+    assert calls == 5
 
 
 def internal_type2_number(value: int) -> bytes:

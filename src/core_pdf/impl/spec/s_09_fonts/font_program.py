@@ -131,8 +131,6 @@ class CFFFont:
         "local_subrs",
         "fd_select",
         "font_dicts",
-        "internal_font_matrix_cache",
-        "internal_glyph_geometry_cache",
     )
 
     def __init__(self, data: bytes | memoryview | None) -> None:
@@ -147,14 +145,6 @@ class CFFFont:
             self.local_subrs: tuple[tuple[bytes, ...], ...] = ()
             self.fd_select: tuple[int, ...] = ()
             self.font_dicts: tuple[dict[int | tuple[int, int], list[float]], ...] = ()
-            self.internal_font_matrix_cache: dict[int, CFFMatrix] = {}
-            self.internal_glyph_geometry_cache: dict[
-                int,
-                tuple[
-                    tuple[tuple[tuple[float, float], ...], ...],
-                    tuple[float, float, float, float] | None,
-                ],
-            ] = {}
             return
         # Keep a caller-owned read-only view when one is provided.  INDEX
         # entries are still materialized as bytes below because they escape
@@ -188,8 +178,6 @@ class CFFFont:
         self.fd_select = self.internal_read_fd_select()
         self.font_dicts = self.internal_read_font_dicts()
         self.local_subrs = self.internal_read_local_subrs()
-        self.internal_font_matrix_cache = {}
-        self.internal_glyph_geometry_cache = {}
 
     def internal_read_index(self, pos: int) -> tuple[list[bytes], int]:
         data = memoryview(self.data)
@@ -629,22 +617,16 @@ class CFFFont:
         return ()
 
     def internal_font_matrix(self, glyph_id: int) -> CFFMatrix:
-        """Effective font matrix for a glyph, memoized per font dictionary index."""
+        """Return the effective font matrix for a glyph."""
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
-        cached = self.internal_font_matrix_cache.get(fd_index)
-        if cached is not None:
-            return cached
         top_matrix = internal_cff_font_matrix(self.top_dict)
         font_dict = self.font_dicts[fd_index] if 0 <= fd_index < len(self.font_dicts) else None
         font_dict_matrix = internal_cff_font_matrix(font_dict) if font_dict is not None else None
         if top_matrix is None:
-            matrix = font_dict_matrix or internal_DEFAULT_CFF_FONT_MATRIX
-        elif font_dict_matrix is None:
-            matrix = top_matrix
-        else:
-            matrix = internal_compose_cff_matrices(top_matrix, font_dict_matrix)
-        self.internal_font_matrix_cache[fd_index] = matrix
-        return matrix
+            return font_dict_matrix or internal_DEFAULT_CFF_FONT_MATRIX
+        if font_dict_matrix is None:
+            return top_matrix
+        return internal_compose_cff_matrices(top_matrix, font_dict_matrix)
 
     def internal_seac_contours(
         self,
@@ -684,35 +666,22 @@ class CFFFont:
         tuple[tuple[tuple[float, float], ...], ...],
         tuple[float, float, float, float] | None,
     ]:
-        cached = self.internal_glyph_geometry_cache.get(glyph_id)
-        if cached is not None:
-            return cached
-        geometry: tuple[
-            tuple[tuple[tuple[float, float], ...], ...],
-            tuple[float, float, float, float] | None,
-        ]
         try:
             charstring = self.charstrings[glyph_id]
         except IndexError:
-            geometry = ((), None)
-        else:
-            contours, raw_bbox = internal_type2_glyph_geometry_impl(
-                charstring,
-                local_subrs=self.local_subrs_for_glyph(glyph_id),
-                global_subrs=self.global_subrs,
-                seac_resolver=self.internal_seac_contours,
-            )
-            matrix = self.internal_font_matrix(glyph_id)
-            if matrix == internal_DEFAULT_CFF_FONT_MATRIX:
-                # The interpreter tracked the bounds of exactly these points.
-                geometry = (tuple(tuple(contour) for contour in contours), raw_bbox)
-            else:
-                normalized = transform_contours(contours, matrix)
-                geometry = (normalized, internal_contours_bbox(normalized))
-        if len(self.internal_glyph_geometry_cache) >= 512:
-            self.internal_glyph_geometry_cache.pop(next(iter(self.internal_glyph_geometry_cache)))
-        self.internal_glyph_geometry_cache[glyph_id] = geometry
-        return geometry
+            return ((), None)
+        contours, raw_bbox = internal_type2_glyph_geometry_impl(
+            charstring,
+            local_subrs=self.local_subrs_for_glyph(glyph_id),
+            global_subrs=self.global_subrs,
+            seac_resolver=self.internal_seac_contours,
+        )
+        matrix = self.internal_font_matrix(glyph_id)
+        if matrix == internal_DEFAULT_CFF_FONT_MATRIX:
+            # The interpreter tracked the bounds of exactly these points.
+            return (tuple(tuple(contour) for contour in contours), raw_bbox)
+        normalized = transform_contours(contours, matrix)
+        return (normalized, internal_contours_bbox(normalized))
 
     def glyph_feature(self, glyph_id: int) -> CFFGlyphFeature:
         geometry = self.internal_glyph_geometry_for_gid(glyph_id)
