@@ -6,7 +6,6 @@ Holds the graphics and text state, the operator handlers, and glyph emission.
 
 from __future__ import annotations
 
-import contextlib
 import typing
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
@@ -30,7 +29,6 @@ from core_pdf.impl.primitives import (
     PdfReference,
     PdfString,
 )
-from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -187,7 +185,6 @@ class TextDocument(typing.Protocol):
     @property
     def resolver(self) -> PdfValueResolver: ...
 
-    image_cache: ImageCache
     raster_font_provider: Any
     legacy_pdfminer_text_operators: bool
 
@@ -346,7 +343,6 @@ class TextState:
         "resources",
         "resources_id",
         "hidden_layers",
-        "image_cache",
         "pending_line_break",
         "pending_run",
         "compat_tj_active",
@@ -482,14 +478,6 @@ class TextState:
         self.resources = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
-        # Image XObjects can be referenced by multiple pages. Keep their lazy
-        # decoders document-scoped so expensive JPEG2000/JBIG2 work is shared.
-        image_cache = getattr(document, "image_cache", None)
-        if image_cache is None:
-            image_cache = ImageCache()
-            with contextlib.suppress(AttributeError):
-                document.image_cache = image_cache
-        self.image_cache = image_cache
         self.pending_line_break = False
         self.pending_run = None
         self.compat_tj_active = False
@@ -1083,7 +1071,6 @@ class TextState:
                         soft_mask_alpha=smask_alpha,
                         kind="image",
                         image_source=self.internal_image_source(
-                            stream_key or ("object", id(xobj)),
                             getattr(xobj, "raw_data", b""),
                             source_dictionary,
                             soft_mask=soft_mask,
@@ -2729,7 +2716,7 @@ class TextState:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             data = getattr(image, "data", b"")
-            source = self.internal_image_source(self.sequence, data, dictionary, prefix="inline")
+            source = self.internal_image_source(data, dictionary)
             self.inline_images.append(
                 CapturedInlineImage(
                     seqno=self.sequence,
@@ -2760,19 +2747,15 @@ class TextState:
 
     def internal_image_source(
         self,
-        key: object,
         raw: bytes | memoryview,
         dictionary: dict[Any, Any],
         *,
         soft_mask: SoftMask | None = None,
-        prefix: str = "xobject",
     ) -> ImageSource:
         return ImageSource(
             raw,
             dictionary,
             soft_mask=soft_mask,
-            cache=self.image_cache,
-            cache_key=(prefix, key),
         )
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:

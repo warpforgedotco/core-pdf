@@ -10,7 +10,6 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.runtime.array_views import readonly
-from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.pipeline import (
@@ -123,8 +122,6 @@ class ImageSource:
         "internal_lock",
         "internal_prepared",
         "internal_prepared_once",
-        "cache",
-        "cache_key",
     )
 
     def __init__(
@@ -133,8 +130,6 @@ class ImageSource:
         dictionary: dict[Any, Any],
         *,
         soft_mask: SoftMask | None = None,
-        cache: ImageCache | None = None,
-        cache_key: tuple[object, ...] = (),
     ) -> None:
         self.raw = raw
         self.dictionary = dictionary
@@ -142,15 +137,9 @@ class ImageSource:
         self.internal_lock = threading.Lock()
         self.internal_prepared: PreparedImage | None = None
         self.internal_prepared_once = False
-        self.cache = cache
-        self.cache_key = cache_key
 
     def prepare(self) -> PreparedImage | None:
-        """Return the immutable prepared image, decoding at most once per cache key."""
-        if self.cache is not None:
-            key = ImageCacheKey("prepared-image", self.cache_key or (id(self),))
-            value = self.cache.get_or_create(key, self.internal_prepare)
-            return value if isinstance(value, PreparedImage) else None
+        """Return the immutable prepared image, decoding this source at most once."""
         if self.internal_prepared_once:
             return self.internal_prepared
         with self.internal_lock:

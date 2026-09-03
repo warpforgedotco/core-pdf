@@ -20,7 +20,6 @@ from core_pdf.impl.exceptions import (
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
 from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
@@ -111,7 +110,6 @@ class PdfDocument(
         "acroform_cache",
         "fields_cache",
         "fields_by_page_cache",
-        "image_cache",
         "inherited_values_cache",
         "page_labels_cache",
         "page_extraction_caches",
@@ -147,7 +145,6 @@ class PdfDocument(
     acroform_cache: PdfDict | None | MissingObject
     fields_cache: list[RawFormField] | None
     fields_by_page_cache: dict[int, list[RawFormField]] | None
-    image_cache: ImageCache
     inherited_values_cache: InheritedValuesCache
     page_labels_cache: list[str] | None | MissingObject
     page_extraction_caches: dict[int, ExtractionCache] | None
@@ -348,7 +345,6 @@ class PdfDocument(
         return self.xref_was_recovered or self.page_tree_was_recovered
 
     def _initialize_document_caches(self) -> None:
-        self.image_cache = ImageCache()
         self.inherited_values_cache = {}
         self._clear_document_caches()
 
@@ -370,7 +366,6 @@ class PdfDocument(
         self.mark_info_cache = MISSING
         self.acroform_cache = MISSING
         self.page_labels_cache = MISSING
-        self.image_cache.clear()
         self.inherited_values_cache.clear()
 
     # Source loading and security
