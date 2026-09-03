@@ -331,7 +331,6 @@ class PdfPage:
                 self.document,
                 self.page_dict,
                 hidden_layers=self.document.oc_hidden_layers(),
-                decoder_cache=self.document.decoder_cache,
                 page_clip=self.effective_page_clip(),
             )
             self.consume_contents(state)

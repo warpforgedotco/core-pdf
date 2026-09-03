@@ -635,7 +635,6 @@ def compose_page(
         state = TextState(
             page.document,
             getattr(page, "page_dict", {}),
-            decoder_cache=getattr(page.document, "decoder_cache", {}),
         )
         resources = (
             page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.cached_resources
