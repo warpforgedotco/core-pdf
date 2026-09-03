@@ -14,19 +14,22 @@ bounding box clears ten pixels, which only happens at OCR scales.
 
 from __future__ import annotations
 
+import functools
 import math
 import zlib
-from pathlib import Path
+from collections.abc import Iterator
 
 import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.parse.model import PRIMARY_OCR_PIXELS
-from core_pdf.impl.render.display import DisplayList, ImagePaintItem, RenderOptions
+from core_pdf.impl.extract.contracts import PRIMARY_OCR_PIXELS
+from core_pdf.impl.render.display import DisplayList
+from core_pdf.impl.render.model import ImagePaintItem, RenderOptions
 from core_pdf.impl.render.page import RenderedPage, compose_page
+from core_pdf.impl.spec.s_08_graphics.image_decode import SoftMask
+from tests.helpers.paths import FIXTURES
 
-FIXTURES = Path(__file__).parents[5] / "fixtures"
 TEXT_PDF = FIXTURES / "pypdf" / "resources" / "crazyones.pdf"
 VECTOR_PDF = FIXTURES / "pypdf" / "resources" / "GeoBase_NHNC1_Data_Model_UML_EN.pdf"
 
@@ -36,18 +39,26 @@ IMAGE_HEIGHT = 256
 SOFT_MASK_WIDTH = IMAGE_WIDTH * 2
 SOFT_MASK_HEIGHT = IMAGE_HEIGHT * 2
 
-internal_image_x = numpy.arange(IMAGE_WIDTH, dtype=numpy.uint16)[None, :]
-internal_image_y = numpy.arange(IMAGE_HEIGHT, dtype=numpy.uint16)[:, None]
-internal_IMAGE_SAMPLES = numpy.empty((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=numpy.uint8)
-internal_IMAGE_SAMPLES[:, :, 0] = (internal_image_x + internal_image_y) % 256
-internal_IMAGE_SAMPLES[:, :, 1] = (internal_image_x * 3) % 256
-internal_IMAGE_SAMPLES[:, :, 2] = (internal_image_y * 5) % 256
-internal_IMAGE_RAW = zlib.compress(internal_IMAGE_SAMPLES.tobytes())
-internal_SOFT_MASK = numpy.tile(
-    numpy.arange(SOFT_MASK_WIDTH, dtype=numpy.uint16) % 256,
-    (SOFT_MASK_HEIGHT, 1),
-).astype(numpy.uint8)
-internal_SOFT_MASK_RAW = zlib.compress(internal_SOFT_MASK.tobytes())
+
+@functools.cache
+def internal_image_raw() -> bytes:
+    """Flate-encoded RGB samples, synthesised on first use rather than at import."""
+    image_x = numpy.arange(IMAGE_WIDTH, dtype=numpy.uint16)[None, :]
+    image_y = numpy.arange(IMAGE_HEIGHT, dtype=numpy.uint16)[:, None]
+    samples = numpy.empty((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=numpy.uint8)
+    samples[:, :, 0] = (image_x + image_y) % 256
+    samples[:, :, 1] = (image_x * 3) % 256
+    samples[:, :, 2] = (image_y * 5) % 256
+    return zlib.compress(samples.tobytes())
+
+
+@functools.cache
+def internal_soft_mask_raw() -> bytes:
+    soft_mask = numpy.tile(
+        numpy.arange(SOFT_MASK_WIDTH, dtype=numpy.uint16) % 256,
+        (SOFT_MASK_HEIGHT, 1),
+    ).astype(numpy.uint8)
+    return zlib.compress(soft_mask.tobytes())
 
 
 def internal_ocr_scale(page) -> float:
@@ -73,25 +84,27 @@ def internal_image_page(*, soft_mask: bool = False) -> RenderedPage:
         "ColorSpace": "DeviceRGB",
         "BitsPerComponent": 8,
     }
-    if soft_mask:
-        dictionary.update(
+    mask = (
+        SoftMask(
+            internal_soft_mask_raw(),
             {
-                "__soft_mask_raw_data__": internal_SOFT_MASK_RAW,
-                "__soft_mask_dictionary__": {
-                    "Filter": "FlateDecode",
-                    "Width": SOFT_MASK_WIDTH,
-                    "Height": SOFT_MASK_HEIGHT,
-                    "ColorSpace": "DeviceGray",
-                    "BitsPerComponent": 8,
-                },
-            }
+                "Filter": "FlateDecode",
+                "Width": SOFT_MASK_WIDTH,
+                "Height": SOFT_MASK_HEIGHT,
+                "ColorSpace": "DeviceGray",
+                "BitsPerComponent": 8,
+            },
         )
+        if soft_mask
+        else None
+    )
     display_list = DisplayList(width=IMAGE_WIDTH, height=IMAGE_HEIGHT)
     display_list.append(
         "image",
         1,
-        raw_data=internal_IMAGE_RAW,
+        raw_data=internal_image_raw(),
         dictionary=dictionary,
+        soft_mask=mask,
         bbox=(0, 0, IMAGE_WIDTH, IMAGE_HEIGHT),
         items=[
             (
@@ -118,37 +131,39 @@ def internal_cold_image_rasterize() -> object:
     return internal_rasterize(internal_image_page(), 1.0)
 
 
-@pytest.mark.benchmark_high_impact
-def test_compose_text_page_benchmark(benchmark) -> None:
-    """Display-list construction, which the OCR path pays once per page."""
+@pytest.fixture(scope="module")
+def text_page() -> Iterator[tuple[object, RenderedPage]]:
+    """The text page opened and composed once for the three text benchmarks."""
     with PdfDocument.open(TEXT_PDF) as document:
         page = document.pages[0]
         page.get_page_program()  # warm stream, font, and decoder caches
-        rendered = benchmark(compose_page, page, RenderOptions(include_text=True))
-        assert rendered.width > 0
-        assert rendered.height > 0
+        yield page, compose_page(page, RenderOptions(include_text=True))
 
 
 @pytest.mark.benchmark_high_impact
-def test_rasterize_text_page_at_ocr_scale_benchmark(benchmark) -> None:
+def test_compose_text_page_benchmark(benchmark, text_page) -> None:
+    """Display-list construction, which the OCR path pays once per page."""
+    page, _ = text_page
+    rendered = benchmark(compose_page, page, RenderOptions(include_text=True))
+    assert rendered.width > 0
+    assert rendered.height > 0
+
+
+@pytest.mark.benchmark_high_impact
+def test_rasterize_text_page_at_ocr_scale_benchmark(benchmark, text_page) -> None:
     """The hot path: painting a text page at the OCR primary budget."""
-    with PdfDocument.open(TEXT_PDF) as document:
-        page = document.pages[0]
-        rendered = compose_page(page, RenderOptions(include_text=True))
-        scale = internal_ocr_scale(page)
-        raster = benchmark(internal_rasterize, rendered, scale)
-        assert raster.width * raster.height <= PRIMARY_OCR_PIXELS
-        assert raster.channels == 4
+    page, rendered = text_page
+    raster = benchmark(internal_rasterize, rendered, internal_ocr_scale(page))
+    assert raster.width * raster.height <= PRIMARY_OCR_PIXELS
+    assert raster.channels == 4
 
 
 @pytest.mark.benchmark_high_impact
-def test_rasterize_text_page_at_screen_scale_benchmark(benchmark) -> None:
+def test_rasterize_text_page_at_screen_scale_benchmark(benchmark, text_page) -> None:
     """The same page at 72 DPI, where every fill takes the analytic coverage path."""
-    with PdfDocument.open(TEXT_PDF) as document:
-        page = document.pages[0]
-        rendered = compose_page(page, RenderOptions(include_text=True))
-        raster = benchmark(internal_rasterize, rendered, 1.0)
-        assert raster.channels == 4
+    _, rendered = text_page
+    raster = benchmark(internal_rasterize, rendered, 1.0)
+    assert raster.channels == 4
 
 
 @pytest.mark.benchmark_high_impact

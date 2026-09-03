@@ -1,3 +1,4 @@
+from contextlib import closing
 from typing import cast
 
 import pytest
@@ -39,68 +40,76 @@ def test_finds_header_from_sliced_memoryview_without_full_source_buffer() -> Non
 
 
 def test_sparse_high_object_numbers_use_dictionary_caches() -> None:
-    resolver = ObjectResolver(
-        b"",
-        {key_for(999_999): PdfXRefEntry(offset=0)},
-        {},
-    )
-    try:
+    with closing(
+        ObjectResolver(
+            b"",
+            {key_for(999_999): PdfXRefEntry(offset=0)},
+            {},
+        )
+    ) as resolver:
         assert resolver.objects_gen0 is None
         assert resolver.xref_gen0 is None
-    finally:
-        resolver.close()
 
 
 def test_dense_generation_zero_xref_uses_array_caches() -> None:
     xref = {key_for(object_number): PdfXRefEntry(offset=0) for object_number in range(5_000)}
-    resolver = ObjectResolver(b"", xref, {})
-    try:
+    with closing(ObjectResolver(b"", xref, {})) as resolver:
         assert resolver.objects_gen0 is not None
         assert resolver.xref_gen0 is not None
         assert len(resolver.objects_gen0) == 5_000
-    finally:
-        resolver.close()
 
 
 def test_deep_cache_verifies_source_identity() -> None:
-    resolver = ObjectResolver(b"", {}, {})
-    source: list[object] = []
-    unrelated: list[object] = []
-    resolver.deep_cache[id(source)] = (unrelated, ["stale"])
-    try:
+    with closing(ObjectResolver(b"", {}, {})) as resolver:
+        source: list[object] = []
+        unrelated: list[object] = []
+        resolver.deep_cache[id(source)] = (unrelated, ["stale"])
         assert resolver.deep_resolve(source) is source
         assert resolver.deep_cache[id(source)] == (source, source)
-    finally:
-        resolver.close()
+
+
+def test_deep_resolve_terminates_on_a_cyclic_reference_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A damaged file can encode 1 0 R -> 2 0 R -> 1 0 R.
+
+    deep_resolve used to recurse into itself for a PdfReference while only ever
+    recording container ids in ``seen``, so such a chain ran to RecursionError.
+    """
+    with closing(ObjectResolver(b"", {}, {})) as resolver:
+        monkeypatch.setattr(
+            type(resolver),
+            "resolve",
+            lambda self, ref: (
+                PdfReference(2, 0)
+                if type(ref) is PdfReference and ref.object_number == 1
+                else PdfReference(1, 0)
+                if type(ref) is PdfReference
+                else ref
+            ),
+        )
+        assert resolver.deep_resolve(PdfReference(1, 0)) == PdfReference(1, 0)
 
 
 def test_resolve_str_does_not_expand_composite_object_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    resolver = ObjectResolver(b"", {}, {})
-
     def internal_reject_deep_resolution(*args: object) -> object:
         del args
         raise AssertionError("composite value was deep-resolved")
 
     monkeypatch.setattr(ObjectResolver, "deep_resolve", internal_reject_deep_resolution)
-    try:
+    with closing(ObjectResolver(b"", {}, {})) as resolver:
         assert resolver.resolve_str([PdfReference(1), "XYZ"]) is None
         assert resolver.resolve_str(PdfString(b"https://example.invalid")) == (
             "https://example.invalid"
         )
-    finally:
-        resolver.close()
 
 
 def test_resolves_demanded_object_missing_from_damaged_xref() -> None:
     data = b"%PDF-1.7\n154 0 obj\n<< /Type /Font >>\nendobj\n"
-    resolver = ObjectResolver(data, {}, {}, recover_missing=True)
-
-    try:
+    with closing(ObjectResolver(data, {}, {}, recover_missing=True)) as resolver:
         resolved = resolver.resolve(PdfReference(154))
-    finally:
-        resolver.close()
 
     assert isinstance(resolved, dict)
     assert str(cast(PdfDict, resolved)["Type"]) == "Font"
@@ -128,13 +137,9 @@ def test_object_missing_from_damaged_object_stream_resolves_to_none() -> None:
         key_for(6, 0): PdfXRefEntry(0, object_stream=5, index_in_stream=0),
         key_for(7, 0): PdfXRefEntry(0, object_stream=5, index_in_stream=1),
     }
-    resolver = ObjectResolver(data, xref, {})
-
-    try:
+    with closing(ObjectResolver(data, xref, {})) as resolver:
         present = resolver.resolve(PdfReference(6))
         missing = resolver.resolve(PdfReference(7))
-    finally:
-        resolver.close()
 
     assert isinstance(present, dict)
     assert str(cast(PdfDict, present)["Type"]) == "Font"
@@ -153,15 +158,14 @@ def test_damaged_xref_recovery_does_not_swallow_unsupported_security_error() -> 
         del object_number, generation_number, value, dictionary
         raise PdfUnsupportedError("unsupported security configuration")
 
-    resolver = ObjectResolver(
-        data,
-        {},
-        {},
-        decipher=internal_reject_decipher,
-        recover_missing=True,
-    )
-    try:
+    with closing(
+        ObjectResolver(
+            data,
+            {},
+            {},
+            decipher=internal_reject_decipher,
+            recover_missing=True,
+        )
+    ) as resolver:
         with pytest.raises(PdfUnsupportedError, match="unsupported security configuration"):
             resolver.resolve(PdfReference(1))
-    finally:
-        resolver.close()

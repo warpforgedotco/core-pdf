@@ -9,33 +9,13 @@ the stream behind the clip.
 
 from __future__ import annotations
 
-import io
-
-from core_pdf import PdfDocument
-
-
-def assemble(objects: list[bytes]) -> bytes:
-    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = []
-    for number, obj in enumerate(objects, start=1):
-        offsets.append(len(pdf))
-        pdf.extend(f"{number} 0 obj\n".encode())
-        pdf.extend(obj)
-        pdf.extend(b"\nendobj\n")
-    xref_offset = len(pdf)
-    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode())
-    pdf.extend(b"0000000000 65535 f \n")
-    for offset in offsets:
-        pdf.extend(f"{offset:010d} 00000 n \n".encode())
-    pdf.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-        f"startxref\n{xref_offset}\n%%EOF\n".encode()
-    )
-    return bytes(pdf)
-
-
-def stream_obj(data: bytes, extra: bytes = b"") -> bytes:
-    return f"<< /Length {len(data)} {extra.decode()} >>\nstream\n".encode() + data + b"\nendstream"
+from tests.helpers.pdf_bytes import (
+    assemble_pdf,
+    first_page_runs,
+    one_page_pdf,
+    open_pdf,
+    stream_obj,
+)
 
 
 def form_xobject_pdf() -> bytes:
@@ -45,7 +25,7 @@ def form_xobject_pdf() -> bytes:
         b"BT /F1 12 Tf 10 200 Td (OutsideTheBox) Tj ET\n"
     )
     content = b"q 1 0 0 1 100 100 cm /Fm1 Do Q\n"
-    return assemble(
+    return assemble_pdf(
         [
             b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -69,16 +49,7 @@ def off_page_pdf() -> bytes:
         b"BT /F1 12 Tf 50 1400 Td (AbovePageTop) Tj ET\n"
         b"BT /F1 12 Tf 50 -300 Td (BelowPageBottom) Tj ET\n"
     )
-    return assemble(
-        [
-            b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-            stream_obj(content),
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        ]
-    )
+    return one_page_pdf(content)
 
 
 def clip_path_pdf() -> bytes:
@@ -90,16 +61,7 @@ def clip_path_pdf() -> bytes:
         b"Q\n"
         b"BT /F1 12 Tf 20 600 Td (AfterClipRestored) Tj ET\n"
     )
-    return assemble(
-        [
-            b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-            stream_obj(content),
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        ]
-    )
+    return one_page_pdf(content)
 
 
 def cropbox_pdf() -> bytes:
@@ -108,22 +70,11 @@ def cropbox_pdf() -> bytes:
         b"BT /F1 12 Tf 50 200 Td (InsideCropBox) Tj ET\n"
         b"BT /F1 12 Tf 50 700 Td (OutsideCropBox) Tj ET\n"
     )
-    return assemble(
-        [
-            b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/CropBox [0 0 612 400] "
-            b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-            stream_obj(content),
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        ]
-    )
+    return one_page_pdf(content, page_extra=b"/CropBox [0 0 612 400]")
 
 
 def page_text(data: bytes) -> str:
-    with PdfDocument.open(io.BytesIO(data)) as document:
-        return "".join(run.text for run in document.pages[0].text_diagnostics().runs)
+    return "".join(run.text for run in first_page_runs(data))
 
 
 def test_form_xobject_bbox_clips_the_text_it_excludes() -> None:
@@ -154,7 +105,7 @@ def test_cropbox_narrows_the_page_clip() -> None:
 
 
 def test_effective_page_clip_intersects_cropbox_with_mediabox() -> None:
-    with PdfDocument.open(io.BytesIO(cropbox_pdf())) as document:
+    with open_pdf(cropbox_pdf()) as document:
         assert document.pages[0].effective_page_clip() == (0.0, 0.0, 612.0, 400.0)
-    with PdfDocument.open(io.BytesIO(off_page_pdf())) as document:
+    with open_pdf(off_page_pdf()) as document:
         assert document.pages[0].effective_page_clip() == (0.0, 0.0, 612.0, 792.0)

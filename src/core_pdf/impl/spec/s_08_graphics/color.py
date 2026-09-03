@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Any, TypeAlias, cast
 
 import numpy
 
-from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
+from core_pdf.impl.runtime.array_views import ByteBuffer, readonly, uint8_view
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
@@ -31,9 +31,8 @@ from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples as internal_native_unpack_subbyte_image_samples,
 )
 from core_pdf.impl.spec.s_08_graphics.color_math import (
-    adapt_d50_to_d65,
+    d50_xyz_to_srgb,
     lab_to_xyz,
-    xyz_to_srgb,
 )
 from core_pdf.impl.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
@@ -46,10 +45,7 @@ from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_floats_to_srgb,
     internal_component_byte,
 )
-from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
-    IccProfileError,
-    parse_icc_transform,
-)
+from core_pdf.impl.spec.s_08_graphics.shading import internal_compile_pdf_function
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
@@ -206,6 +202,37 @@ internal_separation_lut_cache: dict[
 ] = {}
 
 
+def internal_tint_components_evaluator(
+    tint_fn: object, error: str
+) -> Callable[[float], ColorComponents]:
+    """One-input tint transform as a callable, whatever form it arrived in.
+
+    Mirrors internal_evaluate_tint, which the *operand* path already uses, so a
+    Separation renders the same as a fill colour and as image samples. Before
+    this, a FunctionType 2 or 3 tint -- a plain dictionary, and the simplest
+    form the spec allows -- fell through to the identity and then failed the
+    component-count check, and image_decode swallowed that ValueError as if it
+    were a malformed ICCBased reference.
+    """
+    if tint_fn is None:
+        return lambda value: [value]
+    if isinstance(tint_fn, (list, tuple)):
+        if tint_fn and callable(tint_fn[0]):
+            tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
+
+            def call_python(value: float) -> ColorComponents:
+                try:
+                    return cast(ColorComponents, tint_callable(value))
+                except Exception as exc:
+                    raise ValueError(error) from exc
+
+            return call_python
+        constant = cast(ColorComponents, list(tint_fn))
+        return lambda value: constant
+    compiled = internal_compile_pdf_function(tint_fn)
+    return lambda value: list(compiled(value))
+
+
 def internal_build_sampled_separation_rgb_lut(
     tint_fn: PdfStream,
     alt_name: str,
@@ -221,8 +248,7 @@ def internal_build_sampled_separation_rgb_lut(
         if rgb is None:
             raise ValueError("invalid Separation color space")
         table[value] = tuple(rgb)
-    table.flags.writeable = False
-    return table
+    return readonly(table)
 
 
 @lru_cache(maxsize=256)
@@ -230,10 +256,8 @@ def internal_calrgb_parameter_arrays(
     matrix: tuple[float, ...],
     black_point: tuple[float, ...],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    matrix_array = numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3)
-    black_point_array = numpy.asarray(black_point, dtype=numpy.float64)
-    matrix_array.flags.writeable = False
-    black_point_array.flags.writeable = False
+    matrix_array = readonly(numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3))
+    black_point_array = readonly(numpy.asarray(black_point, dtype=numpy.float64))
     return matrix_array, black_point_array
 
 
@@ -242,8 +266,6 @@ class ImageColorManager:
     def convert_image_data(
         raw: ImageBuffer,
         image_dict: ImageDict | ImageColorSpec,
-        *,
-        prefer_embedded_icc: bool = False,
     ) -> ImageBuffer | None:
         current: ImageDict | ImageColorSpec = image_dict
         depth = 0
@@ -285,20 +307,6 @@ class ImageColorManager:
             if cs_kind == "Indexed":
                 return ImageColorManager.convert_indexed(samples, spec)
             if cs_kind == "ICCBased":
-                if prefer_embedded_icc and spec.icc_profile is not None:
-                    try:
-                        transform = parse_icc_transform(spec.icc_profile)
-                        array = uint8_view(samples).reshape(-1, transform.input_channels)
-                        normalized = array.astype(numpy.float32) / 255.0
-                        converted = numpy.rint(
-                            numpy.clip(transform.apply(normalized) * 255.0, 0.0, 255.0)
-                        ).astype(numpy.uint8)
-                        converted = converted.reshape(-1)
-                        if spec.channels == 1 and converted.size == len(samples):
-                            return ImageColorManager.convert_gray(converted)
-                        return converted
-                    except (IccProfileError, ValueError):
-                        pass
                 if spec.alt is not None:
                     current = ImageColorSpec(kind=spec.alt, params={})
                     raw = samples
@@ -419,28 +427,20 @@ class ImageColorManager:
             inks[:, 0] = samples
             return cmyk_bytes_to_srgb(inks).reshape(-1)
 
-        fallback_result = bytearray()
-        for byte in raw:
-            v = byte / 255.0
-            if tint_fn is None:
-                components: ColorComponents = [v]
-            elif isinstance(tint_fn, (list, tuple)):
-                if len(tint_fn) >= 1 and callable(tint_fn[0]):
-                    tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
-                    try:
-                        components = cast(ColorComponents, tint_callable(v))
-                    except Exception as exc:
-                        raise ValueError("invalid separation tint function") from exc
-                else:
-                    components = cast(ColorComponents, list(tint_fn))
-            else:
-                components = [v]
+        # A Separation tint is a pure function of one 8-bit sample, so evaluate
+        # it 256 times and gather -- the same shape the sampled-stream path above
+        # already uses, instead of once per pixel.
+        evaluate = internal_tint_components_evaluator(tint_fn, "invalid separation tint function")
+        table = numpy.empty((256, 3), dtype=numpy.uint8)
+        for value in range(256):
+            components = evaluate(value / 255.0)
             if len(components) != expected:
                 raise ValueError("invalid separation tint function")
             rgb = ImageColorManager.apply_alt_color(components, alt_name)
-            if rgb is not None:
-                fallback_result.extend(rgb)
-        return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
+            if rgb is None:
+                raise ValueError("invalid Separation color space")
+            table[value] = tuple(rgb)
+        return table[uint8_view(raw)].reshape(-1)
 
     @staticmethod
     def convert_devicen(raw: ImageBuffer, color_space: ImageColorSpec) -> ImageBuffer | None:
@@ -470,10 +470,20 @@ class ImageColorManager:
             inks[:, :carried] = samples[:, :carried]
             return cmyk_bytes_to_srgb(inks).reshape(-1)
 
-        fallback_result = bytearray()
-        step = n
-        for i in range(0, len(raw), step):
-            components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
+        if alt_name not in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+            raise ValueError("invalid DeviceN color space")
+        expected = internal_alternate_color_component_count(alt_name)
+
+        # The tint transform is a pure function of one ink tuple, and an image
+        # holds far fewer distinct tuples than pixels. Evaluating per distinct
+        # tuple and gathering turns a per-pixel Python call -- which also
+        # thrashed the 4096-entry CMYK cache behind apply_alt_color, since a
+        # 2-channel DeviceN has up to 65536 inputs -- into one call per colour.
+        samples = uint8_view(raw).reshape(-1, n)
+        distinct, inverse = numpy.unique(samples, axis=0, return_inverse=True)
+        tinted = numpy.empty((len(distinct), expected), dtype=numpy.float64)
+        for index, row in enumerate(distinct.tolist()):
+            components: ColorComponents = [value / 255.0 for value in row]
             if isinstance(tint_fn, (list, tuple)) and len(tint_fn) >= 1 and callable(tint_fn[0]):
                 tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
                 try:
@@ -482,23 +492,23 @@ class ImageColorManager:
                     raise ValueError("invalid DeviceN tint function") from exc
             elif isinstance(tint_fn, PdfStream):
                 components = internal_native_evaluate_sampled_tint_function(tint_fn, *components)
-            expected = (
-                1
-                if alt_name == "DeviceGray"
-                else 3
-                if alt_name == "DeviceRGB"
-                else 4
-                if alt_name == "DeviceCMYK"
-                else None
-            )
-            if expected is None:
-                raise ValueError("invalid DeviceN color space")
             if len(components) != expected:
                 raise ValueError("invalid DeviceN tint function")
-            rgb = ImageColorManager.apply_alt_color(components, alt_name)
-            if rgb is not None:
-                fallback_result.extend(rgb)
-        return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
+            tinted[index] = components
+
+        # apply_alt_color one colour at a time would drop back into the
+        # single-sample ICC path; the alternate spaces all convert a whole
+        # block at once. round-half-to-even matches int(round(...)), and the
+        # clamp order is the same, so this is byte-identical.
+        scaled = numpy.clip(numpy.rint(numpy.clip(tinted, 0.0, 1.0) * 255.0), 0.0, 255.0)
+        inks = scaled.astype(numpy.uint8)
+        if alt_name == "DeviceCMYK":
+            converted = cmyk_bytes_to_srgb(inks)
+        elif alt_name == "DeviceRGB":
+            converted = inks
+        else:
+            converted = numpy.repeat(inks, 3, axis=1)
+        return converted[numpy.asarray(inverse).reshape(-1)].reshape(-1)
 
     @staticmethod
     def convert_gray(raw: ImageBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
@@ -574,7 +584,7 @@ class ImageColorManager:
                 values[:, index] = numpy.power(values[:, index], exponent)
         matrix_array, black_point_array = internal_calrgb_parameter_arrays(tuple(matrix), tuple(bp))
         xyz = (values @ matrix_array.T + black_point_array).astype(numpy.float32)
-        rgb = xyz_to_srgb(adapt_d50_to_d65(xyz))
+        rgb = d50_xyz_to_srgb(xyz)
         return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 
     @staticmethod
@@ -588,7 +598,7 @@ class ImageColorManager:
         lab[:, 1] = (lab[:, 1] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
         lab[:, 2] = (lab[:, 2] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
         xyz = lab_to_xyz(lab, (wp[0], wp[1], wp[2]))
-        rgb = xyz_to_srgb(adapt_d50_to_d65(xyz))
+        rgb = d50_xyz_to_srgb(xyz)
         return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 
     @staticmethod

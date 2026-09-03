@@ -9,12 +9,12 @@ from typing import TypeAlias, TypedDict, cast
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 MetadataScalar: TypeAlias = (
     str

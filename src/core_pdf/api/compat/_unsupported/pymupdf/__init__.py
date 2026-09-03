@@ -17,7 +17,7 @@ from core_pdf.api.compat.pypdf import (
     StructuredState,
 )
 from core_pdf.impl.model.geometry import bbox_intersects
-from core_pdf.impl.structured import (
+from core_pdf.impl.output import (
     Annotation,
     Block,
     BlockKind,
@@ -26,7 +26,7 @@ from core_pdf.impl.structured import (
     Link,
     TextLine,
 )
-from core_pdf.impl.structured import (
+from core_pdf.impl.output import (
     Page as StructuredPage,
 )
 

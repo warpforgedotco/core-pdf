@@ -6,6 +6,7 @@ from __future__ import annotations
 import unicodedata
 
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.spec.s_09_fonts.helpers import strip_subset_tag
 
 TEX_MATH_GLYPH_OVERRIDES: dict[str, dict[str, str]] = {
     "TeX_Times_Math_Italic": {
@@ -69,7 +70,7 @@ def should_prefer_glyph_name_mapping(
 def normalized_base_font_name(base_font_name: str | None) -> str | None:
     if base_font_name is None:
         return None
-    return base_font_name.split("+", 1)[-1]
+    return strip_subset_tag(base_font_name)
 
 
 def build_glyph_decode_table(

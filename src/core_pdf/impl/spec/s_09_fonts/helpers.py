@@ -10,14 +10,20 @@ from typing import Any, Callable
 from core_pdf._vendor.fontTools.agl import UV2AGL
 from core_pdf._vendor.fontTools.encodings.MacRoman import MacRoman
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
-from core_pdf.impl.spec.s_07_syntax.text_string import PDFDOC_ENCODING_TABLE
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
 from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+
+
+def strip_subset_tag(font_name: str) -> str:
+    """Drop the ``ABCDEF+`` subset prefix (9.6.4) from a base font name."""
+    return font_name.split("+", 1)[-1]
+
 
 LIGATURE_TEXT_OVERRIDES = {
     "\ufb00": "ff",

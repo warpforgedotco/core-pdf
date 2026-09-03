@@ -6,9 +6,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import StrEnum
 
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name, parse_text_string
 
 ResolveFn = Callable[[object], object]
 MAX_PAGE_TREE_DEPTH = 100
@@ -46,7 +45,7 @@ def format_page_label(
     resolve: ResolveFn,
 ) -> str:
     style = normalize_page_label_style(resolve(spec.get("S")))
-    prefix = decode_page_label_prefix(resolve(spec.get("P")))
+    prefix = parse_text_string(resolve(spec.get("P"))) or ""
     start = resolve(spec.get("St"))
     number = (start if type(start) is int and start > 0 else 1) + page_offset
 
@@ -71,19 +70,6 @@ def normalize_page_label_style(value: object) -> PageLabelStyle | None:
         return PageLabelStyle(style) if style is not None else None
     except ValueError:
         return None
-
-
-def decode_page_label_prefix(value: object) -> str:
-    if value is None:
-        return ""
-    data = getattr(value, "data", None)
-    if isinstance(data, bytes):
-        return decode_pdf_text_string(data)
-    if isinstance(value, bytes):
-        return decode_pdf_text_string(value)
-    if isinstance(value, str):
-        return value
-    return ""
 
 
 def infer_page_tree_node_type(
@@ -137,7 +123,6 @@ def format_alpha(value: int) -> str:
 
 
 __all__ = (
-    "decode_page_label_prefix",
     "format_alpha",
     "format_page_label",
     "format_roman",

@@ -8,27 +8,12 @@ from typing import Any, TypeGuard
 from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
-    parse_float,
     parse_int,
 )
 
 
-def pdf_int(value: Any, default: int) -> int:
-    if type(value) is bool:
-        return default
-    parsed = parse_int(value, None)
-    return default if parsed is None else parsed
-
-
-def pdf_float(value: Any, default: float) -> float:
-    if type(value) is bool:
-        return default
-    parsed = parse_float(value, None)
-    return default if parsed is None else parsed
-
-
 def pdf_positive_int(value: Any, default: int = 0) -> int:
-    parsed = pdf_int(value, default)
+    parsed = parse_int(value, default)
     return parsed if parsed > 0 else default
 
 
@@ -124,8 +109,6 @@ __all__ = (
     "image_color_space_name",
     "image_display_metadata",
     "image_filter_names",
-    "pdf_float",
-    "pdf_int",
     "pdf_number",
     "pdf_positive_int",
 )

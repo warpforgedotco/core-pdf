@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 from typing import Any, cast
 
 from core_pdf.impl.document import PdfDocument
@@ -10,25 +9,18 @@ from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_07_document.records import RawFormField
 from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_name
+from tests.helpers.paths import SCORE_BENCH
+from tests.helpers.resolvers import IdentityResolver
 
-TESTS_DIR = Path(__file__).parents[5]
-SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "g-325a.pdf"
-
-
-class FakeResolver:
-    def resolve(self, value: PdfObject) -> PdfObject:
-        return value
-
-    def resolve_name(self, value: PdfObject) -> str | None:
-        return parse_name(value)
+SAMPLE_PDF = SCORE_BENCH / "g-325a.pdf"
 
 
 class FakeDocument:
     def __init__(self, fields: list[RawFormField]) -> None:
         self.internal_cache_lock = threading.RLock()
+        self.recovery_enabled = False
         self.internal_page_locks: dict[int, threading.RLock] = {}
-        self.resolver = FakeResolver()
+        self.resolver = IdentityResolver()
         self.internal_fields = fields
         self.pages: list[Any] = []
         self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
@@ -42,7 +34,7 @@ class FakeDocument:
         return self.internal_fields
 
     def resolve(self, value: PdfObject) -> PdfObject:
-        return self.resolver.resolve(value)
+        return cast(PdfObject, self.resolver.resolve(value))
 
     def page_index_for(self, page_obj: object) -> int | None:
         return 0 if isinstance(page_obj, dict) else None

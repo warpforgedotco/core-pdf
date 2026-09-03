@@ -9,14 +9,16 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.pipeline import (
     decode_stream_data,
     decode_stream_image_data,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf.impl.spec.s_08_graphics.color import ImageColorManager
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_int
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,9 +51,7 @@ class ImageRaster:
         expected_channels = 1 if self.color_model == "gray" else 3
         if array.shape[2] not in {expected_channels, expected_channels + 1}:
             raise ValueError("image raster channel layout does not match its color model")
-        array = numpy.ascontiguousarray(array)
-        array.flags.writeable = False
-        object.__setattr__(self, "array", array)
+        object.__setattr__(self, "array", readonly(numpy.ascontiguousarray(array)))
 
     @property
     def width(self) -> int:
@@ -100,12 +100,26 @@ class PreparedImage:
         return self.raster.nbytes + (soft_mask.nbytes if soft_mask is not None else 0)
 
 
+@dataclass(frozen=True, slots=True)
+class SoftMask:
+    """The /SMask plane accompanying an image XObject.
+
+    Carried as its own field rather than smuggled through the image's PDF
+    dictionary: that dictionary is the real object dictionary and is exported
+    verbatim to display consumers, so private keys in it leak downstream.
+    """
+
+    raw: bytes | memoryview
+    dictionary: dict[Any, Any]
+
+
 class ImageSource:
     """Thread-safe lazy preparation owner for one embedded image source."""
 
     __slots__ = (
         "raw",
         "dictionary",
+        "soft_mask",
         "internal_lock",
         "internal_prepared",
         "internal_prepared_once",
@@ -118,11 +132,13 @@ class ImageSource:
         raw: bytes | memoryview,
         dictionary: dict[Any, Any],
         *,
+        soft_mask: SoftMask | None = None,
         cache: ImageCache | None = None,
         cache_key: tuple[object, ...] = (),
     ) -> None:
         self.raw = raw
         self.dictionary = dictionary
+        self.soft_mask = soft_mask
         self.internal_lock = threading.Lock()
         self.internal_prepared: PreparedImage | None = None
         self.internal_prepared_once = False
@@ -182,14 +198,18 @@ class ImageSource:
         )
 
     def internal_decode_mask(self) -> DecodedRaster | None:
-        width = pdf_int(self.dictionary.get("Width"), 0)
-        height = pdf_int(self.dictionary.get("Height"), 0)
+        width = parse_int(self.dictionary.get("Width"), 0)
+        height = parse_int(self.dictionary.get("Height"), 0)
         if width <= 0 or height <= 0:
             return None
         try:
             decoded = decode_stream_data(self.raw, self.dictionary)
-        except Exception:
-            decoded = self.raw
+        except FilterError:
+            # Falling back to self.raw here unpacked the still-encoded bytes as
+            # a bitmap, painting compressed noise into the alpha plane. A mask
+            # that cannot be decoded is dropped instead. An unfiltered stream
+            # does not reach this path -- decode_stream_data returns it as-is.
+            return None
         row_bytes = (width + 7) // 8
         if len(decoded) < row_bytes * height:
             return None
@@ -213,17 +233,16 @@ class ImageSource:
         return DecodedRaster(array, width, height, 2)
 
     def internal_decode_soft_mask(self) -> ImageRaster | None:
-        raw = self.dictionary.get("__soft_mask_raw_data__")
-        dictionary = self.dictionary.get("__soft_mask_dictionary__")
-        if not isinstance(raw, (bytes, memoryview)) or not isinstance(dictionary, dict):
+        soft_mask = self.soft_mask
+        if soft_mask is None:
             return None
-        mask_dictionary = dict(dictionary)
+        mask_dictionary = dict(soft_mask.dictionary)
         mask_dictionary.setdefault("ColorSpace", "DeviceGray")
         mask_dictionary.setdefault("BitsPerComponent", 8)
         # The parent PreparedImage owns this plane and reports its bytes to the
         # document cache. Caching a second nested PreparedImage would count the
         # same allocation twice and split preparation ownership again.
-        prepared = ImageSource(raw, mask_dictionary).prepare()
+        prepared = ImageSource(soft_mask.raw, mask_dictionary).prepare()
         if prepared is None:
             return None
         mask = prepared.raster
@@ -280,14 +299,14 @@ def decode_pdf_image_samples(
     raw: bytes | memoryview,
     dictionary: dict[Any, Any],
 ) -> tuple[bytes | memoryview | DecodedImage, dict[Any, Any]] | None:
-    width = pdf_int(dictionary.get("Width"), 0)
-    height = pdf_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0)
+    height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     native = decode_stream_image_data(raw, dictionary)
     if native is not None and native.width == width and native.height == height:
         return native, dictionary
-    bits_per_component = pdf_int(dictionary.get("BitsPerComponent"), 8)
+    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
     expected_gray = width * height
     expected_rgb = expected_gray * 3
     if len(raw) in {expected_gray, expected_rgb}:
@@ -306,8 +325,8 @@ def decode_pdf_image_samples(
 
 
 def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> DecodedRaster | None:
-    width = pdf_int(dictionary.get("Width"), 0)
-    height = pdf_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0)
+    height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     result = decode_pdf_image_samples(raw, dictionary)

@@ -6,6 +6,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
+from core_pdf.impl.text import word_gap_threshold
+
 NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
 NO_SPACE_AFTER = frozenset("([{")
 
@@ -16,13 +18,7 @@ def cached_encode_latin1(s: str) -> bytes:
 
 
 def gap_separator(left: str, right: str, gap: float, run: Any) -> str:
-    threshold = run.space_width * 0.12
-    font_threshold = run.font_size * 0.10
-    if font_threshold > threshold:
-        threshold = font_threshold
-    if threshold < 1.0:
-        threshold = 1.0
-    if gap <= threshold:
+    if gap <= word_gap_threshold(run.space_width, run.font_size):
         return ""
     if not left or not right or left[-1].isspace() or right[0].isspace():
         return ""

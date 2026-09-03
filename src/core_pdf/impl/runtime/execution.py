@@ -17,6 +17,7 @@ from concurrent.futures import (
 from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from functools import partial
 from typing import Any, Generic, TypeVar
 
 internal_InputT = TypeVar("internal_InputT")
@@ -580,10 +581,13 @@ class ExecutionRuntime:
         with self.internal_lock:
             return self.internal_take_eligible_locked(helping=True, stage=stage)
 
-    def internal_execute_helped(self, work: internal_QueuedWork, stage_acquired: bool) -> bool:
+    def internal_execute(
+        self, work: internal_QueuedWork, release: Callable[[], None] | None
+    ) -> bool:
+        """Run ``work`` on this thread, resolve its future, then give back its slot."""
         if not work.future.set_running_or_notify_cancel():
-            if stage_acquired:
-                self.internal_stage_slot_released(work.stage)
+            if release is not None:
+                release()
             return False
         try:
             result = self.internal_run(
@@ -599,10 +603,14 @@ class ExecutionRuntime:
         else:
             work.future.set_result(result)
         finally:
-            if stage_acquired:
-                self.internal_stage_slot_released(work.stage)
+            if release is not None:
+                release()
             self.internal_signal_progress()
         return True
+
+    def internal_execute_helped(self, work: internal_QueuedWork, stage_acquired: bool) -> bool:
+        release = partial(self.internal_stage_slot_released, work.stage) if stage_acquired else None
+        return self.internal_execute(work, release)
 
     def internal_help_once(self, stage: WorkStage) -> bool:
         selected = self.internal_take_pending_for_help(stage)
@@ -631,29 +639,7 @@ class ExecutionRuntime:
         return future.result()
 
     def internal_execute_queued(self, work: internal_QueuedWork) -> None:
-        if not work.future.set_running_or_notify_cancel():
-            self.internal_worker_slot_released(work.stage)
-            return
-        result: Any = None
-        error: BaseException | None = None
-        try:
-            result = self.internal_run(
-                work.function,
-                work.args,
-                work.kwargs,
-                work.context,
-                work.submitted_at,
-                work.stage,
-            )
-        except BaseException as exc:
-            error = exc
-        finally:
-            self.internal_worker_slot_released(work.stage)
-        if error is not None:
-            work.future.set_exception(error)
-        else:
-            work.future.set_result(result)
-        self.internal_signal_progress()
+        self.internal_execute(work, partial(self.internal_worker_slot_released, work.stage))
 
     def internal_stage_slot_released(self, stage: WorkStage) -> None:
         with self.internal_lock:

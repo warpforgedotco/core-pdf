@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from math import ceil
-from typing import Any
+from typing import Any, TypeAlias
 
 from core_pdf.impl.model.geometry import RectBox, bbox_union
+from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
@@ -66,6 +67,43 @@ def glyph_bitmap_dimensions(
     return (bitmap_w, bitmap_h)
 
 
+def internal_text_basis_rect(
+    x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
+) -> Rectangle:
+    """Axis-aligned device bounds of a text-space rect under ``text_basis``.
+
+    This is transform_bbox against (a, b, c, d, base_x, base_y), specialised
+    for the overwhelmingly common upright case where b and c are zero -- two
+    multiplies instead of eight, on a path that runs per glyph.
+    """
+    base_x, base_y, a, b, c, d = text_basis
+    if b == 0.0 and c == 0.0:
+        px0 = base_x + x0 * a
+        px1 = base_x + x1 * a
+        py0 = base_y + y0 * d
+        py1 = base_y + y1 * d
+        return (
+            px0 if px0 < px1 else px1,
+            py0 if py0 < py1 else py1,
+            px1 if px1 > px0 else px0,
+            py1 if py1 > py0 else py0,
+        )
+    p00_x = base_x + x0 * a + y0 * c
+    p00_y = base_y + x0 * b + y0 * d
+    p01_x = base_x + x0 * a + y1 * c
+    p01_y = base_y + x0 * b + y1 * d
+    p10_x = base_x + x1 * a + y0 * c
+    p10_y = base_y + x1 * b + y0 * d
+    p11_x = base_x + x1 * a + y1 * c
+    p11_y = base_y + x1 * b + y1 * d
+    return (
+        min(p00_x, p01_x, p10_x, p11_x),
+        min(p00_y, p01_y, p10_y, p11_y),
+        max(p00_x, p01_x, p10_x, p11_x),
+        max(p00_y, p01_y, p10_y, p11_y),
+    )
+
+
 def glyph_ink_rect(
     glyph_bbox: Rectangle | None,
     advance_start: float,
@@ -84,33 +122,7 @@ def glyph_ink_rect(
     text_x1 = advance_start + gx1 * text_advance_scale
     text_y0 = rise + gy0 * font_scale
     text_y1 = rise + gy1 * font_scale
-    base_x, base_y, a, b, c, d = text_basis
-    if b == 0.0 and c == 0.0:
-        px0 = base_x + text_x0 * a
-        px1 = base_x + text_x1 * a
-        py0 = base_y + text_y0 * d
-        py1 = base_y + text_y1 * d
-        rect = (
-            px0 if px0 < px1 else px1,
-            py0 if py0 < py1 else py1,
-            px1 if px1 > px0 else px0,
-            py1 if py1 > py0 else py0,
-        )
-    else:
-        p00_x = base_x + text_x0 * a + text_y0 * c
-        p00_y = base_y + text_x0 * b + text_y0 * d
-        p01_x = base_x + text_x0 * a + text_y1 * c
-        p01_y = base_y + text_x0 * b + text_y1 * d
-        p10_x = base_x + text_x1 * a + text_y0 * c
-        p10_y = base_y + text_x1 * b + text_y0 * d
-        p11_x = base_x + text_x1 * a + text_y1 * c
-        p11_y = base_y + text_x1 * b + text_y1 * d
-        rect = (
-            min(p00_x, p01_x, p10_x, p11_x),
-            min(p00_y, p01_y, p10_y, p11_y),
-            max(p00_x, p01_x, p10_x, p11_x),
-            max(p00_y, p01_y, p10_y, p11_y),
-        )
+    rect = internal_text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
     fallback_height = fallback_bbox[3] - fallback_bbox[1]
     fallback_width = fallback_bbox[2] - fallback_bbox[0]
     rect_x0, rect_y0, rect_x1, rect_y1 = rect
@@ -133,34 +145,12 @@ def transformed_text_rect(
     y1: float,
     text_basis: TextBasis,
 ) -> RectBox:
-    base_x, base_y, a, b, c, d = text_basis
-    if b == 0.0 and c == 0.0:
-        px0 = base_x + x0 * a
-        px1 = base_x + x1 * a
-        py0 = base_y + y0 * d
-        py1 = base_y + y1 * d
-        return RectBox(
-            px0 if px0 < px1 else px1,
-            py0 if py0 < py1 else py1,
-            px1 if px1 > px0 else px0,
-            py1 if py1 > py0 else py0,
-            seqno=state.sequence,
-            fill=state.fill_color,
-            fill_opacity=state.fill_opacity,
-        )
-    p00_x = base_x + x0 * a + y0 * c
-    p00_y = base_y + x0 * b + y0 * d
-    p01_x = base_x + x0 * a + y1 * c
-    p01_y = base_y + x0 * b + y1 * d
-    p10_x = base_x + x1 * a + y0 * c
-    p10_y = base_y + x1 * b + y0 * d
-    p11_x = base_x + x1 * a + y1 * c
-    p11_y = base_y + x1 * b + y1 * d
+    rect_x0, rect_y0, rect_x1, rect_y1 = internal_text_basis_rect(x0, y0, x1, y1, text_basis)
     return RectBox(
-        min(p00_x, p01_x, p10_x, p11_x),
-        min(p00_y, p01_y, p10_y, p11_y),
-        max(p00_x, p01_x, p10_x, p11_x),
-        max(p00_y, p01_y, p10_y, p11_y),
+        rect_x0,
+        rect_y0,
+        rect_x1,
+        rect_y1,
         seqno=state.sequence,
         fill=state.fill_color,
         fill_opacity=state.fill_opacity,
@@ -360,15 +350,10 @@ class RunGeometry:
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
-    matrix = font.get("FontMatrix")
-    if not isinstance(matrix, (list, tuple)) or len(matrix) != 6:
+    try:
+        return Matrix.from_operand(font.get("FontMatrix"))
+    except ValueError:
         return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-    values: list[float] = []
-    for value in matrix:
-        if type(value) not in (int, float):
-            return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-        values.append(float(value))
-    return Matrix(*values)
 
 
 class CapturedLine:
@@ -407,7 +392,7 @@ class CapturedSubpath:
         self.points = points if points is not None else []
         self.closed = closed
 
-    def transformed(self, matrix: Matrix) -> CapturedSubpath:
+    def transformed(self, matrix: Matrix | Sequence[float]) -> CapturedSubpath:
         a, b, c, d, e, f = matrix
         return CapturedSubpath(
             [(x * a + y * c + e, x * b + y * d + f) for x, y in self.points],
@@ -481,6 +466,40 @@ class CapturedPath:
         if self.subpaths:
             self.subpaths[-1].close()
 
+    def axis_aligned_rect(self) -> Rectangle | None:
+        """The rectangle this path draws when it is exactly one axis-aligned box.
+
+        One segment-bearing subpath (empty ``m``-only subpaths are ignored), four
+        corners in either winding, closed explicitly or by repeating the first
+        point, and a positive area. Both the router's "simple vector rectangle"
+        test and the rasterizer's rect fast path rely on this one definition.
+        """
+        segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
+        if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
+            return None
+        subpath = segment_subpaths[0]
+        points = list(subpath.points)
+        if len(points) >= 2 and points[0] == points[-1]:
+            points.pop()
+        if len(points) != 4:
+            return None
+        if not subpath.closed and subpath.points[0] != subpath.points[-1]:
+            return None
+        xs = {point[0] for point in points}
+        ys = {point[1] for point in points}
+        if len(xs) != 2 or len(ys) != 2:
+            return None
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        if set(points) != {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}:
+            return None
+        for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
+            if px0 != px1 and py0 != py1:
+                return None
+        return (x0, y0, x1, y1)
+
     def rect(self, x: float, y: float, w: float, h: float) -> None:
         self.subpaths.append(
             CapturedSubpath(
@@ -516,14 +535,26 @@ DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 internal_EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
+StrokeStyleKey = tuple[
+    tuple[float, ...] | None,
+    float,
+    float,
+    int,
+    int,
+    tuple[tuple[float, ...], float] | None,
+    str | None,
+    float | None,
+]
+
+
 @dataclass(slots=True)
 class CapturedDrawing:
     seqno: int
     fill: tuple[float, ...] | None
     fill_opacity: float | None
-    fill_pattern: Mapping[object, object] | None = None
+    fill_pattern: PatternPaint | None = None
     stroke_color: tuple[float, ...] | None = None
-    stroke_pattern: Mapping[object, object] | None = None
+    stroke_pattern: PatternPaint | None = None
     stroke_opacity: float | None = None
     line_width: float = 1.0
     line_cap: int = 0
@@ -550,6 +581,28 @@ class CapturedDrawing:
 
     def replace(self, **kwargs: Any) -> CapturedDrawing:
         return dataclasses.replace(self, **kwargs)
+
+    def stroke_style_key(self) -> StrokeStyleKey | None:
+        """Hashable stroke paint style, or None when a pattern paints the stroke.
+
+        Colour, opacity (1.0 when unset), width, cap, join, normalised dash,
+        blend mode and soft-mask alpha, in that order. Consumers that group
+        strokes by style key off this tuple and layer their own filters on top.
+        """
+        if self.stroke_pattern is not None:
+            return None
+        color = self.stroke_color
+        dash = self.dash_pattern
+        return (
+            tuple(float(component) for component in color) if color is not None else None,
+            1.0 if self.stroke_opacity is None else float(self.stroke_opacity),
+            float(self.line_width),
+            int(self.line_cap or 0),
+            int(self.line_join or 0),
+            (tuple(float(value) for value in dash[0]), float(dash[1])) if dash else None,
+            self.blend_mode,
+            self.soft_mask_alpha,
+        )
 
     @property
     def rect(self) -> RectBox | None:
@@ -579,10 +632,39 @@ class CapturedDrawing:
         return rect
 
 
+@dataclass(frozen=True, slots=True)
+class ShadingPattern:
+    """A PatternType 2 paint: the resolved /Shading dictionary."""
+
+    dictionary: dict[Any, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class TilingPattern:
+    """A PatternType 1 paint: one captured cell plus the step to repeat it by.
+
+    Holds the captured records themselves. This used to be a nested dict of
+    string keys cast to PdfDict, which meant the renderer re-parsed by key and
+    every projected field had to be listed by hand on both sides.
+    """
+
+    bbox: Rectangle
+    x_step: float
+    y_step: float
+    drawings: list[CapturedDrawing]
+    glyphs: list[GlyphObservation]
+
+
+PatternPaint: TypeAlias = ShadingPattern | TilingPattern
+
+
 __all__ = (
     "CapturedDrawing",
     "CapturedInlineImage",
     "CapturedLine",
     "CapturedPath",
     "CapturedSubpath",
+    "PatternPaint",
+    "ShadingPattern",
+    "TilingPattern",
 )

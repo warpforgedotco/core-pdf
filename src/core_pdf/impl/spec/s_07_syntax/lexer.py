@@ -74,7 +74,6 @@ class PdfLexer:
         "source_buffer",
         "data_len",
         "pos",
-        "exhausted",
         "reference_resolver",
         "decipher",
         "current_obj_num",
@@ -88,7 +87,6 @@ class PdfLexer:
     source_buffer: FindableSizedBuffer | None
     data_len: int
     pos: int
-    exhausted: bool
     reference_resolver: Callable[[PdfReference], object] | None
     decipher: Decipher | None
     current_obj_num: int | None
@@ -119,7 +117,6 @@ class PdfLexer:
         self.data_len = len(self.raw_data)
         self.source_buffer = full_source_buffer(self.raw_data, self.data_len)
         self.pos = 0
-        self.exhausted = False
         self.reference_resolver = reference_resolver
         self.decipher = decipher
         self.current_obj_num = None
@@ -150,11 +147,9 @@ class PdfLexer:
         self.raw_data = memoryview(b"")
         self.data_len = 0
         self.pos = 0
-        self.exhausted = True
 
     def rewind(self, position: int = 0) -> None:
         self.pos = max(0, min(position, self.data_len))
-        self.exhausted = False
         self.current_obj_num = None
         self.current_gen_num = None
 
@@ -194,7 +189,10 @@ class PdfLexer:
         byte = data[pos]
         if byte != 37 and not WS_TABLE[byte]:
             return pos
-        return skip_pdf_ignored(data, position, data_len)
+        # Only whitespace was consumed reaching `pos`, which skip_pdf_ignored
+        # would skip again anyway -- resume there rather than making it redo
+        # the peek above from `position`.
+        return skip_pdf_ignored(data, pos, data_len)
 
     def scan_word_at(self, position: int, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         data = self.raw_data
@@ -454,17 +452,9 @@ class PdfLexer:
                 assert next_token is not None
                 next_raw, next_end = next_token
                 if is_integer_word(next_raw):
-                    next_next = self.scan_word_at(next_end)
-                    if next_next is not None and next_next[0] == b"R":
-                        self.pos = next_next[1]
-                        try:
-                            obj_num = int(raw)
-                            gen_num = int(next_raw)
-                        except ValueError as exc:
-                            raise PdfParseError("invalid reference") from exc
-                        if obj_num < 0 or gen_num < 0:
-                            raise PdfParseError("invalid reference")
-                        return PdfReference(obj_num, gen_num)
+                    reference = self.internal_reference_at(raw, next_raw, next_end)
+                    if reference is not None:
+                        return reference
             return int(raw)
         return self.parse_keyword(raw)
 
@@ -628,6 +618,27 @@ class PdfLexer:
             values.append(value)
             pos = end
 
+    def internal_reference_at(
+        self, raw: bytes, next_raw: bytes, next_end: int
+    ) -> PdfReference | None:
+        """The ``R`` of an ``N G R`` reference, given the two integers already scanned.
+
+        Returns None -- leaving self.pos alone -- when the third token is not
+        ``R``, so the caller can fall back to treating ``raw`` as a number.
+        """
+        next_next = self.scan_word_at(next_end)
+        if next_next is None or next_next[0] != b"R":
+            return None
+        self.pos = next_next[1]
+        try:
+            obj_num = int(raw)
+            gen_num = int(next_raw)
+        except ValueError as exc:
+            raise PdfParseError("invalid reference") from exc
+        if obj_num < 0 or gen_num < 0:
+            raise PdfParseError("invalid reference")
+        return PdfReference(obj_num, gen_num)
+
     def parse_array(self) -> list[Any]:
         numeric_values = self.parse_numeric_array()
         if numeric_values is not None:
@@ -676,27 +687,20 @@ class PdfLexer:
             raw, end = scanned
             self.pos = end
             if is_number_word_bytes(raw):
-                raw_is_integer = 46 not in raw
-                next_token = self.scan_word_at(end)
-                if next_token is not None:
-                    next_raw, next_end = next_token
-                    if raw_is_integer and is_integer_word(next_raw):
-                        next_next = self.scan_word_at(next_end)
-                        if next_next is not None and next_next[0] == b"R":
-                            self.pos = next_next[1]
-                            try:
-                                obj_num = int(raw)
-                                gen_num = int(next_raw)
-                            except ValueError as exc:
-                                raise PdfParseError("invalid reference") from exc
-                            if obj_num < 0 or gen_num < 0:
-                                raise PdfParseError("invalid reference")
-                            values.append(PdfReference(obj_num, gen_num))
-                            continue
-                if not raw_is_integer:
+                if 46 in raw:
                     values.append(float(raw))
-                else:
-                    values.append(int(raw))
+                    continue
+                next_pos = self.skip_ignored_at(end)
+                if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
+                    next_token = self.scan_word_at(next_pos, skip_ignored=False)
+                    if next_token is not None:
+                        next_raw, next_end = next_token
+                        if is_integer_word(next_raw):
+                            reference = self.internal_reference_at(raw, next_raw, next_end)
+                            if reference is not None:
+                                values.append(reference)
+                                continue
+                values.append(int(raw))
                 continue
             values.append(self.parse_keyword(raw))
 
@@ -814,6 +818,12 @@ class PdfLexer:
     def parse_dictionary(self) -> PdfDict:
         values: PdfDict = {}
         contents_was_parsed_without_decipher = False
+        # The signature-Contents carve-out below is the only reason to inspect a
+        # value before parsing it, and it cannot apply when nothing is being
+        # deciphered. Deciding that once keeps the probe -- a skip_ignored_at the
+        # following parse_object immediately repeats, two buffer reads, and a
+        # PdfName-to-str compare -- off every key of every dictionary.
+        deciphering = self.decipher is not None and self.current_obj_num is not None
         self.advance(2)
         while True:
             self.pos = self.skip_ignored_at(self.pos)
@@ -848,30 +858,27 @@ class PdfLexer:
 
             key = PdfName_of(key_bytes)
             value_start = self.pos
-            value_pos = self.skip_ignored_at(value_start)
-            value_is_hex_string = (
-                value_pos < self.data_len
-                and self.raw_data[value_pos] == 60
-                and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
-            )
             try:
-                if (
-                    key == "Contents"
-                    and value_is_hex_string
-                    and self.decipher is not None
-                    and self.current_obj_num is not None
-                ):
-                    # ISO 32000-2:2020, 7.6.2 excludes a Signature dictionary's
-                    # hexadecimal Contents value from encryption. Parse it raw
-                    # until the whole dictionary identifies its type; Type may
-                    # follow Contents and defaults to Sig under Table 255.
-                    self.pos = value_pos
-                    values[key] = PdfString(self.read_hex_string(), is_literal=False)
-                    contents_was_parsed_without_decipher = True
+                if deciphering and key == "Contents":
+                    value_pos = self.skip_ignored_at(value_start)
+                    if (
+                        value_pos < self.data_len
+                        and self.raw_data[value_pos] == 60
+                        and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
+                    ):
+                        # ISO 32000-2:2020, 7.6.2 excludes a Signature
+                        # dictionary's hexadecimal Contents value from
+                        # encryption. Parse it raw until the whole dictionary
+                        # identifies its type; Type may follow Contents and
+                        # defaults to Sig under Table 255.
+                        self.pos = value_pos
+                        values[key] = PdfString(self.read_hex_string(), is_literal=False)
+                        contents_was_parsed_without_decipher = True
+                    else:
+                        values[key] = self.parse_object()
+                        contents_was_parsed_without_decipher = False
                 else:
                     values[key] = self.parse_object()
-                    if key == "Contents":
-                        contents_was_parsed_without_decipher = False
             except PdfParseError:
                 self.pos = value_start
                 if (
@@ -881,13 +888,13 @@ class PdfLexer:
                 ):
                     raise
 
-        signature_type = values.get("Type")
-        is_signature_dictionary = signature_type in ("Sig", "DocTimeStamp") or (
-            signature_type is None and "ByteRange" in values
-        )
-        if contents_was_parsed_without_decipher and not is_signature_dictionary:
+        if contents_was_parsed_without_decipher:
+            signature_type = values.get("Type")
+            is_signature_dictionary = signature_type in ("Sig", "DocTimeStamp") or (
+                signature_type is None and "ByteRange" in values
+            )
             raw_contents = values.get("Contents")
-            if type(raw_contents) is PdfString:
+            if not is_signature_dictionary and type(raw_contents) is PdfString:
                 values["Contents"] = PdfString(
                     self.apply_decipher(raw_contents.data),
                     is_literal=raw_contents.is_literal,
@@ -959,65 +966,59 @@ class PdfLexer:
         data_start = self.pos
         raw_data: bytes | memoryview
         if type(length) is not int or length < 0:
-            endstream_pos = self.find_stream_end(data_start)
-            if endstream_pos < 0:
-                endobj_pos = self.find_object_end(data_start)
-                if endobj_pos < 0:
-                    raise PdfParseError("invalid stream length")
-                raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                self.rewind(endobj_pos)
-            else:
-                raw_data = self.raw_data[data_start:endstream_pos]
-                self.rewind(endstream_pos + 9)
-            if should_decipher:
-                raw_data = self.apply_decipher(raw_data, dictionary)
-            return PdfStream(dictionary, raw_data, dictionary)
-
-        raw_data = self.read_bytes(length)
-        if len(raw_data) != length:
-            endstream_pos = self.find_stream_end(data_start)
-            if endstream_pos < 0:
-                endobj_pos = self.find_object_end(data_start)
-                if endobj_pos < 0:
+            recovered = self.internal_recover_stream_data(data_start)
+            if recovered is None:
+                raise PdfParseError("invalid stream length")
+            raw_data = recovered
+        else:
+            raw_data = self.read_bytes(length)
+            if len(raw_data) != length:
+                recovered = self.internal_recover_stream_data(data_start)
+                if recovered is None:
                     raw_data = bytes(raw_data)
                     self.rewind(self.data_len)
                 else:
-                    raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                    self.rewind(endobj_pos)
+                    raw_data = recovered
             else:
-                raw_data = self.raw_data[data_start:endstream_pos]
-                self.rewind(endstream_pos + 9)
-        else:
-            self.pos = self.skip_ignored_at(self.pos)
-            if self.raw_data[
-                self.pos : self.pos + 9
-            ] == b"endstream" or matches_keyword_with_one_substitution(
-                self.raw_data, self.pos, b"endstream"
-            ):
-                self.advance(9)
-            else:
-                endstream_pos = self.find_stream_end(data_start, preferred=self.pos)
-                if endstream_pos >= 0:
-                    if endstream_pos != self.pos:
-                        raw_data = self.raw_data[data_start:endstream_pos]
-                    self.pos = endstream_pos
-                else:
-                    endobj_pos = self.find_object_end(data_start)
-                    if endobj_pos >= 0:
-                        raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                        self.rewind(endobj_pos)
-                    else:
+                self.pos = self.skip_ignored_at(self.pos)
+                if not self.internal_at_endstream():
+                    recovered = self.internal_recover_stream_data(data_start, preferred=self.pos)
+                    if recovered is None:
                         self.rewind(self.data_len)
-            if self.raw_data[
-                self.pos : self.pos + 9
-            ] == b"endstream" or matches_keyword_with_one_substitution(
-                self.raw_data, self.pos, b"endstream"
-            ):
-                self.advance(9)
+                    else:
+                        raw_data = recovered
+        if self.internal_at_endstream():
+            self.advance(9)
 
         if should_decipher:
             raw_data = self.apply_decipher(raw_data, dictionary)
         return PdfStream(dictionary, raw_data, dictionary)
+
+    def internal_at_endstream(self) -> bool:
+        return self.raw_data[
+            self.pos : self.pos + 9
+        ] == b"endstream" or matches_keyword_with_one_substitution(
+            self.raw_data, self.pos, b"endstream"
+        )
+
+    def internal_recover_stream_data(
+        self, data_start: int, *, preferred: int | None = None
+    ) -> bytes | memoryview | None:
+        """Delimit stream data by ``endstream``, else ``endobj``; ``None`` if neither exists.
+
+        On success the lexer is positioned at the keyword found; the caller
+        consumes ``endstream`` itself, since a stream cut at ``endobj`` has
+        no ``endstream`` to skip.
+        """
+        endstream_pos = self.find_stream_end(data_start, preferred=preferred)
+        if endstream_pos >= 0:
+            self.rewind(endstream_pos)
+            return self.raw_data[data_start:endstream_pos]
+        endobj_pos = self.find_object_end(data_start)
+        if endobj_pos >= 0:
+            self.rewind(endobj_pos)
+            return self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
+        return None
 
     def internal_find_keyword_candidate(
         self,

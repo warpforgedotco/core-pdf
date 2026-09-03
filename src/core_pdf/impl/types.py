@@ -27,7 +27,6 @@ PathSource: TypeAlias = str | PathLike[str]
 PdfSource: TypeAlias = (
     PathSource | bytes | bytearray | memoryview | BinaryReader | SeekableBinaryReader
 )
-Point: TypeAlias = tuple[float, float]
 Rectangle: TypeAlias = tuple[float, float, float, float]
 
 __all__ = (
@@ -35,7 +34,6 @@ __all__ = (
     "PathSource",
     "PdfByteBuffer",
     "PdfSource",
-    "Point",
     "Rectangle",
     "SeekableBinaryReader",
 )

@@ -17,8 +17,10 @@ from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
     apply_ascii_hex,
+    apply_flate,
     apply_lzw,
     apply_run_length,
+    looks_like_pdf_content_stream,
 )
 from core_pdf.impl.spec.s_07_filters.decode_spec import (
     FilterParams,
@@ -36,10 +38,6 @@ from core_pdf.impl.spec.s_07_filters.decoders import (
     decode_jpx_image,
 )
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf.impl.spec.s_07_filters.flate import (
-    apply_flate,
-    looks_like_pdf_content_stream,
-)
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.predictors import apply_predictor
 from core_pdf.impl.spec.s_07_filters.registry import (

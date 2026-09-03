@@ -45,8 +45,9 @@ from core_pdf.impl.spec.s_07_security.standard import (
     internal_supported_revisions,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from tests.helpers.paths import FIXTURES
 
-internal_SPECS = Path(__file__).resolve().parents[5] / "fixtures" / "specifications" / "PDF"
+internal_SPECS = FIXTURES / "specifications" / "PDF"
 internal_ADOBE_PDF_17 = "PDFReference-1.7-Adobe-2006.pdf"
 internal_ISO_32000_1 = "ISO32000-1-2008-PDF-1.7.pdf"
 internal_ISO_32000_2 = "ISO32000-2-2020-PDF-2.0-EC3.pdf"
@@ -167,12 +168,18 @@ def test_iso_ts_32003_aes_gcm_rules_match_the_implementation_when_available() ->
     assert "password algorithms used shall be the same" in object_encryption
     assert "standard security handler of revision 6" in object_encryption
 
+
+def test_aes_gcm_constants_match_iso_ts_32003() -> None:
+    """ISO/TS 32003:2023, Tables 2-4: the values the prose above documents."""
     assert internal_supported_revisions(6) == (7,)
     assert internal_AES_GCM_KEY_BYTES == 32
     assert internal_AES_GCM_IV_BYTES == 12
     assert internal_AES_GCM_TAG_BYTES == 16
     assert internal_AES_GCM_MAX_PLAINTEXT_BYTES == (1 << 39) - 256
 
+
+def test_parse_crypt_filters_accepts_aesv4() -> None:
+    """ISO/TS 32003:2023, 5.2: an AESV4 crypt filter under V 6."""
     params: PdfDict = {
         "CF": {
             "StdCF": {
@@ -189,7 +196,7 @@ def test_iso_ts_32003_aes_gcm_rules_match_the_implementation_when_available() ->
     assert crypt_filters == {"StdCF": "AESV4"}
 
 
-def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> None:
+def test_iso_ts_32004_standalone_pdf_mac_prose_is_parseable() -> None:
     """ISO/TS 32004:2024, 4, 5.1-5.2, 6.2-6.6."""
     with PdfDocument.open(internal_specification(internal_ISO_TS_32004)) as document:
         assert len(document.pages) == 25
@@ -265,6 +272,9 @@ def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> Non
     assert "dataDigest field shall be obtained by digesting the bytes" in unsigned_digest
     assert "ByteRange entry of the AuthCode dictionary" in unsigned_digest
 
+
+def test_pdf_mac_constants_match_iso_ts_32004() -> None:
+    """ISO/TS 32004:2024, 5.1-5.2 and 6.2-6.4: the values the prose above documents."""
     assert internal_PDF_MAC_PERMISSION_BIT == 13
     assert internal_PDF_MAC_PERMISSION_MASK == 1 << 12
     assert 13 in internal_RESERVED_ONE_PERMISSION_BITS
@@ -278,6 +288,9 @@ def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> Non
     assert internal_AES_256_KEY_WRAP_OID == "2.16.840.1.101.3.4.1.45"
     assert internal_HMAC_SHA256_OID == "1.2.840.113549.2.9"
 
+
+def test_parse_config_marks_pdf_mac_required_when_bit_13_is_zero() -> None:
+    """ISO/TS 32004:2024, 5.1: bit 13 zero plus a KDFSalt makes the MAC mandatory."""
     params: PdfDict = {
         "R": 6,
         "P": -4100,

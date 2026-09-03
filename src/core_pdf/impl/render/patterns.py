@@ -1,0 +1,403 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Gradient-pattern geometry and colour evaluation."""
+
+from __future__ import annotations
+
+import math
+from typing import Any, cast
+
+from core_pdf.impl.model.geometry import RectBox, rect_tuple
+from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.render.blend import (
+    internal_clamp01,
+    internal_color_component,
+    internal_color_rgba,
+)
+from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
+from core_pdf.impl.render.paths import internal_intersect_box, internal_translate_rect
+from core_pdf.impl.spec.s_07_content.capture import (
+    CapturedDrawing,
+    CapturedPath,
+    ShadingPattern,
+    TilingPattern,
+)
+from core_pdf.impl.spec.s_08_graphics.device_profiles import cmyk_floats_to_srgb
+from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
+from core_pdf.impl.spec.s_08_graphics.shading import PreparedShading, prepare_shading
+
+
+def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
+    x0, y0, x1, y1 = coords[:4]
+    dx = x1 - x0
+    dy = y1 - y0
+    denom = dx * dx + dy * dy
+    if denom <= 1e-12:
+        return None
+    return ((px - x0) * dx + (py - y0) * dy) / denom
+
+
+def radial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
+    x0, y0, r0, x1, y1, r1 = coords[:6]
+    dx = x1 - x0
+    dy = y1 - y0
+    dr = r1 - r0
+    qx = px - x0
+    qy = py - y0
+    a = dx * dx + dy * dy - dr * dr
+    b = -2.0 * (qx * dx + qy * dy + r0 * dr)
+    c = qx * qx + qy * qy - r0 * r0
+    if abs(a) <= 1e-12:
+        if abs(b) <= 1e-12:
+            return None
+        return -c / b
+    disc = b * b - 4.0 * a * c
+    if disc < 0.0:
+        return None
+    root = disc**0.5
+    t0 = (-b - root) / (2.0 * a)
+    t1 = (-b + root) / (2.0 * a)
+    valid = [t for t in (t0, t1) if math.isfinite(t)]
+    if not valid:
+        return None
+    in_range = [t for t in valid if 0.0 <= t <= 1.0]
+    return max(in_range) if in_range else min(valid, key=lambda t: abs(t - 0.5))
+
+
+def internal_shading_color_rgba(
+    color_model: str,
+    components: list[float] | tuple[float, ...],
+    opacity: Any,
+) -> tuple[int, int, int, int]:
+    alpha = internal_color_component(opacity, 255) if type(opacity) in {int, float} else 255
+    name = color_model or "DeviceRGB"
+    if name.endswith("DeviceGray") or len(components) == 1:
+        gray = internal_color_component(components[0] if components else 0.0)
+        return gray, gray, gray, alpha
+    if name.endswith("DeviceCMYK") and len(components) >= 4:
+        c, m, y, k = (internal_clamp01(v) for v in components[:4])
+        red, green, blue = cmyk_floats_to_srgb(c, m, y, k)
+        return red, green, blue, alpha
+    rgb = [internal_color_component(c) for c in components[:3]]
+    while len(rgb) < 3:
+        rgb.append(rgb[-1] if rgb else 0)
+    return rgb[0], rgb[1], rgb[2], alpha
+
+
+class internal_PatternTargetMixin:
+    """Stateful gradient and tiling-pattern painting operations."""
+
+    __slots__ = ()
+
+    def shading_box(
+        self: Any,
+        data: dict[str, Any],
+        shading: PreparedShading,
+    ) -> tuple[float, float, float, float]:
+        # Captured frame values hoisted into locals so the body below runs on
+        # LOAD_FAST exactly as it did when this was a closure.
+        crop_x0 = self.crop_x0
+        crop_y0 = self.crop_y0
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        width = self.width
+        box = shading.bbox
+        if box is None:
+            box = rect_tuple(data.get("bbox"))
+        if box is None:
+            box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
+        x0, y0, x1, y1 = box
+        return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
+
+    def paint_shading(self: Any, data: dict[str, Any], blend_mode: str | None) -> None:
+        # Captured frame values hoisted into locals so the body below runs on
+        # LOAD_FAST exactly as it did when this was a closure.
+        blend_normal_pixel = self.blend_normal_pixel
+        blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        can_blend_normal_fast = self.can_blend_normal_fast
+        clip_row_visible_spans = self.clip_row_visible_spans
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        current_clip = self.current_clip
+        page_box_to_pixels = self.page_box_to_pixels
+        scale = self.scale
+        shading_box = self.shading_box
+        width = self.width
+        shading = data.get("prepared_shading")
+        if not isinstance(shading, PreparedShading):
+            shading = prepare_shading(data.get("dictionary"))
+        if shading is None:
+            return
+        shading_type = shading.shading_type
+        coords = shading.coords
+        domain = shading.domain
+        extend0 = shading.extend_start
+        extend1 = shading.extend_end
+        x0, y0, x1, y1 = shading_box(data, shading)
+        clip_box = current_clip()
+        if clip_box is not None:
+            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            if clipped is None:
+                return
+            x0, y0, x1, y1 = clipped
+        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
+        if pixel_box is None:
+            return
+        ix0, iy0, ix1, iy1 = pixel_box
+        soft_mask_alpha = data.get("soft_mask_alpha")
+        fill_opacity = data.get("fill_opacity")
+        normal_fast = can_blend_normal_fast(blend_mode)
+        # Fixed for the whole shading; resolving it per pixel re-ran pdf_number
+        # and float() once per device pixel of the fill.
+        shading_alpha = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
+        domain_span = domain[1] - domain[0]
+        # page_x only depends on the column, so it is identical on every row;
+        # computing it once here avoids redoing the same division per pixel.
+        page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
+        # A gradient function is evaluated purely from unit_t, and real pages
+        # spend most of their pixels in a clamped extend region or an
+        # axis-aligned band where unit_t repeats exactly -- cache per call so
+        # evaluate_pdf_function (which can run an arbitrary PDF function,
+        # including a PostScript calculator) is not repeated for the same t.
+        color_cache: dict[float, tuple[int, int, int, int]] = {}
+        for py in range(iy0, iy1):
+            page_y = crop_y1 - (py + 0.5) / scale
+            row = py * width * 4
+            visible_spans = clip_row_visible_spans(py)
+            if not visible_spans:
+                continue
+            # Walking the spans directly answers a per-row question once per
+            # span, where the bisect answered it again for every pixel.
+            for span_start, span_end in visible_spans:
+                for px in range(max(ix0, span_start), min(ix1, span_end)):
+                    page_x = page_x_values[px - ix0]
+                    unit_t = (
+                        axial_shading_t(coords, page_x, page_y)
+                        if shading_type == 2
+                        else radial_shading_t(coords, page_x, page_y)
+                    )
+                    if unit_t is None:
+                        continue
+                    if unit_t < 0.0:
+                        if not extend0:
+                            continue
+                        unit_t = 0.0
+                    elif unit_t > 1.0:
+                        if not extend1:
+                            continue
+                        unit_t = 1.0
+                    rgba = color_cache.get(unit_t)
+                    if rgba is None:
+                        value = domain[0] + unit_t * domain_span
+                        rgba = internal_shading_color_rgba(
+                            shading.color_model,
+                            shading.evaluate(value),
+                            fill_opacity,
+                        )
+                        # Bounded like the raster coordinate caches below: a
+                        # diagonal or radial gradient can produce a near-unique
+                        # unit_t per pixel, so an unbounded cache would grow to
+                        # one entry per pixel on a large fill.
+                        if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                            color_cache[unit_t] = rgba
+                    if shading_alpha is not None:
+                        rgba = (
+                            rgba[0],
+                            rgba[1],
+                            rgba[2],
+                            max(0, min(255, int(round(rgba[3] * shading_alpha)))),
+                        )
+                    if normal_fast:
+                        blend_normal_pixel(row + px * 4, *rgba)
+                    else:
+                        blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+
+    def paint_tiling_glyphs(
+        self: Any,
+        glyphs: list[GlyphObservation],
+        tx: float,
+        ty: float,
+        blend_mode: str | None,
+    ) -> None:
+        # Captured frame values hoisted into locals so the body below runs on
+        # LOAD_FAST exactly as it did when this was a closure.
+        draw_glyph_bitmap = self.draw_glyph_bitmap
+        for glyph in glyphs:
+            if not glyph.visible:
+                continue
+            bbox = internal_translate_rect(glyph.ink_bbox, tx, ty)
+            rgba = internal_color_rgba(glyph.fill, None)
+            draw_glyph_bitmap(
+                bbox,
+                glyph.resolved_bitmap(),
+                rgba,
+                blend_mode,
+                glyph.bitmap_width,
+                glyph.bitmap_height,
+            )
+
+    def paint_tiling_drawing(
+        self: Any,
+        drawing: CapturedDrawing,
+        tx: float,
+        ty: float,
+        parent_blend_mode: str | None,
+    ) -> None:
+        # Captured frame values hoisted into locals so the body below runs on
+        # LOAD_FAST exactly as it did when this was a closure.
+        fill_path = self.fill_path
+        paint_shading = self.paint_shading
+        stroke_path = self.stroke_path
+        kind = drawing.kind
+        blend = drawing.blend_mode or parent_blend_mode
+        raw_path = drawing.path
+        path = raw_path.translated(tx, ty) if type(raw_path) is CapturedPath else None
+        if kind == "shading" and isinstance(drawing.dictionary, dict):
+            paint_shading(
+                {
+                    "dictionary": drawing.dictionary,
+                    "bbox": internal_translate_rect(drawing.rect, tx, ty),
+                    "fill_opacity": drawing.fill_opacity,
+                    "soft_mask_alpha": drawing.soft_mask_alpha,
+                },
+                blend,
+            )
+            return
+        if kind not in {"fill", "fillstroke", "stroke"}:
+            return
+        if path is None:
+            return
+        fill_rgba = internal_color_rgba(drawing.fill, drawing.fill_opacity)
+        if kind in {"fill", "fillstroke"}:
+            fill_path(
+                path,
+                fill_rgba,
+                blend,
+                drawing.fill_rule or "nonzero",
+            )
+        if kind in {"stroke", "fillstroke"}:
+            stroke_rgba = internal_color_rgba(drawing.stroke_color, drawing.stroke_opacity)
+            stroke_path(
+                path,
+                float(drawing.line_width or 1.0),
+                stroke_rgba,
+                drawing.dash_pattern,
+                blend,
+                int(drawing.line_cap or 0),
+                int(drawing.line_join or 0),
+            )
+
+    def paint_tiling_pattern(
+        self: Any,
+        pattern: TilingPattern,
+        target_data: dict[str, Any],
+        blend_mode: str | None,
+    ) -> bool:
+        # Captured frame values hoisted into locals so the body below runs on
+        # LOAD_FAST exactly as it did when this was a closure.
+        crop_x0 = self.crop_x0
+        crop_y0 = self.crop_y0
+        crop_y1 = self.crop_y1
+        current_clip = self.current_clip
+        paint_tiling_drawing = self.paint_tiling_drawing
+        paint_tiling_glyphs = self.paint_tiling_glyphs
+        path_bbox = self.path_bbox
+        scale = self.scale
+        width = self.width
+        cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
+        x_step = abs(pattern.x_step)
+        y_step = abs(pattern.y_step)
+        if x_step <= 0.0 or y_step <= 0.0:
+            return False
+        drawings = pattern.drawings
+        glyphs = pattern.glyphs
+        if not drawings and not glyphs:
+            return False
+        target_box = target_data.get("bbox") or path_bbox(target_data.get("path"))
+        target_box_type = type(target_box)
+        if target_box_type is RectBox:
+            target_rect = cast(RectBox, target_box)
+            x0, y0, x1, y1 = (
+                target_rect.x0,
+                target_rect.y0,
+                target_rect.x1,
+                target_rect.y1,
+            )
+        elif target_box_type is list or target_box_type is tuple:
+            target_box = cast(list[Any] | tuple[Any, ...], target_box)
+            if len(target_box) == 4:
+                try:
+                    x0, y0, x1, y1 = (float(value) for value in target_box)
+                except (TypeError, ValueError):
+                    return False
+            else:
+                x0, y0, x1, y1 = (
+                    crop_x0,
+                    crop_y0,
+                    crop_x0 + width / scale,
+                    crop_y1,
+                )
+        else:
+            x0, y0, x1, y1 = crop_x0, crop_y0, crop_x0 + width / scale, crop_y1
+        clip_box = current_clip()
+        if clip_box is not None:
+            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            if clipped is None:
+                return True
+            x0, y0, x1, y1 = clipped
+        start_x = cell_x0 + math.floor((x0 - cell_x0) / x_step) * x_step
+        start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
+        cells = 0
+        y = start_y
+        while y < y1 + y_step and cells < 10000:
+            x = start_x
+            while x < x1 + x_step and cells < 10000:
+                tx = x - cell_x0
+                ty = y - cell_y0
+                if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
+                    for drawing in drawings:
+                        if type(drawing) is not dict:
+                            continue
+                        paint_tiling_drawing(drawing, tx, ty, blend_mode)
+                    paint_tiling_glyphs(glyphs, tx, ty, blend_mode)
+                cells += 1
+                x += x_step
+            y += y_step
+        return True
+
+    def paint_fill_pattern(self: Any, data: dict[str, Any], blend_mode: str | None) -> bool:
+        # Captured frame values hoisted into locals so the body below runs on
+        # LOAD_FAST exactly as it did when this was a closure.
+        clip_path_stack = self.clip_path_stack
+        mark_clip_metadata_dirty = self.mark_clip_metadata_dirty
+        paint_shading = self.paint_shading
+        paint_tiling_pattern = self.paint_tiling_pattern
+        path_bbox = self.path_bbox
+        pattern = data.get("fill_pattern")
+        if not isinstance(pattern, (ShadingPattern, TilingPattern)):
+            return False
+        path = data.get("path")
+        pushed_clip = False
+        if type(path) is CapturedPath and path.has_segments():
+            clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
+            mark_clip_metadata_dirty()
+            pushed_clip = True
+        try:
+            if isinstance(pattern, ShadingPattern):
+                dictionary = pattern.dictionary
+                if not isinstance(dictionary, dict):
+                    return False
+                shading_data = {
+                    "dictionary": dictionary,
+                    "bbox": data.get("bbox") or path_bbox(path),
+                    "fill_opacity": data.get("fill_opacity"),
+                    "soft_mask_alpha": data.get("soft_mask_alpha"),
+                }
+                paint_shading(shading_data, blend_mode)
+                return True
+            return paint_tiling_pattern(pattern, data, blend_mode)
+        finally:
+            if pushed_clip:
+                clip_path_stack.pop()
+                mark_clip_metadata_dirty()
+        return False

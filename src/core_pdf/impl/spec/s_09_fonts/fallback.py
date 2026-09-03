@@ -11,6 +11,7 @@ from importlib.resources import files
 from typing import Protocol, cast
 
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl.spec.s_09_fonts.helpers import strip_subset_tag
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,8 +57,9 @@ def internal_provider_face(
     return callback(request)
 
 
+@lru_cache(maxsize=256)
 def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
-    name = (font_name or "").split("+", 1)[-1].lower()
+    name = strip_subset_tag(font_name or "").lower()
     if "zapfdingbats" in name:
         return ("NotoSansSymbols2-Regular.ttf",)
     if "symbol" in name:

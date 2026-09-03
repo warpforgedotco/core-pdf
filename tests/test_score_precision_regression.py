@@ -34,7 +34,9 @@ from typing import Any, cast
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+from tests.helpers.paths import REPO_ROOT, require_fixture
+
+ROOT = REPO_ROOT
 SCORE_SCRIPT = ROOT / "scripts" / "score_unstructured_bench.py"
 
 _score_bench = run_path(
@@ -87,8 +89,7 @@ def test_tokenize_treats_orphan_symbol_as_own_token() -> None:
     ),
 )
 def test_precision_regression_partition(tmp_path: Path) -> None:
-    if not SCORE_BENCH_ROOT.exists():
-        cast(Any, pytest.skip)(f"SCORE-Bench fixtures not present at {SCORE_BENCH_ROOT}")
+    require_fixture(SCORE_BENCH_ROOT, f"SCORE-Bench fixtures not present at {SCORE_BENCH_ROOT}")
 
     json_output = tmp_path / "precision_regression.json"
     result = subprocess.run(

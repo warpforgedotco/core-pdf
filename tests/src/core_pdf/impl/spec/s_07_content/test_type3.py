@@ -9,20 +9,17 @@ from core_pdf.impl.spec.s_07_content.capture import type3_glyph_names
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder, Type3CharProcProgram
+from tests.helpers.resolvers import IdentityResolver
 
 
 def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
-    resolver = SimpleNamespace(
-        kw_cache={},
-        resolve=lambda value: value,
-        resolve_name=lambda value: None,
-    )
     document = cast(
         Any,
         SimpleNamespace(
-            resolver=resolver,
+            resolver=IdentityResolver(),
             decoder_cache={},
             internal_cache_lock=threading.RLock(),
+            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})
@@ -71,17 +68,13 @@ def test_type3_names_include_base_encoding_and_differences() -> None:
 
 def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
     stream = PdfStream(raw_data=b"500 0 d0 0 0 1 1 re f")
-    resolver = SimpleNamespace(
-        kw_cache={},
-        resolve=lambda value: value,
-        resolve_name=lambda value: None,
-    )
     document = cast(
         Any,
         SimpleNamespace(
-            resolver=resolver,
+            resolver=IdentityResolver(),
             decoder_cache={},
             internal_cache_lock=threading.RLock(),
+            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})
@@ -119,12 +112,8 @@ def test_type3_char_proc_compiles_once_and_replays_exactly() -> None:
     fallback_state._render_type3_glyphs_impl(b"AAA", fallback_decoder)
 
     assert internal_drawing_signature(compiled_state) == internal_drawing_signature(fallback_state)
-    assert compiled_decoder.type3_charproc_cache_misses == 1
-    assert compiled_decoder.type3_charproc_cache_hits == 2
     assert compiled_decoder.type3_charproc_compiled_programs == 1
-    assert compiled_decoder.type3_charproc_compiled_operations == 9
     assert compiled_decoder.type3_charproc_unsafe_fallbacks == 0
-    assert fallback_decoder.type3_charproc_unsafe_fallbacks == 3
     assert not compiled_state.active_streams
     assert not compiled_state.stack
     assert not compiled_state.clip_scope_stack

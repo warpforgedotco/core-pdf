@@ -6,7 +6,7 @@ import zlib
 import numpy
 import pytest
 
-from core_pdf.impl.spec.s_07_filters.flate import apply_flate, looks_like_pdf_content_stream
+from core_pdf.impl.spec.s_07_filters.codecs import apply_flate, looks_like_pdf_content_stream
 
 
 def build_content_stream(operations: int) -> bytes:

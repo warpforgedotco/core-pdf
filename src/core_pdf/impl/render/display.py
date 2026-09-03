@@ -1,154 +1,35 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Display-list records and crop-aware render planning."""
+"""Display-list construction and crop-aware render planning."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from enum import IntEnum
 from typing import Any, cast
 
 from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.render.model import (
+    DisplayItem,
+    DisplayListItem,
+    ImagePaintItem,
+    PathPaintItem,
+    PathPaintKind,
+)
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_display_metadata,
     pdf_number,
 )
 from core_pdf.impl.spec.s_08_graphics.shading import prepare_shading
 
-
-@dataclass(slots=True)
-class RenderOptions:
-    page_number: int | None = None
-    rotate: int = 0
-    crop: tuple[float, float, float, float] | None = None
-    include_annotations: bool = True
-    include_layers: bool = True
-    include_text: bool = True
-
-    def __post_init__(self) -> None:
-        if self.rotate % 90:
-            raise ValueError("render rotation must be a multiple of 90 degrees")
-        self.rotate %= 360
-
-
-@dataclass(slots=True)
-class DisplayListItem:
-    kind: str
-    seqno: int
-    data: dict[str, Any] = field(default_factory=dict)
-
-
-class PathPaintKind(IntEnum):
-    FILL = 0
-    STROKE = 1
-    FILL_STROKE = 2
-
-
-class LineCap(IntEnum):
-    BUTT = 0
-    ROUND = 1
-    PROJECTING_SQUARE = 2
-
-
-class LineJoin(IntEnum):
-    MITER = 0
-    ROUND = 1
-    BEVEL = 2
-
-
-PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
-PATH_PAINT_KINDS = {name: PathPaintKind(index) for index, name in enumerate(PATH_PAINT_NAMES)}
+PATH_PAINT_KINDS = {
+    name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
+}
 MAX_COALESCED_STROKE_SUBPATHS = 256
-
-
-@dataclass(slots=True)
-class PathPaintItem:
-    """Typed, allocation-light record for the common unpatterned path hot path."""
-
-    paint_kind: PathPaintKind
-    seqno: int
-    bbox: Any
-    path: Any
-    fill: Any
-    fill_opacity: Any
-    stroke_color: Any
-    stroke_opacity: Any
-    line_width: Any
-    line_cap: Any
-    line_join: Any
-    dash_pattern: Any
-    fill_rule: Any
-    blend_mode: Any
-    soft_mask_alpha: Any
-    coalesced_path: bool = False
-
-    @property
-    def kind(self) -> str:
-        return PATH_PAINT_NAMES[int(self.paint_kind)]
-
-    def to_data(self) -> dict[str, Any]:
-        return {
-            "bbox": self.bbox,
-            "path": self.path,
-            "fill": self.fill,
-            "fill_opacity": self.fill_opacity,
-            "stroke_color": self.stroke_color,
-            "stroke_opacity": self.stroke_opacity,
-            "line_width": self.line_width,
-            "line_cap": self.line_cap,
-            "line_join": self.line_join,
-            "dash_pattern": self.dash_pattern,
-            "fill_rule": self.fill_rule,
-            "blend_mode": self.blend_mode,
-            "soft_mask_alpha": self.soft_mask_alpha,
-        }
-
-
-@dataclass(slots=True)
-class ImagePaintItem:
-    """Typed image paint command whose source owns all PDF image preparation."""
-
-    paint_kind: str
-    seqno: int
-    bbox: Any
-    source: ImageSource | None
-    quad: tuple[tuple[float, float], ...] | None
-    fill: Any
-    fill_opacity: Any
-    blend_mode: Any
-    soft_mask_alpha: Any
-    image_clip: Any
-    source_metadata: dict[str, Any]
-    ctm: Any = None
-    xobject_depth: Any = None
-
-    @property
-    def kind(self) -> str:
-        return self.paint_kind
-
-    def to_data(self) -> dict[str, Any]:
-        """Return the legacy diagnostic mapping without duplicating paint ownership."""
-        source = self.source
-        return {
-            "bbox": self.bbox,
-            "raw_data": source.raw if source is not None else None,
-            "dictionary": source.dictionary if source is not None else None,
-            "image_source": source,
-            "items": [("quad", self.quad)] if self.quad is not None else [],
-            "fill": self.fill,
-            "fill_opacity": self.fill_opacity,
-            "blend_mode": self.blend_mode,
-            "soft_mask_alpha": self.soft_mask_alpha,
-            "image_clip": self.image_clip,
-            "source_metadata": self.source_metadata,
-            "ctm": self.ctm,
-            "xobject_depth": self.xobject_depth,
-        }
-
-
-DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
+RASTER_CONTROL_KINDS = frozenset({"state-push", "state-pop", "clip", "group-begin", "group-end"})
+RENDER_TILE_SIZE = 128.0
+MAX_TILES_PER_ITEM = 256
 
 
 def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
@@ -192,9 +73,11 @@ class DisplayList:
                 dictionary = data.get("dictionary")
                 raw = data.get("raw_data", data.get("data"))
                 if isinstance(dictionary, dict) and isinstance(raw, (bytes, bytearray, memoryview)):
+                    soft_mask = data.get("soft_mask")
                     source = ImageSource(
                         memoryview(raw).cast("B") if isinstance(raw, bytearray) else raw,
                         dictionary,
+                        soft_mask=soft_mask if isinstance(soft_mask, SoftMask) else None,
                     )
                 else:
                     source = None
@@ -337,11 +220,6 @@ class DisplayList:
         )
 
 
-RASTER_CONTROL_KINDS = frozenset({"state-push", "state-pop", "clip", "group-begin", "group-end"})
-RENDER_TILE_SIZE = 128.0
-MAX_TILES_PER_ITEM = 256
-
-
 def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, float] | None:
     """Compute the conservative paint bounds used by the compiled render plan."""
     if type(item) is ImagePaintItem:
@@ -456,14 +334,6 @@ class CompiledRenderPlan:
 
 __all__ = (
     "CompiledRenderPlan",
-    "DisplayItem",
     "DisplayList",
-    "DisplayListItem",
-    "ImagePaintItem",
-    "LineCap",
-    "LineJoin",
-    "PathPaintItem",
-    "PathPaintKind",
-    "RenderOptions",
     "internal_image_quad",
 )

@@ -7,7 +7,7 @@ from core_pdf.api.compat.llamaindex._operator_text import (
     internal_difference_text,
     internal_TextState,
 )
-from core_pdf.impl.parse import layout as native_layout
+from core_pdf.impl.extract import block_layout as native_layout
 from core_pdf.impl.primitives import PdfName
 
 

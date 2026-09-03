@@ -13,7 +13,6 @@ from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
     Decipher,
@@ -30,14 +29,16 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
+    parse_box,
     parse_float,
-    parse_float_strict,
     parse_int,
+    parse_text_string,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     FindableSizedBuffer,
     full_source_buffer,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 STREAM_DECODE_KEYS = frozenset(
     {
@@ -229,8 +230,21 @@ class ObjectResolver:
             return value
 
         if t is PdfReference:
-            res = self.resolve(value)
-            if type(res) in (dict, list, PdfStream, tuple, PdfReference):
+            # Walk the chain iteratively with its own seen set, the way
+            # resolve_str does. Recursing through deep_resolve instead never
+            # recorded the reference keys -- `seen` is only populated for
+            # containers below -- so a cyclic chain (1 0 R -> 2 0 R -> 1 0 R)
+            # recursed until RecursionError. A cycle yields the reference
+            # unresolved, matching what resolve() itself returns for one.
+            res: object = value
+            chain: set[int] = set()
+            while type(res) is PdfReference:
+                reference_key = key_for(res.object_number, res.generation_number)
+                if reference_key in chain:
+                    return res
+                chain.add(reference_key)
+                res = self.resolve(res)
+            if type(res) in (dict, list, PdfStream, tuple):
                 return self.deep_resolve(res, seen)
             return res
 
@@ -256,16 +270,15 @@ class ObjectResolver:
             deep_cache[val_id] = (value, res)
             return res
 
-        marker = id(value)
-        if marker in seen:
+        if val_id in seen:
             return value
-        seen.add(marker)
+        seen.add(val_id)
 
         if t is list:
             items = cast(list[object], value)
-            if len(items) > 64 and set(map(type, items)).issubset(terminal_types):
-                deep_cache[val_id] = (value, cast(CachedPdfObject, items))
-                return items
+            # One short-circuiting scan, not two checks. A set(map(type, ...))
+            # pre-pass is ~23% faster for a long all-terminal array but ~18x
+            # slower for one that holds references, which bails on item zero.
             for item in items:
                 if type(item) not in terminal_types:
                     break
@@ -322,17 +335,10 @@ class ObjectResolver:
         resolved = self.deep_resolve(value)
         if resolved is None:
             return None
-        if isinstance(resolved, (list, tuple)) and len(resolved) == 4:
-            try:
-                return (
-                    parse_float_strict(resolved[0]),
-                    parse_float_strict(resolved[1]),
-                    parse_float_strict(resolved[2]),
-                    parse_float_strict(resolved[3]),
-                )
-            except ValueError as error:
-                raise ValueError("invalid box value") from error
-        raise ValueError("invalid box value")
+        box = parse_box(resolved)
+        if box is None:
+            raise ValueError("invalid box value")
+        return box
 
     def resolve_font_dict(self, font: PdfDict) -> PdfDict:
         resolved_font = self.deep_resolve(font)
@@ -361,6 +367,17 @@ class ObjectResolver:
             return decode_pdf_text_string(val.data)
         return None
 
+    def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
+        """A value as a name, falling back to a text string.
+
+        ``name_like`` also accepts a non-name value whose text is a valid name,
+        which lenient readers allow for AcroForm field types.
+        """
+        text = self.resolve_name(value)
+        if text is None and name_like:
+            text = self.resolve_name_like_value(value)
+        return text or self.resolve_str(value)
+
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         if type(value) is int:
             return value
@@ -383,13 +400,7 @@ class ObjectResolver:
                 return None
             seen.add(reference_key)
             resolved = self.resolve(reference)
-        if type(resolved) is PdfString:
-            return decode_pdf_text_string(resolved.data)
-        if type(resolved) is bytes:
-            return decode_pdf_text_string(resolved)
-        if type(resolved) is str:
-            return resolved
-        return None
+        return parse_text_string(resolved)
 
     def internal_cached_object(self, ref: PdfReference) -> object:
         obj_num = ref.object_number
@@ -515,7 +526,7 @@ class ObjectResolver:
             if parsed is None:
                 continue
             offset, object_number, generation_number = parsed
-            key = (object_number << 16) | generation_number
+            key = key_for(object_number, generation_number)
             offsets.setdefault(key, []).append(offset)
         indexed = {key: tuple(values) for key, values in offsets.items()}
         with self.lock:
@@ -525,7 +536,7 @@ class ObjectResolver:
 
     def recover_missing_indirect_object(self, lexer: PdfLexer, ref: PdfReference) -> object:
         """Resolve a demanded object omitted by a damaged cross-reference table."""
-        key = (ref.object_number << 16) | ref.generation_number
+        key = key_for(ref.object_number, ref.generation_number)
         for offset in reversed(self.internal_recovery_offsets(lexer).get(key, ())):
             lexer.rewind(offset)
             try:

@@ -5,11 +5,11 @@
 This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. Third-party compatibility facades live in `src/core_pdf/api/compat`. Internal implementation is organized under `src/core_pdf/impl`:
 
 - `impl/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
-- `impl/parse/` is the extraction pipeline, one module per stage (capture → route → fusion → tables → OCR → layout → emit). `parse/__init__.py` re-exports only the pipeline entry points and shared stage models; import stage internals from the owning submodule.
-- `impl/render/` rasterizes; `impl/structured/` serializes to markdown/HTML/JSON; `impl/model/` holds the capture records (geometry, text runs, glyphs) and `impl/layout/` holds the heuristics that consume them. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
+- `impl/extract/` is the extraction pipeline, with OCR internals grouped under `extract/ocr/`. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
+- `impl/render/` rasterizes; `impl/output.py` defines structured output and `impl/serialize.py` emits markdown/HTML/JSON. `impl/records.py` holds capture records, `impl/model/` owns lower-level geometry/text models, and `impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
-Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_parse_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
+Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_extract_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
 
 Start with `docs/architecture.md` — it describes the pipeline and how the source tree is organized.
 

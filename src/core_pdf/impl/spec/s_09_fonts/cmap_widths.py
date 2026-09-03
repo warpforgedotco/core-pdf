@@ -6,6 +6,8 @@ from collections.abc import Iterator, Mapping
 from contextlib import suppress
 from typing import Any
 
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
+
 internal_MIN_CID = 0
 internal_MAX_CID = 0xFFFF
 
@@ -59,6 +61,12 @@ class SparseFontWidthMap(FontWidthMap):
         if type(key) is not int:
             return default
         return self.widths.get(key, default)
+
+    def width_for(self, code: int, default: float) -> float:
+        # The base implementation routes through get(), adding two frames to
+        # the hottest simple-font lookup. CompactCIDWidthMap already overrides
+        # this; every caller passes an int, so the guard in get() is moot here.
+        return self.widths.get(code, default)
 
 
 class CompactCIDWidthMap(FontWidthMap):
@@ -137,26 +145,6 @@ def require_cid_int(value: Any, message: str) -> int:
     raise ValueError(message)
 
 
-def require_cid_float(value: Any, message: str) -> float:
-    if type(value) is float:
-        return value
-    if type(value) is int:
-        return float(value)
-    if type(value) is bool:
-        raise ValueError(message)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            pass
-    if isinstance(value, bytes):
-        try:
-            return float(value)
-        except ValueError:
-            pass
-    raise ValueError(message)
-
-
 def parse_cid_widths(value: Any) -> FontWidthMap:
     if value is None:
         return SparseFontWidthMap()
@@ -203,7 +191,7 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
                         widths[code] = w
                     else:
                         with suppress(ValueError):
-                            widths[code] = require_cid_float(w, "invalid CID widths array")
+                            widths[code] = parse_float_strict(w, "invalid CID widths array")
                 code += 1
             index += 1
         else:
@@ -211,7 +199,7 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
                 break
             try:
                 last = require_cid_int(nxt, "invalid CID widths array")
-                width = require_cid_float(value[index + 1], "invalid CID widths array")
+                width = parse_float_strict(value[index + 1], "invalid CID widths array")
             except ValueError:
                 index += 2
                 continue

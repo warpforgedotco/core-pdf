@@ -134,9 +134,7 @@ line-length = 100
 # that is either a deliberate optimization pinned by docs/architecture.md or known
 # debt. Shrink this list rather than raising max-complexity.
 #   operations.py  dispatch_operations (162) — protected: hand-unrolled dispatch loop
-#   ocr.py         internal_recognize_page_with_reserved_raster (66)
 "src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
-"src/core_pdf/impl/parse/ocr.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 60
@@ -238,17 +236,29 @@ root_package = "core_pdf"
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
-name = "Derived-processing layers"
+name = "Derived-processing spine"
 type = "layers"
 containers = ["core_pdf.impl"]
 layers = [
     "document",
-    "page",
-    "parse",
+    "extract",
     "render",
-    "structured",
-    "layout",
+    "output : layout",
     "model",
+]
+
+[[tool.importlinter.contracts]]
+name = "Serialization stays below processing and the specification"
+type = "forbidden"
+source_modules = ["core_pdf.impl.serialize"]
+forbidden_modules = [
+    "core_pdf.impl.document",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.render",
+    "core_pdf.impl.runtime",
+    "core_pdf.impl.spec",
+    "core_pdf.api",
 ]
 
 [[tool.importlinter.contracts]]
@@ -274,44 +284,11 @@ type = "forbidden"
 source_modules = ["core_pdf.impl.spec"]
 forbidden_modules = [
     "core_pdf.impl.document",
+    "core_pdf.impl.extract",
     "core_pdf.impl.layout",
-    "core_pdf.impl.page",
-    "core_pdf.impl.parse",
+    "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.structured",
-]
-
-[[tool.importlinter.contracts]]
-name = "Pipeline stages run in order"
-type = "layers"
-containers = ["core_pdf.impl.parse"]
-# Each stage may use the stages before it and the shared model, never a later one.
-# pipeline is the orchestrator and sits above all of them.
-layers = [
-    "pipeline",
-    "emit",
-    "ocr",
-    "tables",
-    "fusion",
-    "layout",
-    "route",
-    "capture",
-    "model",
-]
-
-[[tool.importlinter.contracts]]
-name = "OCR stage layers"
-type = "layers"
-containers = ["core_pdf.impl.parse"]
-# The recognition stage is itself layered: ocr.py orchestrates, the modules under
-# it produce rasters, pick regions and talk to Tesseract, and all of them share
-# one record vocabulary at the bottom.
-layers = [
-    "ocr",
-    "ocr_regions",
-    "ocr_raster",
-    "ocr_stroked_vector : ocr_tesseract",
-    "ocr_model",
+    "core_pdf.impl.serialize",
 ]
 
 [[tool.importlinter.contracts]]
@@ -320,13 +297,13 @@ type = "forbidden"
 source_modules = ["core_pdf.impl.runtime"]
 forbidden_modules = [
     "core_pdf.impl.document",
+    "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.model",
-    "core_pdf.impl.page",
-    "core_pdf.impl.parse",
+    "core_pdf.impl.output",
     "core_pdf.impl.render",
+    "core_pdf.impl.serialize",
     "core_pdf.impl.spec",
-    "core_pdf.impl.structured",
     "core_pdf.api",
 ]
 
@@ -336,12 +313,12 @@ type = "forbidden"
 source_modules = ["core_pdf.impl.model"]
 forbidden_modules = [
     "core_pdf.impl.document",
+    "core_pdf.impl.extract",
     "core_pdf.impl.layout",
-    "core_pdf.impl.page",
-    "core_pdf.impl.parse",
+    "core_pdf.impl.output",
     "core_pdf.impl.render",
+    "core_pdf.impl.serialize",
     "core_pdf.impl.spec",
-    "core_pdf.impl.structured",
     "core_pdf.api",
 ]
 
@@ -356,11 +333,12 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
+    "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.model",
-    "core_pdf.impl.parse",
+    "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.structured",
+    "core_pdf.impl.serialize",
 ]
 
 [[tool.importlinter.contracts]]
@@ -376,11 +354,12 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
+    "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.model",
-    "core_pdf.impl.parse",
+    "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.structured",
+    "core_pdf.impl.serialize",
 ]
 
 [[tool.importlinter.contracts]]
@@ -394,19 +373,19 @@ name = "Base modules stay beneath the spec and derived processing"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.exceptions",
-    "core_pdf.impl.models",
     "core_pdf.impl.pages",
     "core_pdf.impl.primitives",
+    "core_pdf.impl.records",
     "core_pdf.impl.text",
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
     "core_pdf.impl.document",
+    "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.model",
-    "core_pdf.impl.page",
-    "core_pdf.impl.parse",
+    "core_pdf.impl.output",
     "core_pdf.impl.render",
+    "core_pdf.impl.serialize",
     "core_pdf.impl.spec",
-    "core_pdf.impl.structured",
 ]

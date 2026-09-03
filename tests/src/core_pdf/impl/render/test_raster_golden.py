@@ -10,8 +10,10 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.spec.s_08_graphics.image_decode import SoftMask
 from scripts import raster_golden
+from scripts.raster_cover import greedy_cover
 from scripts.raster_golden import (
     CANONICAL_SOURCE,
     RasterSnapshot,
@@ -30,6 +32,21 @@ from scripts.raster_golden import (
 def internal_raster(samples: numpy.ndarray) -> RasterImage:
     height, width, channels = samples.shape
     return RasterImage(samples, width, height, channels)
+
+
+def test_raster_cover_seeds_fixed_documents_without_choosing_them() -> None:
+    line_a = ("render.py", 1)
+    line_b = ("render.py", 2)
+    line_c = ("render.py", 3)
+    per_document = {
+        "tolerant.pdf": {line_a},
+        "first.pdf": {line_a, line_b},
+        "second.pdf": {line_c},
+    }
+
+    chosen = greedy_cover(per_document, precovered_names=frozenset({"tolerant.pdf"}))
+
+    assert chosen == ["first.pdf", "second.pdf"]
 
 
 def test_raster_difference_accepts_each_limit_at_its_boundary() -> None:
@@ -136,10 +153,8 @@ def test_jpx_policy_scans_filter_chains_nested_items_and_soft_masks() -> None:
     item = types.SimpleNamespace(
         data={
             "items": [nested],
-            "dictionary": {
-                "__soft_mask_raw_data__": compressed,
-                "__soft_mask_dictionary__": jpx_dictionary,
-            },
+            "dictionary": {},
+            "soft_mask": SoftMask(compressed, jpx_dictionary),
         }
     )
 

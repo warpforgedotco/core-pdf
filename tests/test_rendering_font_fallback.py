@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import zlib
-from pathlib import Path
 
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontFace, PdfRasterFontRequest
-from core_pdf.impl.render.display import RenderOptions
-from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.render.model import RasterImage, RenderOptions
 from core_pdf.impl.spec.s_09_fonts.fallback import fallback_glyph_outline
+from tests.helpers.paths import FIXTURES, FONT_PROGRAMS
 
-SIMPLE1 = Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
-FONT_PROGRAM_FIXTURES = Path(__file__).parent / "fixtures" / "font_programs"
+SIMPLE1 = FIXTURES / "pdfminer.six" / "samples" / "simple1.pdf"
+FONT_PROGRAM_FIXTURES = FONT_PROGRAMS
 
 
 def internal_nonwhite_pixels(raster: RasterImage) -> int:
-    pixels = numpy.frombuffer(raster.pixels, dtype=numpy.uint8).reshape(
-        raster.height, raster.width, raster.channels
-    )
+    pixels = raster.array()
     return int(numpy.count_nonzero(numpy.any(pixels[:, :, :3] != 255, axis=2)))
 
 
@@ -25,10 +22,7 @@ def test_unembedded_base14_font_renders_deterministically() -> None:
     with PdfDocument.open(SIMPLE1) as document:
         raster = document.pages[0].render().rasterize()
 
-    pixels = numpy.frombuffer(raster.pixels, dtype=numpy.uint8).reshape(
-        raster.height, raster.width, raster.channels
-    )
-    foreground = numpy.any(pixels[:, :, :3] != 255, axis=2)
+    foreground = numpy.any(raster.array()[:, :, :3] != 255, axis=2)
     rows, columns = numpy.where(foreground)
 
     assert internal_nonwhite_pixels(raster) == 2997

@@ -6,6 +6,7 @@ from core_pdf.impl.spec.s_07_content.operations import OperandWindow
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
+from tests.helpers.resolvers import IdentityResolver
 
 
 def test_distinct_stream_slices_with_equal_lengths_have_distinct_execution_keys() -> None:
@@ -17,16 +18,13 @@ def test_distinct_stream_slices_with_equal_lengths_have_distinct_execution_keys(
 
 
 def internal_consume(content: bytes) -> TextState:
-    resolver = SimpleNamespace(
-        kw_cache={},
-        resolve=lambda value: value,
-        resolve_dict=lambda value: value if isinstance(value, dict) else None,
-        resolve_name=lambda internal_value: None,
-        resolve_str=lambda internal_value: None,
-    )
     document = cast(
         Any,
-        SimpleNamespace(resolver=resolver, internal_cache_lock=threading.RLock()),
+        SimpleNamespace(
+            resolver=IdentityResolver(),
+            internal_cache_lock=threading.RLock(),
+            legacy_pdfminer_text_operators=False,
+        ),
     )
     state = TextState(document, {})
     state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)

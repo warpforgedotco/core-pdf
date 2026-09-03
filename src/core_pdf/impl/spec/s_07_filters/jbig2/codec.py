@@ -6,12 +6,14 @@ from dataclasses import dataclass
 
 import numpy
 
-from core_pdf.impl.spec.s_07_filters.jbig2.bitmap_kernels import compose_packed_bitmap_data
-from core_pdf.impl.spec.s_07_filters.jbig2.buffer_views import uint8_matrix_view, uint8_view
+from core_pdf.impl.spec.s_07_filters.jbig2.bitmap_kernels import (
+    compose_packed_bitmap_data,
+    uint8_matrix_view,
+    uint8_view,
+)
 
 JBIG2_FILE_HEADER = b"\x97JB2\r\n\x1a\n"
 JBIG2_PAGE_INFO = 48
-JBIG2_END_OF_PAGE = 49
 JBIG2_END_OF_FILE = 51
 JBIG2_IMMEDIATE_GENERIC_REGION = 38
 JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION = 39

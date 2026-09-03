@@ -33,7 +33,7 @@ import imagecodecs
 import numpy
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf.impl.spec.s_07_filters.decoders import decode_jpx_image
 from core_pdf.impl.spec.s_07_filters.jpeg2000 import (
@@ -244,10 +244,11 @@ def internal_scan_jpx_policy(items: Iterable[object]) -> JpxPolicyScan:
                 unclassified.append(location)
             irreversible |= result is True
 
-        if not isinstance(dictionary, dict):
+        soft_mask = data.get("soft_mask")
+        if soft_mask is None:
             continue
-        mask_dictionary = dictionary.get("__soft_mask_dictionary__")
-        mask_raw = dictionary.get("__soft_mask_raw_data__")
+        mask_dictionary = getattr(soft_mask, "dictionary", None)
+        mask_raw = getattr(soft_mask, "raw", None)
         if not isinstance(mask_dictionary, dict) or not isinstance(
             mask_raw, (bytes, bytearray, memoryview)
         ):

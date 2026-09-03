@@ -117,7 +117,6 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
         *,
         local_subrs: tuple[bytes, ...],
         global_subrs: tuple[bytes, ...],
-        collect_contours: bool,
         seac_resolver: (
             Callable[
                 [int, int, float, float],
@@ -132,7 +131,6 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
             value,
             local_subrs=local_subrs,
             global_subrs=global_subrs,
-            collect_contours=collect_contours,
             seac_resolver=seac_resolver,
         )
 
@@ -174,7 +172,6 @@ def internal_type2_geometry(
         internal_type2_program(*tokens),
         local_subrs=(),
         global_subrs=(),
-        collect_contours=True,
     )
 
 
@@ -197,20 +194,9 @@ def internal_type2_calculated_line(
 def internal_type2_contour(
     operands: list[int], operator: int | tuple[int, int]
 ) -> list[tuple[float, float]]:
-    encoded_operator = bytes([operator]) if isinstance(operator, int) else bytes(operator)
-    charstring = (
-        internal_type2_number(0)
-        + internal_type2_number(0)
-        + bytes([21])
-        + b"".join(internal_type2_number(value) for value in operands)
-        + encoded_operator
-        + bytes([14])
-    )
-    contours, ignored_bbox = internal_type2_glyph_geometry_impl(
-        charstring,
-        local_subrs=(),
-        global_subrs=(),
-        collect_contours=True,
+    encoded_operator = (operator,) if isinstance(operator, int) else operator
+    contours, ignored_bbox = internal_type2_geometry(
+        0, 0, (21,), *operands, encoded_operator, (14,)
     )
     assert len(contours) == 1
     return contours[0]
@@ -337,7 +323,7 @@ def test_type2_stack_operators_preserve_specified_order(
 
 
 def test_type2_random_is_repeatable_and_in_the_specified_range() -> None:
-    program = internal_type2_program(
+    tokens = (
         0,
         0,
         (21,),
@@ -349,18 +335,8 @@ def test_type2_random_is_repeatable_and_in_the_specified_range() -> None:
         (14,),
     )
 
-    first = internal_type2_glyph_geometry_impl(
-        program,
-        local_subrs=(),
-        global_subrs=(),
-        collect_contours=True,
-    )
-    second = internal_type2_glyph_geometry_impl(
-        program,
-        local_subrs=(),
-        global_subrs=(),
-        collect_contours=True,
-    )
+    first = internal_type2_geometry(*tokens)
+    second = internal_type2_geometry(*tokens)
 
     assert first == second
     endpoint = first[0][0][-1]

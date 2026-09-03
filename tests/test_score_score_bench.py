@@ -8,16 +8,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.parse import (
+from core_pdf.impl.extract.contracts import (
     PageRoute,
     ParseReport,
     RecognitionReport,
     WorkPlan,
-    ocr_tesseract,
 )
+from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
+from tests.helpers.paths import REPO_ROOT
 
 score_bench = run_path(
-    str(Path(__file__).parents[1] / "scripts" / "score_unstructured_bench.py"),
+    str(REPO_ROOT / "scripts" / "score_unstructured_bench.py"),
     run_name="score_score_bench_tests",
 )
 tokenize = score_bench["tokenize"]
@@ -224,63 +225,57 @@ def test_collect_document_extraction_analysis_is_opt_in(
     assert records[0]["recognition"]["passes"] == ({"name": "primary", "elapsed_seconds": 1.25},)
 
 
-def test_score_failure_bucket_identifies_actionable_modes() -> None:
+BASE_CASE_SCORE = {
+    "stem": "case.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 10,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0,
+}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        pytest.param({}, "empty-output", id="empty-output"),
+        pytest.param(
+            {
+                "percent_tokens_found": 0.9,
+                "percent_tokens_added": 0.5,
+                "precision": 0.4,
+                "predicted_tokens": 22,
+                "matched_tokens": 9,
+            },
+            "low-precision",
+            id="low-precision",
+        ),
+        pytest.param(
+            {
+                "cct": 0.3,
+                "percent_tokens_found": 1.0,
+                "precision": 1.0,
+                "predicted_tokens": 10,
+                "matched_tokens": 10,
+                "content_f1": 0.9,
+                "order_gap": 0.6,
+            },
+            "order-gap",
+            id="order-gap",
+        ),
+    ],
+)
+def test_score_failure_bucket_identifies_actionable_modes(
+    overrides: dict[str, object], expected: str
+) -> None:
     case_score = score_bench["CaseScore"]
     bucket = score_bench["score_failure_bucket"]
 
-    assert (
-        bucket(
-            case_score(
-                stem="empty.pdf",
-                status="ok",
-                cct=0.0,
-                percent_tokens_found=0.0,
-                percent_tokens_added=0.0,
-                precision=0.0,
-                gt_tokens=10,
-                predicted_tokens=0,
-                matched_tokens=0,
-                elapsed_seconds=0.0,
-            )
-        )
-        == "empty-output"
-    )
-    assert (
-        bucket(
-            case_score(
-                stem="extra.pdf",
-                status="ok",
-                cct=0.0,
-                percent_tokens_found=0.9,
-                percent_tokens_added=0.5,
-                precision=0.4,
-                gt_tokens=10,
-                predicted_tokens=22,
-                matched_tokens=9,
-                elapsed_seconds=0.0,
-            )
-        )
-        == "low-precision"
-    )
-    assert (
-        bucket(
-            case_score(
-                stem="order.pdf",
-                status="ok",
-                cct=0.3,
-                percent_tokens_found=1.0,
-                percent_tokens_added=0.0,
-                precision=1.0,
-                gt_tokens=10,
-                predicted_tokens=10,
-                matched_tokens=10,
-                elapsed_seconds=0.0,
-                content_f1=0.9,
-                order_gap=0.6,
-            )
-        )
-        == "order-gap"
-    )
+    assert bucket(case_score(**{**BASE_CASE_SCORE, **overrides})) == expected
 
 
 def test_score_hints_formats_missing_and_extra_tokens() -> None:
@@ -448,6 +443,8 @@ def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
 
     ocr_tesseract.internal_OCR_LOCAL.__dict__.clear()
     monkeypatch.setattr(tesserocr, "PyTessBaseAPI", FakeApi)
+    # Identity per thread is the claim; resolving real tessdata is not part of it.
+    monkeypatch.setattr(ocr_tesseract, "internal_tessdata_path", lambda: "")
     barrier = Barrier(2)
 
     def worker() -> tuple[int, int]:

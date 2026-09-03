@@ -6,26 +6,14 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-
-import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl import page as engine_page
-
-FIXTURE = (
-    Path(__file__).parent
-    / "fixtures"
-    / "SCORE-Bench"
-    / "src"
-    / "Employee_Health_Benefits_Assess-p006.pdf"
-)
+from core_pdf.impl import document as engine_document
+from tests.helpers.paths import score_bench_pdf
 
 
 def internal_page():
-    if not FIXTURE.exists():
-        pytest.skip()
-    return PdfDocument.open(FIXTURE)
+    return PdfDocument.open(score_bench_pdf("Employee_Health_Benefits_Assess-p006.pdf"))
 
 
 def test_concurrent_geometry_extraction_on_one_page_is_consistent() -> None:
@@ -47,14 +35,14 @@ def test_concurrent_geometry_extraction_on_one_page_is_consistent() -> None:
 def test_get_text_lines_returns_one_shared_list_under_concurrency(monkeypatch) -> None:
     workers = 8
 
-    original_layout_line = engine_page.LayoutLine
+    original_layout_line = engine_document.LayoutLine
 
     class SlowLayoutLine(original_layout_line):  # type: ignore[valid-type,misc]
         def __init__(self, runs, *args, **kwargs) -> None:
             time.sleep(0.0005)
             original_layout_line.__init__(self, runs, *args, **kwargs)
 
-    monkeypatch.setattr(engine_page, "LayoutLine", SlowLayoutLine)
+    monkeypatch.setattr(engine_document, "LayoutLine", SlowLayoutLine)
 
     with internal_page() as document:
         page = document.pages[0]

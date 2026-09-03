@@ -6,41 +6,9 @@ from __future__ import annotations
 from typing import cast
 
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
-
-
-def pdf_name_direct(value: object) -> str | None:
-    if isinstance(value, PdfName):
-        return value.value
-    if isinstance(value, str):
-        return value.lstrip("/")
-    return None
-
-
-def pdf_box_direct(value: object) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return None
-    try:
-        return (
-            parse_float_strict(value[0]),
-            parse_float_strict(value[1]),
-            parse_float_strict(value[2]),
-            parse_float_strict(value[3]),
-        )
-    except ValueError:
-        return None
-
-
-def pdf_string_direct(value: object) -> str | None:
-    if isinstance(value, PdfString):
-        return decode_pdf_text_string(value.data)
-    if isinstance(value, bytes):
-        return decode_pdf_text_string(value)
-    if isinstance(value, str):
-        return value
-    return None
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_text_string
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 
 def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:
@@ -51,9 +19,9 @@ def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDic
 
 def link_target_direct(action: PdfDict, link_type: str | None) -> str | None:
     if link_type == "URI":
-        return pdf_string_direct(action.get("URI"))
+        return parse_text_string(action.get("URI"))
     if link_type == "GoTo":
-        return pdf_string_direct(action.get("D"))
+        return parse_text_string(action.get("D"))
     return None
 
 
@@ -101,8 +69,6 @@ def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: 
 __all__ = (
     "link_target_direct",
     "link_target_resolved",
-    "pdf_box_direct",
-    "pdf_name_direct",
     "resolve_annotation_dict",
     "resolve_destination_value",
 )

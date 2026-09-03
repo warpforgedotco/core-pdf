@@ -9,6 +9,7 @@ import pytest
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
     apply_ascii_hex,
+    apply_flate,
     apply_lzw,
 )
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
@@ -17,9 +18,8 @@ from core_pdf.impl.spec.s_07_filters.decoders import (
     decode_jpx_image,
     internal_jpx_thread_count,
 )
-from core_pdf.impl.spec.s_07_filters.flate import apply_flate
 from core_pdf.impl.spec.s_07_filters.pipeline import decode_stream_image_data
-from core_pdf.impl.spec.s_07_filters.predictor_impl import (
+from core_pdf.impl.spec.s_07_filters.predictors import (
     png_predict,
     tiff_predict_16,
     tiff_predict_bits,

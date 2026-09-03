@@ -8,33 +8,7 @@ loses every filled-in field.
 
 from __future__ import annotations
 
-import io
-
-from core_pdf import PdfDocument
-
-
-def assemble(objects: list[bytes]) -> bytes:
-    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = []
-    for number, obj in enumerate(objects, start=1):
-        offsets.append(len(pdf))
-        pdf.extend(f"{number} 0 obj\n".encode())
-        pdf.extend(obj)
-        pdf.extend(b"\nendobj\n")
-    xref_offset = len(pdf)
-    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode())
-    pdf.extend(b"0000000000 65535 f \n")
-    for offset in offsets:
-        pdf.extend(f"{offset:010d} 00000 n \n".encode())
-    pdf.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-        f"startxref\n{xref_offset}\n%%EOF\n".encode()
-    )
-    return bytes(pdf)
-
-
-def stream_obj(data: bytes, extra: bytes = b"") -> bytes:
-    return f"<< /Length {len(data)} {extra.decode()} >>\nstream\n".encode() + data + b"\nendstream"
+from tests.helpers.pdf_bytes import assemble_pdf, open_pdf, stream_obj
 
 
 def appearance(text: bytes) -> bytes:
@@ -60,7 +34,7 @@ def widget(rect: bytes, appearance_ref: int, extra: bytes = b"") -> bytes:
 def form_pdf() -> bytes:
     """One visible widget, one hidden widget, and no catalog /AcroForm."""
     content = b"BT /F1 12 Tf 50 700 Td (PageContent) Tj ET\n"
-    return assemble(
+    return assemble_pdf(
         [
             b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -81,7 +55,7 @@ def form_pdf() -> bytes:
 def scratch_widget_pdf() -> bytes:
     """A widget with neither /FT nor /T -- not a control a reader draws."""
     content = b"BT /F1 12 Tf 50 700 Td (PageContent) Tj ET\n"
-    return assemble(
+    return assemble_pdf(
         [
             b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -99,7 +73,7 @@ def scratch_widget_pdf() -> bytes:
 
 
 def page_runs(data: bytes):
-    with PdfDocument.open(io.BytesIO(data)) as document:
+    with open_pdf(data) as document:
         page = document.pages[0]
         return page.text_diagnostics().runs, page.get_fields()
 
@@ -112,7 +86,7 @@ def test_widget_appearance_text_reaches_extraction() -> None:
 
 
 def test_widget_appearance_glyphs_retain_their_capture_source() -> None:
-    with PdfDocument.open(io.BytesIO(form_pdf())) as document:
+    with open_pdf(form_pdf()) as document:
         glyphs = document.pages[0].get_page_program().products.glyphs
 
     page_glyph = next(glyph for glyph in glyphs if glyph.text == "P")

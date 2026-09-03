@@ -7,11 +7,15 @@ emits, so it lives here rather than with the capture records in ``model/``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from itertools import islice
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
+from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
+from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
 from core_pdf.impl.model.runs import TextRun, internal_track_text_run
-from core_pdf.impl.models import TextWord
+from core_pdf.impl.records import TextWord
+from core_pdf.impl.types import Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.runs import (
@@ -33,7 +37,7 @@ def reconstruct_cached_layout_line_text(
     internal_key: LayoutLineReconstructionKey | None = None,
 ) -> LayoutLineText:
     """Reconstruct a line once for every revision of its constituent runs."""
-    from core_pdf.impl.layout.text_lines import reconstruct_layout_line_text
+    from core_pdf.impl.layout.reconstruction import reconstruct_layout_line_text
 
     key: LayoutLineReconstructionKey = (
         internal_key
@@ -68,7 +72,6 @@ class LayoutLine:
         "max_order",
         "max_depth",
         "min_order",
-        "mid_y",
         "height",
         "max_font_size",
         "is_all_caps_text",
@@ -84,7 +87,6 @@ class LayoutLine:
     max_order: int
     max_depth: int
     min_order: int
-    mid_y: float
     max_font_size: float
     is_all_caps_text: bool
 
@@ -99,7 +101,6 @@ class LayoutLine:
             self.max_order = -1
             self.max_depth = -1
             self.min_order = 999999
-            self.mid_y = 0.0
             self.height = 0.0
             self.max_font_size = 0.0
             self.is_all_caps_text = True
@@ -158,7 +159,6 @@ class LayoutLine:
         self.max_order = max_order
         self.max_depth = max_depth
         self.min_order = min_order
-        self.mid_y = (y0 + y1) * 0.5
         self.height = y1 - y0
         self.max_font_size = max_font_size
         self.is_all_caps_text = is_all_caps_text
@@ -260,3 +260,365 @@ def layout_line_segment_char_bbox(
     step = (x1 - x0) / text_length
     char_x0 = x0 + step * index
     return (char_x0, y0, char_x0 + step, y1)
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutGeometryIssue:
+    code: str
+    severity: str
+    subject: str
+    bbox: Rectangle | None = None
+    message: str = ""
+    details: tuple[tuple[str, object], ...] = ()
+    repairable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutGeometrySummary:
+    issue_count: int
+    error_count: int
+    warning_count: int
+    repairable_count: int
+    text_run_count: int
+    line_count: int
+
+
+def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
+    key = (
+        run.internal_revision,
+        tuple(run.coords),
+        run.advance_bbox,
+        run.ink_bbox,
+        id(run.glyph_clusters),
+    )
+    cache = run.internal_geometry_issues_cache
+    if cache is not None and cache[0] == key:
+        return cast(tuple[LayoutGeometryIssue, ...], cache[1])
+    issues = internal_compute_text_run_geometry_issues(run)
+    internal_track_text_run(run)
+    object.__setattr__(run, "internal_geometry_issues_cache", (key, issues))
+    return issues
+
+
+def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
+    issues: list[LayoutGeometryIssue] = []
+    run_bbox = (run.x0, run.y0, run.x1, run.y1)
+    visible_text = run.visible and bool(run.text.strip())
+
+    if visible_text and not bbox_is_positive(run_bbox):
+        issues.append(
+            LayoutGeometryIssue(
+                code="run_nonpositive_bbox",
+                severity="error",
+                subject="text_run",
+                bbox=run_bbox,
+                message="Visible text run has no positive page-space area.",
+            )
+        )
+
+    if visible_text and glyph_text_has_unsupported_codepoint(run.text):
+        issues.append(
+            LayoutGeometryIssue(
+                code="unsupported_text_run",
+                severity="warning",
+                subject="text_run",
+                bbox=run_bbox,
+                message="Text run contains unsupported/private-use glyph text.",
+                repairable=True,
+            )
+        )
+
+    confidence = run.confidence
+    if visible_text and confidence is not None and confidence <= 0.35:
+        issues.append(
+            LayoutGeometryIssue(
+                code="low_confidence_text_run",
+                severity="warning",
+                subject="text_run",
+                bbox=run_bbox,
+                message="Text run came from low-confidence glyph decoding.",
+                details=(("confidence", confidence),),
+                repairable=True,
+            )
+        )
+
+    advance_bbox = finite_rect(run.advance_bbox, require_positive=False)
+    ink_bbox = finite_rect(run.ink_bbox, require_positive=False)
+    if visible_text and (advance_bbox is None or not bbox_is_positive(advance_bbox)):
+        issues.append(
+            LayoutGeometryIssue(
+                code="run_nonpositive_advance_bbox",
+                severity="error",
+                subject="text_run.advance_bbox",
+                bbox=advance_bbox,
+                message="Visible text run has no positive advance bbox.",
+            )
+        )
+    if visible_text and (ink_bbox is None or not bbox_is_positive(ink_bbox)):
+        issues.append(
+            LayoutGeometryIssue(
+                code="run_nonpositive_ink_bbox",
+                severity="warning",
+                subject="text_run.ink_bbox",
+                bbox=ink_bbox,
+                message="Visible text run has no positive ink bbox.",
+            )
+        )
+
+    clusters = tuple(run.glyph_clusters or ())
+    if not clusters:
+        return tuple(issues)
+
+    cluster_text = "".join(cluster.text for cluster in clusters)
+    if cluster_text != run.text:
+        issues.append(
+            LayoutGeometryIssue(
+                code="glyph_cluster_text_mismatch",
+                severity="error",
+                subject="text_run.glyph_clusters",
+                bbox=run_bbox,
+                message="Glyph cluster text does not reconstruct the text run.",
+                details=(
+                    ("run_text", run.text),
+                    ("cluster_text", cluster_text),
+                    ("cluster_count", len(clusters)),
+                ),
+                repairable=True,
+            )
+        )
+
+    cluster_bboxes: list[Rectangle] = []
+    for cluster_index, cluster in enumerate(clusters):
+        cluster_bbox = finite_rect(cluster.advance_bbox, require_positive=False)
+        if cluster_bbox is None or not bbox_is_positive(cluster_bbox):
+            issues.append(
+                LayoutGeometryIssue(
+                    code="glyph_cluster_nonpositive_bbox",
+                    severity="error",
+                    subject=f"glyph_cluster[{cluster_index}]",
+                    bbox=cluster_bbox,
+                    message="Glyph cluster has no positive advance bbox.",
+                    details=(("cluster_id", cluster.cluster_id),),
+                    repairable=True,
+                )
+            )
+        else:
+            cluster_bboxes.append(cluster_bbox)
+
+        cluster_text_value = cluster.text
+        if not cluster_text_value.strip():
+            continue
+        cluster_confidence = cluster.confidence
+        unsupported = glyph_text_has_unsupported_codepoint(cluster_text_value)
+        low_confidence = cluster_confidence is not None and cluster_confidence <= 0.35
+        suspicious_low_confidence = (
+            cluster_confidence is not None
+            and cluster_confidence <= 0.62
+            and not cluster_text_value.isalnum()
+        )
+        if unsupported or low_confidence or suspicious_low_confidence:
+            issues.append(
+                LayoutGeometryIssue(
+                    code=(
+                        "unsupported_glyph_cluster_text"
+                        if unsupported
+                        else "low_confidence_repairable_glyph"
+                    ),
+                    severity="warning",
+                    subject=f"glyph_cluster[{cluster_index}]",
+                    bbox=cluster_bbox,
+                    message="Glyph cluster is a repairable low-confidence text observation.",
+                    details=(
+                        ("cluster_id", cluster.cluster_id),
+                        ("text", cluster_text_value),
+                        ("confidence", cluster_confidence),
+                    ),
+                    repairable=True,
+                )
+            )
+
+    cluster_union = bbox_union(tuple(cluster_bboxes))
+    if cluster_union is None or advance_bbox is None or not bbox_is_positive(advance_bbox):
+        return tuple(issues)
+
+    # Glyph clusters are derived from glyph advance geometry, which is also the
+    # canonical page-space extent used by layout.  The legacy run coordinates
+    # can describe the text origin and nominal font box instead, notably for
+    # vertical writing where those boxes are intentionally offset.
+    cluster_inside_advance = overlap_ratio_of(cluster_union, advance_bbox)
+    if cluster_inside_advance < 0.80:
+        issues.append(
+            LayoutGeometryIssue(
+                code="glyph_clusters_outside_advance_bbox",
+                severity="error",
+                subject="text_run.glyph_clusters",
+                bbox=cluster_union,
+                message="Glyph cluster geometry does not overlap the owning advance bbox.",
+                details=(
+                    ("overlap_ratio", round(cluster_inside_advance, 4)),
+                    ("reference_region", "advance_bbox"),
+                ),
+            )
+        )
+
+    axis = "y" if run.rotation_angle in (90, 270) else "x"
+    run_span = bbox_height(run_bbox) if axis == "y" else bbox_width(run_bbox)
+    cluster_span = bbox_height(cluster_union) if axis == "y" else bbox_width(cluster_union)
+    min_reference_span = max(20.0, run.font_size * 2.0)
+    if cluster_span > 0.0 and run_span > min_reference_span and run_span > cluster_span * 2.5:
+        issues.append(
+            LayoutGeometryIssue(
+                code="run_bbox_oversized_for_glyph_clusters",
+                severity="warning",
+                subject="text_run",
+                bbox=run_bbox,
+                message="Run bbox is much larger than its glyph cluster geometry.",
+                details=(
+                    ("axis", axis),
+                    ("run_span", round(run_span, 4)),
+                    ("cluster_span", round(cluster_span, 4)),
+                ),
+            )
+        )
+
+    return tuple(issues)
+
+
+def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, ...]:
+    issues: list[LayoutGeometryIssue] = []
+    line_bbox = (line.x0, line.y0, line.x1, line.y1)
+    has_visible_text = any(run.visible and run.text.strip() for run in line.runs)
+    if has_visible_text and not bbox_is_positive(line_bbox):
+        issues.append(
+            LayoutGeometryIssue(
+                code="line_nonpositive_bbox",
+                severity="error",
+                subject="layout_line",
+                bbox=line_bbox,
+                message="Line with visible text has no positive page-space area.",
+            )
+        )
+
+    if not bbox_is_positive(line_bbox):
+        return tuple(issues)
+
+    for run_index, run in enumerate(line.runs):
+        if not run.visible or not run.text.strip():
+            continue
+        run_bbox = (run.x0, run.y0, run.x1, run.y1)
+        if not bbox_is_positive(run_bbox):
+            continue
+        overlap = overlap_ratio_of(run_bbox, line_bbox)
+        if overlap < 0.80:
+            issues.append(
+                LayoutGeometryIssue(
+                    code="run_outside_line_bbox",
+                    severity="error",
+                    subject=f"layout_line.runs[{run_index}]",
+                    bbox=run_bbox,
+                    message="Run geometry falls outside the owning line bbox.",
+                    details=(("overlap_ratio", round(overlap, 4)),),
+                )
+            )
+
+    words = line.cached_text_and_words()[1]
+    word_bboxes = tuple(
+        bbox for word in words if (bbox := word.bbox) is not None and bbox_is_positive(bbox)
+    )
+    if not word_bboxes:
+        return tuple(issues)
+    word_union = bbox_union(word_bboxes)
+    if word_union is None:
+        return tuple(issues)
+    axis = "y" if line.rotation_angle in (90, 270) else "x"
+    line_span = bbox_height(line_bbox) if axis == "y" else bbox_width(line_bbox)
+    word_span = bbox_height(word_union) if axis == "y" else bbox_width(word_union)
+    if word_span > 0.0 and line_span > max(20.0, word_span * 2.5):
+        issues.append(
+            LayoutGeometryIssue(
+                code="line_bbox_oversized_for_words",
+                severity="warning",
+                subject="layout_line",
+                bbox=line_bbox,
+                message="Line bbox is much larger than reconstructed word geometry.",
+                details=(
+                    ("axis", axis),
+                    ("line_span", round(line_span, 4)),
+                    ("word_span", round(word_span, 4)),
+                ),
+            )
+        )
+
+    return tuple(issues)
+
+
+def page_layout_geometry_issues(
+    lines: list[LayoutLine],
+) -> tuple[LayoutGeometryIssue, ...]:
+    issues: list[LayoutGeometryIssue] = []
+    for line_index, line in enumerate(lines):
+        for issue in layout_line_geometry_issues(line):
+            issues.append(with_issue_detail(issue, "line_index", line_index))
+        for run_index, run in enumerate(line.runs):
+            for issue in text_run_geometry_issues(run):
+                issues.append(
+                    with_issue_detail(
+                        with_issue_detail(issue, "run_index", run_index),
+                        "line_index",
+                        line_index,
+                    )
+                )
+    return tuple(issues)
+
+
+def page_layout_geometry_summary(lines: list[LayoutLine]) -> LayoutGeometrySummary:
+    issues = page_layout_geometry_issues(lines)
+    error_count = 0
+    warning_count = 0
+    repairable_count = 0
+    text_run_count = 0
+    for issue in issues:
+        if issue.severity == "error":
+            error_count += 1
+        elif issue.severity == "warning":
+            warning_count += 1
+        if issue.repairable:
+            repairable_count += 1
+    for line in lines:
+        text_run_count += len(line.runs)
+    return LayoutGeometrySummary(
+        issue_count=len(issues),
+        error_count=error_count,
+        warning_count=warning_count,
+        repairable_count=repairable_count,
+        text_run_count=text_run_count,
+        line_count=len(lines),
+    )
+
+
+def with_issue_detail(
+    issue: LayoutGeometryIssue,
+    key: str,
+    value: Any,
+) -> LayoutGeometryIssue:
+    return LayoutGeometryIssue(
+        code=issue.code,
+        severity=issue.severity,
+        subject=issue.subject,
+        bbox=issue.bbox,
+        message=issue.message,
+        details=(*issue.details, (key, value)),
+        repairable=issue.repairable,
+    )
+
+
+def bbox_is_positive(bbox: Rectangle | None) -> bool:
+    return bbox is not None and bbox[2] > bbox[0] and bbox[3] > bbox[1]
+
+
+def bbox_width(bbox: Rectangle) -> float:
+    return bbox[2] - bbox[0]
+
+
+def bbox_height(bbox: Rectangle) -> float:
+    return bbox[3] - bbox[1]

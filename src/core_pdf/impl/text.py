@@ -3,6 +3,45 @@
 
 from __future__ import annotations
 
+import re
+
+# Smallest horizontal gap that separates two words. Both the spec-level run merger
+# and the layout line builder consult this so a gap that reads as a word break in
+# one place reads the same in the other.
+WORD_GAP_SPACE_FACTOR = 0.15
+WORD_GAP_SIZE_FACTOR = 0.08
+WORD_GAP_MIN = 0.75
+
+# Leader and filler punctuation (ToC dot leaders, dashed rules, ellipsis fillers)
+# that reference text omits. One character class for every stage that strips it.
+LEADER_CHARS = frozenset(".-\u2013\u2014~\u2026")
+internal_LEADER_CLASS = "[.\\-\u2013\u2014~\u2026]"
+internal_LEADER_RUN_RE = re.compile(rf"(?:[ \t]*{internal_LEADER_CLASS}){{2,}}")
+internal_TRAILING_LEADER_RE = re.compile(rf"(?<=\S)(?:[ \t]*{internal_LEADER_CLASS}){{3,}}[ \t]*$")
+internal_LEADING_LEADER_RE = re.compile(rf"^(?:{internal_LEADER_CLASS}[ \t]+){{2,}}")
+
+
+def word_gap_threshold(space_width: float, size: float) -> float:
+    """Gap width above which two neighbouring runs are separate words."""
+    return max(space_width * WORD_GAP_SPACE_FACTOR, size * WORD_GAP_SIZE_FACTOR, WORD_GAP_MIN)
+
+
+def is_leader_run(text: str) -> bool:
+    """True when the non-space content is nothing but leader punctuation."""
+    nonspace = [ch for ch in text if not ch.isspace()]
+    return len(nonspace) >= 2 and all(ch in LEADER_CHARS for ch in nonspace)
+
+
+def strip_edge_leaders(text: str) -> str:
+    """Drop a leader run at the end (3+) or the start (2+ spaced) of a fragment."""
+    text = internal_TRAILING_LEADER_RE.sub("", text)
+    return internal_LEADING_LEADER_RE.sub("", text)
+
+
+def collapse_leader_runs(text: str) -> str:
+    """Replace interior leader runs with a single space and collapse whitespace."""
+    return collapse_ws(internal_LEADER_RUN_RE.sub(" ", text))
+
 
 def collapse_ws(text: str) -> str:
     """Collapse all runs of whitespace to single spaces and trim the ends."""

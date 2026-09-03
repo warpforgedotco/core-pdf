@@ -11,19 +11,21 @@ import numpy
 import pytest
 
 from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.render.blend import internal_color_component
 from core_pdf.impl.render.display import internal_image_quad
 from core_pdf.impl.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
-    internal_color_component,
+    internal_soft_mask_alpha_at,
+)
+from core_pdf.impl.render.paths import (
     internal_fill_path_crossing_spans,
     internal_fill_path_sample_crossings,
     internal_fill_path_sample_crossings_numpy,
     internal_intersect_box,
-    internal_shading_color_rgba,
-    internal_soft_mask_alpha_at,
     internal_translate_rect,
 )
+from core_pdf.impl.render.patterns import internal_shading_color_rgba
 
 
 class TestIntersectBox:

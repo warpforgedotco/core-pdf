@@ -8,22 +8,22 @@ from typing import Any, cast
 
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.render.display import (
-    CompiledRenderPlan,
-    DisplayItem,
-    DisplayList,
-    DisplayListItem,
-    ImagePaintItem,
-    PathPaintItem,
-    RenderOptions,
-)
-from core_pdf.impl.render.kernels import (
+from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.render.blend import (
     internal_color_rgba,
     internal_scale_rgba_alpha,
 )
-from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
+from core_pdf.impl.render.model import (
+    DisplayItem,
+    DisplayListItem,
+    ImagePaintItem,
+    PathPaintItem,
+    RasterImage,
+    RenderOptions,
+)
 from core_pdf.impl.render.target import (
-    internal_ClipState,
     internal_RasterMetrics,
     internal_RasterTarget,
 )
@@ -409,14 +409,21 @@ class RenderedPage:
 
 # ===== page =====
 
+# Plain ints so the event loop compares list elements without constructing an
+# IntEnum per event.
+internal_EVENT_TEXT = int(PageEventKind.TEXT)
+internal_EVENT_GLYPH = int(PageEventKind.GLYPH)
+internal_EVENT_DRAWING = int(PageEventKind.DRAWING)
+internal_EVENT_IMAGE = int(PageEventKind.IMAGE)
+internal_EVENT_INLINE_IMAGE = int(PageEventKind.INLINE_IMAGE)
 
-def internal_glyph_outline_path(glyph: Any) -> CapturedPath | None:
+
+def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
     """Resolve and transform one captured embedded-font outline."""
-    if not getattr(glyph, "paint_glyph", True):
+    if not glyph.paint_glyph:
         return None
-    transform = getattr(glyph, "glyph_transform", None)
-    decoder = getattr(glyph, "font_decoder", None)
-    resolver = getattr(decoder, "glyph_outline", None)
+    transform = glyph.glyph_transform
+    resolver = getattr(glyph.font_decoder, "glyph_outline", None)
     if transform is None or not callable(resolver):
         return None
     code = glyph.bitmap_code
@@ -427,28 +434,28 @@ def internal_glyph_outline_path(glyph: Any) -> CapturedPath | None:
     contours = resolver(code, glyph.gid, glyph.text)
     if not contours:
         return None
-    a, b, c, d, e, f = transform
     subpaths: list[CapturedSubpath] = []
     for contour in contours:
         if len(contour) < 2:
             continue
-        points = [(x * a + y * c + e, x * b + y * d + f) for x, y in contour]
+        subpath = CapturedSubpath(list(contour), closed=True).transformed(transform)
+        points = subpath.points
         if len(points) >= 2 and points[0] == points[-1]:
             points.pop()
         if len(points) >= 2:
-            subpaths.append(CapturedSubpath(points, closed=True))
+            subpaths.append(subpath)
     return CapturedPath(subpaths) if subpaths else None
 
 
 def internal_append_glyph_paint(
-    display_list: DisplayList, glyph: Any, clipping_subpaths: list[CapturedSubpath]
+    display_list: DisplayList, glyph: GlyphObservation, clipping_subpaths: list[CapturedSubpath]
 ) -> bool:
-    if getattr(glyph, "visible", True) is False:
+    if glyph.visible is False:
         return True
     path = internal_glyph_outline_path(glyph)
     if path is None:
         return False
-    mode = int(getattr(glyph, "text_render_mode", 0))
+    mode = int(glyph.text_render_mode)
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
     if mode in internal_NON_PAINTING_RENDER_MODES:
@@ -460,16 +467,16 @@ def internal_append_glyph_paint(
         bbox=path.bbox(),
         path=path,
         fill=glyph.fill,
-        fill_opacity=getattr(glyph, "fill_opacity", None),
-        stroke_color=getattr(glyph, "stroke_color", None),
-        stroke_opacity=getattr(glyph, "stroke_opacity", None),
-        line_width=getattr(glyph, "line_width", 1.0),
-        line_cap=getattr(glyph, "line_cap", 0),
-        line_join=getattr(glyph, "line_join", 0),
-        dash_pattern=getattr(glyph, "dash_pattern", None),
+        fill_opacity=glyph.fill_opacity,
+        stroke_color=glyph.stroke_color,
+        stroke_opacity=glyph.stroke_opacity,
+        line_width=glyph.line_width,
+        line_cap=glyph.line_cap,
+        line_join=glyph.line_join,
+        dash_pattern=glyph.dash_pattern,
         fill_rule="nonzero",
-        blend_mode=getattr(glyph, "blend_mode", None),
-        soft_mask_alpha=getattr(glyph, "soft_mask_alpha", None),
+        blend_mode=glyph.blend_mode,
+        soft_mask_alpha=glyph.soft_mask_alpha,
     )
     return True
 
@@ -525,17 +532,19 @@ def compose_page(
         )
         text_clipping_subpaths.clear()
 
+    event_kinds: list[int] = page_program.events.kind.tolist()
+    event_payloads: list[int] = page_program.events.payload.tolist()
     for event_index in event_indexes:
         event_index = int(event_index)
-        kind = PageEventKind(int(page_program.events.kind[event_index]))
-        payload = int(page_program.events.payload[event_index])
-        if kind is PageEventKind.TEXT:
+        kind = event_kinds[event_index]
+        payload = event_payloads[event_index]
+        if kind == internal_EVENT_TEXT:
             if not options.include_text:
                 continue
             append_text_run(products.runs[payload])
-        elif kind is PageEventKind.GLYPH:
+        elif kind == internal_EVENT_GLYPH:
             glyph = products.glyphs[payload]
-            glyph_text_object_id = getattr(glyph, "text_object_id", 0)
+            glyph_text_object_id = glyph.text_object_id
             if (
                 current_text_object_id is not None
                 and glyph_text_object_id != current_text_object_id
@@ -544,7 +553,7 @@ def compose_page(
             current_text_object_id = glyph_text_object_id
             if internal_append_glyph_paint(display_list, glyph, text_clipping_subpaths):
                 continue
-            if getattr(glyph, "text_render_mode", 0) in internal_NON_PAINTING_RENDER_MODES:
+            if glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES:
                 continue
             bitmap = glyph.resolved_bitmap()
             if not bitmap:
@@ -566,10 +575,10 @@ def compose_page(
                 bitmap_width=glyph.bitmap_width,
                 bitmap_height=glyph.bitmap_height,
             )
-        elif kind in {PageEventKind.DRAWING, PageEventKind.IMAGE}:
+        elif kind in (internal_EVENT_DRAWING, internal_EVENT_IMAGE):
             flush_text_clip(products.drawings[payload].seqno)
             display_list.append_captured_drawing(products.drawings[payload])
-        elif kind is PageEventKind.INLINE_IMAGE:
+        elif kind == internal_EVENT_INLINE_IMAGE:
             inline_image = products.inline_images[payload]
             flush_text_clip(inline_image.seqno)
             display_list.append(

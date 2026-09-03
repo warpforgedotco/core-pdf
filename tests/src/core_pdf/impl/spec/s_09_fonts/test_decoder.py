@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -21,7 +20,18 @@ from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
 )
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
-TESTS_DIR = Path(__file__).parents[5]
+
+def to_unicode_cmap(body: bytes) -> bytes:
+    """Wrap CMap body lines in the CIDInit boilerplate every ToUnicode program carries."""
+    return (
+        b"/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CMapType 2 def\n"
+        + body
+        + b"\nendcmap\nCMapName currentdict /CMap defineresource pop\nend end\n"
+    )
+
+
+def to_unicode_stream(body: bytes) -> PdfStream:
+    return PdfStream(decoded_data=to_unicode_cmap(body))
 
 
 def test_glyph_name_to_unicode_handles_computer_modern_delimiter_aliases() -> None:
@@ -291,37 +301,29 @@ def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None
     assert cff_font.bbox_calls == [7, 8]
 
 
-def test_font_decoder_does_not_emit_unknown_difference_names() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [65, "/DefinitelyUnknownGlyphName"]},
-    }
+@pytest.mark.parametrize(
+    ("differences", "encoded", "expected"),
+    [
+        pytest.param([65, "/DefinitelyUnknownGlyphName"], b"A", "", id="unknown-name"),
+        pytest.param([65, "/DefinitelyUnknownGlyphName.alt"], b"A", "", id="unknown-dotted"),
+        pytest.param([65, "/DefinitelyUnknown_OtherUnknown"], b"A", "", id="unknown-underscore"),
+        pytest.param([12, "/A"], b"\x0c", "A", id="single-character"),
+        pytest.param([12, "/A_B"], b"\x0c", "AB", id="known-underscore-parts"),
+        pytest.param([12, "/A.alt"], b"\x0c", "A", id="known-dotted-base"),
+        pytest.param(
+            [12, "/integraltext", "/summationtext"],
+            b"\x0c\x0d",
+            "\u222b\u2211",
+            id="tex-text-symbols",
+        ),
+    ],
+)
+def test_font_decoder_difference_names(
+    differences: list[object], encoded: bytes, expected: str
+) -> None:
+    decoder = FontDecoder({"Subtype": "Type1", "Encoding": {"Differences": differences}})
 
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"A") == ""
-
-
-def test_font_decoder_does_not_emit_unknown_dotted_difference_base_names() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [65, "/DefinitelyUnknownGlyphName.alt"]},
-    }
-
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"A") == ""
-
-
-def test_font_decoder_does_not_emit_unknown_underscore_difference_parts() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [65, "/DefinitelyUnknown_OtherUnknown"]},
-    }
-
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"A") == ""
+    assert decoder.decode(encoded) == expected
 
 
 def test_type3_numeric_charproc_name_retains_base_encoding() -> None:
@@ -350,50 +352,6 @@ def test_undefined_simple_font_code_retains_a_replacement_glyph() -> None:
 
     assert glyph.unicode == "\ufffd"
     assert glyph.unicode_source == "undefined"
-
-
-def test_font_decoder_keeps_single_character_difference_names() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [12, "/A"]},
-    }
-
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"\x0c") == "A"
-
-
-def test_font_decoder_keeps_known_underscore_difference_parts() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [12, "/A_B"]},
-    }
-
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"\x0c") == "AB"
-
-
-def test_font_decoder_keeps_known_dotted_difference_base_names() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [12, "/A.alt"]},
-    }
-
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"\x0c") == "A"
-
-
-def test_font_decoder_maps_tex_text_symbol_difference_names() -> None:
-    font = {
-        "Subtype": "Type1",
-        "Encoding": {"Differences": [12, "/integraltext", "/summationtext"]},
-    }
-
-    decoder = FontDecoder(font)
-
-    assert decoder.decode(b"\x0c\x0d") == "\u222b\u2211"
 
 
 def test_glyph_u_codepoint_rejects_surrogates() -> None:
@@ -448,20 +406,14 @@ def test_truetype_cmap_inversion_rejects_surrogates() -> None:
 
 def test_to_unicode_bfrange_does_not_emit_surrogates() -> None:
     cmap = ToUnicodeCMap(
-        b"""
-        /CIDInit /ProcSet findresource begin
-        12 dict begin
-        begincmap
-        1 begincodespacerange
-        <01> <02>
-        endcodespacerange
-        1 beginbfrange
-        <01> <02> <D7FF>
-        endbfrange
-        endcmap
-        CMapName currentdict /CMap defineresource pop
-        end end
-        """
+        to_unicode_cmap(b"""
+1 begincodespacerange
+<01> <02>
+endcodespacerange
+1 beginbfrange
+<01> <02> <D7FF>
+endbfrange
+""")
     )
 
     assert cmap.decode(b"\x01\x02") == "\ud7ff\ufffd"
@@ -469,21 +421,15 @@ def test_to_unicode_bfrange_does_not_emit_surrogates() -> None:
 
 def test_to_unicode_destination_strings_stay_utf16be() -> None:
     cmap = ToUnicodeCMap(
-        b"""
-        /CIDInit /ProcSet findresource begin
-        12 dict begin
-        begincmap
-        2 begincodespacerange
-        <01> <02>
-        endcodespacerange
-        2 beginbfchar
-        <01> <FEFF0041>
-        <02> <FFFE4100>
-        endbfchar
-        endcmap
-        CMapName currentdict /CMap defineresource pop
-        end end
-        """
+        to_unicode_cmap(b"""
+2 begincodespacerange
+<01> <02>
+endcodespacerange
+2 beginbfchar
+<01> <FEFF0041>
+<02> <FFFE4100>
+endbfchar
+""")
     )
 
     assert cmap.decode(b"\x01") == "A"
@@ -492,18 +438,12 @@ def test_to_unicode_destination_strings_stay_utf16be() -> None:
 
 def test_to_unicode_fallback_does_not_emit_surrogates() -> None:
     cmap = ToUnicodeCMap(
-        b"""
-        /CIDInit /ProcSet findresource begin
-        12 dict begin
-        begincmap
-        2 begincodespacerange
-        <0000> <ffff>
-        <000000> <ffffff>
-        endcodespacerange
-        endcmap
-        CMapName currentdict /CMap defineresource pop
-        end end
-        """
+        to_unicode_cmap(b"""
+2 begincodespacerange
+<0000> <ffff>
+<000000> <ffffff>
+endcodespacerange
+""")
     )
 
     assert cmap.decode(b"\xd8\x00") == "\ufffd"
@@ -511,20 +451,14 @@ def test_to_unicode_fallback_does_not_emit_surrogates() -> None:
 
 def test_to_unicode_fixed_two_byte_fast_path_preserves_unmapped_identity() -> None:
     cmap = ToUnicodeCMap(
-        b"""
-        /CIDInit /ProcSet findresource begin
-        12 dict begin
-        begincmap
-        1 begincodespacerange
-        <0000> <ffff>
-        endcodespacerange
-        1 beginbfchar
-        <0041> <0058>
-        endbfchar
-        endcmap
-        CMapName currentdict /CMap defineresource pop
-        end end
-        """
+        to_unicode_cmap(b"""
+1 begincodespacerange
+<0000> <ffff>
+endcodespacerange
+1 beginbfchar
+<0041> <0058>
+endbfchar
+""")
     )
 
     assert cmap.decode(b"\x00\x41\x00\x42") == "XB"
@@ -532,60 +466,36 @@ def test_to_unicode_fixed_two_byte_fast_path_preserves_unmapped_identity() -> No
 
 def test_to_unicode_one_byte_fast_path_strips_nul_like_other_paths() -> None:
     cmap = ToUnicodeCMap(
-        b"""
-        /CIDInit /ProcSet findresource begin
-        12 dict begin
-        begincmap
-        1 begincodespacerange
-        <00> <ff>
-        endcodespacerange
-        1 beginbfchar
-        <41> <0000>
-        endbfchar
-        endcmap
-        CMapName currentdict /CMap defineresource pop
-        end end
-        """
+        to_unicode_cmap(b"""
+1 begincodespacerange
+<00> <ff>
+endcodespacerange
+1 beginbfchar
+<41> <0000>
+endbfchar
+""")
     )
 
     assert cmap.decode(b"AB") == "B"
 
 
-def test_to_unicode_rejects_invalid_codespace_ranges() -> None:
-    for range_line in (b"<ff> <00>", b"<> <ff>", b"<00> <ffff>"):
-        with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
-            ToUnicodeCMap(
-                b"""
-                /CIDInit /ProcSet findresource begin
-                12 dict begin
-                begincmap
-                1 begincodespacerange
-                """
-                + range_line
-                + b"""
-                endcodespacerange
-                endcmap
-                CMapName currentdict /CMap defineresource pop
-                end end
-                """
-            )
+@pytest.mark.parametrize("range_line", [b"<ff> <00>", b"<> <ff>", b"<00> <ffff>"])
+def test_to_unicode_rejects_invalid_codespace_ranges(range_line: bytes) -> None:
+    with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
+        ToUnicodeCMap(
+            to_unicode_cmap(b"1 begincodespacerange\n" + range_line + b"\nendcodespacerange")
+        )
 
 
 def test_to_unicode_rejects_only_overlapping_codespace_ranges() -> None:
     with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
         ToUnicodeCMap(
-            b"""
-            /CIDInit /ProcSet findresource begin
-            12 dict begin
-            begincmap
-            2 begincodespacerange
-            <00> <7f>
-            <40> <ff>
-            endcodespacerange
-            endcmap
-            CMapName currentdict /CMap defineresource pop
-            end end
-            """
+            to_unicode_cmap(b"""
+2 begincodespacerange
+<00> <7f>
+<40> <ff>
+endcodespacerange
+""")
         )
 
 
@@ -602,7 +512,10 @@ def test_encoding_differences_default_to_standard_encoding() -> None:
     assert decoder.decode(b"\x80A") == "A"
 
 
-def cid_type0_font(encoding: str, *, ordering: str = "Japan1") -> dict[str, object]:
+def cid_type0_font(
+    encoding: str, *, ordering: str = "Japan1", descendant: dict[str, object] | None = None
+) -> dict[str, object]:
+    """A Type 0 font over one CIDFontType0; ``descendant`` adds entries to the CIDFont."""
     return {
         "Subtype": "Type0",
         "BaseFont": "HeiseiMin-W3",
@@ -616,6 +529,7 @@ def cid_type0_font(encoding: str, *, ordering: str = "Japan1") -> dict[str, obje
                     "Ordering": PdfString(ordering.encode("ascii")),
                     "Supplement": 7,
                 },
+                **(descendant or {}),
             }
         ],
     }
@@ -761,11 +675,12 @@ def test_font_decoder_recovers_japanese_without_to_unicode() -> None:
 
 
 def test_vertical_cid_advance_uses_w2_and_dw2() -> None:
-    font = cid_type0_font("Identity-V")
-    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
-    assert isinstance(descendant, dict)
-    descendant.update({"DW": 200, "W": [1, [200]], "DW2": [880, 900], "W2": [1, [500, 0, -700]]})
-    decoder = FontDecoder(font)
+    decoder = FontDecoder(
+        cid_type0_font(
+            "Identity-V",
+            descendant={"DW": 200, "W": [1, [200]], "DW2": [880, 900], "W2": [1, [500, 0, -700]]},
+        )
+    )
 
     # CID 1 uses W2's vertical displacement; CID 2 uses DW2. Horizontal W/DW
     # values must not affect vertical text positioning.
@@ -777,10 +692,7 @@ def test_vertical_cid_advance_uses_w2_and_dw2() -> None:
 
 def test_vertical_cid_omitted_dw2_matches_spec_default() -> None:
     omitted = FontDecoder(cid_type0_font("Identity-V"))
-    explicit_font = cid_type0_font("Identity-V")
-    descendant = cast(dict[str, object], cast(list[object], explicit_font["DescendantFonts"])[0])
-    descendant["DW2"] = [880, -1000]
-    explicit = FontDecoder(explicit_font)
+    explicit = FontDecoder(cid_type0_font("Identity-V", descendant={"DW2": [880, -1000]}))
 
     omitted_advance = omitted.text_advance_vector(
         b"\x00\x01", font_size=10, char_space=0, word_space=0, horizontal_scale=100
@@ -794,11 +706,9 @@ def test_vertical_cid_omitted_dw2_matches_spec_default() -> None:
 
 
 def test_vertical_cid_w2_range_overrides_dw2() -> None:
-    font = cid_type0_font("Identity-V")
-    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
-    assert isinstance(descendant, dict)
-    descendant.update({"DW2": [880, -1000], "W2": [3, 4, -600, 250, 770]})
-    decoder = FontDecoder(font)
+    decoder = FontDecoder(
+        cid_type0_font("Identity-V", descendant={"DW2": [880, -1000], "W2": [3, 4, -600, 250, 770]})
+    )
 
     advance = decoder.text_advance_vector(
         b"\x00\x03\x00\x05", font_size=10, char_space=0, word_space=0, horizontal_scale=1
@@ -808,117 +718,68 @@ def test_vertical_cid_w2_range_overrides_dw2() -> None:
 
 
 def test_vertical_w2_position_vector_is_scaled_to_text_space() -> None:
-    font = cid_type0_font("Identity-V")
-    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
-    assert isinstance(descendant, dict)
-    descendant.update({"DW2": [880, -1000], "W2": [7, [600, 200, -450]]})
-
-    decoder = FontDecoder(font)
+    decoder = FontDecoder(
+        cid_type0_font("Identity-V", descendant={"DW2": [880, -1000], "W2": [7, [600, 200, -450]]})
+    )
 
     assert decoder.vertical_glyph_metric(7) == (600.0, 200.0, -450.0)
     assert decoder.vertical_glyph_position(7, font_size=10) == pytest.approx((-2.0, 4.5))
 
 
 def test_vertical_glyph_metric_uses_dw2_and_horizontal_width_fallback() -> None:
-    font = cid_type0_font("Identity-V")
-    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
-    assert isinstance(descendant, dict)
-    descendant.update({"DW": 400, "DW2": [750, -900]})
-    decoder = FontDecoder(font)
+    decoder = FontDecoder(cid_type0_font("Identity-V", descendant={"DW": 400, "DW2": [750, -900]}))
 
     assert decoder.vertical_glyph_metric(7) == (-900.0, 200.0, 750.0)
 
 
-def test_to_unicode_is_authoritative_over_glyph_name_repairs() -> None:
-    decoder = FontDecoder(
-        {
-            "Subtype": "Type1",
-            "Encoding": {"Differences": [65, "A"]},
-            "ToUnicode": PdfStream(
-                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
-                12 dict begin begincmap
-                /CMapType 2 def
-                1 begincodespacerange <00> <ff> endcodespacerange
-                1 beginbfchar <41> <0058> endbfchar
-                endcmap end
-            """
-            ),
-        }
-    )
+@pytest.mark.parametrize(
+    ("font", "bfchar", "expected", "source", "alternate"),
+    [
+        pytest.param(
+            {"Encoding": {"Differences": [65, "A"]}},
+            b"1 beginbfchar <41> <0058> endbfchar",
+            "X",
+            "to_unicode",
+            None,
+            id="to-unicode-wins-over-glyph-name",
+        ),
+        pytest.param(
+            {"BaseFont": "TeXGyrePagella-Regular", "Encoding": {"Differences": [65, "ff"]}},
+            b"0 beginbfchar endbfchar",
+            "ff",
+            "glyph_name",
+            None,
+            id="glyph-name-when-code-omitted",
+        ),
+        pytest.param(
+            {"BaseFont": "Helvetica", "Encoding": "WinAnsiEncoding"},
+            b"1 beginbfchar <41> <fffd> endbfchar",
+            "A",
+            "encoding",
+            "\ufffd",
+            id="replacement-falls-through-to-predefined",
+        ),
+        pytest.param(
+            {"BaseFont": "TeXGyrePagella-Regular", "Encoding": {"Differences": [65, "ff"]}},
+            b"1 beginbfchar <41> <0000> endbfchar",
+            "ff",
+            "glyph_name",
+            None,
+            id="glyph-name-when-to-unicode-is-nul",
+        ),
+    ],
+)
+def test_font_decoder_to_unicode_precedence(
+    font: dict[str, object], bfchar: bytes, expected: str, source: str, alternate: str | None
+) -> None:
+    to_unicode = to_unicode_stream(b"1 begincodespacerange <00> <ff> endcodespacerange\n" + bfchar)
+    decoder = FontDecoder({"Subtype": "Type1", **font, "ToUnicode": to_unicode})
 
     glyph = decoder.decode_glyphs(b"A")[0]
-    assert glyph.unicode == "X"
-    assert glyph.unicode_source == "to_unicode"
-
-
-def test_font_decoder_uses_explicit_glyph_name_when_to_unicode_omits_code() -> None:
-    decoder = FontDecoder(
-        {
-            "Subtype": "Type1",
-            "BaseFont": "TeXGyrePagella-Regular",
-            "Encoding": {"Differences": [65, "ff"]},
-            "ToUnicode": PdfStream(
-                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
-                12 dict begin begincmap
-                /CMapType 2 def
-                1 begincodespacerange <00> <ff> endcodespacerange
-                0 beginbfchar endbfchar
-                endcmap end
-            """
-            ),
-        }
-    )
-
-    glyph = decoder.decode_glyphs(b"A")[0]
-    assert glyph.unicode == "ff"
-    assert glyph.unicode_source == "glyph_name"
-
-
-def test_font_decoder_falls_through_replacement_to_predefined_mapping() -> None:
-    decoder = FontDecoder(
-        {
-            "Subtype": "Type1",
-            "BaseFont": "Helvetica",
-            "Encoding": "WinAnsiEncoding",
-            "ToUnicode": PdfStream(
-                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
-                12 dict begin begincmap
-                /CMapType 2 def
-                1 begincodespacerange <00> <ff> endcodespacerange
-                1 beginbfchar <41> <fffd> endbfchar
-                endcmap end
-            """
-            ),
-        }
-    )
-
-    glyph = decoder.decode_glyphs(b"A")[0]
-    assert glyph.unicode == "A"
-    assert glyph.unicode_source == "encoding"
-    assert "�" in glyph.alternates
-
-
-def test_font_decoder_uses_glyph_name_when_to_unicode_is_nul() -> None:
-    decoder = FontDecoder(
-        {
-            "Subtype": "Type1",
-            "BaseFont": "TeXGyrePagella-Regular",
-            "Encoding": {"Differences": [65, "ff"]},
-            "ToUnicode": PdfStream(
-                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
-                12 dict begin begincmap
-                /CMapType 2 def
-                1 begincodespacerange <00> <ff> endcodespacerange
-                1 beginbfchar <41> <0000> endbfchar
-                endcmap end
-            """
-            ),
-        }
-    )
-
-    glyph = decoder.decode_glyphs(b"A")[0]
-    assert glyph.unicode == "ff"
-    assert glyph.unicode_source == "glyph_name"
+    assert glyph.unicode == expected
+    assert glyph.unicode_source == source
+    if alternate is not None:
+        assert alternate in glyph.alternates
 
 
 def test_font_decoder_recovers_japanese_identity_cids_without_to_unicode() -> None:
@@ -951,36 +812,42 @@ def test_font_decoder_recovers_vertical_japanese_punctuation() -> None:
     assert {glyph.unicode_source for glyph in glyphs} == {"predefined_cmap"}
 
 
-def test_font_decoder_recovers_predefined_chinese_and_korean_encodings() -> None:
-    cases = (
+@pytest.mark.parametrize(
+    ("ordering", "encoding", "encoded", "expected"),
+    [
         ("GB1", "GBK-EUC-H", bytes.fromhex("d6d0cec4babad7d6"), "中文汉字"),
         ("CNS1", "ETen-B5-H", bytes.fromhex("a4a4a4e5ba7ea672"), "中文漢字"),
         ("Korea1", "KSCms-UHC-H", bytes.fromhex("c7d1b1b9beeec7d1b1db"), "한국어한글"),
-    )
+    ],
+)
+def test_font_decoder_recovers_predefined_chinese_and_korean_encodings(
+    ordering: str, encoding: str, encoded: bytes, expected: str
+) -> None:
+    decoder = FontDecoder(cid_type0_font(encoding, ordering=ordering))
+    glyphs = decoder.decode_glyphs(encoded)
 
-    for ordering, encoding, encoded, expected in cases:
-        decoder = FontDecoder(cid_type0_font(encoding, ordering=ordering))
-        glyphs = decoder.decode_glyphs(encoded)
-
-        assert decoder.decode(encoded) == expected
-        assert {glyph.unicode_source for glyph in glyphs} == {"predefined_cmap"}
+    assert decoder.decode(encoded) == expected
+    assert {glyph.unicode_source for glyph in glyphs} == {"predefined_cmap"}
 
 
-def test_font_decoder_recovers_non_japanese_identity_cids_without_to_unicode() -> None:
-    cases = (
+@pytest.mark.parametrize(
+    ("ordering", "cids", "expected"),
+    [
         ("GB1", (4559, 3795, 1905, 4659), "中文汉字"),
         ("CNS1", (661, 726, 4111, 959), "中文漢字"),
         ("Korea1", (3296, 1204, 2479, 3296, 1238), "한국어한글"),
         ("KR", (2835, 353, 1887, 2835, 392), "한국어한글"),
-    )
+    ],
+)
+def test_font_decoder_recovers_non_japanese_identity_cids_without_to_unicode(
+    ordering: str, cids: tuple[int, ...], expected: str
+) -> None:
+    encoded = b"".join(cid.to_bytes(2, "big") for cid in cids)
+    decoder = FontDecoder(cid_type0_font("Identity-H", ordering=ordering))
+    glyphs = decoder.decode_glyphs(encoded)
 
-    for ordering, cids, expected in cases:
-        encoded = b"".join(cid.to_bytes(2, "big") for cid in cids)
-        decoder = FontDecoder(cid_type0_font("Identity-H", ordering=ordering))
-        glyphs = decoder.decode_glyphs(encoded)
-
-        assert decoder.decode(encoded) == expected
-        assert {glyph.unicode_source for glyph in glyphs} == {"cid_collection"}
+    assert decoder.decode(encoded) == expected
+    assert {glyph.unicode_source for glyph in glyphs} == {"cid_collection"}
 
 
 def test_font_decoder_recovers_adobe_kr_unicode_encoding() -> None:

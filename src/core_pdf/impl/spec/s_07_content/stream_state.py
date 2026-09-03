@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
+from core_pdf.impl.spec.s_07_content.capture import PatternPaint
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
@@ -18,7 +20,13 @@ ResourceCategoryCache = dict[str, object]
 ResourceCache = dict[tuple[int, str], ResourceCategoryCache]
 ResolvedResourceCache = dict[tuple[int, str], object]
 StreamKey = tuple[str, int, int]
-LayoutFormId: TypeAlias = tuple[tuple[StreamKey, tuple[float, float, float, float]], ...] | None
+# An entry records one Form XObject invocation. Either half can be absent --
+# a direct (non-reference) XObject has no stream key, and a form without a
+# usable /BBox has no layout box -- but the entry still has to be kept so
+# the tuple identifies the invocation tree. Consumers skip unusable halves.
+LayoutFormId: TypeAlias = (
+    tuple[tuple[StreamKey | None, tuple[float, float, float, float] | None], ...] | None
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,11 +53,11 @@ class StreamState:
     graphics_stack_len: int
     marked_content_stack_len: int
     fill_color: tuple[float, ...] | None
-    fill_pattern: PdfDict | None
-    fill_opacity: float | None
+    fill_pattern: PatternPaint | None
+    fill_opacity: float
     stroke_color: tuple[float, ...] | None
-    stroke_pattern: PdfDict | None
-    stroke_opacity: float | None
+    stroke_pattern: PatternPaint | None
+    stroke_opacity: float
     line_width: float
     line_cap: int
     line_join: int
@@ -91,3 +99,13 @@ class ContentStreamFrame:
     old_state: StreamState | None = field(default=None, init=False)
     outer_group_alpha: float | None = field(default=None, init=False)
     entered: bool = field(default=False, init=False)
+
+
+# Every field except the two stack depths mirrors a TextState attribute of the
+# same name, so capture/restore drive off this list instead of two hand-written
+# copies that a new field can silently fall out of.
+STREAM_STATE_MIRRORED: tuple[str, ...] = tuple(
+    f.name
+    for f in dataclasses.fields(StreamState)
+    if f.name not in ("graphics_stack_len", "marked_content_stack_len")
+)

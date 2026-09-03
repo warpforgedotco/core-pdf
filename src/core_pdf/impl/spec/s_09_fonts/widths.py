@@ -6,7 +6,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float, parse_int
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
+    parse_float,
+    parse_int_strict,
+)
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,
@@ -15,41 +18,6 @@ from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
     internal_MIN_CID,
     parse_cid_widths,
 )
-
-
-def require_font_int(value: Any, message: str) -> int:
-    if type(value) is int:
-        return value
-    if type(value) is bool:
-        raise ValueError(message)
-    parsed = parse_int(value, None)
-    if parsed is None:
-        raise ValueError(message)
-    return parsed
-
-
-def require_font_float(value: Any, message: str) -> float:
-    if type(value) is float:
-        return value
-    if type(value) is int:
-        return float(value)
-    if type(value) is bool:
-        raise ValueError(message)
-    parsed = parse_float(value, None)
-    if parsed is None:
-        raise ValueError(message)
-    return parsed
-
-
-def parse_optional_font_float(value: Any, default: float) -> float:
-    if type(value) is float:
-        return value
-    if type(value) is int:
-        return float(value)
-    if value is None or type(value) is bool:
-        return default
-    parsed = parse_float(value, None)
-    return default if parsed is None else parsed
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -87,7 +55,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
         default_width = 1000.0
         default_width_explicit = False
     else:
-        default_width = parse_optional_font_float(missing_width, 1000.0)
+        default_width = parse_float(missing_width, 1000.0)
         default_width_explicit = True
     is_vertical = False
     default_vertical_displacement_y = -1000.0
@@ -99,18 +67,18 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
         if isinstance(descendant, dict):
             descendant_dw = descendant.get("DW")
             if descendant_dw is not None:
-                default_width = parse_optional_font_float(descendant_dw, default_width)
+                default_width = parse_float(descendant_dw, default_width)
                 default_width_explicit = True
             dw2 = descendant.get("DW2")
             if isinstance(dw2, (list, tuple)) and len(dw2) >= 2:
-                default_vertical_origin_y = parse_optional_font_float(dw2[0], 880.0)
-                default_vertical_displacement_y = parse_optional_font_float(dw2[1], -1000.0)
+                default_vertical_origin_y = parse_float(dw2[0], 880.0)
+                default_vertical_displacement_y = parse_float(dw2[1], -1000.0)
             w2 = descendant.get("W2")
             if isinstance(w2, (list, tuple)):
                 index = 0
                 while index + 1 < len(w2):
                     try:
-                        first = require_font_int(w2[index], "invalid CID vertical widths")
+                        first = parse_int_strict(w2[index], "invalid CID vertical widths")
                     except ValueError:
                         index += 1
                         continue
@@ -120,22 +88,20 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
                             cid = first + offset
                             if internal_MIN_CID <= cid <= internal_MAX_CID:
                                 vertical_metrics[cid] = (
-                                    parse_optional_font_float(
+                                    parse_float(
                                         values[offset * 3], default_vertical_displacement_y
                                     ),
-                                    parse_optional_font_float(values[offset * 3 + 1], 0.0),
-                                    parse_optional_font_float(values[offset * 3 + 2], 0.0),
+                                    parse_float(values[offset * 3 + 1], 0.0),
+                                    parse_float(values[offset * 3 + 2], 0.0),
                                 )
                         index += 2
                     else:
                         if index + 4 < len(w2):
                             try:
-                                last = require_font_int(values, "invalid CID vertical widths")
-                                width = parse_optional_font_float(
-                                    w2[index + 2], default_vertical_displacement_y
-                                )
-                                vx = parse_optional_font_float(w2[index + 3], 0.0)
-                                vy = parse_optional_font_float(w2[index + 4], 0.0)
+                                last = parse_int_strict(values, "invalid CID vertical widths")
+                                width = parse_float(w2[index + 2], default_vertical_displacement_y)
+                                vx = parse_float(w2[index + 3], 0.0)
+                                vy = parse_float(w2[index + 4], 0.0)
                                 bounds = internal_clipped_cid_bounds(first, last)
                                 if bounds is not None:
                                     clipped_first, clipped_last = bounds
@@ -150,7 +116,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             if wmode is None:
                 wmode = 0
             try:
-                wmode_int = require_font_int(wmode, "invalid font WMode")
+                wmode_int = parse_int_strict(wmode, "invalid font WMode")
             except ValueError:
                 wmode_int = 0
             is_vertical = wmode_int == 1
@@ -164,7 +130,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     if isinstance(descriptor, dict) and subtype != "Type0":
         desc_missing_width = descriptor.get("MissingWidth")
         if desc_missing_width is not None:
-            default_width = parse_optional_font_float(desc_missing_width, default_width)
+            default_width = parse_float(desc_missing_width, default_width)
             default_width_explicit = True
 
     if subtype == "Type0":
@@ -183,14 +149,14 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
         first_char = 0
     else:
         try:
-            first_char = require_font_int(first_char_val, "invalid font FirstChar")
+            first_char = parse_int_strict(first_char_val, "invalid font FirstChar")
         except ValueError:
             first_char = 0
     last_char_val = font.get("LastChar")
     last_char = None
     if last_char_val is not None:
         try:
-            last_char = require_font_int(last_char_val, "invalid font LastChar")
+            last_char = parse_int_strict(last_char_val, "invalid font LastChar")
         except ValueError:
             last_char = None
     font_widths = font.get("Widths")
@@ -200,7 +166,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             code = first_char + index
             if last_char is not None and code > last_char:
                 break
-            sparse_widths[code] = parse_optional_font_float(width, default_width)
+            sparse_widths[code] = parse_float(width, default_width)
         widths = SparseFontWidthMap(sparse_widths)
     elif font_widths is not None:
         raise ValueError("invalid font widths array")

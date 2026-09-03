@@ -13,6 +13,7 @@ import pytest
 
 from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import color_spec_from_value
+from tests.helpers.pdf_bytes import assemble_pdf, open_pdf, stream_obj
 
 # Tint 0 is the lightest colour, tint 1 the darkest -- here white to green.
 SPOT_GREEN = [
@@ -87,38 +88,21 @@ def test_device_spaces_are_left_to_their_own_components(name: str) -> None:
 def internal_spot_pdf(content: bytes) -> bytes:
     """A one-page PDF whose only resource is the SpotGreen Separation space."""
     tint = b"<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 0.5 0] /N 1 >>"
-    objects = {
-        1: b"<< /Type /Catalog /Pages 2 0 R >>",
-        2: b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        3: (
+    return assemble_pdf(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 16 16] /Contents 4 0 R "
-            b"/Resources << /ColorSpace << /CS0 [/Separation /SpotGreen /DeviceRGB 5 0 R] >> >> >>"
-        ),
-        4: b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
-        5: tint,
-    }
-    out = bytearray(b"%PDF-1.7\n")
-    offsets: dict[int, int] = {}
-    for number in sorted(objects):
-        offsets[number] = len(out)
-        out += b"%d 0 obj\n" % number + objects[number] + b"\nendobj\n"
-    start = len(out)
-    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
-    for number in sorted(objects):
-        out += b"%010d 00000 n \n" % offsets[number]
-    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
-        len(objects) + 1,
-        start,
+            b"/Resources << /ColorSpace << /CS0 [/Separation /SpotGreen /DeviceRGB 5 0 R] >> >> >>",
+            stream_obj(content),
+            tint,
+        ],
+        version="1.7",
     )
-    return bytes(out)
 
 
 def internal_first_fill(content: bytes) -> tuple[float, ...] | None:
-    import io
-
-    from core_pdf import PdfDocument
-
-    with PdfDocument(io.BytesIO(internal_spot_pdf(content))) as document:
+    with open_pdf(internal_spot_pdf(content)) as document:
         drawings = document.pages[0].get_drawings()
     return drawings[0].fill if drawings else None
 

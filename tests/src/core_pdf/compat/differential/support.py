@@ -36,6 +36,8 @@ FULL_ONLY_PATHS = frozenset(
         "llama_index/docs/examples/data/10q/uber_10q_march_2022.pdf",
         "llama_index/docs/examples/data/10q/uber_10q_sept_2022.pdf",
         "pypdf/resources/issue-604.pdf",
+        "pypdf/sample-files/009-pdflatex-geotopo/GeoTopo-komprimiert.pdf",
+        "pypdf/sample-files/009-pdflatex-geotopo/GeoTopo.pdf",
         "unstructured/example-docs/pdf/DA-619p.pdf",
         "unstructured/example-docs/pdf/failure-after-repair.pdf",
         "unstructured/example-docs/pdf/pdf2image-memory-error-test-400p.pdf",

@@ -9,7 +9,6 @@ from core_pdf.impl.runtime.array_views import (
     resample_box,
     resample_nearest,
     resample_smooth,
-    typed_view,
     uint8_image_view,
     uint8_view,
 )
@@ -65,17 +64,6 @@ def test_uint8_image_view_validates_shape() -> None:
         uint8_image_view(b"abcde", (2, 2))
 
     assert uint8_image_view(b"abcde", (2, 2), allow_trailing=True).shape == (2, 2)
-
-
-def test_typed_view_supports_byte_offsets_and_array_inputs() -> None:
-    source = b"\x00\x01\x00\x02\x00\x03"
-
-    view = typed_view(source, ">u2", count=2, offset=2)
-    assert view.tolist() == [2, 3]
-
-    array = numpy.asarray([1, 2, 3], dtype=numpy.uint16)
-    array_view = typed_view(array, numpy.dtype(numpy.uint16), count=2, offset=1)
-    assert array_view.tolist() == [2, 3]
 
 
 def test_nearest_indices_are_bounded_and_cached() -> None:

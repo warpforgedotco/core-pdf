@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import functools
 import zlib
-from pathlib import Path
 
 import pytest
 
@@ -12,12 +12,13 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.spec.s_09_fonts.font_program_type1 import Type1FontProgram
+from tests.helpers.paths import FIXTURES
 
-FIXTURES = Path(__file__).parents[6] / "fixtures"
 TYPE1_PDF = FIXTURES / "pdfminer.six" / "samples" / "simple5.pdf"
 CFF2_HEX = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
 
 
+@functools.cache
 def internal_type1_data() -> tuple[bytes, int | None]:
     with PdfDocument.open(TYPE1_PDF) as document:
         decoder = document.pages[0].get_page_program().products.glyphs[0].font_decoder
@@ -31,20 +32,23 @@ def internal_type1_data() -> tuple[bytes, int | None]:
         return stream.data, length1
 
 
-TYPE1_DATA, TYPE1_LENGTH1 = internal_type1_data()
-CFF2_DATA = zlib.decompress(bytes.fromhex(CFF2_HEX.read_text().strip()))
+@functools.cache
+def internal_cff2_data() -> bytes:
+    return zlib.decompress(bytes.fromhex(CFF2_HEX.read_text().strip()))
 
 
 @pytest.mark.benchmark_high_impact
 def test_type1_cold_program_parse_benchmark(benchmark) -> None:
-    program = benchmark(Type1FontProgram, TYPE1_DATA, length1=TYPE1_LENGTH1)
+    data, length1 = internal_type1_data()
+    program = benchmark(Type1FontProgram, data, length1=length1)
     assert program.charstrings
     assert len(program.internal_contour_cache) == 0
 
 
 @pytest.mark.benchmark_high_impact
 def test_type1_cached_glyph_reuse_benchmark(benchmark) -> None:
-    program = Type1FontProgram(TYPE1_DATA, length1=TYPE1_LENGTH1)
+    data, length1 = internal_type1_data()
+    program = Type1FontProgram(data, length1=length1)
     expected = program.glyph_contours("H")
     result = benchmark(program.glyph_contours, "H")
     assert result is expected
@@ -52,6 +56,6 @@ def test_type1_cached_glyph_reuse_benchmark(benchmark) -> None:
 
 
 def test_cff2_cold_program_parse_benchmark(benchmark) -> None:
-    program = benchmark(OpenTypeFontProgram, CFF2_DATA)
+    program = benchmark(OpenTypeFontProgram, internal_cff2_data())
     assert program.glyph_id_for_name("A") is not None
     assert len(program.internal_contour_cache) == 0

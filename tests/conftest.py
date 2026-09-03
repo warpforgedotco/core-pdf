@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
+import re
+import shutil
+import subprocess
 
 import pytest
 
@@ -49,8 +53,39 @@ def internal_disable_benchmarks_by_default(config: pytest.Config) -> None:
     config.option.benchmark_disable = True
 
 
+def internal_export_tessdata_prefix() -> None:
+    """Resolve the Tesseract data directory once for the whole session.
+
+    ``ocr_tesseract.internal_resolve_tessdata_path`` honours ``TESSDATA_PREFIX``
+    before anything else, and without it every xdist worker re-derives the
+    directory through ``tesserocr.get_languages()`` (about 2.4 s each). One
+    ``tesseract --list-langs`` here, before workers fork, makes that lookup free.
+    The tessdata tests set or clear the variable themselves.
+    """
+    if os.environ.get("TESSDATA_PREFIX"):
+        return
+    executable = shutil.which("tesseract")
+    if executable is None:
+        return
+    try:
+        completed = subprocess.run(
+            [executable, "--list-langs"], capture_output=True, check=False, text=True, timeout=5
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    match = re.search(
+        r'List of available languages in "([^"]+)"', completed.stdout + completed.stderr
+    )
+    if match is None:
+        return
+    tessdata = pathlib.Path(match.group(1)).expanduser()
+    if (tessdata / "eng.traineddata").is_file():
+        os.environ["TESSDATA_PREFIX"] = str(tessdata.resolve())
+
+
 def pytest_configure(config: pytest.Config) -> None:
     internal_disable_benchmarks_by_default(config)
+    internal_export_tessdata_prefix()
     shadowed = internal_shadowed_modules()
     if not shadowed:
         return

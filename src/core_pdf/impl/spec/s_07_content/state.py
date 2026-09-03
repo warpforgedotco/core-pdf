@@ -12,11 +12,13 @@ from functools import lru_cache
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
+import numpy
+
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.model.geometry import RectBox, transform_bbox
 from core_pdf.impl.model.glyph_table import GlyphTableBuilder
 from core_pdf.impl.model.glyphs import (
     GlyphCluster,
@@ -28,6 +30,7 @@ from core_pdf.impl.model.glyphs import (
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
     MISSING,
+    MissingObject,
     PdfName,
     PdfReference,
     PdfString,
@@ -38,8 +41,11 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedInlineImage,
     CapturedLine,
     CapturedPath,
+    PatternPaint,
     PdfminerCursor,
     RunGeometry,
+    ShadingPattern,
+    TilingPattern,
     glyph_bitmap_dimensions,
     glyph_ink_rect,
     glyph_text_space_boxes,
@@ -67,6 +73,7 @@ from core_pdf.impl.spec.s_07_content.operator_tables import (
     build_operator_tables,
 )
 from core_pdf.impl.spec.s_07_content.stream_state import (
+    STREAM_STATE_MIRRORED,
     ContentStreamFrame,
     LayoutFormId,
     ResolvedResourceCache,
@@ -86,13 +93,14 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
-    parse_float,
+    parse_float_strict,
     parse_int,
+    parse_int_strict,
 )
 from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, transform_bbox
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import (
     DecodedGlyph,
     FontDecoder,
@@ -102,7 +110,14 @@ from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
-ObjectCache: TypeAlias = dict[object, object]
+# Each resource cache stores MISSING for "not yet computed", so its value type
+# carries the sentinel and readers cast it away after the identity check --
+# the same idiom the page-box caches use in s_07_document/page.py.
+ColorSpaceCache: TypeAlias = dict[object, str | None | MissingObject]
+ColorSpecCache: TypeAlias = dict[object, "ImageColorSpec | None | MissingObject"]
+ColorNormalizationCache: TypeAlias = dict[object, tuple[float, ...] | None | MissingObject]
+ExtGStateCache: TypeAlias = dict[object, "dict[str, Any] | None | MissingObject"]
+FontSettingCache: TypeAlias = dict[object, tuple[str | None, float] | MissingObject]
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
 internal_GraphicsState: TypeAlias = tuple[
     float,
@@ -112,11 +127,11 @@ internal_GraphicsState: TypeAlias = tuple[
     float,
     float,
     tuple[float, ...] | None,
-    PdfDict | None,
-    float | None,
+    PatternPaint | None,
+    float,
     tuple[float, ...] | None,
-    PdfDict | None,
-    float | None,
+    PatternPaint | None,
+    float,
     str,
     str,
     ImageColorSpec | None,
@@ -241,8 +256,11 @@ class TextDocument(typing.Protocol):
     image_cache: ImageCache
     internal_cache_lock: Any
     raster_font_provider: Any
+    legacy_pdfminer_text_operators: bool
 
-    def resolve(self, value: object) -> object: ...
+    # TextState never calls this itself, but `detect_ligature_overrides` takes a
+    # FontResourceDocument, and a document only satisfies that protocol with it.
+    def resolve(self, value: object, /) -> object: ...
 
 
 # ISO 32000-1 Table 106: mode 3 is "neither fill nor stroke text (invisible)"
@@ -273,11 +291,13 @@ class TextState:
     stack: list[internal_GraphicsState]
     clip_scope_stack: list[bool]
     fill_color: tuple[float, ...] | None
-    fill_pattern: PdfDict | None
-    fill_opacity: float | None
+    fill_pattern: PatternPaint | None
+    # Always a real number: __init__ seeds 1.0, `gs` clamps into [0, 1], and a
+    # restore only ever copies a value that came from here.
+    fill_opacity: float
     stroke_color: tuple[float, ...] | None
-    stroke_pattern: PdfDict | None
-    stroke_opacity: float | None
+    stroke_pattern: PatternPaint | None
+    stroke_opacity: float
     blend_mode: str | None
     group_alpha: float | None
     flatness: int
@@ -307,12 +327,12 @@ class TextState:
     resources: PdfDict
     resolved_resource_categories: ResolvedResourceCache
     resource_cache: ResourceCache
-    color_space_cache: ObjectCache
-    color_spec_cache: ObjectCache
-    color_normalization_cache: ObjectCache
-    extgstate_cache: ObjectCache
-    font_setting_cache: ObjectCache
-    operand_decode_cache: ObjectCache
+    color_space_cache: ColorSpaceCache
+    color_spec_cache: ColorSpecCache
+    color_normalization_cache: ColorNormalizationCache
+    extgstate_cache: ExtGStateCache
+    font_setting_cache: FontSettingCache
+    text_scan_cache: dict[StreamKey, bool]
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     decoder_memo: dict[tuple[int, str | None], FontDecoder]
     kw_cache: dict[bytes, object]
@@ -420,13 +440,14 @@ class TextState:
         "color_normalization_cache",
         "extgstate_cache",
         "font_setting_cache",
-        "operand_decode_cache",
+        "text_scan_cache",
         "decoder_cache",
         "decoder_memo",
         "kw_cache",
         "pending_line_break",
         "pending_run",
         "compat_tj_active",
+        "compat_tj_enabled",
         "compat_tj_cursor_x",
         "compat_tj_cursor_y",
         "compat_tj_origin_e",
@@ -518,6 +539,12 @@ class TextState:
         self.clip_scope_stack = []
         self.capture_glyphs = True
         self.capture_graphics = True
+        # The pdfminer cursor exists only so the pdfminer and pdfplumber
+        # facades can reproduce that library's per-glyph advance bookkeeping.
+        # Both open the document with legacy_pdfminer_text_operators, and they
+        # are the only readers of the provenance it emits, so native extraction
+        # does not need to pay for it on every glyph of every page.
+        self.compat_tj_enabled = document.legacy_pdfminer_text_operators
         self.capture_clipping = True
         self.runs = []
         self.glyphs = GlyphTableBuilder()
@@ -575,10 +602,10 @@ class TextState:
         self.color_normalization_cache = {}
         self.extgstate_cache = {}
         self.font_setting_cache = {}
-        self.operand_decode_cache = {}
+        self.text_scan_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.decoder_memo = {}
-        self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
+        self.kw_cache = self.document.resolver.kw_cache
         self.pending_line_break = False
         self.pending_run = None
         self.compat_tj_active = False
@@ -627,7 +654,7 @@ class TextState:
         previous_compat_origin = (self.compat_tj_origin_e, self.compat_tj_origin_f)
         previous_compat_decoder = self.compat_tj_decoder
         previous_compat_need_charspace = self.compat_tj_need_charspace
-        self.compat_tj_active = self.capture_glyphs
+        self.compat_tj_active = self.capture_glyphs and self.compat_tj_enabled
         self.compat_tj_origin_e = self.lm_e
         self.compat_tj_origin_f = self.lm_f
         self.compat_tj_decoder = effective_decoder
@@ -716,11 +743,7 @@ class TextState:
             flatness = max(0.1, float(self.flatness) if self.flatness else 0.25)
             segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
         prev_x, prev_y = x0, y0
-        draw_path = (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        )
+        draw_path = self.internal_records_path()
         path = self.current_path if draw_path else None
         segment_step = 1.0 / segments
         for i in range(1, segments + 1):
@@ -751,17 +774,6 @@ class TextState:
         else:
             self.char_space_scale = 0.0
             self.word_space_scale = 0.0
-
-    def update_char_space_scale(self) -> None:
-        fs = self.font_size
-        self.char_space_scale = self.char_space * 1000.0 / fs if fs else 0.0
-
-    def update_word_space_scale(self) -> None:
-        fs = self.font_size
-        self.word_space_scale = self.word_space * 1000.0 / fs if fs else 0.0
-
-    def update_horizontal_text_scale(self) -> None:
-        self.text_advance_scale = self.font_size * self.horizontal_scale / 100000.0
 
     def update_font_metrics(self) -> None:
         decoder = self.current_decoder
@@ -854,7 +866,7 @@ class TextState:
             if (
                 not self.capture_graphics
                 and not self.capture_glyphs
-                and not content_stream_may_show_text(stream.data_view)
+                and not self.internal_stream_may_show_text(frame)
             ):
                 self.flush_run()
             else:
@@ -873,102 +885,17 @@ class TextState:
 
     def capture_stream_state(self) -> StreamState:
         return StreamState(
-            resources=self.resources,
-            resources_id=self.resources_id,
-            ctm=self.ctm,
-            text_matrix=self.text_matrix,
-            line_matrix=self.line_matrix,
-            font_size=self.font_size,
-            font_operand=self.font_operand,
-            font_size_operand=self.font_size_operand,
-            horizontal_scale=self.horizontal_scale,
-            char_space=self.char_space,
-            word_space=self.word_space,
-            rise=self.rise,
-            leading=self.leading,
-            render_mode=self.render_mode,
-            current_font=self.current_font,
-            current_decoder=self.current_decoder,
-            current_decoder_resources_id=self.current_decoder_resources_id,
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
-            fill_color=self.fill_color,
-            fill_pattern=self.fill_pattern,
-            fill_opacity=self.fill_opacity,
-            stroke_color=self.stroke_color,
-            stroke_pattern=self.stroke_pattern,
-            stroke_opacity=self.stroke_opacity,
-            line_width=self.line_width,
-            line_cap=self.line_cap,
-            line_join=self.line_join,
-            miter_limit=self.miter_limit,
-            dash_pattern=self.dash_pattern,
-            compatibility_depth=self.compatibility_depth,
-            fill_color_space=self.fill_color_space,
-            stroke_color_space=self.stroke_color_space,
-            blend_mode=self.blend_mode,
-            group_alpha=self.group_alpha,
-            flatness=self.flatness,
-            render_intent=self.render_intent,
-            clip_bbox=self.clip_bbox,
-            layout_form_bbox=self.layout_form_bbox,
-            layout_form_id=self.layout_form_id,
-            pending_line_break=self.pending_line_break,
-            compat_tj_cursor_x=self.compat_tj_cursor_x,
-            compat_tj_cursor_y=self.compat_tj_cursor_y,
-            xobject_depth=self.xobject_depth,
-            resource_cache=self.resource_cache,
-            resolved_resource_categories=self.resolved_resource_categories,
+            **{name: getattr(self, name) for name in STREAM_STATE_MIRRORED},
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
-        self.resources = state.resources
-        self.resources_id = state.resources_id
-        self.ctm = state.ctm
-        self.text_matrix = state.text_matrix
-        self.line_matrix = state.line_matrix
-        self.font_size = state.font_size
-        self.font_operand = state.font_operand
-        self.font_size_operand = state.font_size_operand
-        self.horizontal_scale = state.horizontal_scale
-        self.char_space = state.char_space
-        self.word_space = state.word_space
-        self.rise = state.rise
-        self.leading = state.leading
-        self.render_mode = state.render_mode
-        self.current_font = state.current_font
-        self.current_decoder = state.current_decoder
-        self.current_decoder_resources_id = state.current_decoder_resources_id
+        for name in STREAM_STATE_MIRRORED:
+            setattr(self, name, getattr(state, name))
         del self.stack[state.graphics_stack_len :]
         del self.clip_scope_stack[state.graphics_stack_len :]
         del self.marked_content_stack[state.marked_content_stack_len :]
-        self.fill_color = state.fill_color
-        self.fill_pattern = state.fill_pattern
-        self.fill_opacity = state.fill_opacity
-        self.stroke_color = state.stroke_color
-        self.stroke_pattern = state.stroke_pattern
-        self.stroke_opacity = state.stroke_opacity
-        self.line_width = state.line_width
-        self.line_cap = state.line_cap
-        self.line_join = state.line_join
-        self.miter_limit = state.miter_limit
-        self.dash_pattern = state.dash_pattern
-        self.fill_color_space = state.fill_color_space
-        self.stroke_color_space = state.stroke_color_space
-        self.compatibility_depth = state.compatibility_depth
-        self.blend_mode = state.blend_mode
-        self.group_alpha = state.group_alpha
-        self.flatness = state.flatness
-        self.render_intent = state.render_intent
-        self.clip_bbox = state.clip_bbox
-        self.layout_form_bbox = state.layout_form_bbox
-        self.layout_form_id = state.layout_form_id
-        self.pending_line_break = state.pending_line_break
-        self.compat_tj_cursor_x = state.compat_tj_cursor_x
-        self.compat_tj_cursor_y = state.compat_tj_cursor_y
-        self.xobject_depth = state.xobject_depth
-        self.resource_cache = state.resource_cache
-        self.resolved_resource_categories = state.resolved_resource_categories
         self.update_text_scales()
         self.update_font_metrics()
 
@@ -1108,7 +1035,7 @@ class TextState:
                 if (
                     not self.capture_graphics
                     and not self.capture_glyphs
-                    and not content_stream_may_show_text(frame.stream.data_view)
+                    and not self.internal_stream_may_show_text(frame)
                 ):
                     self.flush_run()
                     self.exit_stream_frame(frame)
@@ -1244,12 +1171,12 @@ class TextState:
         glyphs = None
         if needs_decode:
             glyphs = decoder.decode_glyphs(data)
-            text = "".join(glyph.unicode for glyph in glyphs)
+            text = "".join([glyph.unicode for glyph in glyphs])
         if self.capture_glyphs:
             if glyphs is None:
                 glyphs = decoder.decode_glyphs(data)
             if text is None:
-                text = "".join(glyph.unicode for glyph in glyphs)
+                text = "".join([glyph.unicode for glyph in glyphs])
         if text is None:
             text = ""
         return text, data, glyphs
@@ -1276,15 +1203,32 @@ class TextState:
             return False
 
         for entry in self.marked_content_stack:
-            layer = getattr(entry, "layer", entry)
+            layer = entry.layer
             if layer and layer in self.hidden_layers:
                 return False
         return True
 
+    def internal_stream_may_show_text(self, frame: ContentStreamFrame) -> bool:
+        """Memoised text scan of an entered frame's stream, keyed by its execution key."""
+        key = frame.stream_key
+        if key is None:
+            return content_stream_may_show_text(frame.stream.data_view)
+        cached = self.text_scan_cache.get(key)
+        if cached is None:
+            cached = content_stream_may_show_text(frame.stream.data_view)
+            self.text_scan_cache[key] = cached
+        return cached
+
+    def internal_records_path(self) -> bool:
+        """True when path construction operators must record geometry."""
+        return self.capture_clipping or (
+            (self.capture_graphics or self.capture_glyphs) and self.is_graphics_visible()
+        )
+
     def is_graphics_visible(self) -> bool:
         if self.marked_content_stack:
             for entry in self.marked_content_stack:
-                layer = getattr(entry, "layer", entry)
+                layer = entry.layer
                 if layer and layer in self.hidden_layers:
                     return False
         return True
@@ -1365,7 +1309,7 @@ class TextState:
             return
         self.append_xobject(operands[0], depth)
 
-    def append_xobject(self: Any, name_obj: Any, depth: int) -> None:
+    def append_xobject(self, name_obj: Any, depth: int) -> None:
         name = self.document.resolver.resolve_name(name_obj)
         if not name:
             return
@@ -1425,8 +1369,17 @@ class TextState:
                         if width > 0 and height > 0 and smask_data:
                             total = min(len(smask_data), width * height)
                             if total > 0:
-                                smask_alpha = sum(smask_data[:total]) / (255.0 * total)
-                source_dictionary = dict(xobj_dict)
+                                smask_sum = numpy.frombuffer(
+                                    smask_data, numpy.uint8, count=total
+                                ).sum(dtype=numpy.uint64)
+                                smask_alpha = int(smask_sum) / (255.0 * total)
+                drawing_dictionary = dict(xobj_dict)
+                soft_mask = (
+                    SoftMask(soft_mask_raw_data, soft_mask_dictionary or {})
+                    if soft_mask_raw_data is not None
+                    else None
+                )
+                source_dictionary = dict(drawing_dictionary)
                 # The colour manager reads the palette and base space straight
                 # off this dictionary, so an indirect /ColorSpace (or one whose
                 # Indexed lookup table is indirect) left it unable to convert
@@ -1437,9 +1390,6 @@ class TextState:
                     source_dictionary[PdfName.of("ColorSpace")] = (
                         self.document.resolver.deep_resolve(color_space)
                     )
-                if soft_mask_raw_data is not None:
-                    source_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
-                    source_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
                 # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
                 # set bits in the current fill colour. Every other image ignores
                 # the fill, so recording it is only meaningful for the mask case,
@@ -1458,6 +1408,7 @@ class TextState:
                             stream_key or ("object", id(xobj)),
                             getattr(xobj, "raw_data", b""),
                             source_dictionary,
+                            soft_mask=soft_mask,
                         ),
                         image_clip=self.clip_bbox,
                         items=[("quad", quad)] if quad is not None else [],
@@ -1467,12 +1418,7 @@ class TextState:
                     )
                 )
                 self.drawings[-1].raw_data = getattr(xobj, "raw_data", b"")
-                self.drawings[-1].dictionary = dict(xobj_dict)
-                if soft_mask_raw_data is not None:
-                    self.drawings[-1].dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
-                    self.drawings[-1].dictionary["__soft_mask_dictionary__"] = (
-                        soft_mask_dictionary or {}
-                    )
+                self.drawings[-1].dictionary = drawing_dictionary
             return
         if subtype != "Form":
             return
@@ -1499,11 +1445,15 @@ class TextState:
                 if self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
                     group_alpha = max(0.0, min(1.0, self.fill_opacity))
         raw_resources = xobj_dict.get("Resources")
-        resources = (
-            raw_resources
-            if isinstance(raw_resources, dict)
-            else self.document.resolver.resolve_dict(raw_resources)
-        ) or self.resources
+        resources = cast(
+            PdfDict,
+            (
+                raw_resources
+                if isinstance(raw_resources, dict)
+                else self.document.resolver.resolve_dict(raw_resources)
+            )
+            or self.resources,
+        )
         xobj_matrix = xobj_dict.get("Matrix")
         if isinstance(xobj_matrix, (list, tuple)) and len(xobj_matrix) > 6:
             xobj_matrix = xobj_matrix[:6]
@@ -1555,19 +1505,19 @@ class TextState:
             swallow_parse_errors=True,
         )
 
-    def flush_run(self: Any) -> None:
+    def flush_run(self) -> None:
         if self.pending_run:
             self.pending_run.freeze_glyph_clusters()
             self.runs.append(self.pending_run)
             self.pending_run = None
 
-    def transform_point(self: Any, x: float, y: float) -> tuple[float, float]:
+    def transform_point(self, x: float, y: float) -> tuple[float, float]:
         return (
             x * self.ca + y * self.cc + self.ce,
             x * self.cb + y * self.cd + self.cf,
         )
 
-    def graphics_scale(self: Any) -> float:
+    def graphics_scale(self) -> float:
         x_scale = hypot(self.ca, self.cb)
         y_scale = hypot(self.cc, self.cd)
         if x_scale == 0 and y_scale == 0:
@@ -1578,13 +1528,13 @@ class TextState:
             return x_scale
         return (x_scale + y_scale) * 0.5
 
-    def transformed_line_width(self: Any) -> float:
+    def transformed_line_width(self) -> float:
         line_width = max(0.0, self.line_width)
         if line_width == 0:
             return 0.0
         return line_width * self.graphics_scale()
 
-    def transformed_dash_pattern(self: Any) -> tuple[list[float], float] | None:
+    def transformed_dash_pattern(self) -> tuple[list[float], float] | None:
         dash_pattern = self.dash_pattern
         if not dash_pattern:
             return None
@@ -1592,7 +1542,7 @@ class TextState:
         scale = self.graphics_scale()
         return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 
-    def flush_drawing(self: Any, kind: str, fill_rule: str = "nonzero") -> None:
+    def flush_drawing(self, kind: str, fill_rule: str = "nonzero") -> None:
         if not self.capture_graphics or not self.is_graphics_visible():
             self.current_path.clear()
             return
@@ -1648,64 +1598,7 @@ class TextState:
             self.sequence += 1
 
     def alloc_run(
-        self: Any,
-        text: str,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        tx: float,
-        ty: float,
-        font_size: float,
-        space_width: float,
-        order: int,
-        stream_order: int,
-        xobject_depth: int,
-        font_name: str | None,
-        is_vertical: bool,
-        rotation_angle: int,
-        visible: bool,
-        line_break_before: bool,
-        seqno: int,
-        fill_color: tuple[float, ...] | None,
-        advance_bbox: Rectangle | None = None,
-        ink_bbox: Rectangle | None = None,
-        baseline: tuple[float, float, float, float] | None = None,
-        provenance: tuple[tuple[str, object], ...] = (),
-        confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
-    ) -> TextRun:
-        text = normalize_extracted_text(text)
-        return self.alloc_prepared_run(
-            text,
-            x0,
-            y0,
-            x1,
-            y1,
-            tx,
-            ty,
-            font_size,
-            space_width,
-            order,
-            stream_order,
-            xobject_depth,
-            font_name,
-            is_vertical,
-            rotation_angle,
-            visible,
-            line_break_before,
-            seqno,
-            fill_color,
-            advance_bbox,
-            ink_bbox,
-            baseline,
-            provenance,
-            confidence,
-            glyph_clusters,
-        )
-
-    def alloc_prepared_run(
-        self: Any,
+        self,
         text: str,
         x0: float,
         y0: float,
@@ -1733,9 +1626,9 @@ class TextState:
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> TextRun:
         existing = self.run_pool.pop() if self.capture_glyphs and self.run_pool else None
-        r = TextRun.reinit(
+        return TextRun.reinit(
             existing,
-            text,
+            normalize_extracted_text(text),
             x0,
             y0,
             x1,
@@ -1761,9 +1654,8 @@ class TextState:
             confidence,
             glyph_clusters,
         )
-        return r
 
-    def internal_is_clipped_away(self: Any, x0: float, y0: float, x1: float, y1: float) -> bool:
+    def internal_is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
         """Report whether a box falls entirely outside the active clip.
 
         Text only survives if it overlaps the clip, so a form XObject's /BBox,
@@ -1778,7 +1670,7 @@ class TextState:
                 return True
         return False
 
-    def update_pending_run(self: Any, new_run: TextRun) -> None:
+    def update_pending_run(self, new_run: TextRun) -> None:
         nc = new_run.coords
         if self.internal_is_clipped_away(
             nc[TextRun.X0], nc[TextRun.Y0], nc[TextRun.X1], nc[TextRun.Y1]
@@ -1881,7 +1773,7 @@ class TextState:
                 self.run_pool.append(new_run)
 
     def record_glyph_observations(
-        self: Any,
+        self,
         text: str,
         data: bytes | bytearray | memoryview,
         decoder: FontDecoder,
@@ -1955,10 +1847,7 @@ class TextState:
         glyph_bbox_cache = decoder.glyph_bbox_cache
         vertical_position = decoder.vertical_glyph_position
         vertical_metric = decoder.vertical_glyph_metric
-        clusters = getattr(self, "glyph_clusters", None)
-        if clusters is None:
-            clusters = []
-            self.glyph_clusters = clusters
+        clusters = self.glyph_clusters
         cursor = 0
         is_vertical = decoder.is_vertical
         glyph_width = decoder.glyph_width
@@ -2069,20 +1958,22 @@ class TextState:
         run_geometry = RunGeometry()
         add_run_geometry = run_geometry.add
         for glyph in glyphs:
-            advance = (
-                chunk_advance(
+            if is_vertical:
+                advance = chunk_advance(
                     glyph.width_code,
                     decoder,
                     word_space=glyph.code_bytes == b" ",
                 )
-                if is_vertical
-                else (
-                    glyph_width(glyph.width_code)
+                glyph_width_units = 0.0
+            else:
+                # Reused by the compat cursor below. glyph_width is three frames
+                # deep, so calling it twice per glyph is pure overhead.
+                glyph_width_units = glyph_width(glyph.width_code)
+                advance = (
+                    glyph_width_units
                     + char_space_scale
                     + (word_space_scale if glyph.code_bytes == b" " else 0.0)
-                )
-                * advance_scale
-            )
+                ) * advance_scale
             chunk_text = glyph.unicode
             if not chunk_text:
                 chunk_text = text[cursor : cursor + 1]
@@ -2096,7 +1987,7 @@ class TextState:
                 width_units = (
                     float(vertical_metric(glyph.width_code)[0])
                     if is_vertical
-                    else glyph_width(glyph.width_code)
+                    else glyph_width_units
                 )
                 observation_provenance: tuple[tuple[str, Any], ...] = (
                     *glyph_provenance,
@@ -2413,7 +2304,7 @@ class TextState:
         return run_geometry.advance, run_geometry.ink, run_geometry.confidence
 
     def _append_text_impl(
-        self: Any,
+        self,
         operand: Any = None,
         *,
         data: bytes | memoryview | None = None,
@@ -2433,7 +2324,7 @@ class TextState:
                 # consumers can retain the replacement marker, while legacy
                 # facades project the source code as their exact ``(cid:N)``
                 # spelling. Dropping them here also lost their cursor advance.
-                text = "".join(glyph.unicode for glyph in glyphs)
+                text = "".join([glyph.unicode for glyph in glyphs])
             else:
                 text = decoder.decode(bytes(data))
         else:
@@ -2623,7 +2514,6 @@ class TextState:
                 ty=tf,
                 font_size=effective_font_size,
                 space_width=effective_space_width,
-                order=seqno,
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
                 font_name=self.current_font,
@@ -2634,7 +2524,6 @@ class TextState:
                 seqno=seqno,
                 fill_color=self.fill_color,
                 advance_bbox=advance_bbox,
-                ink_bbox=advance_bbox,
                 baseline=baseline,
                 provenance=provenance,
                 confidence=1.0,
@@ -2704,7 +2593,7 @@ class TextState:
         self.tm_f = tf + adv_x * tb + adv_y * td
         self.pending_line_break = False
 
-    def _render_type3_glyphs_impl(self: Any, data: bytes, decoder: FontDecoder) -> None:
+    def _render_type3_glyphs_impl(self, data: bytes | memoryview, decoder: FontDecoder) -> None:
         # ISO 32000-1 9.3.6: "Only a value of 3 for text rendering mode shall
         # have any effect on text displayed in a Type 3 font", and Table 106
         # makes mode 3 invisible. Mode 7 deliberately still paints here -- for a
@@ -2791,7 +2680,7 @@ class TextState:
                 self.tm_e += advance * self.tm_a
                 self.tm_f += advance * self.tm_b
 
-    def append_tj_array(self: Any, array: Any) -> None:
+    def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
             return
         if not array:
@@ -2816,7 +2705,7 @@ class TextState:
             self.compat_tj_decoder,
             self.compat_tj_need_charspace,
         )
-        self.compat_tj_active = self.capture_glyphs
+        self.compat_tj_active = self.capture_glyphs and self.compat_tj_enabled
         self.compat_tj_origin_e = self.lm_e
         self.compat_tj_origin_f = self.lm_f
         self.compat_tj_decoder = decoder
@@ -2874,20 +2763,20 @@ class TextState:
         self.compat_tj_cursor_x = compat_cursor_x
         self.compat_tj_cursor_y = compat_cursor_y
 
-    def current_actual_text_span(self: Any) -> Any | None:
+    def current_actual_text_span(self) -> Any | None:
         for entry in reversed(self.marked_content_stack):
             if getattr(entry, "actual_text", None) is not None:
                 return entry
         return None
 
-    def current_marked_content_mcid(self: Any) -> int | None:
+    def current_marked_content_mcid(self) -> int | None:
         for entry in reversed(self.marked_content_stack):
             mcid = getattr(entry, "mcid", None)
             if type(mcid) is int:
                 return mcid
         return None
 
-    def emit_actual_text_span(self: Any, entry: Any) -> None:
+    def emit_actual_text_span(self, entry: Any) -> None:
         actual_text = getattr(entry, "actual_text", None)
         if actual_text is None or not getattr(entry, "has_text_extents", False):
             return
@@ -2902,7 +2791,7 @@ class TextState:
             font_size=entry.font_size,
             font_name=entry.font_name,
             space_width=entry.space_width,
-            order=entry.order,
+            order=entry.seqno,
             stream_order=entry.stream_order,
             xobject_depth=entry.xobject_depth,
             is_vertical=entry.is_vertical,
@@ -2912,7 +2801,7 @@ class TextState:
             seqno=entry.seqno,
             fill_color=entry.fill_color,
             advance_bbox=entry.advance_bbox,
-            ink_bbox=entry.ink_bbox,
+            ink_bbox=entry.advance_bbox,
             baseline=entry.baseline,
             provenance=(*entry.provenance, ("unicode_source", "actual_text")),
             confidence=entry.confidence,
@@ -2922,7 +2811,7 @@ class TextState:
             self.glyphs.append_row(
                 GlyphObservation(
                     text=actual_text,
-                    ink_bbox=entry.ink_bbox or entry.advance_bbox,
+                    ink_bbox=entry.advance_bbox,
                     advance_bbox=entry.advance_bbox,
                     seqno=entry.seqno,
                     font_name=entry.font_name,
@@ -2958,14 +2847,7 @@ class TextState:
         self.tm_f = self.lm_f = 0.0
         self.compat_tj_cursor_x = 0.0
         self.compat_tj_cursor_y = 0.0
-        self.combined_A = self.ca
-        self.combined_B = self.cb
-        self.combined_C = self.cc
-        self.combined_D = self.cd
-        if self.ca == 1.0 and self.cb == 0.0 and self.cc == 0.0 and self.cd == 1.0:
-            self.cached_rotation = 0
-        else:
-            self.cached_rotation = detect_rotation_from_linear(self.ca, self.cb, self.cc, self.cd)
+        self.update_combined()
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:
         self.flush_run()
@@ -3010,7 +2892,7 @@ class TextState:
             return
         self.op_Td_values(tx, ty)
 
-    def op_Td_values(self: Any, tx: float, ty: float) -> None:
+    def op_Td_values(self, tx: float, ty: float) -> None:
         self.internal_move_text(tx, ty)
 
     def op_TD(self, operands: OperandWindow, depth: int) -> None:
@@ -3023,7 +2905,7 @@ class TextState:
             return
         self.op_TD_values(tx, ty)
 
-    def op_TD_values(self: Any, tx: float, ty: float) -> None:
+    def op_TD_values(self, tx: float, ty: float) -> None:
         self.leading = -ty
         self.internal_move_text(tx, ty)
 
@@ -3054,9 +2936,7 @@ class TextState:
             return
         self.op_Tm_values(a, b, c, d_, e, f)
 
-    def op_Tm_values(
-        self: Any, a: float, b: float, c: float, d_: float, e: float, f: float
-    ) -> None:
+    def op_Tm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None:
         self.flush_run()
         self.tm_a = self.lm_a = a
         self.tm_b = self.lm_b = b
@@ -3075,7 +2955,7 @@ class TextState:
         font_size_operand = operands[1]
         self.op_Tf_values(font_operand, font_size_operand)
 
-    def op_Tf_values(self: Any, font_operand: Any, font_size_operand: Any) -> None:
+    def op_Tf_values(self, font_operand: Any, font_size_operand: Any) -> None:
         decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
         if (
             self.current_decoder is not None
@@ -3109,7 +2989,7 @@ class TextState:
                 return
             self.font_setting_cache[cache_key] = (font_name, font_size)
         else:
-            font_name, font_size = cached
+            font_name, font_size = cast(tuple[str | None, float], cached)
         if (
             self.current_font == font_name
             and self.current_decoder is not None
@@ -3148,9 +3028,9 @@ class TextState:
             return
         self.op_Tc_values(char_space)
 
-    def op_Tc_values(self: Any, char_space: float) -> None:
+    def op_Tc_values(self, char_space: float) -> None:
         self.char_space = char_space
-        self.update_char_space_scale()
+        self.update_text_scales()
 
     def op_Tw(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3161,11 +3041,11 @@ class TextState:
             return
         self.op_Tw_values(word_space)
 
-    def op_Tw_values(self: Any, word_space: float) -> None:
+    def op_Tw_values(self, word_space: float) -> None:
         if self.word_space == word_space:
             return
         self.word_space = word_space
-        self.update_word_space_scale()
+        self.update_text_scales()
 
     def op_Tr(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3182,7 +3062,7 @@ class TextState:
             self.horizontal_scale = self.as_float(operands[0])
         except (TypeError, ValueError):
             return
-        self.update_horizontal_text_scale()
+        self.update_text_scales()
 
     def op_Ts(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3209,9 +3089,8 @@ class TextState:
             return
         self.word_space = word_space
         self.char_space = char_space
-        self.update_char_space_scale()
-        self.update_word_space_scale()
-        if not getattr(self.document, "legacy_pdfminer_text_operators", False):
+        self.update_text_scales()
+        if not self.document.legacy_pdfminer_text_operators:
             self.internal_move_text(0.0, -self.leading)
             self.pending_line_break = True
         self.internal_show_text(operands[2])
@@ -3228,12 +3107,7 @@ class TextState:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             data = getattr(image, "data", b"")
-            source = ImageSource(
-                data,
-                dictionary,
-                cache=getattr(self.document, "image_cache", None),
-                cache_key=("inline", self.sequence),
-            )
+            source = self.internal_image_source(self.sequence, data, dictionary, prefix="inline")
             self.inline_images.append(
                 CapturedInlineImage(
                     seqno=self.sequence,
@@ -3267,12 +3141,16 @@ class TextState:
         key: object,
         raw: bytes | memoryview,
         dictionary: dict[Any, Any],
+        *,
+        soft_mask: SoftMask | None = None,
+        prefix: str = "xobject",
     ) -> ImageSource:
         return ImageSource(
             raw,
             dictionary,
-            cache=getattr(self.document, "image_cache", None),
-            cache_key=("xobject", key),
+            soft_mask=soft_mask,
+            cache=self.image_cache,
+            cache_key=(prefix, key),
         )
 
     def op_BDC(self, operands: OperandWindow, depth: int) -> None:
@@ -3309,17 +3187,20 @@ class TextState:
             self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3 and not self.type3_uncolored:
-            self.stroke_color_space = "DeviceRGB"
-            self.set_stroke_color(operands[0], operands[1], operands[2])
+        if len(operands) >= 3:
+            self.op_RG_values(
+                cast("int | float", operands[0]),
+                cast("int | float", operands[1]),
+                cast("int | float", operands[2]),
+            )
 
-    def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+    def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None:
         if self.type3_uncolored:
             return
         self.stroke_color_space = "DeviceRGB"
         self.set_stroke_color(red, green, blue)
 
-    def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+    def op_rg_values(self, red: int | float, green: int | float, blue: int | float) -> None:
         if self.type3_uncolored:
             return
         self.fill_color_space = "DeviceRGB"
@@ -3333,41 +3214,45 @@ class TextState:
     def op_w(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.line_width = max(0.0, self.as_float(operands[0]))
+                # op_w_value coerces via as_float; the except below covers non-numerics.
+                self.op_w_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
-    def op_w_value(self: Any, line_width: int | float) -> None:
+    def op_w_value(self, line_width: int | float) -> None:
         self.line_width = max(0.0, self.as_float(line_width))
 
     def op_J(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.line_cap = self.as_int(operands[0])
+                # op_J_value coerces via as_int; the except below covers non-numerics.
+                self.op_J_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
-    def op_J_value(self: Any, line_cap: int | float) -> None:
+    def op_J_value(self, line_cap: int | float) -> None:
         self.line_cap = self.as_int(line_cap)
 
     def op_j(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.line_join = self.as_int(operands[0])
+                # op_j_value coerces via as_int; the except below covers non-numerics.
+                self.op_j_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
-    def op_j_value(self: Any, line_join: int | float) -> None:
+    def op_j_value(self, line_join: int | float) -> None:
         self.line_join = self.as_int(line_join)
 
     def op_M(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                self.miter_limit = max(1.0, self.as_float(operands[0]))
+                # op_M_value coerces via as_float; the except below covers non-numerics.
+                self.op_M_value(cast("int | float", operands[0]))
             except (TypeError, ValueError):
                 return
 
-    def op_M_value(self: Any, miter_limit: int | float) -> None:
+    def op_M_value(self, miter_limit: int | float) -> None:
         self.miter_limit = max(1.0, self.as_float(miter_limit))
 
     def op_d(self, operands: OperandWindow, depth: int) -> None:
@@ -3393,13 +3278,9 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_m_values(self: Any, x: int | float, y: int | float) -> None:
+    def op_m_values(self, x: int | float, y: int | float) -> None:
         point = (self.as_float(x), self.as_float(y))
-        if (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        ):
+        if self.internal_records_path():
             self.current_path.move_to(*point)
         self.current_point = point
         self.subpath_start = point
@@ -3412,15 +3293,11 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_l_values(self: Any, x: int | float, y: int | float) -> None:
+    def op_l_values(self, x: int | float, y: int | float) -> None:
         if self.current_point is None:
             return
         point = (self.as_float(x), self.as_float(y))
-        if (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        ):
+        if self.internal_records_path():
             self.current_path.line_to(*point)
         self.current_point = point
 
@@ -3434,26 +3311,18 @@ class TextState:
             self.op_re_values(x, y, w, h)
 
     def op_re_values(
-        self: Any, x: int | float, y: int | float, width: int | float, height: int | float
+        self, x: int | float, y: int | float, width: int | float, height: int | float
     ) -> None:
         x_float = float(x)
         y_float = float(y)
-        if (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        ):
+        if self.internal_records_path():
             self.current_path.rect(x_float, y_float, float(width), float(height))
         self.current_point = (x_float, y_float)
         self.subpath_start = (x_float, y_float)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
-            if (
-                self.capture_clipping
-                or (self.capture_graphics or self.capture_glyphs)
-                and self.is_graphics_visible()
-            ):
+            if self.internal_records_path():
                 self.current_path.close()
             self.current_point = self.subpath_start
 
@@ -3495,7 +3364,7 @@ class TextState:
             # which uses the current point as the first one.
             self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
-    def internal_close_current_subpath(self: Any) -> None:
+    def internal_close_current_subpath(self) -> None:
         if (
             self.capture_graphics
             and self.is_graphics_visible()
@@ -3548,7 +3417,7 @@ class TextState:
         self.current_path.clear()
         self.internal_end_path()
 
-    def internal_emit_clip_scope_push(self: Any) -> None:
+    def internal_emit_clip_scope_push(self) -> None:
         if not self.clip_scope_stack or self.clip_scope_stack[-1]:
             return
         self.clip_scope_stack[-1] = True
@@ -3564,7 +3433,7 @@ class TextState:
     def op_W(self, operands: OperandWindow, depth: int) -> None:
         self.internal_record_clip("nonzero")
 
-    def internal_record_clip(self: Any, fill_rule: str) -> None:
+    def internal_record_clip(self, fill_rule: str) -> None:
         path = self.current_path.transformed(self.ctm)
         if not path.has_segments():
             return
@@ -3600,11 +3469,11 @@ class TextState:
     def op_W_star(self, operands: OperandWindow, depth: int) -> None:
         self.internal_record_clip("evenodd")
 
-    def normalize_colors(self: Any, *components: Any) -> tuple[float, ...] | None:
+    def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
         cache_key = components
         cached = self.color_normalization_cache.get(cache_key, MISSING)
         if cached is not MISSING:
-            return cached
+            return cast(tuple[float, ...] | None, cached)
         values: list[float] = []
         for component in components:
             try:
@@ -3619,7 +3488,7 @@ class TextState:
         self.color_normalization_cache[cache_key] = normalized
         return normalized
 
-    def set_stroke_color(self: Any, *components: Any) -> None:
+    def set_stroke_color(self, *components: Any) -> None:
         if self.type3_uncolored:
             return
         normalized = self.normalize_colors(*components)
@@ -3627,7 +3496,7 @@ class TextState:
             self.stroke_color = normalized
             self.stroke_pattern = None
 
-    def set_fill_color(self: Any, *components: Any) -> None:
+    def set_fill_color(self, *components: Any) -> None:
         if self.type3_uncolored:
             return
         normalized = self.normalize_colors(*components)
@@ -3636,15 +3505,15 @@ class TextState:
             self.fill_pattern = None
 
     # `o` is an OperandWindow on the hot path and a plain list elsewhere, holding
-    # raw PDF operands; `Any` matches the deliberate looseness of `self: Any` here.
-    def normalize_color_operands(self: Any, o: Any) -> tuple[float, ...] | None:
+    # raw PDF operands, so `Any` is the honest annotation for it.
+    def normalize_color_operands(self, o: Any) -> tuple[float, ...] | None:
         # Plain numeric operands (the overwhelming majority) clamp directly;
         # anything else -- strings, names, nulls -- goes through the resolver.
         if o and all(type(c) is float or type(c) is int for c in o):
             return tuple(max(0.0, min(1.0, float(c))) for c in o)
         return self.normalize_colors(*o)
 
-    def internal_color_space_value(self: Any, name_obj: Any) -> object:
+    def internal_color_space_value(self, name_obj: Any) -> object:
         """The colour-space resource behind a `cs`/`CS` operand, indirects resolved.
 
         A colour-space array carries the tint function and the Indexed palette
@@ -3664,7 +3533,7 @@ class TextState:
             return [resolve(entry) for entry in value]
         return value
 
-    def internal_resolve_color_spec(self: Any, name_obj: Any) -> ImageColorSpec | None:
+    def internal_resolve_color_spec(self, name_obj: Any) -> ImageColorSpec | None:
         """Resolve a `cs`/`CS` operand to its full colour space, not just a name.
 
         Cached per resource dictionary like the name is: the parse walks the
@@ -3687,7 +3556,7 @@ class TextState:
         return spec
 
     def internal_color_from_operands(
-        self: Any, operands: Any, spec: ImageColorSpec | None
+        self, operands: Any, spec: ImageColorSpec | None
     ) -> tuple[float, ...] | None:
         """Turn `sc`/`scn` operands into the colour they select.
 
@@ -3705,7 +3574,7 @@ class TextState:
                     return converted
         return self.normalize_color_operands(operands)
 
-    def internal_numeric_operands(self: Any, operands: Any) -> list[float] | None:
+    def internal_numeric_operands(self, operands: Any) -> list[float] | None:
         values: list[float] = []
         for operand in operands:
             if type(operand) is float or type(operand) is int:
@@ -3714,14 +3583,12 @@ class TextState:
                 return None
         return values or None
 
-    def resolve_color_space(
-        self: Any, name_obj: Any, *, default_fallback: bool = False
-    ) -> str | None:
+    def resolve_color_space(self, name_obj: Any, *, default_fallback: bool = False) -> str | None:
         try:
             cache_key = (self.resources_id, name_obj, default_fallback)
             cached = self.color_space_cache.get(cache_key, MISSING)
             if cached is not MISSING:
-                return cached
+                return cast(str | None, cached)
         except TypeError:
             cache_key = None
 
@@ -3763,8 +3630,8 @@ class TextState:
         return resolved
 
     def resolve_pattern_color(
-        self: Any, operands: tuple[Any, ...] | OperandWindow
-    ) -> PdfDict | None:
+        self, operands: tuple[Any, ...] | OperandWindow
+    ) -> PatternPaint | None:
         if not operands:
             return None
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -3781,14 +3648,14 @@ class TextState:
             return None
         pattern_type = parse_int(pattern_dict.get("PatternType"), None)
         if pattern_type == 2:
-            shading = pattern_dict.get("Shading")
+            shading: object = pattern_dict.get("Shading")
             shading = self.document.resolver.resolve(shading)
             shading_dict = (
                 self.document.resolver.resolve_dict(shading) if shading is not None else None
             )
             if not isinstance(shading_dict, dict):
                 return None
-            return cast(PdfDict, {"kind": "shading", "dictionary": dict(shading_dict)})
+            return ShadingPattern(dict(shading_dict))
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
         paint_type = parse_int(pattern_dict.get("PaintType"), 1)
@@ -3821,72 +3688,20 @@ class TextState:
             nested_state.consume_stream(pattern, resources, matrix, 0)
         except Exception:
             return None
-        return cast(
-            PdfDict,
-            {
-                "kind": "tiling",
-                "bbox": tuple(bbox),
-                "x_step": float(x_step),
-                "y_step": float(y_step),
-                "drawings": [
-                    {
-                        "kind": drawing.kind,
-                        "fill": (
-                            base_color if drawing.kind in {"fill", "fillstroke"} else drawing.fill
-                        ),
-                        "fill_pattern": drawing.fill_pattern,
-                        "fill_opacity": drawing.fill_opacity,
-                        "stroke_color": (
-                            base_color
-                            if drawing.kind in {"stroke", "fillstroke"}
-                            else drawing.stroke_color
-                        ),
-                        "stroke_pattern": drawing.stroke_pattern,
-                        "stroke_opacity": drawing.stroke_opacity,
-                        "line_width": drawing.line_width,
-                        "line_cap": drawing.line_cap,
-                        "line_join": drawing.line_join,
-                        "dash_pattern": drawing.dash_pattern,
-                        "fill_rule": drawing.fill_rule,
-                        "blend_mode": drawing.blend_mode,
-                        "soft_mask_alpha": drawing.soft_mask_alpha,
-                        "raw_data": drawing.raw_data,
-                        "dictionary": drawing.dictionary,
-                        "items": list(drawing.items),
-                        "path": drawing.path,
-                        "rect": drawing.rect,
-                    }
-                    for drawing in nested_state.drawings
-                ],
-                "runs": [
-                    {
-                        "text": run.text,
-                        "bbox": (run.x0, run.y0, run.x1, run.y1),
-                        "fill_color": run.fill_color,
-                        "visible": run.visible,
-                    }
-                    for run in nested_state.runs
-                ],
-                "glyphs": [
-                    {
-                        "text": glyph.text,
-                        "bbox": glyph.ink_bbox,
-                        "advance_bbox": glyph.advance_bbox,
-                        "fill_color": glyph.fill,
-                        "visible": glyph.visible,
-                        "code": glyph.cid,
-                        "gid": glyph.gid,
-                        "font_name": glyph.font_name,
-                        "unicode_source": glyph.unicode_source,
-                        "alternates": glyph.alternates,
-                        "bitmap": glyph.resolved_bitmap(),
-                        "bitmap_width": glyph.bitmap_width,
-                        "bitmap_height": glyph.bitmap_height,
-                    }
-                    for glyph in nested_state.glyphs
-                    if glyph.has_paint
-                ],
-            },
+        # The cell's drawings are owned by this pattern and painted nowhere
+        # else, so an uncoloured (PaintType 2) pattern recolours them in place
+        # rather than copying every field into a parallel record.
+        for drawing in nested_state.drawings:
+            if drawing.kind in {"fill", "fillstroke"}:
+                drawing.fill = base_color
+            if drawing.kind in {"stroke", "fillstroke"}:
+                drawing.stroke_color = base_color
+        return TilingPattern(
+            bbox=bbox,
+            x_step=float(x_step),
+            y_step=float(y_step),
+            drawings=nested_state.drawings,
+            glyphs=[glyph for glyph in nested_state.glyphs if glyph.has_paint],
         )
 
     def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
@@ -3996,19 +3811,19 @@ class TextState:
         # A property-bearing marked-content point likewise has no lasting state.
         return
 
-    def resolve_marked_content_properties(self: Any, value: Any) -> dict[str, Any] | None:
+    def resolve_marked_content_properties(self, value: Any) -> dict[str, Any] | None:
         if value is None:
             return None
         resolved = self.document.resolver.resolve(value)
         if isinstance(resolved, dict):
-            return resolved
+            return cast("dict[str, Any]", resolved)
         name = self.document.resolver.resolve_name(value)
         if not name:
             return None
         props = self.lookup_page_resource("Properties", name)
-        return props if isinstance(props, dict) else None
+        return cast("dict[str, Any]", props) if isinstance(props, dict) else None
 
-    def resolve_marked_content_layer(self: Any, value: Any) -> str | None:
+    def resolve_marked_content_layer(self, value: Any) -> str | None:
         if value is None:
             return None
 
@@ -4016,12 +3831,9 @@ class TextState:
         if isinstance(resolved, dict):
             oc = resolved.get("OC")
             if oc is not None:
-                name = self.document.resolver.resolve_name(oc)
-                return name or self.document.resolver.resolve_str(oc)
+                return self.document.resolver.resolve_name_or_text(oc)
 
-        return self.document.resolver.resolve_name(value) or self.document.resolver.resolve_str(
-            value
-        )
+        return self.document.resolver.resolve_name_or_text(value)
 
     def op_BX(self, operands: OperandWindow, depth: int) -> None:
         self.compatibility_depth += 1
@@ -4072,33 +3884,26 @@ class TextState:
             return value
         if value_type is int:
             return float(value)
-        if value_type is bool:
-            raise ValueError("invalid numeric operand")
-        parsed = parse_float(value, None)
-        if parsed is None:
-            raise ValueError("invalid numeric operand")
-        return parsed
+        return parse_float_strict(value, "invalid numeric operand")
 
     @staticmethod
     def as_int(value: Any) -> int:
-        if type(value) is bool:
-            raise ValueError("invalid numeric operand")
-        parsed = parse_int(value, None)
-        if parsed is None:
-            raise ValueError("invalid numeric operand")
-        return parsed
+        if type(value) is int:
+            return value
+        return parse_int_strict(value, "invalid numeric operand")
 
-    def resolve_extgstate(self: Any, name: str) -> dict[str, Any] | None:
+    def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
         cache_key = (self.resources_id, name)
         cached = self.extgstate_cache.get(cache_key, MISSING)
         if cached is not MISSING:
-            return cached
+            return cast("dict[str, Any] | None", cached)
         resolved = self.lookup_page_resource("ExtGState", name)
         if not isinstance(resolved, dict):
             self.extgstate_cache[cache_key] = None
             return None
-        self.extgstate_cache[cache_key] = resolved
-        return resolved
+        extgstate = cast("dict[str, Any]", resolved)
+        self.extgstate_cache[cache_key] = extgstate
+        return extgstate
 
     def op_q(self, operands: OperandWindow, depth: int) -> None:
         self.clip_scope_stack.append(False)
@@ -4223,7 +4028,7 @@ class TextState:
         self.op_cm_values(m_a, m_b, m_c, m_d, m_e, m_f)
 
     def op_cm_values(
-        self: Any,
+        self,
         m_a: float,
         m_b: float,
         m_c: float,
@@ -4246,9 +4051,12 @@ class TextState:
             self.set_fill_color(operands[0])
 
     def op_rg(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3 and not self.type3_uncolored:
-            self.fill_color_space = "DeviceRGB"
-            self.set_fill_color(operands[0], operands[1], operands[2])
+        if len(operands) >= 3:
+            self.op_rg_values(
+                cast("int | float", operands[0]),
+                cast("int | float", operands[1]),
+                cast("int | float", operands[2]),
+            )
 
     def op_k(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and not self.type3_uncolored:
@@ -4279,3 +4087,17 @@ class TextState:
                     self.blend_mode = self.document.resolver.resolve_name_like_value(blend_mode)
         except (TypeError, ValueError):
             return
+
+
+if typing.TYPE_CHECKING:
+
+    def internal_check_operation_target(state: TextState) -> OperationTarget:
+        """Static-only conformance check.
+
+        dispatch_operations is reached through `cast(OperationTarget, self)`,
+        which asserts nothing. This makes mypy and ty verify that TextState
+        really does provide every member of the protocol -- including the
+        sixteen unboxed `op_*_value(s)` methods, which no handler table can
+        reach and which nothing else would catch.
+        """
+        return state

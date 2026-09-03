@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -12,8 +11,9 @@ from core_pdf import PdfDecryptionError, PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from tests.helpers.paths import FIXTURES as FIXTURES_ROOT
 
-FIXTURE_DIRECTORY = Path(__file__).parents[5] / "fixtures" / "security_interop"
+FIXTURE_DIRECTORY = FIXTURES_ROOT / "security_interop"
 AES_GCM_DIRECTORY = FIXTURE_DIRECTORY / "aes_gcm"
 AES_GCM_FIXTURE = AES_GCM_DIRECTORY / "aes-256-r7-gcm.pdf"
 AES_GCM_USER_PASSWORD = "user-gcm"

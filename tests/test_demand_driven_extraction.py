@@ -1,20 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.parse import pipeline as parse_pipeline
-from core_pdf.impl.parse.pipeline import PAGE_EXTRACTION_CACHE_KEY, page_extraction
+from core_pdf.impl.extract import pipeline as parse_pipeline
+from tests.helpers.paths import SCORE_BENCH
 
-FIXTURE = (
-    Path(__file__).parent
-    / "fixtures"
-    / "SCORE-Bench"
-    / "src"
-    / "Employee_Health_Benefits_Assess-p006.pdf"
-)
+FIXTURE = SCORE_BENCH / "Employee_Health_Benefits_Assess-p006.pdf"
 
 
 def test_repeated_extract_reuses_the_cached_table_stage(
@@ -36,12 +28,7 @@ def test_repeated_extract_reuses_the_cached_table_stage(
         page = document.pages[0]
         first = page.extract()
         second = page.extract()
-        extraction = page_extraction(page)
-        cache = page.extraction_cache
 
     assert first is second
     assert first.tables == ()
     assert calls == 1
-    assert cache is not None
-    assert cache[PAGE_EXTRACTION_CACHE_KEY] is extraction
-    assert extraction.internal_assembled_page is first

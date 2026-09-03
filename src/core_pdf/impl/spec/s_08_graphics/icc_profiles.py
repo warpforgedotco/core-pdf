@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from typing import Any, TypedDict
 
 import numpy
 
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_08_graphics.color_math import (
     d50_xyz_to_srgb,
     lab_to_xyz,
@@ -61,6 +62,10 @@ class IccMatrixProfile:
     matrix: tuple[tuple[float, float, float], ...]
     curves: tuple[IccCurve, ...]
 
+    @cached_property
+    def matrix_array(self) -> numpy.ndarray[Any, Any]:
+        return readonly(numpy.asarray(self.matrix, dtype=numpy.float32))
+
 
 @dataclass(frozen=True)
 class IccLutProfile:
@@ -75,6 +80,33 @@ class IccLutProfile:
     output_tables: tuple[tuple[float, ...], ...]
     legacy_lab: bool = False
     black_point: tuple[float, float, float] | None = None
+
+    # These arrays were previously rebuilt through module-level lru_caches keyed
+    # on the tuples themselves. A tuple does not memoize its hash, so every
+    # cache *hit* re-walked the key: 2055us for an 83521x3 CLUT, of which 1950us
+    # was hash(). The profile is already cached on its own bytes, so the derived
+    # arrays belong on it. cached_property writes through __dict__ and so works
+    # on a frozen dataclass.
+
+    @cached_property
+    def matrix_array(self) -> numpy.ndarray[Any, Any]:
+        return readonly(numpy.asarray(self.matrix, dtype=numpy.float32))
+
+    @cached_property
+    def clut_array(self) -> numpy.ndarray[Any, Any]:
+        return readonly(numpy.asarray(self.clut, dtype=numpy.float32))
+
+    @cached_property
+    def input_table_arrays(self) -> tuple[tuple[Any, Any], ...]:
+        return tuple(internal_curve_table_arrays(table) for table in self.input_tables)
+
+    @cached_property
+    def output_table_arrays(self) -> tuple[tuple[Any, Any], ...]:
+        return tuple(internal_curve_table_arrays(table) for table in self.output_tables[:3])
+
+    @cached_property
+    def byte_input_curves(self) -> tuple[numpy.ndarray[Any, Any], ...]:
+        return internal_byte_input_curves(self.input_tables)
 
 
 class IccLutTag(TypedDict):
@@ -173,7 +205,7 @@ class IccTransform:
                     numpy.ascontiguousarray(block, dtype=numpy.float32) / numpy.float32(255.0),
                 )
             else:
-                curves = internal_byte_input_curves(profile.input_tables)
+                curves = profile.byte_input_curves
                 values = numpy.column_stack(
                     [curve[block[:, index]] for index, curve in enumerate(curves)]
                 ).astype(numpy.float32, copy=False)
@@ -187,21 +219,16 @@ class IccTransform:
 def internal_curve_table_arrays(
     values: tuple[float, ...],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    axis = numpy.linspace(0.0, 1.0, len(values), dtype=numpy.float32)
-    table = numpy.asarray(values, dtype=numpy.float32)
-    axis.flags.writeable = False
-    table.flags.writeable = False
+    axis = readonly(numpy.linspace(0.0, 1.0, len(values), dtype=numpy.float32))
+    table = readonly(numpy.asarray(values, dtype=numpy.float32))
     return axis, table
 
 
-@lru_cache(maxsize=256)
 def internal_readonly_float32(
     values: tuple[tuple[float, ...], ...],
 ) -> numpy.ndarray[Any, Any]:
     """Cache one read-only float32 array per distinct matrix or CLUT."""
-    result = numpy.asarray(values, dtype=numpy.float32)
-    result.flags.writeable = False
-    return result
+    return readonly(numpy.asarray(values, dtype=numpy.float32))
 
 
 @lru_cache(maxsize=128)
@@ -244,7 +271,7 @@ def apply_matrix_transform(profile: IccMatrixProfile, samples: ColorSamples) -> 
     if profile.color_space == "GRAY":
         xyz = curves * numpy.asarray(profile.white_point, dtype=numpy.float32)
     else:
-        xyz = curves @ internal_readonly_float32(profile.matrix)
+        xyz = curves @ profile.matrix_array
     return numpy.clip(d50_xyz_to_srgb(xyz), 0.0, 1.0).astype(
         numpy.float32,
         copy=False,
@@ -311,7 +338,7 @@ def apply_parametric_curve_array(
 
 
 def apply_lut_transform(profile: IccLutProfile, samples: ColorSamples) -> ColorSamples:
-    input_table_arrays = tuple(internal_curve_table_arrays(table) for table in profile.input_tables)
+    input_table_arrays = profile.input_table_arrays
     values = numpy.column_stack(
         [
             numpy.interp(
@@ -332,18 +359,16 @@ def internal_lut_transform_from_curved(
     """Finish a LUT transform whose input curves have already been applied."""
     if profile.color_space == "XYZ" and profile.input_channels == 3:
         values = numpy.clip(
-            values @ internal_readonly_float32(profile.matrix).T,
+            values @ profile.matrix_array.T,
             0.0,
             1.0,
         )
     clut = interpolate_lut_array(
-        internal_readonly_float32(profile.clut),
+        profile.clut_array,
         profile.grid_points,
         values,
     )
-    output_table_arrays = tuple(
-        internal_curve_table_arrays(table) for table in profile.output_tables[:3]
-    )
+    output_table_arrays = profile.output_table_arrays
     output = numpy.column_stack(
         [
             numpy.interp(
@@ -402,11 +427,17 @@ def internal_distinct_byte_rows(
     for index in range(channels):
         keys <<= numpy.uint32(8)
         keys |= samples[:, index]
-    ignored_keys, first, inverse = numpy.unique(keys, return_index=True, return_inverse=True)
-    return numpy.ascontiguousarray(samples[first]), inverse
+    # The key holds the whole row, so the distinct rows unpack straight out of
+    # the unique keys. Asking for return_index instead forces numpy.unique onto
+    # a stable sort, which is materially slower for no extra information.
+    unique_keys, inverse = numpy.unique(keys, return_inverse=True)
+    distinct = numpy.empty((len(unique_keys), channels), dtype=numpy.uint8)
+    for index in range(channels):
+        shift = numpy.uint32(8 * (channels - 1 - index))
+        distinct[:, index] = ((unique_keys >> shift) & numpy.uint32(0xFF)).astype(numpy.uint8)
+    return distinct, inverse
 
 
-@lru_cache(maxsize=64)
 def internal_byte_input_curves(
     input_tables: tuple[tuple[float, ...], ...],
 ) -> tuple[numpy.ndarray[Any, Any], ...]:
@@ -415,9 +446,7 @@ def internal_byte_input_curves(
     curves: list[numpy.ndarray[Any, Any]] = []
     for table in input_tables:
         axis, values = internal_curve_table_arrays(table)
-        curve = numpy.interp(positions, axis, values).astype(numpy.float32)
-        curve.flags.writeable = False
-        curves.append(curve)
+        curves.append(readonly(numpy.interp(positions, axis, values).astype(numpy.float32)))
     return tuple(curves)
 
 

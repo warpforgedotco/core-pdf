@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.model.geometry import rotate_page_runs
 from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
@@ -18,13 +19,9 @@ from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
     consume_annotation_appearances,
 )
-from core_pdf.impl.spec.s_07_document.document_recovery import document_recovery_enabled
-from core_pdf.impl.spec.s_07_document.page_boxes import rotate_page_runs
 from core_pdf.impl.spec.s_07_document.page_links import (
     link_target_direct,
     link_target_resolved,
-    pdf_box_direct,
-    pdf_name_direct,
     resolve_annotation_dict,
 )
 from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawLink
@@ -36,6 +33,7 @@ from core_pdf.impl.spec.s_07_syntax.types import (
     PdfDict,
     PdfObject,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
 from core_pdf.impl.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.types import Rectangle
 
@@ -127,7 +125,7 @@ class PdfPage:
         return self._annotation_dicts(strict=False)
 
     def _annotation_dicts(self, *, strict: bool) -> list[PdfDict]:
-        recover_annotations = document_recovery_enabled(self.document)
+        recover_annotations = self.document.recovery_enabled
         raw_annots = self.document.resolver.resolve(self.inherited_values.get("Annots"))
         if raw_annots is None:
             return []
@@ -149,7 +147,7 @@ class PdfPage:
         return resolved_annots
 
     def get_annotations(self) -> list[RawAnnotation]:
-        recover_annotations = document_recovery_enabled(self.document)
+        recover_annotations = self.document.recovery_enabled
         results = []
         for annot in self._annotation_dicts(strict=True):
             subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
@@ -195,13 +193,11 @@ class PdfPage:
         resolve = self.document.resolve
         records: list[RawLink] = []
         for annot in annots:
-            subtype = pdf_name_direct(annot.get("Subtype"))
-            if subtype is None:
-                subtype = resolver.resolve_name(annot.get("Subtype"))
+            subtype = resolver.resolve_name(annot.get("Subtype"))
             if subtype != "Link":
                 continue
 
-            rect = pdf_box_direct(annot.get("Rect"))
+            rect = parse_box(annot.get("Rect"))
             if rect is None:
                 rect = resolver.resolve_box(annot.get("Rect"))
             if rect is None:
@@ -215,7 +211,7 @@ class PdfPage:
             if isinstance(action, dict):
                 action = cast(PdfDict, action)
                 raw_type = action.get("S")
-                link_type = pdf_name_direct(raw_type) or resolver.resolve_name(raw_type)
+                link_type = resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)
                 if url is None:
                     url = link_target_resolved(resolver, action, link_type)
@@ -304,7 +300,7 @@ class PdfPage:
         can_skip_bad_stream = (
             len(content_streams) > 1
             or isinstance(contents_obj, (list, tuple))
-            or document_recovery_enabled(self.document)
+            or self.document.recovery_enabled
         )
         if len(content_streams) > 1:
             try:
@@ -332,7 +328,7 @@ class PdfPage:
             if program is not None:
                 return program
             state = TextState(
-                cast(Any, self.document),
+                self.document,
                 self.page_dict,
                 hidden_layers=self.document.oc_hidden_layers(),
                 decoder_cache=self.document.decoder_cache,
