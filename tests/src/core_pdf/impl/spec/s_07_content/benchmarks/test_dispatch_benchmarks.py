@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Performance bounds for the content-operator dispatch fast paths.
+"""Performance bounds for content-operator dispatch.
 
 `dispatch_operations` hand-inlines 25 operators ahead of the handler tables.
 Nothing measured that path before this file: the only other content-stream
 tokenization benchmark drives `iter_content_operations`, which passes
-`handler_target=None` and so disables every fast path, exercising the generic
-table lookup instead. Any change to the dispatch chains needs a baseline that
-actually runs them.
+`handler_target=None` and so disables every fast path. Any change to the
+dispatch chains needs a baseline that actually runs them.
 
 Two modes, because they take different branches: capture mode reaches the
 two-byte and one-byte fast paths, text-only mode reaches the skip stage and the
@@ -59,9 +58,6 @@ def internal_dispatch(state: TextState, data: bytes) -> None:
     cast(Any, dispatch_operations)(
         PdfLexer(data),
         state.op_handlers,
-        state.op_handlers_bytes,
-        state.single_op_handlers,
-        state.double_op_handlers,
         cast(Any, state),
         0,
         operands=state.operands,

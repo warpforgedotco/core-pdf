@@ -68,7 +68,7 @@ from core_pdf.impl.spec.s_07_content.operations import (
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import (
     TYPE3_REPLAY_OPERATORS,
-    build_operator_tables,
+    build_operator_handlers,
 )
 from core_pdf.impl.spec.s_07_content.stream_state import (
     STREAM_STATE_MIRRORED,
@@ -278,9 +278,7 @@ internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 class TextState:
     # Built once per class from the handler methods; shared by every instance.
-    shared_operator_tables: typing.ClassVar[
-        tuple[dict[str, Any], dict[bytes, Any], list[Any | None], dict[int, Any]] | None
-    ] = None
+    shared_operator_handlers: typing.ClassVar[dict[str, Any] | None] = None
 
     document: TextDocument
     page: PdfDict
@@ -345,9 +343,6 @@ class TextState:
     kw_cache: dict[bytes, object]
     pending_run: TextRun | None
     op_handlers: dict[str, OperationHandler]
-    op_handlers_bytes: dict[bytes, OperationHandler]
-    single_op_handlers: list[OperationHandler | None]
-    double_op_handlers: dict[int, OperationHandler]
 
     __slots__ = (
         "document",
@@ -462,9 +457,6 @@ class TextState:
         "compat_tj_decoder",
         "compat_tj_need_charspace",
         "op_handlers",
-        "op_handlers_bytes",
-        "single_op_handlers",
-        "double_op_handlers",
         "combined_A",
         "combined_B",
         "combined_C",
@@ -622,18 +614,13 @@ class TextState:
         self.compat_tj_decoder = None
         self.compat_tj_need_charspace = False
         cls = type(self)
-        # Read the class's own entry, not an inherited one: `cls.shared_operator_tables`
-        # would find the base class's tables and skip building the subclass's, so an
+        # Read the class's own entry, not an inherited one: `cls.shared_operator_handlers`
+        # would find the base class's mapping and skip building the subclass's, so an
         # overridden `op_*` would never be dispatched.
-        shared = cls.__dict__.get("shared_operator_tables")
+        shared = cls.__dict__.get("shared_operator_handlers")
         if shared is None:
-            shared = cls.shared_operator_tables = build_operator_tables(cls)
-        (
-            self.op_handlers,
-            self.op_handlers_bytes,
-            self.single_op_handlers,
-            self.double_op_handlers,
-        ) = shared
+            shared = cls.shared_operator_handlers = build_operator_handlers(cls)
+        self.op_handlers = shared
 
         self.combined_A = 1.0
         self.combined_B = 0.0
@@ -1049,9 +1036,6 @@ class TextState:
                 typing.cast(typing.Any, dispatch_operations)(
                     lexer,
                     self.op_handlers,
-                    self.op_handlers_bytes,
-                    self.single_op_handlers,
-                    self.double_op_handlers,
                     typing.cast(OperationTarget, self),
                     frame.depth,
                     operands=self.operands,

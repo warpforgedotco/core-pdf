@@ -19,11 +19,7 @@ def dispatch_m_operands(source: bytes) -> list[object]:
     def move_to(operands: Sequence[object], internal_depth: int) -> None:
         received.extend(operands)
 
-    fast_handlers: list[object] = [None] * 65536
-    fast_handlers[ord("m") << 8] = move_to
-    cast(Any, dispatch_operations)(
-        PdfLexer(source), {"m": move_to}, None, fast_handlers, {}, None, 0
-    )
+    cast(Any, dispatch_operations)(PdfLexer(source), {"m": move_to}, None, 0)
     return received
 
 

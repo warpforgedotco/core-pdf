@@ -194,25 +194,10 @@ __all__ = (
     "TEXT_ONLY_SKIP_DOUBLE",
     "TEXT_ONLY_SKIP_SINGLE",
     "TYPE3_REPLAY_OPERATORS",
-    "build_operator_tables",
+    "build_operator_handlers",
 )
 
 
-def build_operator_tables(
-    target: type[Any],
-) -> tuple[
-    dict[str, Any],
-    dict[bytes, Any],
-    list[Any | None],
-    dict[int, Any],
-]:
-    handlers = {name: getattr(target, spec.handler) for name, spec in OPERATOR_SPECS.items()}
-    byte_handlers = {name.encode("latin-1"): handler for name, handler in handlers.items()}
-    single_handlers: list[Any | None] = [None] * 256
-    double_handlers: dict[int, Any] = {}
-    for name, handler in handlers.items():
-        if len(name) == 1:
-            single_handlers[ord(name)] = handler
-        elif len(name) == 2:
-            double_handlers[(ord(name[0]) << 8) | ord(name[1])] = handler
-    return handlers, byte_handlers, single_handlers, double_handlers
+def build_operator_handlers(target: type[Any]) -> dict[str, Any]:
+    """Bind each content operator name to its target method."""
+    return {name: getattr(target, spec.handler) for name, spec in OPERATOR_SPECS.items()}

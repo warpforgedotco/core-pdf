@@ -262,15 +262,12 @@ def internal_run_dispatch(
 ) -> internal_RecordingOperationTarget:
     """Dispatch ``data`` against a fresh (or given) recording target.
 
-    Every handler table is empty/all-None, so any token that falls through
-    Stage C/D/E without a fast path taking it reaches Stage F, finds no
-    handler there either, and is silently dropped -- exactly like production
-    behavior for an operator with no registered handler.
+    The handler map is empty, so any token without a fast path is silently
+    dropped, exactly like an unregistered production operator.
     """
     if target is None:
         target = internal_RecordingOperationTarget()
-    single_op_handlers: list[object] = [None] * 65536
-    cast(Any, dispatch_operations)(PdfLexer(data), {}, None, single_op_handlers, {}, target, 0)
+    cast(Any, dispatch_operations)(PdfLexer(data), {}, target, 0)
     return target
 
 
@@ -373,12 +370,12 @@ def test_stage_c_re_calls_nothing_when_not_capturing() -> None:
 def internal_dispatch_with_real_tables(
     data: bytes, target: internal_RecordingOperationTarget
 ) -> list[str]:
-    """Dispatch against the *real* handler tables, recording what fired.
+    """Dispatch against a complete handler map, recording what fired.
 
     `internal_run_dispatch` deliberately passes empty tables, so a token that
     no fast path takes reaches Stage F and is dropped. That is the wrong shape
     for asking "was this operator skipped?", because a skip and a missing
-    handler look identical. Here every table entry records the operator name,
+    handler look identical. Here every map entry records the operator name,
     so silence means the skip stage consumed it.
     """
     seen: list[str] = []
@@ -390,15 +387,7 @@ def internal_dispatch_with_real_tables(
         return handler
 
     handlers = {name: make(name) for name in OPERATOR_SPECS}
-    single: list[object] = [None] * 256
-    double: dict[int, object] = {}
-    for name in OPERATOR_SPECS:
-        raw = name.encode("latin-1")
-        if len(raw) == 1:
-            single[raw[0]] = make(name)
-        elif len(raw) == 2:
-            double[(raw[0] << 8) | raw[1]] = make(name)
-    cast(Any, dispatch_operations)(PdfLexer(data), handlers, None, single, double, target, 0)
+    cast(Any, dispatch_operations)(PdfLexer(data), handlers, target, 0)
     return seen
 
 

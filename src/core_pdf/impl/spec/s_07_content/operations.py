@@ -302,18 +302,6 @@ class StringHandlerMap(Protocol[internal_HandlerT]):
     def get(self, key: str) -> internal_HandlerT | None: ...
 
 
-class ByteHandlerMap(Protocol[internal_HandlerT]):
-    def get(self, key: bytes) -> internal_HandlerT | None: ...
-
-
-class SingleHandlerLookup(Protocol[internal_HandlerT]):
-    def __getitem__(self, key: int) -> internal_HandlerT | None: ...
-
-
-class IntHandlerMap(Protocol[internal_HandlerT]):
-    def get(self, key: int) -> internal_HandlerT | None: ...
-
-
 class CollectedOperationHandler:
     __slots__ = ("callback", "op_name")
 
@@ -340,36 +328,10 @@ class CollectedStringHandlers:
         return handler
 
 
-class CollectedIntegerHandlers:
-    __slots__ = ("callback", "handlers")
-
-    def __init__(self, callback: OperationCollector) -> None:
-        self.callback = callback
-        self.handlers: dict[int, BoundOperationHandler] = {}
-
-    def __getitem__(self, key: int) -> BoundOperationHandler:
-        handler = self.handlers.get(key)
-        if handler is not None:
-            return handler
-        if key > 255:
-            op_name = chr(key >> 8) + chr(key & 0xFF)
-        else:
-            op_name = chr(key)
-        handler = CollectedOperationHandler(self.callback, op_name)
-        self.handlers[key] = handler
-        return handler
-
-    def get(self, key: int) -> BoundOperationHandler:
-        return self[key]
-
-
 @overload
 def dispatch_operations(
     lexer: PdfLexer,
     op_handlers: StringHandlerMap[StateOperationHandler],
-    op_handlers_bytes: ByteHandlerMap[StateOperationHandler] | None,
-    single_op_handlers: SingleHandlerLookup[StateOperationHandler],
-    double_op_handlers: IntHandlerMap[StateOperationHandler],
     handler_target: OperationTarget,
     depth: int,
     operands: list[ContentOperand] | None = None,
@@ -380,9 +342,6 @@ def dispatch_operations(
 def dispatch_operations(
     lexer: PdfLexer,
     op_handlers: StringHandlerMap[BoundOperationHandler],
-    op_handlers_bytes: ByteHandlerMap[BoundOperationHandler] | None,
-    single_op_handlers: SingleHandlerLookup[BoundOperationHandler],
-    double_op_handlers: IntHandlerMap[BoundOperationHandler],
     handler_target: None,
     depth: int,
     operands: list[ContentOperand] | None = None,
@@ -392,12 +351,6 @@ def dispatch_operations(
 def dispatch_operations(
     lexer: PdfLexer,
     op_handlers: StringHandlerMap[StateOperationHandler] | StringHandlerMap[BoundOperationHandler],
-    op_handlers_bytes: ByteHandlerMap[StateOperationHandler]
-    | ByteHandlerMap[BoundOperationHandler]
-    | None,
-    single_op_handlers: SingleHandlerLookup[StateOperationHandler]
-    | SingleHandlerLookup[BoundOperationHandler],
-    double_op_handlers: IntHandlerMap[StateOperationHandler] | IntHandlerMap[BoundOperationHandler],
     handler_target: OperationTarget | None,
     depth: int,
     operands: list[ContentOperand] | None = None,
@@ -415,8 +368,6 @@ def dispatch_operations(
     ws_table = WS_TABLE
     is_word_start = IS_WORD_START
     op_get = op_handlers.get
-    op_get_bytes = op_handlers_bytes.get if op_handlers_bytes is not None else None
-    double_get = double_op_handlers.get
     max_operands = len(operands)
     exact_number_types = (int, float)
 
@@ -601,8 +552,8 @@ def dispatch_operations(
                             recovered_pos = recover_inline_image_position(
                                 lexer,
                                 pos,
-                                (lambda token: op_get_bytes(token) is not None)
-                                if op_get_bytes is not None
+                                (lambda token: op_get(token.decode("latin-1")) is not None)
+                                if handler_target is not None
                                 else None,
                             )
                             if recovered_pos is None:
@@ -957,29 +908,19 @@ def dispatch_operations(
                             op_count = 0
                             continue
 
-                handler = None
-                if n_raw == 1:
-                    handler = single_op_handlers[raw_bytes[pos - 1]]
-                elif n_raw == 2:
-                    handler = double_get((raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1])
-
-                if handler is None:
-                    raw = raw_bytes[pos - n_raw : pos]
-                    raw_key = raw.tobytes() if type(raw) is memoryview else raw
-                    if op_get_bytes is not None:
-                        handler = op_get_bytes(raw_key)
-                    if handler is None:
-                        if raw_key in (
-                            b"R",
-                            b"obj",
-                            b"endobj",
-                            b"stream",
-                            b"endstream",
-                        ):
-                            op_count = 0
-                            continue
-                        op_name = cast(str, lexer.parse_keyword(raw_key))
-                        handler = op_get(op_name)
+                raw = raw_bytes[pos - n_raw : pos]
+                raw_key = raw.tobytes() if type(raw) is memoryview else raw
+                if raw_key in (
+                    b"R",
+                    b"obj",
+                    b"endobj",
+                    b"stream",
+                    b"endstream",
+                ):
+                    op_count = 0
+                    continue
+                op_name = cast(str, lexer.parse_keyword(raw_key))
+                handler = op_get(op_name)
 
                 if handler is not None:
                     operand_window.count = min(op_count, max_operands)
@@ -1176,9 +1117,6 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     dispatch_operations(
         lexer,
         CollectedStringHandlers(collector),
-        None,
-        CollectedIntegerHandlers(collector),
-        CollectedIntegerHandlers(collector),
         None,
         0,
     )
