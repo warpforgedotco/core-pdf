@@ -205,38 +205,6 @@ class OperationTarget(Protocol):
 
 
 OperationHandler: TypeAlias = Callable[[OperationTarget | None, OperandWindow, int], None]
-OperationCollector: TypeAlias = Callable[[OperandWindow, int, str], None]
-
-
-class CollectedOperationHandler:
-    __slots__ = ("callback", "op_name")
-
-    def __init__(self, callback: OperationCollector, op_name: str) -> None:
-        self.callback = callback
-        self.op_name = op_name
-
-    def __call__(
-        self,
-        target: OperationTarget | None,
-        operands: OperandWindow,
-        depth: int,
-    ) -> None:
-        self.callback(operands, depth, self.op_name)
-
-
-class CollectedStringHandlers:
-    __slots__ = ("callback", "handlers")
-
-    def __init__(self, callback: OperationCollector) -> None:
-        self.callback = callback
-        self.handlers: dict[str, OperationHandler] = {}
-
-    def get(self, key: str) -> OperationHandler:
-        handler = self.handlers.get(key)
-        if handler is None:
-            handler = CollectedOperationHandler(self.callback, key)
-            self.handlers[key] = handler
-        return handler
 
 
 def dispatch_operations(
@@ -576,15 +544,21 @@ def dispatch_operations(
 
 
 def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
-
     results: list[ContentOperation] = []
 
-    def collector(operands: OperandWindow, depth: int, op_name: str) -> None:
-        results.append((op_name, tuple(operands)))
+    def get_handler(op_name: str) -> OperationHandler:
+        def collect(
+            _target: OperationTarget | None,
+            operands: OperandWindow,
+            _depth: int,
+        ) -> None:
+            results.append((op_name, tuple(operands)))
+
+        return collect
 
     dispatch_operations(
         lexer,
-        CollectedStringHandlers(collector).get,
+        get_handler,
         None,
         0,
     )
