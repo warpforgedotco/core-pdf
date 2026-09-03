@@ -295,19 +295,29 @@ class PdfDocument(
         with self.internal_cache_lock:
             return self.internal_page_locks.setdefault(page_number, threading.RLock())
 
+    def internal_catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
+        """A catalog entry that must be a dictionary when it is present at all.
+
+        ``recoverable`` drops an entry that is present but not a dictionary,
+        instead of raising, once the document has already been reconstructed.
+        """
+        value = self.resolver.resolve(self.catalog().get(key))
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return cast(PdfDict, value)
+        if recoverable and self.recovery_enabled:
+            return None
+        raise ValueError(f"invalid {key} dictionary")
+
     @property
     def structure(self) -> StructureTree | None:
         with self.internal_cache_lock:
             structure = self.structure_cache
             if structure is not MISSING:
                 return cast(StructureTree | None, structure)
-            resolved_root = self.resolver.resolve(self.catalog().get("StructTreeRoot"))
-            if resolved_root is None:
-                self.structure_cache = None
-                return None
-            if not isinstance(resolved_root, dict):
-                raise ValueError("invalid StructTreeRoot dictionary")
-            structure = StructureTree(self, cast(PdfDict, resolved_root))
+            root = self.internal_catalog_dict("StructTreeRoot")
+            structure = None if root is None else StructureTree(self, root)
             self.structure_cache = structure
             return structure
 
@@ -317,13 +327,7 @@ class PdfDocument(
             mark_info = self.mark_info_cache
             if mark_info is not MISSING:
                 return cast(PdfDict | None, mark_info)
-            resolved_mark_info = self.resolver.resolve(self.catalog().get("MarkInfo"))
-            if resolved_mark_info is None:
-                self.mark_info_cache = None
-                return None
-            if not isinstance(resolved_mark_info, dict):
-                raise ValueError("invalid MarkInfo dictionary")
-            mark_info = cast(PdfDict, resolved_mark_info)
+            mark_info = self.internal_catalog_dict("MarkInfo")
             self.mark_info_cache = mark_info
             return mark_info
 
@@ -992,8 +996,7 @@ class PdfDocument(
         self,
     ) -> dict[str, RawNamedDestination]:
         with self.internal_cache_lock:
-            if self.named_destinations_cache is None:
-                self.populate_named_destinations()
+            self.populate_named_destinations()
             return dict(self.named_destinations_cache or {})
 
     def resolve_named_destination(
@@ -1005,8 +1008,7 @@ class PdfDocument(
             return None
         seen.add(name)
         with self.internal_cache_lock:
-            if self.named_destinations_cache is None:
-                self.populate_named_destinations()
+            self.populate_named_destinations()
             return (self.named_destinations_cache or {}).get(name)
 
     def destination_from_list(self, resolved_list: PdfArray) -> RawNamedDestination:
@@ -1149,18 +1151,12 @@ class PdfDocument(
             cached = self.acroform_cache
             if cached is not MISSING:
                 return cast(PdfDict | None, cached)
-            acroform_val = self.resolver.resolve(self.catalog().get("AcroForm"))
-            if acroform_val is None:
-                self.acroform_cache = None
-                return None
-            if isinstance(acroform_val, dict):
-                result = cast(PdfDict, acroform_val)
-                self.acroform_cache = result
-                return result
-            if self.recovery_enabled:
-                self.acroform_cache = None
-                return None
-            raise ValueError("invalid AcroForm dictionary")
+            # Unlike StructTreeRoot and MarkInfo, a recovered document keeps
+            # going with no form rather than failing: a damaged AcroForm costs
+            # the field list, not the page content every caller came for.
+            acroform = self.internal_catalog_dict("AcroForm", recoverable=True)
+            self.acroform_cache = acroform
+            return acroform
 
     def collect_field_records(
         self,

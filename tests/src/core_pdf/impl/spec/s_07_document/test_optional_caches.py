@@ -17,6 +17,12 @@ class MissingResolver:
 
 
 class OptionalDocument:
+    # The properties under test read a catalog entry through
+    # PdfDocument.internal_catalog_dict, so the stand-in borrows it the same
+    # way the tests below borrow the properties themselves.
+    internal_catalog_dict = PdfDocument.internal_catalog_dict
+    recovery_enabled = False
+
     def __init__(self) -> None:
         self.internal_cache_lock = threading.RLock()
         self.resolver = MissingResolver()
