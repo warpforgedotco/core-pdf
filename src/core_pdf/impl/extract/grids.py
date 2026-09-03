@@ -98,22 +98,18 @@ def internal_grid_components(
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
     if len(horizontal) < 2 or len(vertical) < 2:
         return ()
+    vertical_x = vertical[:, 0]
+    vertical_y0 = vertical[:, 1]
+    vertical_y1 = vertical[:, 2]
     pairs: list[tuple[int, int]] = []
     for h_index, segment in enumerate(horizontal):
-        h_box = (
-            float(segment[0]) - AXIS_TOLERANCE,
-            float(segment[2]) - AXIS_TOLERANCE,
-            float(segment[1]) + AXIS_TOLERANCE,
-            float(segment[2]) + AXIS_TOLERANCE,
+        matching = numpy.flatnonzero(
+            (vertical_x >= float(segment[0]) - AXIS_TOLERANCE)
+            & (vertical_x <= float(segment[1]) + AXIS_TOLERANCE)
+            & (vertical_y1 >= float(segment[2]) - AXIS_TOLERANCE)
+            & (vertical_y0 <= float(segment[2]) + AXIS_TOLERANCE)
         )
-        for v_index, segment in enumerate(vertical):
-            if not (
-                float(segment[0]) < h_box[0]
-                or float(segment[0]) > h_box[2]
-                or float(segment[2]) < h_box[1]
-                or float(segment[1]) > h_box[3]
-            ):
-                pairs.append((h_index, v_index))
+        pairs.extend((h_index, int(v_index)) for v_index in matching)
     if not pairs:
         return ()
     disjoint = internal_DisjointSet(len(horizontal) + len(vertical))
@@ -236,11 +232,12 @@ def internal_merge_grid_cells(
         coordinate_indexes: tuple[int, int, int],
     ) -> bool:
         position_index, start_index, end_index = coordinate_indexes
-        return any(
-            abs(float(segments[segment_index, position_index]) - position) <= AXIS_TOLERANCE
-            and float(segments[segment_index, start_index]) <= start + AXIS_TOLERANCE
-            and float(segments[segment_index, end_index]) >= end - AXIS_TOLERANCE
-            for segment_index in range(len(segments))
+        return bool(
+            numpy.any(
+                (numpy.abs(segments[:, position_index] - position) <= AXIS_TOLERANCE)
+                & (segments[:, start_index] <= start + AXIS_TOLERANCE)
+                & (segments[:, end_index] >= end - AXIS_TOLERANCE)
+            )
         )
 
     def vertical_boundary_present(x: float, y0: float, y1: float) -> bool:
