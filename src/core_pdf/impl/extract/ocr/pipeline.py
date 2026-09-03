@@ -36,7 +36,7 @@ from core_pdf.impl.extract.ocr.candidates import (
 )
 from core_pdf.impl.extract.ocr.execution import internal_OcrPassExecution, internal_OcrPassState
 from core_pdf.impl.extract.ocr.pass_tasks import (
-    internal_OcrPassTaskResources,
+    internal_OcrPassTaskFactory,
     internal_raster_tasks,
     internal_region_tasks,
 )
@@ -87,7 +87,7 @@ def internal_recognize_page_with_reserved_raster(
         image_filters = capture.evidence.image_filters
         if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
             compact_image = "grayscale"
-    task_resources = internal_OcrPassTaskResources(
+    task_factory = internal_OcrPassTaskFactory(
         capture,
         plan,
         compact_image,
@@ -146,7 +146,7 @@ def internal_recognize_page_with_reserved_raster(
         selected = pass_state.selected
         selected_tasks = pass_state.selected_tasks
         context.raise_if_cancelled()
-        pass_tasks = task_resources.materialize(
+        pass_tasks = task_factory.materialize(
             ocr_pass,
             selected=selected,
             selected_tasks=selected_tasks,
@@ -298,7 +298,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_columns=max(3, retry_pass.region_columns),
                     max_regions=max(8, retry_pass.max_regions),
                 )
-                retry_regions = task_resources.internal_high_resolution_weak_region_tasks(
+                retry_regions = task_factory.internal_high_resolution_weak_region_tasks(
                     tasks,
                     retry_pass,
                     candidate.observations,

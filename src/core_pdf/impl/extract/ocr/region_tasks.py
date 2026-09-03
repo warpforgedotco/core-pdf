@@ -340,9 +340,8 @@ def internal_candidate_region_tasks(
     regions: tuple[internal_OcrRegion, ...],
     ocr_pass: OcrPass,
     *,
-    rendered: Any | None,
     compact_image: bool | str,
-) -> tuple[tuple[internal_OcrTask, ...], Any | None]:
+) -> tuple[internal_OcrTask, ...]:
     direct_regions = internal_page_image_regions(
         capture,
         minimum_area_ratio=0.02,
@@ -356,6 +355,7 @@ def internal_candidate_region_tasks(
         if dominant is not None:
             direct_regions = (dominant,)
     tasks: list[internal_OcrTask] = []
+    rendered = None
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     direct_region_index = (
         SpatialIndex(((index, region.page_box) for index, region in enumerate(direct_regions)))
@@ -450,7 +450,7 @@ def internal_candidate_region_tasks(
                 compact_image=compact_image,
             )
         )
-    return tuple(tasks), rendered
+    return tuple(tasks)
 
 
 def internal_high_resolution_weak_region_tasks(
@@ -459,9 +459,8 @@ def internal_high_resolution_weak_region_tasks(
     ocr_pass: OcrPass,
     primary: ObservationBatch,
     *,
-    rendered: Any | None,
     compact_image: bool | str,
-) -> tuple[tuple[internal_OcrTask, ...], Any | None]:
+) -> tuple[internal_OcrTask, ...]:
     """Rasterize only weak cells at rescue resolution instead of the whole page."""
     source_rasters: dict[tuple[int, tuple[float, float, float, float], int], internal_Raster] = {}
     for task in source_tasks:
@@ -486,13 +485,12 @@ def internal_high_resolution_weak_region_tasks(
             )
     regions = internal_merge_ocr_regions(weak_regions)
     if not regions:
-        return (), rendered
-    if rendered is None:
-        rendered = compose_page(
-            capture.page,
-            RenderOptions(include_text=ocr_pass.include_native_text),
-            page_program=capture.program,
-        )
+        return ()
+    rendered = compose_page(
+        capture.page,
+        RenderOptions(include_text=ocr_pass.include_native_text),
+        page_program=capture.program,
+    )
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     tasks: list[internal_OcrTask] = []
     for region in regions:
@@ -515,4 +513,4 @@ def internal_high_resolution_weak_region_tasks(
                 compact_image=compact_image,
             )
         )
-    return tuple(tasks), rendered
+    return tuple(tasks)

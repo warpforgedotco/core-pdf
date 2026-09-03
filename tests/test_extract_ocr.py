@@ -1078,7 +1078,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
             page_box=(0.0, 0.0, 10.0, 10.0),
             resolution=raster.resolution,
         )
-        return (task,), None
+        return (task,)
 
     patch_ocr_helper(monkeypatch, "internal_high_resolution_weak_region_tasks", weak_region_crops)
 
@@ -1888,15 +1888,15 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
+    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion((0.0, 0.0, 100.0, 100.0), 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (3,))
 
-    tasks, _ = ocr_region_tasks.internal_candidate_region_tasks(
+    tasks = ocr_region_tasks.internal_candidate_region_tasks(
         capture,
         (target,),
         ocr_pass,
-        rendered=object(),
         compact_image=False,
     )
 
@@ -1931,15 +1931,15 @@ def test_candidate_region_defers_layered_images_to_compositor(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
+    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion(page_box, 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (11,))
 
-    tasks, _ = ocr_region_tasks.internal_candidate_region_tasks(
+    tasks = ocr_region_tasks.internal_candidate_region_tasks(
         capture,
         (target,),
         ocr_pass,
-        rendered=object(),
         compact_image=False,
     )
 
@@ -1998,7 +1998,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
             page_box=regions[0].page_box,
             resolution=raster.resolution,
         )
-        return (task,), None
+        return (task,)
 
     patch_ocr_helper(monkeypatch, "internal_candidate_region_tasks", candidate_tasks)
     monkeypatch.setattr(
