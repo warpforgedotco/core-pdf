@@ -25,7 +25,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     skip_literal_string,
     skip_name,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
 
 PdfName_of = PdfName.of
 
@@ -33,8 +33,6 @@ ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
-
-IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
 TEXT_CLIP_PREFIX_RE = re.compile(
     b"[\x00\t\n\f\r ]*"
@@ -176,9 +174,6 @@ def dispatch_operations(
     source_bytes = full_source_bytes(raw_data)
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
-    word_break_or_ws = SEPARATOR_TABLE
-    ws_table = WS_TABLE
-    is_word_start = IS_WORD_START
     text_only = (
         target is not None
         and not target.capture_graphics
@@ -200,46 +195,18 @@ def dispatch_operations(
 
     pos = lexer.pos
     while pos < data_len:
+        pos = lexer.skip_ignored_at(pos)
+        if pos >= data_len:
+            break
         byte = raw_bytes[pos]
 
-        if ws_table[byte]:
-            pos += 1
-            while pos < data_len and ws_table[raw_bytes[pos]]:
-                pos += 1
-            if pos >= data_len:
+        if not SEPARATOR_TABLE[byte]:
+            scanned = lexer.scan_word_at(pos, skip_ignored=False)
+            if scanned is None:
                 break
-            byte = raw_bytes[pos]
-            if byte == 37:
-                pos = lexer.skip_ignored_at(pos)
-                if pos >= data_len:
-                    break
-                byte = raw_bytes[pos]
-        elif byte == 37:
-            pos = lexer.skip_ignored_at(pos)
-            if pos >= data_len:
-                break
-            byte = raw_bytes[pos]
+            raw_key, pos = scanned
 
-        if is_word_start[byte]:
-            limit = pos + 1024 if pos + 1024 < data_len else data_len
-            end = pos + 1
-            while end < limit:
-                if word_break_or_ws[raw_bytes[end]]:
-                    break
-                end += 1
-            if end == limit:
-                lexer.pos = pos
-                scanned = lexer.scan_word_at(pos, skip_ignored=False)
-                if scanned is None:
-                    break
-                ignored, end = scanned
-
-            n_raw = end - pos
-            pos = end
-
-            if n_raw > 0:
-                raw = raw_bytes[pos - n_raw : pos]
-                raw_key = raw.tobytes() if type(raw) is memoryview else raw
+            if raw_key:
                 if is_number_word_bytes(raw_key):
                     append_operand(float(raw_key) if b"." in raw_key else int(raw_key))
                     continue
