@@ -9,6 +9,7 @@ from typing import Any, cast
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.render.blend import (
     internal_color_rgba,
     internal_scale_rgba_alpha,
@@ -28,7 +29,12 @@ from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
+from core_pdf.impl.spec.s_07_content.capture import (
+    CapturedDrawing,
+    CapturedInlineImage,
+    CapturedPath,
+    CapturedSubpath,
+)
 from core_pdf.impl.spec.s_07_content.page_program import PageEventKind, PageProgram
 from core_pdf.impl.spec.s_07_content.state import (
     TextState,
@@ -401,14 +407,6 @@ class RenderedPage:
 
 # ===== page =====
 
-# Plain ints so the event loop compares list elements without constructing an
-# IntEnum per event.
-internal_EVENT_TEXT = int(PageEventKind.TEXT)
-internal_EVENT_GLYPH = int(PageEventKind.GLYPH)
-internal_EVENT_DRAWING = int(PageEventKind.DRAWING)
-internal_EVENT_IMAGE = int(PageEventKind.IMAGE)
-internal_EVENT_INLINE_IMAGE = int(PageEventKind.INLINE_IMAGE)
-
 
 def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
     """Resolve and transform one captured embedded-font outline."""
@@ -490,17 +488,11 @@ def compose_page(
         page_program = page.get_page_program()
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")
-    products = page_program.products
-
-    event_indexes = (
-        range(len(page_program.events.sequence))
-        if options.include_text
-        else page_program.events.non_text_indexes
-    )
+    events = page_program.events
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
 
-    def append_text_run(run: Any) -> None:
+    def append_text_run(run: TextRun) -> None:
         display_list.append(
             "text",
             run.seqno,
@@ -524,18 +516,17 @@ def compose_page(
         )
         text_clipping_subpaths.clear()
 
-    event_kinds: list[int] = page_program.events.kind.tolist()
-    event_payloads: list[int] = page_program.events.payload.tolist()
-    for event_index in event_indexes:
-        event_index = int(event_index)
-        kind = event_kinds[event_index]
-        payload = event_payloads[event_index]
-        if kind == internal_EVENT_TEXT:
-            if not options.include_text:
-                continue
-            append_text_run(products.runs[payload])
-        elif kind == internal_EVENT_GLYPH:
-            glyph = products.glyphs[payload]
+    for event in events:
+        kind = event.kind
+        if not options.include_text and kind in (PageEventKind.TEXT, PageEventKind.GLYPH):
+            continue
+        payload = event.payload
+        if kind == PageEventKind.TEXT:
+            assert isinstance(payload, TextRun)
+            append_text_run(payload)
+        elif kind == PageEventKind.GLYPH:
+            assert isinstance(payload, GlyphObservation)
+            glyph = payload
             glyph_text_object_id = glyph.text_object_id
             if (
                 current_text_object_id is not None
@@ -567,11 +558,13 @@ def compose_page(
                 bitmap_width=glyph.bitmap_width,
                 bitmap_height=glyph.bitmap_height,
             )
-        elif kind in (internal_EVENT_DRAWING, internal_EVENT_IMAGE):
-            flush_text_clip(products.drawings[payload].seqno)
-            display_list.append_captured_drawing(products.drawings[payload])
-        elif kind == internal_EVENT_INLINE_IMAGE:
-            inline_image = products.inline_images[payload]
+        elif kind in (PageEventKind.DRAWING, PageEventKind.IMAGE):
+            assert isinstance(payload, CapturedDrawing)
+            flush_text_clip(payload.seqno)
+            display_list.append_captured_drawing(payload)
+        elif kind == PageEventKind.INLINE_IMAGE:
+            assert isinstance(payload, CapturedInlineImage)
+            inline_image = payload
             flush_text_clip(inline_image.seqno)
             display_list.append(
                 "inline-image",
@@ -585,7 +578,7 @@ def compose_page(
                 bbox=None,
                 raw_data=inline_image.data,
             )
-    flush_text_clip(len(page_program.events.sequence))
+    flush_text_clip(len(events))
 
     def append_capture(state: TextState) -> None:
         if options.include_text:

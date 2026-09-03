@@ -438,7 +438,7 @@ class PdfPage:
 
     @property
     def chars(self) -> list[TextRun]:
-        return list(self.get_page_program().products.runs)
+        return list(self.get_page_program().runs)
 
     @property
     def display_chars(self) -> list[TextRun]:

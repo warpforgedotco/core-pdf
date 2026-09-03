@@ -21,7 +21,7 @@ CFF2_HEX = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
 @functools.cache
 def internal_type1_data() -> tuple[bytes, int | None]:
     with PdfDocument.open(TYPE1_PDF) as document:
-        decoder = document.pages[0].get_page_program().products.glyphs[0].font_decoder
+        decoder = document.pages[0].get_page_program().glyphs[0].font_decoder
         assert isinstance(decoder, FontDecoder)
         descriptor = decoder.font.get("FontDescriptor")
         assert isinstance(descriptor, dict)

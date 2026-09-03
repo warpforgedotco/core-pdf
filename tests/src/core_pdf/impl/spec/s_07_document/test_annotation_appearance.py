@@ -87,7 +87,7 @@ def test_widget_appearance_text_reaches_extraction() -> None:
 
 def test_widget_appearance_glyphs_retain_their_capture_source() -> None:
     with open_pdf(form_pdf()) as document:
-        glyphs = document.pages[0].get_page_program().products.glyphs
+        glyphs = document.pages[0].get_page_program().glyphs
 
     page_glyph = next(glyph for glyph in glyphs if glyph.text == "P")
     appearance_glyph = next(glyph for glyph in glyphs if glyph.text == "V")

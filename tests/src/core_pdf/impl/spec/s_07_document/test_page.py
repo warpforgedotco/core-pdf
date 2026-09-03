@@ -118,13 +118,15 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
     assert page.get_fields() == [field]
 
 
-def test_page_program_contains_capture_products_and_read_only_events() -> None:
+def test_page_program_contains_capture_products_and_immutable_events() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
         program = page.get_page_program()
 
-        assert program.products.runs
-        assert program.events.sequence.flags.writeable is False
+        assert program.runs
+        events = program.events
+        assert isinstance(events, tuple)
+        assert any(event.payload is program.runs[0] for event in events)
 
 
 def test_page_program_is_shared_by_extraction_and_rendering(monkeypatch) -> None:

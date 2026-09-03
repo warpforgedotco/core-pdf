@@ -719,10 +719,9 @@ def internal_capture_from_program(
     *,
     learned_unicode: LearnedUnicodeMap | None = None,
 ) -> CapturedPage:
-    products = program.products
-    program_runs = tuple(products.runs)
+    program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
-    for glyph in products.glyphs:
+    for glyph in program.glyphs:
         if glyph.font_name:
             glyphs_by_seqno[glyph.seqno].append(glyph.font_name)
     glyph_seqnos = tuple(sorted(glyphs_by_seqno))
@@ -784,7 +783,7 @@ def internal_capture_from_program(
                 glyph.unicode_source,
                 glyph.confidence,
             )
-            for glyph in products.glyphs
+            for glyph in program.glyphs
         ),
         raw_runs,
         learned_unicode,
@@ -809,8 +808,8 @@ def internal_capture_from_program(
         visible_analysis = internal_analyze_text(visible_text)
         visible_text_quality = visible_analysis.quality
         visible_native_characters = visible_analysis.characters
-    drawings = tuple(products.drawings)
-    inline_images = tuple(products.inline_images)
+    drawings = program.drawings
+    inline_images = program.inline_images
     image_filters = tuple(
         filter_name
         for drawing in drawings
@@ -873,7 +872,7 @@ def internal_capture_from_program(
     image_count = len(inline_images) + sum(
         area >= page_area * 0.001 for area in visible_image_areas
     )
-    grid_lines = products.lines
+    grid_lines = program.lines
     full_page_image = any(
         width >= page_width * FULL_PAGE_IMAGE_COVERAGE
         and height >= page_height * FULL_PAGE_IMAGE_COVERAGE

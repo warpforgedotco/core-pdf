@@ -86,7 +86,7 @@ class PdfPage(SpecPdfPage):
                         seqno=run.seqno,
                         geometry_issues=text_run_geometry_issues(run),
                     )
-                    for run in self.get_page_program().products.runs
+                    for run in self.get_page_program().runs
                     if include_invisible or run.visible
                 )
             )
@@ -120,7 +120,7 @@ class PdfPage(SpecPdfPage):
                     items=tuple(drawing.items),
                     rect=rect_tuple(drawing.rect),
                 )
-                for drawing in self.get_page_program().products.drawings
+                for drawing in self.get_page_program().drawings
             )
             cache[cache_key] = result
             return result
@@ -164,7 +164,7 @@ class PdfPage(SpecPdfPage):
                     items=(),
                     rect=None,
                 )
-                for image in self.get_page_program().products.inline_images
+                for image in self.get_page_program().inline_images
             )
         for index, image in enumerate(images):
             source = cast(ImageSource | None, image.image_source)

@@ -17,7 +17,6 @@ from core_pdf.impl.model.geometry import SpatialIndex, bbox_union
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
 # Shared vector ruling geometry.
 
@@ -25,6 +24,24 @@ AXIS_TOLERANCE = 1.5
 
 
 TABLE_REGION_GAP = 22.0  # loosened to allow adjacent table regions with modest gaps to merge
+
+
+def internal_line_coordinate_columns(
+    lines: Any,
+) -> tuple[
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+]:
+    """Materialize ``(x0, y0, x1, y1)`` columns for captured lines."""
+    values = tuple(lines)
+    coordinates = numpy.fromiter(
+        (value for line in values for value in (line.x0, line.y0, line.x1, line.y1)),
+        dtype=numpy.float64,
+        count=len(values) * 4,
+    ).reshape((-1, 4))
+    return coordinates[:, 0], coordinates[:, 1], coordinates[:, 2], coordinates[:, 3]
 
 
 class internal_DisjointSet:
@@ -55,10 +72,9 @@ def internal_axis_segments(
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty
 
-    # Read the four coordinate columns straight off the capture, then classify
-    # and normalize all segments with array operations.  ``LineTable`` already
-    # stores them, so no per-line Python object is built here.
-    x0, y0, x1, y1 = line_coordinate_columns(lines)
+    # Fold the captured coordinates into columns, then classify and normalize
+    # all segments with array operations.
+    x0, y0, x1, y1 = internal_line_coordinate_columns(lines)
     horizontal_mask = (numpy.abs(y1 - y0) <= AXIS_TOLERANCE) & (
         numpy.abs(x1 - x0) >= page_width * 0.02
     )

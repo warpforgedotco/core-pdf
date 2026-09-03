@@ -67,7 +67,7 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
     glyph_evidence = capture.evidence.glyphs
     if not corrupt and not glyph_evidence.unknown_glyphs and not glyph_evidence.unsupported_glyphs:
         return counts
-    for glyph in capture.program.products.glyphs:
+    for glyph in capture.program.glyphs:
         decoder = glyph.font_decoder
         if (
             decoder is None
@@ -116,7 +116,7 @@ def internal_font_mapping_votes(
     votes: dict[object, dict[bytes, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
     glyphs = tuple(
         glyph
-        for glyph in capture.program.products.glyphs
+        for glyph in capture.program.glyphs
         if glyph.visible
         and glyph.code_bytes
         and len(glyph.text) == 1
@@ -240,7 +240,7 @@ def internal_capture_uses_learned_unicode(
     learned_unicode: LearnedUnicodeMap,
 ) -> bool:
     return bool(learned_unicode) and any(
-        glyph.font_decoder in learned_unicode for glyph in capture.program.products.glyphs
+        glyph.font_decoder in learned_unicode for glyph in capture.program.glyphs
     )
 
 

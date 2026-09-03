@@ -19,11 +19,7 @@ def internal_observations(text: str) -> ObservationBatch:
 
 
 def internal_base_capture(page: object, decoder: object, text: str) -> CapturedPage:
-    program = SimpleNamespace(
-        products=SimpleNamespace(
-            glyphs=(SimpleNamespace(font_decoder=decoder),),
-        )
-    )
+    program = SimpleNamespace(glyphs=(SimpleNamespace(font_decoder=decoder),))
     return make_capture(
         page_evidence(
             page_area=100.0, native_characters=len(text), visible_native_characters=len(text)
@@ -71,7 +67,7 @@ def test_document_font_votes_only_resolve_consistent_high_confidence_alignment()
         for index, code in enumerate((1, 2, 3))
     )
     capture = make_capture(
-        program=SimpleNamespace(products=SimpleNamespace(glyphs=glyphs)),
+        program=SimpleNamespace(glyphs=glyphs),
     )
 
     consistent = observations([("CAT", (0.0, 0.0, 3.0, 1.0))], confidence=95.0)

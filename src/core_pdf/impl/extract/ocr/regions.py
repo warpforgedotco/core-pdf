@@ -20,6 +20,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.grids import (
     internal_axis_segments,
     internal_grid_components,
+    internal_line_coordinate_columns,
     internal_split_grid_component,
 )
 from core_pdf.impl.extract.ocr.raster import (
@@ -42,7 +43,6 @@ from core_pdf.impl.model.geometry import (
     rect_tuple,
 )
 from core_pdf.impl.runtime.image_cache import ImageCacheKey
-from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
 
 def internal_page_image_regions(
@@ -339,9 +339,8 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
         vector_density[row * columns + column] += 1.0
     grid_lines = getattr(capture, "grid_lines", ())
     if len(grid_lines):
-        # Bin every grid line at once.  Iterating the capture would rebuild one
-        # Python object per line just to read its four coordinates back out.
-        line_x0, line_y0, line_x1, line_y1 = line_coordinate_columns(grid_lines)
+        # Bin every grid line at once.
+        line_x0, line_y0, line_x1, line_y1 = internal_line_coordinate_columns(grid_lines)
         line_columns = numpy.clip(
             ((line_x0 + line_x1) * 0.5 * columns / max(1.0, page_width)).astype(numpy.int64),
             0,

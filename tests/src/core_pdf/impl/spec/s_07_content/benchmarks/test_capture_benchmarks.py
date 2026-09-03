@@ -23,7 +23,7 @@ def test_latin_page_capture_benchmark(benchmark) -> None:
         page = document.pages[0]
         page.get_page_program()  # warm stream, font, and decoder caches
         program = benchmark(internal_reinterpret, page)
-        assert len(program.products.glyphs) == 730
+        assert len(program.glyphs) == 730
 
 
 @pytest.mark.benchmark_high_impact
@@ -32,4 +32,4 @@ def test_cid_page_capture_benchmark(benchmark) -> None:
         page = document.pages[0]
         page.get_page_program()  # warm stream, font, and decoder caches
         program = benchmark(internal_reinterpret, page)
-        assert len(program.products.glyphs) == 898
+        assert len(program.glyphs) == 898

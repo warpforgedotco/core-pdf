@@ -62,7 +62,7 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
     with PdfDocument.open(pdf, raster_font_provider=reject_fallback) as document:
         page = document.pages[0]
         program = page.get_page_program()
-        glyphs = program.products.glyphs
+        glyphs = program.glyphs
         raster = page.render(RenderOptions(include_annotations=False)).rasterize(cache=False)
 
     assert len(glyphs) == 119
