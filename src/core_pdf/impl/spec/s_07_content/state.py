@@ -4052,17 +4052,3 @@ class TextState:
                     self.blend_mode = self.document.resolver.resolve_name_like_value(blend_mode)
         except (TypeError, ValueError):
             return
-
-
-if typing.TYPE_CHECKING:
-
-    def internal_check_operation_target(state: TextState) -> OperationTarget:
-        """Static-only conformance check.
-
-        dispatch_operations is reached through `cast(OperationTarget, self)`,
-        which asserts nothing. This makes mypy and ty verify that TextState
-        really does provide every member of the protocol -- including the
-        sixteen unboxed `op_*_value(s)` methods, which no handler table can
-        reach and which nothing else would catch.
-        """
-        return state

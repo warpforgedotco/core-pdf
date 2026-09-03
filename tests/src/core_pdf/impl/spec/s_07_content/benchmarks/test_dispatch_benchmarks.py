@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Performance bounds for content-operator dispatch.
-
-`dispatch_operations` hand-inlines 25 operators ahead of the handler tables.
-Nothing measured that path before this file: the only other content-stream
-tokenization benchmark drives `iter_content_operations`, which passes
-`handler_target=None` and so disables every fast path. Any change to the
-dispatch chains needs a baseline that actually runs them.
-
-Two modes, because they take different branches: capture mode reaches the
-two-byte and one-byte fast paths, text-only mode reaches the skip stage and the
-clip-prefix elision.
-"""
+"""Performance bounds for content-operator dispatch in capture and text-only modes."""
 
 from __future__ import annotations
 
@@ -31,8 +20,7 @@ TEXT_BLOCK = (
     b"0.5 Tc 0.25 Tw (more text) Tj ET Q\n" * 40
 )
 
-# Graphics-heavy: the Stage E single-byte operators, which every candidate
-# change to the dispatch chains taxes first.
+# Graphics-heavy content exercises path construction and painting handlers.
 PATH_BLOCK = (
     b"q 2 w 1 J 1 j 10 M [] 0 d 0.9 0.1 0.1 RG "
     b"100 100 m 200 100 l 200 200 l 100 200 l h S "
