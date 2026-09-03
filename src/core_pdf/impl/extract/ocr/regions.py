@@ -34,7 +34,6 @@ from core_pdf.impl.extract.ocr.types import (
     internal_RasterRegion,
 )
 from core_pdf.impl.model.geometry import (
-    SpatialIndex,
     bbox_area,
     bbox_intersection_area,
     bbox_union,
@@ -202,19 +201,9 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
 
     native = getattr(capture, "observations", ObservationBatch.empty())
     native_boxes = tuple(tuple(float(value) for value in box) for box in native.bbox)
-    native_index = SpatialIndex.from_boxes(native_boxes) if native_boxes else None
 
     def native_overlap(box: tuple[float, float, float, float]) -> float:
         area = max(1.0, (box[2] - box[0]) * (box[3] - box[1]))
-        if native_index is not None:
-            return min(
-                1.0,
-                sum(
-                    bbox_intersection_area(box, hit.bbox)
-                    for hit in native_index.intersecting_hits(box)
-                )
-                / area,
-            )
         return min(
             1.0,
             sum(bbox_intersection_area(box, other) for other in native_boxes) / area,

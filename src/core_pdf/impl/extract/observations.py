@@ -26,7 +26,6 @@ from core_pdf.impl.extract.contracts import (
     WorkPlan,
 )
 from core_pdf.impl.extract.quality import internal_candidate
-from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.text import compact_text, text_tokens
 
@@ -70,16 +69,6 @@ def maximum_candidate_coverage(
     """Return each candidate's maximum covered-area ratio in bounded chunks."""
     if not len(candidate_boxes) or not len(native_boxes):
         return numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
-    if len(native_boxes) * COVERAGE_CHUNK > COVERAGE_VECTORIZED_ELEMENTS:
-        native_index = SpatialIndex.from_boxes(native_boxes)
-        output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
-        for index, box in enumerate(candidate_boxes):
-            area = max(1.0, float((box[2] - box[0]) * (box[3] - box[1])))
-            maximum = 0.0
-            for hit in native_index.intersecting_hits(box):
-                maximum = max(maximum, bbox_intersection_area(box, hit.bbox))
-            output[index] = maximum / area
-        return output
     output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
     native_x0 = native_boxes[:, 0][None, :]
     native_y0 = native_boxes[:, 1][None, :]

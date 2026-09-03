@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy
 
-from core_pdf.impl.model.geometry import SpatialIndex
 from core_pdf.impl.runtime.array_views import finite_median
 
 
@@ -437,7 +435,6 @@ def internal_obstacle_partition(
     indexes: numpy.ndarray,
     boxes: numpy.ndarray,
     obstacles: tuple[tuple[float, float, float, float], ...],
-    obstacle_index: SpatialIndex[int] | None = None,
     used_obstacles: frozenset[int] = frozenset(),
 ) -> tuple[tuple[numpy.ndarray, ...], int] | None:
     if not obstacles or len(indexes) < 3:
@@ -453,12 +450,7 @@ def internal_obstacle_partition(
     region_height = max(1.0, region_box[3] - region_box[1])
     centers_x = (region[:, 0] + region[:, 2]) * 0.5
     centers_y = (region[:, 1] + region[:, 3]) * 0.5
-    obstacle_indexes: Iterable[int] = (
-        obstacle_index.intersecting(region_box)
-        if obstacle_index is not None
-        else range(len(obstacles))
-    )
-    for raw_obstacle_index in obstacle_indexes:
+    for raw_obstacle_index in range(len(obstacles)):
         current_obstacle_index = int(raw_obstacle_index)
         if current_obstacle_index in used_obstacles:
             continue
@@ -493,7 +485,6 @@ def internal_xy_cut_regions(
     median_height: float,
     *,
     depth: int = 0,
-    obstacle_index: SpatialIndex[int] | None = None,
     used_obstacles: frozenset[int] = frozenset(),
     geometry: internal_LayoutGeometry | None = None,
     parent_region: internal_LayoutRegion | None = None,
@@ -514,7 +505,6 @@ def internal_xy_cut_regions(
             obstacles,
             median_height,
             depth=depth + 1,
-            obstacle_index=obstacle_index,
             used_obstacles=used,
             geometry=geometry,
             parent_region=current_region,
@@ -524,7 +514,6 @@ def internal_xy_cut_regions(
         indexes,
         boxes,
         obstacles,
-        obstacle_index,
         used_obstacles,
     )
     if obstacle_partition is not None:

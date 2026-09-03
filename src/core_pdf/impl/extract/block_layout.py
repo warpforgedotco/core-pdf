@@ -24,7 +24,7 @@ from core_pdf.impl.extract.contracts import (
     internal_bbox_tuple,
 )
 from core_pdf.impl.layout.lines import LayoutLine
-from core_pdf.impl.model.geometry import SpatialIndex, horizontal_overlap_ratio, interval_overlap
+from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import (
     TextSpan,
@@ -558,17 +558,11 @@ def layout_blocks(
         )
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
-    obstacle_index = (
-        SpatialIndex(((index, obstacle) for index, obstacle in enumerate(obstacles)))
-        if obstacles
-        else None
-    )
     regions = extract_regions.internal_xy_cut_regions(
         numpy.arange(len(lines), dtype=numpy.int64),
         boxes,
         obstacles,
         median_height,
-        obstacle_index=obstacle_index,
     )
     blocks = [
         ParsedBlock(
@@ -641,11 +635,6 @@ def layout_element_order(
         values,
         obstacles,
         max(1.0, finite_median(heights)),
-        obstacle_index=(
-            SpatialIndex(((index, obstacle) for index, obstacle in enumerate(obstacles)))
-            if obstacles
-            else None
-        ),
     )
     return tuple(int(index) for region in regions for index in region)
 

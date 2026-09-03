@@ -37,7 +37,6 @@ from core_pdf.impl.extract.ocr.types import (
     internal_raster_rectangle_page_box,
 )
 from core_pdf.impl.extract.quality import internal_text_utility_stats
-from core_pdf.impl.model.geometry import SpatialIndex
 from core_pdf.impl.model.geometry import (
     overlap_ratio_min_exact as internal_ocr_region_overlap,
 )
@@ -357,21 +356,11 @@ def internal_candidate_region_tasks(
     tasks: list[internal_OcrTask] = []
     rendered = None
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
-    direct_region_index = (
-        SpatialIndex(((index, region.page_box) for index, region in enumerate(direct_regions)))
-        if len(direct_regions) > 4
-        else None
-    )
     for region in regions:
         raster: internal_Raster | None
-        direct_candidates = (
-            (direct_regions[index] for index in direct_region_index.intersecting(region.page_box))
-            if direct_region_index is not None
-            else iter(direct_regions)
-        )
         matching_direct = tuple(
             candidate
-            for candidate in direct_candidates
+            for candidate in direct_regions
             # Region proposals include padding, so a source image need not cover the
             # entire box. It must still cover most of the requested target.
             if internal_ocr_region_coverage(region.page_box, candidate.page_box)

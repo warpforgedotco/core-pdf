@@ -13,7 +13,7 @@ import numpy
 from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch, ObservationSource
 from core_pdf.impl.extract.ocr.types import internal_OcrTask, internal_pixel_box_to_page_box
 from core_pdf.impl.extract.table_cleanup import internal_cell_text
-from core_pdf.impl.model.geometry import SpatialIndex, bbox_union
+from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import finite_median
@@ -98,15 +98,6 @@ def internal_grid_components(
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
     if len(horizontal) < 2 or len(vertical) < 2:
         return ()
-    v_boxes = numpy.column_stack(
-        (
-            vertical[:, 0] - AXIS_TOLERANCE,
-            vertical[:, 1] - AXIS_TOLERANCE,
-            vertical[:, 0] + AXIS_TOLERANCE,
-            vertical[:, 2] + AXIS_TOLERANCE,
-        )
-    )
-    vertical_index = SpatialIndex((i, v_boxes[i]) for i in range(len(vertical)))
     pairs: list[tuple[int, int]] = []
     for h_index, segment in enumerate(horizontal):
         h_box = (
@@ -115,8 +106,14 @@ def internal_grid_components(
             float(segment[1]) + AXIS_TOLERANCE,
             float(segment[2]) + AXIS_TOLERANCE,
         )
-        for v_index in vertical_index.intersecting(h_box):
-            pairs.append((h_index, int(v_index)))
+        for v_index, segment in enumerate(vertical):
+            if not (
+                float(segment[0]) < h_box[0]
+                or float(segment[0]) > h_box[2]
+                or float(segment[2]) < h_box[1]
+                or float(segment[1]) > h_box[3]
+            ):
+                pairs.append((h_index, v_index))
     if not pairs:
         return ()
     disjoint = internal_DisjointSet(len(horizontal) + len(vertical))
@@ -230,50 +227,20 @@ def internal_merge_grid_cells(
     column_count = max((len(row) for row in rows), default=0)
     if row_count == 0 or column_count == 0:
         return []
-    vertical_index = SpatialIndex(
-        (
-            (
-                index,
-                (
-                    float(segment[0]) - AXIS_TOLERANCE,
-                    float(segment[1]) - AXIS_TOLERANCE,
-                    float(segment[0]) + AXIS_TOLERANCE,
-                    float(segment[2]) + AXIS_TOLERANCE,
-                ),
-            )
-            for index, segment in enumerate(vertical)
-        )
-    )
-    horizontal_index = SpatialIndex(
-        (
-            (
-                index,
-                (
-                    float(segment[0]) - AXIS_TOLERANCE,
-                    float(segment[2]) - AXIS_TOLERANCE,
-                    float(segment[1]) + AXIS_TOLERANCE,
-                    float(segment[2]) + AXIS_TOLERANCE,
-                ),
-            )
-            for index, segment in enumerate(horizontal)
-        )
-    )
 
     def boundary_present(
         position: float,
         start: float,
         end: float,
         segments: numpy.ndarray[Any, Any],
-        index: SpatialIndex,
         coordinate_indexes: tuple[int, int, int],
-        query: tuple[float, float, float, float],
     ) -> bool:
         position_index, start_index, end_index = coordinate_indexes
         return any(
             abs(float(segments[segment_index, position_index]) - position) <= AXIS_TOLERANCE
             and float(segments[segment_index, start_index]) <= start + AXIS_TOLERANCE
             and float(segments[segment_index, end_index]) >= end - AXIS_TOLERANCE
-            for segment_index in index.intersecting(query)
+            for segment_index in range(len(segments))
         )
 
     def vertical_boundary_present(x: float, y0: float, y1: float) -> bool:
@@ -282,9 +249,7 @@ def internal_merge_grid_cells(
             y0,
             y1,
             vertical,
-            vertical_index,
             (0, 1, 2),
-            (x - AXIS_TOLERANCE, y0 - AXIS_TOLERANCE, x + AXIS_TOLERANCE, y1 + AXIS_TOLERANCE),
         )
 
     def horizontal_boundary_present(y: float, x0: float, x1: float) -> bool:
@@ -293,9 +258,7 @@ def internal_merge_grid_cells(
             x0,
             x1,
             horizontal,
-            horizontal_index,
             (2, 0, 1),
-            (x0 - AXIS_TOLERANCE, y - AXIS_TOLERANCE, x1 + AXIS_TOLERANCE, y + AXIS_TOLERANCE),
         )
 
     disjoint = internal_DisjointSet(row_count * column_count)

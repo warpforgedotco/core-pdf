@@ -24,12 +24,7 @@ from core_pdf.impl.extract.table_reconcile import (
     internal_project_text_and_tables,
     internal_wordlike_token,
 )
-from core_pdf.impl.model.geometry import (
-    SpatialIndex,
-    horizontal_overlap_ratio,
-    interval_overlap,
-    rect_tuple,
-)
+from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap, rect_tuple
 from core_pdf.impl.output import (
     Block,
     BlockKind,
@@ -437,8 +432,6 @@ def internal_normalize_emitted_text(text: str, source: str) -> str:
 def internal_line_decoration_flags(
     line: ParsedLine,
     drawings: tuple[Any, ...],
-    *,
-    decoration_index: SpatialIndex[tuple[float, float, float, float]] | None = None,
 ) -> dict[str, bool]:
     """Infer simple text decorations from nearby, thin PDF paths."""
     if line.bbox is None:
@@ -446,16 +439,12 @@ def internal_line_decoration_flags(
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
     flags = {"underline": False, "strikeout": False}
-    query = (x0, y0 - 3.0, x1, y0 + line_height * 0.75)
-    if decoration_index is None:
-        candidates = (
-            bbox
-            for drawing in drawings
-            if (bbox := internal_line_decoration_bbox(drawing)) is not None
-            and getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
-        )
-    else:
-        candidates = (hit.item for hit in decoration_index.candidate_hits(query))
+    candidates = (
+        bbox
+        for drawing in drawings
+        if (bbox := internal_line_decoration_bbox(drawing)) is not None
+        and getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+    )
     for bbox in candidates:
         dx0, dy0, dx1, dy1 = bbox
         width = dx1 - dx0
@@ -488,24 +477,6 @@ def internal_line_decoration_bbox(drawing: Any) -> tuple[float, float, float, fl
     return rect_tuple(bbox)
 
 
-def internal_line_decoration_index(
-    drawings: tuple[Any, ...],
-) -> SpatialIndex[tuple[float, float, float, float]]:
-    """Build the broad-phase index for thin path decoration candidates once."""
-    entries = []
-    for drawing in drawings:
-        if getattr(drawing, "kind", None) not in {"fill", "fillstroke", "stroke"}:
-            continue
-        bbox = internal_line_decoration_bbox(drawing)
-        if bbox is None:
-            continue
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
-        if width >= 2.0 and height <= 2.5:
-            entries.append((bbox, bbox))
-    return SpatialIndex(entries, target_cell_count=max(64, len(entries) // 8 or 1))
-
-
 def internal_remove_soft_line_end_hyphens(lines: list[str]) -> list[str]:
     if len(lines) < 2:
         return lines
@@ -529,7 +500,6 @@ def internal_normalized_blocks(
 ) -> list[Block]:
     """Build the normalized text candidate projection from parsed lines."""
     blocks: list[Block] = []
-    decoration_index = internal_line_decoration_index(drawings)
     for index, parsed_block in enumerate(parsed_blocks):
         confidences = tuple(
             line.confidence
@@ -542,11 +512,7 @@ def internal_normalized_blocks(
         )
         decorated_lines: list[ParsedLine] = []
         for line in parsed_block.lines:
-            flags = internal_line_decoration_flags(
-                line,
-                drawings,
-                decoration_index=decoration_index,
-            )
+            flags = internal_line_decoration_flags(line, drawings)
             decorated_lines.append(
                 replace(
                     line,

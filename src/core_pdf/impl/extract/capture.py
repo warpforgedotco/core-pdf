@@ -27,7 +27,6 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.ocr.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.extract.quality import internal_analyze_text
 from core_pdf.impl.model.geometry import (
-    SpatialIndex,
     bbox_intersection_area,
     bbox_union,
     interval_overlap,
@@ -127,9 +126,6 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
     if len(primary_tokens) < DUPLICATE_LAYER_MIN_TOKENS:
         return runs
     duplicate_boxes: set[tuple[float, float, float, float]] = set()
-    primary_index = SpatialIndex.from_items(
-        primary_runs, bbox=lambda run: (run.x0, run.y0, run.x1, run.y1)
-    )
     for box in groups:
         if box == primary_box or len(tokens_by_box[box]) < DUPLICATE_LAYER_MIN_TOKENS:
             continue
@@ -137,7 +133,13 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
         # table cells legitimately have separate clipping boxes and repeat much
         # of the surrounding vocabulary; comparing each cell with every token
         # on the page deleted non-duplicate rows from ISO 32000-2:2020 Table 22.
-        local_tokens = internal_normalized_tokens(primary_index.intersecting(box))
+        local_tokens = internal_normalized_tokens(
+            tuple(
+                run
+                for run in primary_runs
+                if bbox_intersection_area(box, (run.x0, run.y0, run.x1, run.y1)) > 0.0
+            )
+        )
         if (
             len(local_tokens) >= DUPLICATE_LAYER_MIN_TOKENS
             and internal_token_overlap(tokens_by_box[box], local_tokens)
@@ -630,17 +632,6 @@ def internal_uncovered_vector_area(
             rectangles.append((x0, y0, x1, y1, area))
     if not rectangles:
         return 0.0
-    if len(rectangles) * len(native) > 65_536:
-        native_index = SpatialIndex.from_boxes(native)
-        uncovered = 0.0
-        for x0, y0, x1, y1, area in rectangles:
-            box = (x0, y0, x1, y1)
-            covered = sum(
-                bbox_intersection_area(box, hit.bbox) for hit in native_index.intersecting_hits(box)
-            )
-            uncovered += max(0.0, area - min(area, covered))
-        return uncovered
-
     # Evaluate a bounded batch at a time. This keeps the overlap calculation
     # vectorized without allocating a drawings-by-observations matrix for the
     # entire page.

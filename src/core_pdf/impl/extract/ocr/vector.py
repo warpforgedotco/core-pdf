@@ -40,7 +40,7 @@ from core_pdf.impl.extract.ocr.types import (
     internal_StrokedTextCell,
 )
 from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
-from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area, rect_tuple
+from core_pdf.impl.model.geometry import bbox_intersection_area, rect_tuple
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     PathPaintItem,
@@ -357,35 +357,13 @@ def internal_remap_stroked_vector_observations(
     sequences: list[int] = []
     references: list[Any | None] = []
     tolerance = STROKED_VECTOR_PACK_REMAP_TOLERANCE
-    cell_index = SpatialIndex.from_items(
-        packed.cells,
-        bbox=lambda cell: (
-            cell.packed_box[0] - tolerance,
-            cell.packed_box[1] - tolerance,
-            cell.packed_box[2] + tolerance,
-            cell.packed_box[3] + tolerance,
-        ),
-    )
     for index, packed_box in enumerate(observations.bbox):
         box = internal_bbox_tuple(packed_box)
         center_x = (box[0] + box[2]) * 0.5
         center_y = (box[1] + box[3]) * 0.5
-        # Broad-phase grid lookup narrows to spatially nearby cells; the exact
-        # tolerance check below is unchanged so results are identical to a
-        # full scan, just without touching every cell on the page per glyph.
-        # The query box needs a positive area (SpatialIndex rejects a
-        # degenerate point), so pad it by a fixed epsilon far smaller than
-        # any real geometry difference -- it only widens the broad-phase
-        # candidate set, never the final exact-tolerance result.
-        query_box = (
-            center_x - 1e-6,
-            center_y - 1e-6,
-            center_x + 1e-6,
-            center_y + 1e-6,
-        )
         cells = tuple(
             cell
-            for cell in cell_index.candidates(query_box)
+            for cell in packed.cells
             if cell.packed_box[0] - tolerance <= center_x <= cell.packed_box[2] + tolerance
             and cell.packed_box[1] - tolerance <= center_y <= cell.packed_box[3] + tolerance
         )
@@ -665,7 +643,6 @@ def internal_recover_stroked_vector_text(
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
         return ocr, ()
     decoded = internal_decode_stroked_vector_text(capture, ocr)
-    ocr_index = SpatialIndex.from_boxes(ocr.bbox)
     replacements: set[int] = set()
     accepted: list[StrokedTextObservation] = []
     for observation in decoded.observations:
@@ -675,13 +652,14 @@ def internal_recover_stroked_vector_text(
             * (observation.bbox[3] - observation.bbox[1]),
         )
         overlaps: list[tuple[float, int]] = []
-        for hit in ocr_index.intersecting_hits(observation.bbox):
-            hit_area = max(0.01, (hit.bbox[2] - hit.bbox[0]) * (hit.bbox[3] - hit.bbox[1]))
-            overlap = bbox_intersection_area(observation.bbox, hit.bbox) / min(
+        for index, raw_box in enumerate(ocr.bbox):
+            hit_bbox = internal_bbox_tuple(raw_box)
+            hit_area = max(0.01, (hit_bbox[2] - hit_bbox[0]) * (hit_bbox[3] - hit_bbox[1]))
+            overlap = bbox_intersection_area(observation.bbox, hit_bbox) / min(
                 candidate_area, hit_area
             )
             if overlap >= STROKED_VECTOR_DECODE_MIN_OVERLAP:
-                overlaps.append((overlap, int(hit.item)))
+                overlaps.append((overlap, index))
         if not overlaps:
             accepted.append(observation)
             continue
