@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-
 BYTE_CACHE = [bytes([i]) for i in range(256)]
 
 
-@lru_cache(maxsize=4096)
 def decode_utf16be(data: bytes) -> str:
     if not data:
         return ""
