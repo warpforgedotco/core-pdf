@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 
@@ -241,22 +240,17 @@ PREDEFINED_CMAP_UNICODE_CODECS: dict[str, str] = {
 }
 
 
-@lru_cache(maxsize=1)
-def cmap_resource_root() -> Traversable:
-    return resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
-
-
 def normalized_cmap_name(name: str) -> str:
     return name[1:] if name.startswith("/") else name
 
 
-@lru_cache(maxsize=1)
-def cmap_resource_index() -> dict[str, Traversable]:
-    root = cmap_resource_root()
+def resolve_cmap_resource(name: str) -> bytes | None:
+    root = resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
     if not root.is_dir():
-        return {}
+        return None
 
-    index: dict[str, Traversable] = {}
+    target = normalized_cmap_name(name)
+    deprecated: Traversable | None = None
     candidates: list[tuple[Traversable, str | None]] = [(root, None)]
     while candidates:
         current, parent_name = candidates.pop()
@@ -264,24 +258,14 @@ def cmap_resource_index() -> dict[str, Traversable]:
             if child.is_dir():
                 candidates.append((child, child.name))
                 continue
-            if parent_name != "CMap":
+            if parent_name != "CMap" or child.name != target:
                 continue
-            name = child.name
-            existing = index.get(name)
-            if existing is None or "/deprecated/" in str(existing):
-                index[name] = child
-    return index
+            if "/deprecated/" not in str(child):
+                return child.read_bytes()
+            deprecated = child
+    return deprecated.read_bytes() if deprecated is not None else None
 
 
-@lru_cache(maxsize=1024)
-def resolve_cmap_resource(name: str) -> bytes | None:
-    resource = cmap_resource_index().get(normalized_cmap_name(name))
-    if resource is None:
-        return None
-    return resource.read_bytes()
-
-
-@lru_cache(maxsize=4096)
 def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
     normalized_name = normalized_cmap_name(name)
     if normalized_name in {"Identity-H", "Identity-V"}:
@@ -300,7 +284,6 @@ def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
         return None
 
 
-@lru_cache(maxsize=131_072)
 def unicode_scalar_from_cmap_code(code: bytes, codec: str) -> str | None:
     try:
         if codec in {"gb2312_7bit", "euc_kr_7bit"}:
@@ -379,8 +362,6 @@ def unicode_candidate_preference(text: str) -> tuple[int, int, int, int, int]:
 
 
 __all__ = (
-    "cmap_resource_index",
-    "cmap_resource_root",
     "normalized_cmap_name",
     "predefined_cmap_unicode",
     "resolve_cmap_decoder",

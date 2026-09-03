@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import threading
 import unicodedata
-from functools import lru_cache
 
 from core_pdf.impl.spec.s_09_fonts.data.core14 import (
     COMMON_GLYPHS,
@@ -180,7 +179,6 @@ def ensure_glyph_map() -> dict[str, str]:
     return GLYPH_MAP
 
 
-@lru_cache(maxsize=2048)
 def glyph_name_to_unicode(name: str) -> str:
     if not name or name.startswith("."):
         return ""
