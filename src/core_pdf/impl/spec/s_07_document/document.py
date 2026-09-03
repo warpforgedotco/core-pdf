@@ -6,7 +6,7 @@ from __future__ import annotations
 import contextlib
 import mmap
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
@@ -77,6 +77,10 @@ if TYPE_CHECKING:
 
 
 internal_PageT = TypeVar("internal_PageT", bound=PageListItem)
+
+
+def internal_unresolved_destination(name: str) -> RawNamedDestination:
+    return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
 
 
 class PdfDocument(
@@ -879,10 +883,10 @@ class PdfDocument(
             raise ValueError("invalid outline count")
         return self.validate_outline_count(current_count)
 
-    def resolve_destination(self, dest: object, seen: set[str] | None = None) -> int | None:
+    def resolve_destination(self, dest: object) -> int | None:
         if dest is None:
             return None
-        normalized = self.normalize_destination_value(dest, seen)
+        normalized = self.normalize_destination_value(dest)
         if (
             normalized.raw is None
             and normalized.page_index is None
@@ -892,20 +896,8 @@ class PdfDocument(
             raise ValueError("invalid destination")
         return normalized.page_index
 
-    def named_destinations(
-        self,
-    ) -> dict[str, RawNamedDestination]:
-        return self.build_named_destinations()
-
-    def resolve_named_destination(
-        self, name: str, seen: set[str] | None = None
-    ) -> RawNamedDestination | None:
-        if seen is None:
-            seen = set()
-        if name in seen:
-            return None
-        seen.add(name)
-        return self.build_named_destinations().get(name)
+    def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
+        return self.named_destinations().get(name)
 
     def destination_from_list(self, resolved_list: PdfArray) -> RawNamedDestination:
         if not resolved_list:
@@ -931,24 +923,19 @@ class PdfDocument(
     def normalize_destination_value(
         self,
         val: object,
-        seen: set[str] | None = None,
-        targets: dict[str, object] | None = None,
-        normalized: dict[str, RawNamedDestination] | None = None,
-        resolving: set[str] | None = None,
     ) -> RawNamedDestination:
-        if seen is None:
-            seen = set()
+        return self.internal_normalize_destination_value(val, self.resolve_named_destination)
+
+    def internal_normalize_destination_value(
+        self,
+        val: object,
+        resolve_name: Callable[[str], RawNamedDestination | None],
+    ) -> RawNamedDestination:
         resolved = self.resolver.resolve(val)
         if isinstance(resolved, dict):
             dest_value = resolved.get("D")
             if dest_value is not None:
-                return self.normalize_destination_value(
-                    dest_value,
-                    seen,
-                    targets=targets,
-                    normalized=normalized,
-                    resolving=resolving,
-                )
+                return self.internal_normalize_destination_value(dest_value, resolve_name)
         resolved_list = val if isinstance(val, list) else resolved
         if isinstance(resolved_list, tuple):
             resolved_list = list(resolved_list)
@@ -959,39 +946,12 @@ class PdfDocument(
 
         name = self.resolver.resolve_name_like_value(resolved)
         if name is not None:
-            if targets is not None and normalized is not None and resolving is not None:
-                cached = normalized.get(name)
-                if cached is not None:
-                    return cached
-                if name in resolving:
-                    return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
-                resolving.add(name)
-                try:
-                    target = targets.get(name)
-                    result = (
-                        RawNamedDestination(page_index=None, type=None, args=[], raw=name)
-                        if target is None
-                        else self.normalize_destination_value(
-                            target,
-                            seen,
-                            targets=targets,
-                            normalized=normalized,
-                            resolving=resolving,
-                        )
-                    )
-                    normalized[name] = result
-                    return result
-                finally:
-                    resolving.discard(name)
-
-            if name in seen:
-                return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
-            nested = self.resolve_named_destination(name, seen)
+            nested = resolve_name(name)
             if nested is not None:
                 return nested
         raise ValueError("invalid destination")
 
-    def build_named_destinations(self) -> dict[str, RawNamedDestination]:
+    def named_destinations(self) -> dict[str, RawNamedDestination]:
         targets: dict[str, object] = {}
         dests = self.resolver.resolve(self.catalog().get("Dests"))
         if isinstance(dests, dict):
@@ -1014,20 +974,33 @@ class PdfDocument(
 
         normalized: dict[str, RawNamedDestination] = {}
         resolving: set[str] = set()
+
+        def normalize_name(name: str) -> RawNamedDestination:
+            cached = normalized.get(name)
+            if cached is not None:
+                return cached
+            if name in resolving:
+                return internal_unresolved_destination(name)
+            resolving.add(name)
+            try:
+                target = targets.get(name)
+                result = (
+                    internal_unresolved_destination(name)
+                    if target is None
+                    else self.internal_normalize_destination_value(target, normalize_name)
+                )
+                normalized[name] = result
+                return result
+            finally:
+                resolving.discard(name)
+
         for name in targets:
             try:
-                self.normalize_destination_value(
-                    name,
-                    targets=targets,
-                    normalized=normalized,
-                    resolving=resolving,
-                )
+                normalize_name(name)
             except (PdfParseError, ValueError):
                 # Entries in a name tree are independent. Keep a damaged or
                 # dangling destination unresolved without discarding the rest.
-                normalized[name] = RawNamedDestination(
-                    page_index=None, type=None, args=[], raw=name
-                )
+                normalized[name] = internal_unresolved_destination(name)
         return normalized
 
     # Forms
