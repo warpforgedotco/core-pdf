@@ -381,7 +381,6 @@ class FontDecoder:
     is_vertical: bool
     ascent: float
     descent: float
-    glyph_cache: dict[bytes, DecodedGlyph]
     font_name: str | None
     glyph_decode_table: tuple[str, ...] | None
     glyph_decode_table_authoritative: bool
@@ -400,7 +399,6 @@ class FontDecoder:
         self.font = font
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
-        self.glyph_cache: dict[bytes, DecodedGlyph] = {}
         self.type3_glyph_names = None
         self.internal_initialize()
 
@@ -788,15 +786,6 @@ class FontDecoder:
         source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
-    def internal_update_cff_unicode_repairs(self, repairs: Mapping[bytes, str]) -> bool:
-        """Install changed CFF repairs and discard glyphs built without them."""
-        changed = any(self.cff_unicode_repairs.get(code) != text for code, text in repairs.items())
-        if not changed:
-            return False
-        self.cff_unicode_repairs.update(repairs)
-        self.glyph_cache.clear()
-        return True
-
     def internal_true_type_unicode_for_gid(self, gid: int) -> str:
         match self.font_program:
             case TrueTypeFontProgram() as program:
@@ -870,17 +859,12 @@ class FontDecoder:
         self, data: bytes | bytearray | memoryview
     ) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
-        glyph_cache = self.glyph_cache
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
             table = self.encoding_decode_table
         byte_cache = BYTE_CACHE
         for code in data:
             chunk = byte_cache[code]
-            cached_glyph = glyph_cache.get(chunk)
-            if cached_glyph is not None:
-                glyphs.append(cached_glyph)
-                continue
             gid = self.glyph_id_for_code(code)
             if self.to_unicode is not None:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
@@ -907,24 +891,23 @@ class FontDecoder:
             else:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
             choice = self.internal_apply_simple_unicode_overrides(choice, chunk)
-            glyph = DecodedGlyph(
-                code_bytes=chunk,
-                char_code=code,
-                cid=code,
-                gid=gid,
-                unicode=choice.text,
-                unicode_source=choice.source,
-                alternates=choice.alternates,
-                width_code=code,
-                bitmap_code=code,
-                split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
+            glyphs.append(
+                DecodedGlyph(
+                    code_bytes=chunk,
+                    char_code=code,
+                    cid=code,
+                    gid=gid,
+                    unicode=choice.text,
+                    unicode_source=choice.source,
+                    alternates=choice.alternates,
+                    width_code=code,
+                    bitmap_code=code,
+                    split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
+                )
             )
-            glyph_cache[chunk] = glyph
-            glyphs.append(glyph)
         return glyphs
 
     def internal_decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
-        glyph_cache = self.glyph_cache
         entries = self.cmap.decode_entries(data) if self.cmap is not None else []
         if not entries:
             chunks = split_code_bytes(data, self.to_unicode)
@@ -940,23 +923,11 @@ class FontDecoder:
                 and has_invalid_unicode_mapping(mapped)
             )
             if repairs:
-                # The same invalid mappings are recomputed on every call, so
-                # only a repair that actually moves the table can invalidate
-                # glyphs already decoded under the old one.
-                self.internal_update_cff_unicode_repairs(repairs)
-        glyphs: list[DecodedGlyph] = []
-        for code_bytes, cid in entries:
-            cached_glyph = glyph_cache.get(code_bytes)
-            if cached_glyph is not None:
-                glyphs.append(cached_glyph)
-                continue
-            glyph = self.internal_build_cid_glyph(code_bytes, cid)
-            glyph_cache[code_bytes] = glyph
-            glyphs.append(glyph)
-        return glyphs
+                self.cff_unicode_repairs.update(repairs)
+        return [self.internal_build_cid_glyph(code_bytes, cid) for code_bytes, cid in entries]
 
     def internal_build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
-        """Build one CID glyph after the caller has missed the per-code cache."""
+        """Build one decoded glyph from a content-stream code and mapped CID."""
         char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
         gid = self.glyph_id_for_code(cid)
         if gid is not None and gid != 0 and not self.internal_glyph_exists(gid):
