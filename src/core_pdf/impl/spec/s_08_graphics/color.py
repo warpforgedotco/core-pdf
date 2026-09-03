@@ -430,11 +430,8 @@ class ImageColorManager:
             raise ValueError("invalid DeviceN color space")
         expected = internal_alternate_color_component_count(alt_name)
 
-        # The tint transform is a pure function of one ink tuple, and an image
-        # holds far fewer distinct tuples than pixels. Evaluating per distinct
-        # tuple and gathering turns a per-pixel Python call -- which also
-        # thrashed the 4096-entry CMYK cache behind apply_alt_color, since a
-        # 2-channel DeviceN has up to 65536 inputs -- into one call per colour.
+        # The tint transform is a pure function of one ink tuple, so convert
+        # the distinct colours and then project them back to the samples.
         samples = uint8_view(raw).reshape(-1, n)
         distinct, inverse = numpy.unique(samples, axis=0, return_inverse=True)
         tinted = numpy.empty((len(distinct), expected), dtype=numpy.float64)

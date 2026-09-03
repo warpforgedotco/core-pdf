@@ -368,10 +368,8 @@ def internal_remove_table_duplicate_blocks(
 ) -> list[Block]:
     if not blocks or not tables:
         return blocks
-    table_profiles = [
-        (table.bbox, internal_table_profile(table)) for table in tables if table.bbox is not None
-    ]
-    table_boxes = [(box, profile.token_set) for box, profile in table_profiles]
+    table_profiles = [(table.bbox, internal_table_profile(table)) for table in tables]
+    table_boxes = [(box, profile.token_set) for box, profile in table_profiles if box is not None]
     table_token_counts: Counter[str] = Counter()
     for ignored_box, profile in table_profiles:
         table_token_counts.update(profile.token_counts)

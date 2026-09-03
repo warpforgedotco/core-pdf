@@ -1049,8 +1049,7 @@ class TextState:
                 # The colour manager reads the palette and base space straight
                 # off this dictionary, so an indirect /ColorSpace (or one whose
                 # Indexed lookup table is indirect) left it unable to convert
-                # the samples and the whole image was dropped. deep_resolve is
-                # cached, so repeated XObjects pay for this once.
+                # the samples and the whole image was dropped.
                 color_space = source_dictionary.get("ColorSpace")
                 if color_space is not None:
                     source_dictionary[PdfName.of("ColorSpace")] = (

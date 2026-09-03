@@ -143,7 +143,7 @@ class CFFFont:
             return
         # Keep a caller-owned read-only view when one is provided.  INDEX
         # entries are still materialized as bytes below because they escape
-        # the parser and are used as stable cache keys.
+        # the parser and remain stable identifiers within the font program.
         self.data = data
         if len(self.data) < 4 or self.data[0] != 1:
             raise ValueError("invalid CFF font program")

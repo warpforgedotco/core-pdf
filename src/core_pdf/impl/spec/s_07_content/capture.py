@@ -176,7 +176,7 @@ def glyph_text_space_boxes(
 
 def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
     """Project the decoder's normalized simple-font encoding onto byte codes."""
-    # Keep ``font`` in the API until Type 3 program-cache ownership moves out of
+    # Keep ``font`` in the API until Type 3 program ownership moves out of
     # FontDecoder. The decoder was constructed from this dictionary and already
     # normalized its base encoding and Differences.
     del font
