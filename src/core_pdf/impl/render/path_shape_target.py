@@ -13,7 +13,6 @@ from core_pdf.impl.render.blend import (
     internal_blend_normal_solid_array_numpy,
     internal_blend_solid_array_numpy,
 )
-from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
     internal_intersect_box,
@@ -310,8 +309,6 @@ class internal_PathShapeTargetMixin:
         page_box_to_pixels = self.page_box_to_pixels
         page_pixels = self.page_pixels
         pixels = self.pixels
-        raster_x_coordinate_cache = self.raster_x_coordinate_cache
-        raster_y_coordinate_cache = self.raster_y_coordinate_cache
         scale = self.scale
         width = self.width
         circle_box = (cx - radius, cy - radius, cx + radius, cy + radius)
@@ -330,16 +327,8 @@ class internal_PathShapeTargetMixin:
         rectangular_clip = not clip_path_stack or clip_paths_are_axis_aligned_rects()
         if normal_fast and rgba[3] >= 255 and rectangular_clip:
             if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:
-                x_coords = raster_x_coordinate_cache.get((ix0, ix1))
-                if x_coords is None:
-                    x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
-                    if len(raster_x_coordinate_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                        raster_x_coordinate_cache[(ix0, ix1)] = x_coords
-                y_coords = raster_y_coordinate_cache.get((iy0, iy1))
-                if y_coords is None:
-                    y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
-                    if len(raster_y_coordinate_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                        raster_y_coordinate_cache[(iy0, iy1)] = y_coords
+                x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
+                y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
                 circle_page_xs = crop_x0 + (x_coords + 0.5) / scale
                 circle_page_ys = crop_y1 - (y_coords + 0.5) / scale
                 inside = (circle_page_xs[None, :] - cx) ** 2 + (

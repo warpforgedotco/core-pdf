@@ -60,10 +60,6 @@ class internal_RasterTarget(
         "crop_y1",
         "page_pixels",
         "page_buffer",
-        "raster_x_coordinate_cache",
-        "raster_y_coordinate_cache",
-        "raster_x_sample_cache",
-        "raster_y_sample_cache",
         # Bound clip methods cached at construction. Reading them back is a plain
         # attribute load; going through `self.clip.<name>` would allocate a fresh
         # bound method on every call, and fill_rect alone makes ~1.8M of them.
@@ -73,8 +69,6 @@ class internal_RasterTarget(
         "clip_paths_are_axis_aligned_rects",
         "clip_row_visible_spans",
         "pixel_in_clip",
-        "page_x_coordinate_cache",
-        "page_y_coordinate_cache",
         "crop_y0",
         "color_cache",
         "mark_clip_metadata_dirty",
@@ -109,18 +103,12 @@ class internal_RasterTarget(
         self.crop_y1 = crop_y1
         self.page_pixels = page_view
         self.page_buffer = pixels
-        self.raster_x_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
-        self.raster_y_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
-        self.raster_x_sample_cache: dict[int, tuple[float, ...]] = {}
-        self.raster_y_sample_cache: dict[int, tuple[float, ...]] = {}
         self.page_box_to_pixels = clip.page_box_to_pixels
         self.clipped_pixel_box = clip.clipped_pixel_box
         self.current_clip = clip.current_clip
         self.clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         self.clip_row_visible_spans = clip.clip_row_visible_spans
         self.pixel_in_clip = clip.pixel_in_clip
-        self.page_x_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
-        self.page_y_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
         self.crop_y0 = crop_y0
         self.color_cache: dict[tuple[int, int], tuple[int, int, int, int]] = {}
         self.mark_clip_metadata_dirty = clip.mark_clip_metadata_dirty

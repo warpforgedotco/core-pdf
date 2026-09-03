@@ -7,7 +7,6 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.model import LineCap, LineJoin
 from core_pdf.impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
@@ -53,10 +52,6 @@ class internal_PathStrokeTargetMixin:
         page_pixels = self.page_pixels
         pixel_in_clip = self.pixel_in_clip
         pixels = self.pixels
-        raster_x_coordinate_cache = self.raster_x_coordinate_cache
-        raster_x_sample_cache = self.raster_x_sample_cache
-        raster_y_coordinate_cache = self.raster_y_coordinate_cache
-        raster_y_sample_cache = self.raster_y_sample_cache
         scale = self.scale
         width = self.width
         if dash_pattern and dash_pattern[0]:
@@ -186,16 +181,8 @@ class internal_PathStrokeTargetMixin:
             and normal_fast
             and (ix1 - ix0) * (iy1 - iy0) > RASTER_KERNEL_MIN_PIXEL_AREA
         ):
-            x_coords = raster_x_coordinate_cache.get((ix0, ix1))
-            if x_coords is None:
-                x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
-                if len(raster_x_coordinate_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                    raster_x_coordinate_cache[(ix0, ix1)] = x_coords
-            y_coords = raster_y_coordinate_cache.get((iy0, iy1))
-            if y_coords is None:
-                y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
-                if len(raster_y_coordinate_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                    raster_y_coordinate_cache[(iy0, iy1)] = y_coords
+            x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
+            y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
             rasterize_unclipped_line_normal(
                 pixels,
                 width,
@@ -217,23 +204,16 @@ class internal_PathStrokeTargetMixin:
             return
         for py in range(iy0, iy1):
             row = py * width * 4
-            page_y_samples = raster_y_sample_cache.get(py)
-            if page_y_samples is None:
-                page_y_samples = tuple(
-                    crop_y1 - (py + sample_offset) / scale
-                    for sample_offset in RASTER_SAMPLE_OFFSETS
-                )
-                raster_y_sample_cache[py] = page_y_samples
+            page_y_samples = tuple(
+                crop_y1 - (py + sample_offset) / scale for sample_offset in RASTER_SAMPLE_OFFSETS
+            )
             for px in range(ix0, ix1):
                 if clip_path_stack and not pixel_in_clip(px, py):
                     continue
-                page_x_samples = raster_x_sample_cache.get(px)
-                if page_x_samples is None:
-                    page_x_samples = tuple(
-                        crop_x0 + (px + sample_offset) / scale
-                        for sample_offset in RASTER_SAMPLE_OFFSETS
-                    )
-                    raster_x_sample_cache[px] = page_x_samples
+                page_x_samples = tuple(
+                    crop_x0 + (px + sample_offset) / scale
+                    for sample_offset in RASTER_SAMPLE_OFFSETS
+                )
                 covered = 0
                 if line_cap == 0:
                     cross_limit = half2 * seg_len2

@@ -9,11 +9,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.model.geometry import points_bbox
-from core_pdf.impl.render.kernels import (
-    AFFINE_BLIT_SCRATCH_BYTES,
-    RASTER_COORDINATE_CACHE_MAX_ENTRIES,
-    internal_cached_raster_coordinates,
-)
+from core_pdf.impl.render.kernels import AFFINE_BLIT_SCRATCH_BYTES
 from core_pdf.impl.runtime.array_views import (
     ByteBuffer,
     uint8_view,
@@ -25,40 +21,11 @@ class internal_ImageAffineTargetMixin:
 
     __slots__ = ()
 
-    def cached_page_coordinates(
-        self: Any,
-        cache: dict[tuple[int, int], numpy.ndarray[Any, Any]],
-        start: int,
-        stop: int,
-        origin: float,
-        direction: float,
-    ) -> numpy.ndarray[Any, Any]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        scale = self.scale
-        key = (start, stop)
-        coordinates = cache.get(key)
-        if coordinates is None:
-            coordinates = origin + (numpy.arange(start, stop) + 0.5) / scale * direction
-            if len(cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                cache[key] = coordinates
-        return coordinates
-
     def page_x_coordinates(self: Any, start: int, stop: int) -> numpy.ndarray[Any, Any]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        cached_page_coordinates = self.cached_page_coordinates
-        crop_x0 = self.crop_x0
-        page_x_coordinate_cache = self.page_x_coordinate_cache
-        return cached_page_coordinates(page_x_coordinate_cache, start, stop, crop_x0, 1.0)
+        return self.crop_x0 + (numpy.arange(start, stop) + 0.5) / self.scale
 
     def page_y_coordinates(self: Any, start: int, stop: int) -> numpy.ndarray[Any, Any]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        cached_page_coordinates = self.cached_page_coordinates
-        crop_y1 = self.crop_y1
-        page_y_coordinate_cache = self.page_y_coordinate_cache
-        return cached_page_coordinates(page_y_coordinate_cache, start, stop, crop_y1, -1.0)
+        return self.crop_y1 - (numpy.arange(start, stop) + 0.5) / self.scale
 
     def blit_opaque_sampled_tiles(
         self: Any,
@@ -147,8 +114,6 @@ class internal_ImageAffineTargetMixin:
         page_y_coordinates = self.page_y_coordinates
         pixel_view = self.pixel_view
         pixels = self.pixels
-        raster_x_coordinate_cache = self.raster_x_coordinate_cache
-        raster_y_coordinate_cache = self.raster_y_coordinate_cache
         scale = self.scale
         width = self.width
         if len(quad) < 3:
@@ -190,11 +155,7 @@ class internal_ImageAffineTargetMixin:
         ):
             inv_ux = 1.0 / ux
             inv_vy = 1.0 / vy
-            page_x = (
-                crop_x0
-                + (internal_cached_raster_coordinates(raster_x_coordinate_cache, ix0, ix1) + 0.5)
-                / scale
-            )
+            page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
             source_u = (page_x - p00[0]) * inv_ux
             source_samples = uint8_view(converted)
             valid_x = (source_u >= 0.0) & (source_u <= 1.0)
@@ -203,11 +164,7 @@ class internal_ImageAffineTargetMixin:
                 0,
                 width_px - 1,
             )
-            axis_page_y = (
-                crop_y1
-                - (internal_cached_raster_coordinates(raster_y_coordinate_cache, iy0, iy1) + 0.5)
-                / scale
-            )
+            axis_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
             source_y_array = ((1.0 - (axis_page_y - p00[1]) * inv_vy) * height_px).astype(
                 numpy.intp
             )
