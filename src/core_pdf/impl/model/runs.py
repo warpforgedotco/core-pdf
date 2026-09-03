@@ -33,10 +33,6 @@ Provenance: TypeAlias = tuple[tuple[str, object], ...]
 class TextRun:
     __slots__ = (
         "text",
-        "stripped_text",
-        "has_text",
-        "text_is_space",
-        "text_is_upper",
         "x0",
         "y0",
         "x1",
@@ -74,10 +70,6 @@ class TextRun:
     SPACE_WIDTH: ClassVar[int] = 7
 
     text: str
-    stripped_text: str
-    has_text: bool
-    text_is_space: bool
-    text_is_upper: bool
     x0: float
     y0: float
     x1: float
@@ -102,9 +94,7 @@ class TextRun:
     baseline: tuple[float, float, float, float] | None
     provenance: Provenance
     confidence: float | None
-    # A pending run may hold a list while merges accumulate; finalized runs
-    # always carry the tuple form (see freeze_glyph_clusters).
-    glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
+    glyph_clusters: tuple[GlyphCluster, ...]
 
     @property
     def coords(self) -> tuple[float, float, float, float, float, float, float, float]:
@@ -123,6 +113,26 @@ class TextRun:
     @property
     def height(self) -> float:
         return self.y1 - self.y0
+
+    @property
+    def stripped_text(self) -> str:
+        text = self.text
+        if text and text[0] > " " and text[-1] > " ":
+            return text
+        return text.strip()
+
+    @property
+    def has_text(self) -> bool:
+        return bool(self.stripped_text)
+
+    @property
+    def text_is_space(self) -> bool:
+        return not self.has_text and self.text.isspace()
+
+    @property
+    def text_is_upper(self) -> bool:
+        stripped = self.stripped_text
+        return bool(stripped) and stripped.isupper()
 
     def __init__(
         self,
@@ -151,7 +161,7 @@ class TextRun:
         baseline: tuple[float, float, float, float] | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
+        glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> None:
         self.inside_active_clip = inside_active_clip
         self.x0 = x0
@@ -162,7 +172,7 @@ class TextRun:
         self.ty = ty
         self.font_size = font_size
         self.space_width = space_width
-        self.set_text(text)
+        self.text = text
         self.font_name = font_name
         self.order = order
         self.stream_order = stream_order
@@ -190,40 +200,6 @@ class TextRun:
             bx1 if bx1 > x1 else x1,
             by1 if by1 > y1 else y1,
         )
-
-    def extend_glyph_clusters(
-        self, clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
-    ) -> None:
-        # While a run is pending, accumulate clusters in a list so repeated
-        # merges stay linear; freeze_glyph_clusters restores the tuple form at
-        # finalization.
-        if not clusters:
-            return
-        existing = self.glyph_clusters
-        if not existing:
-            self.glyph_clusters = clusters
-        elif type(existing) is list:
-            existing.extend(clusters)
-        else:
-            combined = list(existing)
-            combined.extend(clusters)
-            self.glyph_clusters = combined
-
-    def freeze_glyph_clusters(self) -> None:
-        if type(self.glyph_clusters) is list:
-            self.glyph_clusters = tuple(self.glyph_clusters)
-
-    def set_text(self, text: str) -> None:
-        self.text = text
-        if text and text[0] > " " and text[-1] > " ":
-            stripped_text = text
-        else:
-            stripped_text = text.strip()
-        self.stripped_text = stripped_text
-        has_text = bool(stripped_text)
-        self.has_text = has_text
-        self.text_is_space = not has_text and text.isspace()
-        self.text_is_upper = has_text and stripped_text.isupper()
 
     def is_bold(self) -> bool:
         if not self.font_name:

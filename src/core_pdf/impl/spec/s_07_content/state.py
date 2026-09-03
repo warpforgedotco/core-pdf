@@ -1512,7 +1512,6 @@ class TextState:
 
     def flush_run(self) -> None:
         if self.pending_run:
-            self.pending_run.freeze_glyph_clusters()
             self.runs.append(self.pending_run)
             self.pending_run = None
 
@@ -1718,7 +1717,7 @@ class TextState:
                     gap = new_run.x0 - p.x1
                     if -2.0 <= gap < merge_threshold:
                         separator = gap_separator(p_text, new_text, gap, p)
-                        p.set_text(p_text + separator + new_text)
+                        p.text = p_text + separator + new_text
                         p.union_ink_bbox(new_run.ink_bbox)
                         if new_run.x1 > p.x1:
                             p.x1 = new_run.x1
@@ -1727,7 +1726,7 @@ class TextState:
                         gap_rtl = p.x0 - new_run.x1
                         if -2.0 <= gap_rtl < merge_threshold:
                             separator = gap_separator(new_text, p_text, gap_rtl, p)
-                            p.set_text(new_text + separator + p_text)
+                            p.text = new_text + separator + p_text
                             p.union_ink_bbox(new_run.ink_bbox)
                             if new_run.x0 < p.x0:
                                 p.x0 = new_run.x0
@@ -1736,7 +1735,7 @@ class TextState:
                     gap = new_run.y0 - p.y1
                     if -2.0 <= gap < merge_threshold:
                         separator = gap_separator(p_text, new_text, gap, p)
-                        p.set_text(p_text + separator + new_text)
+                        p.text = p_text + separator + new_text
                         p.union_ink_bbox(new_run.ink_bbox)
                         if new_run.y1 > p.y1:
                             p.y1 = new_run.y1
@@ -1745,7 +1744,7 @@ class TextState:
                 h_gap_inv = p.x0 - new_run.x1
                 if -2.0 <= h_gap_inv < merge_threshold:
                     separator = gap_separator(p_text, new_text, h_gap_inv, p)
-                    p.set_text(p_text + separator + new_text)
+                    p.text = p_text + separator + new_text
                     p.union_ink_bbox(new_run.ink_bbox)
                     if new_run.x0 < p.x0:
                         p.x0 = new_run.x0
@@ -1754,19 +1753,18 @@ class TextState:
                     h_gap_inv_rtl = new_run.x0 - p.x1
                     if -2.0 <= h_gap_inv_rtl < merge_threshold:
                         separator = gap_separator(new_text, p_text, h_gap_inv_rtl, p)
-                        p.set_text(new_text + separator + p_text)
+                        p.text = new_text + separator + p_text
                         p.union_ink_bbox(new_run.ink_bbox)
                         if new_run.x1 > p.x1:
                             p.x1 = new_run.x1
                         merged = True
 
         if not merged:
-            p.freeze_glyph_clusters()
             self.runs.append(p)
             self.pending_run = new_run
         else:
             p.advance_bbox = (p.x0, p.y0, p.x1, p.y1)
-            p.extend_glyph_clusters(new_run.glyph_clusters)
+            p.glyph_clusters += new_run.glyph_clusters
 
     def record_glyph_observations(
         self,
