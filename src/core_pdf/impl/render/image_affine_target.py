@@ -74,7 +74,6 @@ class internal_ImageAffineTargetMixin:
     ) -> None:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
-        raster_metrics = self.raster_metrics
         row_count = len(valid_rows)
         column_count = len(valid_columns)
         all_valid = bool(valid_rows.all() and valid_columns.all())
@@ -90,12 +89,6 @@ class internal_ImageAffineTargetMixin:
                 1,
                 AFFINE_BLIT_SCRATCH_BYTES // max(1, tile_columns * scratch_bytes_per_pixel),
             ),
-        )
-        estimated_scratch = tile_rows * tile_columns * scratch_bytes_per_pixel
-        raster_metrics.tiled_affine_blit_count += 1
-        raster_metrics.tiled_affine_peak_scratch_bytes = max(
-            raster_metrics.tiled_affine_peak_scratch_bytes,
-            estimated_scratch,
         )
         for row_start in range(0, row_count, tile_rows):
             row_end = min(row_count, row_start + tile_rows)

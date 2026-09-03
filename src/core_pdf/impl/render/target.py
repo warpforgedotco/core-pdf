@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Mutable raster target, clipping, and render metrics."""
+"""Mutable raster target and clipping."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy
 
@@ -27,9 +27,6 @@ from core_pdf.impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
-
-if TYPE_CHECKING:
-    from core_pdf.impl.render.page import RenderedPage
 
 
 class internal_RasterTarget(
@@ -76,8 +73,6 @@ class internal_RasterTarget(
         "clip_paths_are_axis_aligned_rects",
         "clip_row_visible_spans",
         "pixel_in_clip",
-        "page",
-        "raster_metrics",
         "page_x_coordinate_cache",
         "page_y_coordinate_cache",
         "crop_y0",
@@ -93,8 +88,6 @@ class internal_RasterTarget(
         group_alpha: float | None,
         *,
         clip: internal_ClipState,
-        page: "RenderedPage",
-        raster_metrics: internal_RasterMetrics,
         width: int,
         height: int,
         scale: float,
@@ -126,8 +119,6 @@ class internal_RasterTarget(
         self.clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         self.clip_row_visible_spans = clip.clip_row_visible_spans
         self.pixel_in_clip = clip.pixel_in_clip
-        self.page = page
-        self.raster_metrics = raster_metrics
         self.page_x_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
         self.page_y_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
         self.crop_y0 = crop_y0
@@ -396,36 +387,3 @@ class internal_RasterTarget(
                 int(item.line_cap or 0),
                 int(item.line_join or 0),
             )
-
-
-class internal_RasterMetrics:
-    """Image-decode and tiled-blit tallies collected while a page rasterizes.
-
-    These are not debug counters: ``tests/benchmarks`` asserts on every field
-    (an image is decoded exactly once, tiled affine blitting stays under a 1 MiB
-    scratch budget). Keep them wired up through any refactor.
-    """
-
-    __slots__ = (
-        "image_count",
-        "image_decode_seconds",
-        "image_blit_seconds",
-        "tiled_affine_blit_count",
-        "tiled_affine_peak_scratch_bytes",
-    )
-
-    def __init__(self) -> None:
-        self.image_count = 0
-        self.image_decode_seconds = 0.0
-        self.image_blit_seconds = 0.0
-        self.tiled_affine_blit_count = 0
-        self.tiled_affine_peak_scratch_bytes = 0
-
-    def as_metadata(self) -> dict[str, float | int]:
-        return {
-            "image_count": self.image_count,
-            "decode_seconds": self.image_decode_seconds,
-            "blit_seconds": self.image_blit_seconds,
-            "tiled_affine_blit_count": self.tiled_affine_blit_count,
-            "tiled_affine_peak_scratch_bytes": self.tiled_affine_peak_scratch_bytes,
-        }

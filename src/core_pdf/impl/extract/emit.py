@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize text and produce the final ParsedPage."""
+"""Normalize extracted products and produce the final page."""
 
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ from core_pdf.impl.extract.block_layout import (
     layout_element_order,
 )
 from core_pdf.impl.extract.contracts import (
+    PageRoute,
+    ParsedBlock,
     ParsedLine,
-    ParsedPage,
 )
 from core_pdf.impl.extract.table_reconcile import (
     internal_emitted_text_tokens,
@@ -523,13 +524,13 @@ def internal_remove_soft_line_end_hyphens(lines: list[str]) -> list[str]:
 
 
 def internal_normalized_blocks(
-    parsed: ParsedPage,
+    parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
     """Build the normalized text candidate projection from parsed lines."""
     blocks: list[Block] = []
     decoration_index = internal_line_decoration_index(drawings)
-    for index, parsed_block in enumerate(parsed.blocks):
+    for index, parsed_block in enumerate(parsed_blocks):
         confidences = tuple(
             line.confidence
             for line in parsed_block.lines
@@ -588,32 +589,40 @@ def internal_normalized_blocks(
 
 
 def assemble_page(
-    parsed: ParsedPage,
+    blocks: tuple[ParsedBlock, ...],
+    *,
+    page_number: int,
+    width: float,
+    height: float,
+    rotation: int,
+    route: PageRoute,
+    tables: tuple[Table, ...] = (),
+    figures: tuple[Figure, ...] = (),
+    diagnostics: tuple[str, ...] = (),
+    full_page_image: bool = False,
     drawings: tuple[CapturedDrawing, ...] = (),
 ) -> Page:
-    blocks = internal_normalized_blocks(parsed, drawings)
-    blocks = internal_remove_off_page_blocks(
-        internal_remove_corrupt_native_blocks(blocks),
-        parsed.width,
-        parsed.height,
+    normalized_blocks = internal_normalized_blocks(blocks, drawings)
+    normalized_blocks = internal_remove_off_page_blocks(
+        internal_remove_corrupt_native_blocks(normalized_blocks),
+        width,
+        height,
     )
-    blocks, tables = internal_project_text_and_tables(blocks, parsed.tables)
+    normalized_blocks, projected_tables = internal_project_text_and_tables(
+        normalized_blocks, tables
+    )
     elements: list[tuple[str, object, tuple[float, float, float, float]]] = [
-        ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in blocks
+        ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in normalized_blocks
     ]
-    elements.extend(("table", table, table.bbox or (0.0, 0.0, 0.0, 0.0)) for table in tables)
     elements.extend(
-        ("figure", figure, figure.bbox or (0.0, 0.0, 0.0, 0.0)) for figure in parsed.figures
+        ("table", table, table.bbox or (0.0, 0.0, 0.0, 0.0)) for table in projected_tables
     )
+    elements.extend(("figure", figure, figure.bbox or (0.0, 0.0, 0.0, 0.0)) for figure in figures)
     ordered_blocks: list[Block] = []
     ordered_tables: list[Table] = []
     ordered_figures: list[Figure] = []
     element_boxes = tuple(item[2] for item in elements)
-    if (
-        parsed.full_page_image
-        and len(element_boxes) > 1
-        and internal_has_repeated_block_columns(parsed.blocks)
-    ):
+    if full_page_image and len(element_boxes) > 1 and internal_has_repeated_block_columns(blocks):
         element_order = tuple(
             sorted(
                 range(len(element_boxes)),
@@ -621,9 +630,7 @@ def assemble_page(
             )
         )
     else:
-        element_order = layout_element_order(
-            element_boxes, parsed.rotation, parsed.width, parsed.height
-        )
+        element_order = layout_element_order(element_boxes, rotation, width, height)
     for order, index in enumerate(element_order):
         kind, element, internal_bbox = elements[index]
         if kind == "block":
@@ -642,26 +649,26 @@ def assemble_page(
         block.text
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[3] >= parsed.height * 0.88
-        and block.bbox[3] - block.bbox[1] <= parsed.height * 0.08
+        and block.bbox[3] >= height * 0.88
+        and block.bbox[3] - block.bbox[1] <= height * 0.08
         and len(block.text) <= 240
     ]
     footer_parts = [
         block.text
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[1] <= parsed.height * 0.12
-        and block.bbox[3] - block.bbox[1] <= parsed.height * 0.08
+        and block.bbox[1] <= height * 0.12
+        and block.bbox[3] - block.bbox[1] <= height * 0.08
         and len(block.text) <= 240
     ]
     return Page(
-        page_number=parsed.page_number,
-        width=parsed.width,
-        height=parsed.height,
-        rotation=parsed.rotation,
+        page_number=page_number,
+        width=width,
+        height=height,
+        rotation=rotation,
         blocks=tuple(ordered_blocks),
-        page_class=parsed.route.value,
-        base_route=parsed.route.value,
+        page_class=route.value,
+        base_route=route.value,
         tables=tuple(ordered_tables),
         figures=tuple(ordered_figures),
         header="\n".join(header_parts),
@@ -675,8 +682,8 @@ def assemble_page(
                     if message == "reading-order-ambiguous"
                     else message
                 ),
-                page_number=parsed.page_number,
+                page_number=page_number,
             )
-            for message in parsed.diagnostics
+            for message in diagnostics
         ),
     )

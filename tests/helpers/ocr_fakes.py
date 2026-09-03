@@ -16,7 +16,6 @@ from core_pdf.impl.extract.contracts import (
     ObservationSource,
     PagePlanReason,
     PageRoute,
-    RecognitionReport,
     RecognitionResult,
     WorkPlan,
 )
@@ -205,8 +204,8 @@ class FakeDocumentPage:
 class RecordingExtraction:
     """A page extraction whose plan and recognition calls are recorded.
 
-    ``recognition`` answers with one high-confidence ``seed`` observation and a
-    report carrying ``alphabet`` as the learned stroked-vector alphabet.
+    ``recognition`` answers with one high-confidence ``seed`` observation and
+    the learned stroked-vector alphabet.
     """
 
     def __init__(
@@ -243,7 +242,7 @@ class RecordingExtraction:
         )
         self.internal_recognition = RecognitionResult(
             observations,
-            RecognitionReport(stroked_vector_alphabet=self.alphabet),
+            stroked_vector_alphabet=self.alphabet,
         )
         return self.internal_recognition
 

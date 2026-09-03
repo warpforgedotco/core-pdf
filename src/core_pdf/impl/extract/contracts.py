@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any, cast
 
@@ -511,7 +511,6 @@ class CapturedPage:
     grid_lines: Any
     inline_images: tuple[CapturedInlineImage, ...]
     evidence: PageEvidence
-    newstroke_report: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -564,80 +563,11 @@ class WorkPlan:
             ocr_pass.scope is OcrPassScope.IMAGE_REGIONS for ocr_pass in self.ocr_passes
         )
 
-    def as_record(self) -> dict[str, object]:
-        return {
-            "route": self.route.value,
-            "reason": self.reason.value,
-            "verify_hidden_text": self.verify_hidden_text,
-            "fusion_policy": self.fusion_policy.value,
-            "allow_direct_image_ocr": self.allow_direct_image_ocr,
-            "augment_page_candidates": self.augment_page_candidates,
-            "ocr_passes": tuple(
-                {
-                    item.name: (value.value if isinstance(value, StrEnum) else value)
-                    for item in fields(ocr_pass)
-                    for value in (getattr(ocr_pass, item.name),)
-                }
-                for ocr_pass in self.ocr_passes
-            ),
-        }
-
-
-@dataclass(slots=True)
-class RecognitionReport:
-    """Canonical diagnostics collected and returned by the recognition stage."""
-
-    passes: tuple[dict[str, object], ...] = ()
-    candidates: tuple[Mapping[str, object], ...] = ()
-    candidate_analysis: tuple[Mapping[str, object], ...] = ()
-    hidden_text_verification: Mapping[str, object] = field(default_factory=dict)
-    stroked_vector_decode: Mapping[str, object] = field(default_factory=dict)
-    stroked_vector_packed: Mapping[str, object] = field(default_factory=dict)
-    document_stroked_glyphs: Mapping[str, object] = field(default_factory=dict)
-    render_timings: Mapping[str, object] = field(default_factory=dict)
-    grid_cell_ocr: Mapping[str, object] = field(default_factory=dict)
-    render_error: str | None = None
-    stroked_vector_alphabet: tuple[tuple[Any, str], ...] = ()
-
-    def as_record(self) -> dict[str, object]:
-        return {
-            "passes": self.passes,
-            "candidates": self.candidates,
-            "candidate_analysis": self.candidate_analysis,
-            "hidden_text_verification": dict(self.hidden_text_verification),
-            "stroked_vector_decode": dict(self.stroked_vector_decode),
-            "stroked_vector_packed": dict(self.stroked_vector_packed),
-            "document_stroked_glyphs": dict(self.document_stroked_glyphs),
-            "render_timings": dict(self.render_timings),
-            "grid_cell_ocr": dict(self.grid_cell_ocr),
-            "render_error": self.render_error,
-            "stroked_vector_alphabet": self.stroked_vector_alphabet,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class RecognitionResult:
     observations: ObservationBatch
-    report: RecognitionReport = field(default_factory=RecognitionReport)
-
-
-MetricValue = float | int | str | bool
-
-
-@dataclass(frozen=True, slots=True)
-class ParseReport:
-    """Typed analysis product for one completed page pipeline."""
-
-    plan: WorkPlan
-    recognition: RecognitionReport = field(default_factory=RecognitionReport)
-    metrics: Mapping[str, MetricValue] = field(default_factory=dict)
-
-    def as_record(self) -> dict[str, object]:
-        return {
-            "plan": self.plan.as_record(),
-            "recognition": self.recognition.as_record(),
-            "metrics": dict(self.metrics),
-        }
+    stroked_vector_alphabet: tuple[tuple[Any, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,26 +615,3 @@ class ReadingOrderEvidence:
     ambiguous: bool
     confidence: float
     strategy: str
-
-
-@dataclass(frozen=True, slots=True)
-class ParsedPage:
-    page_number: int
-    width: float
-    height: float
-    rotation: int
-    route: PageRoute
-    blocks: tuple[ParsedBlock, ...]
-    tables: tuple[Any, ...] = ()
-    figures: tuple[Any, ...] = ()
-    diagnostics: tuple[str, ...] = ()
-    full_page_image: bool = False
-    report: ParseReport | None = None
-
-    @property
-    def lines(self) -> tuple[ParsedLine, ...]:
-        return tuple(line for block in self.blocks for line in block.lines)
-
-    @property
-    def text(self) -> str:
-        return "\n".join(line.text for line in self.lines)

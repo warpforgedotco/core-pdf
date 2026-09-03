@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfContractError, PdfDocumentClosedError
 from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
-from core_pdf.impl.extract.pipeline import extract_page, page_extraction
+from core_pdf.impl.extract.pipeline import extract_page
 from core_pdf.impl.extract.selection import extract_document
 from core_pdf.impl.layout.lines import (
     LayoutGeometrySummary,
@@ -56,11 +56,6 @@ class PdfPage(SpecPdfPage):
         """Return this page's canonical high-level structured representation."""
         return self.extract()
 
-    @property
-    def parse_report(self) -> Any | None:
-        """Return the report owned by this page's base extraction, when materialized."""
-        return page_extraction(self).report
-
     def internal_cache(self) -> ExtractionCache:
         cache = self.extraction_cache
         if cache is None:
@@ -73,7 +68,6 @@ class PdfPage(SpecPdfPage):
         with self.document.acquire_operation() as operation:
             with RUNTIME.task_scope(
                 cancelled=lambda: operation.cancelled,
-                metrics=True,
             ) as context:
                 return extract_page(self, context)
 
@@ -358,7 +352,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
                         if context is None:
                             with RUNTIME.task_scope(
                                 cancelled=lambda: operation.cancelled,
-                                metrics=True,
                             ) as active_context:
                                 result = extract_document(self, active_context, selected_pages)
                         else:

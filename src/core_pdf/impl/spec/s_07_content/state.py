@@ -119,46 +119,55 @@ ColorNormalizationCache: TypeAlias = dict[object, tuple[float, ...] | None | Mis
 ExtGStateCache: TypeAlias = dict[object, "dict[str, Any] | None | MissingObject"]
 FontSettingCache: TypeAlias = dict[object, tuple[str | None, float] | MissingObject]
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
-internal_GraphicsState: TypeAlias = tuple[
-    float,
-    float,
-    float,
-    float,
-    float,
-    float,
-    tuple[float, ...] | None,
-    PatternPaint | None,
-    float,
-    tuple[float, ...] | None,
-    PatternPaint | None,
-    float,
-    str,
-    str,
-    ImageColorSpec | None,
-    ImageColorSpec | None,
-    int,
-    str | None,
-    float | None,
-    int,
-    str | None,
-    Rectangle | None,
-    float,
-    int,
-    int,
-    float,
-    tuple[list[float], float],
-    float,
-    object,
-    object,
-    float,
-    float,
-    float,
-    float,
-    float,
-    int,
-    str | None,
-    FontDecoder | None,
-]
+
+
+class internal_GraphicsStateSnapshot(typing.NamedTuple):
+    """Named, immutable state saved by ``q`` and restored by ``Q``.
+
+    This remains a tuple so restoring it can use the fast tuple-unpack path, but
+    construction names every field. Adding or reordering state can therefore no
+    longer silently shift a run of same-typed positional values.
+    """
+
+    ca: float
+    cb: float
+    cc: float
+    cd: float
+    ce: float
+    cf: float
+    fill_color: tuple[float, ...] | None
+    fill_pattern: PatternPaint | None
+    fill_opacity: float
+    stroke_color: tuple[float, ...] | None
+    stroke_pattern: PatternPaint | None
+    stroke_opacity: float
+    fill_color_space: str
+    stroke_color_space: str
+    fill_color_spec: ImageColorSpec | None
+    stroke_color_spec: ImageColorSpec | None
+    compatibility_depth: int
+    blend_mode: str | None
+    group_alpha: float | None
+    flatness: int
+    render_intent: str | None
+    clip_bbox: Rectangle | None
+    line_width: float
+    line_cap: int
+    line_join: int
+    miter_limit: float
+    dash_pattern: tuple[list[float], float]
+    font_size: float
+    font_operand: object
+    font_size_operand: object
+    horizontal_scale: float
+    char_space: float
+    word_space: float
+    rise: float
+    leading: float
+    render_mode: int
+    current_font: str | None
+    current_decoder: FontDecoder | None
+
 
 TYPE3_REPLAY_OPERAND_TYPES = (int, float, PdfName, PdfString)
 
@@ -288,7 +297,7 @@ class TextState:
     current_path: CapturedPath
     current_point: tuple[float, float] | None
     subpath_start: tuple[float, float] | None
-    stack: list[internal_GraphicsState]
+    stack: list[internal_GraphicsStateSnapshot]
     clip_scope_stack: list[bool]
     fill_color: tuple[float, ...] | None
     fill_pattern: PatternPaint | None
@@ -3908,45 +3917,45 @@ class TextState:
     def op_q(self, operands: OperandWindow, depth: int) -> None:
         self.clip_scope_stack.append(False)
         self.stack.append(
-            (
-                self.ca,
-                self.cb,
-                self.cc,
-                self.cd,
-                self.ce,
-                self.cf,
-                self.fill_color,
-                self.fill_pattern,
-                self.fill_opacity,
-                self.stroke_color,
-                self.stroke_pattern,
-                self.stroke_opacity,
-                self.fill_color_space,
-                self.stroke_color_space,
-                self.fill_color_spec,
-                self.stroke_color_spec,
-                self.compatibility_depth,
-                self.blend_mode,
-                self.group_alpha,
-                self.flatness,
-                self.render_intent,
-                self.clip_bbox,
-                self.line_width,
-                self.line_cap,
-                self.line_join,
-                self.miter_limit,
-                self.dash_pattern,
-                self.font_size,
-                self.font_operand,
-                self.font_size_operand,
-                self.horizontal_scale,
-                self.char_space,
-                self.word_space,
-                self.rise,
-                self.leading,
-                self.render_mode,
-                self.current_font,
-                self.current_decoder,
+            internal_GraphicsStateSnapshot(
+                ca=self.ca,
+                cb=self.cb,
+                cc=self.cc,
+                cd=self.cd,
+                ce=self.ce,
+                cf=self.cf,
+                fill_color=self.fill_color,
+                fill_pattern=self.fill_pattern,
+                fill_opacity=self.fill_opacity,
+                stroke_color=self.stroke_color,
+                stroke_pattern=self.stroke_pattern,
+                stroke_opacity=self.stroke_opacity,
+                fill_color_space=self.fill_color_space,
+                stroke_color_space=self.stroke_color_space,
+                fill_color_spec=self.fill_color_spec,
+                stroke_color_spec=self.stroke_color_spec,
+                compatibility_depth=self.compatibility_depth,
+                blend_mode=self.blend_mode,
+                group_alpha=self.group_alpha,
+                flatness=self.flatness,
+                render_intent=self.render_intent,
+                clip_bbox=self.clip_bbox,
+                line_width=self.line_width,
+                line_cap=self.line_cap,
+                line_join=self.line_join,
+                miter_limit=self.miter_limit,
+                dash_pattern=self.dash_pattern,
+                font_size=self.font_size,
+                font_operand=self.font_operand,
+                font_size_operand=self.font_size_operand,
+                horizontal_scale=self.horizontal_scale,
+                char_space=self.char_space,
+                word_space=self.word_space,
+                rise=self.rise,
+                leading=self.leading,
+                render_mode=self.render_mode,
+                current_font=self.current_font,
+                current_decoder=self.current_decoder,
             )
         )
 

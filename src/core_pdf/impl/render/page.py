@@ -23,10 +23,7 @@ from core_pdf.impl.render.model import (
     RasterImage,
     RenderOptions,
 )
-from core_pdf.impl.render.target import (
-    internal_RasterMetrics,
-    internal_RasterTarget,
-)
+from core_pdf.impl.render.target import internal_RasterTarget
 from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
@@ -181,13 +178,10 @@ class RenderedPage:
             width=width,
             height=height,
         )
-        raster_metrics = internal_RasterMetrics()
         raster_target = internal_RasterTarget(
             pixels,
             page_group_alpha,
             clip=clip_state,
-            page=self,
-            raster_metrics=raster_metrics,
             width=width,
             height=height,
             scale=scale,
@@ -206,7 +200,6 @@ class RenderedPage:
         draw_glyph_bitmap = raster_target.draw_glyph_bitmap
         fill_path = raster_target.fill_path
         blit_image = raster_target.blit_image
-        record_image_timings = raster_target.record_image_timings
         paint_fill_pattern = raster_target.paint_fill_pattern
         paint_typed_path = raster_target.paint_typed_path
         stroke_path = raster_target.stroke_path
@@ -377,7 +370,6 @@ class RenderedPage:
             # A rotation that is not a multiple of 90 rasterizes unrotated; the
             # reported dimensions match the buffer's unrotated layout.
             result = RasterImage(raster_target.pixels, width, height, 4)
-        record_image_timings()
         if cache:
             if self.image_cache is not None:
                 self.image_cache.put(cache_key, result)

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import replace
 
 import numpy
@@ -19,7 +18,6 @@ from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     OcrPass,
     OcrPassScope,
-    RecognitionReport,
     RecognitionResult,
     WorkPlan,
 )
@@ -33,7 +31,6 @@ from core_pdf.impl.extract.grids import (
 )
 from core_pdf.impl.extract.ocr.candidates import (
     internal_augment_candidate,
-    internal_candidate_timing_record,
     internal_hidden_text_verification,
     internal_merge_candidate_batches,
 )
@@ -70,34 +67,28 @@ def recognize_page(
     plan: WorkPlan,
     context: TaskScope,
 ) -> RecognitionResult:
-    report = RecognitionReport()
     if not plan.ocr_passes:
-        return RecognitionResult(ObservationBatch.empty(), report)
+        return RecognitionResult(ObservationBatch.empty())
     with context.reserve_raster(MAX_OCR_RASTER_BYTES):
         context.raise_if_cancelled()
         observations, cached_stroked_decode = internal_recognize_page_with_reserved_raster(
             capture,
             plan,
             context,
-            report=report,
         )
-    observations = internal_recover_stroked_vector_text(
+    observations, alphabet = internal_recover_stroked_vector_text(
         capture,
         observations,
-        report,
         cached_decode=cached_stroked_decode,
     )
-    return RecognitionResult(observations, report)
+    return RecognitionResult(observations, stroked_vector_alphabet=alphabet)
 
 
 def internal_recognize_page_with_reserved_raster(
     capture: CapturedPage,
     plan: WorkPlan,
     context: TaskScope,
-    *,
-    report: RecognitionReport | None = None,
-) -> tuple[ObservationBatch, tuple[int, StrokedTextDecode, float] | None]:
-    report = report or RecognitionReport()
+) -> tuple[ObservationBatch, tuple[int, StrokedTextDecode] | None]:
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
     compact_image: bool | str = True
@@ -108,10 +99,9 @@ def internal_recognize_page_with_reserved_raster(
     task_resources = internal_OcrPassTaskResources(
         capture,
         plan,
-        report,
         compact_image,
     )
-    pending_stroked_decode: tuple[int, StrokedTextDecode, float] | None = None
+    pending_stroked_decode: tuple[int, StrokedTextDecode] | None = None
     pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
 
@@ -129,7 +119,6 @@ def internal_recognize_page_with_reserved_raster(
 
     if plan.verify_hidden_text:
         context.raise_if_cancelled()
-        started = time.perf_counter()
         verification_pass = OcrPass(
             "hidden-text-verification",
             OcrPassScope.PAGE,
@@ -144,7 +133,7 @@ def internal_recognize_page_with_reserved_raster(
             capture,
             max_pixels=HIDDEN_TEXT_VERIFY_PIXELS,
         )
-        verification_tasks, raster_pixels = internal_region_tasks(
+        verification_tasks = internal_region_tasks(
             verification_region, verification_pass, compact_image=compact_image
         )
         verification_candidates = recognize_tasks(verification_tasks)
@@ -153,39 +142,6 @@ def internal_recognize_page_with_reserved_raster(
             capture.observations,
             verification_candidate.observations,
         )
-        verification_record: dict[str, object] = {
-            "name": verification_pass.name,
-            "scope": verification_pass.scope.value,
-            "scale": verification_pass.scale,
-            "modes": verification_pass.modes,
-            "recognize_words": verification_pass.recognize_words,
-            "character_confidence_threshold": None,
-            "task_count": len(verification_tasks),
-            "raster_pixels": raster_pixels,
-            "region_stage": "dominant-image-preview",
-            "region_boxes": (
-                (verification_region.page_box,) if verification_region is not None else ()
-            ),
-            "full_page_fallback": False,
-            "elapsed_seconds": time.perf_counter() - started,
-            "render_timings": report.render_timings or {},
-            **internal_candidate_timing_record(verification_candidates),
-            "accepted_additions": 0,
-            "adaptive_retry_scale": None,
-            "adaptive_preflight": None,
-            "adaptive_rescue_decision": None,
-            "adaptive_rescue": None,
-            "pixel_budget": verification_pass.pixel_budget,
-            "rectangles": tuple(task.rectangle for task in verification_tasks),
-            "selected": verification.accepted,
-            **verification_candidate.metrics.as_record(),
-            **verification.as_record(),
-        }
-        report.passes += (verification_record,)
-        report.hidden_text_verification = {
-            "raster_pixels": raster_pixels,
-            **verification.as_record(),
-        }
         if verification.accepted:
             return internal_promoted_hidden_observations(capture), pending_stroked_decode
 
@@ -200,7 +156,6 @@ def internal_recognize_page_with_reserved_raster(
         selected = pass_state.selected
         selected_tasks = pass_state.selected_tasks
         context.raise_if_cancelled()
-        started = time.perf_counter()
         pass_tasks = task_resources.materialize(
             ocr_pass,
             selected=selected,
@@ -211,17 +166,8 @@ def internal_recognize_page_with_reserved_raster(
         ocr_pass = pass_tasks.ocr_pass
         tasks = pass_tasks.tasks
         packed_stroked = pass_tasks.packed_stroked
-        raster_pixels = pass_tasks.raster_pixels
-        skipped_raster_pixels = pass_tasks.skipped_raster_pixels
-        image_text_preflight = pass_tasks.image_text_preflight
-        skipped_region_boxes = pass_tasks.skipped_region_boxes
-        region_stage = pass_tasks.region_stage
-        region_boxes = pass_tasks.region_boxes
-        adaptive_preflight = pass_tasks.adaptive_preflight
         if not tasks:
-            if not image_text_preflight:
-                continue
-            region_stage = "image-text-preflight"
+            continue
 
         candidate_source_tasks = tasks
         task_candidates = recognize_tasks(tasks)
@@ -231,21 +177,16 @@ def internal_recognize_page_with_reserved_raster(
                 for candidate in task_candidates
             )
             task_candidates = tuple(item[0] for item in remapped_with_counts)
-            unmapped_observations = sum(item[1] for item in remapped_with_counts)
             packed_candidate = internal_merge_candidate_batches(task_candidates)
-            decode_started = time.perf_counter()
             packed_decode = internal_decode_stroked_vector_text(
                 capture,
                 packed_candidate.observations,
                 packed_candidate.symbols,
             )
-            decode_seconds = time.perf_counter() - decode_started
-            packed_accepted, packed_gate = internal_packed_stroked_vector_decode_gate(
+            packed_accepted = internal_packed_stroked_vector_decode_gate(
                 packed_decode,
                 len(packed_stroked.cells),
             )
-            packed_pixels = raster_pixels
-            fallback_used = False
             if packed_accepted:
                 # Seed packing only rasterizes multi-glyph runs, so isolated
                 # glyphs (pin numbers, lone digits) are never shown to OCR when
@@ -256,9 +197,8 @@ def internal_recognize_page_with_reserved_raster(
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
                     variant="isolated",
-                    report=report,
                 )
-                isolated_tasks, isolated_pixels = (
+                isolated_tasks = (
                     internal_raster_tasks(
                         isolated_packed.raster,
                         isolated_packed.packed_box,
@@ -271,7 +211,7 @@ def internal_recognize_page_with_reserved_raster(
                         compact_image=compact_image,
                     )
                     if isolated_packed is not None
-                    else ((), 0)
+                    else ()
                 )
                 if isolated_tasks and isolated_packed is not None:
                     isolated_remapped = tuple(
@@ -283,51 +223,31 @@ def internal_recognize_page_with_reserved_raster(
                         for candidate in recognize_tasks(isolated_tasks)
                     )
                     isolated_candidates = tuple(item[0] for item in isolated_remapped)
-                    packed_gate["isolated_cells"] = len(isolated_packed.cells)
-                    packed_gate["isolated_observations"] = sum(
-                        len(item[0].observations) for item in isolated_remapped
-                    )
                     task_candidates = (*task_candidates, *isolated_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
                     tasks = (*tasks, *isolated_tasks)
                     packed_candidate = internal_merge_candidate_batches(task_candidates)
-                    raster_pixels += isolated_pixels
                 pending_stroked_decode = (
                     id(packed_candidate.observations),
                     packed_decode,
-                    decode_seconds,
                 )
             else:
                 fallback_region = internal_full_stroked_vector_text_raster(
                     capture,
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
-                    report=report,
                 )
-                fallback_tasks, fallback_pixels = internal_region_tasks(
+                fallback_tasks = internal_region_tasks(
                     fallback_region,
                     replace(ocr_pass, recognize_words=False),
                     compact_image=compact_image,
                 )
                 if fallback_tasks:
-                    fallback_used = True
                     fallback_candidates = recognize_tasks(fallback_tasks)
                     task_candidates = (*task_candidates, *fallback_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
                     tasks = (*tasks, *fallback_tasks)
                     packed_candidate = internal_merge_candidate_batches(fallback_candidates)
-                    raster_pixels += fallback_pixels
-                    region_stage = "stroked-vector-text-fallback"
-                    region_boxes = (
-                        (fallback_region.page_box,) if fallback_region is not None else region_boxes
-                    )
-            report.stroked_vector_packed = {
-                **packed_gate,
-                "raster_pixels": packed_pixels,
-                "unmapped_observations": unmapped_observations,
-                "symbol_observations": len(packed_candidate.symbols),
-                "fallback_used": fallback_used,
-            }
             candidate = packed_candidate
         else:
             candidate = internal_merge_candidate_batches(task_candidates)
@@ -342,9 +262,6 @@ def internal_recognize_page_with_reserved_raster(
                 candidate,
                 minimum_confidence=70.0,
             )
-        adaptive_retry_scale: float | None = None
-        adaptive_rescue: dict[str, object] | None = None
-        adaptive_rescue_decision: dict[str, object] | None = None
         median_height = candidate.metrics.median_text_height
         rescue_eligible = bool(
             ocr_pass.adaptive_scale
@@ -357,7 +274,7 @@ def internal_recognize_page_with_reserved_raster(
         run_rescue = False
         if rescue_eligible:
             adaptive_rescue_used = True
-            run_rescue, adaptive_rescue_decision = internal_adaptive_rescue_decision(
+            run_rescue = internal_adaptive_rescue_decision(
                 candidate,
                 candidate_source_tasks,
                 ocr_pass,
@@ -377,16 +294,14 @@ def internal_recognize_page_with_reserved_raster(
                 if candidate.metrics.characters < 32 or median_height < 18.0
                 else "weak-regions"
             )
-            retry_boxes: tuple[tuple[float, float, float, float], ...] = ()
             if retry_scope == "page":
                 retry_raster = internal_rendered_page_raster(
                     capture,
                     adaptive_retry_scale,
                     max_pixels=MAX_OCR_PIXELS,
                     include_native_text=ocr_pass.include_native_text,
-                    report=report,
                 )
-                retry_tasks, rescue_pixels = internal_raster_tasks(
+                retry_tasks = internal_raster_tasks(
                     retry_raster, page_box, retry_pass, compact_image=compact_image
                 )
             else:
@@ -402,14 +317,12 @@ def internal_recognize_page_with_reserved_raster(
                     retry_pass,
                     candidate.observations,
                 )
-                retry_tasks = retry_regions.tasks
-                rescue_pixels = retry_regions.raster_pixels
-                retry_boxes = retry_regions.region_boxes
+                retry_tasks = retry_regions
             if retry_tasks:
                 candidate_source_tasks = (*candidate_source_tasks, *retry_tasks)
                 retry_candidates = recognize_tasks(retry_tasks)
                 retry_candidate = internal_merge_candidate_batches(retry_candidates)
-                augmented_candidate, rescue_additions = internal_augment_candidate(
+                augmented_candidate, _rescue_additions = internal_augment_candidate(
                     candidate,
                     retry_candidate,
                     minimum_confidence=ocr_pass.minimum_confidence,
@@ -418,36 +331,13 @@ def internal_recognize_page_with_reserved_raster(
                     candidate = retry_candidate
                 elif augmented_candidate.metrics.utility > candidate.metrics.utility:
                     candidate = augmented_candidate
-                task_candidates = (*task_candidates, *retry_candidates)
-                raster_pixels += rescue_pixels
-                adaptive_rescue = {
-                    "scope": retry_scope,
-                    "scale": adaptive_retry_scale,
-                    "raster_pixels": rescue_pixels,
-                    "task_count": len(retry_tasks),
-                    "accepted_additions": rescue_additions,
-                    "region_boxes": retry_boxes,
-                }
         pass_state = internal_OcrPassExecution(
             ocr_pass=ocr_pass,
             candidate=candidate,
             candidate_source_tasks=candidate_source_tasks,
-            task_candidates=task_candidates,
             tasks=tasks,
-            started=started,
-            raster_pixels=raster_pixels,
-            skipped_raster_pixels=skipped_raster_pixels,
-            image_text_preflight=image_text_preflight,
-            region_stage=region_stage,
-            region_boxes=region_boxes,
-            skipped_region_boxes=skipped_region_boxes,
-            adaptive_retry_scale=adaptive_retry_scale,
-            adaptive_preflight=adaptive_preflight,
-            adaptive_rescue_decision=adaptive_rescue_decision,
-            adaptive_rescue=adaptive_rescue,
-        ).complete(pass_state, report)
+        ).complete(pass_state)
 
-    pass_state.record_selection(report)
     selected = pass_state.selected
     if selected is None:
         return ObservationBatch.empty(), pending_stroked_decode
@@ -496,14 +386,6 @@ def internal_recognize_page_with_reserved_raster(
                         # than whole-page OCR, so keep the original.
                         return selected.observations, pending_stroked_decode
                     retained = prior.take(numpy.flatnonzero(outside))
-                    report.grid_cell_ocr = {
-                        "cells": len(cell_tasks),
-                        "cell_observations": len(cell_observations),
-                        "replaced_observations": int(numpy.count_nonzero(~outside)),
-                        "grid_box": grid_box,
-                        "columns": len(x_lines) - 1,
-                        "rows": len(y_lines) - 1,
-                    }
                     return (
                         ObservationBatch.concatenate(retained, cell_observations),
                         pending_stroked_decode,

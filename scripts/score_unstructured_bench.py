@@ -17,7 +17,6 @@ from time import perf_counter
 from typing import Any, Iterable, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.extract.contracts import ParseReport
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
@@ -64,14 +63,6 @@ class CaseScore:
     error: str | None = None
     missing_top: list[tuple[str, int]] | None = None
     extra_top: list[tuple[str, int]] | None = None
-    candidate_analysis: list[dict[str, Any]] | None = None
-    selected_candidate_cct: float | None = None
-    best_candidate_name: str | None = None
-    best_candidate_cct: float | None = None
-    candidate_oracle_gap: float | None = None
-    selected_to_final_cct: float | None = None
-    best_to_final_cct: float | None = None
-    extraction_analysis: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -370,22 +361,6 @@ def score_result_sections(
                 ),
             )
         )
-    candidate_results = [
-        result for result in successful if result.score.candidate_oracle_gap is not None
-    ]
-    if candidate_results:
-        sections.append(
-            (
-                "Largest Candidate Oracle Gap",
-                sorted(
-                    candidate_results,
-                    key=lambda item: (
-                        -(item.score.candidate_oracle_gap or 0.0),
-                        item.case_number,
-                    ),
-                ),
-            )
-        )
     return sections
 
 
@@ -466,8 +441,6 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tables = document.extract().table_view.tables
             table_elapsed = perf_counter() - table_started
             evaluation_started = perf_counter()
-            candidate_analysis = score_document_candidates(document, gt_text)
-            extraction_analysis = collect_document_extraction_analysis(document)
         content_f1, found, added, precision, gt_count, predicted_count, matched = score_tokens(
             gt_text, predicted_text
         )
@@ -479,21 +452,6 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
         truth_cells = ground_truth_table_cells(table_truth)
         predicted_cells = predicted_table_cells(predicted_tables)
         table_pairs = match_table_indexes(truth_cells, predicted_cells)
-        selected_candidate = next(
-            (candidate for candidate in candidate_analysis if candidate["selected"]),
-            None,
-        )
-        best_candidate = max(
-            candidate_analysis,
-            key=lambda candidate: (candidate["cct"], candidate["precision"]),
-            default=None,
-        )
-        selected_candidate_cct = (
-            cast(float, selected_candidate["cct"]) if selected_candidate is not None else None
-        )
-        best_candidate_cct = (
-            cast(float, best_candidate["cct"]) if best_candidate is not None else None
-        )
         evaluation_elapsed = perf_counter() - evaluation_started
         score = CaseScore(
             stem=case.stem,
@@ -521,24 +479,6 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             evaluation_elapsed_seconds=evaluation_elapsed,
             missing_top=token_diff["missing_top"][:5],
             extra_top=token_diff["extra_top"][:5],
-            candidate_analysis=candidate_analysis or None,
-            selected_candidate_cct=selected_candidate_cct,
-            best_candidate_name=(
-                cast(str, best_candidate["name"]) if best_candidate is not None else None
-            ),
-            best_candidate_cct=best_candidate_cct,
-            candidate_oracle_gap=(
-                best_candidate_cct - selected_candidate_cct
-                if best_candidate_cct is not None and selected_candidate_cct is not None
-                else None
-            ),
-            selected_to_final_cct=(
-                cct - selected_candidate_cct if selected_candidate_cct is not None else None
-            ),
-            best_to_final_cct=(
-                best_candidate_cct - cct if best_candidate_cct is not None else None
-            ),
-            extraction_analysis=extraction_analysis or None,
         )
         return score
     except Exception as exc:
@@ -560,60 +500,6 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
 def extract_document_text(document: PdfDocument) -> str:
     """Return the canonical core-document text used for benchmark scoring."""
     return document.extract().text
-
-
-def score_document_candidates(document: PdfDocument, gt_text: str) -> list[dict[str, Any]]:
-    """Score opt-in raw OCR candidates against the case's content ground truth."""
-    scored: list[dict[str, Any]] = []
-    for page_number, page in enumerate(document.pages, start=1):
-        report = getattr(page, "parse_report", None)
-        records = report.recognition.candidate_analysis if isinstance(report, ParseReport) else ()
-        for record in records:
-            if not isinstance(record, dict):
-                continue
-            text = record.get("text")
-            if not isinstance(text, str):
-                continue
-            content_f1, found, added, precision, gt_count, predicted_count, matched = score_tokens(
-                gt_text, text
-            )
-            cct = score_cct(gt_text, text)
-            cer, wer = score_ordered_errors(gt_text, text)
-            scored.append(
-                {key: value for key, value in record.items() if key != "text"}
-                | {
-                    "page": page_number,
-                    "cct": cct,
-                    "content_f1": content_f1,
-                    "order_gap": content_order_gap(content_f1, cct),
-                    "recall": found,
-                    "added": added,
-                    "precision": precision,
-                    "gt_tokens": gt_count,
-                    "predicted_tokens": predicted_count,
-                    "matched_tokens": matched,
-                    "cer": cer,
-                    "wer": wer,
-                }
-            )
-    return scored
-
-
-def collect_document_extraction_analysis(document: PdfDocument) -> list[dict[str, Any]]:
-    """Collect opt-in extraction diagnostics in a JSON-friendly page envelope."""
-    if os.environ.get("CORE_PDF_EXTRACTION_ANALYSIS", "").casefold() not in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        return []
-    records: list[dict[str, Any]] = []
-    for page_number, page in enumerate(document.pages, start=1):
-        report = getattr(page, "parse_report", None)
-        if isinstance(report, ParseReport):
-            records.append({"page": page_number, **report.as_record()})
-    return records
 
 
 def configure_native_thread_budget() -> None:
@@ -1002,8 +888,6 @@ class ScoreBench:
     case_filters: tuple[str, ...] = ()
     json_output: Path | None = None
     html_output: Path | None = DEFAULT_HTML_OUTPUT
-    candidate_analysis: bool = False
-    extraction_analysis: bool = False
     full_results: bool = False
     report_limit: int = 25
     partition: str = "all"
@@ -1031,8 +915,6 @@ class ScoreBench:
             action="store_true",
             help="Disable the default HTML report.",
         )
-        parser.add_argument("--candidate-analysis", action="store_true")
-        parser.add_argument("--extraction-analysis", action="store_true")
         parser.add_argument("--full-results", action="store_true")
         parser.add_argument(
             "--report-limit",
@@ -1054,8 +936,6 @@ class ScoreBench:
             case_filters=tuple(value.casefold() for value in args.case),
             json_output=args.json_output,
             html_output=None if args.no_html_output else args.html_output,
-            candidate_analysis=args.candidate_analysis,
-            extraction_analysis=args.extraction_analysis,
             full_results=args.full_results,
             report_limit=args.report_limit,
             fail_on_errors=args.fail_on_errors,
@@ -1107,9 +987,6 @@ class ScoreBench:
 
     def internal_score_cases(self, cases: list[ScoreBenchCase]) -> list[CaseScore]:
         configure_native_thread_budget()
-        os.environ["CORE_PDF_CANDIDATE_ANALYSIS"] = "1" if self.candidate_analysis else "0"
-        os.environ["CORE_PDF_EXTRACTION_ANALYSIS"] = "1" if self.extraction_analysis else "0"
-        os.environ["CORE_PDF_TRACE"] = "1" if self.extraction_analysis else "0"
         workers = min(os.cpu_count() or 4, len(cases)) if len(cases) > 1 else 1
         is_picklable = (
             workers > 1

@@ -813,10 +813,9 @@ def test_orthogonal_image_blit_preserves_rotation_pixel_order(rotation: int) -> 
     numpy.testing.assert_array_equal(actual, expected)
 
 
-@pytest.mark.parametrize(("empty_first", "expected_tiled"), [(True, 1), (False, 0)])
+@pytest.mark.parametrize("empty_first", [True, False])
 def test_axis_aligned_image_blit_preserves_empty_clip_subpath_order(
     empty_first: bool,
-    expected_tiled: int,
 ) -> None:
     samples = numpy.array(
         [
@@ -855,9 +854,6 @@ def test_axis_aligned_image_blit_preserves_empty_clip_subpath_order(
     expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
     expected[:, 1, :3] = samples[:, 1]
     numpy.testing.assert_array_equal(actual, expected)
-    timings = page.metadata["__core_pdf_raster_image_timings__"]
-    assert timings["tiled_affine_blit_count"] == expected_tiled
-    assert 0 <= timings["tiled_affine_peak_scratch_bytes"] <= 1 << 20
 
 
 def test_orthogonal_image_quad_rasterizes_rotated_samples() -> None:

@@ -3,25 +3,14 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, replace
 from typing import Self
 
-from core_pdf.impl.extract.contracts import (
-    OcrPass,
-    OcrPassScope,
-    RecognitionReport,
-)
-from core_pdf.impl.extract.ocr.candidates import (
-    internal_augment_candidate,
-    internal_candidate_timing_record,
-    internal_record_candidates,
-)
+from core_pdf.impl.extract.contracts import OcrPass, OcrPassScope
+from core_pdf.impl.extract.ocr.candidates import internal_augment_candidate
 from core_pdf.impl.extract.ocr.rescue import internal_primary_text_is_sufficient
 from core_pdf.impl.extract.ocr.types import internal_OcrTask
 from core_pdf.impl.extract.quality import internal_Candidate
-
-internal_PageBox = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,41 +89,18 @@ class internal_OcrPassState:
             )
         return self
 
-    def record_selection(self, report: RecognitionReport) -> None:
-        """Mark the winning pass and expose the complete candidate history."""
-        if self.selected is not None:
-            for diagnostic in report.passes:
-                diagnostic["selected"] = diagnostic["name"] == self.selected_name
-        internal_record_candidates(self.candidates, self.selected_name, report)
-
 
 @dataclass(frozen=True, slots=True)
 class internal_OcrPassExecution:
-    """Completed pass data needed for reporting and the selection transition."""
+    """Completed pass data needed for the selection transition."""
 
     ocr_pass: OcrPass
     candidate: internal_Candidate
     candidate_source_tasks: tuple[internal_OcrTask, ...]
-    task_candidates: tuple[internal_Candidate, ...]
     tasks: tuple[internal_OcrTask, ...]
-    started: float
-    raster_pixels: int
-    skipped_raster_pixels: int
-    image_text_preflight: tuple[dict[str, object], ...]
-    region_stage: str
-    region_boxes: tuple[internal_PageBox, ...]
-    skipped_region_boxes: tuple[internal_PageBox, ...]
-    adaptive_retry_scale: float | None
-    adaptive_preflight: dict[str, object] | None
-    adaptive_rescue_decision: dict[str, object] | None
-    adaptive_rescue: dict[str, object] | None
 
-    def complete(
-        self,
-        state: internal_OcrPassState,
-        report: RecognitionReport,
-    ) -> internal_OcrPassState:
-        """Record this pass and return the candidate-selection state for the next one."""
+    def complete(self, state: internal_OcrPassState) -> internal_OcrPassState:
+        """Return the candidate-selection state for the next pass."""
         ocr_pass = self.ocr_pass
         candidate = self.candidate
         selected = state.selected
@@ -154,38 +120,6 @@ class internal_OcrPassExecution:
         next_state = replace(
             state,
             candidates=(*state.candidates, (ocr_pass.name, candidate)),
-        )
-        report.passes += (
-            {
-                "name": ocr_pass.name,
-                "scope": ocr_pass.scope.value,
-                "scale": ocr_pass.scale,
-                "modes": ocr_pass.modes,
-                "recognize_words": any(task.recognize_words for task in self.tasks),
-                "character_confidence_threshold": ocr_pass.character_confidence_threshold,
-                "task_count": len(self.tasks),
-                "raster_pixels": self.raster_pixels,
-                "skipped_raster_pixels": self.skipped_raster_pixels,
-                "image_text_preflight": self.image_text_preflight,
-                "region_stage": self.region_stage,
-                "region_boxes": self.region_boxes,
-                "skipped_region_boxes": self.skipped_region_boxes,
-                "full_page_fallback": (
-                    self.region_stage == "page" and ocr_pass.scope is OcrPassScope.PAGE
-                ),
-                "elapsed_seconds": time.perf_counter() - self.started,
-                "render_timings": report.render_timings or {},
-                **internal_candidate_timing_record(self.task_candidates),
-                "accepted_additions": additions,
-                "adaptive_retry_scale": self.adaptive_retry_scale,
-                "adaptive_preflight": self.adaptive_preflight,
-                "adaptive_rescue_decision": self.adaptive_rescue_decision,
-                "adaptive_rescue": self.adaptive_rescue,
-                "pixel_budget": ocr_pass.pixel_budget,
-                "rectangles": tuple(task.rectangle for task in self.tasks),
-                "selected": False,
-                **candidate.metrics.as_record(),
-            },
         )
         if not self.tasks:
             return next_state
