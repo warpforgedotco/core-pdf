@@ -806,7 +806,7 @@ class TextState:
         self.pending_line_break = False
         self.stream_order += 1
         if initialize_lexer:
-            frame.lexer = PdfLexer(frame.stream.data_view)
+            frame.lexer = PdfLexer(frame.stream.data)
         frame.entered = True
         return True
 

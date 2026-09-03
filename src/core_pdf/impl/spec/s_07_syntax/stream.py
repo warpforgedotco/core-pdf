@@ -21,7 +21,6 @@ class PdfStream:
         "raw_data",
         "spec",
         "decoded_data",
-        "data_view_cache",
         "internal_lock",
     )
 
@@ -29,7 +28,6 @@ class PdfStream:
     raw_data: bytes | memoryview
     spec: PdfStreamDecodeSpec
     decoded_data: bytes | None
-    data_view_cache: memoryview | None
 
     def __init__(
         self,
@@ -50,7 +48,6 @@ class PdfStream:
         self.raw_data = raw_data
         self.spec = cast(PdfStreamDecodeSpec, spec)
         self.decoded_data = decoded_data
-        self.data_view_cache = None
         self.internal_lock = threading.RLock()
 
     def replace(self, **kwargs: object) -> "PdfStream":
@@ -87,14 +84,3 @@ class PdfStream:
                     )
                     self.decoded_data = decoded_data
         return decoded_data
-
-    @property
-    def data_view(self) -> memoryview:
-        data_view = self.data_view_cache
-        if data_view is None:
-            with self.internal_lock:
-                data_view = self.data_view_cache
-                if data_view is None:
-                    data_view = memoryview(self.data)
-                    self.data_view_cache = data_view
-        return data_view
