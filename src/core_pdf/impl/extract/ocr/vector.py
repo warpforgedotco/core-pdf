@@ -683,17 +683,12 @@ def internal_packed_stroked_vector_decode_gate(
 def internal_recover_stroked_vector_text(
     capture: CapturedPage,
     ocr: ObservationBatch,
-    *,
-    cached_decode: tuple[int, StrokedTextDecode] | None = None,
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
         return ocr, ()
-    if cached_decode is not None and cached_decode[0] == id(ocr):
-        decoded = cached_decode[1]
-    else:
-        decoded = internal_decode_stroked_vector_text(capture, ocr)
+    decoded = internal_decode_stroked_vector_text(capture, ocr)
     ocr_index = SpatialIndex.from_boxes(ocr.bbox)
     replacements: set[int] = set()
     accepted: list[StrokedTextObservation] = []

@@ -94,12 +94,7 @@ def internal_recognize(
     plan: WorkPlan,
     context: TaskScope,
 ) -> ObservationBatch:
-    observations, _ = ocr.internal_recognize_page_with_reserved_raster(
-        capture,
-        plan,
-        context,
-    )
-    return observations
+    return ocr.internal_recognize_page_with_reserved_raster(capture, plan, context)
 
 
 @pytest.fixture

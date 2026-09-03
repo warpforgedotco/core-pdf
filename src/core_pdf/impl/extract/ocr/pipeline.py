@@ -44,7 +44,6 @@ from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
 from core_pdf.impl.extract.ocr.region_tasks import internal_ocr_task_groups
 from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
 from core_pdf.impl.extract.ocr.rescue import internal_adaptive_rescue_decision
-from core_pdf.impl.extract.ocr.strokes import StrokedTextDecode
 from core_pdf.impl.extract.ocr.tesseract import (
     internal_recognize_group,
     internal_recover_timed_out_tasks,
@@ -71,16 +70,8 @@ def recognize_page(
         return RecognitionResult(ObservationBatch.empty())
     with context.reserve_raster(MAX_OCR_RASTER_BYTES):
         context.raise_if_cancelled()
-        observations, cached_stroked_decode = internal_recognize_page_with_reserved_raster(
-            capture,
-            plan,
-            context,
-        )
-    observations, alphabet = internal_recover_stroked_vector_text(
-        capture,
-        observations,
-        cached_decode=cached_stroked_decode,
-    )
+        observations = internal_recognize_page_with_reserved_raster(capture, plan, context)
+    observations, alphabet = internal_recover_stroked_vector_text(capture, observations)
     return RecognitionResult(observations, stroked_vector_alphabet=alphabet)
 
 
@@ -88,7 +79,7 @@ def internal_recognize_page_with_reserved_raster(
     capture: CapturedPage,
     plan: WorkPlan,
     context: TaskScope,
-) -> tuple[ObservationBatch, tuple[int, StrokedTextDecode] | None]:
+) -> ObservationBatch:
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
     compact_image: bool | str = True
@@ -101,7 +92,6 @@ def internal_recognize_page_with_reserved_raster(
         plan,
         compact_image,
     )
-    pending_stroked_decode: tuple[int, StrokedTextDecode] | None = None
     pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
 
@@ -143,7 +133,7 @@ def internal_recognize_page_with_reserved_raster(
             verification_candidate.observations,
         )
         if verification.accepted:
-            return internal_promoted_hidden_observations(capture), pending_stroked_decode
+            return internal_promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
         prepared_state = pass_state.prepare(
@@ -227,10 +217,6 @@ def internal_recognize_page_with_reserved_raster(
                     candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
                     tasks = (*tasks, *isolated_tasks)
                     packed_candidate = internal_merge_candidate_batches(task_candidates)
-                pending_stroked_decode = (
-                    id(packed_candidate.observations),
-                    packed_decode,
-                )
             else:
                 fallback_region = internal_full_stroked_vector_text_raster(
                     capture,
@@ -340,7 +326,7 @@ def internal_recognize_page_with_reserved_raster(
 
     selected = pass_state.selected
     if selected is None:
-        return ObservationBatch.empty(), pending_stroked_decode
+        return ObservationBatch.empty()
     selected_tasks = pass_state.selected_tasks
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the
@@ -384,10 +370,7 @@ def internal_recognize_page_with_reserved_raster(
                         # The page-segmented reads carried more content than
                         # the cell reads; this grid's cells recognize worse
                         # than whole-page OCR, so keep the original.
-                        return selected.observations, pending_stroked_decode
+                        return selected.observations
                     retained = prior.take(numpy.flatnonzero(outside))
-                    return (
-                        ObservationBatch.concatenate(retained, cell_observations),
-                        pending_stroked_decode,
-                    )
-    return selected.observations, pending_stroked_decode
+                    return ObservationBatch.concatenate(retained, cell_observations)
+    return selected.observations
