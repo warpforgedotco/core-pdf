@@ -38,7 +38,6 @@ from core_pdf.impl.spec.s_09_fonts.font_program import (
     CFFFont,
     CFFUnicodeRepairIndex,
     cff_font_for_data,
-    cff_unicode_repair_index_for_data,
     is_repairable_to_unicode_label,
 )
 from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
@@ -199,9 +198,12 @@ def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
 
 
 def build_cff_unicode_repair_index(
-    font: dict[str, Any], to_unicode: ToUnicodeCMap | None, cmap: CMapDecoder | None
+    font: dict[str, Any],
+    font_program: FontProgram | None,
+    to_unicode: ToUnicodeCMap | None,
+    cmap: CMapDecoder | None,
 ) -> CFFUnicodeRepairIndex | None:
-    if to_unicode is None:
+    if to_unicode is None or not isinstance(font_program, CFFFont):
         return None
     descendant = get_descendant(font)
     if descendant is None:
@@ -214,23 +216,11 @@ def build_cff_unicode_repair_index(
     font_file = descriptor.get("FontFile3")
     if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
         return None
-    subtype = normalize_pdf_name(font_file.dictionary.get("Subtype"))
-    font_data: bytes | None = font_file.data
-    if subtype == "OpenType":
-        if font_data is None:
-            return None
-        font_data = internal_extract_cff_table(font_data)
-        if font_data is None:
-            return None
     mapping = single_code_mapping(to_unicode, cmap)
     if not any(is_repairable_to_unicode_label(value) for internal_cid, value in mapping.values()):
         return None
-    try:
-        return cff_unicode_repair_index_for_data(
-            font_data, tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
-        )
-    except ValueError:
-        return None
+    mapping_items = tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
+    return CFFUnicodeRepairIndex(font_program, mapping_items)
 
 
 def internal_extract_cff_table(data: bytes) -> bytes | None:
@@ -523,7 +513,9 @@ class FontDecoder:
             self.glyph_decode_table_authoritative = False
         else:
             self.glyph_decode_table, self.glyph_decode_table_authoritative = glyph_decode
-        self.cff_unicode_repair_index = build_cff_unicode_repair_index(font, to_unicode, cmap)
+        self.cff_unicode_repair_index = build_cff_unicode_repair_index(
+            font, self.font_program, to_unicode, cmap
+        )
         self.cff_unicode_repairs = {}
 
     @staticmethod

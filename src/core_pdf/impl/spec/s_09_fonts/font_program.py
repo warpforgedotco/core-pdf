@@ -1581,21 +1581,12 @@ class CFFUnicodeRepairIndex:
         self.internal_resolved_gids.update(requested_gids)
 
 
-@lru_cache(maxsize=64)
-def cff_unicode_repair_index_for_data(
-    font_data: bytes,
-    mapping_items: tuple[tuple[bytes, int, str], ...],
-) -> CFFUnicodeRepairIndex:
-    return CFFUnicodeRepairIndex(cff_font_for_data(font_data), mapping_items)
-
-
 __all__ = (
     "STANDARD_GLYPH_SIDS",
     "CFFFont",
     "CFFGlyphFeature",
     "CFFUnicodeRepairIndex",
     "cff_font_for_data",
-    "cff_unicode_repair_index_for_data",
     "glyph_feature_distance",
     "is_repairable_to_unicode_label",
 )
