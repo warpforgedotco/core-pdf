@@ -228,9 +228,6 @@ class ImageSource:
         mask_dictionary = dict(soft_mask.dictionary)
         mask_dictionary.setdefault("ColorSpace", "DeviceGray")
         mask_dictionary.setdefault("BitsPerComponent", 8)
-        # The parent PreparedImage owns this plane and reports its bytes to the
-        # document cache. Caching a second nested PreparedImage would count the
-        # same allocation twice and split preparation ownership again.
         prepared = ImageSource(soft_mask.raw, mask_dictionary).prepare()
         if prepared is None:
             return None
