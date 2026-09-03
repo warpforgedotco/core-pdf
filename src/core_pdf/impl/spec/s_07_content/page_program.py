@@ -12,7 +12,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.exceptions import PdfContractError
-from core_pdf.impl.model.glyph_table import GlyphTable, GlyphTableBuilder
+from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_content.capture import (
@@ -119,7 +119,7 @@ class PageEventStream:
     visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
     non_text_indexes: numpy.ndarray[Any, numpy.dtype[numpy.int64]]
     runs: tuple[TextRun, ...]
-    glyphs: GlyphTable
+    glyphs: tuple[GlyphObservation, ...]
     drawings: tuple[CapturedDrawing, ...]
     inline_images: tuple[CapturedInlineImage, ...]
     lines: LineTable
@@ -158,17 +158,15 @@ class PageEventStream:
             ],
             [
                 (
-                    seqno,
+                    glyph.seqno,
                     1,
                     PageEventKind.GLYPH,
                     index,
-                    ink_bbox or missing_box,
-                    visible,
+                    glyph.ink_bbox or missing_box,
+                    glyph.visible,
                 )
-                for index, seqno, ink_bbox, visible, has_paint in (
-                    products.glyphs.iter_event_rows()
-                )
-                if has_paint
+                for index, glyph in enumerate(products.glyphs)
+                if glyph.has_paint
             ],
             [
                 (
@@ -250,7 +248,7 @@ class PageProducts:
     """Typed payload columns owned by the canonical page program."""
 
     runs: tuple[TextRun, ...]
-    glyphs: GlyphTable
+    glyphs: tuple[GlyphObservation, ...]
     drawings: tuple[CapturedDrawing, ...]
     inline_images: tuple[CapturedInlineImage, ...]
     lines: LineTable
@@ -258,12 +256,9 @@ class PageProducts:
     @classmethod
     def from_state(cls, state: Any) -> PageProducts:
         runs = tuple(state.runs)
-        raw_glyphs = state.glyphs
-        if isinstance(raw_glyphs, GlyphTableBuilder):
-            # Builder rows are typed by construction; no per-glyph scan needed.
-            glyphs = raw_glyphs.build()
-        else:
-            glyphs = GlyphTable.from_rows(raw_glyphs)
+        glyphs = tuple(state.glyphs)
+        if not all(isinstance(glyph, GlyphObservation) for glyph in glyphs):
+            raise PdfContractError("page state emitted an invalid glyph product")
         raw_drawings = tuple(state.drawings)
         if not all(isinstance(drawing, CapturedDrawing) for drawing in raw_drawings):
             raise PdfContractError("page state emitted an invalid drawing product")

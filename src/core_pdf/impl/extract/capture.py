@@ -722,9 +722,9 @@ def internal_capture_from_program(
     products = program.products
     program_runs = tuple(products.runs)
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
-    for glyph_seqno, glyph_font_name in products.glyphs.iter_font_names():
-        if glyph_font_name:
-            glyphs_by_seqno[int(glyph_seqno)].append(glyph_font_name)
+    for glyph in products.glyphs:
+        if glyph.font_name:
+            glyphs_by_seqno[glyph.seqno].append(glyph.font_name)
     glyph_seqnos = tuple(sorted(glyphs_by_seqno))
     enriched_runs: list[TextRun] = []
     for index, run in enumerate(program_runs):
@@ -775,7 +775,17 @@ def internal_capture_from_program(
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
     glyph_evidence = internal_glyph_evidence_fields(
-        products.glyphs.iter_evidence_rows(),
+        (
+            (
+                glyph.text,
+                glyph.visible,
+                glyph.font_decoder,
+                glyph.code_bytes,
+                glyph.unicode_source,
+                glyph.confidence,
+            )
+            for glyph in products.glyphs
+        ),
         raw_runs,
         learned_unicode,
     )

@@ -8,7 +8,6 @@ import numpy
 import pytest
 
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.model.glyph_table import GlyphTable
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
@@ -501,7 +500,7 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
         bitmap_code=65,
         font_decoder=decoder,
     )
-    products = PageProducts((), GlyphTable.from_rows((glyph,)), (), (), LineTable.from_lines(()))
+    products = PageProducts((), (glyph,), (), (), LineTable.from_lines(()))
     page_program = PageProgram(products)
 
     text_free = compose_page(
@@ -653,9 +652,7 @@ def test_text_clip_is_committed_before_the_next_text_object() -> None:
         font_decoder=decoder,
         glyph_transform=(0.005, 0.0, 0.0, 0.005, 1.0, 1.0),
     )
-    products = PageProducts(
-        (), GlyphTable.from_rows((clipping, painted)), (), (), LineTable.from_lines(())
-    )
+    products = PageProducts((), (clipping, painted), (), (), LineTable.from_lines(()))
 
     rendered = compose_page(Page(), page_program=PageProgram(products))
 

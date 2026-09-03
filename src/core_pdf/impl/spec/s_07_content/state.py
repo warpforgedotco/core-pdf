@@ -19,11 +19,9 @@ if TYPE_CHECKING:
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import RectBox, transform_bbox
-from core_pdf.impl.model.glyph_table import GlyphTableBuilder
 from core_pdf.impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
-    GlyphSegment,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
@@ -290,7 +288,7 @@ class TextState:
     capture_graphics: bool
     compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
-    glyphs: GlyphTableBuilder
+    glyphs: list[GlyphObservation]
     glyph_clusters: list[GlyphCluster]
     lines: list[CapturedLine]
     drawings: list[CapturedDrawing]
@@ -556,7 +554,7 @@ class TextState:
         self.compat_tj_enabled = document.legacy_pdfminer_text_operators
         self.capture_clipping = True
         self.runs = []
-        self.glyphs = GlyphTableBuilder()
+        self.glyphs = []
         self.glyph_clusters = []
         self.lines = []
         self.drawings = []
@@ -1848,9 +1846,7 @@ class TextState:
             combined_c,
             combined_d,
         )
-        append_glyph = self.glyphs.append_row
-        glyph_rows = self.glyphs.rows
-        append_glyph_row = glyph_rows.append
+        append_glyph = self.glyphs.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
         glyph_bbox_cache = decoder.glyph_bbox_cache
@@ -1938,30 +1934,6 @@ class TextState:
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
-        # One segment carries every op-constant observation field for this
-        # text-showing operation; fast-path glyphs append compact row tuples
-        # that reference it instead of full observations.
-        segment = GlyphSegment(
-            seqno,
-            effective_font_name,
-            font_size,
-            effective_font_size,
-            effective_font_height,
-            fill,
-            rotation_angle,
-            decoder,
-            render_mode,
-            fill_opacity,
-            stroke_color,
-            stroke_opacity,
-            glyph_line_width,
-            line_cap,
-            line_join,
-            glyph_dash_pattern,
-            blend_mode,
-            group_alpha,
-            text_object_id,
-        )
         # Accumulated during the append loop so the caller need not rescan
         # the slice it just wrote.
         run_geometry = RunGeometry()
@@ -2142,42 +2114,55 @@ class TextState:
                         font_size,
                     )
                     bitmap_code = glyph.bitmap_code
-                # Single-glyph fast path: append one compact row and a cluster
-                # referencing it; the full GlyphObservation materializes only
-                # if a row-level consumer asks for it.
-                append_glyph_row(
-                    (
-                        segment,
-                        chunk_text,
-                        rect,
-                        advance_bbox,
-                        baseline,
-                        glyph.code_bytes,
-                        glyph.char_code,
-                        glyph.cid,
-                        glyph.gid,
-                        observation_visible,
-                        observation_confidence,
-                        glyph.unicode_source,
-                        glyph.alternates,
-                        bitmap_width,
-                        bitmap_height,
-                        bitmap_code,
-                        outline_transform,
-                        observation_provenance,
-                        cluster_id,
-                    )
+                observation = GlyphObservation(
+                    text=chunk_text,
+                    ink_bbox=rect,
+                    advance_bbox=advance_bbox,
+                    seqno=seqno,
+                    code_bytes=glyph.code_bytes,
+                    char_code=glyph.char_code,
+                    cid=glyph.cid,
+                    gid=glyph.gid,
+                    font_name=effective_font_name,
+                    font_size=font_size,
+                    baseline=baseline,
+                    rotation_angle=rotation_angle,
+                    fill=fill,
+                    visible=observation_visible,
+                    confidence=observation_confidence,
+                    unicode_source=glyph.unicode_source,
+                    alternates=glyph.alternates,
+                    bitmap_width=bitmap_width,
+                    bitmap_height=bitmap_height,
+                    bitmap_code=bitmap_code,
+                    font_decoder=decoder,
+                    effective_font_size=effective_font_size,
+                    effective_font_height=effective_font_height,
+                    provenance=observation_provenance,
+                    glyph_transform=outline_transform,
+                    text_render_mode=render_mode,
+                    fill_opacity=fill_opacity,
+                    stroke_color=stroke_color,
+                    stroke_opacity=stroke_opacity,
+                    line_width=glyph_line_width,
+                    line_cap=line_cap,
+                    line_join=line_join,
+                    dash_pattern=glyph_dash_pattern,
+                    blend_mode=blend_mode,
+                    soft_mask_alpha=group_alpha,
+                    text_object_id=text_object_id,
+                    cluster_key=cluster_provenance_id,
                 )
+                append_glyph(observation)
                 clusters.append(
-                    GlyphCluster.from_row(
-                        glyph_rows,
-                        len(glyph_rows) - 1,
-                        cluster_id,
-                        chunk_text,
-                        advance_bbox,
-                        rect,
-                        baseline,
-                        observation_confidence,
+                    GlyphCluster(
+                        cluster_id=cluster_id,
+                        text=chunk_text,
+                        glyphs=(observation,),
+                        advance_bbox=advance_bbox,
+                        ink_bbox=rect,
+                        baseline=baseline,
+                        confidence=observation_confidence,
                     )
                 )
                 add_run_geometry(advance_bbox, rect, observation_confidence)
@@ -2510,8 +2495,8 @@ class TextState:
                     string_syntax=string_syntax,
                     compatibility_data=compatibility_data,
                 )
-                actual_text_span.compatibility_glyphs.extend(self.glyphs.extract_rows(glyph_start))
-                self.glyphs.truncate(glyph_start)
+                actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
+                del self.glyphs[glyph_start:]
                 del self.glyph_clusters[cluster_start:]
             actual_text_span.add_extents(
                 x0=x0,
@@ -2817,7 +2802,7 @@ class TextState:
         )
         self.update_pending_run(new_run)
         if self.capture_glyphs and entry.advance_bbox is not None:
-            self.glyphs.append_row(
+            self.glyphs.append(
                 GlyphObservation(
                     text=actual_text,
                     ink_bbox=entry.advance_bbox,
