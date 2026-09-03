@@ -6,7 +6,6 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from core_pdf.impl.spec.s_09_fonts.cmap_encoding import decode_utf16be
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
     CodeSpaceRanges,
@@ -23,6 +22,20 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
     decode_cmap_hex_token,
     decode_cmap_token,
 )
+
+
+def internal_decode_utf16be(data: bytes) -> str:
+    if not data:
+        return ""
+    if data.startswith(b"\xfe\xff"):
+        data = data[2:]
+    if len(data) == 1:
+        return chr(data[0])
+    buffer = data if len(data) % 2 == 0 else b"\x00" + data
+    try:
+        return buffer.decode("utf-16-be", "replace")
+    except (UnicodeDecodeError, ValueError):
+        return data.decode("latin-1", "replace")
 
 
 class ToUnicodeCMap:
@@ -141,7 +154,7 @@ class ToUnicodeCMap:
                 src = decode_cmap_token(src_tok)
                 if not src:
                     continue
-                dst = decode_utf16be(decode_cmap_token(dst_tok))
+                dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
             except (ValueError, UnicodeDecodeError):
                 # PostScript hex strings pad an odd final nibble with zero.
                 # If corruption starts another ``<`` before the closing
@@ -156,7 +169,7 @@ class ToUnicodeCMap:
                             continue
                         if len(prefix) % 2:
                             prefix += b"0"
-                        dst = decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
+                        dst = internal_decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
                     except (ValueError, UnicodeDecodeError):
                         break
                     self.mappings[src] = dst
@@ -211,7 +224,7 @@ class ToUnicodeCMap:
                     if start_code + i > end_code:
                         break
                     try:
-                        dst = decode_utf16be(decode_cmap_token(dst_tok))
+                        dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
                     except (ValueError, UnicodeDecodeError):
                         continue
                     src = (start_code + i).to_bytes(src_len, "big")
@@ -224,7 +237,7 @@ class ToUnicodeCMap:
                 idx += 3
             elif t3.startswith(b"<") or t3.startswith(b"("):
                 try:
-                    base_dst = decode_utf16be(decode_cmap_token(t3))
+                    base_dst = internal_decode_utf16be(decode_cmap_token(t3))
                     mappings = expand_range(start_code, end_code, src_len, base_dst)
                 except (ValueError, UnicodeDecodeError):
                     invalid_range_count += 1
