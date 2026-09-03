@@ -23,7 +23,6 @@ class FakeDocument:
         self.resolver = IdentityResolver()
         self.internal_fields = fields
         self.pages: list[Any] = []
-        self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
 
     def page_lock(self, page_number: int) -> threading.RLock:
         with self.internal_cache_lock:
@@ -39,9 +38,7 @@ class FakeDocument:
         return 0 if isinstance(page_obj, dict) else None
 
     def fields_by_page(self) -> dict[int, list[RawFormField]]:
-        if self.fields_by_page_cache is None:
-            self.fields_by_page_cache = PdfDocument.build_fields_by_page(cast(Any, self))
-        return self.fields_by_page_cache
+        return PdfDocument.fields_by_page(cast(Any, self))
 
 
 def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> None:

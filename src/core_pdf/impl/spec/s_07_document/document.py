@@ -101,8 +101,6 @@ class PdfDocument(
         "named_destinations_cache",
         "embedded_files_cache",
         "oc_layers",
-        "fields_cache",
-        "fields_by_page_cache",
         "internal_cache_lock",
         "internal_page_locks",
         "xref_was_recovered",
@@ -128,8 +126,6 @@ class PdfDocument(
     named_destinations_cache: dict[str, RawNamedDestination] | None
     embedded_files_cache: list[RawEmbeddedFile] | None
     oc_layers: dict[str, bool] | None
-    fields_cache: list[RawFormField] | None
-    fields_by_page_cache: dict[int, list[RawFormField]] | None
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
     xref_was_recovered: bool
@@ -296,8 +292,6 @@ class PdfDocument(
         self.named_destinations_cache = None
         self.embedded_files_cache = None
         self.oc_layers = None
-        self.fields_cache = None
-        self.fields_by_page_cache = None
 
     # Source loading and security
 
@@ -1201,49 +1195,29 @@ class PdfDocument(
         return records
 
     def fields(self) -> list[RawFormField]:
-        with self.internal_cache_lock:
-            if self.fields_cache is not None:
-                return self.fields_cache
-            af = self.acroform
-            records: list[RawFormField] = []
-            if af is not None:
-                field_list = af.get("Fields")
-                if field_list is None:
+        af = self.acroform
+        records: list[RawFormField] = []
+        if af is not None:
+            field_list = af.get("Fields")
+            if field_list is None:
+                field_list = []
+            elif not isinstance(field_list, list):
+                if self.recovery_enabled:
                     field_list = []
-                elif not isinstance(field_list, list):
-                    if self.recovery_enabled:
-                        field_list = []
-                    else:
-                        raise ValueError("invalid AcroForm Fields array")
-                for field in field_list:
-                    field_obj = self.resolver.resolve(field)
-                    records.extend(self.collect_field_records(field_obj))
-            # 12.5.6.19 lets a field with a single widget merge both
-            # dictionaries into one, so a widget carrying /FT is itself a field
-            # and a missing or empty catalog field tree does not mean the
-            # document has none -- producers do ship filled forms that way.
-            # Fall back to the pages when the tree tells us nothing, which also
-            # keeps well-formed documents clear of a whole-page scan.
-            if not records or self.recovery_enabled:
-                records.extend(self.discover_widget_field_records(records))
-            self.fields_cache = records
-            return records
+                else:
+                    raise ValueError("invalid AcroForm Fields array")
+            for field in field_list:
+                field_obj = self.resolver.resolve(field)
+                records.extend(self.collect_field_records(field_obj))
+        # 12.5.6.19 lets a field with a single widget merge both dictionaries
+        # into one, so a widget carrying /FT is itself a field and a missing or
+        # empty catalog field tree does not mean the document has none.
+        if not records or self.recovery_enabled:
+            records.extend(self.discover_widget_field_records(records))
+        return records
 
     def fields_by_page(self) -> dict[int, list[RawFormField]]:
-        with self.internal_cache_lock:
-            fields = self.fields_by_page_cache
-            if fields is None:
-                fields = self.build_fields_by_page()
-                self.fields_by_page_cache = fields
-            return fields
-
-    def build_fields_by_page(self) -> dict[int, list[RawFormField]]:
-        """Group every document field by the page index its widget(s) sit on.
-
-        Computed once for the whole document instead of once per page: a page's
-        ``get_fields()`` used to rescan every field in the document on every call,
-        which is O(pages x fields) for multi-page forms. This groups in one pass.
-        """
+        """Group every document field by the page index its widget(s) sit on."""
         from core_pdf.impl.spec.s_07_document.page import PdfPage
 
         grouped: dict[int, list[RawFormField]] = {}
