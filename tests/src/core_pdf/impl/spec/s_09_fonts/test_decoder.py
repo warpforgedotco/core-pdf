@@ -263,20 +263,6 @@ def test_cid_font_decoder_reuses_glyphs_across_distinct_long_operands() -> None:
     assert all(glyph is first[0] for glyph in second if glyph.cid == ord("A"))
 
 
-def test_cid_glyph_cache_stops_accepting_new_codes_at_its_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(decoder_module, "internal_CID_GLYPH_CACHE_LIMIT", 1)
-    decoder = FontDecoder(cid_type0_font("Identity-H"))
-
-    cached = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
-    uncached_first = decoder.internal_decode_cid_glyphs(b"\x00B")[0]
-    uncached_second = decoder.internal_decode_cid_glyphs(b"\x00B")[0]
-
-    assert decoder.internal_decode_cid_glyphs(b"\x00A")[0] is cached
-    assert uncached_second is not uncached_first
-
-
 def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
     class FakeCFFFont(CFFFont):
         def __init__(self) -> None:
@@ -601,7 +587,7 @@ def test_cff_unicode_repair_is_batched_on_first_suspicious_code(
     assert repair_index.calls == [(b"\x00A",)]
 
 
-def test_cff_unicode_repair_invalidates_cid_glyphs_only_when_changed(
+def test_cff_unicode_repair_refreshes_cid_glyphs_only_when_changed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRepairIndex:
@@ -631,8 +617,6 @@ def test_cff_unicode_repair_invalidates_cid_glyphs_only_when_changed(
     first = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
     unchanged = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
     decoder.decode(b"\x00A")
-    assert decoder.decode_cache
-    assert decoder.glyphs_cache
     repair_index.repair = "Y"
     changed = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
 
@@ -640,8 +624,7 @@ def test_cff_unicode_repair_invalidates_cid_glyphs_only_when_changed(
     assert unchanged is first
     assert changed.unicode == "Y"
     assert changed is not first
-    assert not decoder.decode_cache
-    assert not decoder.glyphs_cache
+    assert decoder.glyph_cache[b"\x00A"] is changed
 
 
 def test_cid_collection_map_resolves_once_on_first_unmapped_code(

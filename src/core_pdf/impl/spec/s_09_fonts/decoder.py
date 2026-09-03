@@ -301,13 +301,6 @@ def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | No
     return None
 
 
-# Distinct CID codes memoized per decoder. A simple font's cache is bounded by
-# its 256 single-byte codes; a CID font's code space is not, so this bounds the
-# dictionary while still covering the few thousand distinct codes a dense CJK
-# page can carry.
-internal_CID_GLYPH_CACHE_LIMIT = 4096
-
-
 @dataclass(frozen=True, slots=True)
 class DecodedGlyph:
     code_bytes: bytes
@@ -393,11 +386,8 @@ class FontDecoder:
     is_vertical: bool
     ascent: float
     descent: float
-    decode_cache: dict[bytes, str]
-    glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]]
     fast_widths_cache: tuple[float, ...] | None
-    simple_glyph_cache: dict[int, DecodedGlyph]
-    cid_glyph_cache: dict[bytes, DecodedGlyph]
+    glyph_cache: dict[bytes, DecodedGlyph]
     glyph_bbox_cache: dict[int, Rectangle | None]
     glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]]
     font_name: str | None
@@ -418,10 +408,7 @@ class FontDecoder:
         self.font = font
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
-        self.decode_cache: dict[bytes, str] = {}
-        self.glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]] = {}
-        self.simple_glyph_cache = {}
-        self.cid_glyph_cache = {}
+        self.glyph_cache: dict[bytes, DecodedGlyph] = {}
         self.fast_widths_cache = None
         self.glyph_bbox_cache = {}
         self.glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
@@ -723,12 +710,6 @@ class FontDecoder:
     def decode(self, data: bytes) -> str:
         if not data:
             return ""
-        use_cache = len(data) <= 16
-        decode_cache = self.decode_cache
-        if use_cache:
-            cached = decode_cache.get(data)
-            if cached is not None:
-                return cached
         table = self.byte_decode_table
         if (
             table is not None
@@ -737,31 +718,17 @@ class FontDecoder:
             and self.glyph_decode_table is None
             and not self.ligature_overrides
         ):
-            result = "".join(table[byte] for byte in data)
-        else:
-            result = "".join(glyph.unicode for glyph in self.decode_glyphs(data))
-        if use_cache and len(decode_cache) < 512:
-            decode_cache[data] = result
-        return result
+            return "".join(table[byte] for byte in data)
+        return "".join(glyph.unicode for glyph in self.decode_glyphs(data))
 
     def decode_glyphs(self, data: bytes | bytearray | memoryview) -> tuple[DecodedGlyph, ...]:
         if not data:
             return ()
-        use_cache = len(data) <= 16
-        cache_key = bytes(data) if use_cache else None
-        if cache_key is not None:
-            cached = self.glyphs_cache.get(cache_key)
-            if cached is not None:
-                return cached
-
         if self.is_cid_font:
             glyphs = self.internal_decode_cid_glyphs(bytes(data))
         else:
             glyphs = self.internal_decode_simple_glyphs(data)
-        result = tuple(glyphs)
-        if cache_key is not None and len(self.glyphs_cache) < 512:
-            self.glyphs_cache[cache_key] = result
-        return result
+        return tuple(glyphs)
 
     def internal_unicode_choice_for_code(
         self, code_bytes: bytes, fallback_code: int, gid: int | None = None
@@ -844,19 +811,13 @@ class FontDecoder:
         source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
-    def internal_clear_cid_unicode_caches(self) -> None:
-        """Clear text and glyph memos derived from CID Unicode mappings."""
-        self.decode_cache.clear()
-        self.glyphs_cache.clear()
-        self.cid_glyph_cache.clear()
-
     def internal_update_cff_unicode_repairs(self, repairs: Mapping[bytes, str]) -> bool:
-        """Install changed CFF repairs and invalidate CID glyphs built without them."""
+        """Install changed CFF repairs and discard glyphs built without them."""
         changed = any(self.cff_unicode_repairs.get(code) != text for code, text in repairs.items())
         if not changed:
             return False
         self.cff_unicode_repairs.update(repairs)
-        self.internal_clear_cid_unicode_caches()
+        self.glyph_cache.clear()
         return True
 
     def internal_resolved_cid_unicode_map(self) -> Mapping[int, str] | CIDUnicodeMap | None:
@@ -940,17 +901,17 @@ class FontDecoder:
         self, data: bytes | bytearray | memoryview
     ) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
-        glyph_cache = self.simple_glyph_cache
+        glyph_cache = self.glyph_cache
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
             table = self.encoding_decode_table
         byte_cache = BYTE_CACHE
         for code in data:
-            cached_glyph = glyph_cache.get(code)
+            chunk = byte_cache[code]
+            cached_glyph = glyph_cache.get(chunk)
             if cached_glyph is not None:
                 glyphs.append(cached_glyph)
                 continue
-            chunk = byte_cache[code]
             gid = self.glyph_id_for_code(code)
             if self.to_unicode is not None:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
@@ -989,12 +950,12 @@ class FontDecoder:
                 bitmap_code=code,
                 split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
             )
-            glyph_cache[code] = glyph
+            glyph_cache[chunk] = glyph
             glyphs.append(glyph)
         return glyphs
 
     def internal_decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
-        glyph_cache = self.cid_glyph_cache
+        glyph_cache = self.glyph_cache
         entries = self.cmap.decode_entries(data) if self.cmap is not None else []
         if not entries:
             chunks = split_code_bytes(data, self.to_unicode)
@@ -1021,8 +982,7 @@ class FontDecoder:
                 glyphs.append(cached_glyph)
                 continue
             glyph = self.internal_build_cid_glyph(code_bytes, cid)
-            if len(glyph_cache) < internal_CID_GLYPH_CACHE_LIMIT:
-                glyph_cache[code_bytes] = glyph
+            glyph_cache[code_bytes] = glyph
             glyphs.append(glyph)
         return glyphs
 
