@@ -210,15 +210,6 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
     This deliberately does not render a preview image.  Native text, image bounds,
     captured paths, and grid lines are already available from the canonical page IR.
     """
-    cache = getattr(capture.page, "extraction_cache", None)
-    cache_key = "ocr_candidate_regions_v1"
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, tuple) and all(
-            isinstance(item, internal_OcrRegion) for item in cached
-        ):
-            return cached
-
     page_width = float(capture.page.width)
     page_height = float(capture.page.height)
     page_area = max(1.0, page_width * page_height)
@@ -486,8 +477,6 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
                 ("page-fallback",),
             ),
         )
-    if cache is not None:
-        cache[cache_key] = regions
     return regions
 
 

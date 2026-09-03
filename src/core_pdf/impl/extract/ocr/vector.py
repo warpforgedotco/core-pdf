@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Any
 
 import numpy
@@ -78,31 +77,10 @@ STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES = 16
 STROKED_VECTOR_PACK_MIN_DECODED_RUNS = 16
 
 
-@dataclass(frozen=True, slots=True)
-class internal_CachedStrokedTextProfile:
-    drawings: tuple[Any, ...]
-    drawing_indexes: tuple[int, ...]
-    profile: StrokedTextProfile
-
-
 def internal_stroked_text_profile(capture: CapturedPage) -> StrokedTextProfile:
-    """Return the single structural glyph profile shared by OCR and document reuse."""
+    """Build the structural glyph profile used by stroked-text OCR."""
     evidence = capture.evidence.stroked_vector_text
-    cache = capture.page.extraction_cache
-    cached = cache.get("_stroked_text_profile")
-    if (
-        isinstance(cached, internal_CachedStrokedTextProfile)
-        and cached.drawings is capture.drawings
-        and cached.drawing_indexes == evidence.drawing_indexes
-    ):
-        return cached.profile
-    profile = profile_stroked_text(capture.drawings, evidence.drawing_indexes)
-    cache["_stroked_text_profile"] = internal_CachedStrokedTextProfile(
-        capture.drawings,
-        evidence.drawing_indexes,
-        profile,
-    )
-    return profile
+    return profile_stroked_text(capture.drawings, evidence.drawing_indexes)
 
 
 def internal_pack_stroked_text_runs(

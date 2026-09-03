@@ -43,8 +43,8 @@ from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.execution import TaskScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
-from tests.helpers.extract_fakes import FakePage, drawing, page_evidence, text_run
 from tests.helpers.extract_fakes import capture as make_capture
+from tests.helpers.extract_fakes import drawing, page_evidence, text_run
 from tests.helpers.ocr_fakes import (
     FakeDocumentPage,
     FakeResultIterator,
@@ -1813,31 +1813,6 @@ def test_document_stroked_alphabet_blacklists_conflicting_signatures() -> None:
 
     assert alphabet == {second: "B"}
     assert ambiguous == {first}
-
-
-def test_stroked_text_profile_is_cached_per_capture_drawings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[object, ...]] = []
-    profile = StrokedTextProfile()
-    monkeypatch.setattr(
-        ocr_stroked_vector,
-        "profile_stroked_text",
-        lambda drawings, indexes: calls.append(drawings) or profile,
-    )
-    page = FakePage()
-    evidence = page_evidence(
-        stroked_vector_text=StrokedVectorTextEvidence(trusted=True, drawing_indexes=(0,))
-    )
-    first_drawings = (drawing("stroke", (0.0, 0.0, 1.0, 1.0)),)
-    second_drawings = (drawing("stroke", (0.0, 0.0, 1.0, 1.0)),)
-    first = make_capture(evidence, page=page, drawings=first_drawings)
-    second = make_capture(evidence, page=page, drawings=second_drawings)
-
-    assert ocr_stroked_vector.internal_stroked_text_profile(first) is profile
-    assert ocr_stroked_vector.internal_stroked_text_profile(first) is profile
-    assert ocr_stroked_vector.internal_stroked_text_profile(second) is profile
-    assert calls == [first_drawings, second_drawings]
 
 
 def test_uncovered_vector_area_ignores_page_sized_background() -> None:
