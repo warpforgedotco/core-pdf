@@ -40,7 +40,7 @@ from core_pdf.impl.extract.ocr.types import (
     internal_StrokedTextCell,
 )
 from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
-from core_pdf.impl.model.geometry import bbox_intersection_area, rect_tuple
+from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     PathPaintItem,
@@ -357,19 +357,22 @@ def internal_remap_stroked_vector_observations(
     sequences: list[int] = []
     references: list[Any | None] = []
     tolerance = STROKED_VECTOR_PACK_REMAP_TOLERANCE
+    cell_boxes = numpy.asarray(
+        tuple(cell.packed_box for cell in packed.cells), dtype=numpy.float32
+    ).reshape((-1, 4))
     for index, packed_box in enumerate(observations.bbox):
         box = internal_bbox_tuple(packed_box)
         center_x = (box[0] + box[2]) * 0.5
         center_y = (box[1] + box[3]) * 0.5
-        cells = tuple(
-            cell
-            for cell in packed.cells
-            if cell.packed_box[0] - tolerance <= center_x <= cell.packed_box[2] + tolerance
-            and cell.packed_box[1] - tolerance <= center_y <= cell.packed_box[3] + tolerance
+        matching = numpy.flatnonzero(
+            (cell_boxes[:, 0] - tolerance <= center_x)
+            & (cell_boxes[:, 2] + tolerance >= center_x)
+            & (cell_boxes[:, 1] - tolerance <= center_y)
+            & (cell_boxes[:, 3] + tolerance >= center_y)
         )
-        if len(cells) != 1:
+        if len(matching) != 1:
             continue
-        cell = cells[0]
+        cell = packed.cells[int(matching[0])]
         dx = cell.source_box[0] - cell.packed_box[0]
         dy = cell.source_box[1] - cell.packed_box[1]
         mapped = (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
@@ -643,6 +646,11 @@ def internal_recover_stroked_vector_text(
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
         return ocr, ()
     decoded = internal_decode_stroked_vector_text(capture, ocr)
+    ocr_boxes = ocr.bbox
+    ocr_areas = numpy.maximum(
+        0.01,
+        (ocr_boxes[:, 2] - ocr_boxes[:, 0]) * (ocr_boxes[:, 3] - ocr_boxes[:, 1]),
+    )
     replacements: set[int] = set()
     accepted: list[StrokedTextObservation] = []
     for observation in decoded.observations:
@@ -651,19 +659,23 @@ def internal_recover_stroked_vector_text(
             (observation.bbox[2] - observation.bbox[0])
             * (observation.bbox[3] - observation.bbox[1]),
         )
-        overlaps: list[tuple[float, int]] = []
-        for index, raw_box in enumerate(ocr.bbox):
-            hit_bbox = internal_bbox_tuple(raw_box)
-            hit_area = max(0.01, (hit_bbox[2] - hit_bbox[0]) * (hit_bbox[3] - hit_bbox[1]))
-            overlap = bbox_intersection_area(observation.bbox, hit_bbox) / min(
-                candidate_area, hit_area
-            )
-            if overlap >= STROKED_VECTOR_DECODE_MIN_OVERLAP:
-                overlaps.append((overlap, index))
-        if not overlaps:
+        overlap_width = numpy.maximum(
+            0.0,
+            numpy.minimum(ocr_boxes[:, 2], observation.bbox[2])
+            - numpy.maximum(ocr_boxes[:, 0], observation.bbox[0]),
+        )
+        overlap_height = numpy.maximum(
+            0.0,
+            numpy.minimum(ocr_boxes[:, 3], observation.bbox[3])
+            - numpy.maximum(ocr_boxes[:, 1], observation.bbox[1]),
+        )
+        overlap_ratios = (overlap_width * overlap_height) / numpy.minimum(candidate_area, ocr_areas)
+        matching = numpy.flatnonzero(overlap_ratios >= STROKED_VECTOR_DECODE_MIN_OVERLAP)
+        if not len(matching):
             accepted.append(observation)
             continue
-        best_overlap, best_index = max(overlaps)
+        best_index = int(matching[-1 - numpy.argmax(overlap_ratios[matching][::-1])])
+        best_overlap = float(overlap_ratios[best_index])
         recognized_text = ocr.text[best_index].strip()
         if recognized_text == observation.text:
             continue

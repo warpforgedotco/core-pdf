@@ -200,14 +200,19 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
             candidates.append(internal_OcrRegion(padded, 5.0, ("image",)))
 
     native = getattr(capture, "observations", ObservationBatch.empty())
-    native_boxes = tuple(tuple(float(value) for value in box) for box in native.bbox)
+    native_boxes = native.bbox
 
     def native_overlap(box: tuple[float, float, float, float]) -> float:
         area = max(1.0, (box[2] - box[0]) * (box[3] - box[1]))
-        return min(
-            1.0,
-            sum(bbox_intersection_area(box, other) for other in native_boxes) / area,
+        overlap_width = numpy.maximum(
+            0.0,
+            numpy.minimum(native_boxes[:, 2], box[2]) - numpy.maximum(native_boxes[:, 0], box[0]),
         )
+        overlap_height = numpy.maximum(
+            0.0,
+            numpy.minimum(native_boxes[:, 3], box[3]) - numpy.maximum(native_boxes[:, 1], box[1]),
+        )
+        return min(1.0, float(numpy.sum(overlap_width * overlap_height)) / area)
 
     for drawing in getattr(capture, "drawings", ()):
         if getattr(drawing, "kind", None) not in {"fill", "fillstroke", "stroke"}:
