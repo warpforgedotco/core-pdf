@@ -92,8 +92,6 @@ class internal_PatternTargetMixin:
         data: dict[str, Any],
         shading: PreparedShading,
     ) -> tuple[float, float, float, float]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         crop_x0 = self.crop_x0
         crop_y0 = self.crop_y0
         crop_y1 = self.crop_y1
@@ -108,8 +106,6 @@ class internal_PatternTargetMixin:
         return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
 
     def paint_shading(self: Any, data: dict[str, Any], blend_mode: str | None) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -194,8 +190,6 @@ class internal_PatternTargetMixin:
         ty: float,
         blend_mode: str | None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         draw_glyph_bitmap = self.draw_glyph_bitmap
         for glyph in glyphs:
             if not glyph.visible:
@@ -218,8 +212,6 @@ class internal_PatternTargetMixin:
         ty: float,
         parent_blend_mode: str | None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         fill_path = self.fill_path
         paint_shading = self.paint_shading
         stroke_path = self.stroke_path
@@ -268,8 +260,6 @@ class internal_PatternTargetMixin:
         target_data: dict[str, Any],
         blend_mode: str | None,
     ) -> bool:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         crop_x0 = self.crop_x0
         crop_y0 = self.crop_y0
         crop_y1 = self.crop_y1

@@ -33,8 +33,6 @@ class internal_ImageAxisTargetMixin:
         self: Any,
         item: ImagePaintItem,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_px = self.blend_px
@@ -306,7 +304,6 @@ class internal_ImageAxisTargetMixin:
         drawing for stencil masks only; when it is absent the PDF default of
         black applies, which is what every mask in the corpus resolves to."""
 
-        # Captured target state hoisted into locals, as elsewhere in this class.
         clipped_pixel_box = self.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -409,7 +406,6 @@ class internal_ImageAxisTargetMixin:
         a soft mask, or is clipped — anything that rules out a straight copy but
         still allows vectorised normal blending."""
 
-        # Captured target state hoisted into locals, as elsewhere in this class.
         clip_row_visible_spans = self.clip_row_visible_spans
         pixel_view = self.pixel_view
         pixels = self.pixels
@@ -485,7 +481,6 @@ class internal_ImageAxisTargetMixin:
         blend mode, so NumPy can gather the sampled source region and write it
         directly to the destination."""
 
-        # Captured target state hoisted into locals, as elsewhere in this class.
         pixel_view = self.pixel_view
         pixels = self.pixels
         expected_length = width_px * height_px * comps

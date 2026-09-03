@@ -33,8 +33,6 @@ class internal_ImageAffineTargetMixin:
         *,
         transposed: bool = False,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         row_count = len(valid_rows)
         column_count = len(valid_columns)
         all_valid = bool(valid_rows.all() and valid_columns.all())
@@ -87,8 +85,6 @@ class internal_ImageAffineTargetMixin:
         constant_alpha: float | None,
         blend_mode: str | None,
     ) -> bool:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel

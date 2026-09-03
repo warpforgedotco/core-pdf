@@ -179,8 +179,6 @@ class internal_PathShapeTargetMixin:
         bitmap_width: Any = None,
         bitmap_height: Any = None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clip = self.clip
         buffer_stack = self.buffer_stack
         clip_path_stack = clip.clip_path_stack
@@ -293,8 +291,6 @@ class internal_PathShapeTargetMixin:
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px

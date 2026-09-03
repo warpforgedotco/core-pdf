@@ -34,8 +34,6 @@ class internal_PathStrokeTargetMixin:
         blend_mode: str | None = None,
         line_cap: int = 0,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
@@ -280,8 +278,6 @@ class internal_PathStrokeTargetMixin:
         line_join: int = 0,
         blend_mode: str | None = None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         fill_circle = self.fill_circle
         fill_rect = self.fill_rect
         scale = self.scale
@@ -305,8 +301,6 @@ class internal_PathStrokeTargetMixin:
         line_cap: int,
         blend_mode: str | None = None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         fill_circle = self.fill_circle
         fill_rect = self.fill_rect
         scale = self.scale
@@ -333,8 +327,6 @@ class internal_PathStrokeTargetMixin:
         line_cap: int = 0,
         line_join: int = 0,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clip_path_stack = self.clip_path_stack
         current_clip = self.current_clip
         fill_cap = self.fill_cap
