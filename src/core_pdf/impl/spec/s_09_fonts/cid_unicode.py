@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from functools import lru_cache
 
 from core_pdf.impl.spec.s_09_fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
@@ -56,7 +55,6 @@ def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
     )
 
 
-@lru_cache(maxsize=128)
 def compact_cmap(name: str) -> CompactCMap | None:
     normalized_name = normalized_cmap_name(name)
     if resolve_cmap_resource(normalized_name) is None:
@@ -80,20 +78,15 @@ def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | Non
 
 
 class CIDUnicodeMap:
-    __slots__ = ("cache", "ordering", "registry", "vertical")
+    __slots__ = ("ordering", "registry", "vertical")
 
     def __init__(self, registry: str, ordering: str, vertical: bool) -> None:
         self.registry = registry
         self.ordering = ordering
         self.vertical = vertical
-        self.cache: dict[int, str | None] = {}
 
     def get(self, cid: int, default: str | None = None) -> str | None:
-        if cid in self.cache:
-            result = self.cache[cid]
-            return default if result is None else result
         result = self.internal_resolve(cid)
-        self.cache[cid] = result
         return default if result is None else result
 
     def internal_resolve(self, cid: int) -> str | None:
@@ -134,7 +127,6 @@ class CIDUnicodeMap:
         )
 
 
-@lru_cache(maxsize=32)
 def resolve_cid_unicode_map(
     registry: str,
     ordering: str,
