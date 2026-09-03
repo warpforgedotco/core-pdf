@@ -57,7 +57,7 @@ from core_pdf.impl.spec.s_09_fonts.glyph_decode import (
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.spec.s_09_fonts.helpers import (
     base_encoding_glyph_names,
-    cached_decode_table,
+    build_decode_table,
     parse_differences,
     unicode_for_glyph_name,
 )
@@ -452,7 +452,7 @@ class FontDecoder:
             )
         else:
             key = base_encoding or ("Type3" if is_type3 else "")
-            encoding_decode_table = cached_decode_table(key, tuple(sorted(differences.items())))
+            encoding_decode_table = build_decode_table(key, differences)
 
         byte_decode_table: tuple[str, ...] | None = None
         if to_unicode is None and not is_cid_font:

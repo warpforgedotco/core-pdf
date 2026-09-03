@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from functools import lru_cache
 from typing import Any, Callable
 
 from core_pdf._vendor.fontTools.agl import UV2AGL
@@ -118,13 +117,15 @@ def base_encoding_glyph_names(key: str | None) -> tuple[str, ...]:
 
 
 def build_decode_table(
-    base: tuple[str, ...],
-    differences: dict[int, str] | None = None,
+    key: str,
+    differences: dict[int, str] | tuple[tuple[int, str], ...] | None = None,
 ) -> tuple[str, ...]:
+    base = ENCODING_FALLBACKS.get(key, internal_PDFDOC_FALLBACK_TABLE)
     if not differences:
         return base
     table = list(base)
-    for code, glyph_name in differences.items():
+    items = differences.items() if isinstance(differences, dict) else differences
+    for code, glyph_name in items:
         mapped = unicode_for_glyph_name(glyph_name)
         if mapped is None:
             if glyph_name.isdecimal():
@@ -142,13 +143,8 @@ def build_decode_table(
     return tuple(table)
 
 
-@lru_cache(maxsize=256)
-def cached_decode_table(
-    key: str, differences_items: tuple[tuple[int, str], ...]
-) -> tuple[str, ...]:
-    differences = dict(differences_items)
-    base = ENCODING_FALLBACKS.get(key, internal_PDFDOC_FALLBACK_TABLE)
-    return build_decode_table(base, differences)
+# Kept as an import alias for compatibility facades; table construction is direct.
+cached_decode_table = build_decode_table
 
 
 def parse_differences(
