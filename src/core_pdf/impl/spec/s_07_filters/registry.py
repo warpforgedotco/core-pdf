@@ -29,7 +29,6 @@ class FilterDescriptor:
     decoder: FilterDecoder | None
     aliases: tuple[str, ...]
     predictor: bool = False
-    expensive_decode: bool = False
     ccitt: bool = False
     # JPX reads the image dictionary (for /SMaskInData and colour) rather than
     # the DecodeParms every other filter is handed.
@@ -42,9 +41,8 @@ FILTER_DESCRIPTORS = (
         "flate",
         ("flatedecode", "platedecode"),
         predictor=True,
-        expensive_decode=True,
     ),
-    FilterDescriptor("Fl", "flate", ("fl",), predictor=True, expensive_decode=True),
+    FilterDescriptor("Fl", "flate", ("fl",), predictor=True),
     FilterDescriptor("ASCIIHexDecode", "ascii_hex", ("asciihexdecode",)),
     FilterDescriptor("AHx", "ascii_hex", ("ahx",)),
     FilterDescriptor("ASCII85Decode", "ascii85", ("ascii85decode",)),
@@ -56,28 +54,25 @@ FILTER_DESCRIPTORS = (
         "lzw",
         ("lzwdecode",),
         predictor=True,
-        expensive_decode=True,
     ),
-    FilterDescriptor("LZW", "lzw", ("lzw",), predictor=True, expensive_decode=True),
-    FilterDescriptor("DCT", "jpeg", ("dct",), expensive_decode=True),
-    FilterDescriptor("DCTDecode", "jpeg", ("dctdecode",), expensive_decode=True),
+    FilterDescriptor("LZW", "lzw", ("lzw",), predictor=True),
+    FilterDescriptor("DCT", "jpeg", ("dct",)),
+    FilterDescriptor("DCTDecode", "jpeg", ("dctdecode",)),
     FilterDescriptor(
         "CCITTFaxDecode",
         "ccitt",
         ("ccitt", "ccittfaxdecode"),
-        expensive_decode=True,
         ccitt=True,
     ),
-    FilterDescriptor("CCF", "ccitt", ("ccf",), expensive_decode=True, ccitt=True),
+    FilterDescriptor("CCF", "ccitt", ("ccf",), ccitt=True),
     FilterDescriptor("Crypt", "crypt", ("crypt",)),
     FilterDescriptor(
         "JPXDecode",
         "jpx",
         ("jpxdecode",),
-        expensive_decode=True,
         wants_image_dictionary=True,
     ),
-    FilterDescriptor("JBIG2Decode", "jbig2", ("jbig2decode",), expensive_decode=True),
+    FilterDescriptor("JBIG2Decode", "jbig2", ("jbig2decode",)),
     FilterDescriptor("Identity", None, ("identity",)),
     FilterDescriptor("None", None, ("none",)),
 )
@@ -89,9 +84,6 @@ FILTER_NAME_ALIASES = {
 CCITT_FILTERS = frozenset(descriptor.name for descriptor in FILTER_DESCRIPTORS if descriptor.ccitt)
 PREDICTOR_FILTERS = frozenset(
     descriptor.name for descriptor in FILTER_DESCRIPTORS if descriptor.predictor
-)
-EXPENSIVE_DECODE_CACHE_FILTERS = frozenset(
-    descriptor.name for descriptor in FILTER_DESCRIPTORS if descriptor.expensive_decode
 )
 
 

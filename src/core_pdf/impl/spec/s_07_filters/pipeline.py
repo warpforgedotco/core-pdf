@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Filter dispatch: map stream filter names to decoders and cache expensive decodes."""
+"""Filter dispatch from normalized stream filter names to decoders."""
 
 from __future__ import annotations
 
-import os
 import typing
 
 import numpy
@@ -13,7 +12,6 @@ if typing.TYPE_CHECKING:
 
     FilterFn = Callable[[bytes, object], bytes]
 
-from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
     apply_ascii_hex,
@@ -41,7 +39,6 @@ from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsup
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.predictors import apply_predictor
 from core_pdf.impl.spec.s_07_filters.registry import (
-    EXPENSIVE_DECODE_CACHE_FILTERS,
     FILTER_DESCRIPTOR_BY_NAME,
     FILTER_DESCRIPTORS,
     NATIVE_IMAGE_SPECS,
@@ -67,48 +64,6 @@ FILTER_MAP: dict[str, FilterFn] = {
     for descriptor in FILTER_DESCRIPTORS
     if descriptor.decoder is not None
 }
-EXPENSIVE_DECODE_CACHE_BYTES_ENV = "CORE_PDF_EXPENSIVE_DECODE_CACHE_BYTES"
-DEFAULT_EXPENSIVE_DECODE_CACHE_BYTES = 384 * 1024 * 1024
-
-
-def internal_expensive_decode_cache_bytes() -> int:
-    raw = os.environ.get(EXPENSIVE_DECODE_CACHE_BYTES_ENV)
-    if raw is None:
-        return DEFAULT_EXPENSIVE_DECODE_CACHE_BYTES
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return DEFAULT_EXPENSIVE_DECODE_CACHE_BYTES
-
-
-internal_EXPENSIVE_DECODE_CACHE = ImageCache(internal_expensive_decode_cache_bytes())
-
-
-def expensive_decode_cache_key(
-    data: bytes,
-    filters: typing.Sequence[str],
-    params: typing.Sequence[object],
-) -> ImageCacheKey:
-    return ImageCacheKey(
-        kind="expensive_decode",
-        identity=(id(data), len(data), tuple(filters), repr(params)),
-    )
-
-
-def cached_expensive_decode(key: ImageCacheKey, data: bytes) -> bytes | None:
-    entry = internal_EXPENSIVE_DECODE_CACHE.get(key)
-    if entry is None:
-        return None
-    source, decoded = entry
-    # The key embeds id(data), which CPython reuses after a buffer is freed, so
-    # the entry carries its source and is only trusted for that exact object. A
-    # mismatch needs no eviction: the caller decodes and stores under this key,
-    # which replaces the entry.
-    return decoded if source is data else None
-
-
-def store_expensive_decode(key: ImageCacheKey, data: bytes, decoded: bytes) -> None:
-    internal_EXPENSIVE_DECODE_CACHE.put(key, (data, decoded), size=len(data) + len(decoded))
 
 
 def internal_coerce_decoder_bytes(result: object) -> bytes:
@@ -175,16 +130,6 @@ def decode_stream_data(
         normalized_parms = spec.params
     if normalized_parms and len(normalized_parms) != len(filters):
         raise FilterParseError("invalid stream decode parameters")
-    decode_cache_key = (
-        expensive_decode_cache_key(data, filters, normalized_parms)
-        if EXPENSIVE_DECODE_CACHE_FILTERS.intersection(filters)
-        else None
-    )
-    if decode_cache_key is not None:
-        cached = cached_expensive_decode(decode_cache_key, data)
-        if cached is not None:
-            return cached
-
     result = data
     for index, flt in enumerate(filters):
         parms = normalized_parms[index] if index < len(normalized_parms) else None
@@ -196,8 +141,6 @@ def decode_stream_data(
             parent_dictionary=parent_dictionary,
             allow_content_stream_passthrough=len(filters) == 1,
         )
-    if decode_cache_key is not None:
-        store_expensive_decode(decode_cache_key, data, result)
     return result
 
 

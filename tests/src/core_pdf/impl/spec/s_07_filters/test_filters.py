@@ -10,7 +10,7 @@ import numpy
 import pytest
 
 from core_pdf.impl.primitives import PdfName
-from core_pdf.impl.spec.s_07_filters import pipeline, predictors
+from core_pdf.impl.spec.s_07_filters import predictors
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
     apply_ascii_hex,
@@ -27,10 +27,7 @@ from core_pdf.impl.spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_tiff_predictor,
 )
-from core_pdf.impl.spec.s_07_filters.registry import (
-    EXPENSIVE_DECODE_CACHE_FILTERS,
-    PREDICTOR_FILTERS,
-)
+from core_pdf.impl.spec.s_07_filters.registry import PREDICTOR_FILTERS
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples,
@@ -47,25 +44,8 @@ def raw_deflate_compress(data: bytes) -> bytes:
     return compressor.compress(data) + compressor.flush()
 
 
-def test_filter_registry_pins_predictor_and_expensive_decode_policy() -> None:
+def test_filter_registry_pins_predictor_policy() -> None:
     assert frozenset({"FlateDecode", "Fl", "LZWDecode", "LZW"}) == PREDICTOR_FILTERS
-    assert (
-        frozenset(
-            {
-                "CCF",
-                "CCITTFaxDecode",
-                "DCT",
-                "DCTDecode",
-                "Fl",
-                "FlateDecode",
-                "JBIG2Decode",
-                "JPXDecode",
-                "LZW",
-                "LZWDecode",
-            }
-        )
-        == EXPENSIVE_DECODE_CACHE_FILTERS
-    )
 
 
 @pytest.mark.parametrize("alias", ["FlateDecode", "FLATEDECODE", "PlateDecode"])
@@ -339,35 +319,6 @@ def test_empty_png_predictor_avoids_row_allocation(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(predictors, "png_predict", unexpected_decode)
 
     assert apply_png_predictor(b"", params) == b""
-
-
-def test_expensive_decode_cache_reuses_exact_memoryview_backing_bytes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cached: dict[tuple[object, ...], tuple[bytes, bytes]] = {}
-    decoded_sources: list[bytes] = []
-
-    def fake_decode(data: bytes, context: object) -> bytes:
-        decoded_sources.append(data)
-        return b"decoded"
-
-    def fake_get(key: tuple[object, ...], data: bytes) -> bytes | None:
-        entry = cached.get(key)
-        return entry[1] if entry is not None and entry[0] is data else None
-
-    def fake_store(key: tuple[object, ...], data: bytes, decoded: bytes) -> None:
-        cached[key] = (data, decoded)
-
-    monkeypatch.setitem(pipeline.FILTER_MAP, "JPXDecode", fake_decode)
-    monkeypatch.setattr(pipeline, "cached_expensive_decode", fake_get)
-    monkeypatch.setattr(pipeline, "store_expensive_decode", fake_store)
-    source = bytes(bytearray(b"encoded image"))
-    spec = {"Filter": PdfName.of("JPXDecode")}
-
-    assert decode_stream_data(memoryview(source), spec) == b"decoded"
-    assert decode_stream_data(memoryview(source), spec) == b"decoded"
-    assert decoded_sources == [source]
-    assert decoded_sources[0] is source
 
 
 def test_decode_stream_data_preserves_reversed_memoryview_order() -> None:
