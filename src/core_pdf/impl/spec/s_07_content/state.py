@@ -2855,9 +2855,6 @@ class TextState:
             ty = self.as_float(operands[1])
         except (TypeError, ValueError):
             return
-        self.op_Td_values(tx, ty)
-
-    def op_Td_values(self, tx: float, ty: float) -> None:
         self.internal_move_text(tx, ty)
 
     def op_TD(self, operands: OperandWindow, depth: int) -> None:
@@ -2868,9 +2865,6 @@ class TextState:
             ty = self.as_float(operands[1])
         except (TypeError, ValueError):
             return
-        self.op_TD_values(tx, ty)
-
-    def op_TD_values(self, tx: float, ty: float) -> None:
         self.leading = -ty
         self.internal_move_text(tx, ty)
 
@@ -2899,9 +2893,6 @@ class TextState:
             f = self.as_float(operands[5])
         except (TypeError, ValueError):
             return
-        self.op_Tm_values(a, b, c, d_, e, f)
-
-    def op_Tm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None:
         self.flush_run()
         self.tm_a = self.lm_a = a
         self.tm_b = self.lm_b = b
@@ -2918,9 +2909,6 @@ class TextState:
             return
         font_operand = operands[0]
         font_size_operand = operands[1]
-        self.op_Tf_values(font_operand, font_size_operand)
-
-    def op_Tf_values(self, font_operand: Any, font_size_operand: Any) -> None:
         decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
         if (
             self.current_decoder is not None
@@ -2928,14 +2916,10 @@ class TextState:
             and font_operand is self.font_operand
         ):
             if font_size_operand is not self.font_size_operand:
-                value_type = type(font_size_operand)
-                if value_type is float or value_type is int:
-                    font_size = font_size_operand
-                else:
-                    try:
-                        font_size = self.as_float(font_size_operand)
-                    except (TypeError, ValueError):
-                        return
+                try:
+                    font_size = self.as_float(font_size_operand)
+                except (TypeError, ValueError):
+                    return
                 if self.font_size != font_size:
                     self.font_size = font_size
                     self.update_text_scales()
@@ -2991,9 +2975,6 @@ class TextState:
             char_space = self.as_float(operands[0])
         except (TypeError, ValueError):
             return
-        self.op_Tc_values(char_space)
-
-    def op_Tc_values(self, char_space: float) -> None:
         self.char_space = char_space
         self.update_text_scales()
 
@@ -3004,9 +2985,6 @@ class TextState:
             word_space = self.as_float(operands[0])
         except (TypeError, ValueError):
             return
-        self.op_Tw_values(word_space)
-
-    def op_Tw_values(self, word_space: float) -> None:
         if self.word_space == word_space:
             return
         self.word_space = word_space
@@ -3152,24 +3130,9 @@ class TextState:
             self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3:
-            self.op_RG_values(
-                cast("int | float", operands[0]),
-                cast("int | float", operands[1]),
-                cast("int | float", operands[2]),
-            )
-
-    def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None:
-        if self.type3_uncolored:
-            return
-        self.stroke_color_space = "DeviceRGB"
-        self.set_stroke_color(red, green, blue)
-
-    def op_rg_values(self, red: int | float, green: int | float, blue: int | float) -> None:
-        if self.type3_uncolored:
-            return
-        self.fill_color_space = "DeviceRGB"
-        self.set_fill_color(red, green, blue)
+        if len(operands) >= 3 and not self.type3_uncolored:
+            self.stroke_color_space = "DeviceRGB"
+            self.set_stroke_color(operands[0], operands[1], operands[2])
 
     def op_K(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and not self.type3_uncolored:
@@ -3179,46 +3142,30 @@ class TextState:
     def op_w(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                # op_w_value coerces via as_float; the except below covers non-numerics.
-                self.op_w_value(cast("int | float", operands[0]))
+                self.line_width = max(0.0, self.as_float(operands[0]))
             except (TypeError, ValueError):
                 return
-
-    def op_w_value(self, line_width: int | float) -> None:
-        self.line_width = max(0.0, self.as_float(line_width))
 
     def op_J(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                # op_J_value coerces via as_int; the except below covers non-numerics.
-                self.op_J_value(cast("int | float", operands[0]))
+                self.line_cap = self.as_int(operands[0])
             except (TypeError, ValueError):
                 return
-
-    def op_J_value(self, line_cap: int | float) -> None:
-        self.line_cap = self.as_int(line_cap)
 
     def op_j(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                # op_j_value coerces via as_int; the except below covers non-numerics.
-                self.op_j_value(cast("int | float", operands[0]))
+                self.line_join = self.as_int(operands[0])
             except (TypeError, ValueError):
                 return
-
-    def op_j_value(self, line_join: int | float) -> None:
-        self.line_join = self.as_int(line_join)
 
     def op_M(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
-                # op_M_value coerces via as_float; the except below covers non-numerics.
-                self.op_M_value(cast("int | float", operands[0]))
+                self.miter_limit = max(1.0, self.as_float(operands[0]))
             except (TypeError, ValueError):
                 return
-
-    def op_M_value(self, miter_limit: int | float) -> None:
-        self.miter_limit = max(1.0, self.as_float(miter_limit))
 
     def op_d(self, operands: OperandWindow, depth: int) -> None:
         if not operands or len(operands) < 2:
@@ -3238,33 +3185,23 @@ class TextState:
     def op_m(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2:
             try:
-                # op_m_values coerces via as_float; the except below covers non-numerics.
-                self.op_m_values(cast("int | float", operands[0]), cast("int | float", operands[1]))
+                point = (self.as_float(operands[0]), self.as_float(operands[1]))
             except (TypeError, ValueError):
                 return
-
-    def op_m_values(self, x: int | float, y: int | float) -> None:
-        point = (self.as_float(x), self.as_float(y))
-        if self.internal_records_path():
-            self.current_path.move_to(*point)
-        self.current_point = point
-        self.subpath_start = point
+            if self.internal_records_path():
+                self.current_path.move_to(*point)
+            self.current_point = point
+            self.subpath_start = point
 
     def op_l(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2 and self.current_point is not None:
             try:
-                # op_l_values coerces via as_float; the except below covers non-numerics.
-                self.op_l_values(cast("int | float", operands[0]), cast("int | float", operands[1]))
+                point = (self.as_float(operands[0]), self.as_float(operands[1]))
             except (TypeError, ValueError):
                 return
-
-    def op_l_values(self, x: int | float, y: int | float) -> None:
-        if self.current_point is None:
-            return
-        point = (self.as_float(x), self.as_float(y))
-        if self.internal_records_path():
-            self.current_path.line_to(*point)
-        self.current_point = point
+            if self.internal_records_path():
+                self.current_path.line_to(*point)
+            self.current_point = point
 
     def op_re(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4:
@@ -3273,17 +3210,10 @@ class TextState:
                 w, h = self.as_float(operands[2]), self.as_float(operands[3])
             except (TypeError, ValueError):
                 return
-            self.op_re_values(x, y, w, h)
-
-    def op_re_values(
-        self, x: int | float, y: int | float, width: int | float, height: int | float
-    ) -> None:
-        x_float = float(x)
-        y_float = float(y)
-        if self.internal_records_path():
-            self.current_path.rect(x_float, y_float, float(width), float(height))
-        self.current_point = (x_float, y_float)
-        self.subpath_start = (x_float, y_float)
+            if self.internal_records_path():
+                self.current_path.rect(x, y, w, h)
+            self.current_point = (x, y)
+            self.subpath_start = (x, y)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
@@ -3990,17 +3920,6 @@ class TextState:
         except (TypeError, ValueError):
             return
 
-        self.op_cm_values(m_a, m_b, m_c, m_d, m_e, m_f)
-
-    def op_cm_values(
-        self,
-        m_a: float,
-        m_b: float,
-        m_c: float,
-        m_d: float,
-        m_e: float,
-        m_f: float,
-    ) -> None:
         ca, cb, cc, cd, ce, cf = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
         self.ca = m_a * ca + m_b * cc
         self.cb = m_a * cb + m_b * cd
@@ -4016,12 +3935,9 @@ class TextState:
             self.set_fill_color(operands[0])
 
     def op_rg(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3:
-            self.op_rg_values(
-                cast("int | float", operands[0]),
-                cast("int | float", operands[1]),
-                cast("int | float", operands[2]),
-            )
+        if len(operands) >= 3 and not self.type3_uncolored:
+            self.fill_color_space = "DeviceRGB"
+            self.set_fill_color(operands[0], operands[1], operands[2])
 
     def op_k(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and not self.type3_uncolored:
