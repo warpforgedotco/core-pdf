@@ -13,6 +13,7 @@ from core_pdf.api.compat._text_state import (
     internal_flush_text,
     internal_legacy_base_table,
     internal_positioned_text,
+    internal_PREDEFINED_ENCODING_CODECS,
 )
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
@@ -43,24 +44,6 @@ internal_LEGACY_GLYPH_ALIASES = {
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
     "negationslash": "⁄",
-}
-internal_PREDEFINED_ENCODING_CODECS = {
-    "Identity-H": "utf-16-be",
-    "Identity-V": "utf-16-be",
-    "GB-EUC-H": "gbk",
-    "GB-EUC-V": "gbk",
-    "GBpc-EUC-H": "gb2312",
-    "GBpc-EUC-V": "gb2312",
-    "GBK-EUC-H": "gbk",
-    "GBK-EUC-V": "gbk",
-    "GBK2K-H": "gb18030",
-    "GBK2K-V": "gb18030",
-    "ETen-B5-H": "cp950",
-    "ETen-B5-V": "cp950",
-    "ETenms-B5-H": "cp950",
-    "ETenms-B5-V": "cp950",
-    "90ms-RKSJ-H": "cp932",
-    "90ms-RKSJ-V": "cp932",
 }
 
 
