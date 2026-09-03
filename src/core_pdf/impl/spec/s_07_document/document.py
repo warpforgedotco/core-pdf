@@ -101,7 +101,6 @@ class PdfDocument(
         "file_handle",
         "page_dicts_cache",
         "pages_cache",
-        "page_index_cache",
         "oc_layers",
         "internal_cache_lock",
         "internal_page_locks",
@@ -124,7 +123,6 @@ class PdfDocument(
     file_handle: BinaryIO | None
     page_dicts_cache: list[PdfDict] | None
     pages_cache: LazyPageList[internal_PageT] | None
-    page_index_cache: dict[int, int] | None
     oc_layers: dict[str, bool] | None
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
@@ -288,7 +286,6 @@ class PdfDocument(
     def _clear_document_caches(self) -> None:
         self.page_dicts_cache = None
         self.pages_cache = None
-        self.page_index_cache = None
         self.oc_layers = None
 
     # Source loading and security
@@ -757,31 +754,24 @@ class PdfDocument(
         if not isinstance(page_obj, dict):
             return None
         with self.internal_cache_lock:
-            if self.page_index_cache is None:
-                if self.page_dicts_cache is None:
-                    self.page_dicts_cache = self.build_page_dicts()
-                self.page_index_cache = {
-                    id(page_dict): index for index, page_dict in enumerate(self.page_dicts_cache)
-                }
-            page_index = self.page_index_cache.get(id(page_obj))
-            if page_index is not None:
-                return page_index
+            page_dicts = self.page_dicts_cache
+            if page_dicts is None:
+                page_dicts = self.build_page_dicts()
+                self.page_dicts_cache = page_dicts
+            for index, cached_page in enumerate(page_dicts):
+                if cached_page is page_obj:
+                    return index
             page_struct_parents = page_obj.get("StructParents")
-            if page_struct_parents is not None and self.page_dicts_cache is not None:
-                for index, cached_page in enumerate(self.page_dicts_cache):
+            if page_struct_parents is not None:
+                for index, cached_page in enumerate(page_dicts):
                     if cached_page.get("StructParents") == page_struct_parents:
-                        self.page_index_cache[id(page_obj)] = index
                         return index
-            if self.page_dicts_cache is None:
-                return None
-            for index, cached_page in enumerate(self.page_dicts_cache):
+            for index, cached_page in enumerate(page_dicts):
                 if cached_page == page_obj:
-                    self.page_index_cache[id(page_obj)] = index
                     return index
             signature = self.recovered_page_signature(cast(PdfDict, page_obj))
-            for index, cached_page in enumerate(self.page_dicts_cache):
+            for index, cached_page in enumerate(page_dicts):
                 if self.recovered_page_signature(cached_page) == signature:
-                    self.page_index_cache[id(page_obj)] = index
                     return index
             return None
 
