@@ -99,7 +99,6 @@ class PdfDocument(
         "pages_cache",
         "page_index_cache",
         "named_destinations_cache",
-        "embedded_files_cache",
         "oc_layers",
         "internal_cache_lock",
         "internal_page_locks",
@@ -124,7 +123,6 @@ class PdfDocument(
     pages_cache: LazyPageList[internal_PageT] | None
     page_index_cache: dict[int, int] | None
     named_destinations_cache: dict[str, RawNamedDestination] | None
-    embedded_files_cache: list[RawEmbeddedFile] | None
     oc_layers: dict[str, bool] | None
     internal_cache_lock: threading.RLock
     internal_page_locks: dict[int, threading.RLock]
@@ -290,7 +288,6 @@ class PdfDocument(
         self.pages_cache = None
         self.page_index_cache = None
         self.named_destinations_cache = None
-        self.embedded_files_cache = None
         self.oc_layers = None
 
     # Source loading and security
@@ -1305,14 +1302,6 @@ class PdfDocument(
     # Attachments and optional content
 
     def embedded_files(self) -> list[RawEmbeddedFile]:
-        with self.internal_cache_lock:
-            files = self.embedded_files_cache
-            if files is None:
-                files = self.build_embedded_files()
-                self.embedded_files_cache = files
-            return list(files)
-
-    def build_embedded_files(self) -> list[RawEmbeddedFile]:
         names = self.resolver.resolve(self.catalog().get("Names"))
         if not isinstance(names, dict):
             return []
