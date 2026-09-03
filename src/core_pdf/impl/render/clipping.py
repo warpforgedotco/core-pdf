@@ -18,12 +18,11 @@ from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
 
 class internal_ClipState:
-    """Clip stack, its derived metadata, and the caches that memoize both.
+    """Clip stack and derived row visibility.
 
     Lifted out of ``RenderedPage.rasterize``. ``clip_path_stack`` is shared by
     reference with the rasterizer, which pushes and pops it as the content
-    stream nests; every mutation must go through ``mark_dirty`` so the cached
-    box and the row-span generation counter stay in step.
+    stream nests; mutations clear the cached visible rows.
 
     Instance attributes are hoisted into locals inside the hot methods, matching
     the convention the content-stream dispatch loop already uses.
@@ -31,8 +30,6 @@ class internal_ClipState:
 
     __slots__ = (
         "clip_path_stack",
-        "path_bbox_cache",
-        "path_rect_cache",
         "path_edge_cache",
         "clip_row_span_cache",
         "clip_visible_row_cache",
@@ -41,10 +38,6 @@ class internal_ClipState:
         "scale",
         "width",
         "height",
-        "metadata_dirty",
-        "stack_generation",
-        "cached_box",
-        "cached_is_rectangular",
         "page_box_to_pixels",
         "page_x_to_pixel_span",
     )
@@ -60,27 +53,19 @@ class internal_ClipState:
         height: int,
     ) -> None:
         self.clip_path_stack = clip_path_stack
-        self.path_bbox_cache: dict[int, tuple[float, float, float, float] | None] = {}
-        self.path_rect_cache: dict[int, tuple[float, float, float, float] | None] = {}
         self.path_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
         self.clip_row_span_cache: dict[tuple[int, int, str], tuple[tuple[int, int], ...]] = {}
-        self.clip_visible_row_cache: dict[tuple[int, int], tuple[tuple[int, int], ...]] = {}
+        self.clip_visible_row_cache: dict[int, tuple[tuple[int, int], ...]] = {}
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
         self.scale = scale
         self.width = width
         self.height = height
-        self.metadata_dirty = True
-        self.stack_generation = 0
-        self.cached_box: tuple[float, float, float, float] | None = None
         self.page_box_to_pixels, self.page_x_to_pixel_span = internal_make_page_geometry(
             crop_x0, crop_y1, scale, width, height
         )
-        self.cached_is_rectangular = True
 
-    def refresh_clip_metadata(self) -> None:
-        if not self.metadata_dirty:
-            return
+    def clip_metadata(self) -> tuple[tuple[float, float, float, float] | None, bool]:
         clip: tuple[float, float, float, float] | None = None
         rectangular = True
         axis_aligned_rect_box = self.axis_aligned_rect_box
@@ -97,24 +82,16 @@ class internal_ClipState:
             clip = box if clip is None else internal_intersect_box(clip, box)
             if clip is None:
                 break
-        self.cached_box = clip
-        self.cached_is_rectangular = rectangular
-        self.metadata_dirty = False
+        return clip, rectangular
 
     def mark_clip_metadata_dirty(self) -> None:
-        self.metadata_dirty = True
-        self.stack_generation += 1
-        # Every entry is keyed by the generation that just advanced, so the whole
-        # cache is unreachable now; keeping it only grows the page-render dict.
         self.clip_visible_row_cache.clear()
 
     def current_clip(self) -> tuple[float, float, float, float] | None:
-        self.refresh_clip_metadata()
-        return self.cached_box
+        return self.clip_metadata()[0]
 
     def clip_paths_are_axis_aligned_rects(self) -> bool:
-        self.refresh_clip_metadata()
-        return self.cached_is_rectangular
+        return self.clip_metadata()[1]
 
     def clipped_pixel_box(
         self, box: tuple[float, float, float, float]
@@ -126,17 +103,11 @@ class internal_ClipState:
         Every painter opens this way; only the sentinel each hands back to its
         own caller differs, so that part stays at the call site.
 
-        An empty clip stack leaves ``refresh_clip_metadata`` with the ``None``
-        it starts from, so testing the stack first is exactly ``current_clip()``
-        without the refresh.
+        An empty clip stack has no clip box, so it goes directly to pixel
+        conversion.
         """
         if self.clip_path_stack:
-            # current_clip() inlined: reading the flag its own body tests first
-            # skips both a bound-method allocation and a frame on the clean
-            # path, which is the one every painter takes.
-            if self.metadata_dirty:
-                self.refresh_clip_metadata()
-            clip_box = self.cached_box
+            clip_box = self.current_clip()
             if clip_box is not None:
                 clipped = internal_intersect_box(box, clip_box)
                 if clipped is None:
@@ -150,22 +121,10 @@ class internal_ClipState:
     def path_bbox(self, path: Any) -> tuple[float, float, float, float] | None:
         if type(path) is not CapturedPath:
             return None
-        cache = self.path_bbox_cache
-        cache_key = id(path)
-        if cache_key in cache:
-            return cache[cache_key]
-        box = path.bbox()
-        cache[cache_key] = box
-        return box
+        return path.bbox()
 
     def axis_aligned_rect_box(self, path: CapturedPath) -> tuple[float, float, float, float] | None:
-        path_rect_cache = self.path_rect_cache
-        cache_key = id(path)
-        if cache_key in path_rect_cache:
-            return path_rect_cache[cache_key]
-        rect = path.axis_aligned_rect()
-        path_rect_cache[cache_key] = rect
-        return rect
+        return path.axis_aligned_rect()
 
     def path_edges(self, path: CapturedPath) -> list[tuple[float, float, float, float]]:
         path_edge_cache = self.path_edge_cache
@@ -231,7 +190,7 @@ class internal_ClipState:
 
     def clip_row_visible_spans(self, py: int) -> tuple[tuple[int, int], ...]:
         clip_visible_row_cache = self.clip_visible_row_cache
-        cache_key = (self.stack_generation, py)
+        cache_key = py
         cached = clip_visible_row_cache.get(cache_key)
         if cached is not None:
             return cached

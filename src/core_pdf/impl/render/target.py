@@ -333,10 +333,6 @@ class internal_RasterTarget(
         path = item.path
         if type(path) is not CapturedPath:
             return
-        item_bbox = item.bbox
-        if item_bbox is not None:
-            # compose_page already computed ``path.bbox()`` for the item.
-            self.clip.path_bbox_cache.setdefault(id(path), item_bbox)
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
