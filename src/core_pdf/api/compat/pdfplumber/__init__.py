@@ -258,13 +258,11 @@ class EnginePageAdapter:
 
     def text_characters(self) -> Iterator[Any]:
         from ..pdfminer import (
-            internal_pdfminer_descent,
             internal_pdfminer_embedded_cmap_is_unusable,
             internal_pdfminer_font_name,
             internal_pdfminer_glyph_text,
             internal_pdfminer_ligature_overrides,
             internal_pdfminer_literal_glyphs,
-            internal_pdfminer_normalized_width,
             internal_pdfminer_offsets,
             internal_pdfminer_validate_page_resources,
         )
@@ -286,17 +284,13 @@ class EnginePageAdapter:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
             offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
-            projected_origin = pdfminer_offsets.origins.get(id(glyph))
             x0 += offset_x
             x1 += offset_x
             y0 += offset_y
             y1 += offset_y
             font_height = glyph.effective_font_height or glyph.font_size
-            width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
-            width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
             provenance = dict(glyph.provenance) if glyph.provenance else {}
             matrix = provenance.get("text_matrix")
-            origin = None
             upright = glyph.rotation_angle % 180 == 0
             advance = x1 - x0
             if isinstance(matrix, (tuple, list)) and len(matrix) == 4:
@@ -317,78 +311,7 @@ class EnginePageAdapter:
                 # describes the matrix handedness used by word grouping, not
                 # whether the baseline is horizontal on the rendered page.
                 upright = a * d * scaling > 0.0 and b * c <= 0.0
-            if (
-                getattr(glyph.font_decoder, "is_vertical", False)
-                and width_code is not None
-                and isinstance(matrix, (tuple, list))
-                and len(matrix) == 4
-                and isinstance(origin, (tuple, list))
-                and len(origin) == 2
-            ):
-                metric = glyph.font_decoder.vertical_glyph_metric(width_code)
-                a, b, c, d = (float(value) for value in matrix)
-                origin_x, origin_y = (
-                    projected_origin
-                    if projected_origin is not None
-                    else (float(origin[0]) + offset_x, float(origin[1]) + offset_y)
-                )
-                font_size = glyph.font_size
-                scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
-                local_left = -float(metric[1]) * font_size * 0.001
-                local_top = (1000.0 - float(metric[2])) * font_size * 0.001 + float(
-                    provenance.get("text_rise", 0.0)
-                )
-                advance = float(metric[0]) * font_size * 0.001 * scaling
-                corners = tuple(
-                    (
-                        a * horizontal + c * vertical + origin_x,
-                        b * horizontal + d * vertical + origin_y,
-                    )
-                    for horizontal in (local_left, local_left + font_size)
-                    for vertical in (local_top + advance, local_top)
-                )
-                x0 = min(point[0] for point in corners)
-                y0 = min(point[1] for point in corners)
-                x1 = max(point[0] for point in corners)
-                y1 = max(point[1] for point in corners)
-                font_height = x1 - x0
-            elif (
-                not getattr(glyph.font_decoder, "is_vertical", False)
-                and width_code is not None
-                and callable(width_lookup)
-            ):
-                if (
-                    isinstance(matrix, (tuple, list))
-                    and len(matrix) == 4
-                    and isinstance(origin, (tuple, list))
-                    and len(origin) == 2
-                ):
-                    a, b, c, d = (float(value) for value in matrix)
-                    origin_x, origin_y = (
-                        projected_origin
-                        if projected_origin is not None
-                        else (float(origin[0]) + offset_x, float(origin[1]) + offset_y)
-                    )
-                    font_size = glyph.font_size
-                    scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
-                    advance = internal_pdfminer_normalized_width(glyph) * font_size * scaling
-                    descent = internal_pdfminer_descent(glyph)
-                    low = descent * font_size + float(provenance.get("text_rise", 0.0))
-                    high = low + font_size
-                    corners = tuple(
-                        (
-                            a * along + c * vertical + origin_x,
-                            b * along + d * vertical + origin_y,
-                        )
-                        for along in (0.0, advance)
-                        for vertical in (low, high)
-                    )
-                    x0 = min(point[0] for point in corners)
-                    y0 = min(point[1] for point in corners)
-                    x1 = max(point[0] for point in corners)
-                    y1 = max(point[1] for point in corners)
-                    font_height = y1 - y0
-            elif glyph.rotation_angle % 360 == 90:
+            if glyph.rotation_angle % 360 == 90:
                 x0 = x1 - font_height
             elif glyph.rotation_angle % 360 == 270:
                 x1 = x0 + font_height

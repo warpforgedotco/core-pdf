@@ -1346,22 +1346,14 @@ def internal_pdfminer_literal_glyphs(
     return source, {id(glyph): (0.0, 0.0) for glyph in source}
 
 
-class _PdfminerOffsetMap(dict[int, tuple[float, float]]):
-    """Device offsets plus exact projected origins for LTChar reconstruction."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.origins: dict[int, tuple[float, float]] = {}
-
-
 def internal_pdfminer_offsets(
     glyphs: tuple[Any, ...],
     literal_offsets: Mapping[int, tuple[float, float]],
     *,
     discard_unusable_cmap: bool = True,
-) -> _PdfminerOffsetMap:
+) -> dict[int, tuple[float, float]]:
     """Reproduce pdfminer's cursor after legacy decoding and width loss."""
-    offsets = _PdfminerOffsetMap()
+    offsets: dict[int, tuple[float, float]] = {}
     correction_text_x = 0.0
     correction_text_y = 0.0
     for glyph_index, glyph in enumerate(glyphs):
@@ -1814,9 +1806,6 @@ def extract_pages(  # noqa: C901
                     resolved_text_matrix = (*text_matrix, 0.0, 0.0)
                 else:
                     resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-                pdfminer_matrix_origin = (0.0, 0.0)
-                pdfminer_cursor = (0.0, 0.0)
-                exact_cursor_projection = False
                 horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
                 coordinates_in_layout_space = False
                 if (
@@ -1925,56 +1914,23 @@ def extract_pages(  # noqa: C901
                     advance = normalized_width * horizontal_scale * glyph.font_size
                     media_left, media_bottom, _media_right, _media_top = page_media_box
                     page_rotation = int(page.rotation) % 360
-                    if exact_cursor_projection:
-                        matrix_origin_values = cast(tuple[object, object], pdfminer_matrix_origin)
-                        cursor_values = cast(tuple[object, object], pdfminer_cursor)
-                        matrix_origin_x, matrix_origin_y = (
-                            float(cast(Any, value)) for value in matrix_origin_values
-                        )
-                        cursor_x, cursor_y = (float(cast(Any, value)) for value in cursor_values)
-                        (
-                            matrix_origin_x,
-                            matrix_origin_y,
-                            matrix_a,
-                            matrix_b,
-                            matrix_c,
-                            matrix_d,
-                        ) = _pdfminer_rotated_text_matrix(
-                            matrix_origin_x + offset_x - media_left,
-                            matrix_origin_y + offset_y - media_bottom,
-                            (matrix_a, matrix_b, matrix_c, matrix_d),
-                            page_rotation,
-                            page_width,
-                            page_height,
-                        )
-                        # Preserve PDFMiner's translate_matrix operation order:
-                        # rotate the text matrix first, then translate it by the
-                        # local line cursor. Exact layout grouping can depend on
-                        # the resulting final ULP.
-                        layout_origin_x = (
-                            cursor_x * matrix_a + cursor_y * matrix_c + matrix_origin_x
-                        )
-                        layout_origin_y = (
-                            cursor_x * matrix_b + cursor_y * matrix_d + matrix_origin_y
-                        )
-                    else:
-                        layout_origin_x = origin_x - media_left
-                        layout_origin_y = origin_y - media_bottom
-                        (
-                            layout_origin_x,
-                            layout_origin_y,
-                            matrix_a,
-                            matrix_b,
-                            matrix_c,
-                            matrix_d,
-                        ) = _pdfminer_rotated_text_matrix(
-                            layout_origin_x,
-                            layout_origin_y,
-                            (matrix_a, matrix_b, matrix_c, matrix_d),
-                            page_rotation,
-                            page_width,
-                            page_height,
-                        )
+                    layout_origin_x = origin_x - media_left
+                    layout_origin_y = origin_y - media_bottom
+                    (
+                        layout_origin_x,
+                        layout_origin_y,
+                        matrix_a,
+                        matrix_b,
+                        matrix_c,
+                        matrix_d,
+                    ) = _pdfminer_rotated_text_matrix(
+                        layout_origin_x,
+                        layout_origin_y,
+                        (matrix_a, matrix_b, matrix_c, matrix_d),
+                        page_rotation,
+                        page_width,
+                        page_height,
+                    )
                     corners = tuple(
                         (
                             along * matrix_a + vertical * matrix_c + layout_origin_x,
