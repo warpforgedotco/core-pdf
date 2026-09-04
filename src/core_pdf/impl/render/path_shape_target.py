@@ -32,9 +32,6 @@ class internal_PathShapeTargetMixin:
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
     ) -> None:
-        # This is the single hottest method in the rasterizer — roughly 1.8M
-        # calls over the corpus — so only the fast path's names are hoisted here.
-        # The scanline loop below hoists the rest when it is actually reached.
         if box is None:
             return
         buffer_stack = self.buffer_stack
