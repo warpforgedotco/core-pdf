@@ -504,6 +504,8 @@ class PageEvidence:
 @dataclass(frozen=True, slots=True)
 class CapturedPage:
     page: Any
+    width: float
+    height: float
     program: PageProgram
     observations: ObservationBatch
     runs: tuple[TextRun, ...]

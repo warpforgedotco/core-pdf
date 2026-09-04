@@ -104,7 +104,7 @@ def extract_chart_table(capture: CapturedPage, observations: ObservationBatch) -
             column += 1
     if len(cells) < 3 or not boxes:
         return None
-    row_tolerance = max(6.0, float(capture.page.height) * 0.008)
+    row_tolerance = max(6.0, capture.height * 0.008)
     row_groups: list[tuple[float, list[TableCell]]] = []
     for cell in sorted(
         cells,
@@ -607,7 +607,7 @@ def internal_stream_tables(
         columns = internal_aligned_column_clusters(
             observations,
             rows,
-            float(capture.page.width),
+            capture.width,
             minimum_rows=minimum_rows,
         )
         if len(columns) < 2:
@@ -659,7 +659,7 @@ def internal_stream_tables(
             start_order,
             observations,
             rows,
-            float(capture.page.width),
+            capture.width,
         )
         if compact is not None:
             tables.append(compact)

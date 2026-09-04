@@ -242,7 +242,7 @@ class internal_OcrSession:
                 ocr_pass,
                 page_area=max(
                     1.0,
-                    float(self.capture.page.width) * float(self.capture.page.height),
+                    self.capture.width * self.capture.height,
                 ),
             )
         )

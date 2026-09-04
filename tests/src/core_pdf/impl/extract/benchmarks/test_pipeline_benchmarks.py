@@ -110,8 +110,8 @@ def test_layout_blocks_benchmark(benchmark, dense: Staged) -> None:
         obstacles=dense.obstacles,
         use_xy_cut=True,
         rotation=0,
-        page_width=float(dense.capture.page.width),
-        page_height=float(dense.capture.page.height),
+        page_width=dense.capture.width,
+        page_height=dense.capture.height,
     )
 
     assert blocks

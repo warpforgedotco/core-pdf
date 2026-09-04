@@ -535,8 +535,8 @@ def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float
         evidence.full_page_image or evidence.image_area_ratio >= 0.65
     ):
         return None
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     bounds = bbox_union(evidence.image_boxes)
     assert bounds is not None
     x0, y0, x1, y1 = bounds

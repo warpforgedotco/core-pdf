@@ -901,6 +901,8 @@ def internal_capture_from_program(
     )
     captured = CapturedPage(
         page=page,
+        width=page_width,
+        height=page_height,
         program=program,
         observations=observations,
         runs=runs,

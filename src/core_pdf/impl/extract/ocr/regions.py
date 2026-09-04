@@ -49,8 +49,8 @@ def internal_page_image_regions(
     maximum_axis_deviation: float = 1e-5,
     upscale: bool = True,
 ) -> tuple[internal_RasterRegion, ...]:
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     page_area = max(1.0, page_width * page_height)
     regions: list[internal_RasterRegion] = []
     for image in getattr(capture, "drawings", ()):
@@ -179,8 +179,8 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
     This deliberately does not render a preview image.  Native text, image bounds,
     captured paths, and grid lines are already available from the canonical page IR.
     """
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     page_area = max(1.0, page_width * page_height)
     padding = max(6.0, min(36.0, min(page_width, page_height) * 0.01))
     candidates: list[internal_OcrRegion] = []
@@ -446,8 +446,8 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
 
 def internal_has_distributed_outline_text(capture: CapturedPage) -> bool:
     """Detect pages whose text was converted into many small filled vector paths."""
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     max_width = max(24.0, page_width * 0.04)
     max_height = max(24.0, page_height * 0.04)
     boxes = tuple(

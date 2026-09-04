@@ -133,8 +133,8 @@ class internal_PageExtraction:
             obstacles=(*table_obstacles, *image_obstacles),
             use_xy_cut=use_xy_cut,
             rotation=int(getattr(self.page, "rotation", 0) or 0),
-            page_width=float(capture.page.width),
-            page_height=float(capture.page.height),
+            page_width=capture.width,
+            page_height=capture.height,
         )
         return internal_PageProducts(observations, tables, blocks, order_evidence)
 

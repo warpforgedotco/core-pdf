@@ -65,8 +65,8 @@ class internal_DisjointSet:
 def internal_axis_segments(
     capture: CapturedPage,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     lines = capture.grid_lines
     if not lines:
         empty = numpy.empty((0, 3), dtype=numpy.float32)

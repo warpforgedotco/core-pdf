@@ -408,12 +408,12 @@ def internal_candidate_region_tasks(
             >= getattr(
                 getattr(capture, "evidence", None),
                 "page_area",
-                float(capture.page.width) * float(capture.page.height),
+                capture.width * capture.height,
             )
             * 0.75
             and internal_ocr_region_coverage(
                 region.page_box,
-                (0.0, 0.0, float(capture.page.width), float(capture.page.height)),
+                (0.0, 0.0, capture.width, capture.height),
             )
             >= 0.90
             and getattr(getattr(capture, "evidence", None), "vector_complexity", 0)
