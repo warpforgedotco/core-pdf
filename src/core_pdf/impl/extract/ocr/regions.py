@@ -53,7 +53,7 @@ def internal_page_image_regions(
     page_height = capture.height
     page_area = max(1.0, page_width * page_height)
     regions: list[internal_RasterRegion] = []
-    for image in getattr(capture, "drawings", ()):
+    for image in capture.program.drawings:
         if getattr(image, "kind", None) != "image":
             continue
         orientation = internal_direct_image_orientation(
@@ -214,7 +214,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         )
         return min(1.0, float(numpy.sum(overlap_width * overlap_height)) / area)
 
-    for drawing in getattr(capture, "drawings", ()):
+    for drawing in capture.program.drawings:
         if getattr(drawing, "kind", None) not in {"fill", "fillstroke", "stroke"}:
             continue
         box = rect_tuple(getattr(drawing, "rect", None))
@@ -234,11 +234,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
             if padded is not None:
                 candidates.append(internal_OcrRegion(padded, 3.5, ("uncovered-vector",)))
 
-    if hasattr(capture, "grid_lines"):
-        horizontal, vertical = internal_axis_segments(capture)
-    else:
-        horizontal = numpy.empty((0, 3), dtype=numpy.float32)
-        vertical = numpy.empty((0, 3), dtype=numpy.float32)
+    horizontal, vertical = internal_axis_segments(capture)
     for component_horizontal, component_vertical in internal_grid_components(horizontal, vertical):
         x0 = min(float(component_horizontal[:, 0].min()), float(component_vertical[:, 0].min()))
         y0 = min(float(component_horizontal[:, 2].min()), float(component_vertical[:, 1].min()))
@@ -281,7 +277,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
     columns = 6
     rows = max(2, min(8, int(round(columns * page_height / max(1.0, page_width)))))
     vector_density = numpy.zeros(rows * columns, dtype=numpy.float32)
-    for drawing in getattr(capture, "drawings", ()):
+    for drawing in capture.program.drawings:
         if getattr(drawing, "kind", None) not in VECTOR_PAINT_KINDS:
             continue
         box = rect_tuple(getattr(drawing, "rect", None))
@@ -292,7 +288,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         column = min(columns - 1, max(0, int(center_x * columns / max(1.0, page_width))))
         row = min(rows - 1, max(0, int(center_y * rows / max(1.0, page_height))))
         vector_density[row * columns + column] += 1.0
-    grid_lines = getattr(capture, "grid_lines", ())
+    grid_lines = capture.program.lines
     if len(grid_lines):
         # Bin every grid line at once.
         line_x0, line_y0, line_x1, line_y1 = internal_line_coordinate_columns(grid_lines)
@@ -376,7 +372,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         label_boxes: list[list[tuple[float, float, float, float]]] = [
             [] for _ in range(label_rows * label_columns)
         ]
-        for drawing in getattr(capture, "drawings", ()):
+        for drawing in capture.program.drawings:
             if getattr(drawing, "kind", None) not in VECTOR_PAINT_KINDS:
                 continue
             box = rect_tuple(getattr(drawing, "rect", None))
@@ -452,7 +448,7 @@ def internal_has_distributed_outline_text(capture: PageAnalysis) -> bool:
     max_height = max(24.0, page_height * 0.04)
     boxes = tuple(
         box
-        for drawing in getattr(capture, "drawings", ())
+        for drawing in capture.program.drawings
         if getattr(drawing, "kind", None) in {"fill", "fillstroke"}
         and (box := rect_tuple(getattr(drawing, "rect", None))) is not None
         and 0.0 < box[2] - box[0] <= max_width

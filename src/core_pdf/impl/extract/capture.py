@@ -1000,7 +1000,7 @@ def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
     paint_count = 0
     stroke_count = 0
     compact_stroke_count = 0
-    for drawing in getattr(capture, "drawings", ()):
+    for drawing in capture.program.drawings:
         kind = getattr(drawing, "kind", None)
         if kind not in VECTOR_PAINT_KINDS:
             continue

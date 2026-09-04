@@ -187,7 +187,7 @@ def internal_drawing_is_simple_rectangle(drawing: object) -> bool:
 def internal_has_only_simple_vector_rectangles(capture: PageAnalysis) -> bool:
     drawings = tuple(
         drawing
-        for drawing in getattr(capture, "drawings", ())
+        for drawing in capture.program.drawings
         if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
     )
     return len(drawings) >= 32 and all(
