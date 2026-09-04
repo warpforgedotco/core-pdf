@@ -87,40 +87,6 @@ Dependency direction is enforced at stable boundaries by the import-linter contr
 document → extract → render → output → model
 ```
 
-This is deliberately not a total order over every implementation module. `extract/` consumes the
-text-line records and reconstruction primitives in `layout/`, while methods on `output.py` call
-`serialize.py` through function-local imports and serializers consume the output records. The
-former per-stage extraction and OCR layer contracts were retired when those feature namespaces
-were consolidated; the stable floors and specification boundaries remain enforced.
-
-Three packages form dependency floors:
-
-| Package | May import internally |
-| --- | --- |
-| `impl/runtime/` | nothing |
-| `impl/model/` | base modules directly under `impl/` |
-| `impl/spec/s_07_syntax_primitives/` | `impl/primitives.py` |
-
-`impl/spec/` is a sibling of the derived-processing packages. Derived consumers may depend on it;
-within the derived layers, the spec may depend only on the low-level capture model. Base modules
-under `impl/` never depend on the spec or derived packages.
-
-Public extraction records belong in `impl/records.py`; immutable document/page output belongs in
-`impl/output.py`, and format conversion belongs in `impl/serialize.py`. The `model/` package owns
-internal capture records, generic spatial indexing, and low-level records shared with derived
-processing, while `layout/` owns text-line reconstruction and its diagnostics. Both packages avoid
-convenience re-exports: import a symbol from the module that owns it. Document-scoped caches and
-page locks live on the spec-level document, with no process-global fallback that could couple
-unrelated documents.
-
-Two relationships sit outside the simple package ordering:
-
-- `s_14_structure/tree.py` uses type-only references to the spec-level document and page, while
-  `s_07_document` imports the structure tree at runtime. Import-linter excludes those
-  `TYPE_CHECKING` imports because it enforces the runtime graph.
-- Output-record methods call serializers through function-local imports. This keeps serializer
-  entry points on the records without creating a module-initialization cycle.
-
 ### The `spec/s_NN_*` scheme
 
 Subpackages under `spec/` mirror chapters of the PDF specification:
