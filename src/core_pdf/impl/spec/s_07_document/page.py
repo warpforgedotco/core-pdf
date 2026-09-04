@@ -282,7 +282,13 @@ class PdfPage:
         )
         self.consume_contents(state)
         consume_annotation_appearances(self, state)
-        return PageProgram.from_state(state)
+        return PageProgram(
+            runs=tuple(state.runs),
+            glyphs=tuple(state.glyphs),
+            drawings=tuple(state.drawings),
+            inline_images=tuple(state.inline_images),
+            lines=tuple(state.lines),
+        )
 
     def collect_inherited_values(self) -> InheritedValueMap:
         return collect_inherited_values(

@@ -39,7 +39,7 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedPath,
     CapturedSubpath,
 )
-from core_pdf.impl.spec.s_07_content.page_program import PageCommandKind, PageProgram
+from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_content.state import (
     TextState,
     internal_NON_PAINTING_RENDER_MODES,
@@ -482,16 +482,12 @@ def compose_page(
         text_clipping_subpaths.clear()
 
     for command in commands:
-        kind = command.kind
-        if not options.include_text and kind in (PageCommandKind.TEXT, PageCommandKind.GLYPH):
+        if not options.include_text and isinstance(command, (TextRun, GlyphObservation)):
             continue
-        payload = command.payload
-        if kind == PageCommandKind.TEXT:
-            assert isinstance(payload, TextRun)
-            append_text_run(payload)
-        elif kind == PageCommandKind.GLYPH:
-            assert isinstance(payload, GlyphObservation)
-            glyph = payload
+        if isinstance(command, TextRun):
+            append_text_run(command)
+        elif isinstance(command, GlyphObservation):
+            glyph = command
             glyph_text_object_id = glyph.text_object_id
             if (
                 current_text_object_id is not None
@@ -523,13 +519,12 @@ def compose_page(
                 bitmap_width=glyph.bitmap_width,
                 bitmap_height=glyph.bitmap_height,
             )
-        elif kind in (PageCommandKind.DRAWING, PageCommandKind.IMAGE):
-            assert isinstance(payload, CapturedDrawing)
-            flush_text_clip(payload.seqno)
-            display_list.append_captured_drawing(payload)
-        elif kind == PageCommandKind.INLINE_IMAGE:
-            assert isinstance(payload, CapturedInlineImage)
-            inline_image = payload
+        elif isinstance(command, CapturedDrawing):
+            flush_text_clip(command.seqno)
+            display_list.append_captured_drawing(command)
+        else:
+            assert isinstance(command, CapturedInlineImage)
+            inline_image = command
             flush_text_clip(inline_image.seqno)
             display_list.append(
                 "inline-image",

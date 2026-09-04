@@ -113,7 +113,7 @@ def test_page_program_contains_capture_products_and_immutable_commands() -> None
         assert program.runs
         commands = program.commands
         assert isinstance(commands, tuple)
-        assert any(command.payload is program.runs[0] for command in commands)
+        assert any(command is program.runs[0] for command in commands)
 
 
 def test_page_program_interpretations_are_independent(monkeypatch) -> None:

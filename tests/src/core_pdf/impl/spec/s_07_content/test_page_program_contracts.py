@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -9,23 +10,21 @@ from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedLin
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 
 
-def test_page_program_filters_inline_image_drawings_and_keeps_lines() -> None:
-    drawing = CapturedDrawing(1, None, None, kind="stroke")
-    legacy_inline_image = CapturedDrawing(2, None, None, kind="inline-image")
-    program = PageProgram.from_state(
-        SimpleNamespace(
-            runs=(),
-            glyphs=(),
-            drawings=(drawing, legacy_inline_image),
-            inline_images=(),
-            lines=(CapturedLine(1.0, 2.0, 3.0, 4.0, 0.5),),
-        )
+def test_page_program_normalizes_products_and_orders_commands() -> None:
+    first = CapturedDrawing(1, None, None, kind="stroke")
+    second = CapturedDrawing(2, None, None, kind="fill")
+    legacy_inline_image = CapturedDrawing(3, None, None, kind="inline-image")
+    program = PageProgram(
+        drawings=(second, legacy_inline_image, first),
+        lines=(CapturedLine(1.0, 2.0, 3.0, 4.0, 0.5),),
     )
 
-    assert program.drawings == (drawing,)
+    assert program.drawings == (second, first)
     assert [(line.x0, line.y0, line.x1, line.y1, line.line_width) for line in program.lines] == [
         (1.0, 2.0, 3.0, 4.0, 0.5)
     ]
+    assert program.commands == (first, second)
+    assert replace(program, drawings=(second,)).commands == (second,)
 
 
 @pytest.mark.parametrize(
@@ -43,8 +42,5 @@ def test_page_program_rejects_untyped_products(
     value: tuple[object, ...],
     message: str,
 ) -> None:
-    state = SimpleNamespace(runs=(), glyphs=(), drawings=(), inline_images=(), lines=())
-    setattr(state, field, value)
-
     with pytest.raises(PdfContractError, match=message):
-        PageProgram.from_state(state)
+        PageProgram(**cast(Any, {field: value}))

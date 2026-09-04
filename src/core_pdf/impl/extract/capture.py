@@ -725,7 +725,7 @@ def internal_capture_with_newstroke_text(
     return replace(
         capture,
         observations=observations,
-        program=capture.program.with_runs(runs),
+        program=replace(capture.program, runs=runs),
         evidence=evidence,
     )
 

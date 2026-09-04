@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from enum import IntEnum
-from typing import Any, TypeAlias
+from dataclasses import dataclass, field
+from typing import TypeAlias
 
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
@@ -16,37 +15,16 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedLine,
 )
 
-
-class PageCommandKind(IntEnum):
-    TEXT = 1
-    GLYPH = 2
-    DRAWING = 3
-    IMAGE = 4
-    INLINE_IMAGE = 5
-
-
-PageCommandPayload: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
-
-
-@dataclass(frozen=True, slots=True)
-class PageCommand:
-    """One directly typed entry in page-content order."""
-
-    kind: PageCommandKind
-    payload: PageCommandPayload
-
-    @property
-    def seqno(self) -> int:
-        return self.payload.seqno
+PageCommand: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
 
 
 @dataclass(frozen=True, slots=True)
 class PageProgram:
     """The canonical capture shared by extraction and rendering.
 
-    A page is interpreted exactly once. Consumers read the ordinary immutable
-    product tuples directly and request a merged event tuple only when ordering
-    across product types matters.
+    The typed projections are the source of truth. ``commands`` is derived from
+    them once, in content-stream order, so every construction path produces the
+    same program.
     """
 
     runs: tuple[TextRun, ...] = ()
@@ -54,54 +32,41 @@ class PageProgram:
     drawings: tuple[CapturedDrawing, ...] = ()
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: tuple[CapturedLine, ...] = ()
-    commands: tuple[PageCommand, ...] = ()
+    commands: tuple[PageCommand, ...] = field(init=False)
 
-    @classmethod
-    def from_state(cls, state: Any) -> PageProgram:
-        runs = tuple(state.runs)
-        glyphs = tuple(state.glyphs)
-        raw_drawings = tuple(state.drawings)
-        inline_images = tuple(state.inline_images)
-        lines = tuple(state.lines)
-        if not all(isinstance(run, TextRun) for run in runs):
-            raise PdfContractError("page state emitted an invalid text-run product")
-        if not all(isinstance(glyph, GlyphObservation) for glyph in glyphs):
-            raise PdfContractError("page state emitted an invalid glyph product")
-        if not all(isinstance(drawing, CapturedDrawing) for drawing in raw_drawings):
-            raise PdfContractError("page state emitted an invalid drawing product")
-        if not all(isinstance(image, CapturedInlineImage) for image in inline_images):
-            raise PdfContractError("page state emitted an invalid inline-image product")
-        if not all(isinstance(line, CapturedLine) for line in lines):
-            raise PdfContractError("page state emitted an invalid line product")
-        drawings = tuple(drawing for drawing in raw_drawings if drawing.kind != "inline-image")
-        commands = [PageCommand(PageCommandKind.TEXT, run) for run in runs]
-        commands.extend(
-            PageCommand(PageCommandKind.GLYPH, glyph) for glyph in glyphs if glyph.has_paint
+    def __post_init__(self) -> None:
+        runs = tuple(self.runs)
+        glyphs = tuple(self.glyphs)
+        drawings = tuple(self.drawings)
+        inline_images = tuple(self.inline_images)
+        lines = tuple(self.lines)
+        validations: tuple[tuple[str, tuple[object, ...], type[object]], ...] = (
+            ("text-run", runs, TextRun),
+            ("glyph", glyphs, GlyphObservation),
+            ("drawing", drawings, CapturedDrawing),
+            ("inline-image", inline_images, CapturedInlineImage),
+            ("line", lines, CapturedLine),
         )
-        commands.extend(
-            PageCommand(
-                PageCommandKind.IMAGE if drawing.kind == "image" else PageCommandKind.DRAWING,
-                drawing,
-            )
-            for drawing in drawings
-        )
-        commands.extend(PageCommand(PageCommandKind.INLINE_IMAGE, image) for image in inline_images)
-        commands.sort(key=lambda command: command.seqno)
-        return cls(runs, glyphs, drawings, inline_images, lines, tuple(commands))
+        for name, products, product_type in validations:
+            if not all(isinstance(product, product_type) for product in products):
+                raise PdfContractError(f"page program contains an invalid {name} product")
 
-    def with_runs(self, runs: tuple[TextRun, ...]) -> PageProgram:
-        """Return a program whose text projection and command stream agree."""
-        commands = [
-            command for command in self.commands if command.kind is not PageCommandKind.TEXT
-        ]
-        commands.extend(PageCommand(PageCommandKind.TEXT, run) for run in runs)
+        drawings = tuple(drawing for drawing in drawings if drawing.kind != "inline-image")
+        commands: list[PageCommand] = [*runs]
+        commands.extend(glyph for glyph in glyphs if glyph.has_paint)
+        commands.extend(drawings)
+        commands.extend(inline_images)
         commands.sort(key=lambda command: command.seqno)
-        return replace(self, runs=runs, commands=tuple(commands))
+
+        object.__setattr__(self, "runs", runs)
+        object.__setattr__(self, "glyphs", glyphs)
+        object.__setattr__(self, "drawings", drawings)
+        object.__setattr__(self, "inline_images", inline_images)
+        object.__setattr__(self, "lines", lines)
+        object.__setattr__(self, "commands", tuple(commands))
 
 
 __all__ = (
     "PageCommand",
-    "PageCommandKind",
-    "PageCommandPayload",
     "PageProgram",
 )
