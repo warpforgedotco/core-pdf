@@ -214,7 +214,13 @@ def internal_classify_declared_jpx(
 
 def internal_display_data(items: Iterable[object]) -> Iterable[tuple[str, dict[str, Any]]]:
     """Yield top-level and nested drawing dictionaries without following cycles."""
-    pending = [(f"item {index}", getattr(item, "data", None)) for index, item in enumerate(items)]
+    pending: list[tuple[str, object]] = []
+    for index, item in enumerate(items):
+        data = getattr(item, "data", None)
+        if not isinstance(data, dict):
+            to_data = getattr(item, "to_data", None)
+            data = to_data() if callable(to_data) else None
+        pending.append((f"item {index}", data))
     visited: set[int] = set()
     while pending:
         location, data = pending.pop()
@@ -478,10 +484,7 @@ def internal_jpx_stage_diagnostics(pdf: pathlib.Path) -> str:
     diagnostics: list[str] = []
     with PdfDocument.open(pdf) as document:
         rendered = document.pages[RASTER_PAGE].render()
-        for index, item in enumerate(rendered.display_list.items):
-            data = getattr(item, "data", None)
-            if not isinstance(data, dict):
-                continue
+        for location, data in internal_display_data(rendered.display_list.items):
             raw = data.get("raw_data")
             if not isinstance(raw, (bytes, bytearray, memoryview)):
                 continue
@@ -498,7 +501,7 @@ def internal_jpx_stage_diagnostics(pdf: pathlib.Path) -> str:
             except Exception as exc:
                 decoded_text = f"decode_error={type(exc).__name__}: {exc}"
             wavelet = "irreversible-9/7" if irreversible else "reversible-5/3"
-            diagnostics.append(f"item {index}: {wavelet}, raw={raw_digest}, {decoded_text}")
+            diagnostics.append(f"{location}: {wavelet}, raw={raw_digest}, {decoded_text}")
     return "; ".join(diagnostics) or "no classifiable JPX display item"
 
 

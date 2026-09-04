@@ -10,8 +10,8 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.spec.s_08_graphics.image_decode import SoftMask
+from core_pdf.impl.render.model import ImagePaintItem, RasterImage
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 from scripts import raster_golden
 from scripts.raster_cover import greedy_cover
 from scripts.raster_golden import (
@@ -173,6 +173,29 @@ def test_jpx_policy_fails_closed_for_an_unclassified_declared_stream() -> None:
 
     assert not scan.irreversible
     assert scan.unclassified == ("item 0",)
+
+
+def test_jpx_policy_scans_typed_image_sources() -> None:
+    source = numpy.arange(256, dtype=numpy.uint8).reshape(16, 16)
+    encoded = bytes(imagecodecs.jpeg2k_encode(source, reversible=False))
+    item = ImagePaintItem(
+        paint_kind="image",
+        seqno=0,
+        bbox=None,
+        source=ImageSource(encoded, {"Filter": "JPXDecode"}),
+        quad=None,
+        fill=None,
+        fill_opacity=None,
+        blend_mode=None,
+        soft_mask_alpha=None,
+        image_clip=None,
+        source_metadata={},
+    )
+
+    scan = internal_scan_jpx_policy([item])
+
+    assert scan.irreversible
+    assert not scan.unclassified
 
 
 def test_snapshot_references_resolve_relative_to_a_custom_manifest(
