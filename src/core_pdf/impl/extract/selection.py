@@ -7,6 +7,7 @@ import math
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, cast
@@ -261,6 +262,7 @@ def internal_apply_font_enrichment(
                     capture=base.capture(),
                     plan=base.plan(),
                     recognition=recognition,
+                    fields=base.internal_fields,
                 )
             )
             continue
@@ -272,7 +274,13 @@ def internal_apply_font_enrichment(
             capture.program,
             learned_unicode=font.learned_unicode,
         )
-        enriched.append(internal_PageExtraction(base.page, capture=enriched_capture))
+        enriched.append(
+            internal_PageExtraction(
+                base.page,
+                capture=enriched_capture,
+                fields=base.internal_fields,
+            )
+        )
     return tuple(enriched)
 
 
@@ -381,6 +389,7 @@ def internal_apply_stroked_enrichment(
             capture=base.capture(),
             plan=base.plan(),
             recognition=recognition,
+            fields=base.internal_fields,
         )
     return tuple(enriched)
 
@@ -429,7 +438,16 @@ def extract_document(
     pages: Sequence[Any],
 ) -> Document:
     pages = tuple(pages)
-    extractions = tuple(internal_PageExtraction(page) for page in pages)
+    fields_by_page: dict[int, list[Any]] = {}
+    with suppress(TypeError, ValueError):
+        fields_by_page = document.fields_by_page()
+    extractions = tuple(
+        internal_PageExtraction(
+            page,
+            fields=fields_by_page.get(int(page.page_number) - 1, ()),
+        )
+        for page in pages
+    )
     if len(extractions) > 1:
         captures = internal_capture_document_pages(extractions, context)
         if len(captures) == len(pages):

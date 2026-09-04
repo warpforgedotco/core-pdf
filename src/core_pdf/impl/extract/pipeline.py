@@ -78,11 +78,13 @@ class internal_PageExtraction:
         capture: CapturedPage | None = None,
         plan: WorkPlan | None = None,
         recognition: RecognitionResult | None = None,
+        fields: Iterable[Any] | None = None,
     ) -> None:
         self.page = page
         self.internal_capture = capture if capture is not None else capture_page(page)
         self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
         self.internal_recognition = recognition
+        self.internal_fields = tuple(fields) if fields is not None else None
 
     def capture(self) -> CapturedPage:
         return self.internal_capture
@@ -188,8 +190,10 @@ class internal_PageExtraction:
                 text="",
             ),
         )
-        fields = internal_collected_records(
-            self.page.get_fields,
+        source_fields = self.internal_fields
+        fetch_fields = self.page.get_fields if source_fields is None else lambda: source_fields
+        field_records = internal_collected_records(
+            fetch_fields,
             lambda index, record: FormField(
                 name=record.name,
                 field_type=record.type,
@@ -209,7 +213,7 @@ class internal_PageExtraction:
             assembled,
             annotations=annotations,
             links=links,
-            form_fields=fields,
+            form_fields=field_records,
             cropbox=cropbox,
         )
         return assembled
