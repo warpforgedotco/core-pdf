@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_right
 from collections import Counter, defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import combinations
 from typing import cast
 
@@ -49,6 +49,26 @@ from core_pdf.impl.runtime.array_views import finite_median
 # Table-stage orchestration.
 
 internal_CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
+
+
+@dataclass(frozen=True, slots=True)
+class internal_ObservationCoordinates:
+    """Python scalar columns shared by stream-table candidate construction."""
+
+    x0: list[float]
+    y0: list[float]
+    x1: list[float]
+    y1: list[float]
+
+    @classmethod
+    def from_observations(cls, observations: ObservationBatch) -> internal_ObservationCoordinates:
+        bbox = observations.bbox
+        return cls(
+            bbox[:, 0].tolist(),
+            bbox[:, 1].tolist(),
+            bbox[:, 2].tolist(),
+            bbox[:, 3].tolist(),
+        )
 
 
 def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
@@ -357,6 +377,7 @@ def internal_stream_table(
     *,
     minimum_rows: int = 3,
     row_centers: list[float] | None = None,
+    coordinates: internal_ObservationCoordinates | None = None,
 ) -> Table | None:
     support_set = set(support)
     columns = [
@@ -367,10 +388,11 @@ def internal_stream_table(
     ]
     if len(columns) < 2:
         return None
-    all_x0 = observations.bbox[:, 0].tolist()
-    all_y0 = observations.bbox[:, 1].tolist()
-    all_x1 = observations.bbox[:, 2].tolist()
-    all_y1 = observations.bbox[:, 3].tolist()
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    all_x0 = coordinates.x0
+    all_y0 = coordinates.y0
+    all_x1 = coordinates.x1
+    all_y1 = coordinates.y1
     column_centers = numpy.asarray(
         [
             finite_median(
@@ -522,13 +544,20 @@ def internal_compact_stream_table(
     observations: ObservationBatch,
     rows: list[list[int]],
     page_width: float,
+    *,
+    coordinates: internal_ObservationCoordinates | None = None,
 ) -> Table | None:
     """Recover compact tables whose rows are interleaved with nearby prose."""
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    all_x0 = coordinates.x0
+    all_y0 = coordinates.y0
+    all_x1 = coordinates.x1
+    all_y1 = coordinates.y1
     candidates = [
         row
         for row in rows
         if len(row) >= 3
-        and max(float(observations.bbox[index, 2]) for index in row) <= page_width * 0.55
+        and max(all_x1[index] for index in row) <= page_width * 0.55
         and sum(len(observations.text[index].strip()) for index in row) <= 110
     ]
     if len(candidates) < 4:
@@ -539,7 +568,7 @@ def internal_compact_stream_table(
         return None
     anchors = numpy.median(
         numpy.asarray(
-            [[float(observations.bbox[index, 0]) for index in row] for row in anchor_rows],
+            [[all_x0[index] for index in row] for row in anchor_rows],
             dtype=numpy.float32,
         ),
         axis=0,
@@ -552,7 +581,7 @@ def internal_compact_stream_table(
     for row in candidates:
         cell_indexes: list[list[int]] = [[] for _ in anchors]
         for index in row:
-            column = int(numpy.argmin(numpy.abs(anchors - observations.bbox[index, 0])))
+            column = int(numpy.argmin(numpy.abs(anchors - all_x0[index])))
             cell_indexes[column].append(index)
         texts = [internal_cell_text(observations, indexes) for indexes in cell_indexes]
         if not any(texts):
@@ -561,12 +590,12 @@ def internal_compact_stream_table(
             internal_numeric_cell(text) or any(character.isdigit() for character in text)
             for text in texts
         )
-        y0 = min(float(observations.bbox[index, 1]) for index in row)
-        y1 = max(float(observations.bbox[index, 3]) for index in row)
+        y0 = min(all_y0[index] for index in row)
+        y1 = max(all_y1[index] for index in row)
         edges = [
-            min(float(observations.bbox[index, 0]) for index in row),
+            min(all_x0[index] for index in row),
             *(float((anchors[column] + anchors[column + 1]) * 0.5) for column in range(2)),
-            max(float(observations.bbox[index, 2]) for index in row),
+            max(all_x1[index] for index in row),
         ]
         table_rows.append(
             tuple(
@@ -602,6 +631,7 @@ def internal_stream_tables(
 ) -> tuple[Table, ...]:
     if rows is None:
         rows = internal_text_rows(observations)
+    coordinates = internal_ObservationCoordinates.from_observations(observations)
     row_centers = internal_row_centers(observations, rows)
     tables: list[Table] = []
     candidate_columns = internal_aligned_column_clusters(
@@ -661,6 +691,7 @@ def internal_stream_tables(
                     [columns[index] for index in component],
                     minimum_rows=minimum_rows,
                     row_centers=row_centers,
+                    coordinates=coordinates,
                 )
                 if table is not None:
                     tables.append(table)
@@ -670,6 +701,7 @@ def internal_stream_tables(
             observations,
             rows,
             capture.width,
+            coordinates=coordinates,
         )
         if compact is not None:
             tables.append(compact)
