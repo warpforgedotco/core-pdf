@@ -235,10 +235,21 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         per_page: Callable[["PdfPage"], Iterable[Any]],
     ) -> tuple[PageScoped[Any], ...]:
         """Fan a per-page extractor out over the selected pages as scoped records."""
-        return tuple(
-            self.internal_scope(page_index, page, record)
+        pending = [
+            (page_index, record)
             for page_index, page in self.iter_selected_pages(pages)
             for record in per_page(page)
+        ]
+        if not pending:
+            return ()
+        labels = self.page_labels
+        return tuple(
+            self.internal_scope(
+                page_index,
+                labels[page_index] if labels is not None else None,
+                record,
+            )
+            for page_index, record in pending
         )
 
     def extract_form_fields(
@@ -293,11 +304,15 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         return cast(StructuredDocument, self.extract())
 
     @staticmethod
-    def internal_scope(page_index: int, page: Any, record: Any) -> PageScoped[Any]:
+    def internal_scope(
+        page_index: int,
+        page_label: str | None,
+        record: Any,
+    ) -> PageScoped[Any]:
         return PageScoped(
             page_index=page_index,
             page_number=page_index + 1,
-            page_label=page.label,
+            page_label=page_label,
             record=record,
         )
 
