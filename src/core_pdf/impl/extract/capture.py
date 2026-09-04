@@ -733,7 +733,8 @@ def internal_capture_from_program(
         # the run copy when the name would not change.
         majority: str | None = None
         mixed = False
-        for seqno in glyph_seqnos[lo:hi]:
+        for glyph_position in range(lo, hi):
+            seqno = glyph_seqnos[glyph_position]
             for font_name in glyphs_by_seqno[seqno]:
                 if majority is None:
                     majority = font_name
@@ -744,7 +745,9 @@ def internal_capture_from_program(
                 break
         if mixed:
             font_counts = Counter(
-                font_name for seqno in glyph_seqnos[lo:hi] for font_name in glyphs_by_seqno[seqno]
+                font_name
+                for glyph_position in range(lo, hi)
+                for font_name in glyphs_by_seqno[glyph_seqnos[glyph_position]]
             )
             majority = font_counts.most_common(1)[0][0]
         if majority is None or majority == run.font_name:
