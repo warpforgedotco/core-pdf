@@ -278,7 +278,7 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         adapters: Iterable[Any] = (),
     ) -> Any:
         with self.acquire_operation() as operation:
-            selected_pages = tuple(self.pages[index] for index in self.selected_page_indexes(pages))
+            selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
             with ExtractionScope(cancelled=lambda: operation.cancelled) as context:
                 result = extract_document(self, context, selected_pages)
         for adapter in adapters:

@@ -737,8 +737,9 @@ class PdfDocument(
     def iter_selected_pages(
         self, pages: PageSelection | None = None
     ) -> Iterator[tuple[int, internal_PageT]]:
-        for page_index in self.selected_page_indexes(pages):
-            yield page_index, self.pages[page_index]
+        page_objects = self.pages
+        for page_index in resolve_page_selection(pages, len(page_objects)):
+            yield page_index, page_objects[page_index]
 
     # Navigation
 
