@@ -27,7 +27,6 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.ocr.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.extract.quality import internal_analyze_text
 from core_pdf.impl.model.geometry import (
-    bbox_intersection_area,
     bbox_union,
     interval_overlap,
     rect_tuple,
@@ -126,20 +125,32 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
     primary_tokens = tokens_by_box[primary_box]
     if len(primary_tokens) < DUPLICATE_LAYER_MIN_TOKENS:
         return runs
+    candidate_boxes = [
+        box
+        for box in groups
+        if box != primary_box and len(tokens_by_box[box]) >= DUPLICATE_LAYER_MIN_TOKENS
+    ]
+    if not candidate_boxes:
+        return runs
+    candidate_geometry = numpy.asarray(candidate_boxes, dtype=numpy.float64)
+    primary_geometry = numpy.asarray(
+        [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs],
+        dtype=numpy.float64,
+    )
+    intersections = (
+        (candidate_geometry[:, None, 0] < primary_geometry[None, :, 2])
+        & (candidate_geometry[:, None, 2] > primary_geometry[None, :, 0])
+        & (candidate_geometry[:, None, 1] < primary_geometry[None, :, 3])
+        & (candidate_geometry[:, None, 3] > primary_geometry[None, :, 1])
+    )
     duplicate_boxes: set[tuple[float, float, float, float]] = set()
-    for box in groups:
-        if box == primary_box or len(tokens_by_box[box]) < DUPLICATE_LAYER_MIN_TOKENS:
-            continue
+    for box, intersects in zip(candidate_boxes, intersections, strict=True):
         # Compare with primary-layer text painted in the same region. A page's
         # table cells legitimately have separate clipping boxes and repeat much
         # of the surrounding vocabulary; comparing each cell with every token
         # on the page deleted non-duplicate rows from ISO 32000-2:2020 Table 22.
         local_tokens = internal_normalized_tokens(
-            tuple(
-                run
-                for run in primary_runs
-                if bbox_intersection_area(box, (run.x0, run.y0, run.x1, run.y1)) > 0.0
-            )
+            tuple(primary_runs[int(index)] for index in numpy.flatnonzero(intersects))
         )
         if (
             len(local_tokens) >= DUPLICATE_LAYER_MIN_TOKENS
