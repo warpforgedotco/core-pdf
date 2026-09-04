@@ -264,6 +264,7 @@ def internal_apply_font_enrichment(
                     recognition=recognition,
                     fields=base.internal_fields,
                     structure=base.internal_structure,
+                    hidden_layers=base.internal_hidden_layers,
                 )
             )
             continue
@@ -282,6 +283,7 @@ def internal_apply_font_enrichment(
                 capture=enriched_capture,
                 fields=base.internal_fields,
                 structure=base.internal_structure,
+                hidden_layers=base.internal_hidden_layers,
             )
         )
     return tuple(enriched)
@@ -394,6 +396,7 @@ def internal_apply_stroked_enrichment(
             recognition=recognition,
             fields=base.internal_fields,
             structure=base.internal_structure,
+            hidden_layers=base.internal_hidden_layers,
         )
     return tuple(enriched)
 
@@ -442,6 +445,7 @@ def extract_document(
     pages: Sequence[Any],
 ) -> Document:
     pages = tuple(pages)
+    hidden_layers = document.oc_hidden_layers() if pages else frozenset()
     structure_tree = None
     with suppress(IndexError, TypeError, ValueError):
         structure_tree = document.structure
@@ -462,6 +466,7 @@ def extract_document(
             page,
             fields=fields_by_page.get(int(page.page_number) - 1, ()),
             structure=page_structure(page),
+            hidden_layers=hidden_layers,
         )
         for page in pages
     )

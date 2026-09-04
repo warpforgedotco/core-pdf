@@ -80,11 +80,15 @@ class internal_PageExtraction:
         recognition: RecognitionResult | None = None,
         fields: Iterable[Any] | None = None,
         structure: Any = internal_STRUCTURE_UNSET,
+        hidden_layers: frozenset[str] | None = None,
     ) -> None:
         self.page = page
         self.internal_structure = structure
+        self.internal_hidden_layers = hidden_layers
         self.internal_capture = (
-            capture if capture is not None else capture_page(page, structure=structure)
+            capture
+            if capture is not None
+            else capture_page(page, structure=structure, hidden_layers=hidden_layers)
         )
         self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
         self.internal_recognition = recognition

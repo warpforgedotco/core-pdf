@@ -266,12 +266,18 @@ class PdfPage:
                     continue
                 raise
 
-    def get_page_program(self) -> PageProgram:
+    def get_page_program(
+        self,
+        *,
+        hidden_layers: frozenset[str] | None = None,
+    ) -> PageProgram:
         """Interpret the page and return its immutable program."""
         state = TextState(
             self.document,
             self.page_dict,
-            hidden_layers=self.document.oc_hidden_layers(),
+            hidden_layers=(
+                self.document.oc_hidden_layers() if hidden_layers is None else hidden_layers
+            ),
             page_clip=self.effective_page_clip(),
         )
         self.consume_contents(state)

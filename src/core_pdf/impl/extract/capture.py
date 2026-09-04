@@ -941,9 +941,19 @@ def internal_capture_from_program(
     return captured
 
 
-def capture_page(page: Any, *, structure: Any = internal_STRUCTURE_UNSET) -> CapturedPage:
+def capture_page(
+    page: Any,
+    *,
+    structure: Any = internal_STRUCTURE_UNSET,
+    hidden_layers: frozenset[str] | None = None,
+) -> CapturedPage:
     """Build the canonical page products once and derive routing evidence from them."""
-    return internal_capture_from_program(page, page.get_page_program(), structure=structure)
+    program = (
+        page.get_page_program()
+        if hidden_layers is None
+        else page.get_page_program(hidden_layers=hidden_layers)
+    )
+    return internal_capture_from_program(page, program, structure=structure)
 
 
 def internal_requires_high_resolution_vector_ocr(capture: CapturedPage) -> bool:
