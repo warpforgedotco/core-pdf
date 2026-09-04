@@ -16,7 +16,6 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})
@@ -52,7 +51,6 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})

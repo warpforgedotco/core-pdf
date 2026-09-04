@@ -26,6 +26,7 @@ from core_pdf.impl.extract.grids import (
     internal_table_from_component,
 )
 from core_pdf.impl.extract.table_cleanup import (
+    internal_annotate_table_associations,
     internal_cell_text,
     internal_character_spaced_cell,
     internal_clean_table_cell_leader_runs,
@@ -41,6 +42,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_table_character_spaced_prose,
     internal_table_is_single_column_prose,
     internal_table_quality,
+    internal_table_with_bands,
 )
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output import Table, TableCell
@@ -107,6 +109,26 @@ class internal_TableAnalysis:
             ),
         )
 
+    def extract(self, capture: PageAnalysis) -> tuple[Table, ...]:
+        """Detect, reconcile, annotate, and band every table in one operation."""
+        evidence = capture.evidence
+        if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
+            return ()
+        tables = internal_detect_tables(capture, self)
+        chart_table = extract_chart_table(capture, self.observations)
+        if chart_table is not None:
+            tables = (*tables, chart_table)
+        return tuple(
+            internal_table_with_bands(
+                internal_annotate_table_associations(
+                    replace(table, order=order) if table.order != order else table,
+                    self.observations,
+                    self.text_rows,
+                )
+            )
+            for order, table in enumerate(tables)
+        )
+
 
 def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
     """Split dense OCR axis/value lines while keeping prose intact."""
@@ -169,18 +191,10 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
     ):
         cell_box = cell.bbox or (0.0, 0.0, 0.0, 0.0)
         center_y = (cell_box[1] + cell_box[3]) / 2
-        group = next(
-            (
-                candidate
-                for candidate in row_groups
-                if abs(candidate[0] - center_y) <= row_tolerance
-            ),
-            None,
-        )
-        if group is None:
+        if not row_groups or abs(row_groups[-1][0] - center_y) > row_tolerance:
             row_groups.append((center_y, [cell]))
         else:
-            group[1].append(cell)
+            row_groups[-1][1].append(cell)
     rows = tuple(
         tuple(
             sorted(
@@ -201,10 +215,9 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
 
 def internal_detect_tables(
     capture: PageAnalysis,
-    observations: ObservationBatch,
-    *,
-    analysis: internal_TableAnalysis | None = None,
+    analysis: internal_TableAnalysis,
 ) -> tuple[Table, ...]:
+    observations = analysis.observations
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
     vertical = internal_merge_collinear_segments(vertical, coordinate=0, start=1, end=2)
@@ -224,9 +237,8 @@ def internal_detect_tables(
     tables = list(ruled)
     for stream in internal_stream_tables(
         capture,
-        observations,
         len(tables),
-        analysis=analysis,
+        analysis,
     ):
         conflicts = [
             table
@@ -669,12 +681,10 @@ def internal_compact_stream_table(
 
 def internal_stream_tables(
     capture: PageAnalysis,
-    observations: ObservationBatch,
     start_order: int,
-    *,
-    analysis: internal_TableAnalysis | None = None,
+    analysis: internal_TableAnalysis,
 ) -> tuple[Table, ...]:
-    analysis = analysis or internal_TableAnalysis.build(observations, capture.width)
+    observations = analysis.observations
     coordinates = analysis.coordinates
     rows = analysis.text_rows
     row_centers = analysis.row_centers

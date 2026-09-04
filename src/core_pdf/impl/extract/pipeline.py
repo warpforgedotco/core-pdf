@@ -93,7 +93,7 @@ class internal_PageExtraction:
                 annotation_records = tuple(page.get_annotations())
             except (TypeError, ValueError):
                 annotation_records = ()
-        self.internal_capture = (
+        self.capture = (
             replace(capture, fields=field_records, annotations=annotation_records)
             if capture is not None and fields is not None
             else replace(capture, annotations=annotation_records)
@@ -106,31 +106,26 @@ class internal_PageExtraction:
                 annotations=annotation_records,
             )
         )
-        self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
-        self.internal_recognition = recognition
+        self.plan = plan if plan is not None else plan_page(self.capture)
+        self.recognition_result = recognition
 
-    def capture(self) -> PageAnalysis:
-        return self.internal_capture
-
-    def plan(self) -> WorkPlan:
-        return self.internal_plan
-
-    def recognition(self, context: ExtractionScope) -> RecognitionResult:
-        if self.internal_recognition is not None:
-            return self.internal_recognition
-        plan = self.internal_plan
+    def recognize(self, context: ExtractionScope) -> RecognitionResult:
+        if self.recognition_result is not None:
+            return self.recognition_result
+        plan = self.plan
         if plan.ocr_passes or plan.verify_hidden_text:
             from core_pdf.impl.extract.ocr.pipeline import recognize_page
 
-            return recognize_page(self.internal_capture, plan, context)
+            return recognize_page(self.capture, plan, context)
         return RecognitionResult(ObservationBatch.empty())
 
-    def internal_products(self, context: ExtractionScope) -> internal_PageProducts:
-        capture = self.internal_capture
-        plan = self.internal_plan
+    def run(self, context: ExtractionScope) -> internal_PageProducts:
+        """Materialize the fused, table, and layout products exactly once per call."""
+        capture = self.capture
+        plan = self.plan
         observations = fuse_observations(
             capture.observations,
-            self.recognition(context).observations,
+            self.recognize(context).observations,
             plan,
         )
         tables = extract_tables(capture, observations)
@@ -153,24 +148,9 @@ class internal_PageExtraction:
         )
         return internal_PageProducts(observations, tables, blocks, order_evidence)
 
-    def observations(self, context: ExtractionScope) -> ObservationBatch:
-        return self.internal_products(context).observations
-
-    def tables(self, context: ExtractionScope) -> tuple[Table, ...]:
-        return self.internal_products(context).tables
-
-    def layout(self, context: ExtractionScope) -> tuple[ParsedBlock, ...]:
-        return self.internal_products(context).blocks
-
-    def internal_layout_result(
-        self, context: ExtractionScope
-    ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
-        products = self.internal_products(context)
-        return products.blocks, products.order_evidence
-
     def assembled_page(self, context: ExtractionScope) -> Any:
-        capture = self.internal_capture
-        products = self.internal_products(context)
+        capture = self.capture
+        products = self.run(context)
         blocks = products.blocks
         order_evidence = products.order_evidence
         figures = (
@@ -187,12 +167,12 @@ class internal_PageExtraction:
             width=capture.width,
             height=capture.height,
             rotation=capture.rotation,
-            route=self.internal_plan.route,
+            route=self.plan.route,
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
             full_page_image=capture.evidence.full_page_image,
-            drawings=capture.drawings,
+            drawings=capture.program.drawings,
         )
         resolver = self.page.document.resolver
         raw_annotations = capture.annotations or ()

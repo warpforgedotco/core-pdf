@@ -1720,7 +1720,7 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     )
 
     assert ocr_calls == [2]
-    assert plan_calls == [1]
+    assert plan_calls == []
     seed_recognition = enrichment.recognition_by_index[1]
     reused_recognition = enrichment.recognition_by_index[0]
     assert seed_recognition is not None
@@ -1758,7 +1758,7 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     )
 
     assert ocr_calls == [2, 1]
-    assert plan_calls == [1]
+    assert plan_calls == []
     assert tuple(
         enrichment.recognition_by_index[index].observations.text for index in range(2)
     ) == (("seed",), ("seed",))
@@ -1826,7 +1826,6 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
-    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion((0.0, 0.0, 100.0, 100.0), 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (3,))
@@ -1835,6 +1834,7 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         capture,
         (target,),
         ocr_pass,
+        rendered=object(),
         compact_image=False,
     )
 
@@ -1869,7 +1869,6 @@ def test_candidate_region_defers_layered_images_to_compositor(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
-    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion(page_box, 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (11,))
@@ -1878,6 +1877,7 @@ def test_candidate_region_defers_layered_images_to_compositor(
         capture,
         (target,),
         ocr_pass,
+        rendered=object(),
         compact_image=False,
     )
 

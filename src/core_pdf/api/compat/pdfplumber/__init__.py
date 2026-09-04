@@ -169,7 +169,6 @@ def _source(value: PdfInput, password: str = "") -> PdfDocument:
             value,
             password=password,
             recovery_scan_all_revisions=False,
-            legacy_pdfminer_text_operators=True,
         )
     except Exception as exc:
         raise PdfminerException(exc) from exc
@@ -272,7 +271,7 @@ class EnginePageAdapter:
 
         internal_pdfminer_validate_page_resources(self.page)
         compatibility_glyphs: list[Any] = []
-        for glyph in self.page.get_page_program().products.glyphs:
+        for glyph in self.page.get_page_program().glyphs:
             provenance = dict(glyph.provenance) if glyph.provenance else {}
             underlying = provenance.get("compatibility_glyphs")
             if glyph.unicode_source == "actual_text" and isinstance(underlying, tuple):

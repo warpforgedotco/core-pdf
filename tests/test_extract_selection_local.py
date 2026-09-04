@@ -132,23 +132,23 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
     second = selection_text(base_extractions[1:], captures[1:], "second")
     assert first[1].page is second[0].page
     assert first[1] is not second[0]
-    assert first[1].capture().observations.text == ("first-2",)
-    assert second[0].capture().observations.text == ("second-2",)
+    assert first[1].capture.observations.text == ("first-2",)
+    assert second[0].capture.observations.text == ("second-2",)
 
     second_before_first = selection_text(base_extractions[1:], captures[1:], "second")
     first_after_second = selection_text(base_extractions[:2], captures[:2], "first")
-    assert tuple(item.capture().observations.text[0] for item in first_after_second) == (
+    assert tuple(item.capture.observations.text[0] for item in first_after_second) == (
         "first-1",
         "first-2",
     )
-    assert tuple(item.capture().observations.text[0] for item in second_before_first) == (
+    assert tuple(item.capture.observations.text[0] for item in second_before_first) == (
         "second-2",
         "second-3",
     )
 
-    assert tuple(extraction.capture().observations.text[0] for extraction in base_extractions) == (
+    assert tuple(extraction.capture.observations.text[0] for extraction in base_extractions) == (
         "base-1",
         "base-2",
         "base-3",
     )
-    assert first[1].capture().observations.text == ("first-2",)
+    assert first[1].capture.observations.text == ("first-2",)

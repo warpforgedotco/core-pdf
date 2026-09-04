@@ -16,12 +16,13 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_split_semantic_table,
     internal_table_character_spaced_prose,
 )
-from core_pdf.impl.extract.tables import (
-    extract_tables,
+from core_pdf.impl.extract.table_detection import (
     internal_compact_stream_table,
     internal_stream_table,
     internal_stream_tables,
+    internal_TableAnalysis,
 )
+from core_pdf.impl.extract.table_pipeline import extract_tables
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedLine
@@ -327,7 +328,7 @@ def test_extract_tables_assigns_runs_to_ruled_cells() -> None:
         grid_lines=RULED_GRID,
     )
 
-    tables = extract_tables(capture, observations(capture.runs))
+    tables = extract_tables(capture, observations(capture.program.runs))
 
     assert len(tables) == 1
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
@@ -389,7 +390,7 @@ def test_extract_tables_ignores_many_observations_outside_ruled_component() -> N
         (*table_runs, *outside_runs), grid_lines=RULED_GRID, width=4_000.0, height=4_000.0
     )
 
-    tables = extract_tables(capture, observations(capture.runs))
+    tables = extract_tables(capture, observations(capture.program.runs))
 
     assert len(tables) == 1
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
@@ -410,7 +411,7 @@ def test_extract_tables_detects_aligned_borderless_rows() -> None:
         )
     )
 
-    tables = extract_tables(capture, observations(capture.runs))
+    tables = extract_tables(capture, observations(capture.program.runs))
 
     assert len(tables) == 1
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
@@ -444,7 +445,9 @@ def test_stream_tables_prefer_horizontal_observations_over_rotated_noise() -> No
         rotation=(0,) * 8 + (90,) * 4,
     )
 
-    tables = internal_stream_tables(table_capture(()), observations, 0)
+    capture = table_capture(())
+    analysis = internal_TableAnalysis.build(observations, capture.width)
+    tables = internal_stream_tables(capture, 0, analysis)
 
     assert len(tables) == 1
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
@@ -472,4 +475,4 @@ def test_extract_tables_rejects_aligned_bullet_prose() -> None:
         )
     )
 
-    assert extract_tables(capture, observations(capture.runs)) == ()
+    assert extract_tables(capture, observations(capture.program.runs)) == ()

@@ -105,18 +105,18 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
     assert page.get_fields() == [field]
 
 
-def test_page_program_contains_capture_products_and_immutable_events() -> None:
+def test_page_program_contains_capture_products_and_immutable_commands() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
         program = page.get_page_program()
 
         assert program.runs
-        events = program.events
-        assert isinstance(events, tuple)
-        assert any(event.payload is program.runs[0] for event in events)
+        commands = program.commands
+        assert isinstance(commands, tuple)
+        assert any(command.payload is program.runs[0] for command in commands)
 
 
-def test_page_program_is_shared_by_extraction_and_rendering(monkeypatch) -> None:
+def test_page_program_interpretations_are_independent(monkeypatch) -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
         calls = 0
@@ -128,8 +128,8 @@ def test_page_program_is_shared_by_extraction_and_rendering(monkeypatch) -> None
             original(state)
 
         monkeypatch.setattr(page, "consume_contents", counted)
-        program = page.get_page_program()
-        page.extract()
-        page.render()
-        assert page.get_page_program() is program
-        assert calls == 1
+        first = page.get_page_program()
+        second = page.get_page_program()
+
+        assert first is not second
+        assert calls == 2

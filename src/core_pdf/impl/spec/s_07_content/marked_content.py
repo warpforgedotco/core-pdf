@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from core_pdf.impl.model.geometry import union_bbox
 from core_pdf.impl.model.runs import Provenance
@@ -54,8 +54,6 @@ class MarkedContentEntry:
     confidence: float | None = None
     font_decoder: object | None = None
     effective_font_height: float = 0.0
-    compatibility_text: str = ""
-    compatibility_glyphs: list[object] = field(default_factory=list)
 
     def add_extents(
         self,
@@ -84,7 +82,6 @@ class MarkedContentEntry:
         confidence: float | None = None,
         font_decoder: object | None = None,
         effective_font_height: float = 0.0,
-        compatibility_text: str = "",
     ) -> None:
         if self.has_text_extents:
             self.x0 = min(self.x0, x0)
@@ -94,7 +91,6 @@ class MarkedContentEntry:
             self.advance_bbox = union_bbox(self.advance_bbox, advance_bbox)
             self.baseline = extend_baseline(self.baseline, baseline)
             self.confidence = min_optional_confidence(self.confidence, confidence)
-            self.compatibility_text += compatibility_text
         else:
             self.x0 = x0
             self.y0 = y0
@@ -119,6 +115,5 @@ class MarkedContentEntry:
             self.confidence = confidence
             self.font_decoder = font_decoder
             self.effective_font_height = effective_font_height
-            self.compatibility_text = compatibility_text
             self.has_text_extents = True
         self.nbytes += nbytes

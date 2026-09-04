@@ -80,7 +80,7 @@ STROKED_VECTOR_PACK_MIN_DECODED_RUNS = 16
 def internal_stroked_text_profile(capture: PageAnalysis) -> StrokedTextProfile:
     """Build the structural glyph profile used by stroked-text OCR."""
     evidence = capture.evidence.stroked_vector_text
-    return profile_stroked_text(capture.drawings, evidence.drawing_indexes)
+    return profile_stroked_text(capture.program.drawings, evidence.drawing_indexes)
 
 
 def internal_pack_stroked_text_runs(
@@ -210,7 +210,7 @@ def internal_stroked_vector_text_raster(
                     center_y + center_x,
                 )
         for index in cell.drawing_indexes:
-            drawing = capture.drawings[index]
+            drawing = capture.program.drawings[index]
             drawing_box = rect_tuple(getattr(drawing, "rect", None))
             path = getattr(drawing, "path", None)
             if drawing_box is None or path is None:
@@ -307,7 +307,7 @@ def internal_full_stroked_vector_text_raster(
     scale = min(requested_scale, safe_scale)
     display_list = DisplayList(width=page_width, height=page_height)
     for index in evidence.drawing_indexes:
-        drawing = capture.drawings[index]
+        drawing = capture.program.drawings[index]
         display_list.append(
             drawing.kind,
             drawing.seqno,

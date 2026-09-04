@@ -197,21 +197,15 @@ class RecordingExtraction:
         ocr_calls: list[int],
     ) -> None:
         self.page = page
-        self.internal_capture = capture
-        self.internal_recognition: RecognitionResult | None = None
+        self.capture = capture
+        self.plan = WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
+        self.recognition_result: RecognitionResult | None = None
         self.internal_recognized_at: float | None = None
         self.alphabet = alphabet
         self.plan_calls = plan_calls
         self.ocr_calls = ocr_calls
 
-    def capture(self) -> PageAnalysis:
-        return self.internal_capture
-
-    def plan(self) -> WorkPlan:
-        self.plan_calls.append(self.page.page_number)
-        return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
-
-    def recognition(self, context: object) -> RecognitionResult:
+    def recognize(self, context: object) -> RecognitionResult:
         self.ocr_calls.append(self.page.page_number)
         observations = ObservationBatch.from_columns(
             ("seed",),
@@ -219,11 +213,11 @@ class RecordingExtraction:
             source=ObservationSource.OCR,
             confidence=(99.0,),
         )
-        self.internal_recognition = RecognitionResult(
+        self.recognition_result = RecognitionResult(
             observations,
             stroked_vector_alphabet=self.alphabet,
         )
-        return self.internal_recognition
+        return self.recognition_result
 
 
 __all__ = (

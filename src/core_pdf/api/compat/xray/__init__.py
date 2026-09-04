@@ -242,7 +242,7 @@ def _page_redactions(
     if "overrides" not in override_cache:
         override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
     operand_overrides = override_cache["overrides"]
-    glyphs = tuple(page.get_page_program().products.glyphs)
+    glyphs = tuple(page.get_page_program().glyphs)
     sequence_codes: dict[int, bytes] = {}
     for glyph in glyphs:
         sequence_codes[glyph.seqno] = sequence_codes.get(glyph.seqno, b"") + glyph.code_bytes

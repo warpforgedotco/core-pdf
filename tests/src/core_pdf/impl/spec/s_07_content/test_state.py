@@ -20,7 +20,6 @@ def internal_consume(content: bytes) -> TextState:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})
@@ -116,24 +115,6 @@ def test_graphics_state_save_restore_covers_every_snapshot_field() -> None:
     state.op_Q((), 0)
 
     assert tuple(getattr(state, name) for name in fields) == before
-
-
-def test_pdfminer_double_quote_policy_omits_next_line_move() -> None:
-    def state(legacy: bool) -> TextState:
-        result = internal_consume(b"")
-        cast(Any, result.document).legacy_pdfminer_text_operators = legacy
-        result.leading = 12.0
-        result.lm_e = result.tm_e = 10.0
-        result.lm_f = result.tm_f = 20.0
-        return result
-
-    native = state(False)
-    legacy = state(True)
-    native.op_double_quote((2, 3, b""), 0)
-    legacy.op_double_quote((2, 3, b""), 0)
-
-    assert (native.tm_e, native.tm_f) == (10.0, 8.0)
-    assert (legacy.tm_e, legacy.tm_f) == (10.0, 20.0)
 
 
 def test_text_showing_consumes_the_top_operand_from_a_malformed_stack() -> None:

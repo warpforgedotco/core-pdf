@@ -71,8 +71,6 @@ class StreamState:
     layout_form_bbox: tuple[float, float, float, float] | None
     layout_form_id: LayoutFormId
     pending_line_break: bool
-    compat_tj_cursor_x: float
-    compat_tj_cursor_y: float
     xobject_depth: int
 
 

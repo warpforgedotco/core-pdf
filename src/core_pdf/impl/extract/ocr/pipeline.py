@@ -34,7 +34,6 @@ from core_pdf.impl.extract.ocr.candidates import (
     internal_hidden_text_verification,
     internal_merge_candidate_batches,
 )
-from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
 from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
 from core_pdf.impl.extract.ocr.rescue import (
     internal_adaptive_rescue_decision,
@@ -392,8 +391,7 @@ def internal_recognize_page_with_reserved_raster(
                 else "weak-regions"
             )
             if retry_scope == "page":
-                retry_raster = internal_rendered_page_raster(
-                    capture,
+                retry_raster = session.render_raster(
                     adaptive_retry_scale,
                     max_pixels=MAX_OCR_PIXELS,
                     include_native_text=ocr_pass.include_native_text,

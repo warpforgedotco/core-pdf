@@ -49,24 +49,21 @@ def test_interpret_text_page_benchmark(benchmark, text_page) -> None:
     """A plain text page: glyph observation recording with no path work."""
     program = benchmark(reinterpret, text_page)
 
-    products = program.products
-    assert len(products.glyphs) == 730
-    assert not products.drawings
+    assert len(program.glyphs) == 730
+    assert not program.drawings
 
 
 def test_interpret_vector_page_benchmark(benchmark, vector_page) -> None:
     """A drawing-heavy page, where path construction outweighs text."""
     program = benchmark(reinterpret, vector_page)
 
-    products = program.products
-    assert len(products.drawings) == 494
-    assert len(products.lines) == 411
+    assert len(program.drawings) == 494
+    assert len(program.lines) == 411
 
 
 def test_interpret_dense_page_benchmark(benchmark, dense_page) -> None:
     """The heaviest native-text page in the corpus: text, paths and rules."""
     program = benchmark(reinterpret, dense_page)
 
-    products = program.products
-    assert len(products.glyphs) == 3596
-    assert len(products.lines) == 363
+    assert len(program.glyphs) == 3596
+    assert len(program.lines) == 363

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import Any, TypeAlias
 
@@ -17,7 +17,7 @@ from core_pdf.impl.spec.s_07_content.capture import (
 )
 
 
-class PageEventKind(IntEnum):
+class PageCommandKind(IntEnum):
     TEXT = 1
     GLYPH = 2
     DRAWING = 3
@@ -25,15 +25,15 @@ class PageEventKind(IntEnum):
     INLINE_IMAGE = 5
 
 
-PageEventPayload: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
+PageCommandPayload: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
 
 
 @dataclass(frozen=True, slots=True)
-class PageEvent:
+class PageCommand:
     """One directly typed entry in page-content order."""
 
-    kind: PageEventKind
-    payload: PageEventPayload
+    kind: PageCommandKind
+    payload: PageCommandPayload
 
     @property
     def seqno(self) -> int:
@@ -54,6 +54,7 @@ class PageProgram:
     drawings: tuple[CapturedDrawing, ...] = ()
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: tuple[CapturedLine, ...] = ()
+    commands: tuple[PageCommand, ...] = ()
 
     @classmethod
     def from_state(cls, state: Any) -> PageProgram:
@@ -72,44 +73,36 @@ class PageProgram:
             raise PdfContractError("page state emitted an invalid inline-image product")
         if not all(isinstance(line, CapturedLine) for line in lines):
             raise PdfContractError("page state emitted an invalid line product")
-        return cls(
-            runs,
-            glyphs,
-            tuple(drawing for drawing in raw_drawings if drawing.kind != "inline-image"),
-            inline_images,
-            lines,
+        drawings = tuple(drawing for drawing in raw_drawings if drawing.kind != "inline-image")
+        commands = [PageCommand(PageCommandKind.TEXT, run) for run in runs]
+        commands.extend(
+            PageCommand(PageCommandKind.GLYPH, glyph) for glyph in glyphs if glyph.has_paint
         )
-
-    @property
-    def products(self) -> PageProgram:
-        """Return this program for compatibility with callers outside ``impl``."""
-        return self
-
-    @property
-    def events(self) -> tuple[PageEvent, ...]:
-        """Return captured products merged into content-stream order."""
-        events = [PageEvent(PageEventKind.TEXT, run) for run in self.runs]
-        events.extend(
-            PageEvent(PageEventKind.GLYPH, glyph) for glyph in self.glyphs if glyph.has_paint
-        )
-        events.extend(
-            PageEvent(
-                PageEventKind.IMAGE if drawing.kind == "image" else PageEventKind.DRAWING,
+        commands.extend(
+            PageCommand(
+                PageCommandKind.IMAGE if drawing.kind == "image" else PageCommandKind.DRAWING,
                 drawing,
             )
-            for drawing in self.drawings
+            for drawing in drawings
             if drawing.kind != "inline-image"
         )
-        events.extend(PageEvent(PageEventKind.INLINE_IMAGE, image) for image in self.inline_images)
-        # Categories were appended in the tie-break order used by content
-        # interpretation. Python's stable sort preserves it for equal seqnos.
-        events.sort(key=lambda event: event.seqno)
-        return tuple(events)
+        commands.extend(PageCommand(PageCommandKind.INLINE_IMAGE, image) for image in inline_images)
+        commands.sort(key=lambda command: command.seqno)
+        return cls(runs, glyphs, drawings, inline_images, lines, tuple(commands))
+
+    def with_runs(self, runs: tuple[TextRun, ...]) -> PageProgram:
+        """Return a program whose text projection and command stream agree."""
+        commands = [
+            command for command in self.commands if command.kind is not PageCommandKind.TEXT
+        ]
+        commands.extend(PageCommand(PageCommandKind.TEXT, run) for run in runs)
+        commands.sort(key=lambda command: command.seqno)
+        return replace(self, runs=runs, commands=tuple(commands))
 
 
 __all__ = (
-    "PageEvent",
-    "PageEventKind",
-    "PageEventPayload",
+    "PageCommand",
+    "PageCommandKind",
+    "PageCommandPayload",
     "PageProgram",
 )

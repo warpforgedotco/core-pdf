@@ -139,16 +139,6 @@ def dispatch_operations(
         and not target.capture_clipping
     )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
-    # Fixed when the document is opened, but it was previously resolved by a
-    # double getattr chain on every ``<<`` token of every content stream.
-    legacy_pdfminer_mode = bool(
-        target is not None
-        and getattr(
-            getattr(target, "document", None),
-            "legacy_pdfminer_text_operators",
-            False,
-        )
-    )
     skipped_clip_q_count = 0
 
     pos = lexer.pos
@@ -260,29 +250,11 @@ def dispatch_operations(
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
                 try:
-                    parse_dictionary = (
-                        lexer.parse_dictionary
-                        if legacy_pdfminer_mode
-                        else lexer.parse_dictionary_or_stream
-                    )
-                    previous_recovery = lexer.recover_malformed_objects
-                    if legacy_pdfminer_mode:
-                        lexer.recover_malformed_objects = False
-                    try:
-                        append_operand(cast(ContentOperand, parse_dictionary()))
-                    finally:
-                        lexer.recover_malformed_objects = previous_recovery
+                    append_operand(cast(ContentOperand, lexer.parse_dictionary_or_stream()))
                 except PdfParseError as exc:
                     if lexer.pos >= data_len or str(exc) == "unexpected end of PDF input":
-                        trailing = raw_bytes[operand_start:]
-                        if legacy_pdfminer_mode and (
-                            b"endobj" in trailing or re.search(rb"(?m)^xref\b", trailing)
-                        ):
-                            raise ValueError("invalid pdfminer content dictionary") from exc
                         pos = data_len
                         break
-                    if legacy_pdfminer_mode:
-                        raise ValueError("invalid pdfminer content dictionary") from exc
                     if lexer.pos > operand_start:
                         pos = lexer.pos
                         continue
@@ -296,24 +268,10 @@ def dispatch_operations(
             pos = lexer.pos
             continue
         if byte == 40:
-            literal_start = lexer.pos
             raw_string = lexer.read_string()
-            literal_end = lexer.pos
-            lexer.pos = literal_start
-            compatibility_string = lexer.read_string(drop_unknown_escapes=True)
-            lexer.pos = literal_end
             if should_decipher:
                 raw_string = lexer.apply_decipher(raw_string)
-                compatibility_string = lexer.apply_decipher(compatibility_string)
-            string_value = (
-                raw_string
-                if text_only
-                else PdfString(
-                    raw_string,
-                    is_literal=True,
-                    compatibility_data=compatibility_string,
-                )
-            )
+            string_value = raw_string if text_only else PdfString(raw_string, is_literal=True)
             append_operand(string_value)
             pos = lexer.pos
             continue

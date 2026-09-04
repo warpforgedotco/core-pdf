@@ -35,7 +35,6 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedLine,
     CapturedPath,
     PatternPaint,
-    PdfminerCursor,
     RunGeometry,
     ShadingPattern,
     TilingPattern,
@@ -186,7 +185,6 @@ class TextDocument(typing.Protocol):
     def resolver(self) -> PdfValueResolver: ...
 
     raster_font_provider: Any
-    legacy_pdfminer_text_operators: bool
 
     # TextState never calls this itself, but `detect_ligature_overrides` takes a
     # FontResourceDocument, and a document only satisfies that protocol with it.
@@ -204,7 +202,6 @@ class TextState:
     page: PdfDict
     capture_glyphs: bool
     capture_graphics: bool
-    compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
     glyph_clusters: list[GlyphCluster]
@@ -345,14 +342,6 @@ class TextState:
         "hidden_layers",
         "pending_line_break",
         "pending_run",
-        "compat_tj_active",
-        "compat_tj_enabled",
-        "compat_tj_cursor_x",
-        "compat_tj_cursor_y",
-        "compat_tj_origin_e",
-        "compat_tj_origin_f",
-        "compat_tj_decoder",
-        "compat_tj_need_charspace",
         "op_handlers",
         "combined_A",
         "combined_B",
@@ -430,12 +419,6 @@ class TextState:
         self.clip_scope_stack = []
         self.capture_glyphs = True
         self.capture_graphics = True
-        # The pdfminer cursor exists only so the pdfminer and pdfplumber
-        # facades can reproduce that library's per-glyph advance bookkeeping.
-        # Both open the document with legacy_pdfminer_text_operators, and they
-        # are the only readers of the provenance it emits, so native extraction
-        # does not need to pay for it on every glyph of every page.
-        self.compat_tj_enabled = document.legacy_pdfminer_text_operators
         self.capture_clipping = True
         self.runs = []
         self.glyphs = []
@@ -480,13 +463,6 @@ class TextState:
         self.hidden_layers = hidden_layers
         self.pending_line_break = False
         self.pending_run = None
-        self.compat_tj_active = False
-        self.compat_tj_cursor_x = 0.0
-        self.compat_tj_cursor_y = 0.0
-        self.compat_tj_origin_e = 0.0
-        self.compat_tj_origin_f = 0.0
-        self.compat_tj_decoder = None
-        self.compat_tj_need_charspace = False
         self.op_handlers = build_operator_handlers(self)
 
         self.combined_A = 1.0
@@ -501,30 +477,13 @@ class TextState:
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
-        string_syntax: str | None = None,
-        compatibility_data: bytes | None = None,
     ) -> None:
         effective_decoder = decoder if decoder is not None else self.get_decoder()
-        previous_compat_active = self.compat_tj_active
-        previous_compat_origin = (self.compat_tj_origin_e, self.compat_tj_origin_f)
-        previous_compat_decoder = self.compat_tj_decoder
-        previous_compat_need_charspace = self.compat_tj_need_charspace
-        self.compat_tj_active = self.capture_glyphs and self.compat_tj_enabled
-        self.compat_tj_origin_e = self.lm_e
-        self.compat_tj_origin_f = self.lm_f
-        self.compat_tj_decoder = effective_decoder
-        self.compat_tj_need_charspace = False
         self._append_text_impl(
             operand,
             data=data,
             decoder=effective_decoder,
-            string_syntax=string_syntax,
-            compatibility_data=compatibility_data,
         )
-        self.compat_tj_active = previous_compat_active
-        self.compat_tj_origin_e, self.compat_tj_origin_f = previous_compat_origin
-        self.compat_tj_decoder = previous_compat_decoder
-        self.compat_tj_need_charspace = previous_compat_need_charspace
 
     @property
     def ctm(self) -> Matrix:
@@ -1433,8 +1392,6 @@ class TextState:
         rotation_angle: int,
         visible: bool,
         glyphs: tuple[DecodedGlyph, ...] | None = None,
-        string_syntax: str | None = None,
-        compatibility_data: bytes | None = None,
     ) -> (
         tuple[tuple[float, float, float, float], tuple[float, float, float, float], float | None]
         | None
@@ -1479,11 +1436,7 @@ class TextState:
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
             ("text_rise", self.rise),
-            ("string_syntax", string_syntax),
-            ("compatibility_data", compatibility_data),
         )
-        compat_tj_active = self.compat_tj_active and self.compat_tj_decoder is decoder
-        compat_cursor: PdfminerCursor | None = None
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
             self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
@@ -1496,30 +1449,9 @@ class TextState:
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
         vertical_position = decoder.vertical_glyph_position
-        vertical_metric = decoder.vertical_glyph_metric
         clusters = self.glyph_clusters
         cursor = 0
         is_vertical = decoder.is_vertical
-        glyph_width = decoder.glyph_width
-        if compat_tj_active:
-            compat_spacing_scale = self.horizontal_scale * 0.01
-            compat_cursor = PdfminerCursor(
-                self.compat_tj_cursor_x,
-                self.compat_tj_cursor_y,
-                self.compat_tj_need_charspace,
-                char_space=self.char_space * compat_spacing_scale,
-                word_space=(0.0 if decoder.is_cid_font else self.word_space * compat_spacing_scale),
-                spacing_scale=compat_spacing_scale,
-                origin_x=(
-                    self.compat_tj_origin_e * self.ca + self.compat_tj_origin_f * self.cc + self.ce
-                ),
-                origin_y=(
-                    self.compat_tj_origin_e * self.cb + self.compat_tj_origin_f * self.cd + self.cf
-                ),
-                combined=(combined_a, combined_b, combined_c, combined_d),
-                is_vertical=is_vertical,
-                font_size=font_size,
-            )
         effective_font_name = decoder.font_name or font_name
         advance_scale = self.text_advance_scale
         char_space_scale = self.char_space_scale
@@ -1590,13 +1522,9 @@ class TextState:
                     decoder,
                     word_space=glyph.code_bytes == b" ",
                 )
-                glyph_width_units = 0.0
             else:
-                # Reused by the compat cursor below. glyph_width is three frames
-                # deep, so calling it twice per glyph is pure overhead.
-                glyph_width_units = glyph_width(glyph.width_code)
                 advance = (
-                    glyph_width_units
+                    decoder.glyph_width(glyph.width_code)
                     + char_space_scale
                     + (word_space_scale if glyph.code_bytes == b" " else 0.0)
                 ) * advance_scale
@@ -1609,18 +1537,7 @@ class TextState:
                 offset += advance
                 continue
 
-            if compat_cursor is not None:
-                width_units = (
-                    float(vertical_metric(glyph.width_code)[0])
-                    if is_vertical
-                    else glyph_width_units
-                )
-                observation_provenance: tuple[tuple[str, Any], ...] = (
-                    *glyph_provenance,
-                    *compat_cursor.step(width_units, glyph.char_code == 32),
-                )
-            else:
-                observation_provenance = glyph_provenance
+            observation_provenance = glyph_provenance
 
             cluster_id = len(clusters)
             cluster_provenance_id = (seqno, cluster_id)
@@ -1931,10 +1848,6 @@ class TextState:
                 clusters.append(cluster)
             offset += advance
 
-        if compat_cursor is not None:
-            self.compat_tj_cursor_x = compat_cursor.x
-            self.compat_tj_cursor_y = compat_cursor.y
-            self.compat_tj_need_charspace = compat_cursor.need_charspace
         if not run_geometry.started:
             return None
         return run_geometry.advance, run_geometry.ink, run_geometry.confidence
@@ -1945,8 +1858,6 @@ class TextState:
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
-        string_syntax: str | None = None,
-        compatibility_data: bytes | None = None,
     ) -> None:
         decoder = decoder if decoder is not None else self.get_decoder()
 
@@ -2115,34 +2026,6 @@ class TextState:
 
         actual_text_span = self.current_actual_text_span()
         if actual_text_span is not None:
-            compatibility_glyphs = glyphs if glyphs is not None else decoder.decode_glyphs(data)
-            compatibility_parts: list[str] = []
-            for glyph in compatibility_glyphs:
-                mapped = (
-                    decoder.to_unicode.decode(glyph.code_bytes)
-                    if decoder.to_unicode is not None and glyph.code_bytes
-                    else glyph.unicode
-                )
-                # pdfminer represents an explicitly empty ToUnicode target as
-                # U+0000 rather than dropping the source character.
-                compatibility_parts.append(mapped if mapped else "\x00")
-            compatibility_text = "".join(compatibility_parts)
-            if self.capture_glyphs:
-                glyph_start = len(self.glyphs)
-                cluster_start = len(self.glyph_clusters)
-                self.record_glyph_observations(
-                    text,
-                    data,
-                    decoder,
-                    rot,
-                    visible,
-                    glyphs=glyphs,
-                    string_syntax=string_syntax,
-                    compatibility_data=compatibility_data,
-                )
-                actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
-                del self.glyphs[glyph_start:]
-                del self.glyph_clusters[cluster_start:]
             actual_text_span.add_extents(
                 x0=x0,
                 y0=y0,
@@ -2168,7 +2051,6 @@ class TextState:
                 confidence=1.0,
                 font_decoder=decoder,
                 effective_font_height=effective_font_height,
-                compatibility_text=compatibility_text,
             )
             self.sequence = seqno + 1
             self.tm_e = te + adv_x * ta + adv_y * tc
@@ -2211,8 +2093,6 @@ class TextState:
                 rot,
                 visible,
                 glyphs=glyphs,
-                string_syntax=string_syntax,
-                compatibility_data=compatibility_data,
             )
             recorded_clusters = tuple(self.glyph_clusters[cluster_start:])
             if recorded_clusters:
@@ -2328,21 +2208,6 @@ class TextState:
 
         te, tf = self.tm_e, self.tm_f
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
-        previous_compat_tj = (
-            self.compat_tj_active,
-            self.compat_tj_cursor_x,
-            self.compat_tj_cursor_y,
-            self.compat_tj_origin_e,
-            self.compat_tj_origin_f,
-            self.compat_tj_decoder,
-            self.compat_tj_need_charspace,
-        )
-        self.compat_tj_active = self.capture_glyphs and self.compat_tj_enabled
-        self.compat_tj_origin_e = self.lm_e
-        self.compat_tj_origin_f = self.lm_f
-        self.compat_tj_decoder = decoder
-        self.compat_tj_need_charspace = False
-
         for item in array:
             t = type(item)
             if t is PdfString:
@@ -2359,16 +2224,12 @@ class TextState:
                     te, tf = self.tm_e, self.tm_f
                     pending_bytes.clear()
                 adjustment = item * scale
-                compat_adjustment = item * (0.001 * self.font_size * (self.horizontal_scale * 0.01))
                 if is_vert:
                     te -= adjustment * tc
                     tf -= adjustment * td
-                    self.compat_tj_cursor_y -= compat_adjustment
                 else:
                     te -= adjustment * ta
                     tf -= adjustment * tb
-                    self.compat_tj_cursor_x -= compat_adjustment
-                self.compat_tj_need_charspace = True
             elif t is str:
                 pending_bytes.extend(item.encode("latin-1"))
 
@@ -2381,19 +2242,6 @@ class TextState:
             te, tf = self.tm_e, self.tm_f
 
         self.tm_e, self.tm_f = te, tf
-        compat_cursor_x = self.compat_tj_cursor_x
-        compat_cursor_y = self.compat_tj_cursor_y
-        (
-            self.compat_tj_active,
-            self.compat_tj_cursor_x,
-            self.compat_tj_cursor_y,
-            self.compat_tj_origin_e,
-            self.compat_tj_origin_f,
-            self.compat_tj_decoder,
-            self.compat_tj_need_charspace,
-        ) = previous_compat_tj
-        self.compat_tj_cursor_x = compat_cursor_x
-        self.compat_tj_cursor_y = compat_cursor_y
 
     def current_actual_text_span(self) -> Any | None:
         for entry in reversed(self.marked_content_stack):
@@ -2454,18 +2302,10 @@ class TextState:
                     visible=entry.visible,
                     confidence=entry.confidence,
                     unicode_source="actual_text",
-                    # Preserve the text obtained from the font program as an
-                    # alternate.  Consumers such as pdfminer do not interpret
-                    # marked-content /ActualText and therefore need the font
-                    # projection rather than the accessible replacement text.
-                    alternates=(entry.compatibility_text,) if entry.compatibility_text else (),
                     font_decoder=entry.font_decoder,
                     effective_font_size=entry.font_size,
                     effective_font_height=entry.effective_font_height,
-                    provenance=(
-                        *entry.provenance,
-                        ("compatibility_glyphs", tuple(entry.compatibility_glyphs)),
-                    ),
+                    provenance=entry.provenance,
                 )
             )
 
@@ -2477,8 +2317,6 @@ class TextState:
         self.tm_d = self.lm_d = 1.0
         self.tm_e = self.lm_e = 0.0
         self.tm_f = self.lm_f = 0.0
-        self.compat_tj_cursor_x = 0.0
-        self.compat_tj_cursor_y = 0.0
         self.update_combined()
 
     def op_ET(self, operands: ContentOperands, depth: int) -> None:
@@ -2492,8 +2330,6 @@ class TextState:
         self.tm_f = tx * self.lm_b + ty * self.lm_d + self.lm_f
         self.lm_e = self.tm_e
         self.lm_f = self.tm_f
-        self.compat_tj_cursor_x = 0.0
-        self.compat_tj_cursor_y = 0.0
 
     def internal_show_text(self, operand: ContentOperand) -> None:
         decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
@@ -2501,8 +2337,6 @@ class TextState:
             self.append_text(
                 data=operand.data,
                 decoder=decoder,
-                string_syntax="literal" if operand.is_literal else "hex",
-                compatibility_data=operand.compatibility_data,
             )
         else:
             self.append_text(operand, decoder=decoder)
@@ -2567,8 +2401,6 @@ class TextState:
         self.tm_d = self.lm_d = d_
         self.tm_e = self.lm_e = e
         self.tm_f = self.lm_f = f
-        self.compat_tj_cursor_x = 0.0
-        self.compat_tj_cursor_y = 0.0
         self.update_combined()
 
     def op_Tf(self, operands: ContentOperands, depth: int) -> None:
@@ -2694,9 +2526,8 @@ class TextState:
         self.word_space = word_space
         self.char_space = char_space
         self.update_text_scales()
-        if not self.document.legacy_pdfminer_text_operators:
-            self.internal_move_text(0.0, -self.leading)
-            self.pending_line_break = True
+        self.internal_move_text(0.0, -self.leading)
+        self.pending_line_break = True
         self.internal_show_text(operands[2])
 
     def op_BI(self, operands: ContentOperands, depth: int) -> None:

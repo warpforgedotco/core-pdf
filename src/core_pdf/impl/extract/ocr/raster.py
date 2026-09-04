@@ -23,8 +23,7 @@ from core_pdf.impl.extract.contracts import (
 )
 from core_pdf.impl.extract.ocr.types import internal_Raster
 from core_pdf.impl.model.geometry import bbox_union, points_bbox
-from core_pdf.impl.render.model import RasterImage, RenderOptions
-from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import (
     contiguous_bytes,
     resample_bilinear,
@@ -488,20 +487,11 @@ def internal_rendered_page_raster(
     capture: PageAnalysis,
     requested_scale: float,
     *,
+    rendered: Any,
     crop: tuple[float, float, float, float] | None = None,
-    rendered: Any | None = None,
     max_pixels: int = MAX_OCR_PIXELS,
-    include_native_text: bool = False,
 ) -> internal_Raster | None:
     page = capture.page
-    if rendered is None:
-        rendered = compose_page(
-            page,
-            RenderOptions(include_text=include_native_text),
-            page_program=capture.program,
-            fields=capture.fields,
-            annotations=capture.annotations,
-        )
     if crop is None:
         raster_area = max(1.0, float(page.width) * float(page.height))
     else:

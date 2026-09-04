@@ -222,7 +222,7 @@ def internal_prepare_document_font_mappings(
     recognition_by_index: dict[int, RecognitionResult] = {}
     for page_index in seed_indexes:
         context.raise_if_cancelled()
-        recognition_by_index[page_index] = extractions[page_index].recognition(context)
+        recognition_by_index[page_index] = extractions[page_index].recognize(context)
     votes: dict[object, dict[bytes, Counter[str]]] = {}
     for page_index, recognition in recognition_by_index.items():
         internal_merge_font_mapping_votes(
@@ -259,10 +259,10 @@ def internal_apply_font_enrichment(
             enriched.append(
                 internal_PageExtraction(
                     base.page,
-                    capture=base.capture(),
-                    plan=base.plan(),
+                    capture=base.capture,
+                    plan=base.plan,
                     recognition=recognition,
-                    fields=base.capture().fields,
+                    fields=base.capture.fields,
                     structure=base.internal_structure,
                     hidden_layers=base.internal_hidden_layers,
                 )
@@ -355,10 +355,9 @@ def internal_prepare_document_stroked_mappings(
     recognition_by_index: dict[int, RecognitionResult] = {}
     for page_index in ordered:
         extraction = extractions[page_index]
-        capture = extraction.capture()
-        recognition = extraction.internal_recognition
+        capture = extraction.capture
+        recognition = extraction.recognition_result
         if recognition is None and alphabet:
-            extraction.plan()
             decoded = decode_stroked_text_profile_with_alphabet(
                 internal_stroked_text_profile(capture),
                 alphabet,
@@ -368,7 +367,7 @@ def internal_prepare_document_stroked_mappings(
                 continue
 
         if recognition is None:
-            recognition = extraction.recognition(context)
+            recognition = extraction.recognize(context)
         learned = recognition.stroked_vector_alphabet
         if learned:
             internal_merge_document_stroked_alphabet(
@@ -393,10 +392,10 @@ def internal_apply_stroked_enrichment(
         base = extractions[index]
         enriched[index] = internal_PageExtraction(
             base.page,
-            capture=base.capture(),
-            plan=base.plan(),
+            capture=base.capture,
+            plan=base.plan,
             recognition=recognition,
-            fields=base.capture().fields,
+            fields=base.capture.fields,
             structure=base.internal_structure,
             hidden_layers=base.internal_hidden_layers,
         )
@@ -410,7 +409,7 @@ def internal_capture_document_pages(
     captures: list[PageAnalysis] = []
     for extraction in extractions:
         context.raise_if_cancelled()
-        captures.append(extraction.capture())
+        captures.append(extraction.capture)
     return tuple(captures)
 
 
@@ -435,7 +434,7 @@ def internal_prepare_selection_state(
     extractions = internal_apply_font_enrichment(extractions, captures, font)
     stroked = internal_prepare_document_stroked_mappings(
         extractions,
-        tuple(extraction.capture() for extraction in extractions),
+        tuple(extraction.capture for extraction in extractions),
         context,
     )
     return internal_apply_stroked_enrichment(extractions, stroked)

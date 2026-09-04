@@ -39,7 +39,7 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedPath,
     CapturedSubpath,
 )
-from core_pdf.impl.spec.s_07_content.page_program import PageEventKind, PageProgram
+from core_pdf.impl.spec.s_07_content.page_program import PageCommandKind, PageProgram
 from core_pdf.impl.spec.s_07_content.state import (
     TextState,
     internal_NON_PAINTING_RENDER_MODES,
@@ -167,9 +167,7 @@ class RenderedPage:
         page_group_alpha = self.metadata.get("group_alpha")
         if not pdf_number(page_group_alpha):
             page_group_alpha = None
-        clip_path_stack: list[tuple[CapturedPath, str]] = []
         clip_state = internal_ClipState(
-            clip_path_stack,
             crop_x0=crop_x0,
             crop_y1=crop_y1,
             scale=scale,
@@ -206,20 +204,18 @@ class RenderedPage:
             if blend_mode == "Normal":
                 blend_mode = None
             if generic_item.kind == "state-push":
-                clip_state_stack.append(len(clip_path_stack))
+                clip_state_stack.append(clip_state.depth)
                 continue
             if generic_item.kind == "state-pop":
                 if clip_state_stack:
-                    # Truncate in place: the clip state holds this same list, and
-                    # rebinding would leave it pointing at the pre-pop copy.
-                    del clip_path_stack[clip_state_stack.pop() :]
+                    clip_state.restore(clip_state_stack.pop())
                 else:
-                    clip_path_stack.clear()
+                    clip_state.restore(0)
                 continue
             if generic_item.kind == "clip":
                 path = data.get("path")
                 if type(path) is CapturedPath and path.has_segments():
-                    clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
+                    clip_state.push(path, data.get("fill_rule") or "nonzero")
                 continue
             if generic_item.kind == "group-begin":
                 # A transparency group starts from a transparent backdrop, not
@@ -459,7 +455,7 @@ def compose_page(
         page_program = page.get_page_program()
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")
-    events = page_program.events
+    commands = page_program.commands
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
 
@@ -487,15 +483,15 @@ def compose_page(
         )
         text_clipping_subpaths.clear()
 
-    for event in events:
-        kind = event.kind
-        if not options.include_text and kind in (PageEventKind.TEXT, PageEventKind.GLYPH):
+    for command in commands:
+        kind = command.kind
+        if not options.include_text and kind in (PageCommandKind.TEXT, PageCommandKind.GLYPH):
             continue
-        payload = event.payload
-        if kind == PageEventKind.TEXT:
+        payload = command.payload
+        if kind == PageCommandKind.TEXT:
             assert isinstance(payload, TextRun)
             append_text_run(payload)
-        elif kind == PageEventKind.GLYPH:
+        elif kind == PageCommandKind.GLYPH:
             assert isinstance(payload, GlyphObservation)
             glyph = payload
             glyph_text_object_id = glyph.text_object_id
@@ -529,11 +525,11 @@ def compose_page(
                 bitmap_width=glyph.bitmap_width,
                 bitmap_height=glyph.bitmap_height,
             )
-        elif kind in (PageEventKind.DRAWING, PageEventKind.IMAGE):
+        elif kind in (PageCommandKind.DRAWING, PageCommandKind.IMAGE):
             assert isinstance(payload, CapturedDrawing)
             flush_text_clip(payload.seqno)
             display_list.append_captured_drawing(payload)
-        elif kind == PageEventKind.INLINE_IMAGE:
+        elif kind == PageCommandKind.INLINE_IMAGE:
             assert isinstance(payload, CapturedInlineImage)
             inline_image = payload
             flush_text_clip(inline_image.seqno)
@@ -549,7 +545,7 @@ def compose_page(
                 bbox=None,
                 raw_data=inline_image.data,
             )
-    flush_text_clip(len(events))
+    flush_text_clip(len(commands))
 
     def append_capture(state: TextState) -> None:
         if options.include_text:

@@ -399,15 +399,6 @@ def internal_remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-def internal_table_token_coverage(
-    candidate: Table,
-    reference: Table,
-) -> float:
-    return internal_table_profile_token_coverage(
-        internal_table_profile(candidate), internal_table_profile(reference)
-    )
-
-
 def internal_table_profile_token_coverage(
     candidate_facts: internal_TableProfile,
     reference_facts: internal_TableProfile,

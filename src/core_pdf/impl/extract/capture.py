@@ -451,7 +451,7 @@ def internal_promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, .
 
 def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     """Expose a verified hidden layer while preserving its original geometry and ordering."""
-    return internal_observations_from_runs(internal_promoted_hidden_runs(capture.runs))
+    return internal_observations_from_runs(internal_promoted_hidden_runs(capture.program.runs))
 
 
 def internal_apply_learned_unicode_to_run(
@@ -701,7 +701,7 @@ def internal_capture_with_newstroke_text(
         suspicious_characters=analysis.suspicious_characters,
         text_coverage=text_coverage,
         uncovered_vector_area=internal_uncovered_vector_area(
-            capture.drawings,
+            capture.program.drawings,
             observations,
             page_area=capture.evidence.page_area,
         ),
@@ -716,7 +716,12 @@ def internal_capture_with_newstroke_text(
         vector_text_maximum_error=decoded.maximum_error,
         vector_text_trusted=True,
     )
-    return replace(capture, observations=observations, runs=runs, evidence=evidence)
+    return replace(
+        capture,
+        observations=observations,
+        program=capture.program.with_runs(runs),
+        evidence=evidence,
+    )
 
 
 def internal_capture_from_program(
@@ -912,10 +917,6 @@ def internal_capture_from_program(
         annotations=annotations,
         program=program,
         observations=observations,
-        runs=runs,
-        drawings=drawings,
-        grid_lines=grid_lines,
-        inline_images=inline_images,
         evidence=PageEvidence(
             page_area=page_area,
             native_characters=native_characters,
@@ -946,8 +947,8 @@ def internal_capture_from_program(
         ),
     )
     newstroke_decode: NewstrokeDecode | None = None
-    if not captured.runs and internal_requires_high_resolution_vector_ocr(captured):
-        newstroke_decode = decode_newstroke_drawings(captured.drawings)
+    if not captured.program.runs and internal_requires_high_resolution_vector_ocr(captured):
+        newstroke_decode = decode_newstroke_drawings(captured.program.drawings)
         if newstroke_decode.trusted:
             captured = internal_capture_with_newstroke_text(captured, newstroke_decode)
     if not captured.evidence.vector_text_trusted:

@@ -205,7 +205,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         password: str = "",
         *,
         recovery_scan_all_revisions: bool = True,
-        legacy_pdfminer_text_operators: bool = False,
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_operation_lock = threading.RLock()
@@ -216,7 +215,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             source,
             password=password,
             recovery_scan_all_revisions=recovery_scan_all_revisions,
-            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
             raster_font_provider=raster_font_provider,
         )
         self.page_class = PdfPage

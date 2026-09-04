@@ -333,7 +333,7 @@ class internal_PatternTargetMixin:
     def paint_fill_pattern(self: Any, data: dict[str, Any], blend_mode: str | None) -> bool:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
-        clip_path_stack = self.clip_path_stack
+        clip_state = self.clip
         paint_shading = self.paint_shading
         paint_tiling_pattern = self.paint_tiling_pattern
         path_bbox = self.path_bbox
@@ -343,7 +343,7 @@ class internal_PatternTargetMixin:
         path = data.get("path")
         pushed_clip = False
         if type(path) is CapturedPath and path.has_segments():
-            clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
+            clip_state.push(path, data.get("fill_rule") or "nonzero")
             pushed_clip = True
         try:
             if isinstance(pattern, ShadingPattern):
@@ -361,5 +361,5 @@ class internal_PatternTargetMixin:
             return paint_tiling_pattern(pattern, data, blend_mode)
         finally:
             if pushed_clip:
-                clip_path_stack.pop()
+                clip_state.pop()
         return False

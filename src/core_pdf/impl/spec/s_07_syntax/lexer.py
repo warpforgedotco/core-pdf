@@ -767,7 +767,6 @@ class PdfLexer:
                 values["Contents"] = PdfString(
                     self.apply_decipher(raw_contents.data),
                     is_literal=raw_contents.is_literal,
-                    compatibility_data=raw_contents.compatibility_data,
                 )
         return values
 

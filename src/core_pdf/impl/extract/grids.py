@@ -67,7 +67,7 @@ def internal_axis_segments(
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
     page_width = capture.width
     page_height = capture.height
-    lines = capture.grid_lines
+    lines = capture.program.lines
     if not lines:
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty

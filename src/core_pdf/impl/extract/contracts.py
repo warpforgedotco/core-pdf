@@ -10,13 +10,11 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import (
     TextSpan,
 )
 from core_pdf.impl.records import TextWord, internal_reconcile_text_words
 from core_pdf.impl.runtime.array_views import readonly
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 
 # Tesseract page-segmentation modes. Shared stage vocabulary: observations.py chooses a
@@ -511,10 +509,6 @@ class PageAnalysis:
     annotations: tuple[Any, ...] | None
     program: PageProgram
     observations: ObservationBatch
-    runs: tuple[TextRun, ...]
-    drawings: tuple[CapturedDrawing, ...]
-    grid_lines: Any
-    inline_images: tuple[CapturedInlineImage, ...]
     evidence: PageEvidence
 
 

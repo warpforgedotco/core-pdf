@@ -1747,7 +1747,6 @@ def extract_pages(  # noqa: C901
         pdf_file,
         password=password,
         recovery_scan_all_revisions=False,
-        legacy_pdfminer_text_operators=True,
     )
     try:
         yielded = 0
@@ -1774,7 +1773,7 @@ def extract_pages(  # noqa: C901
             chars: list[LTChar] = []
             if not _unstructured_mode:
                 internal_pdfminer_validate_page_resources(page)
-            products = page.get_page_program().products
+            products = page.get_page_program()
             compatibility_glyphs: list[Any] = []
             for glyph in products.glyphs:
                 provenance = dict(glyph.provenance) if glyph.provenance else {}
