@@ -6,6 +6,9 @@ from __future__ import annotations
 from typing import Any
 
 #: Content-stream operator name -> the ``TextState`` method that implements it.
+#: Adding an operator here also requires adding it to
+#: s_07_syntax_primitives/tokens.PDF_CONTENT_OPERATOR_BYTES, which cannot import
+#: this module; test_operations.py pins the two together.
 OPERATOR_SPECS = {
     "BT": "op_BT",
     "ET": "op_ET",

@@ -10,6 +10,10 @@ SEPARATOR_TABLE = bytes([1 if i in WHITESPACE or i in DELIMITERS else 0 for i in
 WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
 # Lexical vocabulary used to recognize content streams before they are parsed.
+# This must stay equal to s_07_content/operator_tables.OPERATOR_SPECS plus ID/EI,
+# which test_operations.py asserts. It is spelled out again here rather than
+# imported because syntax primitives are the spec floor and cannot depend on
+# s_07_content.
 PDF_CONTENT_OPERATOR_BYTES = frozenset(
     b"""BT ET T* Td TD Tj TJ Tm Tf TL Tc Tw Tz Tr Ts ' " Do BI BDC BMC EMC
     q Q cm g rg k G RG K CS cs SC SCN sc scn sh i ri MP DP BX EX d0 d1

@@ -198,6 +198,32 @@ class TextDocument(typing.Protocol):
 internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
+def internal_merge_runs(
+    pending: TextRun,
+    new_run: TextRun,
+    gap: float,
+    threshold: float,
+    *,
+    widen: str,
+    reverse: bool = False,
+) -> bool:
+    """Fold `new_run` into `pending` when `gap` puts the two on one line.
+
+    `reverse` places the new run's text first, for a right-to-left pair.
+    `widen` names the pending edge the new run may push outward: an edge ending
+    in "0" moves to the minimum of the two, one ending in "1" to the maximum.
+    """
+    if not -2.0 <= gap < threshold:
+        return False
+    left, right = (new_run.text, pending.text) if reverse else (pending.text, new_run.text)
+    pending.text = left + gap_separator(left, right, gap, pending) + right
+    pending.union_ink_bbox(new_run.ink_bbox)
+    edge = getattr(new_run, widen)
+    keep = min if widen.endswith("0") else max
+    setattr(pending, widen, keep(edge, getattr(pending, widen)))
+    return True
+
+
 class TextState:
     document: TextDocument
     runs: list[TextRun]
@@ -1131,52 +1157,22 @@ class TextState:
 
         merged = False
         if is_same_style:
-            if p_rotation in (0, 90):
-                if p_rotation == 0:
-                    gap = new_run.x0 - p.x1
-                    if -2.0 <= gap < merge_threshold:
-                        separator = gap_separator(p_text, new_text, gap, p)
-                        p.text = p_text + separator + new_text
-                        p.union_ink_bbox(new_run.ink_bbox)
-                        if new_run.x1 > p.x1:
-                            p.x1 = new_run.x1
-                        merged = True
-                    else:
-                        gap_rtl = p.x0 - new_run.x1
-                        if -2.0 <= gap_rtl < merge_threshold:
-                            separator = gap_separator(new_text, p_text, gap_rtl, p)
-                            p.text = new_text + separator + p_text
-                            p.union_ink_bbox(new_run.ink_bbox)
-                            if new_run.x0 < p.x0:
-                                p.x0 = new_run.x0
-                            merged = True
-                else:
-                    gap = new_run.y0 - p.y1
-                    if -2.0 <= gap < merge_threshold:
-                        separator = gap_separator(p_text, new_text, gap, p)
-                        p.text = p_text + separator + new_text
-                        p.union_ink_bbox(new_run.ink_bbox)
-                        if new_run.y1 > p.y1:
-                            p.y1 = new_run.y1
-                        merged = True
+            if p_rotation == 0:
+                merged = internal_merge_runs(
+                    p, new_run, new_run.x0 - p.x1, merge_threshold, widen="x1"
+                ) or internal_merge_runs(
+                    p, new_run, p.x0 - new_run.x1, merge_threshold, widen="x0", reverse=True
+                )
+            elif p_rotation == 90:
+                merged = internal_merge_runs(
+                    p, new_run, new_run.y0 - p.y1, merge_threshold, widen="y1"
+                )
             else:
-                h_gap_inv = p.x0 - new_run.x1
-                if -2.0 <= h_gap_inv < merge_threshold:
-                    separator = gap_separator(p_text, new_text, h_gap_inv, p)
-                    p.text = p_text + separator + new_text
-                    p.union_ink_bbox(new_run.ink_bbox)
-                    if new_run.x0 < p.x0:
-                        p.x0 = new_run.x0
-                    merged = True
-                else:
-                    h_gap_inv_rtl = new_run.x0 - p.x1
-                    if -2.0 <= h_gap_inv_rtl < merge_threshold:
-                        separator = gap_separator(new_text, p_text, h_gap_inv_rtl, p)
-                        p.text = new_text + separator + p_text
-                        p.union_ink_bbox(new_run.ink_bbox)
-                        if new_run.x1 > p.x1:
-                            p.x1 = new_run.x1
-                        merged = True
+                merged = internal_merge_runs(
+                    p, new_run, p.x0 - new_run.x1, merge_threshold, widen="x0"
+                ) or internal_merge_runs(
+                    p, new_run, new_run.x0 - p.x1, merge_threshold, widen="x1", reverse=True
+                )
 
         if not merged:
             self.runs.append(p)
@@ -1284,26 +1280,6 @@ class TextState:
         rise_offset_x = rise * combined_c
         rise_offset_y = rise * combined_d
 
-        def glyph_transform(
-            glyph_offset: float,
-            vertical_offset: tuple[float, float] | None = None,
-        ) -> tuple[float, float, float, float, float, float]:
-            if vertical_offset is None:
-                origin_x = glyph_offset
-                origin_y = rise
-            else:
-                position_x, position_y = vertical_offset
-                origin_x = position_x
-                origin_y = rise + position_y - glyph_offset
-            return (
-                transform_a,
-                transform_b,
-                transform_c,
-                transform_d,
-                text_basis[0] + origin_x * combined_a + origin_y * combined_c,
-                text_basis[1] + origin_x * combined_b + origin_y * combined_d,
-            )
-
         if axis_aligned_horizontal:
             axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
             axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
@@ -1360,10 +1336,20 @@ class TextState:
                     transformed.y1,
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
-                outline_transform = glyph_transform(offset, glyph_vertical_position)
+                origin_x, position_y = glyph_vertical_position
+                origin_y = rise + position_y - offset
+                outline_transform = (
+                    transform_a,
+                    transform_b,
+                    transform_c,
+                    transform_d,
+                    text_basis[0] + origin_x * combined_a + origin_y * combined_c,
+                    text_basis[1] + origin_x * combined_b + origin_y * combined_d,
+                )
             else:
-                # Inlined glyph_transform for horizontal text; the sums keep
-                # the closure's evaluation order so floats stay bit-identical.
+                # The sums are written out rather than factored so that the
+                # evaluation order -- and therefore the floats -- stay identical
+                # to the vertical branch above.
                 outline_transform = (
                     transform_a,
                     transform_b,

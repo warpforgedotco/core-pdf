@@ -49,8 +49,6 @@ def normalize_extracted_text(text: str) -> str:
 
 
 __all__ = (
-    "NO_SPACE_AFTER",
-    "NO_SPACE_BEFORE",
     "can_merge_cross_font_word",
     "gap_separator",
     "is_garbage_text",
