@@ -313,14 +313,13 @@ def internal_table_from_component(
     x0, x1 = float(x_edges[0]), float(x_edges[-1])
     y0, y1 = float(y_edges[-1]), float(y_edges[0])
     cell_observations: dict[tuple[int, int], list[int]] = defaultdict(list)
-    visible = observations.visible.tolist()
-    candidate_indexes = [index for index in range(len(observations)) if visible[index]]
+    candidate_indexes = numpy.flatnonzero(observations.visible)
     candidate_boxes = observations.bbox[candidate_indexes]
     center_xs = ((candidate_boxes[:, 0] + candidate_boxes[:, 2]) * 0.5).tolist()
     center_ys = ((candidate_boxes[:, 1] + candidate_boxes[:, 3]) * 0.5).tolist()
     x_edge_list = x_edges.tolist()
     negated_y_edges = (-y_edges).tolist()
-    for index, center_x, center_y in zip(candidate_indexes, center_xs, center_ys):
+    for index, center_x, center_y in zip(candidate_indexes.tolist(), center_xs, center_ys):
         if not (x0 <= center_x <= x1 and y0 <= center_y <= y1):
             continue
         column = bisect_right(x_edge_list, center_x) - 1
@@ -690,9 +689,7 @@ def internal_grid_row_observations(
                 float(row_boxes[:, 3].max()),
             )
         )
-        confidences.append(
-            float(numpy.mean([float(observations.confidence[index]) for index in ordered]))
-        )
+        confidences.append(float(numpy.mean(observations.confidence[ordered])))
     return ObservationBatch.from_columns(
         texts,
         boxes,

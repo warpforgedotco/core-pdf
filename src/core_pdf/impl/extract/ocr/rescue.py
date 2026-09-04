@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -17,7 +16,6 @@ from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     OcrPass,
     OcrPassScope,
-    internal_bbox_tuple,
     internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
     internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
 )
@@ -25,7 +23,6 @@ from core_pdf.impl.extract.ocr.raster import internal_raster_ink_grid
 from core_pdf.impl.extract.ocr.region_tasks import internal_weak_region_grid_shape
 from core_pdf.impl.extract.ocr.types import internal_OcrTask, internal_Raster
 from core_pdf.impl.extract.quality import internal_Candidate, internal_text_utility_stats
-from core_pdf.impl.model.geometry import interval_overlap
 
 
 def internal_observation_coverage_grid(
@@ -37,51 +34,46 @@ def internal_observation_coverage_grid(
     if not len(observations):
         return numpy.zeros(rows * columns, dtype=numpy.float32)
     x0, y0, x1, y1 = page_box
-    width = max(1.0, x1 - x0)
-    height = max(1.0, y1 - y0)
-    output = numpy.zeros((rows, columns), dtype=numpy.float32)
-    for text, confidence, raw_box in zip(
-        observations.text,
-        observations.confidence,
-        observations.bbox,
-        strict=True,
-    ):
-        raw_x0, raw_y0, raw_x1, raw_y1 = internal_bbox_tuple(raw_box)
-        box_x0 = max(x0, raw_x0)
-        box_y0 = max(y0, raw_y0)
-        box_x1 = min(x1, raw_x1)
-        box_y1 = min(y1, raw_y1)
-        box_width = box_x1 - box_x0
-        box_height = box_y1 - box_y0
-        if box_width <= 0.0 or box_height <= 0.0:
-            continue
-        utility = internal_text_utility_stats(text, float(confidence)).utility
-        if utility <= 0.0:
-            continue
-        column_start = max(0, min(columns - 1, int((box_x0 - x0) * columns / width)))
-        column_end = max(
-            column_start,
-            min(columns - 1, math.ceil((box_x1 - x0) * columns / width) - 1),
+    boxes = numpy.asarray(observations.bbox, dtype=numpy.float64)
+    clipped = numpy.column_stack(
+        (
+            numpy.maximum(boxes[:, 0], x0),
+            numpy.maximum(boxes[:, 1], y0),
+            numpy.minimum(boxes[:, 2], x1),
+            numpy.minimum(boxes[:, 3], y1),
         )
-        row_start = max(0, min(rows - 1, int((y1 - box_y1) * rows / height)))
-        row_end = max(
-            row_start,
-            min(rows - 1, math.ceil((y1 - box_y0) * rows / height) - 1),
-        )
-        box_area = box_width * box_height
-        for row in range(row_start, row_end + 1):
-            cell_y0 = y1 - (row + 1) * height / rows
-            cell_y1 = y1 - row * height / rows
-            overlap_y = interval_overlap(box_y0, box_y1, cell_y0, cell_y1)
-            if overlap_y <= 0.0:
-                continue
-            for column in range(column_start, column_end + 1):
-                cell_x0 = x0 + column * width / columns
-                cell_x1 = x0 + (column + 1) * width / columns
-                overlap_x = interval_overlap(box_x0, box_x1, cell_x0, cell_x1)
-                if overlap_x > 0.0:
-                    output[row, column] += utility * overlap_x * overlap_y / box_area
-    return output.reshape(-1)
+    )
+    utilities = numpy.asarray(
+        [
+            internal_text_utility_stats(text, float(confidence)).utility
+            for text, confidence in zip(observations.text, observations.confidence, strict=True)
+        ],
+        dtype=numpy.float64,
+    )
+    box_widths = clipped[:, 2] - clipped[:, 0]
+    box_heights = clipped[:, 3] - clipped[:, 1]
+    valid = (box_widths > 0.0) & (box_heights > 0.0) & (utilities > 0.0)
+    if not bool(valid.any()):
+        return numpy.zeros(rows * columns, dtype=numpy.float32)
+
+    clipped = clipped[valid]
+    utilities = utilities[valid]
+    areas = box_widths[valid] * box_heights[valid]
+    x_edges = numpy.linspace(x0, x1, columns + 1, dtype=numpy.float64)
+    y_edges = numpy.linspace(y1, y0, rows + 1, dtype=numpy.float64)
+    overlap_x = numpy.maximum(
+        0.0,
+        numpy.minimum(clipped[:, None, 2], x_edges[None, 1:])
+        - numpy.maximum(clipped[:, None, 0], x_edges[None, :-1]),
+    )
+    overlap_y = numpy.maximum(
+        0.0,
+        numpy.minimum(clipped[:, None, 3], y_edges[None, :-1])
+        - numpy.maximum(clipped[:, None, 1], y_edges[None, 1:]),
+    )
+    weighted = utilities / areas
+    output = numpy.einsum("n,nr,nc->rc", weighted, overlap_y, overlap_x, optimize=True)
+    return output.astype(numpy.float32, copy=False).reshape(-1)
 
 
 @dataclass(frozen=True, slots=True)

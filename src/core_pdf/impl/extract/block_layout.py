@@ -121,8 +121,6 @@ def internal_group_text_and_words(
             positions = -(boxes[:, 1] + boxes[:, 3]) * 0.5
         else:
             positions = (boxes[:, 0] + boxes[:, 2]) * 0.5
-        position_values = positions.tolist()
-
         # One pass over the text counts both directions; ASCII text can only
         # contribute L characters, and only letters carry a strong class.
         rtl = 0
@@ -139,11 +137,8 @@ def internal_group_text_and_words(
                     ltr += 1
                 elif direction_class in {"R", "AL", "AN"}:
                     rtl += 1
-        order = sorted(
-            range(len(position_values)), key=position_values.__getitem__, reverse=rtl > ltr
-        )
-        index_values = indexes.tolist()
-        indexes = cast(numpy.ndarray, numpy.asarray([index_values[position] for position in order]))
+        order = numpy.argsort(-positions if rtl > ltr else positions, kind="stable")
+        indexes = indexes[order]
     references = tuple(observations.references[index] for index in indexes)
     if references and all(isinstance(reference, TextRun) for reference in references):
         runs = cast(list[TextRun], list(references))
