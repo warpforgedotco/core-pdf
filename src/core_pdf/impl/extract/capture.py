@@ -772,8 +772,17 @@ def internal_capture_from_program(
         internal_apply_learned_unicode_to_run(run, learned_unicode)
         for run in internal_extractable_runs(structured_runs)
     )
+    painted_mask = numpy.fromiter(
+        (run.visible for run in raw_runs),
+        dtype=numpy.bool_,
+        count=len(raw_runs),
+    )
     raw_text = "".join(run.text for run in raw_runs)
-    painted_text = "".join(run.text for run in raw_runs if run.visible)
+    painted_text = (
+        raw_text
+        if bool(numpy.all(painted_mask))
+        else "".join(run.text for run in raw_runs if run.visible)
+    )
     raw_analysis = internal_analyze_text(raw_text)
     suspicious_characters = raw_analysis.suspicious_characters
     all_text_quality = raw_analysis.quality
@@ -807,19 +816,15 @@ def internal_capture_from_program(
         quality=all_text_quality,
         glyphs=glyph_evidence,
     )
-    runs = internal_promoted_hidden_runs(raw_runs) if trusted_hidden_text else raw_runs
-    observations = internal_observations_from_runs(runs)
-    visible_text = "".join(run.text for run in runs if run.visible)
-    if visible_text == raw_text:
+    if trusted_hidden_text:
+        runs = internal_promoted_hidden_runs(raw_runs)
         visible_native_characters = native_characters
         visible_text_quality = all_text_quality
-    elif visible_text == painted_text:
+    else:
+        runs = raw_runs
         visible_native_characters = painted_native_characters
         visible_text_quality = painted_text_quality
-    else:
-        visible_analysis = internal_analyze_text(visible_text)
-        visible_text_quality = visible_analysis.quality
-        visible_native_characters = visible_analysis.characters
+    observations = internal_observations_from_runs(runs)
     drawings = program.drawings
     inline_images = program.inline_images
     image_filters = tuple(
@@ -845,22 +850,18 @@ def internal_capture_from_program(
     page_area = max(1.0, page_width * page_height)
     visible = observations.visible
     boxes = observations.bbox
-    visible_widths = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
-    visible_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
+    box_areas = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
+    box_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
+    numpy.multiply(box_areas, box_heights, out=box_areas)
+    coverage_areas = numpy.multiply(box_areas, visible)
     text_coverage = min(
         1.0,
-        float(numpy.sum(visible_widths * visible_heights * visible, dtype=numpy.float64))
-        / page_area,
+        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
     )
-    painted_mask = numpy.fromiter(
-        (run.visible for run in raw_runs),
-        dtype=numpy.bool_,
-        count=len(raw_runs),
-    )
+    numpy.multiply(box_areas, painted_mask, out=coverage_areas)
     painted_text_coverage = min(
         1.0,
-        float(numpy.sum(visible_widths * visible_heights * painted_mask, dtype=numpy.float64))
-        / page_area,
+        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
     )
     visible_image_areas: list[float] = []
     visible_image_boxes: list[tuple[float, float, float, float]] = []
