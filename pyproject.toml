@@ -18,6 +18,7 @@ dependencies = [
     "imagecodecs>=2026.6.26",
     "cryptography>=50.0.0",
     "asn1crypto>=1.5.1",
+    "defusedxml>=0.7.1",
 ]
 
 [project.scripts]

@@ -6,6 +6,9 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import TypeAlias, TypedDict, cast
 
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import fromstring as defused_fromstring
+
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -122,9 +125,13 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
     raw = stream.data
     if not raw:
         return None
+    # XMP arrives from an untrusted document, and ElementTree expands internal
+    # entities without limit: a 400-byte "billion laughs" packet nests to
+    # hundreds of megabytes before it yields a tree. defusedxml rejects the
+    # entity declarations instead, and still forbids external references.
     try:
-        root = ET.fromstring(raw)
-    except ET.ParseError as error:
+        root = defused_fromstring(raw)
+    except (ET.ParseError, DefusedXmlException) as error:
         if recover:
             return {"parse_error": "invalid XMP metadata"}
         raise ValueError("invalid XMP metadata") from error
