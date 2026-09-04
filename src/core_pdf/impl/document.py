@@ -89,7 +89,8 @@ class PdfPage(SpecPdfPage):
     def extract_geometry_summary(self) -> LayoutGeometrySummary:
         return page_layout_geometry_summary(self.get_text_lines())
 
-    def get_drawings(self) -> tuple[DrawingRecord, ...]:
+    @staticmethod
+    def internal_drawing_records(drawings: Iterable[Any]) -> tuple[DrawingRecord, ...]:
         return tuple(
             DrawingRecord.from_captured(
                 drawing,
@@ -98,8 +99,11 @@ class PdfPage(SpecPdfPage):
                 items=tuple(drawing.items),
                 rect=rect_tuple(drawing.rect),
             )
-            for drawing in self.get_page_program().drawings
+            for drawing in drawings
         )
+
+    def get_drawings(self) -> tuple[DrawingRecord, ...]:
+        return self.internal_drawing_records(self.get_page_program().drawings)
 
     def extract_images(
         self,
@@ -107,11 +111,14 @@ class PdfPage(SpecPdfPage):
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[ImageRecord, ...]:
+        if not include_inline and not include_xobjects:
+            return ()
+        program = self.get_page_program()
         images: list[ImageRecord] = []
         if include_xobjects:
             images.extend(
                 ImageRecord.from_captured(drawing)
-                for drawing in self.get_drawings()
+                for drawing in self.internal_drawing_records(program.drawings)
                 if drawing.kind == "image"
             )
         if include_inline:
@@ -140,7 +147,7 @@ class PdfPage(SpecPdfPage):
                     items=(),
                     rect=None,
                 )
-                for image in self.get_page_program().inline_images
+                for image in program.inline_images
             )
         for index, image in enumerate(images):
             source = cast(ImageSource | None, image.image_source)
