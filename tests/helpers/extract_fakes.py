@@ -8,9 +8,9 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     PageEvidence,
 )
 from core_pdf.impl.model.geometry import RectBox
@@ -22,7 +22,7 @@ Box = tuple[float, float, float, float]
 
 @dataclass(slots=True)
 class FakePage:
-    """The few page attributes the parse stages read; ``CapturedPage.page`` is ``Any``."""
+    """The few page attributes the parse stages read; ``PageAnalysis.page`` is ``Any``."""
 
     width: float = 600.0
     height: float = 800.0
@@ -74,8 +74,8 @@ def capture(
     width: float = 600.0,
     height: float = 800.0,
     rotation: int = 0,
-) -> CapturedPage:
-    """A real ``CapturedPage``; ``rotation`` seeds one observation so routing sees it."""
+) -> PageAnalysis:
+    """A real ``PageAnalysis``; ``rotation`` seeds one observation so routing sees it."""
     if batch is None:
         batch = ObservationBatch.from_columns(
             ("x",),
@@ -83,7 +83,7 @@ def capture(
             source=ObservationSource.NATIVE,
             rotation=(rotation,),
         )
-    return CapturedPage(
+    return PageAnalysis(
         page=page if page is not None else FakePage(width=width, height=height),
         width=width,
         height=height,

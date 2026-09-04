@@ -15,11 +15,11 @@ from core_pdf.impl.extract.contracts import (
     PSM_AUTO,
     PSM_SPARSE_TEXT,
     PSM_SPARSE_TEXT_OSD,
-    CapturedPage,
     FusionPolicy,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     PageEvidence,
     PagePlanReason,
     PageRoute,
@@ -98,7 +98,7 @@ def maximum_candidate_coverage(
     return output
 
 
-def internal_ocr_scale(capture: CapturedPage, *, schematic: bool, vector_complexity: int) -> float:
+def internal_ocr_scale(capture: PageAnalysis, *, schematic: bool, vector_complexity: int) -> float:
     if not schematic or vector_complexity < 4_000:
         return 3.0
     if vector_complexity < 150_000:
@@ -108,7 +108,7 @@ def internal_ocr_scale(capture: CapturedPage, *, schematic: bool, vector_complex
     return 3.5 if capture.evidence.image_count else 4.0
 
 
-def internal_vector_text_scale(capture: CapturedPage, vector_complexity: int) -> float:
+def internal_vector_text_scale(capture: PageAnalysis, vector_complexity: int) -> float:
     """Choose a higher raster scale for text embedded in vector artwork.
 
     Charts and diagrams often use small glyphs painted alongside thousands of
@@ -129,7 +129,7 @@ def internal_schematic_page(
     return vector_complexity >= 180 and (text_density < 0.0015 or text_coverage < 0.05)
 
 
-def internal_rotated_native_characters(capture: CapturedPage) -> int:
+def internal_rotated_native_characters(capture: PageAnalysis) -> int:
     observations = getattr(capture, "observations", None)
     if observations is None or not hasattr(observations, "text"):
         return 0
@@ -184,7 +184,7 @@ def internal_drawing_is_simple_rectangle(drawing: object) -> bool:
     return isinstance(path, CapturedPath) and path.axis_aligned_rect() is not None
 
 
-def internal_has_only_simple_vector_rectangles(capture: CapturedPage) -> bool:
+def internal_has_only_simple_vector_rectangles(capture: PageAnalysis) -> bool:
     drawings = tuple(
         drawing
         for drawing in getattr(capture, "drawings", ())
@@ -243,7 +243,7 @@ def internal_fallback_pass(
     )
 
 
-def plan_page(capture: CapturedPage) -> WorkPlan:
+def plan_page(capture: PageAnalysis) -> WorkPlan:
     evidence = capture.evidence
     total_characters = evidence.native_characters
     characters = evidence.visible_native_characters

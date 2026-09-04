@@ -12,9 +12,9 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     VECTOR_PAINT_KINDS,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
+    PageAnalysis,
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.grids import (
@@ -42,7 +42,7 @@ from core_pdf.impl.model.geometry import (
 
 
 def internal_page_image_regions(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     *,
     minimum_area_ratio: float,
     max_pixels: int = MAX_OCR_PIXELS,
@@ -105,7 +105,7 @@ def internal_page_image_regions(
 
 
 def internal_dominant_image_region(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
@@ -173,7 +173,7 @@ def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[inter
     return tuple(sorted(merged, key=lambda item: (-item.score, item.page_box)))
 
 
-def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrRegion, ...]:
+def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrRegion, ...]:
     """Select likely OCR areas using capture-time geometry only.
 
     This deliberately does not render a preview image.  Native text, image bounds,
@@ -444,7 +444,7 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
     return regions
 
 
-def internal_has_distributed_outline_text(capture: CapturedPage) -> bool:
+def internal_has_distributed_outline_text(capture: PageAnalysis) -> bool:
     """Detect pages whose text was converted into many small filled vector paths."""
     page_width = capture.width
     page_height = capture.height

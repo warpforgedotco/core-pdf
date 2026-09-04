@@ -8,7 +8,7 @@ import pytest
 
 from core_pdf.impl.extract import pipeline as parse_pipeline
 from core_pdf.impl.extract import selection as parse_selection
-from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch
+from core_pdf.impl.extract.contracts import ObservationBatch, PageAnalysis
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import observations, page_evidence
 from tests.helpers.ocr_fakes import FakeDocumentPage
@@ -18,7 +18,7 @@ def internal_observations(text: str) -> ObservationBatch:
     return observations([(text, (0.0, 0.0, 10.0, 10.0))])
 
 
-def internal_base_capture(page: object, decoder: object, text: str) -> CapturedPage:
+def internal_base_capture(page: object, decoder: object, text: str) -> PageAnalysis:
     program = SimpleNamespace(glyphs=(SimpleNamespace(font_decoder=decoder),))
     return make_capture(
         page_evidence(
@@ -102,7 +102,7 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
         program: object,
         *,
         learned_unicode: parse_selection.LearnedUnicodeMap,
-    ) -> CapturedPage:
+    ) -> PageAnalysis:
         del program
         mapping = learned_unicode[decoder]
         marker = mapping[b"x"]
@@ -116,7 +116,7 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
 
     def selection_text(
         selected_extractions: tuple[parse_pipeline.internal_PageExtraction, ...],
-        selected_captures: tuple[CapturedPage, ...],
+        selected_captures: tuple[PageAnalysis, ...],
         marker: str,
     ) -> tuple[parse_pipeline.internal_PageExtraction, ...]:
         enrichment = parse_selection.internal_FontEnrichment(

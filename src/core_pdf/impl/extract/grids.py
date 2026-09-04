@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch, ObservationSource
+from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource, PageAnalysis
 from core_pdf.impl.extract.ocr.types import internal_OcrTask, internal_pixel_box_to_page_box
 from core_pdf.impl.extract.table_cleanup import internal_cell_text
 from core_pdf.impl.model.geometry import bbox_union
@@ -63,7 +63,7 @@ class internal_DisjointSet:
 
 
 def internal_axis_segments(
-    capture: CapturedPage,
+    capture: PageAnalysis,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
     page_width = capture.width
     page_height = capture.height

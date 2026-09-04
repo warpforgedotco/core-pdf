@@ -19,7 +19,7 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     MAX_OCR_PIXELS,
-    CapturedPage,
+    PageAnalysis,
 )
 from core_pdf.impl.extract.ocr.types import internal_Raster
 from core_pdf.impl.model.geometry import bbox_union, points_bbox
@@ -485,7 +485,7 @@ def internal_orient_direct_image_raster(
 
 
 def internal_rendered_page_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     requested_scale: float,
     *,
     crop: tuple[float, float, float, float] | None = None,
@@ -526,7 +526,7 @@ def internal_rendered_page_raster(
     )
 
 
-def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float, float] | None:
+def internal_safe_image_crop(capture: PageAnalysis) -> tuple[float, float, float, float] | None:
     """Return a useful crop when OCR is known to be image-dominated.
 
     A crop is only safe when the image coverage is substantial.  Sparse images

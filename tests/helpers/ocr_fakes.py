@@ -10,9 +10,9 @@ from typing import Any
 import pytest
 
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     PagePlanReason,
     PageRoute,
     RecognitionResult,
@@ -190,7 +190,7 @@ class RecordingExtraction:
     def __init__(
         self,
         page: FakeDocumentPage,
-        capture: CapturedPage,
+        capture: PageAnalysis,
         *,
         alphabet: tuple[tuple[Any, str], ...],
         plan_calls: list[int],
@@ -204,7 +204,7 @@ class RecordingExtraction:
         self.plan_calls = plan_calls
         self.ocr_calls = ocr_calls
 
-    def capture(self) -> CapturedPage:
+    def capture(self) -> PageAnalysis:
         return self.internal_capture
 
     def plan(self) -> WorkPlan:

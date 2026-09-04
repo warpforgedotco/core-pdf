@@ -11,8 +11,8 @@ from typing import Any, TypeVar
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
+    PageAnalysis,
     ParsedBlock,
     ReadingOrderEvidence,
     RecognitionResult,
@@ -75,7 +75,7 @@ class internal_PageExtraction:
         self,
         page: Any,
         *,
-        capture: CapturedPage | None = None,
+        capture: PageAnalysis | None = None,
         plan: WorkPlan | None = None,
         recognition: RecognitionResult | None = None,
         fields: Iterable[Any] | None = None,
@@ -109,7 +109,7 @@ class internal_PageExtraction:
         self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
         self.internal_recognition = recognition
 
-    def capture(self) -> CapturedPage:
+    def capture(self) -> PageAnalysis:
         return self.internal_capture
 
     def plan(self) -> WorkPlan:

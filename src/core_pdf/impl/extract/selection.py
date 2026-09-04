@@ -17,8 +17,8 @@ from core_pdf.impl.extract.capture import (
     internal_capture_from_program,
 )
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
+    PageAnalysis,
     RecognitionResult,
     internal_bbox_tuple,
 )
@@ -59,7 +59,7 @@ class internal_StrokedEnrichment:
     )
 
 
-def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
+def internal_unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
     counts: Counter[object] = Counter()
     quality = capture.evidence.text_quality
     corrupt = (
@@ -92,7 +92,7 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
     return counts
 
 
-def internal_document_font_seed_indexes(captures: Sequence[CapturedPage]) -> tuple[int, ...]:
+def internal_document_font_seed_indexes(captures: Sequence[PageAnalysis]) -> tuple[int, ...]:
     pages_by_decoder: dict[object, list[tuple[int, int]]] = defaultdict(list)
     for page_index, capture in enumerate(captures):
         for decoder, count in internal_unknown_decoder_counts(capture).items():
@@ -113,7 +113,7 @@ def internal_document_font_seed_indexes(captures: Sequence[CapturedPage]) -> tup
 
 
 def internal_font_mapping_votes(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     ocr: ObservationBatch,
 ) -> dict[object, dict[bytes, Counter[str]]]:
     votes: dict[object, dict[bytes, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
@@ -213,7 +213,7 @@ def internal_resolve_document_font_mappings(
 
 def internal_prepare_document_font_mappings(
     extractions: tuple[internal_PageExtraction, ...],
-    captures: tuple[CapturedPage, ...],
+    captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
 ) -> internal_FontEnrichment:
     seed_indexes = internal_document_font_seed_indexes(captures)
@@ -237,7 +237,7 @@ def internal_prepare_document_font_mappings(
 
 
 def internal_capture_uses_learned_unicode(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     learned_unicode: LearnedUnicodeMap,
 ) -> bool:
     return bool(learned_unicode) and any(
@@ -247,7 +247,7 @@ def internal_capture_uses_learned_unicode(
 
 def internal_apply_font_enrichment(
     extractions: tuple[internal_PageExtraction, ...],
-    captures: tuple[CapturedPage, ...],
+    captures: tuple[PageAnalysis, ...],
     font: internal_FontEnrichment,
 ) -> tuple[internal_PageExtraction, ...]:
     """Create local pipelines only for non-seed pages changed by the overlay."""
@@ -328,7 +328,7 @@ def internal_document_stroked_recognition(
 
 def internal_prepare_document_stroked_mappings(
     extractions: tuple[internal_PageExtraction, ...],
-    captures: tuple[CapturedPage, ...],
+    captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
 ) -> internal_StrokedEnrichment:
     """OCR the richest flattened-font page, then decode compatible pages structurally."""
@@ -406,8 +406,8 @@ def internal_apply_stroked_enrichment(
 def internal_capture_document_pages(
     extractions: tuple[internal_PageExtraction, ...],
     context: ExtractionScope,
-) -> tuple[CapturedPage, ...]:
-    captures: list[CapturedPage] = []
+) -> tuple[PageAnalysis, ...]:
+    captures: list[PageAnalysis] = []
     for extraction in extractions:
         context.raise_if_cancelled()
         captures.append(extraction.capture())
@@ -427,7 +427,7 @@ def internal_assemble_document_pages(
 
 def internal_prepare_selection_state(
     extractions: tuple[internal_PageExtraction, ...],
-    captures: tuple[CapturedPage, ...],
+    captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
 ) -> tuple[internal_PageExtraction, ...]:
     """Page pipelines enriched with everything learned across one exact selection."""

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch
+from core_pdf.impl.extract.contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.extract.table_cleanup import (
     internal_annotate_table_associations,
     internal_table_with_bands,
@@ -13,8 +13,7 @@ from core_pdf.impl.extract.table_cleanup import (
 from core_pdf.impl.extract.table_detection import (
     extract_chart_table,
     internal_detect_tables,
-    internal_ObservationCoordinates,
-    internal_text_rows,
+    internal_TableAnalysis,
 )
 from core_pdf.impl.output import Table
 
@@ -23,20 +22,18 @@ from core_pdf.impl.output import Table
 class internal_TableExtractor:
     """Derive every table representation from one captured observation batch."""
 
-    capture: CapturedPage
+    capture: PageAnalysis
     observations: ObservationBatch
 
     def extract(self) -> tuple[Table, ...]:
         evidence = self.capture.evidence
         if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
             return ()
-        coordinates = internal_ObservationCoordinates.from_observations(self.observations)
-        text_rows = internal_text_rows(self.observations, coordinates=coordinates)
+        analysis = internal_TableAnalysis.build(self.observations, self.capture.width)
         tables = internal_detect_tables(
             self.capture,
             self.observations,
-            text_rows=text_rows,
-            coordinates=coordinates,
+            analysis=analysis,
         )
         chart_table = extract_chart_table(self.capture, self.observations)
         if chart_table is not None:
@@ -48,12 +45,12 @@ class internal_TableExtractor:
                 internal_annotate_table_associations(
                     replace(table, order=order) if table.order != order else table,
                     self.observations,
-                    text_rows,
+                    analysis.text_rows,
                 )
             )
             for order, table in enumerate(tables)
         )
 
 
-def extract_tables(capture: CapturedPage, observations: ObservationBatch) -> tuple[Table, ...]:
+def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
     return internal_TableExtractor(capture, observations).extract()

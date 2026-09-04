@@ -10,10 +10,10 @@ from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,
     PRIMARY_OCR_PIXELS,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     WorkPlan,
 )
 from core_pdf.impl.extract.ocr.raster import (
@@ -105,7 +105,7 @@ class internal_OcrPassTasks:
 class internal_OcrSession:
     """Own task construction and synchronous recognition for one page."""
 
-    capture: CapturedPage
+    capture: PageAnalysis
     plan: WorkPlan
     compact_image: bool | str
     context: ExtractionScope

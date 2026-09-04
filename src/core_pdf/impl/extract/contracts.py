@@ -502,7 +502,7 @@ class PageEvidence:
 
 
 @dataclass(frozen=True, slots=True)
-class CapturedPage:
+class PageAnalysis:
     page: Any
     width: float
     height: float

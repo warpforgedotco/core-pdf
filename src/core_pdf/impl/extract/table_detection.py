@@ -13,9 +13,9 @@ from typing import cast
 import numpy
 
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
 )
 from core_pdf.impl.extract.grids import (
     internal_axis_segments,
@@ -79,6 +79,35 @@ class internal_ObservationCoordinates:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class internal_TableAnalysis:
+    """Shared observation facts for one table-extraction operation."""
+
+    observations: ObservationBatch
+    coordinates: internal_ObservationCoordinates
+    text_rows: list[list[int]]
+    row_centers: list[float]
+    candidate_columns: list[list[tuple[int, int]]]
+
+    @classmethod
+    def build(cls, observations: ObservationBatch, page_width: float) -> internal_TableAnalysis:
+        coordinates = internal_ObservationCoordinates.from_observations(observations)
+        text_rows = internal_text_rows(observations, coordinates=coordinates)
+        return cls(
+            observations,
+            coordinates,
+            text_rows,
+            internal_row_centers(observations, text_rows, coordinates=coordinates),
+            internal_aligned_column_clusters(
+                observations,
+                text_rows,
+                page_width,
+                minimum_rows=2,
+                coordinates=coordinates,
+            ),
+        )
+
+
 def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
     """Split dense OCR axis/value lines while keeping prose intact."""
     tokens = tuple(part for part in text.split() if part)
@@ -88,7 +117,7 @@ def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
     return (text,)
 
 
-def extract_chart_table(capture: CapturedPage, observations: ObservationBatch) -> Table | None:
+def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -> Table | None:
     """Represent OCR text recovered from vector artwork as one chart region.
 
     Vector charts frequently paint labels and values without table ruling.  The
@@ -171,11 +200,10 @@ def extract_chart_table(capture: CapturedPage, observations: ObservationBatch) -
 
 
 def internal_detect_tables(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     observations: ObservationBatch,
     *,
-    text_rows: list[list[int]] | None = None,
-    coordinates: internal_ObservationCoordinates | None = None,
+    analysis: internal_TableAnalysis | None = None,
 ) -> tuple[Table, ...]:
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
@@ -198,8 +226,7 @@ def internal_detect_tables(
         capture,
         observations,
         len(tables),
-        rows=text_rows,
-        coordinates=coordinates,
+        analysis=analysis,
     ):
         conflicts = [
             table
@@ -641,25 +668,18 @@ def internal_compact_stream_table(
 
 
 def internal_stream_tables(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     observations: ObservationBatch,
     start_order: int,
     *,
-    rows: list[list[int]] | None = None,
-    coordinates: internal_ObservationCoordinates | None = None,
+    analysis: internal_TableAnalysis | None = None,
 ) -> tuple[Table, ...]:
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
-    if rows is None:
-        rows = internal_text_rows(observations, coordinates=coordinates)
-    row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
+    analysis = analysis or internal_TableAnalysis.build(observations, capture.width)
+    coordinates = analysis.coordinates
+    rows = analysis.text_rows
+    row_centers = analysis.row_centers
     tables: list[Table] = []
-    candidate_columns = internal_aligned_column_clusters(
-        observations,
-        rows,
-        capture.width,
-        minimum_rows=2,
-        coordinates=coordinates,
-    )
+    candidate_columns = analysis.candidate_columns
     for minimum_rows in (3, 2):
         columns = (
             [

@@ -17,9 +17,9 @@ import numpy
 
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.ocr.strokes import (
@@ -77,7 +77,7 @@ STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES = 16
 STROKED_VECTOR_PACK_MIN_DECODED_RUNS = 16
 
 
-def internal_stroked_text_profile(capture: CapturedPage) -> StrokedTextProfile:
+def internal_stroked_text_profile(capture: PageAnalysis) -> StrokedTextProfile:
     """Build the structural glyph profile used by stroked-text OCR."""
     evidence = capture.evidence.stroked_vector_text
     return profile_stroked_text(capture.drawings, evidence.drawing_indexes)
@@ -134,7 +134,7 @@ def internal_pack_stroked_text_runs(
 
 
 def internal_stroked_vector_text_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
@@ -282,7 +282,7 @@ def internal_stroked_vector_text_raster(
 
 
 def internal_full_stroked_vector_text_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
@@ -533,7 +533,7 @@ def internal_stroked_vector_substitution(
 
 
 def internal_stroked_vector_symbol_seeds(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     symbols: ObservationBatch,
 ) -> tuple[StrokedTextSeed, ...]:
     """Join character boxes only when they exactly fill one known vector run."""
@@ -577,7 +577,7 @@ def internal_stroked_vector_symbol_seeds(
 
 
 def internal_decode_stroked_vector_text(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     ocr: ObservationBatch,
     symbols: ObservationBatch | None = None,
 ) -> StrokedTextDecode:
@@ -638,7 +638,7 @@ def internal_packed_stroked_vector_decode_gate(
 
 
 def internal_recover_stroked_vector_text(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     ocr: ObservationBatch,
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""

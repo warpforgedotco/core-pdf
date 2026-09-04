@@ -6,9 +6,9 @@ import numpy
 import pytest
 
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
 )
 from core_pdf.impl.extract.grids import internal_merge_grid_cells, internal_split_grid_component
 from core_pdf.impl.extract.table_cleanup import (
@@ -295,7 +295,7 @@ def table_capture(
     grid_lines: tuple[CapturedLine, ...] = (),
     width: float = 100.0,
     height: float = 100.0,
-) -> CapturedPage:
+) -> PageAnalysis:
     return make_capture(
         page_evidence(page_area=10_000.0),
         runs=runs,

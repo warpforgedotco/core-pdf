@@ -14,10 +14,10 @@ from core_pdf.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_PIXELS,
     MAX_OCR_PIXELS,
     PSM_SPARSE_TEXT,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     RecognitionResult,
     WorkPlan,
 )
@@ -185,7 +185,7 @@ class internal_OcrPassExecution:
 
 
 def recognize_page(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
 ) -> RecognitionResult:
@@ -198,7 +198,7 @@ def recognize_page(
 
 
 def internal_recognize_page_with_reserved_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
 ) -> ObservationBatch:

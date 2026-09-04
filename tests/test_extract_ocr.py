@@ -12,11 +12,11 @@ from core_pdf.impl.extract import contracts as ocr_contracts
 from core_pdf.impl.extract import quality as ocr_quality
 from core_pdf.impl.extract import selection as parse_selection
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     PagePlanReason,
     PageRoute,
     StrokedVectorTextEvidence,
@@ -91,7 +91,7 @@ def token_observations(
 
 
 def internal_recognize(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
 ) -> ObservationBatch:
@@ -1653,7 +1653,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
 
 def stroked_document() -> tuple[
     tuple[RecordingExtraction, ...],
-    tuple[CapturedPage, ...],
+    tuple[PageAnalysis, ...],
     tuple[tuple[parse_selection.GlyphSignature, str], ...],
     list[int],
     list[int],
@@ -1922,7 +1922,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
     patch_ocr_helper(monkeypatch, "internal_has_distributed_outline_text", lambda capture: True)
 
     def candidate_tasks(
-        internal_capture: CapturedPage,
+        internal_capture: PageAnalysis,
         regions: tuple[ocr_types.internal_OcrRegion, ...],
         ocr_pass: OcrPass,
         **internal_kwargs: object,
@@ -2092,7 +2092,7 @@ def test_recover_timed_out_tasks_only_reruns_empty_timeouts() -> None:
 
 
 def test_direct_scan_allowed_for_a_full_page_image_without_native_text() -> None:
-    def capture_for(**evidence: object) -> CapturedPage:
+    def capture_for(**evidence: object) -> PageAnalysis:
         defaults: dict[str, object] = {
             "visible_native_characters": 0,
             "image_count": 1,

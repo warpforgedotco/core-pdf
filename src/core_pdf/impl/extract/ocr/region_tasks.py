@@ -12,10 +12,10 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
     PRIMARY_OCR_PIXELS,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     WorkPlan,
 )
 from core_pdf.impl.extract.ocr.raster import (
@@ -316,7 +316,7 @@ def internal_weak_region_tasks(
     )
 
 
-def internal_direct_scan_allowed(capture: CapturedPage, plan: WorkPlan) -> bool:
+def internal_direct_scan_allowed(capture: PageAnalysis, plan: WorkPlan) -> bool:
     """Decide whether a page-scope pass may OCR the decoded scan itself.
 
     Rendering a scanned page through the compositor resamples the scan a second
@@ -335,7 +335,7 @@ def internal_direct_scan_allowed(capture: CapturedPage, plan: WorkPlan) -> bool:
 
 
 def internal_candidate_region_tasks(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     regions: tuple[internal_OcrRegion, ...],
     ocr_pass: OcrPass,
     *,
@@ -444,7 +444,7 @@ def internal_candidate_region_tasks(
 
 
 def internal_high_resolution_weak_region_tasks(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     source_tasks: tuple[internal_OcrTask, ...],
     ocr_pass: OcrPass,
     primary: ObservationBatch,

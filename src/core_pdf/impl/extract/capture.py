@@ -16,10 +16,10 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     VECTOR_PAINT_KINDS,
-    CapturedPage,
     GlyphEvidence,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     PageEvidence,
     StrokedVectorTextEvidence,
     TextQualityStats,
@@ -449,7 +449,7 @@ def internal_promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, .
     return tuple(internal_promote_hidden_run(run) if not run.visible else run for run in runs)
 
 
-def internal_promoted_hidden_observations(capture: CapturedPage) -> ObservationBatch:
+def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     """Expose a verified hidden layer while preserving its original geometry and ordering."""
     return internal_observations_from_runs(internal_promoted_hidden_runs(capture.runs))
 
@@ -677,9 +677,9 @@ def internal_uncovered_vector_area(
 
 
 def internal_capture_with_newstroke_text(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     decoded: NewstrokeDecode,
-) -> CapturedPage:
+) -> PageAnalysis:
     """Promote a page-level, template-verified vector font into native observations."""
     runs = decoded.runs
     observations = internal_observations_from_runs(runs)
@@ -727,7 +727,7 @@ def internal_capture_from_program(
     structure: Any = internal_STRUCTURE_UNSET,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
-) -> CapturedPage:
+) -> PageAnalysis:
     program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
     for glyph in program.glyphs:
@@ -903,7 +903,7 @@ def internal_capture_from_program(
         observations,
         page_area=page_area,
     )
-    captured = CapturedPage(
+    captured = PageAnalysis(
         page=page,
         width=page_width,
         height=page_height,
@@ -971,7 +971,7 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
-) -> CapturedPage:
+) -> PageAnalysis:
     """Build the canonical page products once and derive routing evidence from them."""
     program = (
         page.get_page_program()
@@ -987,7 +987,7 @@ def capture_page(
     )
 
 
-def internal_requires_high_resolution_vector_ocr(capture: CapturedPage) -> bool:
+def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
     """Identify pure-vector diagrams whose tiny stroked labels need the maximum raster."""
     evidence = capture.evidence
     if not (
