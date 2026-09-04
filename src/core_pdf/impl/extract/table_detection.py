@@ -139,6 +139,11 @@ def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
     return (text,)
 
 
+def internal_chart_cell_center_y(cell: TableCell) -> float:
+    box = cell.bbox or (0.0, 0.0, 0.0, 0.0)
+    return (box[1] + box[3]) / 2
+
+
 def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -> Table | None:
     """Represent OCR text recovered from vector artwork as one chart region.
 
@@ -185,12 +190,13 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         return None
     row_tolerance = max(6.0, capture.height * 0.008)
     row_groups: list[tuple[float, list[TableCell]]] = []
+    # Grouping only compares against the open group, so the cells have to arrive
+    # in the same order the comparison uses: descending row center, not bbox top.
     for cell in sorted(
         cells,
-        key=lambda item: (-(item.bbox or (0, 0, 0, 0))[1], item.column),
+        key=lambda item: (-internal_chart_cell_center_y(item), item.column),
     ):
-        cell_box = cell.bbox or (0.0, 0.0, 0.0, 0.0)
-        center_y = (cell_box[1] + cell_box[3]) / 2
+        center_y = internal_chart_cell_center_y(cell)
         if not row_groups or abs(row_groups[-1][0] - center_y) > row_tolerance:
             row_groups.append((center_y, [cell]))
         else:

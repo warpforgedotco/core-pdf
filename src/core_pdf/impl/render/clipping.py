@@ -24,6 +24,10 @@ class internal_ClipRegion:
     pixel_box: tuple[int, int, int, int] | None
     rectangular: bool
     rows: tuple[internal_RowSpans, ...] | None
+    # ``rows`` only spans the pixel rows the clip box touches; every row outside
+    # that range is empty by construction, so materializing them would cost one
+    # edge sweep per page row for clips nothing ever paints through.
+    rows_origin: int = 0
 
     @property
     def empty(self) -> bool:
@@ -127,7 +131,8 @@ class internal_ClipState:
             return ((0, self.width),)
         if region.rows is None:
             return self.internal_rect_row_spans(region.pixel_box, py)
-        return region.rows[py]
+        row = py - region.rows_origin
+        return region.rows[row] if 0 <= row < len(region.rows) else ()
 
     def internal_path_row_spans(
         self,
@@ -178,8 +183,9 @@ class internal_ClipState:
 
         rect_pixel_box = self.page_box_to_pixels(*rect) if rect is not None else None
         edges = tuple(path.fill_edges()) if rect is None else ()
+        row_start, row_stop = (0, 0) if pixel_box is None else (pixel_box[1], pixel_box[3])
         rows: list[internal_RowSpans] = []
-        for py in range(self.height):
+        for py in range(row_start, row_stop):
             path_spans = (
                 self.internal_rect_row_spans(rect_pixel_box, py)
                 if rect is not None
@@ -188,7 +194,7 @@ class internal_ClipState:
             rows.append(
                 internal_intersect_spans(self.internal_region_row_spans(parent, py), path_spans)
             )
-        self.regions.append(internal_ClipRegion(box, pixel_box, False, tuple(rows)))
+        self.regions.append(internal_ClipRegion(box, pixel_box, False, tuple(rows), row_start))
 
     def current_clip(self) -> tuple[float, float, float, float] | None:
         region = self.current_region()

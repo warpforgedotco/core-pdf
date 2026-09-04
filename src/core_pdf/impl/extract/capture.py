@@ -9,7 +9,7 @@ from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import numpy
 
@@ -451,7 +451,15 @@ def internal_promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, .
 
 def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     """Expose a verified hidden layer while preserving its original geometry and ordering."""
-    return internal_observations_from_runs(internal_promoted_hidden_runs(capture.program.runs))
+    # The observation references carry the extractable runs after ActualText and
+    # learned-Unicode normalization; the raw program runs predate both.
+    references = capture.observations.references
+    runs = (
+        cast("tuple[TextRun, ...]", references)
+        if references and all(isinstance(reference, TextRun) for reference in references)
+        else capture.program.runs
+    )
+    return internal_observations_from_runs(internal_promoted_hidden_runs(runs))
 
 
 def internal_apply_learned_unicode_to_run(
