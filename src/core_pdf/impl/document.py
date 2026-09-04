@@ -240,6 +240,13 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             for page_index, page in self.iter_selected_pages(pages)
             for record in per_page(page)
         ]
+        return self.internal_scoped_pending(pending)
+
+    def internal_scoped_pending(
+        self,
+        pending: Iterable[tuple[int, Any]],
+    ) -> tuple[PageScoped[Any], ...]:
+        pending = tuple(pending)
         if not pending:
             return ()
         labels = self.page_labels
@@ -255,7 +262,13 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
     def extract_form_fields(
         self, *, pages: PageSelection | None = None
     ) -> tuple[PageScoped[Any], ...]:
-        return self._scoped_records(pages, lambda page: page.get_fields())
+        selected = tuple(self.iter_selected_pages(pages))
+        grouped = self.fields_by_page(tuple(page for _index, page in selected))
+        return self.internal_scoped_pending(
+            (page_index, record)
+            for page_index, _page in selected
+            for record in grouped.get(page_index, ())
+        )
 
     def acquire_operation(self) -> DocumentOperation:
         with self.internal_operation_lock:
