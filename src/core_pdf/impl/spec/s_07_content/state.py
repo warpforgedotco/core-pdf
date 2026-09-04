@@ -42,11 +42,11 @@ from core_pdf.impl.spec.s_07_content.capture import (
     glyph_bitmap_dimensions,
     glyph_ink_rect,
     glyph_text_space_boxes,
+    internal_text_basis_rect,
     marker_drawing,
     should_capture_glyph_bitmap,
     should_capture_suspicious_multi_glyph_bitmap,
     transformed_text_line,
-    transformed_text_rect,
     type3_font_matrix,
     type3_glyph_names,
 )
@@ -1322,19 +1322,15 @@ class TextState:
                     font_size=font_size,
                 )
                 text_box, baseline_text = glyph_text_space_boxes(
-                    self,
                     offset,
                     advance,
-                    decoder,
-                    glyph_vertical_position,
+                    is_vertical=True,
+                    rise=rise,
+                    font_ascent=font_ascent,
+                    font_descent=font_descent,
+                    position=glyph_vertical_position,
                 )
-                transformed = transformed_text_rect(self, *text_box, text_basis)
-                advance_bbox = (
-                    transformed.x0,
-                    transformed.y0,
-                    transformed.x1,
-                    transformed.y1,
-                )
+                advance_bbox = internal_text_basis_rect(*text_box, text_basis)
                 baseline = transformed_text_line(*baseline_text, text_basis)
                 origin_x, position_y = glyph_vertical_position
                 origin_y = rise + position_y - offset
@@ -1375,18 +1371,14 @@ class TextState:
                     )
                 else:
                     text_box, baseline_text = glyph_text_space_boxes(
-                        self,
                         offset,
                         advance,
-                        decoder,
+                        is_vertical=False,
+                        rise=rise,
+                        font_ascent=font_ascent,
+                        font_descent=font_descent,
                     )
-                    transformed = transformed_text_rect(self, *text_box, text_basis)
-                    advance_bbox = (
-                        transformed.x0,
-                        transformed.y0,
-                        transformed.x1,
-                        transformed.y1,
-                    )
+                    advance_bbox = internal_text_basis_rect(*text_box, text_basis)
                     baseline = transformed_text_line(*baseline_text, text_basis)
             observation_visible = visible
             if observation_visible:
@@ -1524,25 +1516,20 @@ class TextState:
                         glyph.alternates,
                     )
                     char_box, char_baseline_text = glyph_text_space_boxes(
-                        self, char_offset, per_char_advance, decoder
+                        char_offset,
+                        per_char_advance,
+                        is_vertical=is_vertical,
+                        rise=rise,
+                        font_ascent=font_ascent,
+                        font_descent=font_descent,
                     )
-                    char_advance_rect = transformed_text_rect(self, *char_box, text_basis)
+                    char_advance_rect = internal_text_basis_rect(*char_box, text_basis)
                     char_baseline = transformed_text_line(*char_baseline_text, text_basis)
                     cluster_observations.append(
                         GlyphObservation(
                             ch,
-                            (
-                                char_advance_rect.x0,
-                                char_advance_rect.y0,
-                                char_advance_rect.x1,
-                                char_advance_rect.y1,
-                            ),
-                            (
-                                char_advance_rect.x0,
-                                char_advance_rect.y0,
-                                char_advance_rect.x1,
-                                char_advance_rect.y1,
-                            ),
+                            char_advance_rect,
+                            char_advance_rect,
                             seqno,
                             glyph.code_bytes,
                             glyph.char_code,

@@ -108,26 +108,6 @@ def glyph_ink_rect(
     return rect
 
 
-def transformed_text_rect(
-    state: Any,
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    text_basis: TextBasis,
-) -> RectBox:
-    rect_x0, rect_y0, rect_x1, rect_y1 = internal_text_basis_rect(x0, y0, x1, y1, text_basis)
-    return RectBox(
-        rect_x0,
-        rect_y0,
-        rect_x1,
-        rect_y1,
-        seqno=state.sequence,
-        fill=state.fill_color,
-        fill_opacity=state.fill_opacity,
-    )
-
-
 def transformed_text_line(
     x0: float,
     y0: float,
@@ -145,21 +125,24 @@ def transformed_text_line(
 
 
 def glyph_text_space_boxes(
-    state: Any,
     offset: float,
     advance: float,
-    decoder: Any,
+    *,
+    is_vertical: bool,
+    rise: float,
+    font_ascent: float,
+    font_descent: float,
     position: tuple[float, float] = (0.0, 0.0),
 ) -> tuple[
     Rectangle,
     tuple[float, float, float, float],
 ]:
-    if decoder.is_vertical:
+    if is_vertical:
         position_x, position_y = position
-        start_y = state.rise + position_y - offset
+        start_y = rise + position_y - offset
         end_y = start_y - advance
-        ar = state.font_ascent
-        dr = state.font_descent
+        ar = font_ascent
+        dr = font_descent
         x0 = position_x + (dr if dr < ar else ar)
         x1 = position_x + (ar if ar > dr else dr)
         y0 = end_y if end_y < start_y else start_y
@@ -168,11 +151,11 @@ def glyph_text_space_boxes(
             (x0, y0, x1, y1),
             (0.0, start_y, 0.0, end_y),
         )
-    ar = state.font_ascent + state.rise
-    dr = state.font_descent + state.rise
+    ar = font_ascent + rise
+    dr = font_descent + rise
     return (
         (offset, dr, offset + advance, ar),
-        (offset, state.rise, offset + advance, state.rise),
+        (offset, rise, offset + advance, rise),
     )
 
 
