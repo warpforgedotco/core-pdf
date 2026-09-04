@@ -695,7 +695,7 @@ class PdfDocument(
                 raise ValueError("PageLabels is missing page index 0")
             specs.insert(0, (0, {}))
 
-        page_count = len(self.pages)
+        page_count = len(self.build_page_dicts())
         labels: list[str] = []
         spec_pos = 0
         current_index, current_spec = specs[0]
