@@ -603,12 +603,21 @@ def internal_stream_tables(
     rows = internal_text_rows(observations)
     row_centers = internal_row_centers(observations, rows)
     tables: list[Table] = []
+    candidate_columns = internal_aligned_column_clusters(
+        observations,
+        rows,
+        capture.width,
+        minimum_rows=2,
+    )
     for minimum_rows in (3, 2):
-        columns = internal_aligned_column_clusters(
-            observations,
-            rows,
-            capture.width,
-            minimum_rows=minimum_rows,
+        columns = (
+            [
+                column
+                for column in candidate_columns
+                if len({row_index for row_index, internal_index in column}) >= minimum_rows
+            ]
+            if minimum_rows > 2
+            else candidate_columns
         )
         if len(columns) < 2:
             continue
