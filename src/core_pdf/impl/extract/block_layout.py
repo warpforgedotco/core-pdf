@@ -9,7 +9,6 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from heapq import heappop, heappush
-from itertools import combinations
 from typing import cast
 
 import numpy
@@ -812,14 +811,9 @@ def internal_topological_block_order_from_pairs(
     return blocks
 
 
-def internal_topological_block_order_quadratic(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    """Reference implementation used for small inputs and equivalence tests."""
-    return internal_topological_block_order_from_pairs(blocks, combinations(range(len(blocks)), 2))
-
-
 def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    if len(blocks) < 64:
-        return internal_topological_block_order_quadratic(blocks)
+    if len(blocks) <= 2:
+        return blocks
     page_x0 = min(block.bbox[0] for block in blocks)
     page_x1 = max(block.bbox[2] for block in blocks)
     page_width = max(1.0, page_x1 - page_x0)
