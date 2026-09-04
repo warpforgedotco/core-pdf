@@ -59,6 +59,11 @@ class internal_ObservationCoordinates:
     y0: list[float]
     x1: list[float]
     y1: list[float]
+    x_centers: list[float]
+    y_centers: list[float]
+    widths: list[float]
+    heights: list[float]
+    sequences: list[int]
 
     @classmethod
     def from_observations(cls, observations: ObservationBatch) -> internal_ObservationCoordinates:
@@ -68,6 +73,11 @@ class internal_ObservationCoordinates:
             bbox[:, 1].tolist(),
             bbox[:, 2].tolist(),
             bbox[:, 3].tolist(),
+            ((bbox[:, 0] + bbox[:, 2]) * 0.5).tolist(),
+            ((bbox[:, 1] + bbox[:, 3]) * 0.5).tolist(),
+            (bbox[:, 2] - bbox[:, 0]).tolist(),
+            (bbox[:, 3] - bbox[:, 1]).tolist(),
+            observations.sequence.tolist(),
         )
 
 
@@ -167,6 +177,7 @@ def internal_detect_tables(
     observations: ObservationBatch,
     *,
     text_rows: list[list[int]] | None = None,
+    coordinates: internal_ObservationCoordinates | None = None,
 ) -> tuple[Table, ...]:
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
@@ -190,6 +201,7 @@ def internal_detect_tables(
         observations,
         len(tables),
         rows=text_rows,
+        coordinates=coordinates,
     ):
         conflicts = [
             table
@@ -251,7 +263,11 @@ def internal_detect_tables(
 COLUMN_TOLERANCE = 14.0  # loosen tolerance for column edge alignment to reduce split tables
 
 
-def internal_text_rows(observations: ObservationBatch) -> list[list[int]]:
+def internal_text_rows(
+    observations: ObservationBatch,
+    *,
+    coordinates: internal_ObservationCoordinates | None = None,
+) -> list[list[int]]:
     visible_flags = observations.visible.tolist()
     rotations = observations.rotation.tolist()
     visible = [
@@ -263,11 +279,11 @@ def internal_text_rows(observations: ObservationBatch) -> list[list[int]]:
         return []
     # Unbox the sort/grouping columns once; per-element numpy indexing in sort
     # keys costs a scalar box per access.
-    bbox = observations.bbox
-    all_centers = ((bbox[:, 1] + bbox[:, 3]) * 0.5).tolist()
-    all_lefts = bbox[:, 0].tolist()
-    all_heights = (bbox[:, 3] - bbox[:, 1]).tolist()
-    sequences = observations.sequence.tolist()
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    all_centers = coordinates.y_centers
+    all_lefts = coordinates.x0
+    all_heights = coordinates.heights
+    sequences = coordinates.sequences
     ordered = sorted(
         visible,
         key=lambda index: (-all_centers[index], all_lefts[index], sequences[index]),
@@ -290,10 +306,15 @@ def internal_text_rows(observations: ObservationBatch) -> list[list[int]]:
     return [sorted(row, key=lambda index: (all_lefts[index], sequences[index])) for row in rows]
 
 
-def internal_row_centers(observations: ObservationBatch, rows: list[list[int]]) -> list[float]:
+def internal_row_centers(
+    observations: ObservationBatch,
+    rows: list[list[int]],
+    *,
+    coordinates: internal_ObservationCoordinates | None = None,
+) -> list[float]:
     """Mean vertical centre of each row, computed once per observation batch."""
-    bbox = observations.bbox
-    centers = ((bbox[:, 1] + bbox[:, 3]) * 0.5).tolist()
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    centers = coordinates.y_centers
     return [sum(centers[index] for index in row) / len(row) for row in rows]
 
 
@@ -303,11 +324,13 @@ def internal_aligned_column_clusters(
     page_width: float,
     *,
     minimum_rows: int = 2,
+    coordinates: internal_ObservationCoordinates | None = None,
 ) -> list[list[tuple[int, int]]]:
     tolerance = max(COLUMN_TOLERANCE, min(24.0, page_width * 0.04))
-    all_lefts = observations.bbox[:, 0].tolist()
-    all_widths = (observations.bbox[:, 2] - observations.bbox[:, 0]).tolist()
-    sequences = observations.sequence.tolist()
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    all_lefts = coordinates.x0
+    all_widths = coordinates.widths
+    sequences = coordinates.sequences
     positions = [
         (all_lefts[index], row_index, index) for row_index, row in enumerate(rows) for index in row
     ]
@@ -346,21 +369,18 @@ def internal_split_support_rows(
     *,
     minimum_rows: int = 3,
     row_centers: list[float] | None = None,
+    coordinates: internal_ObservationCoordinates | None = None,
 ) -> list[list[int]]:
     if not indexes:
         return []
     if row_centers is None:
-        row_centers = internal_row_centers(observations, rows)
+        row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
     groups = [[indexes[0]]]
     for index in indexes[1:]:
         previous = groups[-1][-1]
-        previous_height = max(
-            float(observations.bbox[item, 3] - observations.bbox[item, 1])
-            for item in rows[previous]
-        )
-        current_height = max(
-            float(observations.bbox[item, 3] - observations.bbox[item, 1]) for item in rows[index]
-        )
+        previous_height = max(coordinates.heights[item] for item in rows[previous])
+        current_height = max(coordinates.heights[item] for item in rows[index])
         allowed_gap = max(55.0, max(previous_height, current_height) * 4.0)
         if row_centers[previous] - row_centers[index] > allowed_gap:
             groups.append([])
@@ -409,7 +429,7 @@ def internal_stream_table(
     column_centers = column_centers[column_order]
     columns = [columns[int(index)] for index in column_order]
     if row_centers is None:
-        row_centers = internal_row_centers(observations, rows)
+        row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
     top = row_centers[support[0]]
     bottom = row_centers[support[-1]]
     selected = [
@@ -628,17 +648,19 @@ def internal_stream_tables(
     start_order: int,
     *,
     rows: list[list[int]] | None = None,
+    coordinates: internal_ObservationCoordinates | None = None,
 ) -> tuple[Table, ...]:
+    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
     if rows is None:
-        rows = internal_text_rows(observations)
-    coordinates = internal_ObservationCoordinates.from_observations(observations)
-    row_centers = internal_row_centers(observations, rows)
+        rows = internal_text_rows(observations, coordinates=coordinates)
+    row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
     tables: list[Table] = []
     candidate_columns = internal_aligned_column_clusters(
         observations,
         rows,
         capture.width,
         minimum_rows=2,
+        coordinates=coordinates,
     )
     for minimum_rows in (3, 2):
         columns = (
@@ -682,6 +704,7 @@ def internal_stream_tables(
                 support,
                 minimum_rows=minimum_rows,
                 row_centers=row_centers,
+                coordinates=coordinates,
             ):
                 table = internal_stream_table(
                     start_order + len(tables),

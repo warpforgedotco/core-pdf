@@ -13,6 +13,7 @@ from core_pdf.impl.extract.table_cleanup import (
 from core_pdf.impl.extract.table_detection import (
     extract_chart_table,
     internal_detect_tables,
+    internal_ObservationCoordinates,
     internal_text_rows,
 )
 from core_pdf.impl.output import Table
@@ -29,11 +30,13 @@ class internal_TableExtractor:
         evidence = self.capture.evidence
         if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
             return ()
-        text_rows = internal_text_rows(self.observations)
+        coordinates = internal_ObservationCoordinates.from_observations(self.observations)
+        text_rows = internal_text_rows(self.observations, coordinates=coordinates)
         tables = internal_detect_tables(
             self.capture,
             self.observations,
             text_rows=text_rows,
+            coordinates=coordinates,
         )
         chart_table = extract_chart_table(self.capture, self.observations)
         if chart_table is not None:
