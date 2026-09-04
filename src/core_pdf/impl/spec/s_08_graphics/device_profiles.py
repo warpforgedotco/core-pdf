@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from functools import cache, lru_cache
 from importlib import resources
 from typing import Any
 
@@ -20,6 +21,7 @@ ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 INTERNAL_DEFAULT_CMYK_PROFILE = "SWOP2006_Coated5v2.icc"
 
 
+@cache
 def default_cmyk_transform() -> IccTransform | None:
     """Return the built-in DeviceCMYK profile, or None if it cannot be used.
 
@@ -28,6 +30,10 @@ def default_cmyk_transform() -> IccTransform | None:
     `_vendor/icc/`, and `_vendor/icc/README.md` records where it came from.
     Returning None rather than raising keeps a damaged or stripped install
     rendering -- the callers below fall back to the naive ink formula.
+
+    Cached because the profile is 2.7MB: every DeviceCMYK colour and image
+    sample funnels through here, and re-reading and re-parsing it per call cost
+    more than the conversion itself.
     """
     try:
         profile = (
@@ -61,13 +67,19 @@ def cmyk_bytes_to_srgb(samples: ByteSamples) -> ByteSamples:
     return numpy.floor(255.0 * (1.0 - inks) * (1.0 - black)).astype(numpy.uint8)
 
 
+@lru_cache(maxsize=8192)
 def cmyk_floats_to_srgb(
     cyan: float,
     magenta: float,
     yellow: float,
     black: float,
 ) -> tuple[int, int, int]:
-    """Convert one DeviceCMYK colour given as four floats in [0, 1] to sRGB."""
+    """Convert one DeviceCMYK colour given as four floats in [0, 1] to sRGB.
+
+    Called once per painted colour by the renderer, and a page reuses its
+    palette heavily, so the result is memoized: lcms builds a fresh transform
+    on every conversion and there is no handle to hold on to instead.
+    """
     sample = numpy.asarray(
         [
             [

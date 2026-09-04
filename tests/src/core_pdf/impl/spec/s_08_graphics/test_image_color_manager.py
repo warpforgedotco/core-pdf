@@ -20,7 +20,9 @@ def test_cmyk_conversion_handles_process_inks_and_black() -> None:
     # 255*(1-ink)*(1-black) formula produces. 100% K is the profile's black
     # after black point compensation, which is a near-neutral very dark grey.
     samples = bytes.fromhex("00000000 ff000000 00ff0000 0000ff00 0a141e28 000000ff")
-    expected = bytes.fromhex("ffffff 00aef0 ec0a8d fff300 d6cdc6 292728")
+    # Pinned against the in-tree ICC converter this replaced, which produced
+    # ...ec0a8d... and ...292728...; lcms rounds one green channel differently.
+    expected = bytes.fromhex("ffffff 00aef0 ec098d fff300 d6cdc6 292628")
 
     numpy.testing.assert_array_equal(
         ImageColorManager.convert_cmyk(samples),
