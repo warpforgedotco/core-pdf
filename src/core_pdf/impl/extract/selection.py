@@ -262,7 +262,7 @@ def internal_apply_font_enrichment(
                     capture=base.capture(),
                     plan=base.plan(),
                     recognition=recognition,
-                    fields=base.internal_fields,
+                    fields=base.capture().fields,
                     structure=base.internal_structure,
                     hidden_layers=base.internal_hidden_layers,
                 )
@@ -276,12 +276,13 @@ def internal_apply_font_enrichment(
             capture.program,
             learned_unicode=font.learned_unicode,
             structure=base.internal_structure,
+            fields=capture.fields,
         )
         enriched.append(
             internal_PageExtraction(
                 base.page,
                 capture=enriched_capture,
-                fields=base.internal_fields,
+                fields=enriched_capture.fields,
                 structure=base.internal_structure,
                 hidden_layers=base.internal_hidden_layers,
             )
@@ -394,7 +395,7 @@ def internal_apply_stroked_enrichment(
             capture=base.capture(),
             plan=base.plan(),
             recognition=recognition,
-            fields=base.internal_fields,
+            fields=base.capture().fields,
             structure=base.internal_structure,
             hidden_layers=base.internal_hidden_layers,
         )

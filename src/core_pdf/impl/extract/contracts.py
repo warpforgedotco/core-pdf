@@ -507,6 +507,7 @@ class CapturedPage:
     width: float
     height: float
     rotation: int
+    fields: tuple[Any, ...] | None
     program: PageProgram
     observations: ObservationBatch
     runs: tuple[TextRun, ...]

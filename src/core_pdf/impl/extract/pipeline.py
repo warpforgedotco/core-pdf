@@ -85,14 +85,21 @@ class internal_PageExtraction:
         self.page = page
         self.internal_structure = structure
         self.internal_hidden_layers = hidden_layers
+        field_records = tuple(fields) if fields is not None else None
         self.internal_capture = (
-            capture
+            replace(capture, fields=field_records)
+            if capture is not None and fields is not None
+            else capture
             if capture is not None
-            else capture_page(page, structure=structure, hidden_layers=hidden_layers)
+            else capture_page(
+                page,
+                structure=structure,
+                hidden_layers=hidden_layers,
+                fields=field_records,
+            )
         )
         self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
         self.internal_recognition = recognition
-        self.internal_fields = tuple(fields) if fields is not None else None
 
     def capture(self) -> CapturedPage:
         return self.internal_capture
@@ -204,7 +211,7 @@ class internal_PageExtraction:
                 text="",
             ),
         )
-        source_fields = self.internal_fields
+        source_fields = capture.fields
         fetch_fields = self.page.get_fields if source_fields is None else lambda: source_fields
         field_records = internal_collected_records(
             fetch_fields,

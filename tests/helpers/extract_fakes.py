@@ -88,6 +88,7 @@ def capture(
         width=width,
         height=height,
         rotation=rotation,
+        fields=None,
         program=program,
         observations=batch,
         runs=runs,

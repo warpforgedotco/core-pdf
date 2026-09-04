@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -444,6 +445,7 @@ def compose_page(
     options: RenderOptions | None = None,
     *,
     page_program: PageProgram | None = None,
+    fields: Iterable[Any] | None = None,
 ) -> RenderedPage:
     options = options or RenderOptions()
     media_box = page.media_box or (0.0, 0.0, page.width, page.height)
@@ -612,12 +614,14 @@ def compose_page(
         return True
 
     if options.include_layers:
-        try:
-            fields = page.get_fields()
-        except ValueError:
-            # A malformed AcroForm must not prevent rendering the page's text and images.
-            fields = ()
-        for field in fields:
+        field_records = fields
+        if field_records is None:
+            try:
+                field_records = page.get_fields()
+            except ValueError:
+                # A malformed AcroForm must not prevent rendering the page's text and images.
+                field_records = ()
+        for field in field_records:
             widget = field.widget or field.dict
             rect = field.rect
             appearance = None
