@@ -180,8 +180,14 @@ class internal_PageExtraction:
             drawings=capture.drawings,
         )
         resolver = self.page.document.resolver
+        try:
+            raw_annotations = tuple(self.page.get_annotations())
+            resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
+        except (TypeError, ValueError):
+            raw_annotations = ()
+            resolved_annotation_dicts = None
         annotations = internal_collected_records(
-            self.page.get_annotations,
+            lambda: raw_annotations,
             lambda _index, record: Annotation(
                 subtype=record.subtype,
                 bbox=record.rect,
@@ -190,7 +196,7 @@ class internal_PageExtraction:
             ),
         )
         links = internal_collected_records(
-            self.page.get_links,
+            lambda: self.page.get_links(resolved_annotation_dicts),
             lambda _index, record: Link(
                 bbox=record.bbox,
                 url=record.url,

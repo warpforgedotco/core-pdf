@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl.exceptions import PdfParseError
@@ -143,8 +144,8 @@ class PdfPage:
             )
         return results
 
-    def get_links(self) -> list[RawLink]:
-        annots = self._annotation_dicts(strict=False)
+    def get_links(self, annots: Iterable[PdfDict] | None = None) -> list[RawLink]:
+        annots = self._annotation_dicts(strict=False) if annots is None else annots
         if not annots:
             return []
 
