@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import operator
 import typing
+from collections import deque
+from itertools import chain
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -198,8 +200,53 @@ class TextDocument(typing.Protocol):
 internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
+class internal_PendingRunText:
+    """Text and glyph clusters accumulated for the run currently being merged.
+
+    Merging appended to the joined string on every fragment, so a line emitted
+    as K separate show operations -- what kerned LaTeX and Word output does --
+    cost O(K^2) in copying. Fragments are collected here instead and joined once
+    when the run is retired. Only the first and last characters are consulted
+    while merging, so both are tracked directly rather than re-derived.
+    """
+
+    __slots__ = ("parts", "clusters", "head", "tail")
+
+    def __init__(self, run: TextRun) -> None:
+        self.parts: deque[str] = deque((run.text,))
+        self.clusters: list[tuple[GlyphCluster, ...]] = [run.glyph_clusters]
+        self.head = run.text[:1]
+        self.tail = run.text[-1:]
+
+    def append(self, separator: str, run: TextRun) -> None:
+        added = separator + run.text
+        self.parts.append(added)
+        self.clusters.append(run.glyph_clusters)
+        if not self.head:
+            self.head = added[:1]
+        if added:
+            self.tail = added[-1:]
+
+    def prepend(self, separator: str, run: TextRun) -> None:
+        added = run.text + separator
+        self.parts.appendleft(added)
+        # Clusters stay in emission order even when the text reads right-to-left.
+        self.clusters.append(run.glyph_clusters)
+        if added:
+            self.head = added[:1]
+        if not self.tail:
+            self.tail = added[-1:]
+
+    def settle(self, run: TextRun) -> None:
+        """Write the accumulated text and clusters back onto `run`."""
+        if len(self.parts) > 1:
+            run.text = "".join(self.parts)
+            run.glyph_clusters = tuple(chain.from_iterable(self.clusters))
+
+
 def internal_merge_runs(
     pending: TextRun,
+    accumulated: internal_PendingRunText,
     new_run: TextRun,
     gap: float,
     threshold: float,
@@ -215,8 +262,14 @@ def internal_merge_runs(
     """
     if not -2.0 <= gap < threshold:
         return False
-    left, right = (new_run.text, pending.text) if reverse else (pending.text, new_run.text)
-    pending.text = left + gap_separator(left, right, gap, pending) + right
+    # `gap_separator` only inspects the adjacent characters, so the accumulated
+    # side is represented by the one character that touches the join.
+    if reverse:
+        separator = gap_separator(new_run.text, accumulated.head, gap, pending)
+        accumulated.prepend(separator, new_run)
+    else:
+        separator = gap_separator(accumulated.tail, new_run.text, gap, pending)
+        accumulated.append(separator, new_run)
     pending.union_ink_bbox(new_run.ink_bbox)
     edge = getattr(new_run, widen)
     keep = min if widen.endswith("0") else max
@@ -272,6 +325,7 @@ class TextState:
     type3_uncolored: bool
     resources: PdfDict
     pending_run: TextRun | None
+    pending_text: internal_PendingRunText | None
     op_handlers: dict[str, OperationHandler]
 
     __slots__ = (
@@ -362,6 +416,7 @@ class TextState:
         "hidden_layers",
         "pending_line_break",
         "pending_run",
+        "pending_text",
         "op_handlers",
         "combined_A",
         "combined_B",
@@ -479,6 +534,7 @@ class TextState:
         self.hidden_layers = hidden_layers
         self.pending_line_break = False
         self.pending_run = None
+        self.pending_text = None
         self.op_handlers = build_operator_handlers(self)
 
         self.combined_A = 1.0
@@ -956,9 +1012,15 @@ class TextState:
         )
 
     def flush_run(self) -> None:
-        if self.pending_run:
-            self.runs.append(self.pending_run)
-            self.pending_run = None
+        """Retire the pending run, joining the text merging accumulated for it."""
+        pending = self.pending_run
+        if pending is None:
+            return
+        if self.pending_text is not None:
+            self.pending_text.settle(pending)
+        self.runs.append(pending)
+        self.pending_run = None
+        self.pending_text = None
 
     def transform_point(self, x: float, y: float) -> tuple[float, float]:
         return (
@@ -1121,12 +1183,14 @@ class TextState:
         if self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
             return
 
-        if not self.pending_run:
+        if self.pending_run is None:
             self.pending_run = new_run
+            self.pending_text = internal_PendingRunText(new_run)
             return
 
         p = self.pending_run
-        p_text = p.text
+        accumulated = self.pending_text
+        assert accumulated is not None
         new_text = new_run.text
         p_font_size = p.font_size
         p_space_width = p.space_width
@@ -1140,8 +1204,8 @@ class TextState:
             and p_font_size == new_run.font_size
             and (
                 p.font_name == new_run.font_name
-                or can_merge_cross_font_word(p_text, new_text)
-                or can_merge_cross_font_word(new_text, p_text)
+                or can_merge_cross_font_word(accumulated.tail, new_text)
+                or can_merge_cross_font_word(new_text, accumulated.head)
             )
             and p.fill_color == new_run.fill_color
         )
@@ -1159,27 +1223,39 @@ class TextState:
         if is_same_style:
             if p_rotation == 0:
                 merged = internal_merge_runs(
-                    p, new_run, new_run.x0 - p.x1, merge_threshold, widen="x1"
+                    p, accumulated, new_run, new_run.x0 - p.x1, merge_threshold, widen="x1"
                 ) or internal_merge_runs(
-                    p, new_run, p.x0 - new_run.x1, merge_threshold, widen="x0", reverse=True
+                    p,
+                    accumulated,
+                    new_run,
+                    p.x0 - new_run.x1,
+                    merge_threshold,
+                    widen="x0",
+                    reverse=True,
                 )
             elif p_rotation == 90:
                 merged = internal_merge_runs(
-                    p, new_run, new_run.y0 - p.y1, merge_threshold, widen="y1"
+                    p, accumulated, new_run, new_run.y0 - p.y1, merge_threshold, widen="y1"
                 )
             else:
                 merged = internal_merge_runs(
-                    p, new_run, p.x0 - new_run.x1, merge_threshold, widen="x0"
+                    p, accumulated, new_run, p.x0 - new_run.x1, merge_threshold, widen="x0"
                 ) or internal_merge_runs(
-                    p, new_run, new_run.x0 - p.x1, merge_threshold, widen="x1", reverse=True
+                    p,
+                    accumulated,
+                    new_run,
+                    new_run.x0 - p.x1,
+                    merge_threshold,
+                    widen="x1",
+                    reverse=True,
                 )
 
         if not merged:
-            self.runs.append(p)
+            self.flush_run()
             self.pending_run = new_run
+            self.pending_text = internal_PendingRunText(new_run)
         else:
             p.advance_bbox = (p.x0, p.y0, p.x1, p.y1)
-            p.glyph_clusters += new_run.glyph_clusters
 
     def record_glyph_observations(
         self,
