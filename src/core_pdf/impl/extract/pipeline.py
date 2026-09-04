@@ -132,7 +132,7 @@ class internal_PageExtraction:
             observations,
             obstacles=(*table_obstacles, *image_obstacles),
             use_xy_cut=use_xy_cut,
-            rotation=int(getattr(self.page, "rotation", 0) or 0),
+            rotation=capture.rotation,
             page_width=capture.width,
             page_height=capture.height,
         )
@@ -169,9 +169,9 @@ class internal_PageExtraction:
         assembled = assemble_page(
             blocks,
             page_number=int(self.page.page_number),
-            width=float(self.page.width),
-            height=float(self.page.height),
-            rotation=int(self.page.rotation),
+            width=capture.width,
+            height=capture.height,
+            rotation=capture.rotation,
             route=self.internal_plan.route,
             tables=products.tables,
             figures=figures,

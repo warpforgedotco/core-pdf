@@ -87,6 +87,7 @@ def capture(
         page=page if page is not None else FakePage(width=width, height=height),
         width=width,
         height=height,
+        rotation=rotation,
         program=program,
         observations=batch,
         runs=runs,

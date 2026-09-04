@@ -839,6 +839,7 @@ def internal_capture_from_program(
         )
     page_width = float(page.width)
     page_height = float(page.height)
+    page_rotation = int(getattr(page, "rotation", 0) or 0)
     page_area = max(1.0, page_width * page_height)
     visible = observations.visible
     boxes = observations.bbox
@@ -903,6 +904,7 @@ def internal_capture_from_program(
         page=page,
         width=page_width,
         height=page_height,
+        rotation=page_rotation,
         program=program,
         observations=observations,
         runs=runs,
@@ -948,7 +950,7 @@ def internal_capture_from_program(
             drawings,
             page_width=page_width,
             page_height=page_height,
-            rotation=int(getattr(page, "rotation", 0) or 0),
+            rotation=page_rotation,
         )
         captured = replace(
             captured,
