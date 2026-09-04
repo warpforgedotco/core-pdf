@@ -446,6 +446,7 @@ def compose_page(
     *,
     page_program: PageProgram | None = None,
     fields: Iterable[Any] | None = None,
+    annotations: Iterable[Any] | None = None,
 ) -> RenderedPage:
     options = options or RenderOptions()
     media_box = page.media_box or (0.0, 0.0, page.width, page.height)
@@ -645,7 +646,8 @@ def compose_page(
                 else False,
             )
     if options.include_annotations:
-        for annot in page.get_annotations():
+        annotation_records = page.get_annotations() if annotations is None else annotations
+        for annot in annotation_records:
             appearance = annot.dict.get("AP") if isinstance(annot.dict, dict) else None
             appearance_state = annot.dict.get("AS") if isinstance(annot.dict, dict) else None
             rendered = False

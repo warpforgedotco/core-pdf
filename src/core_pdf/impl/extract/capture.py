@@ -726,6 +726,7 @@ def internal_capture_from_program(
     learned_unicode: LearnedUnicodeMap | None = None,
     structure: Any = internal_STRUCTURE_UNSET,
     fields: tuple[Any, ...] | None = None,
+    annotations: tuple[Any, ...] | None = None,
 ) -> CapturedPage:
     program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
@@ -907,6 +908,7 @@ def internal_capture_from_program(
         height=page_height,
         rotation=page_rotation,
         fields=fields,
+        annotations=annotations,
         program=program,
         observations=observations,
         runs=runs,
@@ -967,6 +969,7 @@ def capture_page(
     structure: Any = internal_STRUCTURE_UNSET,
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
+    annotations: tuple[Any, ...] | None = None,
 ) -> CapturedPage:
     """Build the canonical page products once and derive routing evidence from them."""
     program = (
@@ -974,7 +977,13 @@ def capture_page(
         if hidden_layers is None
         else page.get_page_program(hidden_layers=hidden_layers)
     )
-    return internal_capture_from_program(page, program, structure=structure, fields=fields)
+    return internal_capture_from_program(
+        page,
+        program,
+        structure=structure,
+        fields=fields,
+        annotations=annotations,
+    )
 
 
 def internal_requires_high_resolution_vector_ocr(capture: CapturedPage) -> bool:

@@ -86,16 +86,24 @@ class internal_PageExtraction:
         self.internal_structure = structure
         self.internal_hidden_layers = hidden_layers
         field_records = tuple(fields) if fields is not None else None
+        if capture is not None and capture.annotations is not None:
+            annotation_records = capture.annotations
+        else:
+            try:
+                annotation_records = tuple(page.get_annotations())
+            except (TypeError, ValueError):
+                annotation_records = ()
         self.internal_capture = (
-            replace(capture, fields=field_records)
+            replace(capture, fields=field_records, annotations=annotation_records)
             if capture is not None and fields is not None
-            else capture
+            else replace(capture, annotations=annotation_records)
             if capture is not None
             else capture_page(
                 page,
                 structure=structure,
                 hidden_layers=hidden_layers,
                 fields=field_records,
+                annotations=annotation_records,
             )
         )
         self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
@@ -187,12 +195,8 @@ class internal_PageExtraction:
             drawings=capture.drawings,
         )
         resolver = self.page.document.resolver
-        try:
-            raw_annotations = tuple(self.page.get_annotations())
-            resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
-        except (TypeError, ValueError):
-            raw_annotations = ()
-            resolved_annotation_dicts = None
+        raw_annotations = capture.annotations or ()
+        resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
         annotations = internal_collected_records(
             lambda: raw_annotations,
             lambda _index, record: Annotation(

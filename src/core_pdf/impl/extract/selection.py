@@ -277,6 +277,7 @@ def internal_apply_font_enrichment(
             learned_unicode=font.learned_unicode,
             structure=base.internal_structure,
             fields=capture.fields,
+            annotations=capture.annotations,
         )
         enriched.append(
             internal_PageExtraction(

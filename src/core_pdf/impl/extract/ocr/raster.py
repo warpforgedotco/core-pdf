@@ -500,6 +500,7 @@ def internal_rendered_page_raster(
             RenderOptions(include_text=include_native_text),
             page_program=capture.program,
             fields=capture.fields,
+            annotations=capture.annotations,
         )
     if crop is None:
         raster_area = max(1.0, float(page.width) * float(page.height))

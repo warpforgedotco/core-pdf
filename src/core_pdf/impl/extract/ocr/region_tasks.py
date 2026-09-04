@@ -390,6 +390,7 @@ def internal_candidate_region_tasks(
                     RenderOptions(include_text=ocr_pass.include_native_text),
                     page_program=capture.program,
                     fields=capture.fields,
+                    annotations=capture.annotations,
                 )
             raster = internal_rendered_page_raster(
                 capture,
@@ -480,6 +481,7 @@ def internal_high_resolution_weak_region_tasks(
         RenderOptions(include_text=ocr_pass.include_native_text),
         page_program=capture.program,
         fields=capture.fields,
+        annotations=capture.annotations,
     )
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     tasks: list[internal_OcrTask] = []
