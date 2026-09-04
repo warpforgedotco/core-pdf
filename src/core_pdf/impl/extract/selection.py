@@ -263,6 +263,7 @@ def internal_apply_font_enrichment(
                     plan=base.plan(),
                     recognition=recognition,
                     fields=base.internal_fields,
+                    structure=base.internal_structure,
                 )
             )
             continue
@@ -273,12 +274,14 @@ def internal_apply_font_enrichment(
             base.page,
             capture.program,
             learned_unicode=font.learned_unicode,
+            structure=base.internal_structure,
         )
         enriched.append(
             internal_PageExtraction(
                 base.page,
                 capture=enriched_capture,
                 fields=base.internal_fields,
+                structure=base.internal_structure,
             )
         )
     return tuple(enriched)
@@ -390,6 +393,7 @@ def internal_apply_stroked_enrichment(
             plan=base.plan(),
             recognition=recognition,
             fields=base.internal_fields,
+            structure=base.internal_structure,
         )
     return tuple(enriched)
 
@@ -438,6 +442,18 @@ def extract_document(
     pages: Sequence[Any],
 ) -> Document:
     pages = tuple(pages)
+    structure_tree = None
+    with suppress(IndexError, TypeError, ValueError):
+        structure_tree = document.structure
+
+    def page_structure(page: Any) -> Any:
+        if structure_tree is None:
+            return None
+        try:
+            return structure_tree.page_structure(page)
+        except (IndexError, TypeError, ValueError):
+            return None
+
     fields_by_page: dict[int, list[Any]] = {}
     with suppress(TypeError, ValueError):
         fields_by_page = document.fields_by_page(pages)
@@ -445,6 +461,7 @@ def extract_document(
         internal_PageExtraction(
             page,
             fields=fields_by_page.get(int(page.page_number) - 1, ()),
+            structure=page_structure(page),
         )
         for page in pages
     )

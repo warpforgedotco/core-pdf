@@ -43,6 +43,7 @@ from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )
 
+internal_STRUCTURE_UNSET = object()
 WORD_TOKEN_RE = re.compile(r"\w+")
 VECTOR_PAINT_OPERATION_WEIGHT = 3
 LearnedUnicodeMap = Mapping[object, Mapping[bytes, str]]
@@ -173,12 +174,16 @@ def internal_run_mcid(run: TextRun) -> int | None:
 def internal_apply_structure_actual_text(
     page: Any,
     runs: tuple[TextRun, ...],
+    structure: Any = internal_STRUCTURE_UNSET,
 ) -> tuple[TextRun, ...]:
     if not any(internal_run_mcid(run) is not None for run in runs):
         return runs
-    try:
-        structure = page.structure
-    except (IndexError, TypeError, ValueError):
+    if structure is internal_STRUCTURE_UNSET:
+        try:
+            structure = page.structure
+        except (IndexError, TypeError, ValueError):
+            return runs
+    if structure is None:
         return runs
     replaced_mcids: set[int] = set()
     output: list[TextRun] = []
@@ -708,6 +713,7 @@ def internal_capture_from_program(
     program: PageProgram,
     *,
     learned_unicode: LearnedUnicodeMap | None = None,
+    structure: Any = internal_STRUCTURE_UNSET,
 ) -> CapturedPage:
     program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
@@ -745,7 +751,7 @@ def internal_capture_from_program(
             enriched_runs.append(run)
         else:
             enriched_runs.append(run.replace(font_name=majority))
-    structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs))
+    structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs), structure)
     raw_runs = tuple(
         internal_apply_learned_unicode_to_run(run, learned_unicode)
         for run in internal_extractable_runs(structured_runs)
@@ -935,9 +941,9 @@ def internal_capture_from_program(
     return captured
 
 
-def capture_page(page: Any) -> CapturedPage:
+def capture_page(page: Any, *, structure: Any = internal_STRUCTURE_UNSET) -> CapturedPage:
     """Build the canonical page products once and derive routing evidence from them."""
-    return internal_capture_from_program(page, page.get_page_program())
+    return internal_capture_from_program(page, page.get_page_program(), structure=structure)
 
 
 def internal_requires_high_resolution_vector_ocr(capture: CapturedPage) -> bool:

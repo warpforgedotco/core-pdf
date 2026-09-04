@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any, TypeVar
 
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
-from core_pdf.impl.extract.capture import capture_page
+from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
 from core_pdf.impl.extract.contracts import (
     CapturedPage,
     ObservationBatch,
@@ -79,9 +79,13 @@ class internal_PageExtraction:
         plan: WorkPlan | None = None,
         recognition: RecognitionResult | None = None,
         fields: Iterable[Any] | None = None,
+        structure: Any = internal_STRUCTURE_UNSET,
     ) -> None:
         self.page = page
-        self.internal_capture = capture if capture is not None else capture_page(page)
+        self.internal_structure = structure
+        self.internal_capture = (
+            capture if capture is not None else capture_page(page, structure=structure)
+        )
         self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
         self.internal_recognition = recognition
         self.internal_fields = tuple(fields) if fields is not None else None
