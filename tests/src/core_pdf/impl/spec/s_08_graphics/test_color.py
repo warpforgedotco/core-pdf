@@ -1,5 +1,3 @@
-from typing import cast
-
 import imagecodecs
 import numpy
 import pytest
@@ -8,6 +6,7 @@ from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_bytes_to_srgb,
     cmyk_floats_to_srgb,
     default_cmyk_transform,
+    internal_cmyk_bytes_to_srgb,
 )
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     INTERNAL_DEDUPLICATE_MIN_ROWS,
@@ -32,9 +31,7 @@ def test_parser_reports_the_profile_colour_space() -> None:
     transform = srgb_transform()
 
     assert transform.color_space == "RGB"
-    assert transform.pcs == "XYZ"
     assert transform.input_channels == 3
-    assert transform.output_channels == 3
     assert transform.alternate_color_space == "DeviceRGB"
 
 
@@ -43,16 +40,16 @@ def test_parser_rejects_invalid_profile() -> None:
         parse_icc_transform(b"not an ICC profile")
 
 
-def test_matrix_transform_accepts_float32_batches() -> None:
+def test_srgb_profile_round_trips_its_own_samples() -> None:
     transform = srgb_transform()
-    samples = numpy.asarray([[0.0, 0.5, 1.0], [1.0, 0.0, 0.25]], dtype=numpy.float32)
+    samples = numpy.asarray([[0, 128, 255], [255, 0, 64]], dtype=numpy.uint8)
 
-    result = transform.apply(samples)
+    result = transform.apply_uint8(samples)
 
     assert result.shape == (2, 3)
-    assert result.dtype == numpy.float32
+    assert result.dtype == numpy.uint8
     # sRGB in, sRGB out: the transform is the identity up to lcms' rounding.
-    numpy.testing.assert_allclose(result, samples, atol=2e-3)
+    assert numpy.abs(result.astype(int) - samples.astype(int)).max() <= 1
 
 
 def test_gray_transform_expands_to_rgb() -> None:
@@ -75,38 +72,14 @@ def test_gray_transform_expands_to_rgb() -> None:
 @pytest.mark.parametrize(
     "samples",
     [
-        numpy.zeros(3, dtype=numpy.float32),
-        numpy.zeros((1, 3), dtype=numpy.float64),
-        numpy.zeros((1, 2), dtype=numpy.float32),
-        numpy.zeros((2, 6), dtype=numpy.float32)[:, ::2],
+        numpy.zeros(3, dtype=numpy.uint8),
+        numpy.zeros((1, 3), dtype=numpy.float32),
+        numpy.zeros((1, 2), dtype=numpy.uint8),
     ],
 )
 def test_transform_rejects_invalid_sample_contract(samples: numpy.ndarray) -> None:
     with pytest.raises(IccSampleError):
-        srgb_transform().apply(samples)
-
-
-def test_uint8_transform_rejects_the_wrong_dtype_or_shape() -> None:
-    transform = srgb_transform()
-    with pytest.raises(IccSampleError):
-        transform.apply_uint8(cast(numpy.ndarray, numpy.zeros((1, 3), dtype=numpy.float32)))
-    with pytest.raises(IccSampleError):
-        transform.apply_uint8(numpy.zeros((1, 4), dtype=numpy.uint8))
-
-
-def test_uint8_transform_agrees_with_the_float_path() -> None:
-    transform = default_cmyk_transform()
-    assert transform is not None
-    values = numpy.asarray(
-        [[0, 0, 0, 0], [255, 255, 255, 255], [64, 128, 192, 32], [7, 200, 33, 90]],
-        dtype=numpy.uint8,
-    )
-    floats = numpy.ascontiguousarray(values.astype(numpy.float32) / 255.0)
-
-    expected = numpy.rint(transform.apply(floats) * 255.0)
-
-    # The two paths differ only in where lcms rounds, so allow a single step.
-    assert numpy.abs(transform.apply_uint8(values).astype(int) - expected).max() <= 1
+        srgb_transform().apply_uint8(samples)
 
 
 def test_uint8_transform_deduplicates_without_changing_results() -> None:
@@ -129,10 +102,7 @@ def test_uint8_transform_deduplicates_without_changing_results() -> None:
 
 
 def test_empty_batches_keep_their_shape() -> None:
-    transform = srgb_transform()
-
-    assert transform.apply_uint8(numpy.zeros((0, 3), dtype=numpy.uint8)).shape == (0, 3)
-    assert transform.apply(numpy.zeros((0, 3), dtype=numpy.float32)).shape == (0, 3)
+    assert srgb_transform().apply_uint8(numpy.zeros((0, 3), dtype=numpy.uint8)).shape == (0, 3)
 
 
 def test_default_cmyk_profile_loads() -> None:
@@ -140,7 +110,6 @@ def test_default_cmyk_profile_loads() -> None:
 
     assert transform is not None
     assert transform.color_space == "CMYK"
-    assert transform.pcs == "Lab"
     assert transform.input_channels == 4
     assert transform.alternate_color_space == "DeviceCMYK"
 
@@ -176,3 +145,20 @@ def test_cmyk_helpers_agree_on_one_colour() -> None:
     single = cmyk_floats_to_srgb(26 / 255.0, 51 / 255.0, 77 / 255.0, 102 / 255.0)
 
     assert single == tuple(int(component) for component in batch)
+
+
+def test_single_colour_conversion_is_cached_on_quantized_inks() -> None:
+    """The shading rasterizer asks per pixel, with floats that vary continuously.
+
+    Caching on the raw floats would miss on nearly every pixel and rebuild an
+    lcms transform each time, so the memo has to key on the quantized inks.
+    """
+    internal_cmyk_bytes_to_srgb.cache_clear()
+    base = (0.2, 0.4, 0.6, 0.1)
+
+    first = cmyk_floats_to_srgb(*base)
+    # A step far below one 8-bit level, the kind an axial gradient produces.
+    nudged = cmyk_floats_to_srgb(*(component + 1e-7 for component in base))
+
+    assert nudged == first
+    assert internal_cmyk_bytes_to_srgb.cache_info().misses == 1

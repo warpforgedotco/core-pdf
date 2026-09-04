@@ -5,18 +5,16 @@ from __future__ import annotations
 
 from functools import cache, lru_cache
 from importlib import resources
-from typing import Any
 
 import numpy
 
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
+    ByteSamples,
     IccProfileError,
     IccSampleError,
     IccTransform,
     parse_icc_transform,
 )
-
-ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 INTERNAL_DEFAULT_CMYK_PROFILE = "SWOP2006_Coated5v2.icc"
 
@@ -67,30 +65,34 @@ def cmyk_bytes_to_srgb(samples: ByteSamples) -> ByteSamples:
     return numpy.floor(255.0 * (1.0 - inks) * (1.0 - black)).astype(numpy.uint8)
 
 
-@lru_cache(maxsize=8192)
 def cmyk_floats_to_srgb(
     cyan: float,
     magenta: float,
     yellow: float,
     black: float,
 ) -> tuple[int, int, int]:
-    """Convert one DeviceCMYK colour given as four floats in [0, 1] to sRGB.
-
-    Called once per painted colour by the renderer, and a page reuses its
-    palette heavily, so the result is memoized: lcms builds a fresh transform
-    on every conversion and there is no handle to hold on to instead.
-    """
-    sample = numpy.asarray(
-        [
-            [
-                internal_component_byte(cyan),
-                internal_component_byte(magenta),
-                internal_component_byte(yellow),
-                internal_component_byte(black),
-            ]
-        ],
-        dtype=numpy.uint8,
+    """Convert one DeviceCMYK colour given as four floats in [0, 1] to sRGB."""
+    return internal_cmyk_bytes_to_srgb(
+        internal_component_byte(cyan),
+        internal_component_byte(magenta),
+        internal_component_byte(yellow),
+        internal_component_byte(black),
     )
+
+
+# Keyed on the quantized inks, not the floats they came from. The hot caller is
+# `render/patterns`, which asks for one colour per pixel of an axial or radial
+# shading: the floats vary continuously, so a float key misses on essentially
+# every pixel and pays a fresh lcms transform build for each, while the byte
+# key collapses a whole gradient ramp to a few hundred entries.
+@lru_cache(maxsize=8192)
+def internal_cmyk_bytes_to_srgb(
+    cyan: int,
+    magenta: int,
+    yellow: int,
+    black: int,
+) -> tuple[int, int, int]:
+    sample = numpy.asarray([[cyan, magenta, yellow, black]], dtype=numpy.uint8)
     red, green, blue = cmyk_bytes_to_srgb(sample)[0]
     return int(red), int(green), int(blue)
 

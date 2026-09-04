@@ -209,10 +209,12 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             alt = normalize_color_space_name(icc_dict.get("Alternate"))
             n = cs_param(icc_dict, "N", 3)
             channels = parse_channel_count(n)
+            # PdfStream.data re-runs the filter pipeline on every access, so a
+            # compressed profile would otherwise be inflated twice here.
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
-            if alt is None and isinstance(icc_stream, PdfStream):
+            if alt is None and icc_profile is not None:
                 try:
-                    alt = parse_icc_transform(bytes(icc_stream.data)).alternate_color_space
+                    alt = parse_icc_transform(icc_profile).alternate_color_space
                 except IccProfileError:
                     alt = None
             return ImageColorSpec(

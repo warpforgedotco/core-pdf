@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, lru_cache
 from typing import Any
 
 import imagecodecs
 import numpy
 
-ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 
@@ -22,53 +21,45 @@ class IccSampleError(ValueError):
     """Raised when sample arrays do not match an ICC transform."""
 
 
-# Rendering intent 1 is relative colorimetric (ICC.1:2010, 6.1.11), which with
-# black point compensation is what the previous in-tree converter implemented:
-# it walked the A2B tag, then scaled the result off the profile's detected
-# black point. Across the whole 8-bit CMYK cube this pairing reproduces that
-# converter to a maximum of 2/255 per channel, mean 0.22.
+# Rendering intent 1 is relative colorimetric (ICC.1:2010, 6.1.11). With black
+# point compensation it reproduces the in-tree converter this replaced to
+# within 2/255 per channel across the whole 8-bit CMYK cube.
 INTERNAL_RENDERING_INTENT = 1
 
-# lcms2.h flags. cmsFLAGS_NOOPTIMIZE is not a quality trade here, it is the
-# opposite: it stops lcms precomputing a device-link LUT and evaluates the full
-# pipeline per sample instead, which is both more faithful (without it the same
-# cube deviates by up to 21/255) and vastly cheaper to set up -- 1.7ms against
-# 18ms for the 2.7MB SWOP profile. Setup cost dominates because imagecodecs
-# exposes no reusable transform handle, so every call rebuilds the transform;
-# the single-colour call sites in render/ would otherwise pay 18ms each. The
-# cost is ~6x more per sample, which only overtakes the LUT past ~150k samples.
-INTERNAL_BLACK_POINT_COMPENSATION = 0x2000
-INTERNAL_NO_OPTIMIZE = 0x0100
-INTERNAL_TRANSFORM_FLAGS = INTERNAL_BLACK_POINT_COMPENSATION | INTERNAL_NO_OPTIMIZE
+# cmsFLAGS_BLACKPOINTCOMPENSATION | cmsFLAGS_NOOPTIMIZE (lcms2.h). NOOPTIMIZE is
+# not a quality trade here but the opposite: it stops lcms precomputing a
+# device-link LUT, which is both more faithful (with the LUT the same cube
+# deviates by up to 21/255) and an order of magnitude cheaper to set up. Setup
+# dominates because imagecodecs exposes no reusable transform handle, so every
+# call rebuilds the transform.
+INTERNAL_TRANSFORM_FLAGS = 0x2000 | 0x0100
 
 # ICC data colour space signatures (ICC.1:2010, Table 19) as lcms reports them,
-# mapped to the names the colour-space code above this module already uses.
+# mapped to the names the colour-space code above this module uses. Lowercasing
+# a name recovers the lcms spelling, which is what `cms_transform` wants.
 INTERNAL_COLOR_SPACE_NAMES = {
     "gray": "GRAY",
     "rgb": "RGB",
     "cmyk": "CMYK",
     "xyz": "XYZ",
 }
-INTERNAL_PCS_NAMES = {"xyz": "XYZ", "lab": "Lab"}
+INTERNAL_PCS_NAMES = {"xyz", "lab"}
 INTERNAL_ALTERNATE_COLOR_SPACES = {
     "GRAY": "DeviceGray",
     "RGB": "DeviceRGB",
     "CMYK": "DeviceCMYK",
 }
 
-# lcms floating-point buffers carry each space in its own natural units, not a
-# normalized [0, 1]: CMYK is ink percentage. Callers hand us [0, 1] throughout,
-# so the input is rescaled and the sRGB result -- already [0, 1], though lcms
-# lets it run slightly outside on out-of-gamut input -- is clamped.
-INTERNAL_FLOAT_INPUT_SCALE = {"CMYK": numpy.float32(100.0)}
-
-# Deduplicating a byte batch costs one sort, and pays for itself many times over
-# on real images: a CMYK page photograph runs around 10% distinct colours, so
-# the transform shrinks by an order of magnitude. Below the row floor the sort
-# is not worth setting up, and above the ratio floor the batch is close enough
-# to all-distinct that deduplicating would be pure overhead.
+# Real images repeat colours heavily -- a CMYK page photograph runs around 10%
+# distinct -- so deduplicating a large batch shrinks the transform by an order
+# of magnitude. Below this floor the sort is not worth setting up.
 INTERNAL_DEDUPLICATE_MIN_ROWS = 4096
-INTERNAL_DEDUPLICATE_MIN_RATIO = 2
+
+# Once the sort is paid for, scattering the result back costs about a twelfth
+# of what transforming the duplicate rows would, so deduplicating pays until
+# the batch is within a few percent of all-distinct. Measured on this profile:
+# ~0.19us per row transformed against ~0.015us per row gathered.
+INTERNAL_DEDUPLICATE_MAX_DISTINCT = 0.9
 
 
 @cache
@@ -79,36 +70,22 @@ def internal_srgb_profile() -> bytes:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class IccTransform:
-    """A compiled ICC transform from profile samples to sRGB."""
+    """An ICC profile and the sRGB conversion it defines."""
 
     profile: bytes
     color_space: str
-    pcs: str
     input_channels: int
-    internal_cms_color_space: str
-
-    @property
-    def output_channels(self) -> int:
-        return 3
 
     @property
     def alternate_color_space(self) -> str:
         return INTERNAL_ALTERNATE_COLOR_SPACES.get(self.color_space, "DeviceRGB")
 
-    def apply(self, samples: ColorSamples) -> ColorSamples:
-        """Convert an (n, channels) block of [0, 1] samples to [0, 1] sRGB."""
-        validate_color_samples(samples, self.input_channels)
-        scale = INTERNAL_FLOAT_INPUT_SCALE.get(self.color_space)
-        source = samples if scale is None else samples * scale
-        result = internal_transform(self, source, numpy.float32)
-        return numpy.clip(result, 0.0, 1.0, out=result)
-
     def apply_uint8(self, samples: ByteSamples) -> ByteSamples:
         """Convert an (n, channels) block of 8-bit device samples to 8-bit sRGB.
 
-        Byte inputs are the overwhelmingly common case -- every image sample
-        arrives this way -- and a byte row is small enough to deduplicate, so
-        only the distinct colours in a batch need to reach lcms at all.
+        Distinct colours are the only ones worth sending to lcms, so a batch
+        large enough to be worth sorting is deduplicated first and the result
+        scattered back.
         """
         channels = self.input_channels
         if samples.dtype != numpy.dtype(numpy.uint8):
@@ -117,78 +94,60 @@ class IccTransform:
             raise IccSampleError(f"samples must have shape (count, {channels})")
         if channels <= 4 and len(samples) > INTERNAL_DEDUPLICATE_MIN_ROWS:
             distinct, inverse = internal_distinct_byte_rows(samples)
-            if len(distinct) * INTERNAL_DEDUPLICATE_MIN_RATIO < len(samples):
-                # `distinct` is all-distinct by construction, so the ratio test
-                # fails on the way back in and this recurses exactly once.
-                return self.apply_uint8(distinct)[inverse]
-        return internal_transform(self, samples, numpy.uint8)
+            # The sort is already paid for by this point, so the test only has
+            # to clear the gather that is still ahead, not the sort behind.
+            if len(distinct) < len(samples) * INTERNAL_DEDUPLICATE_MAX_DISTINCT:
+                return internal_transform(self, distinct)[inverse]
+        return internal_transform(self, samples)
 
 
-def internal_transform(
-    transform: IccTransform,
-    samples: numpy.ndarray[Any, Any],
-    dtype: type[numpy.uint8] | type[numpy.float32],
-) -> numpy.ndarray[Any, Any]:
+def internal_transform(transform: IccTransform, samples: ByteSamples) -> ByteSamples:
     """Run one batch through lcms, as an (n, 1, channels) single-column image.
 
-    Whole batches go in one call. The converter this replaced split them into
-    256k-row blocks because its multilinear interpolation materialised
-    2**input_channels intermediate (rows, 3) float32 arrays at once -- sixteen
-    of them for CMYK -- so a full-page scan in one shot cost hundreds of
-    megabytes. lcms streams sample by sample in C and holds no such
-    intermediates, and blocking here would instead rebuild the transform once
-    per block, which is the dominant cost of a conversion.
+    Whole batches go in one call: lcms streams sample by sample in C, and
+    blocking would instead rebuild the transform once per block, which is the
+    dominant cost of a conversion.
     """
     rows, channels = samples.shape
     if rows == 0:
-        return numpy.empty((0, 3), dtype=dtype)
+        return numpy.empty((0, 3), dtype=numpy.uint8)
     try:
         converted = imagecodecs.cms_transform(
             numpy.ascontiguousarray(samples).reshape(rows, 1, channels),
             transform.profile,
             internal_srgb_profile(),
-            colorspace=transform.internal_cms_color_space,
+            colorspace=transform.color_space.lower(),
             outcolorspace="rgb",
-            outdtype=dtype,
+            outdtype=numpy.uint8,
             intent=INTERNAL_RENDERING_INTENT,
             flags=INTERNAL_TRANSFORM_FLAGS,
         )
     except imagecodecs.CmsError as error:
         raise IccProfileError("ICC profile cannot be converted to sRGB") from error
-    return numpy.asarray(converted, dtype=dtype).reshape(rows, 3)
+    return numpy.asarray(converted, dtype=numpy.uint8).reshape(rows, 3)
 
 
 def parse_icc_transform(profile: bytes) -> IccTransform:
     """Compile an embedded ICC profile into a transform to sRGB."""
-    profile_bytes = bytes(profile)
+    return internal_parse_icc_transform(bytes(profile))
+
+
+# Every ICCBased image re-parses its profile just to read the alternate colour
+# space, and the built-in CMYK profile is 2.7MB. Bounded because the cached
+# value retains the profile bytes, which `cms_transform` needs on every call.
+@lru_cache(maxsize=32)
+def internal_parse_icc_transform(profile: bytes) -> IccTransform:
     try:
-        info = imagecodecs.cms_info(profile_bytes)
+        info = imagecodecs.cms_info(profile)
     except imagecodecs.CmsError as error:
         raise IccProfileError("unsupported or malformed ICC profile") from error
-    cms_color_space = str(info.get("colorspace") or "")
-    color_space = INTERNAL_COLOR_SPACE_NAMES.get(cms_color_space)
-    pcs = INTERNAL_PCS_NAMES.get(str(info.get("pcs") or ""))
+    color_space = INTERNAL_COLOR_SPACE_NAMES.get(str(info.get("colorspace") or ""))
     channels = int(info.get("channels") or 0)
-    if color_space is None or pcs is None or channels < 1:
+    if color_space is None or channels < 1:
         raise IccProfileError("unsupported or malformed ICC profile")
-    return IccTransform(
-        profile=profile_bytes,
-        color_space=color_space,
-        pcs=pcs,
-        input_channels=channels,
-        internal_cms_color_space=cms_color_space,
-    )
-
-
-def validate_color_samples(samples: ColorSamples, channels: int) -> None:
-    if not isinstance(samples, numpy.ndarray):
-        raise IccSampleError("samples must be a NumPy array")
-    if samples.dtype != numpy.dtype(numpy.float32):
-        raise IccSampleError("samples must have float32 dtype")
-    if samples.ndim != 2 or samples.shape[1] != channels:
-        raise IccSampleError(f"samples must have shape (count, {channels})")
-    if not samples.flags.c_contiguous:
-        raise IccSampleError("samples must be C-contiguous")
+    if str(info.get("pcs") or "") not in INTERNAL_PCS_NAMES:
+        raise IccProfileError("unsupported or malformed ICC profile")
+    return IccTransform(profile=profile, color_space=color_space, input_channels=channels)
 
 
 def internal_distinct_byte_rows(
