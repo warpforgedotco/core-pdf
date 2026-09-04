@@ -59,7 +59,6 @@ class internal_ObservationCoordinates:
     y0: list[float]
     x1: list[float]
     y1: list[float]
-    x_centers: list[float]
     y_centers: list[float]
     widths: list[float]
     heights: list[float]
@@ -73,7 +72,6 @@ class internal_ObservationCoordinates:
             bbox[:, 1].tolist(),
             bbox[:, 2].tolist(),
             bbox[:, 3].tolist(),
-            ((bbox[:, 0] + bbox[:, 2]) * 0.5).tolist(),
             ((bbox[:, 1] + bbox[:, 3]) * 0.5).tolist(),
             (bbox[:, 2] - bbox[:, 0]).tolist(),
             (bbox[:, 3] - bbox[:, 1]).tolist(),
