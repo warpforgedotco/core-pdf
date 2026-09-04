@@ -54,6 +54,7 @@ class PdfPage:
     page_dict: PdfDict
     page_number: int
     contents: CachedPdfObject | None
+    inherited_values: InheritedValueMap
 
     def __init__(
         self,
@@ -65,10 +66,7 @@ class PdfPage:
         self.page_dict = page_dict
         self.page_number = page_number
         self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
-
-    @property
-    def inherited_values(self) -> InheritedValueMap:
-        return self.collect_inherited_values()
+        self.inherited_values = self.collect_inherited_values()
 
     @property
     def media_box(self) -> tuple[float, float, float, float] | None:

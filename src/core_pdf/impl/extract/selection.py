@@ -440,7 +440,7 @@ def extract_document(
     pages = tuple(pages)
     fields_by_page: dict[int, list[Any]] = {}
     with suppress(TypeError, ValueError):
-        fields_by_page = document.fields_by_page()
+        fields_by_page = document.fields_by_page(pages)
     extractions = tuple(
         internal_PageExtraction(
             page,

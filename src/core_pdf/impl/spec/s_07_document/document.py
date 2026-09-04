@@ -1116,10 +1116,19 @@ class PdfDocument(
             records.extend(self.discover_widget_field_records(records))
         return records
 
-    def fields_by_page(self) -> dict[int, list[RawFormField]]:
+    def fields_by_page(
+        self,
+        pages: Sequence[internal_PageT] | None = None,
+    ) -> dict[int, list[RawFormField]]:
         """Group every document field by the page index its widget(s) sit on."""
         from core_pdf.impl.spec.s_07_document.page import PdfPage
 
+        page_sequence = self.pages if pages is None else tuple(pages)
+        page_indexes_by_dict = {
+            id(page.page_dict): page.page_number - 1
+            for page in page_sequence
+            if isinstance(page, PdfPage)
+        }
         grouped: dict[int, list[RawFormField]] = {}
         annot_page_index: dict[int, int] | None = None
 
@@ -1128,11 +1137,11 @@ class PdfDocument(
             pg_ref = widget.get("P") if isinstance(widget, dict) else None
             if pg_ref is not None:
                 pg_obj = self.resolver.resolve(pg_ref)
-                return self.page_index_for(pg_obj) if isinstance(pg_obj, dict) else None
+                return page_indexes_by_dict.get(id(pg_obj)) if isinstance(pg_obj, dict) else None
             if annot_page_index is None:
                 annot_page_index = {
-                    id(annot): index
-                    for index, page in enumerate(self.pages)
+                    id(annot): page.page_number - 1
+                    for page in page_sequence
                     if isinstance(page, PdfPage)
                     for annot in page.annotation_dicts()
                 }
