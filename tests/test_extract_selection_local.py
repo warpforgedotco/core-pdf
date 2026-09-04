@@ -8,7 +8,7 @@ import pytest
 
 from core_pdf.impl.extract import pipeline as parse_pipeline
 from core_pdf.impl.extract import selection as parse_selection
-from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch
+from core_pdf.impl.extract.contracts import ObservationBatch, PageAnalysis
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import observations, page_evidence
 from tests.helpers.ocr_fakes import FakeDocumentPage
@@ -18,12 +18,8 @@ def internal_observations(text: str) -> ObservationBatch:
     return observations([(text, (0.0, 0.0, 10.0, 10.0))])
 
 
-def internal_base_capture(page: object, decoder: object, text: str) -> CapturedPage:
-    program = SimpleNamespace(
-        products=SimpleNamespace(
-            glyphs=(SimpleNamespace(font_decoder=decoder),),
-        )
-    )
+def internal_base_capture(page: object, decoder: object, text: str) -> PageAnalysis:
+    program = SimpleNamespace(glyphs=(SimpleNamespace(font_decoder=decoder),))
     return make_capture(
         page_evidence(
             page_area=100.0, native_characters=len(text), visible_native_characters=len(text)
@@ -71,7 +67,7 @@ def test_document_font_votes_only_resolve_consistent_high_confidence_alignment()
         for index, code in enumerate((1, 2, 3))
     )
     capture = make_capture(
-        program=SimpleNamespace(products=SimpleNamespace(glyphs=glyphs)),
+        program=SimpleNamespace(glyphs=glyphs),
     )
 
     consistent = observations([("CAT", (0.0, 0.0, 3.0, 1.0))], confidence=95.0)
@@ -96,15 +92,17 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
     captures = tuple(
         internal_base_capture(page, decoder, f"base-{page.page_number}") for page in pages
     )
-    for page, capture in zip(pages, captures, strict=True):
-        parse_pipeline.page_extraction(page).replace_capture(capture)
+    base_extractions = tuple(
+        parse_pipeline.internal_PageExtraction(page, capture=capture)
+        for page, capture in zip(pages, captures, strict=True)
+    )
 
     def enrich_capture(
         page: object,
         program: object,
         *,
         learned_unicode: parse_selection.LearnedUnicodeMap,
-    ) -> CapturedPage:
+    ) -> PageAnalysis:
         del program
         mapping = learned_unicode[decoder]
         marker = mapping[b"x"]
@@ -117,28 +115,28 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
     monkeypatch.setattr(parse_selection, "internal_capture_from_program", enrich_capture)
 
     def selection_text(
-        selected_pages: tuple[object, ...],
-        selected_captures: tuple[CapturedPage, ...],
+        selected_extractions: tuple[parse_pipeline.internal_PageExtraction, ...],
+        selected_captures: tuple[PageAnalysis, ...],
         marker: str,
     ) -> tuple[parse_pipeline.internal_PageExtraction, ...]:
         enrichment = parse_selection.internal_FontEnrichment(
             learned_unicode={decoder: {b"x": marker}}
         )
         return parse_selection.internal_apply_font_enrichment(
-            selected_pages,
+            selected_extractions,
             selected_captures,
             enrichment,
         )
 
-    first = selection_text(pages[:2], captures[:2], "first")
-    second = selection_text(pages[1:], captures[1:], "second")
+    first = selection_text(base_extractions[:2], captures[:2], "first")
+    second = selection_text(base_extractions[1:], captures[1:], "second")
     assert first[1].page is second[0].page
     assert first[1] is not second[0]
     assert first[1].capture().observations.text == ("first-2",)
     assert second[0].capture().observations.text == ("second-2",)
 
-    second_before_first = selection_text(pages[1:], captures[1:], "second")
-    first_after_second = selection_text(pages[:2], captures[:2], "first")
+    second_before_first = selection_text(base_extractions[1:], captures[1:], "second")
+    first_after_second = selection_text(base_extractions[:2], captures[:2], "first")
     assert tuple(item.capture().observations.text[0] for item in first_after_second) == (
         "first-1",
         "first-2",
@@ -148,7 +146,9 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
         "second-3",
     )
 
-    assert tuple(
-        parse_pipeline.page_extraction(page).capture().observations.text[0] for page in pages
-    ) == ("base-1", "base-2", "base-3")
+    assert tuple(extraction.capture().observations.text[0] for extraction in base_extractions) == (
+        "base-1",
+        "base-2",
+        "base-3",
+    )
     assert first[1].capture().observations.text == ("first-2",)

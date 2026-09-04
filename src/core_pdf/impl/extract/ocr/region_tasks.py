@@ -12,10 +12,10 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
     PRIMARY_OCR_PIXELS,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     WorkPlan,
 )
 from core_pdf.impl.extract.ocr.raster import (
@@ -37,7 +37,6 @@ from core_pdf.impl.extract.ocr.types import (
     internal_raster_rectangle_page_box,
 )
 from core_pdf.impl.extract.quality import internal_text_utility_stats
-from core_pdf.impl.model.geometry import SpatialIndex
 from core_pdf.impl.model.geometry import (
     overlap_ratio_min_exact as internal_ocr_region_overlap,
 )
@@ -317,7 +316,7 @@ def internal_weak_region_tasks(
     )
 
 
-def internal_direct_scan_allowed(capture: CapturedPage, plan: WorkPlan) -> bool:
+def internal_direct_scan_allowed(capture: PageAnalysis, plan: WorkPlan) -> bool:
     """Decide whether a page-scope pass may OCR the decoded scan itself.
 
     Rendering a scanned page through the compositor resamples the scan a second
@@ -336,13 +335,12 @@ def internal_direct_scan_allowed(capture: CapturedPage, plan: WorkPlan) -> bool:
 
 
 def internal_candidate_region_tasks(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     regions: tuple[internal_OcrRegion, ...],
     ocr_pass: OcrPass,
     *,
-    rendered: Any | None,
     compact_image: bool | str,
-) -> tuple[tuple[internal_OcrTask, ...], Any | None]:
+) -> tuple[internal_OcrTask, ...]:
     direct_regions = internal_page_image_regions(
         capture,
         minimum_area_ratio=0.02,
@@ -356,22 +354,13 @@ def internal_candidate_region_tasks(
         if dominant is not None:
             direct_regions = (dominant,)
     tasks: list[internal_OcrTask] = []
+    rendered = None
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
-    direct_region_index = (
-        SpatialIndex(((index, region.page_box) for index, region in enumerate(direct_regions)))
-        if len(direct_regions) > 4
-        else None
-    )
     for region in regions:
         raster: internal_Raster | None
-        direct_candidates = (
-            (direct_regions[index] for index in direct_region_index.intersecting(region.page_box))
-            if direct_region_index is not None
-            else iter(direct_regions)
-        )
         matching_direct = tuple(
             candidate
-            for candidate in direct_candidates
+            for candidate in direct_regions
             # Region proposals include padding, so a source image need not cover the
             # entire box. It must still cover most of the requested target.
             if internal_ocr_region_coverage(region.page_box, candidate.page_box)
@@ -400,13 +389,14 @@ def internal_candidate_region_tasks(
                     capture.page,
                     RenderOptions(include_text=ocr_pass.include_native_text),
                     page_program=capture.program,
+                    fields=capture.fields,
+                    annotations=capture.annotations,
                 )
             raster = internal_rendered_page_raster(
                 capture,
                 ocr_pass.scale,
                 crop=region.page_box,
                 rendered=rendered,
-                cache=True,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,
             )
@@ -420,12 +410,12 @@ def internal_candidate_region_tasks(
             >= getattr(
                 getattr(capture, "evidence", None),
                 "page_area",
-                float(capture.page.width) * float(capture.page.height),
+                capture.width * capture.height,
             )
             * 0.75
             and internal_ocr_region_coverage(
                 region.page_box,
-                (0.0, 0.0, float(capture.page.width), float(capture.page.height)),
+                (0.0, 0.0, capture.width, capture.height),
             )
             >= 0.90
             and getattr(getattr(capture, "evidence", None), "vector_complexity", 0)
@@ -450,18 +440,17 @@ def internal_candidate_region_tasks(
                 compact_image=compact_image,
             )
         )
-    return tuple(tasks), rendered
+    return tuple(tasks)
 
 
 def internal_high_resolution_weak_region_tasks(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     source_tasks: tuple[internal_OcrTask, ...],
     ocr_pass: OcrPass,
     primary: ObservationBatch,
     *,
-    rendered: Any | None,
     compact_image: bool | str,
-) -> tuple[tuple[internal_OcrTask, ...], Any | None]:
+) -> tuple[internal_OcrTask, ...]:
     """Rasterize only weak cells at rescue resolution instead of the whole page."""
     source_rasters: dict[tuple[int, tuple[float, float, float, float], int], internal_Raster] = {}
     for task in source_tasks:
@@ -486,13 +475,14 @@ def internal_high_resolution_weak_region_tasks(
             )
     regions = internal_merge_ocr_regions(weak_regions)
     if not regions:
-        return (), rendered
-    if rendered is None:
-        rendered = compose_page(
-            capture.page,
-            RenderOptions(include_text=ocr_pass.include_native_text),
-            page_program=capture.program,
-        )
+        return ()
+    rendered = compose_page(
+        capture.page,
+        RenderOptions(include_text=ocr_pass.include_native_text),
+        page_program=capture.program,
+        fields=capture.fields,
+        annotations=capture.annotations,
+    )
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     tasks: list[internal_OcrTask] = []
     for region in regions:
@@ -501,7 +491,6 @@ def internal_high_resolution_weak_region_tasks(
             ocr_pass.scale,
             crop=region.page_box,
             rendered=rendered,
-            cache=True,
             max_pixels=ocr_pass.pixel_budget,
             include_native_text=ocr_pass.include_native_text,
         )
@@ -515,4 +504,4 @@ def internal_high_resolution_weak_region_tasks(
                 compact_image=compact_image,
             )
         )
-    return tuple(tasks), rendered
+    return tuple(tasks)

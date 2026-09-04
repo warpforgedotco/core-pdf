@@ -5,11 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import lru_cache
 
-import numpy
-
-from core_pdf.impl.spec.s_09_fonts.cmap_encoding import BYTE_CACHE, decode_utf16be
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
     CodeSpaceRanges,
@@ -28,30 +24,29 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
 )
 
 
-@lru_cache(maxsize=1)
-def internal_identity_bmp_table() -> tuple[str, ...]:
-    """The BMP identity decode table, which does not depend on any font.
-
-    Immutable so the shared cache cannot be patched by a per-font caller.
-    """
-    return tuple(
-        unicode_scalar_or_replacement(code) if code != 0 else "\ufffd" for code in range(65536)
-    )
+def internal_decode_utf16be(data: bytes) -> str:
+    if not data:
+        return ""
+    if data.startswith(b"\xfe\xff"):
+        data = data[2:]
+    if len(data) == 1:
+        return chr(data[0])
+    buffer = data if len(data) % 2 == 0 else b"\x00" + data
+    try:
+        return buffer.decode("utf-16-be", "replace")
+    except (UnicodeDecodeError, ValueError):
+        return data.decode("latin-1", "replace")
 
 
 class ToUnicodeCMap:
     code_space_ranges: CodeSpaceRanges
     mappings: dict[bytes, str]
     decode_lengths: tuple[int, ...]
-    fast_decode_table: list[str] | tuple[str, ...] | None
-    fast_decode_table_2byte: list[str] | None
 
     __slots__ = (
         "code_space_ranges",
         "mappings",
         "decode_lengths",
-        "fast_decode_table",
-        "fast_decode_table_2byte",
     )
 
     def __init__(
@@ -64,8 +59,6 @@ class ToUnicodeCMap:
     ) -> None:
         self.code_space_ranges = []
         self.mappings = {}
-        self.fast_decode_table = None
-        self.fast_decode_table_2byte = None
         if internal_empty:
             self.decode_lengths = ()
             return
@@ -102,13 +95,6 @@ class ToUnicodeCMap:
             )
             or {1}
         )
-        parsed_fast_table = parsed.fast_decode_table
-        if parent is None and parsed_fast_table is not None:
-            self.fast_decode_table = parsed_fast_table
-        else:
-            self.fast_decode_table = None
-            self.precalculate_fast_tables()
-        self.fast_decode_table_2byte = None
 
     def parse_codespace_ranges(self, program: CMapProgram) -> None:
         code_space_ranges = typing.cast("list[tuple[bytes, bytes]]", self.code_space_ranges)
@@ -168,7 +154,7 @@ class ToUnicodeCMap:
                 src = decode_cmap_token(src_tok)
                 if not src:
                     continue
-                dst = decode_utf16be(decode_cmap_token(dst_tok))
+                dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
             except (ValueError, UnicodeDecodeError):
                 # PostScript hex strings pad an odd final nibble with zero.
                 # If corruption starts another ``<`` before the closing
@@ -183,7 +169,7 @@ class ToUnicodeCMap:
                             continue
                         if len(prefix) % 2:
                             prefix += b"0"
-                        dst = decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
+                        dst = internal_decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
                     except (ValueError, UnicodeDecodeError):
                         break
                     self.mappings[src] = dst
@@ -238,7 +224,7 @@ class ToUnicodeCMap:
                     if start_code + i > end_code:
                         break
                     try:
-                        dst = decode_utf16be(decode_cmap_token(dst_tok))
+                        dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
                     except (ValueError, UnicodeDecodeError):
                         continue
                     src = (start_code + i).to_bytes(src_len, "big")
@@ -251,7 +237,7 @@ class ToUnicodeCMap:
                 idx += 3
             elif t3.startswith(b"<") or t3.startswith(b"("):
                 try:
-                    base_dst = decode_utf16be(decode_cmap_token(t3))
+                    base_dst = internal_decode_utf16be(decode_cmap_token(t3))
                     mappings = expand_range(start_code, end_code, src_len, base_dst)
                 except (ValueError, UnicodeDecodeError):
                     invalid_range_count += 1
@@ -296,64 +282,9 @@ class ToUnicodeCMap:
                     unicode_scalar_or_replacement(destination + offset)
                 )
 
-    def precalculate_fast_tables(self) -> None:
-        if 1 in self.decode_lengths:
-            table = [""] * 256
-            for i in range(256):
-                b = BYTE_CACHE[i]
-                res = self.mappings.get(b)
-                table[i] = res if res is not None else chr(i)
-            self.fast_decode_table = table
-
-    def get_fast_decode_table_2byte(self) -> list[str] | None:
-        if self.fast_decode_table_2byte is not None:
-            return self.fast_decode_table_2byte
-        if 2 not in self.decode_lengths:
-            return None
-        table2 = list(internal_identity_bmp_table())
-        for k, v in self.mappings.items():
-            if len(k) == 2:
-                code = (k[0] << 8) | k[1]
-                table2[code] = v
-        self.fast_decode_table_2byte = table2
-        return table2
-
     def decode(self, data: bytes, *, preserve_nulls: bool = False) -> str:
         if not data:
             return ""
-
-        if self.fast_decode_table is not None and (
-            not self.decode_lengths or self.decode_lengths == (1,)
-        ):
-            table = self.fast_decode_table
-            result = "".join(map(table.__getitem__, data))
-            if not preserve_nulls and "\x00" in result:
-                return result.replace("\x00", "")
-            return result
-
-        n = len(data)
-        if n == 1 and self.fast_decode_table is not None:
-            result = self.fast_decode_table[data[0]]
-            if result:
-                return result
-
-        if self.decode_lengths == (2,) and n % 2 == 0:
-            table2 = self.get_fast_decode_table_2byte()
-            if table2 is None:
-                return ""
-            if n > 64:
-                cids = numpy.frombuffer(data, dtype=">u2").tolist()
-                result = "".join([table2[cid] for cid in cids])
-            else:
-                out_small = []
-                for i in range(0, n, 2):
-                    code = (data[i] << 8) | data[i + 1]
-                    out_small.append(table2[code])
-                result = "".join(out_small)
-
-            if not preserve_nulls and "\x00" in result:
-                return result.replace("\x00", "")
-            return result
 
         mappings = self.mappings
         lengths = self.decode_lengths or (1,)
@@ -361,8 +292,6 @@ class ToUnicodeCMap:
         out: list[str] = []
         out_append = out.append
         pos = 0
-        bc = BYTE_CACHE
-
         mappings_get = mappings.get
         while pos < n:
             match_found = False
@@ -371,7 +300,7 @@ class ToUnicodeCMap:
                     continue
 
                 if length == 1:
-                    chunk = bc[data[pos]]
+                    chunk = bytes((data[pos],))
                 else:
                     chunk = data[pos : pos + length]
 
@@ -385,7 +314,7 @@ class ToUnicodeCMap:
             if match_found:
                 continue
 
-            chunk1 = bc[data[pos]]
+            chunk1 = bytes((data[pos],))
             mapped1 = mappings_get(chunk1)
             if mapped1 is not None:
                 out_append(mapped1)
@@ -410,11 +339,9 @@ class ToUnicodeCMap:
 class ParsedToUnicodeCMap:
     code_space_ranges: tuple[tuple[bytes, bytes], ...]
     mappings: dict[bytes, str]
-    fast_decode_table: tuple[str, ...] | None
     usecmap_name: str | None
 
 
-@lru_cache(maxsize=4096)
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
     cmap = ToUnicodeCMap(b"", internal_empty=True)
     program = CMapProgram.parse(data)
@@ -445,13 +372,8 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
         )
         or (1,)
     )
-    cmap.precalculate_fast_tables()
-    fast_decode_table: tuple[str, ...] | None = (
-        tuple(cmap.fast_decode_table) if cmap.fast_decode_table is not None else None
-    )
     return ParsedToUnicodeCMap(
         code_space_ranges=tuple(cmap.code_space_ranges),
         mappings=cmap.mappings,
-        fast_decode_table=fast_decode_table,
         usecmap_name=cmap_metadata(program)[0],
     )

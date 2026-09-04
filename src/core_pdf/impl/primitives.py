@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import threading
-from functools import lru_cache
 from typing import Final
 
 
@@ -11,21 +9,6 @@ class MissingObject:
 
 
 MISSING: Final = MissingObject()
-PDF_NAME_CACHE: dict[bytes, "PdfName"] = {}
-internal_PDF_NAME_CACHE_LOCK = threading.RLock()
-
-
-@lru_cache(maxsize=4096)
-def pdf_name_from_str(value: str) -> "PdfName":
-    b_value = value.encode("latin-1")
-    with internal_PDF_NAME_CACHE_LOCK:
-        cache = PDF_NAME_CACHE
-        cached = cache.get(b_value)
-        if cached is not None:
-            return cached
-        cached = PdfName(b_value)
-        cache[b_value] = cached
-        return cached
 
 
 class PdfName:
@@ -36,73 +19,49 @@ class PdfName:
     with raw bytes and strings used by recovery paths.
     """
 
-    __slots__ = ("value_bytes", "str_value", "hash_value")
+    __slots__ = ("value_bytes", "str_value")
 
     value_bytes: bytes
-    str_value: str | None
-    hash_value: int | None
+    str_value: str
 
     def __init__(self, value_bytes: bytes) -> None:
         object.__setattr__(self, "value_bytes", value_bytes)
         object.__setattr__(self, "str_value", value_bytes.decode("latin-1"))
-        object.__setattr__(self, "hash_value", hash(self.str_value))
 
     @property
     def value(self) -> str:
-        return self.str_value or ""
+        return self.str_value
 
     @classmethod
     def of(cls, value: str | bytes | memoryview | "PdfName") -> "PdfName":
         if type(value) is PdfName:
             return value
-
         if type(value) is str:
-            return pdf_name_from_str(value)
-
-        if type(value) is memoryview:
-            cache = PDF_NAME_CACHE
-            if value.readonly:
-                n = cache.get(value)
-                if n is not None:
-                    return n
-            key_bytes = bytes(value)
+            key_bytes = value.encode("latin-1")
+        elif type(value) is memoryview:
+            key_bytes = value.tobytes()
         elif type(value) is bytes:
             key_bytes = value
         else:
             raise TypeError("PDF names must be str, bytes, memoryview, or PdfName")
-        cache = PDF_NAME_CACHE
-        n = cache.get(key_bytes)
-        if n is not None:
-            return n
-        with internal_PDF_NAME_CACHE_LOCK:
-            n = cache.get(key_bytes)
-            if n is None:
-                cache[key_bytes] = n = cls(key_bytes)
-            return n
+        return cls(key_bytes)
 
     def __str__(self) -> str:
-        return self.str_value or ""
+        return self.str_value
 
     def __repr__(self) -> str:
         return f"PdfName({self.value!r})"
 
     def __hash__(self) -> int:
-        h = self.hash_value
-        if h is None:
-            h = hash(self.str_value)
-            object.__setattr__(self, "hash_value", h)
-        return h
+        return hash(self.str_value)
 
     def __eq__(self, other: object) -> bool:
         if type(other) is PdfName:
-            return self.value == other.value
+            return self.str_value == other.str_value
         if type(other) is bytes:
             return self.value_bytes == other
         if type(other) is str:
-            s = self.str_value
-            if s is not None:
-                return s == other
-            return self.value == other.encode("latin-1")
+            return self.str_value == other
         return False
 
     def __setattr__(self, name: str, value: object) -> None:

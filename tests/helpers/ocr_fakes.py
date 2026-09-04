@@ -3,33 +3,31 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
-from dataclasses import dataclass, field
-from threading import RLock
-from typing import Any, cast
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     PagePlanReason,
     PageRoute,
     RecognitionResult,
     WorkPlan,
 )
-from core_pdf.impl.extract.ocr import pass_tasks as ocr_pass_tasks
 from core_pdf.impl.extract.ocr import pipeline as ocr
 from core_pdf.impl.extract.ocr import raster as ocr_raster
 from core_pdf.impl.extract.ocr import region_tasks as ocr_region_tasks
 from core_pdf.impl.extract.ocr import regions as ocr_regions
 from core_pdf.impl.extract.ocr import rescue as ocr_rescue
+from core_pdf.impl.extract.ocr import session as ocr_pass_tasks
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
-from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.runtime.execution import TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 Box = tuple[float, float, float, float]
 PixelBox = tuple[int, int, int, int]
@@ -71,25 +69,8 @@ def patch_dominant_region(
     )
 
 
-class InlineTaskScope:
-    """A ``TaskScope`` that runs everything on the calling thread."""
-
-    def raise_if_cancelled(self) -> None:
-        pass
-
-    def map_ordered(
-        self,
-        function: Callable[[Any], Any],
-        values: Iterable[Any],
-        *,
-        stage: object = None,
-        **internal_kwargs: object,
-    ) -> Iterator[Any]:
-        return map(function, values)
-
-
-def inline_scope() -> TaskScope:
-    return cast(TaskScope, InlineTaskScope())
+def inline_scope() -> ExtractionScope:
+    return ExtractionScope()
 
 
 class FakeResultIterator:
@@ -194,11 +175,9 @@ def patch_engine(monkeypatch: pytest.MonkeyPatch, api: FakeTessApi | None = None
 
 @dataclass(slots=True)
 class FakeDocumentPage:
-    """The page attributes document-level enrichment reads and locks on."""
+    """The page attributes document-level enrichment reads."""
 
     page_number: int
-    extraction_cache: ExtractionCache = field(default_factory=ExtractionCache)
-    internal_page_lock: RLock = field(default_factory=RLock)
 
 
 class RecordingExtraction:
@@ -211,7 +190,7 @@ class RecordingExtraction:
     def __init__(
         self,
         page: FakeDocumentPage,
-        capture: CapturedPage,
+        capture: PageAnalysis,
         *,
         alphabet: tuple[tuple[Any, str], ...],
         plan_calls: list[int],
@@ -225,7 +204,7 @@ class RecordingExtraction:
         self.plan_calls = plan_calls
         self.ocr_calls = ocr_calls
 
-    def capture(self) -> CapturedPage:
+    def capture(self) -> PageAnalysis:
         return self.internal_capture
 
     def plan(self) -> WorkPlan:
@@ -251,7 +230,6 @@ __all__ = (
     "FakeDocumentPage",
     "FakeResultIterator",
     "FakeTessApi",
-    "InlineTaskScope",
     "RecordingExtraction",
     "inline_scope",
     "patch_dominant_region",

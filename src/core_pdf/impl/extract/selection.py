@@ -7,7 +7,7 @@ import math
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from concurrent.futures import Future
+from contextlib import suppress
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, cast
@@ -17,8 +17,8 @@ from core_pdf.impl.extract.capture import (
     internal_capture_from_program,
 )
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
+    PageAnalysis,
     RecognitionResult,
     internal_bbox_tuple,
 )
@@ -27,10 +27,10 @@ from core_pdf.impl.extract.ocr.strokes import (
     StrokedTextDecode,
     decode_stroked_text_profile_with_alphabet,
 )
-from core_pdf.impl.extract.pipeline import internal_PageExtraction, page_extraction
+from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output import SCHEMA_VERSION, Document, Page
-from core_pdf.impl.runtime.execution import TaskScope, WorkStage
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 DOCUMENT_FONT_SEED_LIMIT = 4
 DOCUMENT_FONT_SEEDS_PER_DECODER = 2
@@ -45,6 +45,9 @@ class internal_FontEnrichment:
 
     seed_indexes: tuple[int, ...] = ()
     learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
+    recognition_by_index: Mapping[int, RecognitionResult] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +59,7 @@ class internal_StrokedEnrichment:
     )
 
 
-def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
+def internal_unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
     counts: Counter[object] = Counter()
     quality = capture.evidence.text_quality
     corrupt = (
@@ -67,7 +70,7 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
     glyph_evidence = capture.evidence.glyphs
     if not corrupt and not glyph_evidence.unknown_glyphs and not glyph_evidence.unsupported_glyphs:
         return counts
-    for glyph in capture.program.products.glyphs:
+    for glyph in capture.program.glyphs:
         decoder = glyph.font_decoder
         if (
             decoder is None
@@ -89,7 +92,7 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
     return counts
 
 
-def internal_document_font_seed_indexes(captures: Sequence[CapturedPage]) -> tuple[int, ...]:
+def internal_document_font_seed_indexes(captures: Sequence[PageAnalysis]) -> tuple[int, ...]:
     pages_by_decoder: dict[object, list[tuple[int, int]]] = defaultdict(list)
     for page_index, capture in enumerate(captures):
         for decoder, count in internal_unknown_decoder_counts(capture).items():
@@ -110,13 +113,13 @@ def internal_document_font_seed_indexes(captures: Sequence[CapturedPage]) -> tup
 
 
 def internal_font_mapping_votes(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     ocr: ObservationBatch,
 ) -> dict[object, dict[bytes, Counter[str]]]:
     votes: dict[object, dict[bytes, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
     glyphs = tuple(
         glyph
-        for glyph in capture.program.products.glyphs
+        for glyph in capture.program.glyphs
         if glyph.visible
         and glyph.code_bytes
         and len(glyph.text) == 1
@@ -209,63 +212,83 @@ def internal_resolve_document_font_mappings(
 
 
 def internal_prepare_document_font_mappings(
-    pages: tuple[Any, ...],
-    captures: tuple[CapturedPage, ...],
-    context: TaskScope,
+    extractions: tuple[internal_PageExtraction, ...],
+    captures: tuple[PageAnalysis, ...],
+    context: ExtractionScope,
 ) -> internal_FontEnrichment:
     seed_indexes = internal_document_font_seed_indexes(captures)
     if not seed_indexes:
         return internal_FontEnrichment()
-    ocr_by_index: dict[int, ObservationBatch] = {}
-    for completed in context.map_completed(
-        lambda page_index: page_extraction(pages[page_index]).recognition(context).observations,
-        seed_indexes,
-        stage=WorkStage.PAGE,
-    ):
-        ocr_by_index[seed_indexes[completed.index]] = completed.value
+    recognition_by_index: dict[int, RecognitionResult] = {}
+    for page_index in seed_indexes:
+        context.raise_if_cancelled()
+        recognition_by_index[page_index] = extractions[page_index].recognition(context)
     votes: dict[object, dict[bytes, Counter[str]]] = {}
-    for page_index, ocr in ocr_by_index.items():
+    for page_index, recognition in recognition_by_index.items():
         internal_merge_font_mapping_votes(
             votes,
-            internal_font_mapping_votes(captures[page_index], ocr),
+            internal_font_mapping_votes(captures[page_index], recognition.observations),
         )
     return internal_FontEnrichment(
         seed_indexes=seed_indexes,
         learned_unicode=internal_resolve_document_font_mappings(votes),
+        recognition_by_index=MappingProxyType(recognition_by_index),
     )
 
 
 def internal_capture_uses_learned_unicode(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     learned_unicode: LearnedUnicodeMap,
 ) -> bool:
     return bool(learned_unicode) and any(
-        glyph.font_decoder in learned_unicode for glyph in capture.program.products.glyphs
+        glyph.font_decoder in learned_unicode for glyph in capture.program.glyphs
     )
 
 
 def internal_apply_font_enrichment(
-    pages: tuple[Any, ...],
-    captures: tuple[CapturedPage, ...],
+    extractions: tuple[internal_PageExtraction, ...],
+    captures: tuple[PageAnalysis, ...],
     font: internal_FontEnrichment,
 ) -> tuple[internal_PageExtraction, ...]:
     """Create local pipelines only for non-seed pages changed by the overlay."""
     seed_indexes = frozenset(font.seed_indexes)
-    extractions: list[internal_PageExtraction] = []
-    for index, (page, capture) in enumerate(zip(pages, captures, strict=True)):
-        base = page_extraction(page)
-        if index in seed_indexes or not internal_capture_uses_learned_unicode(
-            capture, font.learned_unicode
-        ):
-            extractions.append(base)
+    enriched: list[internal_PageExtraction] = []
+    for index, (base, capture) in enumerate(zip(extractions, captures, strict=True)):
+        recognition = font.recognition_by_index.get(index)
+        if index in seed_indexes:
+            enriched.append(
+                internal_PageExtraction(
+                    base.page,
+                    capture=base.capture(),
+                    plan=base.plan(),
+                    recognition=recognition,
+                    fields=base.capture().fields,
+                    structure=base.internal_structure,
+                    hidden_layers=base.internal_hidden_layers,
+                )
+            )
+            continue
+        if not internal_capture_uses_learned_unicode(capture, font.learned_unicode):
+            enriched.append(base)
             continue
         enriched_capture = internal_capture_from_program(
-            page,
+            base.page,
             capture.program,
             learned_unicode=font.learned_unicode,
+            structure=base.internal_structure,
+            fields=capture.fields,
+            annotations=capture.annotations,
         )
-        extractions.append(internal_PageExtraction(page, capture=enriched_capture))
-    return tuple(extractions)
+        enriched.append(
+            internal_PageExtraction(
+                base.page,
+                capture=enriched_capture,
+                fields=enriched_capture.fields,
+                structure=base.internal_structure,
+                hidden_layers=base.internal_hidden_layers,
+            )
+        )
+    return tuple(enriched)
 
 
 def internal_merge_document_stroked_alphabet(
@@ -304,10 +327,9 @@ def internal_document_stroked_recognition(
 
 
 def internal_prepare_document_stroked_mappings(
-    pages: tuple[Any, ...],
-    captures: tuple[CapturedPage, ...],
-    context: TaskScope,
-    extractions: tuple[internal_PageExtraction, ...] | None = None,
+    extractions: tuple[internal_PageExtraction, ...],
+    captures: tuple[PageAnalysis, ...],
+    context: ExtractionScope,
 ) -> internal_StrokedEnrichment:
     """OCR the richest flattened-font page, then decode compatible pages structurally."""
     indexes = tuple(
@@ -331,14 +353,10 @@ def internal_prepare_document_stroked_mappings(
     alphabet: dict[GlyphSignature, str] = {}
     ambiguous: set[GlyphSignature] = set()
     recognition_by_index: dict[int, RecognitionResult] = {}
-    if extractions is None:
-        extractions = tuple(page_extraction(page) for page in pages)
     for page_index in ordered:
-        page = pages[page_index]
         extraction = extractions[page_index]
         capture = extraction.capture()
-        with page.internal_page_lock:
-            recognition = extraction.internal_recognition
+        recognition = extraction.internal_recognition
         if recognition is None and alphabet:
             extraction.plan()
             decoded = decode_stroked_text_profile_with_alphabet(
@@ -378,108 +396,86 @@ def internal_apply_stroked_enrichment(
             capture=base.capture(),
             plan=base.plan(),
             recognition=recognition,
+            fields=base.capture().fields,
+            structure=base.internal_structure,
+            hidden_layers=base.internal_hidden_layers,
         )
     return tuple(enriched)
 
 
-def internal_page_chunks(
-    pages: tuple[Any, ...],
-    worker_count: int,
-) -> tuple[tuple[int, tuple[Any, ...]], ...]:
-    """Bound scheduler overhead while retaining enough chunks for load balancing."""
-    chunk_size = max(1, min(32, math.ceil(len(pages) / max(1, worker_count * 4))))
-    return tuple(
-        (start, pages[start : start + chunk_size]) for start in range(0, len(pages), chunk_size)
-    )
-
-
 def internal_capture_document_pages(
-    pages: tuple[Any, ...],
-    context: TaskScope,
-) -> tuple[CapturedPage, ...]:
-    captures_by_index: list[CapturedPage | None] = [None] * len(pages)
-
-    def capture_chunk(
-        indexed_pages: tuple[int, tuple[Any, ...]],
-    ) -> tuple[int, tuple[CapturedPage, ...]]:
-        start, chunk = indexed_pages
-        captures: list[CapturedPage] = []
-        for page in chunk:
-            context.raise_if_cancelled()
-            captures.append(page_extraction(page).capture())
-        return start, tuple(captures)
-
-    chunks = internal_page_chunks(pages, context.runtime.max_workers)
-    for completed in context.map_completed(capture_chunk, chunks, stage=WorkStage.PAGE):
-        start, captures = completed.value
-        captures_by_index[start : start + len(captures)] = captures
-    return tuple(capture for capture in captures_by_index if capture is not None)
+    extractions: tuple[internal_PageExtraction, ...],
+    context: ExtractionScope,
+) -> tuple[PageAnalysis, ...]:
+    captures: list[PageAnalysis] = []
+    for extraction in extractions:
+        context.raise_if_cancelled()
+        captures.append(extraction.capture())
+    return tuple(captures)
 
 
 def internal_assemble_document_pages(
     extractions: tuple[internal_PageExtraction, ...],
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> tuple[Page, ...]:
-    pages_by_index: list[Page | None] = [None] * len(extractions)
-    futures: dict[int, Future[Page]] = {}
-    direct_indexes: list[int] = []
-    for index, extraction in enumerate(extractions):
-        plan = extraction.plan()
-        requires_ocr = extraction.internal_recognition is None and (
-            bool(plan.ocr_passes) or plan.verify_hidden_text
-        )
-        if requires_ocr:
-            futures[index] = context.submit(
-                extraction.assembled_page,
-                context,
-                stage=WorkStage.PAGE,
-            )
-        else:
-            direct_indexes.append(index)
-    try:
-        for index in direct_indexes:
-            context.raise_if_cancelled()
-            pages_by_index[index] = extractions[index].assembled_page(context)
-        for index, future in futures.items():
-            pages_by_index[index] = future.result()
-    finally:
-        for future in futures.values():
-            future.cancel()
-    return tuple(page for page in pages_by_index if page is not None)
+    pages: list[Page] = []
+    for extraction in extractions:
+        context.raise_if_cancelled()
+        pages.append(extraction.assembled_page(context))
+    return tuple(pages)
 
 
 def internal_prepare_selection_state(
-    pages: tuple[Any, ...],
-    captures: tuple[CapturedPage, ...],
-    context: TaskScope,
+    extractions: tuple[internal_PageExtraction, ...],
+    captures: tuple[PageAnalysis, ...],
+    context: ExtractionScope,
 ) -> tuple[internal_PageExtraction, ...]:
     """Page pipelines enriched with everything learned across one exact selection."""
-    font = internal_prepare_document_font_mappings(pages, captures, context)
-    extractions = internal_apply_font_enrichment(pages, captures, font)
+    font = internal_prepare_document_font_mappings(extractions, captures, context)
+    extractions = internal_apply_font_enrichment(extractions, captures, font)
     stroked = internal_prepare_document_stroked_mappings(
-        pages,
+        extractions,
         tuple(extraction.capture() for extraction in extractions),
         context,
-        extractions,
     )
     return internal_apply_stroked_enrichment(extractions, stroked)
 
 
 def extract_document(
     document: Any,
-    context: TaskScope,
+    context: ExtractionScope,
     pages: Sequence[Any],
 ) -> Document:
     pages = tuple(pages)
-    extractions: tuple[internal_PageExtraction, ...]
-    if len(pages) == 1:
-        extractions = (page_extraction(pages[0]),)
-    else:
-        captures = internal_capture_document_pages(pages, context)
+    hidden_layers = document.oc_hidden_layers() if pages else frozenset()
+    structure_tree = None
+    with suppress(IndexError, TypeError, ValueError):
+        structure_tree = document.structure
+
+    def page_structure(page: Any) -> Any:
+        if structure_tree is None:
+            return None
+        try:
+            return structure_tree.page_structure(page)
+        except (IndexError, TypeError, ValueError):
+            return None
+
+    fields_by_page: dict[int, list[Any]] = {}
+    with suppress(TypeError, ValueError):
+        fields_by_page = document.fields_by_page(pages)
+    extractions = tuple(
+        internal_PageExtraction(
+            page,
+            fields=fields_by_page.get(int(page.page_number) - 1, ()),
+            structure=page_structure(page),
+            hidden_layers=hidden_layers,
+        )
+        for page in pages
+    )
+    if len(extractions) > 1:
+        captures = internal_capture_document_pages(extractions, context)
         if len(captures) == len(pages):
-            extractions = internal_prepare_selection_state(pages, captures, context)
-        else:
-            extractions = tuple(page_extraction(page) for page in pages)
+            extractions = internal_prepare_selection_state(extractions, captures, context)
     assembled_pages = internal_assemble_document_pages(extractions, context)
     diagnostics = tuple(diagnostic for page in assembled_pages for diagnostic in page.diagnostics)
     metadata = document.get_metadata()

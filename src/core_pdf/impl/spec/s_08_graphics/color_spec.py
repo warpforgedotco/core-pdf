@@ -212,7 +212,7 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
             if alt is None and isinstance(icc_stream, PdfStream):
                 try:
-                    alt = parse_icc_transform(icc_profile).alternate_color_space
+                    alt = parse_icc_transform(bytes(icc_stream.data)).alternate_color_space
                 except IccProfileError:
                     alt = None
             return ImageColorSpec(

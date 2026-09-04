@@ -49,7 +49,7 @@ def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
     assert int(black.max()) - int(black.min()) <= 8
 
 
-def test_sampled_separation_conversion_reuses_exact_rgb_lut() -> None:
+def test_sampled_separation_conversion_builds_exact_readonly_rgb_lut() -> None:
     tint_function = PdfStream(
         {
             "FunctionType": 0,
@@ -75,17 +75,16 @@ def test_sampled_separation_conversion_reuses_exact_rgb_lut() -> None:
 
     numpy.testing.assert_array_equal(first, expected)
     numpy.testing.assert_array_equal(second, expected)
-    # One compiled LUT, reused: the second lookup returns the very same array.
-    assert internal_sampled_separation_rgb_lut(tint_function, "DeviceGray") is (
-        internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
-    )
-    assert not internal_sampled_separation_rgb_lut(tint_function, "DeviceGray").flags.writeable
+    lut = internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
+    expected_lut = numpy.repeat(numpy.arange(256, dtype=numpy.uint8)[:, None], 3, axis=1)
+    numpy.testing.assert_array_equal(lut, expected_lut)
+    assert not lut.flags.writeable
 
-    # The cache must not keep the stream (and its view into the document buffer)
-    # alive; an equal function built from fresh bytes hits the same entry.
+    # An equivalent function built from fresh bytes must produce the same table.
     twin = PdfStream(dict(tint_function.dictionary), bytes(range(256)))
-    assert internal_sampled_separation_rgb_lut(twin, "DeviceGray") is (
-        internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
+    numpy.testing.assert_array_equal(
+        internal_sampled_separation_rgb_lut(twin, "DeviceGray"),
+        lut,
     )
 
 

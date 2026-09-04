@@ -9,22 +9,7 @@ from typing import Any
 
 import numpy
 
-RASTER_COORDINATE_CACHE_MAX_ENTRIES = 256
 AFFINE_BLIT_SCRATCH_BYTES = 1 << 20
-
-
-def internal_cached_raster_coordinates(
-    cache: dict[tuple[int, int], numpy.ndarray[Any, Any]],
-    start: int,
-    stop: int,
-) -> numpy.ndarray[Any, Any]:
-    key = (start, stop)
-    coordinates = cache.get(key)
-    if coordinates is None:
-        coordinates = numpy.arange(start, stop, dtype=numpy.float64)
-        if len(cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-            cache[key] = coordinates
-    return coordinates
 
 
 def internal_box_downsample(

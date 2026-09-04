@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-
 import imagecodecs
 import numpy
 
@@ -17,7 +15,6 @@ ImageDict = dict[str, object]
 ImageBuffer = ByteBuffer
 
 
-@lru_cache(maxsize=1024)
 def decode_translation_tables(
     max_sample: int,
     pairs: tuple[tuple[float, float], ...],

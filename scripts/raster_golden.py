@@ -162,7 +162,6 @@ def render_first_page(pdf: pathlib.Path) -> RasterImage:
         return rendered.rasterize(
             scale=RASTER_SCALE,
             background=RASTER_BACKGROUND,
-            cache=False,
         )
 
 
@@ -269,7 +268,6 @@ def render_first_page_with_jpx_policy(pdf: pathlib.Path) -> tuple[RasterImage, J
         raster = rendered.rasterize(
             scale=RASTER_SCALE,
             background=RASTER_BACKGROUND,
-            cache=False,
         )
         return raster, policy
 

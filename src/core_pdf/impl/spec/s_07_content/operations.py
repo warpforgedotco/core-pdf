@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from typing import Protocol, TypeAlias, TypeVar, cast, overload
+from typing import Protocol, TypeAlias, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -14,34 +14,25 @@ from core_pdf.impl.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import (
-    TEXT_ONLY_SKIP_DOUBLE,
-    TEXT_ONLY_SKIP_SINGLE,
-)
+from core_pdf.impl.spec.s_07_content.operator_tables import TEXT_ONLY_SKIP_OPERATORS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
+    is_number_word_bytes,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
     skip_name,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
 
 PdfName_of = PdfName.of
-FONT_DIGIT_NAMES = tuple(PdfName_of(b"F" + bytes((48 + i,))) for i in range(10))
-CS_DIGIT_NAMES = tuple(PdfName_of(b"CS" + bytes((48 + i,))) for i in range(10))
-TT_DIGIT_NAMES = tuple(PdfName_of(b"TT" + bytes((48 + i,))) for i in range(10))
-P_NAME = PdfName_of(b"P")
 
 ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
-
-IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
 TEXT_CLIP_PREFIX_RE = re.compile(
     b"[\x00\t\n\f\r ]*"
@@ -51,9 +42,7 @@ TEXT_CLIP_PREFIX_RE = re.compile(
     b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
     b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
 )
-TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
-CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
 
 
 def _advance_past_lexical_markers(
@@ -61,11 +50,8 @@ def _advance_past_lexical_markers(
     pos: int,
     data_len: int,
     container_depth: int,
-    container_re: re.Pattern[bytes],
 ) -> tuple[int, int, bytes, int, bool] | None:
-    while match := (container_re if container_depth else TEXT_OR_LEXICAL_MARKER_RE).search(
-        raw_bytes, pos
-    ):
+    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -108,93 +94,11 @@ def _advance_past_lexical_markers(
     return None
 
 
-def content_stream_may_show_text(data: bytes | memoryview) -> bool:
-    data_len = len(data)
-    raw_bytes = full_source_bytes(data)
-    if raw_bytes is None:
-        raw_bytes = bytes(data)
-
-    if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
-        return False
-
-    pos = 0
-    container_depth = 0
-    inline_image_lexer: PdfLexer | None = None
-    while scan := _advance_past_lexical_markers(
-        raw_bytes, pos, data_len, container_depth, CONTAINER_LEXICAL_MARKER_RE
-    ):
-        marker, after, token, container_depth, delimited = scan
-        if not delimited:
-            pos = marker + 1
-            continue
-        if token != b"BI" and container_depth == 0:
-            return True
-        if container_depth:
-            pos = after
-            continue
-        if inline_image_lexer is None:
-            inline_image_lexer = PdfLexer(raw_bytes)
-        inline_image_lexer.pos = after
-        try:
-            parse_inline_image(inline_image_lexer)
-        except PdfParseError:
-            pos = after
-        else:
-            pos = inline_image_lexer.pos
-
-    return False
-
-
 def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
     match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
     if match is None:
         return None
     return match.end()
-
-
-class OperandWindow:
-    __slots__ = ("operands", "count")
-
-    operands: list[ContentOperand] | ContentOperands
-
-    def __init__(
-        self,
-        operands: list[ContentOperand] | ContentOperands,
-        count: int = 0,
-    ) -> None:
-        self.operands = operands
-        self.count = count
-
-    def __len__(self) -> int:
-        return self.count
-
-    def __bool__(self) -> bool:
-        return self.count > 0
-
-    @overload
-    def __getitem__(self, item: int) -> ContentOperand: ...
-
-    @overload
-    def __getitem__(self, item: slice) -> list[ContentOperand]: ...
-
-    def __getitem__(self, item: int | slice) -> ContentOperand | list[ContentOperand]:
-        if type(item) is int:
-            count = self.count
-            if 0 <= item < count:
-                return self.operands[item]
-            if item < 0:
-                item += count
-            if item < 0 or item >= count:
-                raise IndexError(item)
-            return self.operands[item]
-        if isinstance(item, slice):
-            start, stop, step = item.indices(self.count)
-            return [self.operands[index] for index in range(start, stop, step)]
-        raise TypeError("operand index must be int or slice")
-
-    def __iter__(self) -> Iterator[ContentOperand]:
-        for index in range(self.count):
-            yield self.operands[index]
 
 
 class NestedStreamRequest(Exception):
@@ -205,238 +109,42 @@ class OperationTarget(Protocol):
     capture_graphics: bool
     capture_glyphs: bool
     capture_clipping: bool
-    current_decoder: FontDecoder | None
-
-    def get_decoder(self, *, update_metrics: bool = True) -> FontDecoder: ...
-
-    def append_text(
-        self,
-        operand: ContentOperand | None = None,
-        *,
-        data: bytes | memoryview | None = None,
-        decoder: FontDecoder | None = None,
-        string_syntax: str | None = None,
-        compatibility_data: bytes | None = None,
-    ) -> None: ...
-
-    def append_tj_array(self, array: ContentOperand) -> None: ...
-
-    def op_BT(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_TD(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_TD_values(self, tx: float, ty: float) -> None: ...
-
-    def op_Tc(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_Tc_values(self, char_space: float) -> None: ...
-
-    def op_Tf(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_Tf_values(
-        self, font_operand: ContentOperand, font_size_operand: ContentOperand
-    ) -> None: ...
-
-    def op_Tm(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_Tm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None: ...
-
-    def op_Tw(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_Tw_values(self, word_space: float) -> None: ...
-
-    def op_Td(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_Td_values(self, tx: float, ty: float) -> None: ...
-
-    def op_re(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_re_values(
-        self, x: int | float, y: int | float, width: int | float, height: int | float
-    ) -> None: ...
-
-    def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
-
-    def op_rg_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
-
-    def op_w_value(self, line_width: int | float) -> None: ...
-
-    def op_J_value(self, line_cap: int | float) -> None: ...
-
-    def op_j_value(self, line_join: int | float) -> None: ...
-
-    def op_M_value(self, miter_limit: int | float) -> None: ...
-
-    def op_m_values(self, x: int | float, y: int | float) -> None: ...
-
-    def op_l_values(self, x: int | float, y: int | float) -> None: ...
-
-    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_paint_fill(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_ET(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_cm(self, operands: OperandWindow, depth: int) -> None: ...
-
-    # Positional-only: the fast path always calls these with computed
-    # positionals, and pinning the parameter *names* would force every
-    # implementation to spell them identically for no benefit.
-    def op_cm_values(
-        self, a: float, b: float, c: float, d_: float, e: float, f: float, /
-    ) -> None: ...
-
-    def op_q(self, operands: OperandWindow, depth: int) -> None: ...
-
-    def op_Q(self, operands: OperandWindow, depth: int) -> None: ...
 
 
-BoundOperationHandler: TypeAlias = Callable[[OperandWindow, int], None]
-StateOperationHandler: TypeAlias = Callable[[OperationTarget, OperandWindow, int], None]
-OperationCollector: TypeAlias = Callable[[OperandWindow, int, str], None]
-
-internal_HandlerT = TypeVar("internal_HandlerT", covariant=True)
-
-
-class StringHandlerMap(Protocol[internal_HandlerT]):
-    def get(self, key: str) -> internal_HandlerT | None: ...
-
-
-class ByteHandlerMap(Protocol[internal_HandlerT]):
-    def get(self, key: bytes) -> internal_HandlerT | None: ...
-
-
-class SingleHandlerLookup(Protocol[internal_HandlerT]):
-    def __getitem__(self, key: int) -> internal_HandlerT | None: ...
-
-
-class IntHandlerMap(Protocol[internal_HandlerT]):
-    def get(self, key: int) -> internal_HandlerT | None: ...
-
-
-class CollectedOperationHandler:
-    __slots__ = ("callback", "op_name")
-
-    def __init__(self, callback: OperationCollector, op_name: str) -> None:
-        self.callback = callback
-        self.op_name = op_name
-
-    def __call__(self, operands: OperandWindow, depth: int) -> None:
-        self.callback(operands, depth, self.op_name)
-
-
-class CollectedStringHandlers:
-    __slots__ = ("callback", "handlers")
-
-    def __init__(self, callback: OperationCollector) -> None:
-        self.callback = callback
-        self.handlers: dict[str, BoundOperationHandler] = {}
-
-    def get(self, key: str) -> BoundOperationHandler:
-        handler = self.handlers.get(key)
-        if handler is None:
-            handler = CollectedOperationHandler(self.callback, key)
-            self.handlers[key] = handler
-        return handler
-
-
-class CollectedIntegerHandlers:
-    __slots__ = ("callback", "handlers")
-
-    def __init__(self, callback: OperationCollector) -> None:
-        self.callback = callback
-        self.handlers: dict[int, BoundOperationHandler] = {}
-
-    def __getitem__(self, key: int) -> BoundOperationHandler:
-        handler = self.handlers.get(key)
-        if handler is not None:
-            return handler
-        if key > 255:
-            op_name = chr(key >> 8) + chr(key & 0xFF)
-        else:
-            op_name = chr(key)
-        handler = CollectedOperationHandler(self.callback, op_name)
-        self.handlers[key] = handler
-        return handler
-
-    def get(self, key: int) -> BoundOperationHandler:
-        return self[key]
-
-
-@overload
-def dispatch_operations(
-    lexer: PdfLexer,
-    op_handlers: StringHandlerMap[StateOperationHandler],
-    op_handlers_bytes: ByteHandlerMap[StateOperationHandler] | None,
-    single_op_handlers: SingleHandlerLookup[StateOperationHandler],
-    double_op_handlers: IntHandlerMap[StateOperationHandler],
-    handler_target: OperationTarget,
-    depth: int,
-    operands: list[ContentOperand] | None = None,
-) -> None: ...
-
-
-@overload
-def dispatch_operations(
-    lexer: PdfLexer,
-    op_handlers: StringHandlerMap[BoundOperationHandler],
-    op_handlers_bytes: ByteHandlerMap[BoundOperationHandler] | None,
-    single_op_handlers: SingleHandlerLookup[BoundOperationHandler],
-    double_op_handlers: IntHandlerMap[BoundOperationHandler],
-    handler_target: None,
-    depth: int,
-    operands: list[ContentOperand] | None = None,
-) -> None: ...
+OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
 
 
 def dispatch_operations(
     lexer: PdfLexer,
-    op_handlers: StringHandlerMap[StateOperationHandler] | StringHandlerMap[BoundOperationHandler],
-    op_handlers_bytes: ByteHandlerMap[StateOperationHandler]
-    | ByteHandlerMap[BoundOperationHandler]
-    | None,
-    single_op_handlers: SingleHandlerLookup[StateOperationHandler]
-    | SingleHandlerLookup[BoundOperationHandler],
-    double_op_handlers: IntHandlerMap[StateOperationHandler] | IntHandlerMap[BoundOperationHandler],
-    handler_target: OperationTarget | None,
+    get_handler: Callable[[str], OperationHandler | None],
+    target: OperationTarget | None,
     depth: int,
-    operands: list[ContentOperand] | None = None,
 ) -> None:
-    if operands is None:
-        operands = [None] * 16
-    op_count = 0
+    operands: list[ContentOperand] = []
+
+    def append_operand(value: ContentOperand) -> None:
+        if len(operands) < 16:
+            operands.append(value)
+
     raw_data = lexer.raw_data
     data_len = lexer.data_len
     raw_bytes: bytes | memoryview
     source_bytes = full_source_bytes(raw_data)
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
-    word_break_or_ws = SEPARATOR_TABLE
-    ws_table = WS_TABLE
-    is_word_start = IS_WORD_START
-    op_get = op_handlers.get
-    op_get_bytes = op_handlers_bytes.get if op_handlers_bytes is not None else None
-    double_get = double_op_handlers.get
-    max_operands = len(operands)
-    exact_number_types = (int, float)
-
-    def set_operand_count(count: int) -> None:
-        operand_window.count = count if count < max_operands else max_operands
-
-    operand_window = OperandWindow(operands)
     text_only = (
-        handler_target is not None
-        and not handler_target.capture_graphics
-        and not handler_target.capture_glyphs
-        and not handler_target.capture_clipping
+        target is not None
+        and not target.capture_graphics
+        and not target.capture_glyphs
+        and not target.capture_clipping
     )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
     # Fixed when the document is opened, but it was previously resolved by a
     # double getattr chain on every ``<<`` token of every content stream.
     legacy_pdfminer_mode = bool(
-        handler_target is not None
+        target is not None
         and getattr(
-            getattr(handler_target, "document", None),
+            getattr(target, "document", None),
             "legacy_pdfminer_text_operators",
             False,
         )
@@ -445,148 +153,23 @@ def dispatch_operations(
 
     pos = lexer.pos
     while pos < data_len:
+        pos = lexer.skip_ignored_at(pos)
+        if pos >= data_len:
+            break
         byte = raw_bytes[pos]
 
-        if ws_table[byte]:
-            pos += 1
-            while pos < data_len and ws_table[raw_bytes[pos]]:
-                pos += 1
-            if pos >= data_len:
+        if not SEPARATOR_TABLE[byte]:
+            scanned = lexer.scan_word_at(pos, skip_ignored=False)
+            if scanned is None:
                 break
-            byte = raw_bytes[pos]
-            if byte == 37:
-                pos = lexer.skip_ignored_at(pos)
-                if pos >= data_len:
-                    break
-                byte = raw_bytes[pos]
-        elif byte == 37:
-            pos = lexer.skip_ignored_at(pos)
-            if pos >= data_len:
-                break
-            byte = raw_bytes[pos]
+            raw_key, pos = scanned
 
-        if is_word_start[byte]:
-            limit = pos + 1024 if pos + 1024 < data_len else data_len
-            end = pos + 1
-            while end < limit:
-                if word_break_or_ws[raw_bytes[end]]:
-                    break
-                end += 1
-            if end == limit:
-                lexer.pos = pos
-                scanned = lexer.scan_word_at(pos, skip_ignored=False)
-                if scanned is None:
-                    break
-                ignored, end = scanned
+            if raw_key:
+                if is_number_word_bytes(raw_key):
+                    append_operand(float(raw_key) if b"." in raw_key else int(raw_key))
+                    continue
 
-            n_raw = end - pos
-            pos = end
-
-            if n_raw > 0:
-                start_offset = pos - n_raw
-                first = raw_bytes[start_offset]
-                # If the token has a numeric prefix, parse it directly.
-                # This avoids slicing strings and allocating temporary objects.
-                if first == 46 or 48 <= first <= 57 or first == 45 or first == 43:
-                    # Fast path: Single digit number (e.g. '0', '5')
-                    if n_raw == 1 and 48 <= first <= 57:
-                        if op_count < max_operands:
-                            operands[op_count] = first - 48
-                        op_count += 1
-                        continue
-
-                    # Fast path: Two-character numeric tokens (e.g. '12', '-5', '.5')
-                    if n_raw == 2:
-                        b1 = raw_bytes[start_offset + 1]
-                        if 48 <= first <= 57 and 48 <= b1 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = (first - 48) * 10 + (b1 - 48)
-                            op_count += 1
-                            continue
-                        if (first == 45 or first == 43) and 48 <= b1 <= 57:
-                            val = b1 - 48
-                            if op_count < max_operands:
-                                operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-                    # Fast path: Three-character numeric tokens (e.g. '123', '-12')
-                    elif n_raw == 3:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        if 48 <= first <= 57 and 48 <= b1 <= 57 and 48 <= b2 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
-                            op_count += 1
-                            continue
-                        if (first == 45 or first == 43) and 48 <= b1 <= 57 and 48 <= b2 <= 57:
-                            val = (b1 - 48) * 10 + (b2 - 48)
-                            if op_count < max_operands:
-                                operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-
-                    # Fast path: Four-character numeric tokens (e.g. '1234', '-123')
-                    elif n_raw == 4:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        if (
-                            48 <= first <= 57
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = (
-                                    (first - 48) * 1000
-                                    + (b1 - 48) * 100
-                                    + (b2 - 48) * 10
-                                    + (b3 - 48)
-                                )
-                            op_count += 1
-                            continue
-                        if (
-                            (first == 45 or first == 43)
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                        ):
-                            val = (b1 - 48) * 100 + (b2 - 48) * 10 + (b3 - 48)
-                            if op_count < max_operands:
-                                operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-
-                    # General fallback: validate syntax and parse longer integers or float values
-                    digit_start = 1 if first in (43, 45) else 0
-                    saw_digit = False
-                    saw_dot = False
-                    is_valid = True
-                    if digit_start == 0:
-                        if first == 46:
-                            saw_dot = True
-                        elif 48 <= first <= 57:
-                            saw_digit = True
-
-                    for i in range(1 if digit_start == 0 else digit_start, n_raw):
-                        b = raw_bytes[start_offset + i]
-                        if 48 <= b <= 57:
-                            saw_digit = True
-                        elif b == 46 and not saw_dot:
-                            saw_dot = True
-                        else:
-                            is_valid = False
-                            break
-
-                    if is_valid and saw_digit:
-                        raw = raw_bytes[start_offset:pos]
-                        raw_number = raw.tobytes() if type(raw) is memoryview else raw
-                        if op_count < max_operands:
-                            operands[op_count] = float(raw_number) if saw_dot else int(raw_number)
-                        op_count += 1
-                        continue
-
-                if n_raw == 2 and raw_bytes[pos - 2] == 66 and raw_bytes[pos - 1] == 73:
+                if raw_key == b"BI":
                     lexer.pos = pos
                     try:
                         image = parse_inline_image(lexer)
@@ -601,8 +184,8 @@ def dispatch_operations(
                             recovered_pos = recover_inline_image_position(
                                 lexer,
                                 pos,
-                                (lambda token: op_get_bytes(token) is not None)
-                                if op_get_bytes is not None
+                                (lambda token: get_handler(token.decode("latin-1")) is not None)
+                                if target is not None
                                 else None,
                             )
                             if recovered_pos is None:
@@ -611,435 +194,67 @@ def dispatch_operations(
                                     break
                                 raise
                             pos = recovered_pos
-                            op_count = 0
+                            operands.clear()
                             continue
                         raise
                     pos = lexer.pos
-                    if op_count < max_operands:
-                        operands[op_count] = image
-                    op_count += 1
-                    handler = op_get("BI")
+                    append_operand(image)
+                    handler = get_handler("BI")
                     if handler is not None:
-                        operand_window.count = min(op_count, max_operands)
                         lexer.pos = pos
-                        if handler_target is None:
-                            cast(BoundOperationHandler, handler)(operand_window, depth)
-                        else:
-                            cast(StateOperationHandler, handler)(
-                                handler_target,
-                                operand_window,
-                                depth,
-                            )
-                    op_count = 0
+                        handler(tuple(operands), depth)
+                    operands.clear()
                     continue
 
-                # The text-only skip stage runs before every fast-path stage, so
-                # no fast-path branch needs its own text-only guard. `re` used to
-                # carry one, because Stage C ran first and would otherwise have
-                # swallowed it.
+                # Skip irrelevant graphics operators before the normal handler lookup.
                 if text_only:
-                    if n_raw == 1:
-                        op0 = raw_bytes[pos - 1]
-                        if op0 == 113 and op_count == 0:
-                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
-                            if skipped_pos is not None:
-                                skipped_clip_q_count += 1
-                                pos = skipped_pos
-                                op_count = 0
-                                continue
-                        if op0 == 81 and skipped_clip_q_count:
-                            skipped_clip_q_count -= 1
-                            op_count = 0
+                    if raw_key == b"q" and not operands:
+                        skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
+                        if skipped_pos is not None:
+                            skipped_clip_q_count += 1
+                            pos = skipped_pos
+                            operands.clear()
                             continue
-                        if TEXT_ONLY_SKIP_SINGLE[op0]:
-                            op_count = 0
-                            continue
-                    elif n_raw == 2:
-                        op_code = (raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1]
-                        if TEXT_ONLY_SKIP_DOUBLE[op_code]:
-                            op_count = 0
-                            continue
+                    if raw_key == b"Q" and skipped_clip_q_count:
+                        skipped_clip_q_count -= 1
+                        operands.clear()
+                        continue
+                    if raw_key in TEXT_ONLY_SKIP_OPERATORS:
+                        operands.clear()
+                        continue
 
-                if handler_target is not None and n_raw == 2:
-                    op0 = raw_bytes[pos - 2]
-                    op1 = raw_bytes[pos - 1]
-                    match op0:
-                        case 66 if op1 == 84:  # 'B' 'T'
-                            handler_target.op_BT(operand_window, depth)
-                            op_count = 0
-                            continue
-                        case 84:  # 'T'
-                            match op1:
-                                case 68:  # 'D'
-                                    if op_count >= 2:
-                                        tx, ty = operands[0], operands[1]
-                                        if (
-                                            type(tx) in exact_number_types
-                                            and type(ty) in exact_number_types
-                                        ):
-                                            handler_target.op_TD_values(
-                                                cast(int | float, tx), cast(int | float, ty)
-                                            )
-                                        else:
-                                            set_operand_count(op_count)
-                                            handler_target.op_TD(operand_window, depth)
-                                    else:
-                                        set_operand_count(op_count)
-                                        handler_target.op_TD(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                case 99:  # 'c'
-                                    if op_count and operands:
-                                        char_space = operands[0]
-                                        if type(char_space) in exact_number_types:
-                                            handler_target.op_Tc_values(
-                                                cast(int | float, char_space)
-                                            )
-                                        else:
-                                            set_operand_count(op_count)
-                                            handler_target.op_Tc(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                case 102:  # 'f'
-                                    if op_count >= 2:
-                                        handler_target.op_Tf_values(operands[0], operands[1])
-                                    else:
-                                        set_operand_count(op_count)
-                                        handler_target.op_Tf(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                case 106:  # 'j'
-                                    if op_count:
-                                        decoder = (
-                                            handler_target.current_decoder
-                                            if handler_target.current_decoder is not None
-                                            else handler_target.get_decoder()
-                                        )
-                                        # Tj consumes the top value from the
-                                        # operand stack.  Earlier values are
-                                        # stale operands in malformed streams.
-                                        operand = operands[min(op_count, len(operands)) - 1]
-                                        if type(operand) is PdfString:
-                                            handler_target.append_text(
-                                                data=operand.data,
-                                                decoder=decoder,
-                                                string_syntax=(
-                                                    "literal" if operand.is_literal else "hex"
-                                                ),
-                                                compatibility_data=operand.compatibility_data,
-                                            )
-                                        elif type(operand) is bytes:
-                                            handler_target.append_text(
-                                                data=operand, decoder=decoder
-                                            )
-                                        else:
-                                            handler_target.append_text(operand, decoder=decoder)
-                                    op_count = 0
-                                    continue
-                                case 109:  # 'm'
-                                    if op_count >= 6:
-                                        tm_a, tm_b, tm_c = operands[0], operands[1], operands[2]
-                                        tm_d, tm_e, tm_f = operands[3], operands[4], operands[5]
-                                        if (
-                                            type(tm_a) in exact_number_types
-                                            and type(tm_b) in exact_number_types
-                                            and type(tm_c) in exact_number_types
-                                            and type(tm_d) in exact_number_types
-                                            and type(tm_e) in exact_number_types
-                                            and type(tm_f) in exact_number_types
-                                        ):
-                                            handler_target.op_Tm_values(
-                                                cast(int | float, tm_a),
-                                                cast(int | float, tm_b),
-                                                cast(int | float, tm_c),
-                                                cast(int | float, tm_d),
-                                                cast(int | float, tm_e),
-                                                cast(int | float, tm_f),
-                                            )
-                                        else:
-                                            set_operand_count(op_count)
-                                            handler_target.op_Tm(operand_window, depth)
-                                    else:
-                                        set_operand_count(op_count)
-                                        handler_target.op_Tm(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                case 119:  # 'w'
-                                    if op_count:
-                                        word_space = operands[0]
-                                        if type(word_space) in exact_number_types:
-                                            handler_target.op_Tw_values(
-                                                cast(int | float, word_space)
-                                            )
-                                        else:
-                                            set_operand_count(op_count)
-                                            handler_target.op_Tw(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                case 74:  # 'J'
-                                    if op_count:
-                                        handler_target.append_tj_array(operands[0])
-                                    op_count = 0
-                                    continue
-                                case 100:  # 'd'
-                                    if op_count >= 2:
-                                        tx, ty = operands[0], operands[1]
-                                        if (
-                                            type(tx) in exact_number_types
-                                            and type(ty) in exact_number_types
-                                        ):
-                                            handler_target.op_Td_values(
-                                                cast(int | float, tx), cast(int | float, ty)
-                                            )
-                                        else:
-                                            set_operand_count(op_count)
-                                            handler_target.op_Td(operand_window, depth)
-                                    else:
-                                        set_operand_count(op_count)
-                                        handler_target.op_Td(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                # no case _: -- an unmatched op1 falls through to Stage D/E/F,
-                                # same as the original if-chain having no trailing `else`.
-                        case 82 if op1 == 71 and op_count >= 3:  # 'R' 'G'
-                            red, green, blue = operands[0], operands[1], operands[2]
-                            if (
-                                type(red) in exact_number_types
-                                and type(green) in exact_number_types
-                                and type(blue) in exact_number_types
-                            ):
-                                handler_target.op_RG_values(
-                                    cast(int | float, red),
-                                    cast(int | float, green),
-                                    cast(int | float, blue),
-                                )
-                                op_count = 0
-                                continue
-                        case 114:  # 'r'
-                            match op1:
-                                case 103 if op_count >= 3:  # 'g'
-                                    red, green, blue = operands[0], operands[1], operands[2]
-                                    if (
-                                        type(red) in exact_number_types
-                                        and type(green) in exact_number_types
-                                        and type(blue) in exact_number_types
-                                    ):
-                                        handler_target.op_rg_values(
-                                            cast(int | float, red),
-                                            cast(int | float, green),
-                                            cast(int | float, blue),
-                                        )
-                                        op_count = 0
-                                        continue
-                                case 101:  # 'e'
-                                    # Unguarded: in text-only mode the skip stage
-                                    # above has already consumed `re`.
-                                    if op_count >= 4:
-                                        rect_x, rect_y = operands[0], operands[1]
-                                        rect_width, rect_height = operands[2], operands[3]
-                                        if (
-                                            type(rect_x) in exact_number_types
-                                            and type(rect_y) in exact_number_types
-                                            and type(rect_width) in exact_number_types
-                                            and type(rect_height) in exact_number_types
-                                        ):
-                                            handler_target.op_re_values(
-                                                cast(int | float, rect_x),
-                                                cast(int | float, rect_y),
-                                                cast(int | float, rect_width),
-                                                cast(int | float, rect_height),
-                                            )
-                                        else:
-                                            set_operand_count(op_count)
-                                            handler_target.op_re(operand_window, depth)
-                                    else:
-                                        set_operand_count(op_count)
-                                        handler_target.op_re(operand_window, depth)
-                                    op_count = 0
-                                    continue
-                                # no case _: here either -- e.g. `op1 == 103` with
-                                # `op_count < 3` must fall through, not be swallowed.
-                        case 69 if op1 == 84:  # 'E' 'T'
-                            handler_target.op_ET(operand_window, depth)
-                            op_count = 0
-                            continue
-                        case 99 if op1 == 109 and op_count >= 6:  # 'c' 'm'
-                            m_a, m_b, m_c = operands[0], operands[1], operands[2]
-                            m_d, m_e, m_f = operands[3], operands[4], operands[5]
-                            if (
-                                type(m_a) in exact_number_types
-                                and type(m_b) in exact_number_types
-                                and type(m_c) in exact_number_types
-                                and type(m_d) in exact_number_types
-                                and type(m_e) in exact_number_types
-                                and type(m_f) in exact_number_types
-                            ):
-                                handler_target.op_cm_values(
-                                    cast(int | float, m_a),
-                                    cast(int | float, m_b),
-                                    cast(int | float, m_c),
-                                    cast(int | float, m_d),
-                                    cast(int | float, m_e),
-                                    cast(int | float, m_f),
-                                )
-                            else:
-                                set_operand_count(op_count)
-                                handler_target.op_cm(operand_window, depth)
-                            op_count = 0
-                            continue
-                        # no case _: at the outer level either.
-
-                if handler_target is not None and n_raw == 1:
-                    op0 = raw_bytes[pos - 1]
-                    match op0:
-                        case 119 if op_count:  # 'w'
-                            line_width = operands[0]
-                            if type(line_width) in exact_number_types:
-                                handler_target.op_w_value(cast(int | float, line_width))
-                                op_count = 0
-                                continue
-                        case 74 if op_count:  # 'J'
-                            line_cap = operands[0]
-                            if type(line_cap) in exact_number_types:
-                                handler_target.op_J_value(cast(int | float, line_cap))
-                                op_count = 0
-                                continue
-                        case 106 if op_count:  # 'j'
-                            line_join = operands[0]
-                            if type(line_join) in exact_number_types:
-                                handler_target.op_j_value(cast(int | float, line_join))
-                                op_count = 0
-                                continue
-                        case 77 if op_count:  # 'M'
-                            miter_limit = operands[0]
-                            if type(miter_limit) in exact_number_types:
-                                handler_target.op_M_value(cast(int | float, miter_limit))
-                                op_count = 0
-                                continue
-                        case 109 if op_count >= 2:  # 'm'
-                            move_x, move_y = operands[0], operands[1]
-                            if (
-                                type(move_x) in exact_number_types
-                                and type(move_y) in exact_number_types
-                            ):
-                                handler_target.op_m_values(
-                                    cast(int | float, move_x),
-                                    cast(int | float, move_y),
-                                )
-                                op_count = 0
-                                continue
-                        case 108 if op_count >= 2:  # 'l'
-                            line_x, line_y = operands[0], operands[1]
-                            if (
-                                type(line_x) in exact_number_types
-                                and type(line_y) in exact_number_types
-                            ):
-                                handler_target.op_l_values(
-                                    cast(int | float, line_x),
-                                    cast(int | float, line_y),
-                                )
-                                op_count = 0
-                                continue
-                        case 83:  # 'S'
-                            handler_target.op_paint_stroke(operand_window, depth)
-                            op_count = 0
-                            continue
-                        case 102 | 70:  # 'f' | 'F'
-                            handler_target.op_paint_fill(operand_window, depth)
-                            op_count = 0
-                            continue
-                        case 113:  # 'q'
-                            handler_target.op_q(operand_window, depth)
-                            op_count = 0
-                            continue
-                        case 81:  # 'Q'
-                            handler_target.op_Q(operand_window, depth)
-                            op_count = 0
-                            continue
-
-                handler = None
-                if n_raw == 1:
-                    handler = single_op_handlers[raw_bytes[pos - 1]]
-                elif n_raw == 2:
-                    handler = double_get((raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1])
-
-                if handler is None:
-                    raw = raw_bytes[pos - n_raw : pos]
-                    raw_key = raw.tobytes() if type(raw) is memoryview else raw
-                    if op_get_bytes is not None:
-                        handler = op_get_bytes(raw_key)
-                    if handler is None:
-                        if raw_key in (
-                            b"R",
-                            b"obj",
-                            b"endobj",
-                            b"stream",
-                            b"endstream",
-                        ):
-                            op_count = 0
-                            continue
-                        op_name = cast(str, lexer.parse_keyword(raw_key))
-                        handler = op_get(op_name)
+                if raw_key in (
+                    b"R",
+                    b"obj",
+                    b"endobj",
+                    b"stream",
+                    b"endstream",
+                ):
+                    operands.clear()
+                    continue
+                op_name = cast(str, lexer.parse_keyword(raw_key))
+                handler = get_handler(op_name)
 
                 if handler is not None:
-                    operand_window.count = min(op_count, max_operands)
                     lexer.pos = pos
-                    if handler_target is None:
-                        cast(BoundOperationHandler, handler)(operand_window, depth)
-                    else:
-                        cast(StateOperationHandler, handler)(handler_target, operand_window, depth)
-                op_count = 0
+                    handler(tuple(operands), depth)
+                operands.clear()
                 continue
 
         lexer.pos = pos
         if byte == 91:
-            if (
-                handler_target is not None
-                and not handler_target.capture_graphics
-                and not handler_target.capture_glyphs
-            ):
-                if pos + 1 < data_len and raw_bytes[pos + 1] == 93:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, ())
-                    pos += 2
-                    op_count += 1
+            operand_start = pos
+            try:
+                append_operand(cast(ContentOperand, lexer.parse_array()))
+            except PdfParseError as exc:
+                if str(exc) == "unterminated array" and lexer.pos >= data_len:
+                    pos = data_len
+                    break
+                if lexer.pos > operand_start:
+                    pos = lexer.pos
                     continue
-                simple_tj_array = lexer.parse_simple_tj_array()
-                if simple_tj_array is not None:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, simple_tj_array)
-                else:
-                    operand_start = pos
-                    try:
-                        if op_count < max_operands:
-                            operands[op_count] = cast(ContentOperand, lexer.parse_array())
-                        else:
-                            lexer.parse_array()
-                    except PdfParseError as exc:
-                        if str(exc) == "unterminated array" and lexer.pos >= data_len:
-                            pos = data_len
-                            break
-                        if lexer.pos > operand_start:
-                            pos = lexer.pos
-                            continue
-                        raise
-            else:
-                operand_start = pos
-                try:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, lexer.parse_array())
-                    else:
-                        lexer.parse_array()
-                except PdfParseError as exc:
-                    if str(exc) == "unterminated array" and lexer.pos >= data_len:
-                        pos = data_len
-                        break
-                    if lexer.pos > operand_start:
-                        pos = lexer.pos
-                        continue
-                    raise
+                raise
             pos = lexer.pos
-            op_count += 1
             continue
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
@@ -1054,10 +269,7 @@ def dispatch_operations(
                     if legacy_pdfminer_mode:
                         lexer.recover_malformed_objects = False
                     try:
-                        if op_count < max_operands:
-                            operands[op_count] = cast(ContentOperand, parse_dictionary())
-                        else:
-                            parse_dictionary()
+                        append_operand(cast(ContentOperand, parse_dictionary()))
                     finally:
                         lexer.recover_malformed_objects = previous_recovery
                 except PdfParseError as exc:
@@ -1080,10 +292,8 @@ def dispatch_operations(
                 if should_decipher:
                     raw_string = lexer.apply_decipher(raw_string)
                 value = PdfString(raw_string, is_literal=False)
-                if op_count < max_operands:
-                    operands[op_count] = value
+                append_operand(value)
             pos = lexer.pos
-            op_count += 1
             continue
         if byte == 40:
             literal_start = lexer.pos
@@ -1104,55 +314,12 @@ def dispatch_operations(
                     compatibility_data=compatibility_string,
                 )
             )
-            if op_count < max_operands:
-                operands[op_count] = string_value
+            append_operand(string_value)
             pos = lexer.pos
-            op_count += 1
             continue
         if byte == 47:
-            if (
-                pos + 3 <= data_len
-                and raw_bytes[pos + 1] == 70
-                and 48 <= raw_bytes[pos + 2] <= 57
-                and (pos + 3 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 3]])
-            ):
-                if op_count < max_operands:
-                    operands[op_count] = FONT_DIGIT_NAMES[raw_bytes[pos + 2] - 48]
-                pos += 3
-            elif (
-                pos + 4 <= data_len
-                and raw_bytes[pos + 1] == 67
-                and raw_bytes[pos + 2] == 83
-                and 48 <= raw_bytes[pos + 3] <= 57
-                and (pos + 4 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 4]])
-            ):
-                if op_count < max_operands:
-                    operands[op_count] = CS_DIGIT_NAMES[raw_bytes[pos + 3] - 48]
-                pos += 4
-            elif (
-                pos + 4 <= data_len
-                and raw_bytes[pos + 1] == 84
-                and raw_bytes[pos + 2] == 84
-                and 48 <= raw_bytes[pos + 3] <= 57
-                and (pos + 4 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 4]])
-            ):
-                if op_count < max_operands:
-                    operands[op_count] = TT_DIGIT_NAMES[raw_bytes[pos + 3] - 48]
-                pos += 4
-            elif (
-                pos + 2 <= data_len
-                and raw_bytes[pos + 1] == 80
-                and (pos + 2 == data_len or SEPARATOR_TABLE[raw_bytes[pos + 2]])
-            ):
-                if op_count < max_operands:
-                    operands[op_count] = P_NAME
-                pos += 2
-            else:
-                name_value = PdfName_of(lexer.read_name())
-                if op_count < max_operands:
-                    operands[op_count] = name_value
-                pos = lexer.pos
-            op_count += 1
+            append_operand(PdfName_of(lexer.read_name()))
+            pos = lexer.pos
             continue
         if byte == 62:
             pos = pos + 2 if pos + 1 < data_len and raw_bytes[pos + 1] == 62 else pos + 1
@@ -1167,18 +334,17 @@ def dispatch_operations(
 
 
 def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
-
     results: list[ContentOperation] = []
 
-    def collector(operands: OperandWindow, depth: int, op_name: str) -> None:
-        results.append((op_name, tuple(operands)))
+    def get_handler(op_name: str) -> OperationHandler:
+        def collect(operands: ContentOperands, _depth: int) -> None:
+            results.append((op_name, operands))
+
+        return collect
 
     dispatch_operations(
         lexer,
-        CollectedStringHandlers(collector),
-        None,
-        CollectedIntegerHandlers(collector),
-        CollectedIntegerHandlers(collector),
+        get_handler,
         None,
         0,
     )
@@ -1194,9 +360,7 @@ def validate_inline_images(data: bytes | memoryview) -> None:
     pos = 0
     container_depth = 0
     lexer = PdfLexer(raw_bytes)
-    while scan := _advance_past_lexical_markers(
-        raw_bytes, pos, data_len, container_depth, TEXT_OR_LEXICAL_MARKER_RE
-    ):
+    while scan := _advance_past_lexical_markers(raw_bytes, pos, data_len, container_depth):
         _marker, after, token, container_depth, delimited = scan
         if token != b"BI" or container_depth or not delimited:
             pos = after
@@ -1210,8 +374,6 @@ __all__ = (
     "ContentOperand",
     "ContentOperands",
     "ContentOperation",
-    "OperandWindow",
-    "content_stream_may_show_text",
     "dispatch_operations",
     "iter_content_operations",
     "validate_inline_images",

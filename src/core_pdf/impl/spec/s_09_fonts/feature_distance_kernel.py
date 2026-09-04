@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from math import inf
 from typing import Any, Sequence, TypeAlias
 
@@ -21,19 +20,7 @@ FeatureArrays: TypeAlias = tuple[
 ]
 
 
-@lru_cache(maxsize=4096)
 def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
-    """Cached for the pairwise path, where one glyph is compared to many.
-
-    A tuple does not memoize its hash, so a hit here costs a full walk of the
-    key -- measured at 100% of the hit for a 122-cell glyph. Only call this
-    where the same cells genuinely recur; batch callers want the uncached
-    computation below.
-    """
-    return internal_compute_cell_distance_map(cells)
-
-
-def internal_compute_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
     if not cells:
         return ()
     limit = FEATURE_GRID_WIDTH + FEATURE_GRID_HEIGHT
@@ -141,11 +128,8 @@ def internal_feature_arrays(
         valid_counts[index] = len(valid_cells)
         for x, y in valid_cells:
             masks[index, y, x] += 1.0
-        # Each feature is visited once here and the result is cached by the
-        # caller (CFFGlyphFeature.internal_candidate_arrays), so routing through
-        # the memo would only pay its key hash on a guaranteed miss.
         distance_maps[index] = numpy.asarray(
-            internal_compute_cell_distance_map(feature_cells), dtype=numpy.float64
+            internal_cell_distance_map(feature_cells), dtype=numpy.float64
         ).reshape(FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH)
 
     bitmap_width = max((len(bitmap) for bitmap in bitmaps), default=0)

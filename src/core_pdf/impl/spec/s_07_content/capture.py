@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from functools import lru_cache
+from dataclasses import dataclass
 from math import ceil
 from typing import Any, TypeAlias
 
-from core_pdf.impl.model.geometry import RectBox, bbox_union
+from core_pdf.impl.model.geometry import RectBox, bbox_union, transform_bbox
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
@@ -50,7 +49,6 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
 
 
-@lru_cache(maxsize=4096)
 def glyph_bitmap_dimensions(
     glyph_bbox: Rectangle | None,
     font_size: float,
@@ -70,38 +68,9 @@ def glyph_bitmap_dimensions(
 def internal_text_basis_rect(
     x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
 ) -> Rectangle:
-    """Axis-aligned device bounds of a text-space rect under ``text_basis``.
-
-    This is transform_bbox against (a, b, c, d, base_x, base_y), specialised
-    for the overwhelmingly common upright case where b and c are zero -- two
-    multiplies instead of eight, on a path that runs per glyph.
-    """
+    """Axis-aligned device bounds of a text-space rect under ``text_basis``."""
     base_x, base_y, a, b, c, d = text_basis
-    if b == 0.0 and c == 0.0:
-        px0 = base_x + x0 * a
-        px1 = base_x + x1 * a
-        py0 = base_y + y0 * d
-        py1 = base_y + y1 * d
-        return (
-            px0 if px0 < px1 else px1,
-            py0 if py0 < py1 else py1,
-            px1 if px1 > px0 else px0,
-            py1 if py1 > py0 else py0,
-        )
-    p00_x = base_x + x0 * a + y0 * c
-    p00_y = base_y + x0 * b + y0 * d
-    p01_x = base_x + x0 * a + y1 * c
-    p01_y = base_y + x0 * b + y1 * d
-    p10_x = base_x + x1 * a + y0 * c
-    p10_y = base_y + x1 * b + y0 * d
-    p11_x = base_x + x1 * a + y1 * c
-    p11_y = base_y + x1 * b + y1 * d
-    return (
-        min(p00_x, p01_x, p10_x, p11_x),
-        min(p00_y, p01_y, p10_y, p11_y),
-        max(p00_x, p01_x, p10_x, p11_x),
-        max(p00_y, p01_y, p10_y, p11_y),
-    )
+    return transform_bbox((x0, y0, x1, y1), (a, b, c, d, base_x, base_y))
 
 
 def glyph_ink_rect(
@@ -207,7 +176,7 @@ def glyph_text_space_boxes(
 
 def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
     """Project the decoder's normalized simple-font encoding onto byte codes."""
-    # Keep ``font`` in the API until Type 3 program-cache ownership moves out of
+    # Keep ``font`` in the API until Type 3 program ownership moves out of
     # FontDecoder. The decoder was constructed from this dictionary and already
     # normalized its base encoding and Differences.
     del font
@@ -573,7 +542,6 @@ class CapturedDrawing:
     bbox: RectBox | None = None
     stream_order: int = 0
     xobject_depth: int = 0
-    internal_rect_cache: RectBox | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -606,20 +574,15 @@ class CapturedDrawing:
 
     @property
     def rect(self) -> RectBox | None:
-        cached = self.internal_rect_cache
-        if cached is not None:
-            return cached
         if self.bbox is not None:
-            rect = self.bbox.normalize()
-            self.internal_rect_cache = rect
-            return rect
+            return self.bbox.normalize()
         if self.path is None:
             return None
         bbox = self.path.bbox()
         if bbox is None:
             return None
         x0, y0, x1, y1 = bbox
-        rect = RectBox(
+        return RectBox(
             x0,
             y0,
             x1,
@@ -628,8 +591,6 @@ class CapturedDrawing:
             fill=self.fill,
             fill_opacity=self.fill_opacity,
         )
-        self.internal_rect_cache = rect
-        return rect
 
 
 @dataclass(frozen=True, slots=True)

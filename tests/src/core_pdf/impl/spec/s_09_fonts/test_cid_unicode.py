@@ -81,10 +81,9 @@ def test_compact_japan1_map_preserves_legacy_and_vertical_choices() -> None:
     assert vertical.get(7899) == "（"
 
 
-def test_compact_cid_map_caches_missing_cids() -> None:
+def test_compact_cid_map_applies_default_to_missing_cids() -> None:
     mapping = resolve_cid_unicode_map("Adobe", "Japan1")
 
     assert mapping is not None
     assert mapping.get(-1) is None
     assert mapping.get(-1, "missing") == "missing"
-    assert -1 in mapping.cache

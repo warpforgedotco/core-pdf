@@ -590,11 +590,11 @@ class GlyphLineBuilder:
         previous_baseline = previous.baseline
         if previous_baseline is None:
             return False
-        previous_height = previous.height_value
+        previous_height = previous.height
         baseline_drop = rules.baseline_midpoint(previous_baseline, 0) - rules.baseline_midpoint(
             run_baseline, 0
         )
-        if not is_superscript_metrics(previous_height, run.height_value, baseline_drop):
+        if not is_superscript_metrics(previous_height, run.height, baseline_drop):
             return False
         attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
         return run.x0 - previous.x1 <= attach_gap
@@ -763,7 +763,7 @@ class GlyphLineBuilder:
         height = y1 - y0
         x_gap = x0 - prev_x1
         spacing_gap = x_gap
-        space_width = run.coords[TextRun.SPACE_WIDTH]
+        space_width = run.space_width
         estimated_char_width = self.estimated_char_width
         prev_stripped: str | None = None
         stripped: str | None = None

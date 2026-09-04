@@ -12,18 +12,18 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     VECTOR_PAINT_KINDS,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
+    PageAnalysis,
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.grids import (
     internal_axis_segments,
     internal_grid_components,
+    internal_line_coordinate_columns,
     internal_split_grid_component,
 )
 from core_pdf.impl.extract.ocr.raster import (
-    DirectImageOrientation,
     internal_decoded_image_raster,
     internal_direct_image_orientation,
     internal_orient_direct_image_raster,
@@ -31,30 +31,26 @@ from core_pdf.impl.extract.ocr.raster import (
 from core_pdf.impl.extract.ocr.types import (
     internal_ocr_region_box,
     internal_OcrRegion,
-    internal_Raster,
     internal_RasterRegion,
 )
 from core_pdf.impl.model.geometry import (
-    SpatialIndex,
     bbox_area,
     bbox_intersection_area,
     bbox_union,
     rect_tuple,
 )
-from core_pdf.impl.runtime.image_cache import ImageCacheKey
-from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
 
 def internal_page_image_regions(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     *,
     minimum_area_ratio: float,
     max_pixels: int = MAX_OCR_PIXELS,
     maximum_axis_deviation: float = 1e-5,
     upscale: bool = True,
 ) -> tuple[internal_RasterRegion, ...]:
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     page_area = max(1.0, page_width * page_height)
     regions: list[internal_RasterRegion] = []
     for image in getattr(capture, "drawings", ()):
@@ -90,42 +86,15 @@ def internal_page_image_regions(
         raster = internal_decoded_image_raster(
             image,
             display_area,
-            image_cache=getattr(getattr(capture.page, "document", None), "image_cache", None),
             max_pixels=max_pixels,
             upscale=upscale,
         )
         if raster is not None:
-            oriented = raster
-            if orientation is not DirectImageOrientation.IDENTITY:
-                source = getattr(image, "image_source", None)
-                source_key = getattr(source, "cache_key", None)
-                if not isinstance(source_key, tuple):
-                    source_key = ("image", id(image))
-                oriented_key = ImageCacheKey(
-                    "ocr-oriented-raster",
-                    tuple(source_key),
-                    (orientation.value, float(display_area), int(max_pixels), upscale),
-                )
-                cache = getattr(getattr(capture.page, "document", None), "image_cache", None)
-                if cache is not None:
-                    cached_oriented = cache.get_or_create(
-                        oriented_key,
-                        lambda image=image, raster=raster, orientation=orientation: (
-                            internal_orient_direct_image_raster(
-                                image,
-                                raster,
-                                orientation=orientation,
-                            )
-                        ),
-                    )
-                    if isinstance(cached_oriented, internal_Raster):
-                        oriented = cached_oriented
-                else:
-                    oriented = internal_orient_direct_image_raster(
-                        image,
-                        raster,
-                        orientation=orientation,
-                    )
+            oriented = internal_orient_direct_image_raster(
+                image,
+                raster,
+                orientation=orientation,
+            )
             regions.append(
                 internal_RasterRegion(
                     oriented,
@@ -136,7 +105,7 @@ def internal_page_image_regions(
 
 
 def internal_dominant_image_region(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
@@ -204,23 +173,14 @@ def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[inter
     return tuple(sorted(merged, key=lambda item: (-item.score, item.page_box)))
 
 
-def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrRegion, ...]:
+def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrRegion, ...]:
     """Select likely OCR areas using capture-time geometry only.
 
     This deliberately does not render a preview image.  Native text, image bounds,
     captured paths, and grid lines are already available from the canonical page IR.
     """
-    cache = getattr(capture.page, "extraction_cache", None)
-    cache_key = "ocr_candidate_regions_v1"
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, tuple) and all(
-            isinstance(item, internal_OcrRegion) for item in cached
-        ):
-            return cached
-
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     page_area = max(1.0, page_width * page_height)
     padding = max(6.0, min(36.0, min(page_width, page_height) * 0.01))
     candidates: list[internal_OcrRegion] = []
@@ -240,24 +200,19 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
             candidates.append(internal_OcrRegion(padded, 5.0, ("image",)))
 
     native = getattr(capture, "observations", ObservationBatch.empty())
-    native_boxes = tuple(tuple(float(value) for value in box) for box in native.bbox)
-    native_index = SpatialIndex.from_boxes(native_boxes) if native_boxes else None
+    native_boxes = native.bbox
 
     def native_overlap(box: tuple[float, float, float, float]) -> float:
         area = max(1.0, (box[2] - box[0]) * (box[3] - box[1]))
-        if native_index is not None:
-            return min(
-                1.0,
-                sum(
-                    bbox_intersection_area(box, hit.bbox)
-                    for hit in native_index.intersecting_hits(box)
-                )
-                / area,
-            )
-        return min(
-            1.0,
-            sum(bbox_intersection_area(box, other) for other in native_boxes) / area,
+        overlap_width = numpy.maximum(
+            0.0,
+            numpy.minimum(native_boxes[:, 2], box[2]) - numpy.maximum(native_boxes[:, 0], box[0]),
         )
+        overlap_height = numpy.maximum(
+            0.0,
+            numpy.minimum(native_boxes[:, 3], box[3]) - numpy.maximum(native_boxes[:, 1], box[1]),
+        )
+        return min(1.0, float(numpy.sum(overlap_width * overlap_height)) / area)
 
     for drawing in getattr(capture, "drawings", ()):
         if getattr(drawing, "kind", None) not in {"fill", "fillstroke", "stroke"}:
@@ -339,9 +294,8 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
         vector_density[row * columns + column] += 1.0
     grid_lines = getattr(capture, "grid_lines", ())
     if len(grid_lines):
-        # Bin every grid line at once.  Iterating the capture would rebuild one
-        # Python object per line just to read its four coordinates back out.
-        line_x0, line_y0, line_x1, line_y1 = line_coordinate_columns(grid_lines)
+        # Bin every grid line at once.
+        line_x0, line_y0, line_x1, line_y1 = internal_line_coordinate_columns(grid_lines)
         line_columns = numpy.clip(
             ((line_x0 + line_x1) * 0.5 * columns / max(1.0, page_width)).astype(numpy.int64),
             0,
@@ -487,15 +441,13 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
                 ("page-fallback",),
             ),
         )
-    if cache is not None:
-        cache[cache_key] = regions
     return regions
 
 
-def internal_has_distributed_outline_text(capture: CapturedPage) -> bool:
+def internal_has_distributed_outline_text(capture: PageAnalysis) -> bool:
     """Detect pages whose text was converted into many small filled vector paths."""
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     max_width = max(24.0, page_width * 0.04)
     max_height = max(24.0, page_height * 0.04)
     boxes = tuple(

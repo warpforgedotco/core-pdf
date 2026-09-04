@@ -5,10 +5,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from functools import lru_cache
-from types import MappingProxyType
 
 from core_pdf.impl.extract.table_cleanup import (
     internal_character_spaced_cell,
@@ -19,15 +16,15 @@ from core_pdf.impl.model.geometry import overlap_ratio_min, overlap_ratio_of
 from core_pdf.impl.output import Block, Table, TableCell
 
 internal_EMITTED_TEXT_TOKEN_RE = re.compile(r"\w+")
+internal_BlockTokens = tuple[tuple[tuple[float, float, float, float], tuple[str, ...]], ...]
 
 
 @dataclass(frozen=True, slots=True)
 class internal_TableProfile:
-    """Reusable text and shape facts for one reconciliation pass."""
+    """Text and shape facts derived from one table."""
 
-    text: str
     tokens: tuple[str, ...]
-    token_counts: Mapping[str, int]
+    token_counts: Counter[str]
     token_set: frozenset[str]
     character_spaced_ratio: float
     has_grid_shape: bool
@@ -37,13 +34,7 @@ class internal_TableProfile:
     noisy_stream: bool
 
 
-internal_TableProfiles = Mapping[int, internal_TableProfile]
-
-
-@lru_cache(maxsize=256)
 def internal_emitted_text_tokens(text: str) -> tuple[str, ...]:
-    # The same table/block text is tokenized by many dedup heuristics per
-    # page; the memo returns an immutable tuple every caller only reads.
     return tuple(
         match.group(0).casefold() for match in internal_EMITTED_TEXT_TOKEN_RE.finditer(text)
     )
@@ -53,12 +44,8 @@ def internal_wordlike_token(token: str) -> bool:
     return token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
 
 
-def internal_table_text(table: Table) -> str:
-    return " ".join(cell.text for row in table.rows for cell in row if cell.text)
-
-
-def internal_build_table_profile(table: Table) -> internal_TableProfile:
-    text = internal_table_text(table)
+def internal_table_profile(table: Table) -> internal_TableProfile:
+    text = " ".join(cell.text for row in table.rows for cell in row if cell.text)
     tokens = internal_emitted_text_tokens(text)
     token_counts = Counter(tokens)
     filled_texts = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
@@ -75,9 +62,8 @@ def internal_build_table_profile(table: Table) -> internal_TableProfile:
     single_character = sum(len(token) == 1 for token in tokens)
     wordlike = sum(internal_wordlike_token(token) for token in tokens)
     return internal_TableProfile(
-        text=text,
         tokens=tokens,
-        token_counts=MappingProxyType(dict(token_counts)),
+        token_counts=token_counts,
         token_set=frozenset(token_counts),
         character_spaced_ratio=character_spaced_ratio,
         has_grid_shape=has_grid_shape,
@@ -95,46 +81,33 @@ def internal_build_table_profile(table: Table) -> internal_TableProfile:
     )
 
 
-def internal_table_profile(
-    table: Table,
-    profiles: internal_TableProfiles | None = None,
-) -> internal_TableProfile:
-    if profiles is not None:
-        profile = profiles.get(id(table))
-        if profile is not None:
-            return profile
-    return internal_build_table_profile(table)
-
-
-def internal_table_character_spaced_ratio(
-    table: Table,
-    *,
-    profile: internal_TableProfile | None = None,
-) -> float:
-    return (profile or internal_build_table_profile(table)).character_spaced_ratio
-
-
 def internal_overlapping_block_token_coverage(
     table: Table,
     blocks: list[Block],
     *,
     profile: internal_TableProfile | None = None,
+    tokenized_blocks: internal_BlockTokens | None = None,
 ) -> float:
     if table.bbox is None:
         return 0.0
-    table_profile = profile or internal_build_table_profile(table)
+    table_profile = profile or internal_table_profile(table)
     table_tokens = table_profile.tokens
     if len(table_tokens) < 16:
         return 0.0
-    block_tokens: list[str] = []
-    for block in blocks:
-        if block.bbox is None or not block.text:
-            continue
-        if overlap_ratio_min(block.bbox, table.bbox) >= 0.45:
-            block_tokens.extend(internal_emitted_text_tokens(block.text))
-    if not block_tokens:
+    block_entries = tokenized_blocks or tuple(
+        (block.bbox, internal_emitted_text_tokens(block.text))
+        for block in blocks
+        if block.bbox is not None and block.text
+    )
+    overlapping_tokens = tuple(
+        token
+        for bbox, tokens in block_entries
+        if overlap_ratio_min(bbox, table.bbox) >= 0.45
+        for token in tokens
+    )
+    if not overlapping_tokens:
         return 0.0
-    block_counts = Counter(block_tokens)
+    block_counts = Counter(overlapping_tokens)
     matched = sum(
         min(count, block_counts[token]) for token, count in table_profile.token_counts.items()
     )
@@ -143,8 +116,6 @@ def internal_overlapping_block_token_coverage(
 
 def internal_stream_table_is_tabular(
     table: Table,
-    *,
-    profile: internal_TableProfile | None = None,
 ) -> bool:
     """Identify a stream table whose shape is tabular rather than two-column prose.
 
@@ -154,7 +125,7 @@ def internal_stream_table_is_tabular(
     and requiring both keeps a wrapped paragraph or a two-line caption from
     claiming to be a table it merely resembles.
     """
-    return (profile or internal_build_table_profile(table)).stream_is_tabular
+    return internal_table_profile(table).stream_is_tabular
 
 
 def internal_stream_table_duplicated_by_blocks(
@@ -162,8 +133,9 @@ def internal_stream_table_duplicated_by_blocks(
     blocks: list[Block],
     *,
     profile: internal_TableProfile | None = None,
+    tokenized_blocks: internal_BlockTokens | None = None,
 ) -> bool:
-    table_profile = profile or internal_build_table_profile(table)
+    table_profile = profile or internal_table_profile(table)
     table_tokens = table_profile.tokens
     token_count = len(table_tokens)
     if token_count < 16:
@@ -181,7 +153,9 @@ def internal_stream_table_duplicated_by_blocks(
     # alone discarded comparison tables and schedules whose cells are sentences.
     if table_profile.stream_is_tabular:
         return False
-    coverage = internal_overlapping_block_token_coverage(table, blocks, profile=table_profile)
+    coverage = internal_overlapping_block_token_coverage(
+        table, blocks, profile=table_profile, tokenized_blocks=tokenized_blocks
+    )
     if coverage >= 0.80:
         return True
     return token_count >= 500 and coverage >= 0.35
@@ -192,8 +166,9 @@ def internal_table_duplicated_by_blocks(
     blocks: list[Block],
     *,
     profile: internal_TableProfile | None = None,
+    tokenized_blocks: internal_BlockTokens | None = None,
 ) -> bool:
-    table_profile = profile or internal_build_table_profile(table)
+    table_profile = profile or internal_table_profile(table)
     table_tokens = table_profile.tokens
     if len(table_tokens) < 24:
         return False
@@ -206,7 +181,12 @@ def internal_table_duplicated_by_blocks(
         # carries the rows and columns. Keep it and let
         # internal_remove_table_duplicate_blocks take the blocks instead.
         return False
-    return internal_overlapping_block_token_coverage(table, blocks, profile=table_profile) >= 0.90
+    return (
+        internal_overlapping_block_token_coverage(
+            table, blocks, profile=table_profile, tokenized_blocks=tokenized_blocks
+        )
+        >= 0.90
+    )
 
 
 def internal_small_table_duplicated_by_page_text(
@@ -214,9 +194,9 @@ def internal_small_table_duplicated_by_page_text(
     blocks: list[Block],
     *,
     profile: internal_TableProfile | None = None,
-    block_counts: Counter[str] | None = None,
+    page_token_counts: Counter[str] | None = None,
 ) -> bool:
-    table_profile = profile or internal_build_table_profile(table)
+    table_profile = profile or internal_table_profile(table)
     if table.metadata.get("source") == "stream":
         return False
     if table_profile.has_grid_shape:
@@ -224,15 +204,13 @@ def internal_small_table_duplicated_by_page_text(
     table_tokens = table_profile.tokens
     if not 4 <= len(table_tokens) < 24:
         return False
-    page_token_counts = block_counts
-    if page_token_counts is None:
-        page_token_counts = Counter()
-        for block in blocks:
-            page_token_counts.update(internal_emitted_text_tokens(block.text))
-    if not page_token_counts:
+    token_counts = page_token_counts or Counter(
+        token for block in blocks for token in internal_emitted_text_tokens(block.text)
+    )
+    if not token_counts:
         return False
     matched = sum(
-        min(count, page_token_counts[token]) for token, count in table_profile.token_counts.items()
+        min(count, token_counts[token]) for token, count in table_profile.token_counts.items()
     )
     return matched / len(table_tokens) >= 0.90
 
@@ -241,67 +219,71 @@ def internal_covers_synthetic_chart_table(
     table: Table,
     tables: tuple[Table, ...],
     *,
-    profiles: internal_TableProfiles | None = None,
+    profiles: tuple[internal_TableProfile, ...] | None = None,
+    profile: internal_TableProfile | None = None,
 ) -> bool:
-    table_profile = internal_table_profile(table, profiles)
+    table_profile = profile or internal_table_profile(table)
     return any(
         other is not table
         and other.metadata.get("source") == "chart-ocr"
         and other.metadata.get("synthetic")
-        and internal_table_token_coverage(
-            other,
-            table,
-            candidate_profile=internal_table_profile(other, profiles),
-            reference_profile=table_profile,
+        and internal_table_profile_token_coverage(
+            profiles[index] if profiles is not None else internal_table_profile(other),
+            table_profile,
         )
         >= 0.95
-        for other in tables
+        for index, other in enumerate(tables)
     )
-
-
-def internal_fragmented_stream_table(
-    table: Table,
-    *,
-    profile: internal_TableProfile | None = None,
-) -> bool:
-    return (profile or internal_build_table_profile(table)).fragmented_stream
-
-
-def internal_noisy_stream_table(
-    table: Table,
-    *,
-    profile: internal_TableProfile | None = None,
-) -> bool:
-    return (profile or internal_build_table_profile(table)).noisy_stream
 
 
 def internal_remove_block_duplicate_tables(
     blocks: list[Block],
     tables: tuple[Table, ...],
-    *,
-    profiles: internal_TableProfiles | None = None,
 ) -> tuple[Table, ...]:
     if not blocks or not tables:
         return tables
     filtered: list[Table] = []
-    block_boxes = tuple(block.bbox for block in blocks if block.bbox is not None and block.text)
-    block_counts = Counter(
-        token for block in blocks for token in internal_emitted_text_tokens(block.text)
+    profiles = tuple(internal_table_profile(table) for table in tables)
+    needs_block_tokens = any(
+        not profile.structured_stream and not profile.has_grid_shape and len(profile.tokens) >= 4
+        for profile in profiles
     )
-    for table in tables:
-        profile = internal_table_profile(table, profiles)
+    tokenized_blocks = (
+        tuple(
+            (block.bbox, internal_emitted_text_tokens(block.text))
+            for block in blocks
+            if block.bbox is not None and block.text
+        )
+        if needs_block_tokens
+        else ()
+    )
+    block_boxes = tuple(block.bbox for block in blocks if block.bbox is not None and block.text)
+    needs_page_token_counts = any(
+        table.metadata.get("source") != "stream"
+        and not profile.has_grid_shape
+        and 4 <= len(profile.tokens) < 24
+        for table, profile in zip(tables, profiles)
+    )
+    page_token_counts = (
+        Counter(token for ignored_box, tokens in tokenized_blocks for token in tokens)
+        if needs_page_token_counts
+        else Counter()
+    )
+    for table, profile in zip(tables, profiles):
         covers_synthetic_chart = internal_covers_synthetic_chart_table(
-            table, tables, profiles=profiles
+            table, tables, profiles=profiles, profile=profile
         )
         if (
             (
                 (
-                    internal_table_duplicated_by_blocks(table, blocks, profile=profile)
+                    internal_table_duplicated_by_blocks(
+                        table, blocks, profile=profile, tokenized_blocks=tokenized_blocks
+                    )
                     or internal_small_table_duplicated_by_page_text(
                         table,
                         blocks,
                         profile=profile,
-                        block_counts=block_counts,
+                        page_token_counts=page_token_counts,
                     )
                 )
                 and not covers_synthetic_chart
@@ -319,7 +301,9 @@ def internal_remove_block_duplicate_tables(
                         for block_box in block_boxes
                     )
                 )
-                or internal_stream_table_duplicated_by_blocks(table, blocks, profile=profile)
+                or internal_stream_table_duplicated_by_blocks(
+                    table, blocks, profile=profile, tokenized_blocks=tokenized_blocks
+                )
             )
         ):
             continue
@@ -365,6 +349,10 @@ def internal_remove_block_duplicate_table_rows(
             continue
         block_counts = Counter(token for tokens in line_tokens for token in tokens)
         line_sets = [set(tokens) for tokens in line_tokens]
+        line_indexes_by_token: dict[str, set[int]] = {}
+        for line_index, line_set in enumerate(line_sets):
+            for token in line_set:
+                line_indexes_by_token.setdefault(token, set()).add(line_index)
         kept_rows: list[tuple[TableCell, ...]] = []
         for row in table.rows:
             cells = [cell for cell in row if cell.text]
@@ -373,7 +361,12 @@ def internal_remove_block_duplicate_table_rows(
                 kept_rows.append(row)
                 continue
             duplicated = False
-            for line, line_set in zip(line_tokens, line_sets):
+            candidate_line_indexes: set[int] = set()
+            for token in row_tokens:
+                candidate_line_indexes.update(line_indexes_by_token.get(token, ()))
+            for line_index in candidate_line_indexes:
+                line = line_tokens[line_index]
+                line_set = line_sets[line_index]
                 matched = sum(1 for token in row_tokens if token in line_set)
                 if matched / len(row_tokens) >= 0.9 and matched / len(line) >= 0.9:
                     duplicated = True
@@ -382,9 +375,20 @@ def internal_remove_block_duplicate_table_rows(
                 matched = sum(
                     min(count, block_counts[token]) for token, count in Counter(row_tokens).items()
                 )
-                fragment = any(
-                    all(token in line_set for token in row_tokens) for line_set in line_sets
-                )
+                shared_line_indexes: set[int] | None = None
+                for token in set(row_tokens):
+                    indexes = line_indexes_by_token.get(token)
+                    if not indexes:
+                        shared_line_indexes = set()
+                        break
+                    shared_line_indexes = (
+                        set(indexes)
+                        if shared_line_indexes is None
+                        else shared_line_indexes.intersection(indexes)
+                    )
+                    if not shared_line_indexes:
+                        break
+                fragment = bool(shared_line_indexes)
                 duplicated = matched / len(row_tokens) >= 0.9 and not fragment
             if not duplicated:
                 kept_rows.append(row)
@@ -398,15 +402,20 @@ def internal_remove_block_duplicate_table_rows(
 def internal_table_token_coverage(
     candidate: Table,
     reference: Table,
-    *,
-    candidate_profile: internal_TableProfile | None = None,
-    reference_profile: internal_TableProfile | None = None,
 ) -> float:
-    candidate_facts = candidate_profile or internal_build_table_profile(candidate)
+    return internal_table_profile_token_coverage(
+        internal_table_profile(candidate), internal_table_profile(reference)
+    )
+
+
+def internal_table_profile_token_coverage(
+    candidate_facts: internal_TableProfile,
+    reference_facts: internal_TableProfile,
+) -> float:
     candidate_tokens = candidate_facts.tokens
     if not candidate_tokens:
         return 0.0
-    reference_counts = (reference_profile or internal_build_table_profile(reference)).token_counts
+    reference_counts = reference_facts.token_counts
     matched = sum(
         min(count, reference_counts.get(token, 0))
         for token, count in candidate_facts.token_counts.items()
@@ -416,12 +425,10 @@ def internal_table_token_coverage(
 
 def internal_remove_duplicate_tables(
     tables: tuple[Table, ...],
-    *,
-    profiles: internal_TableProfiles | None = None,
 ) -> tuple[Table, ...]:
     filtered: list[Table] = []
-    for index, table in enumerate(tables):
-        profile = internal_table_profile(table, profiles)
+    profiles = tuple(internal_table_profile(table) for table in tables)
+    for index, (table, profile) in enumerate(zip(tables, profiles)):
         tokens = profile.tokens
         if not table.metadata and 0 < len(tokens) <= 8 and profile.token_set <= {"b", "i"}:
             continue
@@ -434,13 +441,7 @@ def internal_remove_duplicate_tables(
             and 0 < len(tokens) <= 24
             and any(
                 other_index != index
-                and internal_table_token_coverage(
-                    table,
-                    other,
-                    candidate_profile=profile,
-                    reference_profile=internal_table_profile(other, profiles),
-                )
-                >= 0.95
+                and internal_table_profile_token_coverage(profile, profiles[other_index]) >= 0.95
                 for other_index, other in enumerate(tables)
             )
         ):
@@ -452,17 +453,15 @@ def internal_remove_duplicate_tables(
 def internal_remove_table_duplicate_blocks(
     blocks: list[Block],
     tables: tuple[Table, ...],
-    *,
-    profiles: internal_TableProfiles | None = None,
 ) -> list[Block]:
     if not blocks or not tables:
         return blocks
-    table_boxes = [
-        (table.bbox, internal_table_profile(table, profiles).token_set)
-        for table in tables
-        if table.bbox is not None
-    ]
-    if not table_boxes:
+    table_profiles = [(table.bbox, internal_table_profile(table)) for table in tables]
+    table_boxes = [(box, profile.token_set) for box, profile in table_profiles if box is not None]
+    table_token_counts: Counter[str] = Counter()
+    for ignored_box, profile in table_profiles:
+        table_token_counts.update(profile.token_counts)
+    if not table_boxes and not table_token_counts:
         return blocks
     deduplicated: list[Block] = []
     for block in blocks:
@@ -472,6 +471,14 @@ def internal_remove_table_duplicate_blocks(
         block_tokens = internal_emitted_text_tokens(block.text)
         if not block_tokens:
             deduplicated.append(block)
+            continue
+        if (
+            block.provenance == ("ocr",)
+            and len(block_tokens) <= 3
+            and all(
+                table_token_counts[token] >= count for token, count in Counter(block_tokens).items()
+            )
+        ):
             continue
         duplicate = False
         contained_line_boxes: list[tuple[float, float, float, float]] = []
@@ -501,45 +508,14 @@ def internal_remove_table_duplicate_blocks(
     return deduplicated
 
 
-def internal_remove_tiny_table_duplicate_blocks(
-    blocks: list[Block],
-    tables: tuple[Table, ...],
-    *,
-    profiles: internal_TableProfiles | None = None,
-) -> list[Block]:
-    if not blocks or not tables:
-        return blocks
-    table_token_counts: Counter[str] = Counter()
-    for table in tables:
-        table_token_counts.update(internal_table_profile(table, profiles).token_counts)
-    if not table_token_counts:
-        return blocks
-    filtered: list[Block] = []
-    for block in blocks:
-        tokens = internal_emitted_text_tokens(block.text)
-        if (
-            block.provenance == ("ocr",)
-            and 0 < len(tokens) <= 3
-            and all(table_token_counts[token] >= count for token, count in Counter(tokens).items())
-        ):
-            continue
-        filtered.append(block)
-    return filtered
-
-
 def internal_project_text_and_tables(
     blocks: list[Block],
     parsed_tables: tuple[Table, ...],
 ) -> tuple[list[Block], tuple[Table, ...]]:
     """Resolve overlap once, producing explicit text and table projections."""
-    profiles = {id(table): internal_build_table_profile(table) for table in parsed_tables}
     tables = internal_remove_duplicate_tables(
-        internal_remove_block_duplicate_tables(blocks, parsed_tables, profiles=profiles),
-        profiles=profiles,
+        internal_remove_block_duplicate_tables(blocks, parsed_tables),
     )
-    text_blocks = internal_remove_table_duplicate_blocks(blocks, tables, profiles=profiles)
-    text_blocks = internal_remove_tiny_table_duplicate_blocks(
-        text_blocks, tables, profiles=profiles
-    )
+    text_blocks = internal_remove_table_duplicate_blocks(blocks, tables)
     tables = internal_remove_block_duplicate_table_rows(text_blocks, tables)
     return text_blocks, tables

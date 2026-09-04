@@ -1,4 +1,3 @@
-import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -8,7 +7,7 @@ from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_content.capture import type3_glyph_names
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder, Type3CharProcProgram
+from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from tests.helpers.resolvers import IdentityResolver
 
 
@@ -17,8 +16,6 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            decoder_cache={},
-            internal_cache_lock=threading.RLock(),
             legacy_pdfminer_text_operators=False,
         ),
     )
@@ -32,23 +29,6 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
     decoder = FontDecoder(font)
     decoder.type3_glyph_names = {65: "A"}
     return state, decoder
-
-
-def internal_drawing_signature(state: TextState) -> list[tuple[object, ...]]:
-    return [
-        (
-            drawing.kind,
-            drawing.seqno,
-            drawing.fill,
-            drawing.fill_opacity,
-            drawing.fill_rule,
-            drawing.path.bbox() if drawing.path is not None else None,
-            tuple((tuple(subpath.points), subpath.closed) for subpath in drawing.path.subpaths)
-            if drawing.path is not None
-            else (),
-        )
-        for drawing in state.drawings
-    ]
 
 
 def test_type3_names_include_base_encoding_and_differences() -> None:
@@ -72,8 +52,6 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            decoder_cache={},
-            internal_cache_lock=threading.RLock(),
             legacy_pdfminer_text_operators=False,
         ),
     )
@@ -92,7 +70,6 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
     assert decoder.type3_glyph_names is not None
     assert 0 not in decoder.type3_glyph_names
     assert decoder.type3_glyph_names[128] == "Euro"
-    assert decoder.type3_charproc_cache[128] is not None
     assert len(state.drawings) == 1
     assert state.drawings[0].path is not None
     # ISO 32000-1 9.6.5 concatenates the font matrix with the text space in
@@ -101,51 +78,34 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
     assert state.drawings[0].path.bbox() == pytest.approx((0.0, 0.0, 0.012, 0.012))
 
 
-def test_type3_char_proc_compiles_once_and_replays_exactly() -> None:
+def test_repeated_type3_char_proc_does_not_leak_stream_state() -> None:
     stream = PdfStream(raw_data=b"500 0 0 0 1 1 d1 q 0 0 m 1 0 l 1 1 l 0 1 l h f Q")
-    compiled_state, compiled_decoder = internal_type3_state(stream)
+    state, decoder = internal_type3_state(stream)
 
-    compiled_state._render_type3_glyphs_impl(b"AAA", compiled_decoder)
+    state._render_type3_glyphs_impl(b"AAA", decoder)
 
-    fallback_state, fallback_decoder = internal_type3_state(stream)
-    fallback_decoder.type3_charproc_cache[65] = Type3CharProcProgram(stream, None)
-    fallback_state._render_type3_glyphs_impl(b"AAA", fallback_decoder)
-
-    assert internal_drawing_signature(compiled_state) == internal_drawing_signature(fallback_state)
-    assert compiled_decoder.type3_charproc_compiled_programs == 1
-    assert compiled_decoder.type3_charproc_unsafe_fallbacks == 0
-    assert not compiled_state.active_streams
-    assert not compiled_state.stack
-    assert not compiled_state.clip_scope_stack
+    assert len(state.drawings) == 3
+    assert not state.active_streams
+    assert not state.stack
+    assert not state.clip_scope_stack
 
 
-def test_type3_char_proc_caches_unsupported_stream_fallback() -> None:
+def test_type3_char_proc_with_unresolved_xobject_does_not_leak_stream_state() -> None:
     stream = PdfStream(raw_data=b"/Nested Do")
     state, decoder = internal_type3_state(stream)
 
     state._render_type3_glyphs_impl(b"AA", decoder)
 
-    cached = decoder.type3_charproc_cache[65]
-    assert cached is not None
-    assert cached.operations is None
-    assert decoder.type3_charproc_cache_misses == 1
-    assert decoder.type3_charproc_cache_hits == 1
-    assert decoder.type3_charproc_compiled_programs == 0
-    assert decoder.type3_charproc_unsafe_fallbacks == 2
+    assert not state.drawings
     assert not state.active_streams
 
 
-def test_type3_dash_operator_uses_safe_fallback_and_preserves_dash() -> None:
-    # Dash operands contain an array and cannot use the direct replay representation.
+def test_type3_dash_operator_preserves_dash() -> None:
     stream = PdfStream(raw_data=b"500 0 d0 [3 2] 1 d 0 0 m 10 0 l S")
     state, decoder = internal_type3_state(stream)
 
     state._render_type3_glyphs_impl(b"A", decoder)
 
-    cached = decoder.type3_charproc_cache[65]
-    assert cached is not None
-    assert cached.operations is None
-    assert decoder.type3_charproc_unsafe_fallbacks == 1
     assert len(state.drawings) == 1
     dash_pattern = state.drawings[0].dash_pattern
     assert dash_pattern is not None

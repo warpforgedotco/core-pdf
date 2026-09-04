@@ -98,23 +98,8 @@ REPLACEMENTS: dict[str, Any] = {
     "glyph_clusters": (OTHER_CLUSTER,),
 }
 
-# The eight packed coordinates live in `coords`, not in same-named attributes.
-COORD_INDEX = {
-    "x0": TextRun.X0,
-    "y0": TextRun.Y0,
-    "x1": TextRun.X1,
-    "y1": TextRun.Y1,
-    "tx": TextRun.TX,
-    "ty": TextRun.TY,
-    "font_size": TextRun.FONT_SIZE,
-    "space_width": TextRun.SPACE_WIDTH,
-}
-
 
 def field_value(run: TextRun, name: str) -> Any:
-    index = COORD_INDEX.get(name)
-    if index is not None:
-        return run.coords[index]
     return getattr(run, name)
 
 

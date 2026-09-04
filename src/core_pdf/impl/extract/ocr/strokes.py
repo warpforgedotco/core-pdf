@@ -112,13 +112,8 @@ class StrokedTextProfile:
     """Reusable segmentation and signatures for one flattened vector font layer."""
 
     records: tuple[internal_PathRecord, ...] = ()
-    runs: tuple[tuple[internal_Glyph, ...], ...] = ()
     run_profiles: tuple[internal_StrokedTextRunProfile, ...] = ()
     seed_runs: tuple[StrokedTextRun, ...] = ()
-    signatures: tuple[tuple[tuple[int, ...], GlyphSignature | None], ...] = ()
-
-    def signature_cache(self) -> dict[tuple[int, ...], GlyphSignature | None]:
-        return dict(self.signatures)
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,12 +176,8 @@ def internal_group_overlapping_x(
 
 def internal_glyph_signature(
     glyph: internal_Glyph,
-    cache: dict[tuple[int, ...], GlyphSignature | None] | None = None,
 ) -> GlyphSignature | None:
     """Return a translation- and scale-independent polyline signature."""
-    cache_key = tuple(record.index for record in glyph)
-    if cache is not None and cache_key in cache:
-        return cache[cache_key]
     points = tuple(
         point
         for record in glyph
@@ -194,14 +185,12 @@ def internal_glyph_signature(
         for point in subpath.points
     )
     if not points:
-        if cache is not None:
-            cache[cache_key] = None
         return None
     x0, y0, x1, y1 = points_bbox(points) or (0.0, 0.0, 0.0, 0.0)
     x_scale = max(0.02, x1 - x0)
     y_scale = max(0.02, y1 - y0)
     quantization = STROKED_TEXT_SIGNATURE_QUANTIZATION
-    signature = tuple(
+    return tuple(
         tuple(
             (
                 bool(subpath.closed),
@@ -217,9 +206,6 @@ def internal_glyph_signature(
         )
         for record in glyph
     )
-    if cache is not None:
-        cache[cache_key] = signature
-    return signature
 
 
 def internal_seed_text(seed: StrokedTextSeed) -> str | None:
@@ -248,7 +234,6 @@ def internal_seed_run_overlap(
 def internal_seed_samples(
     profile: StrokedTextProfile,
     seeds: tuple[StrokedTextSeed, ...],
-    signature_cache: dict[tuple[int, ...], GlyphSignature | None] | None = None,
 ) -> tuple[tuple[internal_SeedSample, ...], int]:
     samples: list[internal_SeedSample] = []
     eligible = 0
@@ -297,7 +282,7 @@ def internal_seed_samples(
         glyphs = internal_group_overlapping_x(hits)
         if len(glyphs) != len(text):
             continue
-        signatures = tuple(internal_glyph_signature(glyph, signature_cache) for glyph in glyphs)
+        signatures = tuple(internal_glyph_signature(glyph) for glyph in glyphs)
         if any(signature is None for signature in signatures):
             continue
         samples.append(
@@ -541,7 +526,8 @@ def stroked_text_isolated_runs(profile: StrokedTextProfile) -> tuple[StrokedText
     stubs, junction dashes) stay excluded via the aspect gate.
     """
     isolated: list[StrokedTextRun] = []
-    for glyphs in profile.runs:
+    for run in profile.run_profiles:
+        glyphs = run.glyphs
         if len(glyphs) != 1:
             continue
         box = internal_glyph_bbox(glyphs[0])
@@ -593,10 +579,9 @@ def profile_stroked_text(
     if not records:
         return StrokedTextProfile()
     runs = internal_path_runs(records)
-    signature_cache: dict[tuple[int, ...], GlyphSignature | None] = {}
     run_profiles: list[internal_StrokedTextRunProfile] = []
     for run in runs:
-        signatures = tuple(internal_glyph_signature(glyph, signature_cache) for glyph in run)
+        signatures = tuple(internal_glyph_signature(glyph) for glyph in run)
         bbox = internal_required_bbox(internal_glyph_bbox(glyph) for glyph in run)
         run_profiles.append(
             internal_StrokedTextRunProfile(
@@ -610,10 +595,8 @@ def profile_stroked_text(
         )
     return StrokedTextProfile(
         records=records,
-        runs=runs,
         run_profiles=tuple(run_profiles),
         seed_runs=tuple(run.seed_run for run in run_profiles if run.seed_run is not None),
-        signatures=tuple(signature_cache.items()),
     )
 
 
@@ -716,8 +699,7 @@ def decode_stroked_text_profile(
     """Learn and decode a page-local font from an existing structural profile."""
     if not profile.records or not seeds:
         return StrokedTextDecode()
-    signature_cache = profile.signature_cache()
-    samples, eligible = internal_seed_samples(profile, seeds, signature_cache)
+    samples, eligible = internal_seed_samples(profile, seeds)
     if not samples:
         return StrokedTextDecode(eligible_seeds=eligible)
     mapping, initial, accepted = internal_consensus_mapping(samples)
@@ -752,17 +734,8 @@ def decode_stroked_text_profile_with_supplemental_seeds(
     if not profile.records:
         return StrokedTextDecode()
 
-    signature_cache = profile.signature_cache()
-    primary_samples, primary_eligible = internal_seed_samples(
-        profile,
-        primary_seeds,
-        signature_cache,
-    )
-    supplemental_samples, supplemental_eligible = internal_seed_samples(
-        profile,
-        supplemental_seeds,
-        signature_cache,
-    )
+    primary_samples, primary_eligible = internal_seed_samples(profile, primary_seeds)
+    supplemental_samples, supplemental_eligible = internal_seed_samples(profile, supplemental_seeds)
     samples = (*primary_samples, *supplemental_samples)
     eligible = primary_eligible + supplemental_eligible
     if not samples:

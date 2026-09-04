@@ -6,7 +6,6 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import lru_cache
 from importlib.resources import files
 from typing import Protocol, cast
 
@@ -57,7 +56,6 @@ def internal_provider_face(
     return callback(request)
 
 
-@lru_cache(maxsize=256)
 def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
     name = strip_subset_tag(font_name or "").lower()
     if "zapfdingbats" in name:
@@ -87,16 +85,9 @@ def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
     return (f"{family}-{style}.ttf",)
 
 
-@lru_cache(maxsize=12)
 def internal_builtin_font(face_name: str) -> TrueTypeFontProgram:
     resource = files(__package__).joinpath("data", "raster_fonts", face_name)
     return TrueTypeFontProgram(resource.read_bytes(), use_cmap=True)
-
-
-@lru_cache(maxsize=16)
-def internal_custom_font(identifier: str, data: bytes) -> TrueTypeFontProgram:
-    del identifier
-    return TrueTypeFontProgram(data, use_cmap=True)
 
 
 def fallback_glyph_outline(
@@ -124,7 +115,7 @@ def fallback_glyph_outline(
     programs: list[TrueTypeFontProgram] = []
     if face is not None:
         with contextlib.suppress(OSError, ValueError):
-            programs.append(internal_custom_font(face.identifier, face.data))
+            programs.append(TrueTypeFontProgram(face.data, use_cmap=True))
     for face_name in internal_builtin_face_names(font_name):
         try:
             programs.append(internal_builtin_font(face_name))

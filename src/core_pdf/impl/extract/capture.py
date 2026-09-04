@@ -16,10 +16,10 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     VECTOR_PAINT_KINDS,
-    CapturedPage,
     GlyphEvidence,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     PageEvidence,
     StrokedVectorTextEvidence,
     TextQualityStats,
@@ -27,8 +27,6 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.ocr.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.extract.quality import internal_analyze_text
 from core_pdf.impl.model.geometry import (
-    SpatialIndex,
-    bbox_intersection_area,
     bbox_union,
     interval_overlap,
     rect_tuple,
@@ -44,6 +42,7 @@ from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )
 
+internal_STRUCTURE_UNSET = object()
 WORD_TOKEN_RE = re.compile(r"\w+")
 VECTOR_PAINT_OPERATION_WEIGHT = 3
 LearnedUnicodeMap = Mapping[object, Mapping[bytes, str]]
@@ -126,18 +125,33 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
     primary_tokens = tokens_by_box[primary_box]
     if len(primary_tokens) < DUPLICATE_LAYER_MIN_TOKENS:
         return runs
-    duplicate_boxes: set[tuple[float, float, float, float]] = set()
-    primary_index = SpatialIndex.from_items(
-        primary_runs, bbox=lambda run: (run.x0, run.y0, run.x1, run.y1)
+    candidate_boxes = [
+        box
+        for box in groups
+        if box != primary_box and len(tokens_by_box[box]) >= DUPLICATE_LAYER_MIN_TOKENS
+    ]
+    if not candidate_boxes:
+        return runs
+    candidate_geometry = numpy.asarray(candidate_boxes, dtype=numpy.float64)
+    primary_geometry = numpy.asarray(
+        [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs],
+        dtype=numpy.float64,
     )
-    for box in groups:
-        if box == primary_box or len(tokens_by_box[box]) < DUPLICATE_LAYER_MIN_TOKENS:
-            continue
+    intersections = (
+        (candidate_geometry[:, None, 0] < primary_geometry[None, :, 2])
+        & (candidate_geometry[:, None, 2] > primary_geometry[None, :, 0])
+        & (candidate_geometry[:, None, 1] < primary_geometry[None, :, 3])
+        & (candidate_geometry[:, None, 3] > primary_geometry[None, :, 1])
+    )
+    duplicate_boxes: set[tuple[float, float, float, float]] = set()
+    for box, intersects in zip(candidate_boxes, intersections, strict=True):
         # Compare with primary-layer text painted in the same region. A page's
         # table cells legitimately have separate clipping boxes and repeat much
         # of the surrounding vocabulary; comparing each cell with every token
         # on the page deleted non-duplicate rows from ISO 32000-2:2020 Table 22.
-        local_tokens = internal_normalized_tokens(primary_index.intersecting(box))
+        local_tokens = internal_normalized_tokens(
+            tuple(primary_runs[int(index)] for index in numpy.flatnonzero(intersects))
+        )
         if (
             len(local_tokens) >= DUPLICATE_LAYER_MIN_TOKENS
             and internal_token_overlap(tokens_by_box[box], local_tokens)
@@ -171,12 +185,16 @@ def internal_run_mcid(run: TextRun) -> int | None:
 def internal_apply_structure_actual_text(
     page: Any,
     runs: tuple[TextRun, ...],
+    structure: Any = internal_STRUCTURE_UNSET,
 ) -> tuple[TextRun, ...]:
     if not any(internal_run_mcid(run) is not None for run in runs):
         return runs
-    try:
-        structure = page.structure
-    except (IndexError, TypeError, ValueError):
+    if structure is internal_STRUCTURE_UNSET:
+        try:
+            structure = page.structure
+        except (IndexError, TypeError, ValueError):
+            return runs
+    if structure is None:
         return runs
     replaced_mcids: set[int] = set()
     output: list[TextRun] = []
@@ -394,7 +412,6 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
     font_size_values: list[float] = []
     line_break_values: list[bool] = []
     for i, run in enumerate(runs):
-        c = run.coords
         box_rows.append(internal_layout_bbox_for_run(run))
         conf = run.confidence
         confidence_values.append(conf if conf is not None else math.nan)
@@ -402,7 +419,7 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
         sequence_values.append(seq if seq >= 0 else i)
         visible_values.append(run.visible)
         rotation_values.append(run.rotation_angle)
-        font_size_values.append(c[6])
+        font_size_values.append(run.font_size)
         line_break_values.append(run.line_break_before)
 
     boxes = numpy.asarray(box_rows, dtype=numpy.float32)
@@ -432,7 +449,7 @@ def internal_promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, .
     return tuple(internal_promote_hidden_run(run) if not run.visible else run for run in runs)
 
 
-def internal_promoted_hidden_observations(capture: CapturedPage) -> ObservationBatch:
+def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     """Expose a verified hidden layer while preserving its original geometry and ordering."""
     return internal_observations_from_runs(internal_promoted_hidden_runs(capture.runs))
 
@@ -631,17 +648,6 @@ def internal_uncovered_vector_area(
             rectangles.append((x0, y0, x1, y1, area))
     if not rectangles:
         return 0.0
-    if len(rectangles) * len(native) > 65_536:
-        native_index = SpatialIndex.from_boxes(native)
-        uncovered = 0.0
-        for x0, y0, x1, y1, area in rectangles:
-            box = (x0, y0, x1, y1)
-            covered = sum(
-                bbox_intersection_area(box, hit.bbox) for hit in native_index.intersecting_hits(box)
-            )
-            uncovered += max(0.0, area - min(area, covered))
-        return uncovered
-
     # Evaluate a bounded batch at a time. This keeps the overlap calculation
     # vectorized without allocating a drawings-by-observations matrix for the
     # entire page.
@@ -671,9 +677,9 @@ def internal_uncovered_vector_area(
 
 
 def internal_capture_with_newstroke_text(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     decoded: NewstrokeDecode,
-) -> CapturedPage:
+) -> PageAnalysis:
     """Promote a page-level, template-verified vector font into native observations."""
     runs = decoded.runs
     observations = internal_observations_from_runs(runs)
@@ -718,13 +724,15 @@ def internal_capture_from_program(
     program: PageProgram,
     *,
     learned_unicode: LearnedUnicodeMap | None = None,
-) -> CapturedPage:
-    products = program.products
-    program_runs = tuple(products.runs)
+    structure: Any = internal_STRUCTURE_UNSET,
+    fields: tuple[Any, ...] | None = None,
+    annotations: tuple[Any, ...] | None = None,
+) -> PageAnalysis:
+    program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
-    for glyph_seqno, glyph_font_name in products.glyphs.iter_font_names():
-        if glyph_font_name:
-            glyphs_by_seqno[int(glyph_seqno)].append(glyph_font_name)
+    for glyph in program.glyphs:
+        if glyph.font_name:
+            glyphs_by_seqno[glyph.seqno].append(glyph.font_name)
     glyph_seqnos = tuple(sorted(glyphs_by_seqno))
     enriched_runs: list[TextRun] = []
     for index, run in enumerate(program_runs):
@@ -738,7 +746,8 @@ def internal_capture_from_program(
         # the run copy when the name would not change.
         majority: str | None = None
         mixed = False
-        for seqno in glyph_seqnos[lo:hi]:
+        for glyph_position in range(lo, hi):
+            seqno = glyph_seqnos[glyph_position]
             for font_name in glyphs_by_seqno[seqno]:
                 if majority is None:
                     majority = font_name
@@ -749,20 +758,31 @@ def internal_capture_from_program(
                 break
         if mixed:
             font_counts = Counter(
-                font_name for seqno in glyph_seqnos[lo:hi] for font_name in glyphs_by_seqno[seqno]
+                font_name
+                for glyph_position in range(lo, hi)
+                for font_name in glyphs_by_seqno[glyph_seqnos[glyph_position]]
             )
             majority = font_counts.most_common(1)[0][0]
         if majority is None or majority == run.font_name:
             enriched_runs.append(run)
         else:
             enriched_runs.append(run.replace(font_name=majority))
-    structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs))
+    structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs), structure)
     raw_runs = tuple(
         internal_apply_learned_unicode_to_run(run, learned_unicode)
         for run in internal_extractable_runs(structured_runs)
     )
+    painted_mask = numpy.fromiter(
+        (run.visible for run in raw_runs),
+        dtype=numpy.bool_,
+        count=len(raw_runs),
+    )
     raw_text = "".join(run.text for run in raw_runs)
-    painted_text = "".join(run.text for run in raw_runs if run.visible)
+    painted_text = (
+        raw_text
+        if bool(numpy.all(painted_mask))
+        else "".join(run.text for run in raw_runs if run.visible)
+    )
     raw_analysis = internal_analyze_text(raw_text)
     suspicious_characters = raw_analysis.suspicious_characters
     all_text_quality = raw_analysis.quality
@@ -775,7 +795,17 @@ def internal_capture_from_program(
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
     glyph_evidence = internal_glyph_evidence_fields(
-        products.glyphs.iter_evidence_rows(),
+        (
+            (
+                glyph.text,
+                glyph.visible,
+                glyph.font_decoder,
+                glyph.code_bytes,
+                glyph.unicode_source,
+                glyph.confidence,
+            )
+            for glyph in program.glyphs
+        ),
         raw_runs,
         learned_unicode,
     )
@@ -786,21 +816,17 @@ def internal_capture_from_program(
         quality=all_text_quality,
         glyphs=glyph_evidence,
     )
-    runs = internal_promoted_hidden_runs(raw_runs) if trusted_hidden_text else raw_runs
-    observations = internal_observations_from_runs(runs)
-    visible_text = "".join(run.text for run in runs if run.visible)
-    if visible_text == raw_text:
+    if trusted_hidden_text:
+        runs = internal_promoted_hidden_runs(raw_runs)
         visible_native_characters = native_characters
         visible_text_quality = all_text_quality
-    elif visible_text == painted_text:
+    else:
+        runs = raw_runs
         visible_native_characters = painted_native_characters
         visible_text_quality = painted_text_quality
-    else:
-        visible_analysis = internal_analyze_text(visible_text)
-        visible_text_quality = visible_analysis.quality
-        visible_native_characters = visible_analysis.characters
-    drawings = tuple(products.drawings)
-    inline_images = tuple(products.inline_images)
+    observations = internal_observations_from_runs(runs)
+    drawings = program.drawings
+    inline_images = program.inline_images
     image_filters = tuple(
         filter_name
         for drawing in drawings
@@ -820,25 +846,22 @@ def internal_capture_from_program(
         )
     page_width = float(page.width)
     page_height = float(page.height)
+    page_rotation = int(getattr(page, "rotation", 0) or 0)
     page_area = max(1.0, page_width * page_height)
     visible = observations.visible
     boxes = observations.bbox
-    visible_widths = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
-    visible_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
+    box_areas = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
+    box_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
+    numpy.multiply(box_areas, box_heights, out=box_areas)
+    coverage_areas = numpy.multiply(box_areas, visible)
     text_coverage = min(
         1.0,
-        float(numpy.sum(visible_widths * visible_heights * visible, dtype=numpy.float64))
-        / page_area,
+        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
     )
-    painted_mask = numpy.fromiter(
-        (run.visible for run in raw_runs),
-        dtype=numpy.bool_,
-        count=len(raw_runs),
-    )
+    numpy.multiply(box_areas, painted_mask, out=coverage_areas)
     painted_text_coverage = min(
         1.0,
-        float(numpy.sum(visible_widths * visible_heights * painted_mask, dtype=numpy.float64))
-        / page_area,
+        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
     )
     visible_image_areas: list[float] = []
     visible_image_boxes: list[tuple[float, float, float, float]] = []
@@ -863,7 +886,7 @@ def internal_capture_from_program(
     image_count = len(inline_images) + sum(
         area >= page_area * 0.001 for area in visible_image_areas
     )
-    grid_lines = products.lines
+    grid_lines = program.lines
     full_page_image = any(
         width >= page_width * FULL_PAGE_IMAGE_COVERAGE
         and height >= page_height * FULL_PAGE_IMAGE_COVERAGE
@@ -880,8 +903,13 @@ def internal_capture_from_program(
         observations,
         page_area=page_area,
     )
-    captured = CapturedPage(
+    captured = PageAnalysis(
         page=page,
+        width=page_width,
+        height=page_height,
+        rotation=page_rotation,
+        fields=fields,
+        annotations=annotations,
         program=program,
         observations=observations,
         runs=runs,
@@ -927,7 +955,7 @@ def internal_capture_from_program(
             drawings,
             page_width=page_width,
             page_height=page_height,
-            rotation=int(getattr(page, "rotation", 0) or 0),
+            rotation=page_rotation,
         )
         captured = replace(
             captured,
@@ -936,12 +964,30 @@ def internal_capture_from_program(
     return captured
 
 
-def capture_page(page: Any) -> CapturedPage:
+def capture_page(
+    page: Any,
+    *,
+    structure: Any = internal_STRUCTURE_UNSET,
+    hidden_layers: frozenset[str] | None = None,
+    fields: tuple[Any, ...] | None = None,
+    annotations: tuple[Any, ...] | None = None,
+) -> PageAnalysis:
     """Build the canonical page products once and derive routing evidence from them."""
-    return internal_capture_from_program(page, page.get_page_program())
+    program = (
+        page.get_page_program()
+        if hidden_layers is None
+        else page.get_page_program(hidden_layers=hidden_layers)
+    )
+    return internal_capture_from_program(
+        page,
+        program,
+        structure=structure,
+        fields=fields,
+        annotations=annotations,
+    )
 
 
-def internal_requires_high_resolution_vector_ocr(capture: CapturedPage) -> bool:
+def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
     """Identify pure-vector diagrams whose tiny stroked labels need the maximum raster."""
     evidence = capture.evidence
     if not (

@@ -15,18 +15,17 @@ from core_pdf.impl.extract.contracts import (
     PSM_AUTO,
     PSM_SPARSE_TEXT,
     PSM_SPARSE_TEXT_OSD,
-    CapturedPage,
     FusionPolicy,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     PageEvidence,
     PagePlanReason,
     PageRoute,
     WorkPlan,
 )
 from core_pdf.impl.extract.quality import internal_candidate
-from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.text import compact_text, text_tokens
 
@@ -57,9 +56,7 @@ FUSION_NOISY_NATIVE_MIN_CONFIDENCE = 90.0
 
 COVERAGE_CHUNK = 256
 
-# Upper bound on elements materialized per vectorized overlap chunk. The chunked
-# path broadcasts COVERAGE_CHUNK candidates against the full native set, so only
-# the native box count bounds per-chunk memory.
+# Upper bound on elements materialized per vectorized overlap chunk.
 COVERAGE_VECTORIZED_ELEMENTS = 1_000_000
 
 
@@ -70,23 +67,17 @@ def maximum_candidate_coverage(
     """Return each candidate's maximum covered-area ratio in bounded chunks."""
     if not len(candidate_boxes) or not len(native_boxes):
         return numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
-    if len(native_boxes) * COVERAGE_CHUNK > COVERAGE_VECTORIZED_ELEMENTS:
-        native_index = SpatialIndex.from_boxes(native_boxes)
-        output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
-        for index, box in enumerate(candidate_boxes):
-            area = max(1.0, float((box[2] - box[0]) * (box[3] - box[1])))
-            maximum = 0.0
-            for hit in native_index.intersecting_hits(box):
-                maximum = max(maximum, bbox_intersection_area(box, hit.bbox))
-            output[index] = maximum / area
-        return output
     output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
     native_x0 = native_boxes[:, 0][None, :]
     native_y0 = native_boxes[:, 1][None, :]
     native_x1 = native_boxes[:, 2][None, :]
     native_y1 = native_boxes[:, 3][None, :]
-    for start in range(0, len(candidate_boxes), COVERAGE_CHUNK):
-        stop = min(len(candidate_boxes), start + COVERAGE_CHUNK)
+    chunk_size = min(
+        COVERAGE_CHUNK,
+        max(1, COVERAGE_VECTORIZED_ELEMENTS // len(native_boxes)),
+    )
+    for start in range(0, len(candidate_boxes), chunk_size):
+        stop = min(len(candidate_boxes), start + chunk_size)
         boxes = candidate_boxes[start:stop]
         widths = numpy.maximum(
             0.0,
@@ -102,11 +93,12 @@ def maximum_candidate_coverage(
             1.0,
             (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]),
         )
-        output[start:stop] = numpy.max(widths * heights, axis=1) / areas
+        numpy.multiply(widths, heights, out=widths)
+        output[start:stop] = numpy.max(widths, axis=1) / areas
     return output
 
 
-def internal_ocr_scale(capture: CapturedPage, *, schematic: bool, vector_complexity: int) -> float:
+def internal_ocr_scale(capture: PageAnalysis, *, schematic: bool, vector_complexity: int) -> float:
     if not schematic or vector_complexity < 4_000:
         return 3.0
     if vector_complexity < 150_000:
@@ -116,7 +108,7 @@ def internal_ocr_scale(capture: CapturedPage, *, schematic: bool, vector_complex
     return 3.5 if capture.evidence.image_count else 4.0
 
 
-def internal_vector_text_scale(capture: CapturedPage, vector_complexity: int) -> float:
+def internal_vector_text_scale(capture: PageAnalysis, vector_complexity: int) -> float:
     """Choose a higher raster scale for text embedded in vector artwork.
 
     Charts and diagrams often use small glyphs painted alongside thousands of
@@ -137,7 +129,7 @@ def internal_schematic_page(
     return vector_complexity >= 180 and (text_density < 0.0015 or text_coverage < 0.05)
 
 
-def internal_rotated_native_characters(capture: CapturedPage) -> int:
+def internal_rotated_native_characters(capture: PageAnalysis) -> int:
     observations = getattr(capture, "observations", None)
     if observations is None or not hasattr(observations, "text"):
         return 0
@@ -192,7 +184,7 @@ def internal_drawing_is_simple_rectangle(drawing: object) -> bool:
     return isinstance(path, CapturedPath) and path.axis_aligned_rect() is not None
 
 
-def internal_has_only_simple_vector_rectangles(capture: CapturedPage) -> bool:
+def internal_has_only_simple_vector_rectangles(capture: PageAnalysis) -> bool:
     drawings = tuple(
         drawing
         for drawing in getattr(capture, "drawings", ())
@@ -251,7 +243,7 @@ def internal_fallback_pass(
     )
 
 
-def plan_page(capture: CapturedPage) -> WorkPlan:
+def plan_page(capture: PageAnalysis) -> WorkPlan:
     evidence = capture.evidence
     total_characters = evidence.native_characters
     characters = evidence.visible_native_characters

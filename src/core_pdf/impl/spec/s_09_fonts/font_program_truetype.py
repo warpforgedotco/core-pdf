@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 import struct
-from functools import lru_cache
 from io import BytesIO
 from typing import Any
 
+from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
+from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.model.geometry import transform_bbox
 from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours, scale_contours
@@ -21,6 +22,29 @@ from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contour
 # failure from the parser as "this font program is unusable" instead of trying
 # to enumerate what a corrupt one can raise.
 FONT_PROGRAM_ERRORS = Exception
+
+
+def internal_fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
+    glyph_set[glyph_name].draw(pen)
+    return tuple(tuple(contour) for contour in internal_recording_to_contours(pen.value))
+
+
+def internal_fonttools_bbox(
+    font: Any,
+    glyph_id: int,
+    scale: float,
+) -> tuple[float, float, float, float] | None:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    bounds_pen = BoundsPen(glyph_set)
+    glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
+    if bounds_pen.bounds is None:
+        return None
+    x_min, y_min, x_max, y_max = bounds_pen.bounds
+    return float(x_min), float(y_min), float(x_max), float(y_max)
 
 
 class internal_RecoverableFontTableWarningFilter(logging.Filter):
@@ -57,10 +81,6 @@ class TrueTypeFontProgram:
         "cmap",
         "unicode_cmap",
         "glyph_to_unicode",
-        "internal_glyph_set",
-        "internal_glyph_contour_cache",
-        "internal_normalized_contour_cache",
-        "internal_glyph_bitmap_cache",
     )
 
     def __init__(
@@ -83,10 +103,6 @@ class TrueTypeFontProgram:
             self.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
         else:
             self.cmap = {}
-        self.internal_glyph_set: Any | None = None
-        self.internal_glyph_contour_cache: dict[int, tuple[tuple[Point, ...], ...]] = {}
-        self.internal_normalized_contour_cache: dict[int, tuple[tuple[Point, ...], ...]] = {}
-        self.internal_glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
 
     def glyph_id_for_code(self, code: int) -> int:
         if self.cid_to_gid is not None:
@@ -116,19 +132,8 @@ class TrueTypeFontProgram:
     def glyph_bitmap_for_gid(
         self, gid: int, *, width: int = 24, height: int = 32
     ) -> tuple[int, ...]:
-        cache_key = (gid, width, height)
-        cached = self.internal_glyph_bitmap_cache.get(cache_key)
-        if cached is not None:
-            return cached
         contours = self.internal_glyph_contours_for_gid(gid)
-        if not contours:
-            self.internal_glyph_bitmap_cache[cache_key] = ()
-            return ()
-        bitmap = rasterize_contours(contours, width=width, height=height)
-        if len(self.internal_glyph_bitmap_cache) >= 512:
-            self.internal_glyph_bitmap_cache.pop(next(iter(self.internal_glyph_bitmap_cache)))
-        self.internal_glyph_bitmap_cache[cache_key] = bitmap
-        return bitmap
+        return rasterize_contours(contours, width=width, height=height) if contours else ()
 
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
@@ -151,49 +156,18 @@ class TrueTypeFontProgram:
         return [list(contour) for contour in self.internal_glyph_contours_for_gid(gid)]
 
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
-        """Return an immutable outline in PDF's 1000-unit glyph space.
-
-        Cached like the OpenType sibling: real TrueType programs have 2048
-        units per em, so ``scale`` is never 1.0 and the rescale below rebuilt
-        every contour tuple on each painted glyph.
-        """
-        cached = self.internal_normalized_contour_cache.get(gid)
-        if cached is not None:
-            return cached
+        """Return an immutable outline in PDF's 1000-unit glyph space."""
         contours = self.internal_glyph_contours_for_gid(gid)
         if not contours:
             return ()
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
-        normalized = contours if scale == 1.0 else scale_contours(contours, scale)
-        if len(self.internal_normalized_contour_cache) >= 512:
-            self.internal_normalized_contour_cache.pop(
-                next(iter(self.internal_normalized_contour_cache))
-            )
-        self.internal_normalized_contour_cache[gid] = normalized
-        return normalized
+        return contours if scale == 1.0 else scale_contours(contours, scale)
 
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
-        cached = self.internal_glyph_contour_cache.get(gid)
-        if cached is not None:
-            return cached
         try:
-            glyph_name = self.font.getGlyphName(gid)
-            glyph_set = self.internal_glyph_set
-            if glyph_set is None:
-                glyph_set = self.font.getGlyphSet()
-                self.internal_glyph_set = glyph_set
-            glyph = glyph_set[glyph_name]
-            pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
-            glyph.draw(pen)
-            contours = tuple(
-                tuple(contour) for contour in internal_recording_to_contours(pen.value)
-            )
+            return internal_fonttools_contours(self.font, gid)
         except FONT_PROGRAM_ERRORS:
-            contours = ()
-        if len(self.internal_glyph_contour_cache) >= 512:
-            self.internal_glyph_contour_cache.pop(next(iter(self.internal_glyph_contour_cache)))
-        self.internal_glyph_contour_cache[gid] = contours
-        return contours
+            return ()
 
     def composite_body_bbox(
         self, gid: int
@@ -503,16 +477,8 @@ def internal_flatten_cubic(
     return out
 
 
-@lru_cache(maxsize=64)
-def tt_font_for_data(
-    data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
-) -> TrueTypeFontProgram:
-    return TrueTypeFontProgram(data, cid_to_gid, use_cmap=use_cmap)
-
-
 __all__ = (
     "Point",
     "TrueTypeFontProgram",
     "rasterize_contours",
-    "tt_font_for_data",
 )

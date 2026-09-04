@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Self
 
 import numpy
 
@@ -12,12 +13,11 @@ from core_pdf.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
     HIDDEN_TEXT_VERIFY_PIXELS,
     MAX_OCR_PIXELS,
-    MAX_OCR_RASTER_BYTES,
     PSM_SPARSE_TEXT,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     RecognitionResult,
     WorkPlan,
 )
@@ -34,20 +34,16 @@ from core_pdf.impl.extract.ocr.candidates import (
     internal_hidden_text_verification,
     internal_merge_candidate_batches,
 )
-from core_pdf.impl.extract.ocr.execution import internal_OcrPassExecution, internal_OcrPassState
-from core_pdf.impl.extract.ocr.pass_tasks import (
-    internal_OcrPassTaskResources,
+from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
+from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
+from core_pdf.impl.extract.ocr.rescue import (
+    internal_adaptive_rescue_decision,
+    internal_primary_text_is_sufficient,
+)
+from core_pdf.impl.extract.ocr.session import (
+    internal_OcrSession,
     internal_raster_tasks,
     internal_region_tasks,
-)
-from core_pdf.impl.extract.ocr.raster import internal_rendered_page_raster
-from core_pdf.impl.extract.ocr.region_tasks import internal_ocr_task_groups
-from core_pdf.impl.extract.ocr.regions import internal_dominant_image_region
-from core_pdf.impl.extract.ocr.rescue import internal_adaptive_rescue_decision
-from core_pdf.impl.extract.ocr.strokes import StrokedTextDecode
-from core_pdf.impl.extract.ocr.tesseract import (
-    internal_recognize_group,
-    internal_recover_timed_out_tasks,
 )
 from core_pdf.impl.extract.ocr.types import internal_OcrTask
 from core_pdf.impl.extract.ocr.vector import (
@@ -59,36 +55,153 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_stroked_vector_text_raster,
 )
 from core_pdf.impl.extract.quality import internal_Candidate
-from core_pdf.impl.runtime.execution import TaskScope, WorkStage
+from core_pdf.impl.runtime.execution import ExtractionScope
+
+
+@dataclass(frozen=True, slots=True)
+class internal_OcrPassState:
+    """Candidate selection and task provenance carried between OCR passes."""
+
+    selected_name: str = ""
+    selected: internal_Candidate | None = None
+    selected_tasks: tuple[internal_OcrTask, ...] = ()
+    previous_region_additions: int = 0
+    seeded_region_selected: bool = False
+    candidates: tuple[tuple[str, internal_Candidate], ...] = ()
+
+    def prepare(self, ocr_pass: OcrPass, *, visible_native_characters: int) -> Self | None:
+        selected = self.selected
+        if (
+            selected is not None
+            and ocr_pass.scope is OcrPassScope.PAGE
+            and ocr_pass.run_if_characters_below is not None
+            and internal_primary_text_is_sufficient(selected)
+        ):
+            return None
+        if (
+            selected is not None
+            and ocr_pass.run_if_characters_below is not None
+            and selected.metrics.characters >= ocr_pass.run_if_characters_below
+        ):
+            return None
+        if (
+            selected is not None
+            and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
+            and ocr_pass.run_if_characters_below is not None
+            and selected.metrics.characters >= 28
+            and selected.metrics.mean_confidence >= 97.0
+        ):
+            return None
+        if (
+            ocr_pass.run_if_additions_below is not None
+            and self.previous_region_additions >= ocr_pass.run_if_additions_below
+        ):
+            return None
+        if (
+            ocr_pass.scope is OcrPassScope.PAGE
+            and ocr_pass.run_if_additions_below is not None
+            and self.previous_region_additions == 0
+            and selected is None
+            and visible_native_characters >= 3_000
+        ):
+            return None
+        if (
+            ocr_pass.scope is OcrPassScope.WEAK_REGIONS
+            and ocr_pass.run_if_additions_below is not None
+            and self.previous_region_additions == 0
+            and selected is not None
+            and selected.metrics.characters >= 32
+            and selected.metrics.mean_confidence >= 90.0
+        ):
+            return None
+        if (
+            ocr_pass.scope is OcrPassScope.PAGE
+            and self.seeded_region_selected
+            and ocr_pass.run_if_additions_below is not None
+        ):
+            return replace(
+                self,
+                selected_name="",
+                selected=None,
+                selected_tasks=(),
+                seeded_region_selected=False,
+            )
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class internal_OcrPassExecution:
+    """Completed pass data needed for the selection transition."""
+
+    ocr_pass: OcrPass
+    candidate: internal_Candidate
+    candidate_source_tasks: tuple[internal_OcrTask, ...]
+    tasks: tuple[internal_OcrTask, ...]
+
+    def complete(self, state: internal_OcrPassState) -> internal_OcrPassState:
+        ocr_pass = self.ocr_pass
+        candidate = self.candidate
+        selected = state.selected
+        additions = 0
+        used_native_seed = False
+        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
+            used_native_seed = selected is None
+            if selected is not None:
+                candidate, additions = internal_augment_candidate(
+                    selected,
+                    candidate,
+                    minimum_confidence=ocr_pass.minimum_confidence,
+                )
+            else:
+                additions = len(candidate.observations)
+
+        next_state = replace(
+            state,
+            candidates=(*state.candidates, (ocr_pass.name, candidate)),
+        )
+        if not self.tasks:
+            return next_state
+        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
+            next_state = replace(next_state, previous_region_additions=additions)
+            if not additions:
+                return next_state
+            return replace(
+                next_state,
+                selected_name=ocr_pass.name,
+                selected=candidate,
+                selected_tasks=(*state.selected_tasks, *self.candidate_source_tasks),
+                seeded_region_selected=used_native_seed and ocr_pass.seed_with_native,
+            )
+        if selected is None or candidate.metrics.utility > (
+            selected.metrics.utility * ocr_pass.minimum_utility_gain
+        ):
+            return replace(
+                next_state,
+                selected_name=ocr_pass.name,
+                selected=candidate,
+                selected_tasks=self.candidate_source_tasks,
+            )
+        return next_state
 
 
 def recognize_page(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     plan: WorkPlan,
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> RecognitionResult:
     if not plan.ocr_passes:
         return RecognitionResult(ObservationBatch.empty())
-    with context.reserve_raster(MAX_OCR_RASTER_BYTES):
-        context.raise_if_cancelled()
-        observations, cached_stroked_decode = internal_recognize_page_with_reserved_raster(
-            capture,
-            plan,
-            context,
-        )
-    observations, alphabet = internal_recover_stroked_vector_text(
-        capture,
-        observations,
-        cached_decode=cached_stroked_decode,
-    )
+    context.raise_if_cancelled()
+    observations = internal_recognize_page_with_reserved_raster(capture, plan, context)
+    observations, alphabet = internal_recover_stroked_vector_text(capture, observations)
     return RecognitionResult(observations, stroked_vector_alphabet=alphabet)
 
 
 def internal_recognize_page_with_reserved_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     plan: WorkPlan,
-    context: TaskScope,
-) -> tuple[ObservationBatch, tuple[int, StrokedTextDecode] | None]:
+    context: ExtractionScope,
+) -> ObservationBatch:
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
     compact_image: bool | str = True
@@ -96,26 +209,14 @@ def internal_recognize_page_with_reserved_raster(
         image_filters = capture.evidence.image_filters
         if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
             compact_image = "grayscale"
-    task_resources = internal_OcrPassTaskResources(
+    session = internal_OcrSession(
         capture,
         plan,
         compact_image,
+        context,
     )
-    pending_stroked_decode: tuple[int, StrokedTextDecode] | None = None
     pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
-
-    def recognize_batch(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
-        groups = internal_ocr_task_groups(tasks)
-        results = context.map_ordered(internal_recognize_group, groups, stage=WorkStage.OCR)
-        return tuple(candidate for group in results for candidate in group)
-
-    def recognize_tasks(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
-        candidates = recognize_batch(tasks)
-        if any(candidate.recognition_status == "timeout" for candidate in candidates):
-            context.raise_if_cancelled()
-            candidates = internal_recover_timed_out_tasks(tasks, candidates, recognize_batch)
-        return candidates
 
     if plan.verify_hidden_text:
         context.raise_if_cancelled()
@@ -136,14 +237,14 @@ def internal_recognize_page_with_reserved_raster(
         verification_tasks = internal_region_tasks(
             verification_region, verification_pass, compact_image=compact_image
         )
-        verification_candidates = recognize_tasks(verification_tasks)
+        verification_candidates = session.recognize_tasks(verification_tasks)
         verification_candidate = internal_merge_candidate_batches(verification_candidates)
         verification = internal_hidden_text_verification(
             capture.observations,
             verification_candidate.observations,
         )
         if verification.accepted:
-            return internal_promoted_hidden_observations(capture), pending_stroked_decode
+            return internal_promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
         prepared_state = pass_state.prepare(
@@ -156,7 +257,7 @@ def internal_recognize_page_with_reserved_raster(
         selected = pass_state.selected
         selected_tasks = pass_state.selected_tasks
         context.raise_if_cancelled()
-        pass_tasks = task_resources.materialize(
+        pass_tasks = session.materialize(
             ocr_pass,
             selected=selected,
             selected_tasks=selected_tasks,
@@ -170,7 +271,7 @@ def internal_recognize_page_with_reserved_raster(
             continue
 
         candidate_source_tasks = tasks
-        task_candidates = recognize_tasks(tasks)
+        task_candidates = session.recognize_tasks(tasks)
         if packed_stroked is not None:
             remapped_with_counts = tuple(
                 internal_remap_stroked_vector_candidate(candidate, packed_stroked)
@@ -220,17 +321,13 @@ def internal_recognize_page_with_reserved_raster(
                             isolated_packed,
                             digit_bearing_only=True,
                         )
-                        for candidate in recognize_tasks(isolated_tasks)
+                        for candidate in session.recognize_tasks(isolated_tasks)
                     )
                     isolated_candidates = tuple(item[0] for item in isolated_remapped)
                     task_candidates = (*task_candidates, *isolated_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
                     tasks = (*tasks, *isolated_tasks)
                     packed_candidate = internal_merge_candidate_batches(task_candidates)
-                pending_stroked_decode = (
-                    id(packed_candidate.observations),
-                    packed_decode,
-                )
             else:
                 fallback_region = internal_full_stroked_vector_text_raster(
                     capture,
@@ -243,7 +340,7 @@ def internal_recognize_page_with_reserved_raster(
                     compact_image=compact_image,
                 )
                 if fallback_tasks:
-                    fallback_candidates = recognize_tasks(fallback_tasks)
+                    fallback_candidates = session.recognize_tasks(fallback_tasks)
                     task_candidates = (*task_candidates, *fallback_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
                     tasks = (*tasks, *fallback_tasks)
@@ -312,7 +409,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_columns=max(3, retry_pass.region_columns),
                     max_regions=max(8, retry_pass.max_regions),
                 )
-                retry_regions = task_resources.internal_high_resolution_weak_region_tasks(
+                retry_regions = session.internal_high_resolution_weak_region_tasks(
                     tasks,
                     retry_pass,
                     candidate.observations,
@@ -320,7 +417,7 @@ def internal_recognize_page_with_reserved_raster(
                 retry_tasks = retry_regions
             if retry_tasks:
                 candidate_source_tasks = (*candidate_source_tasks, *retry_tasks)
-                retry_candidates = recognize_tasks(retry_tasks)
+                retry_candidates = session.recognize_tasks(retry_tasks)
                 retry_candidate = internal_merge_candidate_batches(retry_candidates)
                 augmented_candidate, _rescue_additions = internal_augment_candidate(
                     candidate,
@@ -340,7 +437,7 @@ def internal_recognize_page_with_reserved_raster(
 
     selected = pass_state.selected
     if selected is None:
-        return ObservationBatch.empty(), pending_stroked_decode
+        return ObservationBatch.empty()
     selected_tasks = pass_state.selected_tasks
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the
@@ -359,7 +456,9 @@ def internal_recognize_page_with_reserved_raster(
                 source_task, x_lines, y_lines, source_samples, slope
             )
             if len(cell_tasks) >= internal_GRID_MIN_CELLS:
-                cell_candidate = internal_merge_candidate_batches(recognize_tasks(cell_tasks))
+                cell_candidate = internal_merge_candidate_batches(
+                    session.recognize_tasks(cell_tasks)
+                )
                 cell_observations = internal_grid_row_observations(cell_candidate.observations)
                 if len(cell_observations):
                     grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)
@@ -384,10 +483,7 @@ def internal_recognize_page_with_reserved_raster(
                         # The page-segmented reads carried more content than
                         # the cell reads; this grid's cells recognize worse
                         # than whole-page OCR, so keep the original.
-                        return selected.observations, pending_stroked_decode
+                        return selected.observations
                     retained = prior.take(numpy.flatnonzero(outside))
-                    return (
-                        ObservationBatch.concatenate(retained, cell_observations),
-                        pending_stroked_decode,
-                    )
-    return selected.observations, pending_stroked_decode
+                    return ObservationBatch.concatenate(retained, cell_observations)
+    return selected.observations

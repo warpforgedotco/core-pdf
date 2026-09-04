@@ -60,15 +60,7 @@ def opened_page(path: Path, index: int = 0) -> Iterator[Any]:
 
 
 def reinterpret(page: Any) -> Any:
-    """Interpret ``page``'s content streams again, ignoring the cached program.
-
-    ``get_page_program`` memoizes on the page, so a benchmark calling it
-    repeatedly would time a dictionary read. Dropping the cache first costs one
-    attribute store against milliseconds of interpretation. The decoder cache
-    lives on the document and stays warm, which is what we want: this measures
-    the interpreter, not Flate.
-    """
-    page.page_program_cache = None
+    """Interpret ``page``'s content streams again."""
     return page.get_page_program()
 
 

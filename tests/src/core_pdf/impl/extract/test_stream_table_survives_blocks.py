@@ -11,9 +11,6 @@ prose were discarded whole, and the page kept no table at all.
 
 from __future__ import annotations
 
-import pytest
-
-from core_pdf.impl.extract import table_reconcile
 from core_pdf.impl.extract.table_reconcile import (
     internal_stream_table_duplicated_by_blocks,
     internal_stream_table_is_tabular,
@@ -64,24 +61,6 @@ def test_a_prose_comparison_table_survives_the_blocks_that_repeat_it() -> None:
     # The premise: the blocks do repeat it, so the coverage test alone would drop it.
     assert internal_stream_table_is_tabular(table)
     assert not internal_stream_table_duplicated_by_blocks(table, blocks_covering(table))
-
-
-def test_reconciliation_builds_each_table_profile_once(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    table = table_of(PROSE_CELLS)
-    built: list[Table] = []
-    original_build = table_reconcile.internal_build_table_profile
-
-    def counting_build(candidate: Table) -> table_reconcile.internal_TableProfile:
-        built.append(candidate)
-        return original_build(candidate)
-
-    monkeypatch.setattr(table_reconcile, "internal_build_table_profile", counting_build)
-
-    table_reconcile.internal_project_text_and_tables(blocks_covering(table), (table,))
-
-    assert built == [table]
 
 
 def test_two_columns_of_prose_are_not_mistaken_for_a_table() -> None:

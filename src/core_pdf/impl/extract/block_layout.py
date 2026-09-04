@@ -9,7 +9,6 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from heapq import heappop, heappush
-from itertools import combinations
 from typing import cast
 
 import numpy
@@ -24,7 +23,7 @@ from core_pdf.impl.extract.contracts import (
     internal_bbox_tuple,
 )
 from core_pdf.impl.layout.lines import LayoutLine
-from core_pdf.impl.model.geometry import SpatialIndex, horizontal_overlap_ratio, interval_overlap
+from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import (
     TextSpan,
@@ -122,8 +121,6 @@ def internal_group_text_and_words(
             positions = -(boxes[:, 1] + boxes[:, 3]) * 0.5
         else:
             positions = (boxes[:, 0] + boxes[:, 2]) * 0.5
-        position_values = positions.tolist()
-
         # One pass over the text counts both directions; ASCII text can only
         # contribute L characters, and only letters carry a strong class.
         rtl = 0
@@ -140,17 +137,14 @@ def internal_group_text_and_words(
                     ltr += 1
                 elif direction_class in {"R", "AL", "AN"}:
                     rtl += 1
-        order = sorted(
-            range(len(position_values)), key=position_values.__getitem__, reverse=rtl > ltr
-        )
-        index_values = indexes.tolist()
-        indexes = cast(numpy.ndarray, numpy.asarray([index_values[position] for position in order]))
+        order = numpy.argsort(-positions if rtl > ltr else positions, kind="stable")
+        indexes = indexes[order]
     references = tuple(observations.references[index] for index in indexes)
     if references and all(isinstance(reference, TextRun) for reference in references):
         runs = cast(list[TextRun], list(references))
         line = LayoutLine(runs)
         text = line.reconstructed_text().text.strip()
-        layout_words = line.cached_text_and_words()[1]
+        layout_words = line.text_and_words()[1]
         return text, internal_reconcile_text_words(text, layout_words)
     parts: list[str] = []
     candidate_words: list[TextWord] = []
@@ -558,17 +552,11 @@ def layout_blocks(
         )
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
-    obstacle_index = (
-        SpatialIndex(((index, obstacle) for index, obstacle in enumerate(obstacles)))
-        if obstacles
-        else None
-    )
     regions = extract_regions.internal_xy_cut_regions(
         numpy.arange(len(lines), dtype=numpy.int64),
         boxes,
         obstacles,
         median_height,
-        obstacle_index=obstacle_index,
     )
     blocks = [
         ParsedBlock(
@@ -641,11 +629,6 @@ def layout_element_order(
         values,
         obstacles,
         max(1.0, finite_median(heights)),
-        obstacle_index=(
-            SpatialIndex(((index, obstacle) for index, obstacle in enumerate(obstacles)))
-            if obstacles
-            else None
-        ),
     )
     return tuple(int(index) for region in regions for index in region)
 
@@ -823,14 +806,9 @@ def internal_topological_block_order_from_pairs(
     return blocks
 
 
-def internal_topological_block_order_quadratic(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    """Reference implementation used for small inputs and equivalence tests."""
-    return internal_topological_block_order_from_pairs(blocks, combinations(range(len(blocks)), 2))
-
-
 def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    if len(blocks) < 64:
-        return internal_topological_block_order_quadratic(blocks)
+    if len(blocks) <= 2:
+        return blocks
     page_x0 = min(block.bbox[0] for block in blocks)
     page_x1 = max(block.bbox[2] for block in blocks)
     page_width = max(1.0, page_x1 - page_x0)

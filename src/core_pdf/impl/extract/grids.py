@@ -10,14 +10,13 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.extract.contracts import CapturedPage, ObservationBatch, ObservationSource
+from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource, PageAnalysis
 from core_pdf.impl.extract.ocr.types import internal_OcrTask, internal_pixel_box_to_page_box
-from core_pdf.impl.extract.table_cleanup import internal_cell_text, internal_CellTextMemo
-from core_pdf.impl.model.geometry import SpatialIndex, bbox_union
+from core_pdf.impl.extract.table_cleanup import internal_cell_text
+from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
 # Shared vector ruling geometry.
 
@@ -25,6 +24,24 @@ AXIS_TOLERANCE = 1.5
 
 
 TABLE_REGION_GAP = 22.0  # loosened to allow adjacent table regions with modest gaps to merge
+
+
+def internal_line_coordinate_columns(
+    lines: Any,
+) -> tuple[
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+]:
+    """Materialize ``(x0, y0, x1, y1)`` columns for captured lines."""
+    values = tuple(lines)
+    coordinates = numpy.fromiter(
+        (value for line in values for value in (line.x0, line.y0, line.x1, line.y1)),
+        dtype=numpy.float64,
+        count=len(values) * 4,
+    ).reshape((-1, 4))
+    return coordinates[:, 0], coordinates[:, 1], coordinates[:, 2], coordinates[:, 3]
 
 
 class internal_DisjointSet:
@@ -46,19 +63,18 @@ class internal_DisjointSet:
 
 
 def internal_axis_segments(
-    capture: CapturedPage,
+    capture: PageAnalysis,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     lines = capture.grid_lines
     if not lines:
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty
 
-    # Read the four coordinate columns straight off the capture, then classify
-    # and normalize all segments with array operations.  ``LineTable`` already
-    # stores them, so no per-line Python object is built here.
-    x0, y0, x1, y1 = line_coordinate_columns(lines)
+    # Fold the captured coordinates into columns, then classify and normalize
+    # all segments with array operations.
+    x0, y0, x1, y1 = internal_line_coordinate_columns(lines)
     horizontal_mask = (numpy.abs(y1 - y0) <= AXIS_TOLERANCE) & (
         numpy.abs(x1 - x0) >= page_width * 0.02
     )
@@ -82,25 +98,18 @@ def internal_grid_components(
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
     if len(horizontal) < 2 or len(vertical) < 2:
         return ()
-    v_boxes = numpy.column_stack(
-        (
-            vertical[:, 0] - AXIS_TOLERANCE,
-            vertical[:, 1] - AXIS_TOLERANCE,
-            vertical[:, 0] + AXIS_TOLERANCE,
-            vertical[:, 2] + AXIS_TOLERANCE,
-        )
-    )
-    vertical_index = SpatialIndex((i, v_boxes[i]) for i in range(len(vertical)))
+    vertical_x = vertical[:, 0]
+    vertical_y0 = vertical[:, 1]
+    vertical_y1 = vertical[:, 2]
     pairs: list[tuple[int, int]] = []
     for h_index, segment in enumerate(horizontal):
-        h_box = (
-            float(segment[0]) - AXIS_TOLERANCE,
-            float(segment[2]) - AXIS_TOLERANCE,
-            float(segment[1]) + AXIS_TOLERANCE,
-            float(segment[2]) + AXIS_TOLERANCE,
+        matching = numpy.flatnonzero(
+            (vertical_x >= float(segment[0]) - AXIS_TOLERANCE)
+            & (vertical_x <= float(segment[1]) + AXIS_TOLERANCE)
+            & (vertical_y1 >= float(segment[2]) - AXIS_TOLERANCE)
+            & (vertical_y0 <= float(segment[2]) + AXIS_TOLERANCE)
         )
-        for v_index in vertical_index.intersecting(h_box):
-            pairs.append((h_index, int(v_index)))
+        pairs.extend((h_index, int(v_index)) for v_index in matching)
     if not pairs:
         return ()
     disjoint = internal_DisjointSet(len(horizontal) + len(vertical))
@@ -214,50 +223,21 @@ def internal_merge_grid_cells(
     column_count = max((len(row) for row in rows), default=0)
     if row_count == 0 or column_count == 0:
         return []
-    vertical_index = SpatialIndex(
-        (
-            (
-                index,
-                (
-                    float(segment[0]) - AXIS_TOLERANCE,
-                    float(segment[1]) - AXIS_TOLERANCE,
-                    float(segment[0]) + AXIS_TOLERANCE,
-                    float(segment[2]) + AXIS_TOLERANCE,
-                ),
-            )
-            for index, segment in enumerate(vertical)
-        )
-    )
-    horizontal_index = SpatialIndex(
-        (
-            (
-                index,
-                (
-                    float(segment[0]) - AXIS_TOLERANCE,
-                    float(segment[2]) - AXIS_TOLERANCE,
-                    float(segment[1]) + AXIS_TOLERANCE,
-                    float(segment[2]) + AXIS_TOLERANCE,
-                ),
-            )
-            for index, segment in enumerate(horizontal)
-        )
-    )
 
     def boundary_present(
         position: float,
         start: float,
         end: float,
         segments: numpy.ndarray[Any, Any],
-        index: SpatialIndex,
         coordinate_indexes: tuple[int, int, int],
-        query: tuple[float, float, float, float],
     ) -> bool:
         position_index, start_index, end_index = coordinate_indexes
-        return any(
-            abs(float(segments[segment_index, position_index]) - position) <= AXIS_TOLERANCE
-            and float(segments[segment_index, start_index]) <= start + AXIS_TOLERANCE
-            and float(segments[segment_index, end_index]) >= end - AXIS_TOLERANCE
-            for segment_index in index.intersecting(query)
+        return bool(
+            numpy.any(
+                (numpy.abs(segments[:, position_index] - position) <= AXIS_TOLERANCE)
+                & (segments[:, start_index] <= start + AXIS_TOLERANCE)
+                & (segments[:, end_index] >= end - AXIS_TOLERANCE)
+            )
         )
 
     def vertical_boundary_present(x: float, y0: float, y1: float) -> bool:
@@ -266,9 +246,7 @@ def internal_merge_grid_cells(
             y0,
             y1,
             vertical,
-            vertical_index,
             (0, 1, 2),
-            (x - AXIS_TOLERANCE, y0 - AXIS_TOLERANCE, x + AXIS_TOLERANCE, y1 + AXIS_TOLERANCE),
         )
 
     def horizontal_boundary_present(y: float, x0: float, x1: float) -> bool:
@@ -277,9 +255,7 @@ def internal_merge_grid_cells(
             x0,
             x1,
             horizontal,
-            horizontal_index,
             (2, 0, 1),
-            (x0 - AXIS_TOLERANCE, y - AXIS_TOLERANCE, x1 + AXIS_TOLERANCE, y + AXIS_TOLERANCE),
         )
 
     disjoint = internal_DisjointSet(row_count * column_count)
@@ -327,9 +303,6 @@ def internal_table_from_component(
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
     observations: ObservationBatch,
-    observation_index: SpatialIndex[int] | None = None,
-    *,
-    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table | None:
     x_edges = internal_cluster_positions(vertical[:, 0])
     y_edges = internal_cluster_positions(horizontal[:, 2])[::-1]
@@ -340,22 +313,13 @@ def internal_table_from_component(
     x0, x1 = float(x_edges[0]), float(x_edges[-1])
     y0, y1 = float(y_edges[-1]), float(y_edges[0])
     cell_observations: dict[tuple[int, int], list[int]] = defaultdict(list)
-    if observation_index is not None:
-        candidate_indexes = [
-            int(index) for index in observation_index.intersecting((x0, y0, x1, y1))
-        ]
-    else:
-        visible = observations.visible.tolist()
-        candidate_indexes = [index for index in range(len(observations)) if visible[index]]
-    # Compute centers vectorized (keeping the bbox dtype's rounding) and search
-    # edges with bisect on plain lists; scalar numpy searchsorted costs a full
-    # dispatch per call.
+    candidate_indexes = numpy.flatnonzero(observations.visible)
     candidate_boxes = observations.bbox[candidate_indexes]
     center_xs = ((candidate_boxes[:, 0] + candidate_boxes[:, 2]) * 0.5).tolist()
     center_ys = ((candidate_boxes[:, 1] + candidate_boxes[:, 3]) * 0.5).tolist()
     x_edge_list = x_edges.tolist()
     negated_y_edges = (-y_edges).tolist()
-    for index, center_x, center_y in zip(candidate_indexes, center_xs, center_ys):
+    for index, center_x, center_y in zip(candidate_indexes.tolist(), center_xs, center_ys):
         if not (x0 <= center_x <= x1 and y0 <= center_y <= y1):
             continue
         column = bisect_right(x_edge_list, center_x) - 1
@@ -399,7 +363,6 @@ def internal_table_from_component(
                     text=internal_cell_text(
                         observations,
                         cell_observations[(row, column)],
-                        cell_text_cache,
                     ),
                     bbox=bbox,
                 )
@@ -726,9 +689,7 @@ def internal_grid_row_observations(
                 float(row_boxes[:, 3].max()),
             )
         )
-        confidences.append(
-            float(numpy.mean([float(observations.confidence[index]) for index in ordered]))
-        )
+        confidences.append(float(numpy.mean(observations.confidence[ordered])))
     return ObservationBatch.from_columns(
         texts,
         boxes,

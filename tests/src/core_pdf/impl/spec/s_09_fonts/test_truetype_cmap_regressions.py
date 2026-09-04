@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import zlib
 
-from core_pdf.impl.spec.s_09_fonts.font_program_truetype import tt_font_for_data
+from core_pdf.impl.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
 from tests.helpers.paths import score_bench_pdf
 
 
@@ -27,7 +27,7 @@ def test_macintosh_only_cmap_resolves_glyphs() -> None:
     nothing to do with them, so every glyph on the page was wrong.
     """
     fixture = score_bench_pdf("fhhd0346-p009.pdf")
-    program = tt_font_for_data(
+    program = TrueTypeFontProgram(
         internal_first_embedded_truetype(fixture.read_bytes()), None, use_cmap=True
     )
     assert program.cmap, "a Macintosh-only cmap must still resolve character codes"

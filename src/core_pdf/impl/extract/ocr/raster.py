@@ -19,7 +19,7 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     MAX_OCR_PIXELS,
-    CapturedPage,
+    PageAnalysis,
 )
 from core_pdf.impl.extract.ocr.types import internal_Raster
 from core_pdf.impl.model.geometry import bbox_union, points_bbox
@@ -31,7 +31,6 @@ from core_pdf.impl.runtime.array_views import (
     resample_nearest,
     uint8_image_view,
 )
-from core_pdf.impl.runtime.image_cache import ImageCacheKey
 from core_pdf.impl.spec.s_08_graphics.image_decode import decode_pdf_image
 
 # Tesseract's LSTM was trained near 300-400 DPI. Scans below that are enlarged to
@@ -294,30 +293,10 @@ def internal_decoded_image_raster(
     image: Any,
     display_area: float,
     *,
-    image_cache: Any | None = None,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
 ) -> internal_Raster | None:
     source = getattr(image, "image_source", None)
-    source_key = getattr(source, "cache_key", None)
-    if not isinstance(source_key, tuple):
-        source_key = ("image", id(image))
-    shared_key = ImageCacheKey(
-        "ocr-raster",
-        tuple(source_key),
-        (float(display_area), int(max_pixels), upscale),
-    )
-    if image_cache is not None:
-        cached = image_cache.get_or_create(
-            shared_key,
-            lambda: internal_decoded_image_raster(
-                image,
-                display_area,
-                max_pixels=max_pixels,
-                upscale=upscale,
-            ),
-        )
-        return cached if isinstance(cached, internal_Raster) else None
     shared = source.decode() if source is not None and hasattr(source, "decode") else None
     samples: numpy.ndarray[Any, Any] | None
     data: bytes | memoryview | None
@@ -506,12 +485,11 @@ def internal_orient_direct_image_raster(
 
 
 def internal_rendered_page_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     requested_scale: float,
     *,
     crop: tuple[float, float, float, float] | None = None,
     rendered: Any | None = None,
-    cache: bool = True,
     max_pixels: int = MAX_OCR_PIXELS,
     include_native_text: bool = False,
 ) -> internal_Raster | None:
@@ -521,6 +499,8 @@ def internal_rendered_page_raster(
             page,
             RenderOptions(include_text=include_native_text),
             page_program=capture.program,
+            fields=capture.fields,
+            annotations=capture.annotations,
         )
     if crop is None:
         raster_area = max(1.0, float(page.width) * float(page.height))
@@ -534,7 +514,6 @@ def internal_rendered_page_raster(
             scale=scale,
             max_pixels=max_pixels,
             crop=crop,
-            cache=cache,
         )
     except IndexError:
         # A malformed embedded image can produce a source sample outside its
@@ -547,7 +526,7 @@ def internal_rendered_page_raster(
     )
 
 
-def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float, float] | None:
+def internal_safe_image_crop(capture: PageAnalysis) -> tuple[float, float, float, float] | None:
     """Return a useful crop when OCR is known to be image-dominated.
 
     A crop is only safe when the image coverage is substantial.  Sparse images
@@ -558,8 +537,8 @@ def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float
         evidence.full_page_image or evidence.image_area_ratio >= 0.65
     ):
         return None
-    page_width = float(capture.page.width)
-    page_height = float(capture.page.height)
+    page_width = capture.width
+    page_height = capture.height
     bounds = bbox_union(evidence.image_boxes)
     assert bounds is not None
     x0, y0, x1, y1 = bounds

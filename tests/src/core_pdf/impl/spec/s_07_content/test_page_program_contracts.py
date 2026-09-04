@@ -6,13 +6,13 @@ import pytest
 
 from core_pdf import PdfContractError
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedLine
-from core_pdf.impl.spec.s_07_content.page_program import PageProducts
+from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 
 
-def test_page_program_products_filter_inline_image_drawings_and_materialize_lines() -> None:
+def test_page_program_filters_inline_image_drawings_and_keeps_lines() -> None:
     drawing = CapturedDrawing(1, None, None, kind="stroke")
     legacy_inline_image = CapturedDrawing(2, None, None, kind="inline-image")
-    products = PageProducts.from_state(
+    program = PageProgram.from_state(
         SimpleNamespace(
             runs=(),
             glyphs=(),
@@ -22,8 +22,8 @@ def test_page_program_products_filter_inline_image_drawings_and_materialize_line
         )
     )
 
-    assert products.drawings == (drawing,)
-    assert [(line.x0, line.y0, line.x1, line.y1, line.line_width) for line in products.lines] == [
+    assert program.drawings == (drawing,)
+    assert [(line.x0, line.y0, line.x1, line.y1, line.line_width) for line in program.lines] == [
         (1.0, 2.0, 3.0, 4.0, 0.5)
     ]
 
@@ -35,9 +35,10 @@ def test_page_program_products_filter_inline_image_drawings_and_materialize_line
         ("glyphs", (object(),), "glyph"),
         ("drawings", (object(),), "drawing"),
         ("inline_images", (object(),), "inline-image"),
+        ("lines", (object(),), "line"),
     ],
 )
-def test_page_products_rejects_untyped_products(
+def test_page_program_rejects_untyped_products(
     field: str,
     value: tuple[object, ...],
     message: str,
@@ -46,4 +47,4 @@ def test_page_products_rejects_untyped_products(
     setattr(state, field, value)
 
     with pytest.raises(PdfContractError, match=message):
-        PageProducts.from_state(state)
+        PageProgram.from_state(state)

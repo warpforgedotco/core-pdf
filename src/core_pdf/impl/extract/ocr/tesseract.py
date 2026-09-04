@@ -21,7 +21,6 @@ import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import replace
-from functools import cache
 from html.parser import HTMLParser
 from importlib import import_module
 from pathlib import Path
@@ -43,7 +42,6 @@ from core_pdf.impl.extract.ocr.types import (
 from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import contiguous_bytes, finite_median, resample_smooth
-from core_pdf.impl.runtime.execution import RUNTIME
 from core_pdf.impl.text import collapse_ws
 
 # OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels
@@ -52,8 +50,7 @@ os.environ["OMP_THREAD_LIMIT"] = "1"
 
 internal_OCR_SIGNALS_READY = False
 internal_MAIN_THREAD_MESSAGE = (
-    "core_pdf must initialize OCR on the main thread; import PdfDocument or call "
-    "prewarm_runtime() during application startup"
+    "core_pdf must initialize OCR on the main thread; import PdfDocument before starting OCR"
 )
 
 
@@ -71,13 +68,6 @@ def internal_prepare_ocr_signals() -> None:
     internal_OCR_SIGNALS_READY = True
 
 
-# Importing tesserocr costs ~25 ms and drags in PIL, so it is bound on first use
-# rather than at import time: a native-text document never needs either.
-# ``internal_prepare_ocr_signals`` installs cysignals' handlers on the main
-# thread before an OCR worker imports the binding.
-internal_TESSEROCR_MODULE: Any | None = None
-
-internal_OCR_LOCAL = threading.local()
 OCR_TIMEOUT_MILLISECONDS = 12_000
 # Recognition cost grows with the raster, so a flat budget starves exactly the
 # large rasters the adaptive passes escalate to. Extend it per megapixel above
@@ -112,13 +102,8 @@ def internal_import_tesserocr() -> Any:
 
 
 def internal_ensure_tesserocr() -> Any:
-    """Bind tesserocr once, from whichever thread first needs recognition."""
-    global internal_TESSEROCR_MODULE
-    module = internal_TESSEROCR_MODULE
-    if module is None:
-        module = internal_import_tesserocr()
-        internal_TESSEROCR_MODULE = module
-    return module
+    """Return the imported binding after its signal setup is ready."""
+    return internal_import_tesserocr()
 
 
 def internal_normalized_ocr_token_key(text: str) -> str:
@@ -133,20 +118,13 @@ def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
 
 
 def internal_tessdata_path() -> str:
-    """Resolve English traineddata without relying on wheel build prefixes.
-
-    Success and failure are both memoized: ``functools.cache`` alone would not
-    store a raised error, so a machine without tessdata re-ran the full
-    resolution — directory probes plus a ``tesseract --list-langs``
-    subprocess — on every OCR attempt.
-    """
+    """Resolve English traineddata without relying on wheel build prefixes."""
     resolved_path, error_message = internal_resolve_tessdata_path()
     if resolved_path is None:
         raise RuntimeError(error_message)
     return resolved_path
 
 
-@cache
 def internal_resolve_tessdata_path() -> tuple[str | None, str]:
     configured = os.environ.get("TESSDATA_PREFIX")
     if configured:
@@ -195,44 +173,16 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
 
 
 def internal_api(mode: int) -> Any:
-    api = getattr(internal_OCR_LOCAL, "api", None)
-    if api is None:
-        psm = mode
-        tesserocr = internal_ensure_tesserocr()
-        api = tesserocr.PyTessBaseAPI(
-            path=internal_tessdata_path(),
-            psm=psm,
-            oem=tesserocr.OEM.LSTM_ONLY,
-        )
-        api.SetVariable("preserve_interword_spaces", "0")
-        api.SetVariable("textord_tablefind_recognize_tables", "0")
-        api.SetVariable("textord_tabfind_find_tables", "0")
-        internal_OCR_LOCAL.api = api
-    api.SetPageSegMode(mode)
+    tesserocr = internal_ensure_tesserocr()
+    api = tesserocr.PyTessBaseAPI(
+        path=internal_tessdata_path(),
+        psm=mode,
+        oem=tesserocr.OEM.LSTM_ONLY,
+    )
+    api.SetVariable("preserve_interword_spaces", "0")
+    api.SetVariable("textord_tablefind_recognize_tables", "0")
+    api.SetVariable("textord_tabfind_find_tables", "0")
     return api
-
-
-def internal_prepare_ocr() -> None:
-    """Validate OCR startup and construct a reusable API on every worker.
-
-    ``internal_api`` caches its ``PyTessBaseAPI`` in thread-local storage, so
-    each worker that recognizes a page pays the Tesseract model load itself:
-    measured at ~363 ms for the first build in a process and ~40 ms per
-    additional thread once tessdata is in the page cache. Warming the pool here
-    keeps that off the critical path of the first page each worker handles,
-    which matters most for the single-page documents that make up the bulk of
-    OCR work and cannot amortize it over later pages.
-    """
-    if threading.current_thread() is not threading.main_thread():
-        raise RuntimeError("prewarm_runtime() must be called on the main thread")
-    internal_api(3)
-    RUNTIME.run_on_each_worker(lambda: internal_api(3))
-
-
-def prewarm_runtime() -> None:
-    """Start shared workers and validate OCR during main-thread startup."""
-    RUNTIME.prewarm()
-    internal_prepare_ocr()
 
 
 internal_HOCR_BBOX_RE = re.compile(r"bbox (\d+) (\d+) (\d+) (\d+)")
@@ -456,8 +406,15 @@ def internal_recognize(
     api_override: Any | None = None,
     image_prepared: bool = False,
 ) -> internal_Candidate:
+    if api_override is None:
+        api = internal_api(task.mode)
+        try:
+            return internal_recognize(task, api_override=api, image_prepared=image_prepared)
+        finally:
+            api.End()
     tesserocr = internal_ensure_tesserocr()
-    api = api_override if api_override is not None else internal_api(task.mode)
+    api = api_override
+    api.SetPageSegMode(task.mode)
     if not image_prepared:
         api.SetImageBytes(
             task.image.tesseract_bytes(),
@@ -621,14 +578,15 @@ def internal_recognize_group(tasks: tuple[internal_OcrTask, ...]) -> tuple[inter
     """Recognize same-raster tasks while reusing Tesseract image setup."""
     if not tasks:
         return ()
-    if len(tasks) == 1:
-        return (internal_recognize(tasks[0]),)
     first = tasks[0]
     api = internal_api(first.mode)
-    candidates = [internal_recognize(first, api_override=api)]
-    for task in tasks[1:]:
-        candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
-    return tuple(candidates)
+    try:
+        candidates = [internal_recognize(first, api_override=api)]
+        for task in tasks[1:]:
+            candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
+        return tuple(candidates)
+    finally:
+        api.End()
 
 
 def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask | None:

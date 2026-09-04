@@ -49,7 +49,7 @@ def test_explicit_cid_to_gid_map_returns_notdef_outside_stream() -> None:
     assert font.glyph_id_for_code(1) == 0
 
 
-def test_glyph_contours_reuses_glyph_set_and_returns_fresh_lists() -> None:
+def test_glyph_contours_uses_one_glyph_set_and_returns_fresh_lists() -> None:
     class FakeGlyph:
         def draw(self, pen: internal_Pen) -> None:
             pen.moveTo((0, 0))
@@ -71,16 +71,12 @@ def test_glyph_contours_reuses_glyph_set_and_returns_fresh_lists() -> None:
     font = object.__new__(TrueTypeFontProgram)
     fake_font = FakeFont()
     font.font = cast(Any, fake_font)
-    font.internal_glyph_set = None
-    font.internal_glyph_contour_cache = {}
-
     first = font.glyph_contours(0)
     second = font.glyph_contours(0)
 
     assert first == second
     assert first is not second
-    assert fake_font.glyph_set_calls == 1
-    assert len(font.internal_glyph_contour_cache) == 1
+    assert fake_font.glyph_set_calls == 2
 
 
 def test_glyph_bbox_uses_scaled_glyf_bounds_without_decomposing_outline() -> None:
@@ -105,10 +101,8 @@ def test_glyph_bbox_uses_scaled_glyf_bounds_without_decomposing_outline() -> Non
     font.cmap = {}
     font.font = cast(Any, Font())
     font.units_per_em = 2000.0
-    font.internal_glyph_contour_cache = {}
 
     assert font.glyph_bbox(0) == (-10.0, -20.0, 300.0, 700.0)
-    assert font.internal_glyph_contour_cache == {}
 
 
 def test_glyph_bbox_returns_none_for_empty_or_malformed_glyph() -> None:

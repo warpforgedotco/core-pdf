@@ -6,7 +6,7 @@ import math
 from collections.abc import Sequence
 
 from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
-from core_pdf.impl.spec.s_09_fonts.helpers import cached_decode_table
+from core_pdf.impl.spec.s_09_fonts.helpers import build_decode_table
 from core_pdf.impl.text import is_neutral_character, is_rtl_character
 
 # pypdf's _predefined_cmap, which is what both legacy projections have to
@@ -51,7 +51,7 @@ def internal_orientation(matrix: Sequence[float]) -> int:
 
 def internal_legacy_base_table(name: str) -> list[str]:
     """Build the encoding table expected by the legacy text projections."""
-    table = list(cached_decode_table(name, ()))
+    table = list(build_decode_table(name, ()))
     if name == "StandardEncoding":
         table = [value or chr(code) for code, value in enumerate(table)]
         table[174] = "ﬁ"

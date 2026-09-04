@@ -9,11 +9,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.model.geometry import points_bbox
-from core_pdf.impl.render.kernels import (
-    AFFINE_BLIT_SCRATCH_BYTES,
-    RASTER_COORDINATE_CACHE_MAX_ENTRIES,
-    internal_cached_raster_coordinates,
-)
+from core_pdf.impl.render.kernels import AFFINE_BLIT_SCRATCH_BYTES
 from core_pdf.impl.runtime.array_views import (
     ByteBuffer,
     uint8_view,
@@ -24,41 +20,6 @@ class internal_ImageAffineTargetMixin:
     """Affine decoded-image sampling and blitting for a raster target."""
 
     __slots__ = ()
-
-    def cached_page_coordinates(
-        self: Any,
-        cache: dict[tuple[int, int], numpy.ndarray[Any, Any]],
-        start: int,
-        stop: int,
-        origin: float,
-        direction: float,
-    ) -> numpy.ndarray[Any, Any]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        scale = self.scale
-        key = (start, stop)
-        coordinates = cache.get(key)
-        if coordinates is None:
-            coordinates = origin + (numpy.arange(start, stop) + 0.5) / scale * direction
-            if len(cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                cache[key] = coordinates
-        return coordinates
-
-    def page_x_coordinates(self: Any, start: int, stop: int) -> numpy.ndarray[Any, Any]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        cached_page_coordinates = self.cached_page_coordinates
-        crop_x0 = self.crop_x0
-        page_x_coordinate_cache = self.page_x_coordinate_cache
-        return cached_page_coordinates(page_x_coordinate_cache, start, stop, crop_x0, 1.0)
-
-    def page_y_coordinates(self: Any, start: int, stop: int) -> numpy.ndarray[Any, Any]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
-        cached_page_coordinates = self.cached_page_coordinates
-        crop_y1 = self.crop_y1
-        page_y_coordinate_cache = self.page_y_coordinate_cache
-        return cached_page_coordinates(page_y_coordinate_cache, start, stop, crop_y1, -1.0)
 
     def blit_opaque_sampled_tiles(
         self: Any,
@@ -72,8 +33,6 @@ class internal_ImageAffineTargetMixin:
         *,
         transposed: bool = False,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         row_count = len(valid_rows)
         column_count = len(valid_columns)
         all_valid = bool(valid_rows.all() and valid_columns.all())
@@ -126,8 +85,6 @@ class internal_ImageAffineTargetMixin:
         constant_alpha: float | None,
         blend_mode: str | None,
     ) -> bool:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
@@ -143,12 +100,8 @@ class internal_ImageAffineTargetMixin:
         crop_y1 = self.crop_y1
         current_clip = self.current_clip
         page_pixels = self.page_pixels
-        page_x_coordinates = self.page_x_coordinates
-        page_y_coordinates = self.page_y_coordinates
         pixel_view = self.pixel_view
         pixels = self.pixels
-        raster_x_coordinate_cache = self.raster_x_coordinate_cache
-        raster_y_coordinate_cache = self.raster_y_coordinate_cache
         scale = self.scale
         width = self.width
         if len(quad) < 3:
@@ -190,11 +143,7 @@ class internal_ImageAffineTargetMixin:
         ):
             inv_ux = 1.0 / ux
             inv_vy = 1.0 / vy
-            page_x = (
-                crop_x0
-                + (internal_cached_raster_coordinates(raster_x_coordinate_cache, ix0, ix1) + 0.5)
-                / scale
-            )
+            page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
             source_u = (page_x - p00[0]) * inv_ux
             source_samples = uint8_view(converted)
             valid_x = (source_u >= 0.0) & (source_u <= 1.0)
@@ -203,11 +152,7 @@ class internal_ImageAffineTargetMixin:
                 0,
                 width_px - 1,
             )
-            axis_page_y = (
-                crop_y1
-                - (internal_cached_raster_coordinates(raster_y_coordinate_cache, iy0, iy1) + 0.5)
-                / scale
-            )
+            axis_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
             source_y_array = ((1.0 - (axis_page_y - p00[1]) * inv_vy) * height_px).astype(
                 numpy.intp
             )
@@ -248,8 +193,8 @@ class internal_ImageAffineTargetMixin:
             if u_from_x:
                 inv_ux = 1.0 / ux
                 inv_vy = 1.0 / vy
-                page_x = page_x_coordinates(ix0, ix1)
-                page_y = page_y_coordinates(iy0, iy1)
+                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
                 source_u = (page_x - p00[0]) * inv_ux
                 source_v = (page_y - p00[1]) * inv_vy
                 valid_x = (source_u >= 0.0) & (source_u <= 1.0)
@@ -267,8 +212,8 @@ class internal_ImageAffineTargetMixin:
             else:
                 inv_uy = 1.0 / uy
                 inv_vx = 1.0 / vx
-                page_x = page_x_coordinates(ix0, ix1)
-                page_y = page_y_coordinates(iy0, iy1)
+                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
                 source_v = (page_x - p00[0]) * inv_vx
                 source_u = (page_y - p00[1]) * inv_uy
                 valid_x = (source_v >= 0.0) & (source_v <= 1.0)
@@ -305,8 +250,8 @@ class internal_ImageAffineTargetMixin:
             source_samples = uint8_view(converted)[: width_px * height_px * comps].reshape(
                 height_px, width_px, comps
             )
-            general_page_x = page_x_coordinates(ix0, ix1)
-            general_page_y = page_y_coordinates(iy0, iy1)
+            general_page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+            general_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
             general_rel_x = general_page_x[None, :] - p00[0]
             general_rel_y = general_page_y[:, None] - p00[1]
             general_u = (general_rel_x * vy - general_rel_y * vx) * inv_det

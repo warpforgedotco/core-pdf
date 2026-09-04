@@ -11,16 +11,15 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Any
 
 import numpy
 
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
+    PageAnalysis,
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.ocr.strokes import (
@@ -41,7 +40,7 @@ from core_pdf.impl.extract.ocr.types import (
     internal_StrokedTextCell,
 )
 from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
-from core_pdf.impl.model.geometry import SpatialIndex, bbox_intersection_area, rect_tuple
+from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     PathPaintItem,
@@ -78,31 +77,10 @@ STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES = 16
 STROKED_VECTOR_PACK_MIN_DECODED_RUNS = 16
 
 
-@dataclass(frozen=True, slots=True)
-class internal_CachedStrokedTextProfile:
-    drawings: tuple[Any, ...]
-    drawing_indexes: tuple[int, ...]
-    profile: StrokedTextProfile
-
-
-def internal_stroked_text_profile(capture: CapturedPage) -> StrokedTextProfile:
-    """Return the single structural glyph profile shared by OCR and document reuse."""
+def internal_stroked_text_profile(capture: PageAnalysis) -> StrokedTextProfile:
+    """Build the structural glyph profile used by stroked-text OCR."""
     evidence = capture.evidence.stroked_vector_text
-    cache = capture.page.extraction_cache
-    cached = cache.get("_stroked_text_profile")
-    if (
-        isinstance(cached, internal_CachedStrokedTextProfile)
-        and cached.drawings is capture.drawings
-        and cached.drawing_indexes == evidence.drawing_indexes
-    ):
-        return cached.profile
-    profile = profile_stroked_text(capture.drawings, evidence.drawing_indexes)
-    cache["_stroked_text_profile"] = internal_CachedStrokedTextProfile(
-        capture.drawings,
-        evidence.drawing_indexes,
-        profile,
-    )
-    return profile
+    return profile_stroked_text(capture.drawings, evidence.drawing_indexes)
 
 
 def internal_pack_stroked_text_runs(
@@ -156,7 +134,7 @@ def internal_pack_stroked_text_runs(
 
 
 def internal_stroked_vector_text_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
@@ -290,7 +268,6 @@ def internal_stroked_vector_text_raster(
             background=(255, 255, 255, 255),
             scale=scale,
             max_pixels=max_pixels,
-            cache=False,
         )
     raster = internal_Raster(
         data,
@@ -305,7 +282,7 @@ def internal_stroked_vector_text_raster(
 
 
 def internal_full_stroked_vector_text_raster(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
@@ -360,7 +337,6 @@ def internal_full_stroked_vector_text_raster(
         scale=scale,
         max_pixels=max_pixels,
         crop=crop,
-        cache=False,
     )
     raster = internal_Raster(
         data,
@@ -381,41 +357,22 @@ def internal_remap_stroked_vector_observations(
     sequences: list[int] = []
     references: list[Any | None] = []
     tolerance = STROKED_VECTOR_PACK_REMAP_TOLERANCE
-    cell_index = SpatialIndex.from_items(
-        packed.cells,
-        bbox=lambda cell: (
-            cell.packed_box[0] - tolerance,
-            cell.packed_box[1] - tolerance,
-            cell.packed_box[2] + tolerance,
-            cell.packed_box[3] + tolerance,
-        ),
-    )
+    cell_boxes = numpy.asarray(
+        tuple(cell.packed_box for cell in packed.cells), dtype=numpy.float32
+    ).reshape((-1, 4))
     for index, packed_box in enumerate(observations.bbox):
         box = internal_bbox_tuple(packed_box)
         center_x = (box[0] + box[2]) * 0.5
         center_y = (box[1] + box[3]) * 0.5
-        # Broad-phase grid lookup narrows to spatially nearby cells; the exact
-        # tolerance check below is unchanged so results are identical to a
-        # full scan, just without touching every cell on the page per glyph.
-        # The query box needs a positive area (SpatialIndex rejects a
-        # degenerate point), so pad it by a fixed epsilon far smaller than
-        # any real geometry difference -- it only widens the broad-phase
-        # candidate set, never the final exact-tolerance result.
-        query_box = (
-            center_x - 1e-6,
-            center_y - 1e-6,
-            center_x + 1e-6,
-            center_y + 1e-6,
+        matching = numpy.flatnonzero(
+            (cell_boxes[:, 0] - tolerance <= center_x)
+            & (cell_boxes[:, 2] + tolerance >= center_x)
+            & (cell_boxes[:, 1] - tolerance <= center_y)
+            & (cell_boxes[:, 3] + tolerance >= center_y)
         )
-        cells = tuple(
-            cell
-            for cell in cell_index.candidates(query_box)
-            if cell.packed_box[0] - tolerance <= center_x <= cell.packed_box[2] + tolerance
-            and cell.packed_box[1] - tolerance <= center_y <= cell.packed_box[3] + tolerance
-        )
-        if len(cells) != 1:
+        if len(matching) != 1:
             continue
-        cell = cells[0]
+        cell = packed.cells[int(matching[0])]
         dx = cell.source_box[0] - cell.packed_box[0]
         dy = cell.source_box[1] - cell.packed_box[1]
         mapped = (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
@@ -576,7 +533,7 @@ def internal_stroked_vector_substitution(
 
 
 def internal_stroked_vector_symbol_seeds(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     symbols: ObservationBatch,
 ) -> tuple[StrokedTextSeed, ...]:
     """Join character boxes only when they exactly fill one known vector run."""
@@ -620,7 +577,7 @@ def internal_stroked_vector_symbol_seeds(
 
 
 def internal_decode_stroked_vector_text(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     ocr: ObservationBatch,
     symbols: ObservationBatch | None = None,
 ) -> StrokedTextDecode:
@@ -681,20 +638,19 @@ def internal_packed_stroked_vector_decode_gate(
 
 
 def internal_recover_stroked_vector_text(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     ocr: ObservationBatch,
-    *,
-    cached_decode: tuple[int, StrokedTextDecode] | None = None,
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
         return ocr, ()
-    if cached_decode is not None and cached_decode[0] == id(ocr):
-        decoded = cached_decode[1]
-    else:
-        decoded = internal_decode_stroked_vector_text(capture, ocr)
-    ocr_index = SpatialIndex.from_boxes(ocr.bbox)
+    decoded = internal_decode_stroked_vector_text(capture, ocr)
+    ocr_boxes = ocr.bbox
+    ocr_areas = numpy.maximum(
+        0.01,
+        (ocr_boxes[:, 2] - ocr_boxes[:, 0]) * (ocr_boxes[:, 3] - ocr_boxes[:, 1]),
+    )
     replacements: set[int] = set()
     accepted: list[StrokedTextObservation] = []
     for observation in decoded.observations:
@@ -703,18 +659,23 @@ def internal_recover_stroked_vector_text(
             (observation.bbox[2] - observation.bbox[0])
             * (observation.bbox[3] - observation.bbox[1]),
         )
-        overlaps: list[tuple[float, int]] = []
-        for hit in ocr_index.intersecting_hits(observation.bbox):
-            hit_area = max(0.01, (hit.bbox[2] - hit.bbox[0]) * (hit.bbox[3] - hit.bbox[1]))
-            overlap = bbox_intersection_area(observation.bbox, hit.bbox) / min(
-                candidate_area, hit_area
-            )
-            if overlap >= STROKED_VECTOR_DECODE_MIN_OVERLAP:
-                overlaps.append((overlap, int(hit.item)))
-        if not overlaps:
+        overlap_width = numpy.maximum(
+            0.0,
+            numpy.minimum(ocr_boxes[:, 2], observation.bbox[2])
+            - numpy.maximum(ocr_boxes[:, 0], observation.bbox[0]),
+        )
+        overlap_height = numpy.maximum(
+            0.0,
+            numpy.minimum(ocr_boxes[:, 3], observation.bbox[3])
+            - numpy.maximum(ocr_boxes[:, 1], observation.bbox[1]),
+        )
+        overlap_ratios = (overlap_width * overlap_height) / numpy.minimum(candidate_area, ocr_areas)
+        matching = numpy.flatnonzero(overlap_ratios >= STROKED_VECTOR_DECODE_MIN_OVERLAP)
+        if not len(matching):
             accepted.append(observation)
             continue
-        best_overlap, best_index = max(overlaps)
+        best_index = int(matching[-1 - numpy.argmax(overlap_ratios[matching][::-1])])
+        best_overlap = float(overlap_ratios[best_index])
         recognized_text = ocr.text[best_index].strip()
         if recognized_text == observation.text:
             continue

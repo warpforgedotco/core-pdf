@@ -66,11 +66,10 @@ def test_uint8_image_view_validates_shape() -> None:
     assert uint8_image_view(b"abcde", (2, 2), allow_trailing=True).shape == (2, 2)
 
 
-def test_nearest_indices_are_bounded_and_cached() -> None:
+def test_nearest_indices_are_bounded_and_immutable() -> None:
     indexes = nearest_indices(5, 2)
 
     assert indexes.tolist() == [0, 0, 0, 1, 1]
-    assert indexes is nearest_indices(5, 2)
     assert not indexes.flags.writeable
 
 

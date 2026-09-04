@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Iterable
-from concurrent.futures import Future
 from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.exceptions import PdfContractError, PdfDocumentClosedError
+from core_pdf.impl.exceptions import PdfDocumentClosedError
 from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf.impl.extract.pipeline import extract_page
 from core_pdf.impl.extract.selection import extract_document
@@ -33,8 +32,7 @@ from core_pdf.impl.records import (
 )
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.runtime.execution import RUNTIME, TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
@@ -56,74 +54,56 @@ class PdfPage(SpecPdfPage):
         """Return this page's canonical high-level structured representation."""
         return self.extract()
 
-    def internal_cache(self) -> ExtractionCache:
-        cache = self.extraction_cache
-        if cache is None:
-            # The spec page always registers a cache at construction; a missing one
-            # would silently escape document-level invalidation, so fail loudly.
-            raise PdfContractError("page extraction cache was not initialized")
-        return cache
-
     def extract(self) -> Any:
         with self.document.acquire_operation() as operation:
-            with RUNTIME.task_scope(
+            with ExtractionScope(
                 cancelled=lambda: operation.cancelled,
             ) as context:
                 return extract_page(self, context)
 
     def text_diagnostics(self, *, include_invisible: bool = True) -> TextDiagnostics:
-        with self.internal_page_lock:
-            return TextDiagnostics(
-                runs=tuple(
-                    DiagnosticTextRun(
-                        text=run.text,
-                        bbox=(run.x0, run.y0, run.x1, run.y1),
-                        font_name=run.font_name,
-                        font_size=run.font_size,
-                        is_vertical=run.is_vertical,
-                        visible=run.visible,
-                        rotation=run.rotation_angle,
-                        seqno=run.seqno,
-                        geometry_issues=text_run_geometry_issues(run),
-                    )
-                    for run in self.get_page_program().products.runs
-                    if include_invisible or run.visible
+        return TextDiagnostics(
+            runs=tuple(
+                DiagnosticTextRun(
+                    text=run.text,
+                    bbox=(run.x0, run.y0, run.x1, run.y1),
+                    font_name=run.font_name,
+                    font_size=run.font_size,
+                    is_vertical=run.is_vertical,
+                    visible=run.visible,
+                    rotation=run.rotation_angle,
+                    seqno=run.seqno,
+                    geometry_issues=text_run_geometry_issues(run),
                 )
+                for run in self.get_page_program().runs
+                if include_invisible or run.visible
             )
+        )
 
     def get_text_lines(self) -> list[LayoutLine]:
-        with self.internal_page_lock:
-            if self.text_lines is None:
-                self.text_lines = [LayoutLine([run]) for run in self.chars if run.text]
-            return self.text_lines
+        return [LayoutLine([run]) for run in self.chars if run.text]
 
     def extract_geometry_issues(self) -> tuple[object, ...]:
-        with self.internal_page_lock:
-            return page_layout_geometry_issues(self.get_text_lines())
+        return page_layout_geometry_issues(self.get_text_lines())
 
     def extract_geometry_summary(self) -> LayoutGeometrySummary:
-        with self.internal_page_lock:
-            return page_layout_geometry_summary(self.get_text_lines())
+        return page_layout_geometry_summary(self.get_text_lines())
+
+    @staticmethod
+    def internal_drawing_records(drawings: Iterable[Any]) -> tuple[DrawingRecord, ...]:
+        return tuple(
+            DrawingRecord.from_captured(
+                drawing,
+                raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
+                image_clip=rect_tuple(drawing.image_clip),
+                items=tuple(drawing.items),
+                rect=rect_tuple(drawing.rect),
+            )
+            for drawing in drawings
+        )
 
     def get_drawings(self) -> tuple[DrawingRecord, ...]:
-        cache_key = "page_drawing_records_v2"
-        with self.internal_page_lock:
-            cache = self.internal_cache()
-            cached = cache.get_as(cache_key, tuple)
-            if cached is not None:
-                return cached
-            result = tuple(
-                DrawingRecord.from_captured(
-                    drawing,
-                    raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
-                    image_clip=rect_tuple(drawing.image_clip),
-                    items=tuple(drawing.items),
-                    rect=rect_tuple(drawing.rect),
-                )
-                for drawing in self.get_page_program().products.drawings
-            )
-            cache[cache_key] = result
-            return result
+        return self.internal_drawing_records(self.get_page_program().drawings)
 
     def extract_images(
         self,
@@ -131,11 +111,14 @@ class PdfPage(SpecPdfPage):
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[ImageRecord, ...]:
+        if not include_inline and not include_xobjects:
+            return ()
+        program = self.get_page_program()
         images: list[ImageRecord] = []
         if include_xobjects:
             images.extend(
                 ImageRecord.from_captured(drawing)
-                for drawing in self.get_drawings()
+                for drawing in self.internal_drawing_records(program.drawings)
                 if drawing.kind == "image"
             )
         if include_inline:
@@ -164,7 +147,7 @@ class PdfPage(SpecPdfPage):
                     items=(),
                     rect=None,
                 )
-                for image in self.get_page_program().products.inline_images
+                for image in program.inline_images
             )
         for index, image in enumerate(images):
             source = cast(ImageSource | None, image.image_source)
@@ -189,21 +172,7 @@ class PdfPage(SpecPdfPage):
 
     def render(self, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
-        key = (
-            "rendered_page_v2",
-            options.rotate,
-            options.crop,
-            options.include_text,
-            options.include_annotations,
-            options.include_layers,
-        )
-        with self.internal_page_lock:
-            cache = self.internal_cache()
-            cached = cache.get(key)
-            if cached is None:
-                cached = compose_page(self, options, page_program=self.get_page_program())
-                cache[key] = cached
-            return cached
+        return compose_page(self, options, page_program=self.get_page_program())
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
@@ -243,10 +212,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         self.internal_operation_cancelled = threading.Event()
         self.internal_active_operations = 0
         self.internal_closing = False
-        self.internal_document_extract_lock = threading.RLock()
-        self.internal_extraction_generation = 0
-        self.internal_extracted_documents: dict[tuple[int, ...], Any] = {}
-        self.internal_extraction_flights: dict[tuple[int, tuple[int, ...]], Future[Any]] = {}
         super().__init__(
             source,
             password=password,
@@ -277,16 +242,40 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         per_page: Callable[["PdfPage"], Iterable[Any]],
     ) -> tuple[PageScoped[Any], ...]:
         """Fan a per-page extractor out over the selected pages as scoped records."""
-        return tuple(
-            self.internal_scope(page_index, page, record)
+        pending = [
+            (page_index, record)
             for page_index, page in self.iter_selected_pages(pages)
             for record in per_page(page)
+        ]
+        return self.internal_scoped_pending(pending)
+
+    def internal_scoped_pending(
+        self,
+        pending: Iterable[tuple[int, Any]],
+    ) -> tuple[PageScoped[Any], ...]:
+        pending = tuple(pending)
+        if not pending:
+            return ()
+        labels = self.page_labels
+        return tuple(
+            self.internal_scope(
+                page_index,
+                labels[page_index] if labels is not None else None,
+                record,
+            )
+            for page_index, record in pending
         )
 
     def extract_form_fields(
         self, *, pages: PageSelection | None = None
     ) -> tuple[PageScoped[Any], ...]:
-        return self._scoped_records(pages, lambda page: page.get_fields())
+        selected = tuple(self.iter_selected_pages(pages))
+        grouped = self.fields_by_page(tuple(page for _index, page in selected))
+        return self.internal_scoped_pending(
+            (page_index, record)
+            for page_index, _page in selected
+            for record in grouped.get(page_index, ())
+        )
 
     def acquire_operation(self) -> DocumentOperation:
         with self.internal_operation_lock:
@@ -313,81 +302,37 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
                 return
         super().close()
 
-    def invalidate_document_extraction_cache(self) -> None:
-        with self.internal_document_extract_lock:
-            self.internal_extraction_generation += 1
-            self.internal_extracted_documents.clear()
-            super().invalidate_document_extraction_cache()
-
     def extract(
         self,
         *,
         pages: PageSelection | None = None,
         adapters: Iterable[Any] = (),
-        context: TaskScope | None = None,
     ) -> Any:
         with self.acquire_operation() as operation:
-            leader = False
-            flight: Future[Any] | None = None
-            selected_pages: tuple[Any, ...] = ()
-            with self.internal_document_extract_lock:
-                selected = tuple(self.selected_page_indexes(pages))
-                generation = self.internal_extraction_generation
-                flight_key = generation, selected
-                result = self.internal_extracted_documents.get(selected)
-                if result is None:
-                    flight = self.internal_extraction_flights.get(flight_key)
-                    if flight is None:
-                        selected_pages = tuple(self.pages[index] for index in selected)
-                        flight = Future()
-                        self.internal_extraction_flights[flight_key] = flight
-                        leader = True
-            if result is None:
-                assert flight is not None
-                active_flight = flight
-                if not leader:
-                    result = active_flight.result()
-                else:
-                    try:
-                        if context is None:
-                            with RUNTIME.task_scope(
-                                cancelled=lambda: operation.cancelled,
-                            ) as active_context:
-                                result = extract_document(self, active_context, selected_pages)
-                        else:
-                            result = extract_document(
-                                self,
-                                context.with_cancellation(lambda: operation.cancelled),
-                                selected_pages,
-                            )
-                    except BaseException as exc:
-                        active_flight.set_exception(exc)
-                        raise
-                    else:
-                        with self.internal_document_extract_lock:
-                            if generation == self.internal_extraction_generation:
-                                self.internal_extracted_documents[selected] = result
-                        active_flight.set_result(result)
-                    finally:
-                        with self.internal_document_extract_lock:
-                            self.internal_extraction_flights.pop(flight_key, None)
+            selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
+            with ExtractionScope(cancelled=lambda: operation.cancelled) as context:
+                result = extract_document(self, context, selected_pages)
         for adapter in adapters:
             result = adapter.apply(result)
         return result
 
     @property
     def structured_document(self) -> StructuredDocument:
-        """Return the cached high-level structured view owned by this document."""
+        """Return the high-level structured view of this document."""
         if self.page_count() == 0:
             return StructuredDocument(metadata=self.metadata)
         return cast(StructuredDocument, self.extract())
 
     @staticmethod
-    def internal_scope(page_index: int, page: Any, record: Any) -> PageScoped[Any]:
+    def internal_scope(
+        page_index: int,
+        page_label: str | None,
+        record: Any,
+    ) -> PageScoped[Any]:
         return PageScoped(
             page_index=page_index,
             page_number=page_index + 1,
-            page_label=page.label,
+            page_label=page_label,
             record=record,
         )
 

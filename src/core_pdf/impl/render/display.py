@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -21,15 +20,12 @@ from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_display_metadata,
     pdf_number,
 )
-from core_pdf.impl.spec.s_08_graphics.shading import prepare_shading
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
 }
 MAX_COALESCED_STROKE_SUBPATHS = 256
 RASTER_CONTROL_KINDS = frozenset({"state-push", "state-pop", "clip", "group-begin", "group-end"})
-RENDER_TILE_SIZE = 128.0
-MAX_TILES_PER_ITEM = 256
 
 
 def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
@@ -99,8 +95,6 @@ class DisplayList:
                 )
             )
             return
-        if kind == "shading" and "prepared_shading" not in data:
-            data["prepared_shading"] = prepare_shading(data.get("dictionary"))
         paint_kind = PATH_PAINT_KINDS.get(kind)
         if (
             paint_kind is not None
@@ -221,7 +215,7 @@ class DisplayList:
 
 
 def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, float] | None:
-    """Compute the conservative paint bounds used by the compiled render plan."""
+    """Compute conservative bounds for crop-aware rasterization."""
     if type(item) is ImagePaintItem:
         return rect_tuple(item.bbox)
     if type(item) is PathPaintItem:
@@ -260,80 +254,7 @@ def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, f
     return box
 
 
-@dataclass(frozen=True, slots=True)
-class CompiledRenderPlan:
-    """Immutable draw sequence with a coarse spatial index for crop rendering."""
-
-    items: tuple[DisplayItem, ...]
-    raster_indexes: tuple[int, ...]
-    always_indexes: tuple[int, ...]
-    boxes: tuple[tuple[float, float, float, float] | None, ...]
-    tiles: dict[tuple[int, int], tuple[int, ...]]
-
-    @classmethod
-    def compile(cls, display_list: DisplayList) -> CompiledRenderPlan:
-        items = tuple(display_list.items)
-        raster_indexes: list[int] = []
-        always_indexes: list[int] = []
-        boxes: list[tuple[float, float, float, float] | None] = [None] * len(items)
-        mutable_tiles: dict[tuple[int, int], list[int]] = {}
-        for index, item in enumerate(items):
-            if type(item) is DisplayListItem and item.kind == "text":
-                continue
-            raster_indexes.append(index)
-            box = internal_display_item_box(item)
-            boxes[index] = box
-            if box is None or (type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS):
-                always_indexes.append(index)
-                continue
-            tile_x0 = math.floor(box[0] / RENDER_TILE_SIZE)
-            tile_y0 = math.floor(box[1] / RENDER_TILE_SIZE)
-            tile_x1 = math.floor(box[2] / RENDER_TILE_SIZE)
-            tile_y1 = math.floor(box[3] / RENDER_TILE_SIZE)
-            tile_count = (tile_x1 - tile_x0 + 1) * (tile_y1 - tile_y0 + 1)
-            if tile_count > MAX_TILES_PER_ITEM:
-                always_indexes.append(index)
-                continue
-            for tile_y in range(tile_y0, tile_y1 + 1):
-                for tile_x in range(tile_x0, tile_x1 + 1):
-                    mutable_tiles.setdefault((tile_x, tile_y), []).append(index)
-        return cls(
-            items,
-            tuple(raster_indexes),
-            tuple(always_indexes),
-            tuple(boxes),
-            {key: tuple(indexes) for key, indexes in mutable_tiles.items()},
-        )
-
-    def items_for_crop(
-        self,
-        crop: tuple[float, float, float, float] | None,
-    ) -> tuple[DisplayItem, ...]:
-        if crop is None:
-            if len(self.raster_indexes) == len(self.items):
-                return self.items
-            return tuple(self.items[index] for index in self.raster_indexes)
-        tile_x0 = math.floor(crop[0] / RENDER_TILE_SIZE)
-        tile_y0 = math.floor(crop[1] / RENDER_TILE_SIZE)
-        tile_x1 = math.floor(crop[2] / RENDER_TILE_SIZE)
-        tile_y1 = math.floor(crop[3] / RENDER_TILE_SIZE)
-        selected = set(self.always_indexes)
-        for tile_y in range(tile_y0, tile_y1 + 1):
-            for tile_x in range(tile_x0, tile_x1 + 1):
-                selected.update(self.tiles.get((tile_x, tile_y), ()))
-        candidates = []
-        for index in sorted(selected):
-            box = self.boxes[index]
-            if box is not None and (
-                box[2] <= crop[0] or box[0] >= crop[2] or box[3] <= crop[1] or box[1] >= crop[3]
-            ):
-                continue
-            candidates.append(self.items[index])
-        return tuple(candidates)
-
-
 __all__ = (
-    "CompiledRenderPlan",
     "DisplayList",
     "internal_image_quad",
 )

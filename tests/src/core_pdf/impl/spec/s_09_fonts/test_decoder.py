@@ -235,15 +235,16 @@ def test_font_decoder_prefers_explicit_pdf_encoding_over_embedded_type1_encoding
     assert decoder.decode(b"1") == "1"
 
 
-def test_simple_font_decoder_reuses_glyphs_across_distinct_text_operands() -> None:
+def test_simple_font_decoder_constructs_glyphs_for_each_text_operand() -> None:
     decoder = FontDecoder({"Subtype": "Type1"})
 
     first = decoder.decode_glyphs(b"A" * 17)
     second = decoder.decode_glyphs(b"BA" * 9)
 
     assert first[0].unicode == "A"
-    assert all(glyph is first[0] for glyph in first)
-    assert all(glyph is first[0] for glyph in second if glyph.char_code == ord("A"))
+    assert all(glyph == first[0] for glyph in first)
+    assert all(glyph is not first[0] for glyph in first[1:])
+    assert all(glyph == first[0] for glyph in second if glyph.char_code == ord("A"))
 
 
 def test_font_decoder_slots_follow_its_annotated_state() -> None:
@@ -253,31 +254,18 @@ def test_font_decoder_slots_follow_its_annotated_state() -> None:
     assert not hasattr(decoder, "__dict__")
 
 
-def test_cid_font_decoder_reuses_glyphs_across_distinct_long_operands() -> None:
+def test_cid_font_decoder_constructs_glyphs_for_each_text_operand() -> None:
     decoder = FontDecoder(cid_type0_font("Identity-H"))
 
     first = decoder.decode_glyphs(b"\x00A" * 9)
     second = decoder.decode_glyphs(b"\x00B\x00A" * 5)
 
-    assert all(glyph is first[0] for glyph in first)
-    assert all(glyph is first[0] for glyph in second if glyph.cid == ord("A"))
+    assert all(glyph == first[0] for glyph in first)
+    assert all(glyph is not first[0] for glyph in first[1:])
+    assert all(glyph == first[0] for glyph in second if glyph.cid == ord("A"))
 
 
-def test_cid_glyph_cache_stops_accepting_new_codes_at_its_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(decoder_module, "internal_CID_GLYPH_CACHE_LIMIT", 1)
-    decoder = FontDecoder(cid_type0_font("Identity-H"))
-
-    cached = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
-    uncached_first = decoder.internal_decode_cid_glyphs(b"\x00B")[0]
-    uncached_second = decoder.internal_decode_cid_glyphs(b"\x00B")[0]
-
-    assert decoder.internal_decode_cid_glyphs(b"\x00A")[0] is cached
-    assert uncached_second is not uncached_first
-
-
-def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
+def test_font_decoder_derives_cff_glyph_bboxes_directly() -> None:
     class FakeCFFFont(CFFFont):
         def __init__(self) -> None:
             self.bbox_calls: list[int] = []
@@ -298,7 +286,7 @@ def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None
     assert decoder.glyph_bbox(65) == (0.0, -2.0, 5.0, 8.0)
     assert decoder.glyph_bbox(66) is None
     assert decoder.glyph_bbox(66) is None
-    assert cff_font.bbox_calls == [7, 8]
+    assert cff_font.bbox_calls == [7, 7, 8, 8]
 
 
 @pytest.mark.parametrize(
@@ -601,7 +589,7 @@ def test_cff_unicode_repair_is_batched_on_first_suspicious_code(
     assert repair_index.calls == [(b"\x00A",)]
 
 
-def test_cff_unicode_repair_invalidates_cid_glyphs_only_when_changed(
+def test_cff_unicode_repair_uses_latest_repair(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRepairIndex:
@@ -631,27 +619,24 @@ def test_cff_unicode_repair_invalidates_cid_glyphs_only_when_changed(
     first = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
     unchanged = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
     decoder.decode(b"\x00A")
-    assert decoder.decode_cache
-    assert decoder.glyphs_cache
     repair_index.repair = "Y"
     changed = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
 
     assert first.unicode == "X"
-    assert unchanged is first
+    assert unchanged == first
+    assert unchanged is not first
     assert changed.unicode == "Y"
     assert changed is not first
-    assert not decoder.decode_cache
-    assert not decoder.glyphs_cache
 
 
-def test_cid_collection_map_resolves_once_on_first_unmapped_code(
+def test_cid_collection_map_resolves_for_each_decoded_glyph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, str, bool]] = []
 
     def resolve(registry: str, ordering: str, *, vertical: bool = False) -> dict[int, str]:
         calls.append((registry, ordering, vertical))
-        return {66: "fallback"}
+        return {66: "fallback", 67: "next"}
 
     monkeypatch.setattr(decoder_module, "resolve_cid_unicode_map", resolve)
     font = cid_type0_font("Identity-H")
@@ -659,8 +644,13 @@ def test_cid_collection_map_resolves_once_on_first_unmapped_code(
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"\x00B") == "fallback"
+    assert decoder.decode(b"\x00C") == "next"
     assert decoder.decode(b"\x00B") == "fallback"
-    assert calls == [("Adobe", "Japan1", False)]
+    assert calls == [
+        ("Adobe", "Japan1", False),
+        ("Adobe", "Japan1", False),
+        ("Adobe", "Japan1", False),
+    ]
 
 
 def test_font_decoder_recovers_japanese_without_to_unicode() -> None:

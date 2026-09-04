@@ -8,7 +8,6 @@ from typing import NoReturn
 import imagecodecs
 import numpy
 
-from core_pdf.impl.runtime.execution import internal_env_int
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf.impl.spec.s_07_filters.jbig2.codec import (
@@ -23,6 +22,16 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import coerce_to_bytes, 
 
 def raise_pdf_parse(exc: BaseException) -> NoReturn:
     raise FilterParseError(str(exc)) from exc
+
+
+def internal_env_int(name: str, default: int) -> int:
+    configured = os.environ.get(name)
+    if configured:
+        try:
+            return max(1, int(configured))
+        except ValueError:
+            pass
+    return default
 
 
 def raise_pdf_unsupported(exc: BaseException) -> NoReturn:

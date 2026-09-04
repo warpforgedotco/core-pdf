@@ -5,8 +5,6 @@ import numpy
 from core_pdf.impl.extract.block_layout import (
     internal_column_major_prose,
     internal_reading_order_evidence,
-    internal_topological_block_order,
-    internal_topological_block_order_quadratic,
     layout_blocks,
     layout_blocks_with_evidence,
 )
@@ -308,43 +306,3 @@ def test_layout_assigns_conservative_semantic_block_roles() -> None:
     blocks = layout_blocks(batch, use_xy_cut=False)
 
     assert [block.kind for block in blocks] == ["heading", "paragraph", "caption", "list"]
-
-
-def test_sparse_block_order_matches_quadratic_oracle() -> None:
-    random = numpy.random.default_rng(27032026)
-    for sample in range(40):
-        count = int(random.integers(64, 160))
-        x0 = random.uniform(0.0, 500.0, count)
-        y0 = random.uniform(0.0, 800.0, count)
-        widths = random.uniform(5.0, 180.0, count)
-        heights = random.uniform(4.0, 80.0, count)
-        blocks = [
-            ParsedBlock(
-                lines=(
-                    ParsedLine(
-                        text=f"{sample}:{index}",
-                        bbox=(
-                            float(x0[index]),
-                            float(y0[index]),
-                            float(x0[index] + widths[index]),
-                            float(y0[index] + heights[index]),
-                        ),
-                        source="native",
-                    ),
-                ),
-                bbox=(
-                    float(x0[index]),
-                    float(y0[index]),
-                    float(x0[index] + widths[index]),
-                    float(y0[index] + heights[index]),
-                ),
-            )
-            for index in range(count)
-        ]
-
-        expected = internal_topological_block_order_quadratic(blocks)
-        actual = internal_topological_block_order(blocks)
-
-        assert [block.lines[0].text for block in actual] == [
-            block.lines[0].text for block in expected
-        ]

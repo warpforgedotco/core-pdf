@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adaptive OCR pass preparation and scope-specific task materialization."""
+"""Page-scoped OCR task construction and synchronous recognition."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,
     PRIMARY_OCR_PIXELS,
-    CapturedPage,
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     WorkPlan,
 )
 from core_pdf.impl.extract.ocr.raster import (
@@ -27,6 +27,7 @@ from core_pdf.impl.extract.ocr.region_tasks import (
     internal_direct_scan_allowed,
     internal_estimated_text_height,
     internal_high_resolution_weak_region_tasks,
+    internal_ocr_task_groups,
     internal_tile_tasks,
     internal_weak_region_tasks,
 )
@@ -36,6 +37,10 @@ from core_pdf.impl.extract.ocr.regions import (
     internal_has_distributed_outline_text,
     internal_ocr_region_batch,
     internal_page_image_regions,
+)
+from core_pdf.impl.extract.ocr.tesseract import (
+    internal_recognize_group,
+    internal_recover_timed_out_tasks,
 )
 from core_pdf.impl.extract.ocr.types import (
     internal_OcrRegion,
@@ -49,8 +54,7 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_stroked_vector_text_raster,
 )
 from core_pdf.impl.extract.quality import internal_Candidate
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import RenderedPage, compose_page
+from core_pdf.impl.runtime.execution import ExtractionScope
 
 internal_PageBox = tuple[float, float, float, float]
 
@@ -97,46 +101,36 @@ class internal_OcrPassTasks:
     packed_stroked: internal_PackedStrokedTextRaster | None = None
 
 
-@dataclass(slots=True)
-class internal_OcrPassTaskResources:
-    """Page-local raster and region caches shared by scheduled OCR passes."""
+@dataclass(frozen=True, slots=True)
+class internal_OcrSession:
+    """Own task construction and synchronous recognition for one page."""
 
-    capture: CapturedPage
+    capture: PageAnalysis
     plan: WorkPlan
     compact_image: bool | str
-    rendered_page: RenderedPage | None = None
-    internal_dominant_regions: dict[int, internal_RasterRegion | None] = field(default_factory=dict)
-    internal_rendered_rasters: dict[tuple[float, int, bool], internal_Raster | None] = field(
-        default_factory=dict
-    )
-    internal_candidate_regions: tuple[internal_OcrRegion, ...] | None = None
+    context: ExtractionScope
+
+    def recognize_batch(
+        self, tasks: tuple[internal_OcrTask, ...]
+    ) -> tuple[internal_Candidate, ...]:
+        groups = internal_ocr_task_groups(tasks)
+        return tuple(
+            candidate for group in map(internal_recognize_group, groups) for candidate in group
+        )
+
+    def recognize_tasks(
+        self, tasks: tuple[internal_OcrTask, ...]
+    ) -> tuple[internal_Candidate, ...]:
+        candidates = self.recognize_batch(tasks)
+        if any(candidate.recognition_status == "timeout" for candidate in candidates):
+            self.context.raise_if_cancelled()
+            return internal_recover_timed_out_tasks(tasks, candidates, self.recognize_batch)
+        return candidates
 
     @property
     def page_box(self) -> internal_PageBox:
         page = self.capture.page
         return 0.0, 0.0, float(page.width), float(page.height)
-
-    def internal_dominant_image_region_cached(
-        self,
-        pixel_budget: int,
-    ) -> internal_RasterRegion | None:
-        if pixel_budget not in self.internal_dominant_regions:
-            self.internal_dominant_regions[pixel_budget] = internal_dominant_image_region(
-                self.capture,
-                max_pixels=pixel_budget,
-            )
-        return self.internal_dominant_regions[pixel_budget]
-
-    def internal_rendered_raster_cached(self, ocr_pass: OcrPass) -> internal_Raster | None:
-        raster_key = (ocr_pass.scale, ocr_pass.pixel_budget, ocr_pass.include_native_text)
-        if raster_key not in self.internal_rendered_rasters:
-            self.internal_rendered_rasters[raster_key] = internal_rendered_page_raster(
-                self.capture,
-                ocr_pass.scale,
-                max_pixels=ocr_pass.pixel_budget,
-                include_native_text=ocr_pass.include_native_text,
-            )
-        return self.internal_rendered_rasters[raster_key]
 
     def internal_adapt_pass(
         self,
@@ -157,30 +151,18 @@ class internal_OcrPassTaskResources:
 
         preview_raster: internal_Raster | None = None
         if self.capture.evidence.full_page_image:
-            if OCR_PREFLIGHT_PIXELS not in self.internal_dominant_regions:
-                # The preview only measures text height, so enlarging it would
-                # cost time and shift the projection this decision depends on.
-                self.internal_dominant_regions[OCR_PREFLIGHT_PIXELS] = (
-                    internal_dominant_image_region(
-                        self.capture,
-                        max_pixels=OCR_PREFLIGHT_PIXELS,
-                        upscale=False,
-                    )
-                )
-            preview_region = self.internal_dominant_regions[OCR_PREFLIGHT_PIXELS]
+            # The preview only measures text height, so enlarging it would
+            # cost time and shift the projection this decision depends on.
+            preview_region = internal_dominant_image_region(
+                self.capture,
+                max_pixels=OCR_PREFLIGHT_PIXELS,
+                upscale=False,
+            )
             preview_raster = preview_region.raster if preview_region is not None else None
         else:
-            if self.rendered_page is None:
-                self.rendered_page = compose_page(
-                    self.capture.page,
-                    RenderOptions(include_text=ocr_pass.include_native_text),
-                    page_program=self.capture.program,
-                )
             preview_raster = internal_rendered_page_raster(
                 self.capture,
                 ocr_pass.scale,
-                rendered=self.rendered_page,
-                cache=True,
                 max_pixels=OCR_PREFLIGHT_PIXELS,
                 include_native_text=ocr_pass.include_native_text,
             )
@@ -241,8 +223,7 @@ class internal_OcrPassTaskResources:
         return result
 
     def internal_initial_region_tasks(self, ocr_pass: OcrPass) -> internal_OcrPassTasks:
-        if self.internal_candidate_regions is None:
-            self.internal_candidate_regions = internal_candidate_ocr_regions(self.capture)
+        candidate_regions = internal_candidate_ocr_regions(self.capture)
         distributed_outline_text = bool(
             ocr_pass.scope is OcrPassScope.PAGE
             and internal_has_distributed_outline_text(self.capture)
@@ -257,19 +238,18 @@ class internal_OcrPassTaskResources:
             )
             if distributed_outline_text
             else internal_ocr_region_batch(
-                self.internal_candidate_regions,
+                candidate_regions,
                 ocr_pass,
                 page_area=max(
                     1.0,
-                    float(self.capture.page.width) * float(self.capture.page.height),
+                    self.capture.width * self.capture.height,
                 ),
             )
         )
-        tasks, self.rendered_page = internal_candidate_region_tasks(
+        tasks = internal_candidate_region_tasks(
             self.capture,
             region_batch,
             ocr_pass,
-            rendered=self.rendered_page,
             compact_image=self.compact_image,
         )
         return internal_OcrPassTasks(
@@ -294,11 +274,19 @@ class internal_OcrPassTaskResources:
                 tasks=tasks,
             )
 
-        direct_region = self.internal_dominant_image_region_cached(ocr_pass.pixel_budget)
+        direct_region = internal_dominant_image_region(
+            self.capture,
+            max_pixels=ocr_pass.pixel_budget,
+        )
         raster = direct_region.raster if direct_region is not None else None
         raster_page_box = direct_region.page_box if direct_region is not None else self.page_box
         if raster is None:
-            raster = self.internal_rendered_raster_cached(ocr_pass)
+            raster = internal_rendered_page_raster(
+                self.capture,
+                ocr_pass.scale,
+                max_pixels=ocr_pass.pixel_budget,
+                include_native_text=ocr_pass.include_native_text,
+            )
             raster_page_box = self.page_box
         tasks = (
             internal_weak_region_tasks(
@@ -319,15 +307,13 @@ class internal_OcrPassTaskResources:
         ocr_pass: OcrPass,
         primary: ObservationBatch,
     ) -> tuple[internal_OcrTask, ...]:
-        tasks, self.rendered_page = internal_high_resolution_weak_region_tasks(
+        return internal_high_resolution_weak_region_tasks(
             self.capture,
             source_tasks,
             ocr_pass,
             primary,
-            rendered=self.rendered_page,
             compact_image=self.compact_image,
         )
-        return tasks
 
     def internal_stroked_vector_tasks(self, ocr_pass: OcrPass) -> internal_OcrPassTasks:
         packed_stroked = internal_stroked_vector_text_raster(
@@ -420,14 +406,22 @@ class internal_OcrPassTaskResources:
 
     def internal_page_tasks(self, ocr_pass: OcrPass) -> internal_OcrPassTasks:
         direct_region = (
-            self.internal_dominant_image_region_cached(ocr_pass.pixel_budget)
+            internal_dominant_image_region(
+                self.capture,
+                max_pixels=ocr_pass.pixel_budget,
+            )
             if internal_direct_scan_allowed(self.capture, self.plan)
             else None
         )
         raster = direct_region.raster if direct_region is not None else None
         raster_page_box = direct_region.page_box if direct_region is not None else self.page_box
         if raster is None:
-            raster = self.internal_rendered_raster_cached(ocr_pass)
+            raster = internal_rendered_page_raster(
+                self.capture,
+                ocr_pass.scale,
+                max_pixels=ocr_pass.pixel_budget,
+                include_native_text=ocr_pass.include_native_text,
+            )
             raster_page_box = self.page_box
         task_raster = (
             internal_adaptive_ocr_raster(raster)

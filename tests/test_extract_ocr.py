@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -12,11 +12,11 @@ from core_pdf.impl.extract import contracts as ocr_contracts
 from core_pdf.impl.extract import quality as ocr_quality
 from core_pdf.impl.extract import selection as parse_selection
 from core_pdf.impl.extract.contracts import (
-    CapturedPage,
     ObservationBatch,
     ObservationSource,
     OcrPass,
     OcrPassScope,
+    PageAnalysis,
     PagePlanReason,
     PageRoute,
     StrokedVectorTextEvidence,
@@ -38,13 +38,14 @@ from core_pdf.impl.extract.ocr.strokes import (
     StrokedTextRun,
     StrokedTextSeed,
 )
+from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model import geometry as model_geometry
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.execution import TaskScope
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
-from tests.helpers.extract_fakes import FakePage, drawing, page_evidence, text_run
 from tests.helpers.extract_fakes import capture as make_capture
+from tests.helpers.extract_fakes import drawing, page_evidence, text_run
 from tests.helpers.ocr_fakes import (
     FakeDocumentPage,
     FakeResultIterator,
@@ -90,27 +91,13 @@ def token_observations(
 
 
 def internal_recognize(
-    capture: CapturedPage,
+    capture: PageAnalysis,
     plan: WorkPlan,
-    context: TaskScope,
+    context: ExtractionScope,
 ) -> ObservationBatch:
-    observations, _ = ocr.internal_recognize_page_with_reserved_raster(
-        capture,
-        plan,
-        context,
-    )
-    return observations
+    return ocr.internal_recognize_page_with_reserved_raster(capture, plan, context)
 
 
-@pytest.fixture
-def clear_tessdata_cache() -> Iterator[None]:
-    """Resolve tessdata afresh for the test and leave no stale memo behind."""
-    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
-    yield
-    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
-
-
-@pytest.mark.usefixtures("clear_tessdata_cache")
 def test_tessdata_prefix_takes_precedence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -123,7 +110,6 @@ def test_tessdata_prefix_takes_precedence(
     assert ocr_tesseract.internal_tessdata_path() == str(tessdata)
 
 
-@pytest.mark.usefixtures("clear_tessdata_cache")
 def test_invalid_tessdata_prefix_has_an_actionable_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -134,7 +120,6 @@ def test_invalid_tessdata_prefix_has_an_actionable_error(
         ocr_tesseract.internal_tessdata_path()
 
 
-@pytest.mark.usefixtures("clear_tessdata_cache")
 def test_tessdata_path_falls_back_to_tesseract_cli(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -157,30 +142,6 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
     )
 
     assert ocr_tesseract.internal_tessdata_path() == str(tessdata)
-
-
-def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A worker that builds its Tesseract API lazily pays the model load on the
-    first page it recognizes; prewarming moves that off the critical path."""
-    import threading
-
-    threads: list[str] = []
-    lock = threading.Lock()
-
-    def record(mode: int) -> object:
-        with lock:
-            threads.append(threading.current_thread().name)
-        return SimpleNamespace(SetPageSegMode=lambda internal_mode: None)
-
-    monkeypatch.setattr(ocr_tesseract, "internal_api", record)
-
-    ocr_tesseract.internal_prepare_ocr()
-
-    assert "MainThread" in threads
-    pooled = {name for name in threads if name != "MainThread"}
-    assert len(pooled) == ocr_tesseract.RUNTIME.max_workers
 
 
 def test_low_confidence_standalone_punctuation_is_rejected() -> None:
@@ -1083,7 +1044,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
             page_box=(0.0, 0.0, 10.0, 10.0),
             resolution=raster.resolution,
         )
-        return (task,), None
+        return (task,)
 
     patch_ocr_helper(monkeypatch, "internal_high_resolution_weak_region_tasks", weak_region_crops)
 
@@ -1690,11 +1651,9 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
     assert observations.text == ("full fallback",)
 
 
-def stroked_document(
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[
-    tuple[FakeDocumentPage, ...],
-    tuple[CapturedPage, ...],
+def stroked_document() -> tuple[
+    tuple[RecordingExtraction, ...],
+    tuple[PageAnalysis, ...],
     tuple[tuple[parse_selection.GlyphSignature, str], ...],
     list[int],
     list[int],
@@ -1719,20 +1678,19 @@ def stroked_document(
     )
     ocr_calls: list[int] = []
     plan_calls: list[int] = []
-    extractions = {
-        id(page): RecordingExtraction(
+    extractions = tuple(
+        RecordingExtraction(
             page, capture, alphabet=alphabet, plan_calls=plan_calls, ocr_calls=ocr_calls
         )
         for page, capture in zip(pages, captures, strict=True)
-    }
-    monkeypatch.setattr(parse_selection, "page_extraction", lambda page: extractions[id(page)])
-    return pages, captures, alphabet, ocr_calls, plan_calls
+    )
+    return extractions, captures, alphabet, ocr_calls, plan_calls
 
 
 def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pages, captures, alphabet, ocr_calls, plan_calls = stroked_document(monkeypatch)
+    extractions, captures, alphabet, ocr_calls, plan_calls = stroked_document()
     decoded = StrokedTextDecode(
         observations=tuple(
             StrokedTextObservation(
@@ -1756,7 +1714,7 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     )
 
     enrichment = parse_selection.internal_prepare_document_stroked_mappings(
-        pages,
+        cast(tuple[internal_PageExtraction, ...], extractions),
         captures,
         inline_scope(),
     )
@@ -1779,7 +1737,7 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
 def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pages, captures, alphabet, ocr_calls, plan_calls = stroked_document(monkeypatch)
+    extractions, captures, alphabet, ocr_calls, plan_calls = stroked_document()
     monkeypatch.setattr(
         parse_selection,
         "decode_stroked_text_profile_with_alphabet",
@@ -1794,7 +1752,7 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     )
 
     enrichment = parse_selection.internal_prepare_document_stroked_mappings(
-        pages,
+        cast(tuple[internal_PageExtraction, ...], extractions),
         captures,
         inline_scope(),
     )
@@ -1818,31 +1776,6 @@ def test_document_stroked_alphabet_blacklists_conflicting_signatures() -> None:
 
     assert alphabet == {second: "B"}
     assert ambiguous == {first}
-
-
-def test_stroked_text_profile_is_cached_per_capture_drawings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[object, ...]] = []
-    profile = StrokedTextProfile()
-    monkeypatch.setattr(
-        ocr_stroked_vector,
-        "profile_stroked_text",
-        lambda drawings, indexes: calls.append(drawings) or profile,
-    )
-    page = FakePage()
-    evidence = page_evidence(
-        stroked_vector_text=StrokedVectorTextEvidence(trusted=True, drawing_indexes=(0,))
-    )
-    first_drawings = (drawing("stroke", (0.0, 0.0, 1.0, 1.0)),)
-    second_drawings = (drawing("stroke", (0.0, 0.0, 1.0, 1.0)),)
-    first = make_capture(evidence, page=page, drawings=first_drawings)
-    second = make_capture(evidence, page=page, drawings=second_drawings)
-
-    assert ocr_stroked_vector.internal_stroked_text_profile(first) is profile
-    assert ocr_stroked_vector.internal_stroked_text_profile(first) is profile
-    assert ocr_stroked_vector.internal_stroked_text_profile(second) is profile
-    assert calls == [first_drawings, second_drawings]
 
 
 def test_uncovered_vector_area_ignores_page_sized_background() -> None:
@@ -1893,15 +1826,15 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
+    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion((0.0, 0.0, 100.0, 100.0), 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (3,))
 
-    tasks, _ = ocr_region_tasks.internal_candidate_region_tasks(
+    tasks = ocr_region_tasks.internal_candidate_region_tasks(
         capture,
         (target,),
         ocr_pass,
-        rendered=object(),
         compact_image=False,
     )
 
@@ -1936,15 +1869,15 @@ def test_candidate_region_defers_layered_images_to_compositor(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
+    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion(page_box, 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (11,))
 
-    tasks, _ = ocr_region_tasks.internal_candidate_region_tasks(
+    tasks = ocr_region_tasks.internal_candidate_region_tasks(
         capture,
         (target,),
         ocr_pass,
-        rendered=object(),
         compact_image=False,
     )
 
@@ -1989,7 +1922,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
     patch_ocr_helper(monkeypatch, "internal_has_distributed_outline_text", lambda capture: True)
 
     def candidate_tasks(
-        internal_capture: CapturedPage,
+        internal_capture: PageAnalysis,
         regions: tuple[ocr_types.internal_OcrRegion, ...],
         ocr_pass: OcrPass,
         **internal_kwargs: object,
@@ -2003,7 +1936,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
             page_box=regions[0].page_box,
             resolution=raster.resolution,
         )
-        return (task,), None
+        return (task,)
 
     patch_ocr_helper(monkeypatch, "internal_candidate_region_tasks", candidate_tasks)
     monkeypatch.setattr(
@@ -2159,7 +2092,7 @@ def test_recover_timed_out_tasks_only_reruns_empty_timeouts() -> None:
 
 
 def test_direct_scan_allowed_for_a_full_page_image_without_native_text() -> None:
-    def capture_for(**evidence: object) -> CapturedPage:
+    def capture_for(**evidence: object) -> PageAnalysis:
         defaults: dict[str, object] = {
             "visible_native_characters": 0,
             "image_count": 1,

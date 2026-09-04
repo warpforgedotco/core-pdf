@@ -21,7 +21,6 @@ from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
-    R_SENTINEL,
     STRING_ESCAPE,
     STRING_SPECIAL_TABLE,
     FindableSizedBuffer,
@@ -78,7 +77,6 @@ class PdfLexer:
         "decipher",
         "current_obj_num",
         "current_gen_num",
-        "kw_cache",
         "recover_malformed_objects",
         "recover_dictionary_structure",
     )
@@ -91,7 +89,6 @@ class PdfLexer:
     decipher: Decipher | None
     current_obj_num: int | None
     current_gen_num: int | None
-    kw_cache: dict[bytes, object]
     recover_malformed_objects: bool
     recover_dictionary_structure: bool
 
@@ -101,7 +98,6 @@ class PdfLexer:
         *,
         reference_resolver: Callable[[PdfReference], object] | None = None,
         decipher: Decipher | None = None,
-        kw_cache: dict[bytes, object] | None = None,
         recover_malformed_objects: bool = True,
         recover_dictionary_structure: bool = True,
     ) -> None:
@@ -123,20 +119,6 @@ class PdfLexer:
         self.current_gen_num = None
         self.recover_malformed_objects = recover_malformed_objects
         self.recover_dictionary_structure = recover_dictionary_structure
-
-        if kw_cache is not None:
-            self.kw_cache = kw_cache
-            self.kw_cache[b"true"] = True
-            self.kw_cache[b"false"] = False
-            self.kw_cache[b"null"] = None
-            self.kw_cache[b"R"] = R_SENTINEL
-        else:
-            self.kw_cache = {
-                b"true": True,
-                b"false": False,
-                b"null": None,
-                b"R": R_SENTINEL,
-            }
 
     def close(self) -> None:
         self.source_buffer = None
@@ -223,17 +205,15 @@ class PdfLexer:
 
     def parse_keyword(self, value: memoryview | bytes) -> Any:
         key: bytes = value.tobytes() if type(value) is memoryview else value
-
-        if key in self.kw_cache:
-            cached = self.kw_cache[key]
-            if cached is R_SENTINEL:
-                raise PdfParseError("unexpected indirect reference marker")
-            return cached
-
-        decoded = key.decode("latin-1")
-        if len(self.kw_cache) < 1024:
-            self.kw_cache[key] = decoded
-        return decoded
+        if key == b"true":
+            return True
+        if key == b"false":
+            return False
+        if key == b"null":
+            return None
+        if key == b"R":
+            raise PdfParseError("unexpected indirect reference marker")
+        return key.decode("latin-1")
 
     def read_string(self, *, drop_unknown_escapes: bool = False) -> bytes:
         data = self.raw_data
@@ -703,117 +683,6 @@ class PdfLexer:
                 values.append(int(raw))
                 continue
             values.append(self.parse_keyword(raw))
-
-    def parse_simple_tj_array(self) -> list[Any] | tuple[Any, ...] | None:
-        start_pos = self.pos
-        values: list[Any] | None = None
-        pos = start_pos + 1
-        data = self.raw_data
-        data_len = self.data_len
-        ws_table = WS_TABLE
-        sep_table = SEPARATOR_TABLE
-        should_decipher = self.decipher is not None and self.current_obj_num is not None
-        apply_decipher = self.apply_decipher
-        while True:
-            while pos < data_len:
-                byte = data[pos]
-                if ws_table[byte]:
-                    pos += 1
-                    continue
-                if byte == 37:
-                    pos += 1
-                    while pos < data_len and data[pos] not in (10, 13):
-                        pos += 1
-                    if pos < data_len:
-                        newline = data[pos]
-                        pos += 1
-                        if (
-                            newline == 13
-                            and pos < data_len
-                            and data[pos] == 10
-                            or newline == 10
-                            and pos < data_len
-                            and data[pos] == 13
-                        ):
-                            pos += 1
-                    continue
-                break
-            if pos >= data_len:
-                self.pos = start_pos
-                return None
-            byte = data[pos]
-            if byte == 93:
-                self.pos = pos + 1
-                return values if values is not None else ()
-            if byte == 40:
-                if values is None:
-                    values = []
-                self.pos = pos
-                raw = self.read_string()
-                if should_decipher:
-                    raw = apply_decipher(raw)
-                values.append(raw)
-                pos = self.pos
-                continue
-            if byte == 60:
-                if pos + 1 < data_len and data[pos + 1] == 60:
-                    self.pos = start_pos
-                    return None
-                if values is None:
-                    values = []
-                self.pos = pos
-                raw = self.read_hex_string()
-                if should_decipher:
-                    raw = apply_decipher(raw)
-                values.append(raw)
-                pos = self.pos
-                continue
-            if byte in (91, 47):
-                self.pos = start_pos
-                return None
-
-            if byte in (43, 45, 46) or 48 <= byte <= 57:
-                has_decimal = byte == 46
-                end = pos + 1
-                sign = -1 if byte == 45 else 1
-                int_value = 0
-                int_valid = byte != 46
-                saw_digit = False
-                if 48 <= byte <= 57:
-                    int_value = byte - 48
-                    saw_digit = True
-                while end < data_len:
-                    end_byte = data[end]
-                    if sep_table[end_byte]:
-                        break
-                    if end_byte == 46:
-                        has_decimal = True
-                        int_valid = False
-                    elif 48 <= end_byte <= 57:
-                        if int_valid:
-                            int_value = int_value * 10 + (end_byte - 48)
-                        saw_digit = True
-                    else:
-                        int_valid = False
-                    end += 1
-                if values is None:
-                    values = []
-                if has_decimal:
-                    raw_token = data[pos:end]
-                    try:
-                        values.append(float(raw_token))
-                    except ValueError:
-                        self.pos = start_pos
-                        return None
-                else:
-                    if not int_valid or not saw_digit:
-                        self.pos = start_pos
-                        return None
-                    values.append(int_value * sign)
-                pos = end
-                continue
-            self.pos = start_pos
-            return None
 
     def parse_dictionary(self) -> PdfDict:
         values: PdfDict = {}

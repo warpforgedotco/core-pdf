@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
@@ -159,12 +158,6 @@ class RasterImage:
     width: int
     height: int
     channels: int
-    internal_tesseract_pixels: bytes | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
-    internal_tesseract_lock: threading.Lock = field(
-        default_factory=threading.Lock, init=False, repr=False, compare=False
-    )
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.height <= 0 or self.channels <= 0:
@@ -181,15 +174,8 @@ class RasterImage:
         object.__setattr__(self, "pixels", pixels)
 
     def tesseract_bytes(self) -> bytes:
-        """Return the cached immutable bytes object required by tesserocr."""
-        cached = self.internal_tesseract_pixels
-        if cached is None:
-            with self.internal_tesseract_lock:
-                cached = self.internal_tesseract_pixels
-                if cached is None:
-                    cached = self.pixels if isinstance(self.pixels, bytes) else bytes(self.pixels)
-                    object.__setattr__(self, "internal_tesseract_pixels", cached)
-        return cached
+        """Return the immutable bytes object required by tesserocr."""
+        return bytes(self.pixels)
 
     @property
     def stride(self) -> int:

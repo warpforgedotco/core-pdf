@@ -1194,7 +1194,7 @@ def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
 
 def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
     """Apply failures raised while pdfminer constructs a page resource map."""
-    resources = page.cached_resources
+    resources = page.resources
     fonts = page.document.resolver.resolve(resources.get("Font"))
     if isinstance(fonts, dict):
         for font_value in fonts.values():

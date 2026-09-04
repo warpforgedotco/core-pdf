@@ -13,11 +13,7 @@ import pytest
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.blend import internal_color_component
 from core_pdf.impl.render.display import internal_image_quad
-from core_pdf.impl.render.kernels import (
-    RASTER_COORDINATE_CACHE_MAX_ENTRIES,
-    internal_cached_raster_coordinates,
-    internal_soft_mask_alpha_at,
-)
+from core_pdf.impl.render.kernels import internal_soft_mask_alpha_at
 from core_pdf.impl.render.paths import (
     internal_fill_path_crossing_spans,
     internal_fill_path_sample_crossings,
@@ -170,27 +166,3 @@ class TestCrossingSpans:
     def test_coincident_crossings_are_folded_into_one_boundary(self) -> None:
         crossings = [(1.0, 1), (1.0, 1), (4.0, -1), (4.0, -1)]
         assert internal_fill_path_crossing_spans(crossings, "nonzero") == [(1.0, 4.0)]
-
-
-class TestCachedRasterCoordinates:
-    def test_coordinates_span_the_requested_range(self) -> None:
-        cache: dict[tuple[int, int], numpy.ndarray] = {}
-        assert list(internal_cached_raster_coordinates(cache, 2, 6)) == [2.0, 3.0, 4.0, 5.0]
-
-    def test_repeat_requests_return_the_cached_array(self) -> None:
-        cache: dict[tuple[int, int], numpy.ndarray] = {}
-        first = internal_cached_raster_coordinates(cache, 0, 4)
-        assert internal_cached_raster_coordinates(cache, 0, 4) is first
-
-    def test_cache_cap_stops_growth_without_changing_results(self) -> None:
-        cache: dict[tuple[int, int], numpy.ndarray] = {}
-        for start in range(RASTER_COORDINATE_CACHE_MAX_ENTRIES + 10):
-            internal_cached_raster_coordinates(cache, start, start + 1)
-
-        assert len(cache) == RASTER_COORDINATE_CACHE_MAX_ENTRIES
-        assert list(internal_cached_raster_coordinates(cache, 9_000, 9_003)) == [
-            9000.0,
-            9001.0,
-            9002.0,
-        ]
-        assert len(cache) == RASTER_COORDINATE_CACHE_MAX_ENTRIES

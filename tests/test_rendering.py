@@ -8,10 +8,9 @@ import numpy
 import pytest
 
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.model.glyph_table import GlyphTable
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
+from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     ImagePaintItem,
     PathPaintItem,
@@ -26,17 +25,12 @@ from core_pdf.impl.render.paths import (
     rasterize_packed_stroked_paths,
     rasterize_unclipped_line_normal,
 )
-from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedPath,
     CapturedSubpath,
 )
-from core_pdf.impl.spec.s_07_content.page_program import (
-    LineTable,
-    PageProducts,
-    PageProgram,
-)
+from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import (
@@ -108,11 +102,10 @@ def test_raster_size_accounts_for_rotation_crop_and_scale() -> None:
 def test_rasterize_accepts_a_crop_without_recomposing_the_display_list() -> None:
     page = rendered_page(width=100, height=80)
 
-    full = page.rasterize(background=(255, 255, 255, 255), cache=False)
+    full = page.rasterize(background=(255, 255, 255, 255))
     cropped = page.rasterize(
         background=(255, 255, 255, 255),
         crop=(10.0, 20.0, 40.0, 60.0),
-        cache=False,
     )
 
     assert full.nbytes == 100 * 80 * 4
@@ -121,7 +114,7 @@ def test_rasterize_accepts_a_crop_without_recomposing_the_display_list() -> None
     assert cropped.nbytes == 30 * 40 * 4
 
 
-def test_compiled_render_plan_culls_distant_paint_but_preserves_state() -> None:
+def test_crop_render_items_cull_distant_paint_but_preserve_state() -> None:
     display_list = DisplayList(width=2_000, height=200)
     display_list.append("state-push", 0)
     for index in range(10):
@@ -136,8 +129,8 @@ def test_compiled_render_plan_culls_distant_paint_but_preserves_state() -> None:
         )
     display_list.append("state-pop", 11)
 
-    plan = CompiledRenderPlan.compile(display_list)
-    selected = plan.items_for_crop((0.0, 0.0, 100.0, 100.0))
+    page = RenderedPage(1, 2_000, 200, 0, display_list)
+    selected = page.internal_render_items((0.0, 0.0, 100.0, 100.0))
 
     assert len(selected) == 3
     assert [item.kind for item in selected] == ["state-push", "fill", "state-pop"]
@@ -235,20 +228,10 @@ def test_consecutive_captured_strokes_coalesce_without_changing_pixels() -> None
     assert item.coalesced_path
     assert len(item.path.subpaths) == 2
     assert item.bbox == (1.0, 1.0, 7.0, 4.0)
+    assert coalesced.rasterize(scale=3).pixels == separate.rasterize(scale=3).pixels
     assert (
-        coalesced.rasterize(scale=3, cache=False).pixels
-        == separate.rasterize(
-            scale=3,
-            cache=False,
-        ).pixels
-    )
-    assert (
-        coalesced.rasterize(scale=3, crop=(0.0, 0.0, 4.0, 3.0), cache=False).pixels
-        == separate.rasterize(
-            scale=3,
-            crop=(0.0, 0.0, 4.0, 3.0),
-            cache=False,
-        ).pixels
+        coalesced.rasterize(scale=3, crop=(0.0, 0.0, 4.0, 3.0)).pixels
+        == separate.rasterize(scale=3, crop=(0.0, 0.0, 4.0, 3.0)).pixels
     )
 
 
@@ -310,7 +293,7 @@ def test_clip_preserves_zero_area_stroke_bounds() -> None:
         line_width=0.5,
     )
 
-    pixels = page.rasterize(scale=4, background=(255, 255, 255, 255), cache=False).array()
+    pixels = page.rasterize(scale=4, background=(255, 255, 255, 255)).array()
 
     assert numpy.any(numpy.all(pixels[:, :, :3] == 0, axis=2))
 
@@ -501,8 +484,7 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
         bitmap_code=65,
         font_decoder=decoder,
     )
-    products = PageProducts((), GlyphTable.from_rows((glyph,)), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(products)
+    page_program = PageProgram(glyphs=(glyph,))
 
     text_free = compose_page(
         Page(),
@@ -514,8 +496,6 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
     assert text_free.display_list.items == []
     assert [item.kind for item in with_text.display_list.items] == ["glyph"]
     assert decoder.calls == 1
-
-    assert text_free.cache_identity != with_text.cache_identity
 
 
 @pytest.mark.parametrize(
@@ -653,28 +633,9 @@ def test_text_clip_is_committed_before_the_next_text_object() -> None:
         font_decoder=decoder,
         glyph_transform=(0.005, 0.0, 0.0, 0.005, 1.0, 1.0),
     )
-    products = PageProducts(
-        (), GlyphTable.from_rows((clipping, painted)), (), (), LineTable.from_lines(())
-    )
-
-    rendered = compose_page(Page(), page_program=PageProgram(products))
+    rendered = compose_page(Page(), page_program=PageProgram(glyphs=(clipping, painted)))
 
     assert [item.kind for item in rendered.display_list.items] == ["clip", "fill"]
-
-
-def test_shared_page_raster_cache_reuses_identical_crop() -> None:
-    cache = ImageCache(max_bytes=1024 * 1024)
-    first = rendered_page(width=20, height=20)
-    second = rendered_page(width=20, height=20)
-    first.image_cache = cache
-    second.image_cache = cache
-    first.cache_identity = second.cache_identity = ("page", 1, "program", False)
-
-    first_raster = first.rasterize(crop=(0, 0, 10, 10))
-    second_raster = second.rasterize(crop=(0, 0, 10, 10))
-
-    assert second_raster is first_raster
-    assert cache.stats().hits == 1
 
 
 def test_axis_aligned_image_rasterizes_native_array_samples() -> None:
@@ -743,8 +704,8 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
     assert item.source_metadata["width"] == 2
     assert item.to_data()["source_metadata"] is item.source_metadata
     assert "image_metadata" not in item.to_data()
-    page.rasterize(background=(255, 255, 255, 255), cache=False)
-    page.rasterize(background=(255, 255, 255, 255), cache=False)
+    page.rasterize(background=(255, 255, 255, 255))
+    page.rasterize(background=(255, 255, 255, 255))
 
     assert dictionary == original
     assert "__core_pdf_render_converted_image_data__" not in dictionary
@@ -849,7 +810,7 @@ def test_axis_aligned_image_blit_preserves_empty_clip_subpath_order(
     )
     page.display_list.append("state-pop", 3)
 
-    actual = page.rasterize(background=(255, 255, 255, 255), cache=False).array()
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
 
     expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
     expected[:, 1, :3] = samples[:, 1]

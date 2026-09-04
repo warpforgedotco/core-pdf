@@ -12,7 +12,7 @@ import stringprep
 import struct
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from hashlib import md5, sha256, sha384, sha512
 from hmac import compare_digest
 from types import MappingProxyType
@@ -105,11 +105,6 @@ class internal_StandardSecurityConfig:
 class internal_StandardSecurityHandler:
     config: internal_StandardSecurityConfig
     file_key: bytes
-    # ``decrypt`` runs once per string, not once per object, so the per-object
-    # MD5 below is re-derived thousands of times per page without this memo.
-    object_key_cache: dict[tuple[int, int, bytes], bytes] = field(
-        default_factory=dict, compare=False, repr=False
-    )
 
     def decrypt(
         self,
@@ -174,20 +169,13 @@ class internal_StandardSecurityHandler:
         generation_number: int,
         extra: bytes = b"",
     ) -> bytes:
-        cache = self.object_key_cache
-        cache_key = (object_number, generation_number, extra)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
         seed = (
             self.file_key
             + struct.pack("<L", object_number)[:3]
             + struct.pack("<L", generation_number)[:2]
             + extra
         )
-        key = md5(seed).digest()[: min(len(seed), 16)]
-        cache[cache_key] = key
-        return key
+        return md5(seed).digest()[: min(len(seed), 16)]
 
 
 def create_standard_decipher(

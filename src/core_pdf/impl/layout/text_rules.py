@@ -10,7 +10,6 @@ import struct
 import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from importlib.resources import files
 from statistics import median_low
 
@@ -110,7 +109,6 @@ class WordRankIndex(Mapping[str, int]):
         return self.internal_count
 
 
-@lru_cache(maxsize=1)
 def english_word_frequencies() -> dict[str, WordFrequency]:
     frequencies: dict[str, WordFrequency] = {}
     load_norvig_counts(frequencies)
@@ -118,7 +116,6 @@ def english_word_frequencies() -> dict[str, WordFrequency]:
     return frequencies
 
 
-@lru_cache(maxsize=1)
 def english_word_ranks() -> Mapping[str, int]:
     """Open the packaged rank index without inflating source word lists."""
     import os
@@ -208,19 +205,14 @@ def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
         frequencies[word] = WordFrequency(0, rank)
 
 
-@lru_cache(maxsize=262_144)
-def normalized_word_rank(normalized: str) -> int | None:
+def word_rank(word: str) -> int | None:
+    normalized = word.casefold()
     if not normalized or not normalized.isalpha():
         return None
     ranks = english_word_ranks()
     if isinstance(ranks, WordRankIndex):
         return ranks.lookup(normalized)
     return ranks.get(normalized)
-
-
-@lru_cache(maxsize=65536)
-def word_rank(word: str) -> int | None:
-    return normalized_word_rank(word.casefold())
 
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
@@ -234,26 +226,21 @@ def runs_are_left_to_right(runs: list[TextRun]) -> bool:
     if len(runs) < 2:
         return True
 
-    x0_idx = TextRun.X0
-    x1_idx = TextRun.X1
-
     previous = runs[0]
-    previous_coords = previous.coords
-    prev_x0 = previous_coords[x0_idx]
-    prev_x1 = previous_coords[x1_idx]
-    prev_height = previous.height_value
+    prev_x0 = previous.x0
+    prev_x1 = previous.x1
+    prev_height = previous.height
     prev_order = previous.order
 
     for idx in range(1, len(runs)):
         run = runs[idx]
-        coords = run.coords
-        x0 = coords[x0_idx]
+        x0 = run.x0
         if x0 < prev_x0:
             return False
         if x0 == prev_x0 and run.order < prev_order:
             return False
-        x1 = coords[x1_idx]
-        height = run.height_value
+        x1 = run.x1
+        height = run.height
         overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
         if overlap > (prev_height if prev_height < height else height) * 0.25:
             return False
@@ -278,10 +265,9 @@ def runs_are_right_to_left(runs: list[TextRun]) -> bool:
     stream_sorted = sorted(ordered, key=lambda r: (r.order, r.stream_order))
     decreases = 0
     increases = 0
-    text_run_x0 = TextRun.X0
-    prev_x0 = stream_sorted[0].coords[text_run_x0]
+    prev_x0 = stream_sorted[0].x0
     for idx in range(1, len(stream_sorted)):
-        x0 = stream_sorted[idx].coords[text_run_x0]
+        x0 = stream_sorted[idx].x0
         if x0 < prev_x0:
             decreases += 1
         elif x0 > prev_x0:
@@ -291,9 +277,6 @@ def runs_are_right_to_left(runs: list[TextRun]) -> bool:
 
 
 def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
-    x0_idx = TextRun.X0
-    x1_idx = TextRun.X1
-
     previous: TextRun | None = None
     prev_x0 = 0.0
     prev_x1 = 0.0
@@ -302,9 +285,8 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         run = runs[idx]
         if not run.has_text:
             continue
-        coords = run.coords
-        x0 = coords[x0_idx]
-        x1 = coords[x1_idx]
+        x0 = run.x0
+        x1 = run.x1
         space_width = run.space_width
         if previous is not None:
             overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
@@ -450,14 +432,6 @@ def should_use_estimated_word_spacing(previous: str, current: str) -> bool:
     return not (not previous[-1].isalpha() or not current[0].isalpha())
 
 
-@lru_cache(maxsize=4096)
-def ranked_alpha_word(text: str) -> int | None:
-    normalized = text.casefold()
-    if not normalized.isalpha():
-        return None
-    return word_rank(normalized)
-
-
 def repair_table_split_word_boundaries(text: str) -> str:
     """Join dictionary-backed fragments split by table glyph spacing."""
     tokens = text.split(" ")
@@ -481,11 +455,11 @@ def table_split_word_join_is_plausible(left: str, right: str) -> bool:
     if not left.isalpha() or not right.isalpha():
         return False
     joined = left + right
-    joined_rank = ranked_alpha_word(joined)
+    joined_rank = word_rank(joined)
     if joined_rank is None or len(joined) < 3:
         return False
-    left_rank = ranked_alpha_word(left)
-    right_rank = ranked_alpha_word(right)
+    left_rank = word_rank(left)
+    right_rank = word_rank(right)
     if left_rank is None or right_rank is None:
         return True
     if joined_rank < min(left_rank, right_rank):
@@ -509,7 +483,7 @@ def leading_alpha_token(text: str) -> str:
 
 
 def is_high_frequency_boundary_word(text: str) -> bool:
-    rank = ranked_alpha_word(text.strip())
+    rank = word_rank(text.strip())
     return rank is not None and rank <= 250
 
 
@@ -555,11 +529,11 @@ def should_join_plausible_split_word(
         # keep only tight, lowercase joins in this opt-in path.
         return x_gap <= max(1.8, min(space_width, height) * 0.25)
     joined = f"{tail}{head}"
-    joined_rank = ranked_alpha_word(joined)
+    joined_rank = word_rank(joined)
     if joined_rank is None or joined_rank > 150_000:
         return False
-    tail_rank = ranked_alpha_word(tail)
-    head_rank = ranked_alpha_word(head)
+    tail_rank = word_rank(tail)
+    head_rank = word_rank(head)
     if tail_rank is None:
         return True
     if head_rank is None and joined_rank <= 75_000 and len(tail) <= 5:
@@ -765,8 +739,8 @@ def stacked_formula_denominator(
         return False
     if denominator.rotation_angle != 0 or numerator.rotation_angle != 0:
         return False
-    denominator_height = denominator.height_value
-    numerator_height = numerator.height_value
+    denominator_height = denominator.height
+    numerator_height = numerator.height
     if denominator_height <= 0.0 or numerator_height <= 0.0:
         return False
     if numerator_height < denominator_height * 0.7 or numerator_height > denominator_height * 1.3:
@@ -813,7 +787,6 @@ def chemical_subscript_prefix_text(text: str) -> bool:
     return bool(stripped) and stripped[-1:].isalpha() and stripped[-1:].isupper()
 
 
-@lru_cache(maxsize=1024)
 def is_private_use_or_control(ch: str) -> bool:
     codepoint = ord(ch)
     if ch in "\t\n\r":

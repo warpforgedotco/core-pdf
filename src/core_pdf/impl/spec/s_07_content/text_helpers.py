@@ -3,18 +3,12 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any
 
 from core_pdf.impl.text import word_gap_threshold
 
 NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
 NO_SPACE_AFTER = frozenset("([{")
-
-
-@lru_cache(maxsize=256)
-def cached_encode_latin1(s: str) -> bytes:
-    return s.encode("latin-1", "replace")
 
 
 def gap_separator(left: str, right: str, gap: float, run: Any) -> str:
@@ -33,7 +27,6 @@ def can_merge_cross_font_word(left: str, right: str) -> bool:
     return (left[-1].isalnum() or left[-1] == "_") and (right[0].isalnum() or right[0] == "_")
 
 
-@lru_cache(maxsize=4096)
 def is_garbage_text(text: str) -> bool:
     if not text:
         return True
@@ -58,7 +51,6 @@ def normalize_extracted_text(text: str) -> str:
 __all__ = (
     "NO_SPACE_AFTER",
     "NO_SPACE_BEFORE",
-    "cached_encode_latin1",
     "can_merge_cross_font_word",
     "gap_separator",
     "is_garbage_text",

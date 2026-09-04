@@ -3,18 +3,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.render.blend import (
     internal_color_rgba,
     internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
+from core_pdf.impl.render.display import (
+    RASTER_CONTROL_KINDS,
+    DisplayList,
+    internal_display_item_box,
+)
 from core_pdf.impl.render.model import (
     DisplayItem,
     DisplayListItem,
@@ -27,8 +33,12 @@ from core_pdf.impl.render.target import internal_RasterTarget
 from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
-from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
+from core_pdf.impl.spec.s_07_content.capture import (
+    CapturedDrawing,
+    CapturedInlineImage,
+    CapturedPath,
+    CapturedSubpath,
+)
 from core_pdf.impl.spec.s_07_content.page_program import PageEventKind, PageProgram
 from core_pdf.impl.spec.s_07_content.state import (
     TextState,
@@ -50,11 +60,7 @@ class RenderedPage:
     height: float
     rotate: int
     display_list: DisplayList
-    image_cache: ImageCache | None = field(default=None, repr=False)
-    cache_identity: tuple[object, ...] = field(default=(), repr=False)
-    render_plan: CompiledRenderPlan | None = field(default=None, repr=False)
     metadata: dict[str, Any] = field(default_factory=dict)
-    raster_cache: dict[tuple[Any, ...], RasterImage] = field(default_factory=dict, repr=False)
 
     def internal_render_items(
         self,
@@ -62,11 +68,20 @@ class RenderedPage:
     ) -> list[DisplayItem] | tuple[DisplayItem, ...]:
         if crop is None:
             return self.display_list.items
-        plan = self.render_plan
-        if plan is None or len(plan.items) != len(self.display_list.items):
-            plan = CompiledRenderPlan.compile(self.display_list)
-            self.render_plan = plan
-        return plan.items_for_crop(crop)
+        selected: list[DisplayItem] = []
+        for item in self.display_list.items:
+            if type(item) is DisplayListItem and item.kind == "text":
+                continue
+            box = internal_display_item_box(item)
+            always_render = box is None or (
+                type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS
+            )
+            outside_crop = box is not None and (
+                box[2] <= crop[0] or box[0] >= crop[2] or box[3] <= crop[1] or box[1] >= crop[3]
+            )
+            if always_render or not outside_crop:
+                selected.append(item)
+        return selected
 
     def internal_effective_crop(
         self,
@@ -134,27 +149,10 @@ class RenderedPage:
         scale: float = 1.0,
         max_pixels: int | None = None,
         crop: tuple[float, float, float, float] | None = None,
-        cache: bool = True,
     ) -> RasterImage:
         scale = max(0.01, float(scale))
         self.validate_raster_size(scale, max_pixels, crop=crop)
         crop = self.internal_effective_crop(crop)
-        raster_options = (
-            tuple(background),
-            scale,
-            tuple(crop) if isinstance(crop, (list, tuple)) else None,
-            self.rotate,
-        )
-        cache_key = ImageCacheKey("page-raster", self.cache_identity or (id(self),), raster_options)
-        cached = (
-            self.image_cache.get(cache_key)
-            if cache and self.image_cache is not None
-            else self.raster_cache.get(raster_options)
-            if cache
-            else None
-        )
-        if cached is not None:
-            return cached
         if crop is not None:
             crop_x0, crop_y0, internal_crop_x1, crop_y1 = crop
         else:
@@ -191,32 +189,16 @@ class RenderedPage:
             page_view=page_pixels,
         )
         buffer_stack = raster_target.buffer_stack
-        # Same dict objects the target owns; the not-yet-extracted painters
-        # below still reach for them by their original names.
-        # Bound methods in locals so the painting call sites keep their single
-        # LOAD_FAST + CALL; each method re-reads self.pixels, so group push/pop
-        # still redirects painting the way the closures' cell did.
-        composite_group = raster_target.composite_group
-        draw_glyph_bitmap = raster_target.draw_glyph_bitmap
-        fill_path = raster_target.fill_path
-        blit_image = raster_target.blit_image
-        paint_fill_pattern = raster_target.paint_fill_pattern
-        paint_typed_path = raster_target.paint_typed_path
-        stroke_path = raster_target.stroke_path
-        paint_shading = raster_target.paint_shading
         rotate = self.rotate % 360
 
         clip_state_stack: list[int] = []
-        # Bound methods in locals: call sites below stay unchanged and keep the
-        # single LOAD_FAST + CALL they had as closures.
-        mark_clip_metadata_dirty = clip_state.mark_clip_metadata_dirty
 
         for item in self.internal_render_items(crop):
             if type(item) is PathPaintItem:
-                paint_typed_path(item)
+                raster_target.paint_typed_path(item)
                 continue
             if type(item) is ImagePaintItem:
-                blit_image(item)
+                raster_target.blit_image(item)
                 continue
             generic_item = cast(DisplayListItem, item)
             data = generic_item.data
@@ -233,13 +215,11 @@ class RenderedPage:
                     del clip_path_stack[clip_state_stack.pop() :]
                 else:
                     clip_path_stack.clear()
-                mark_clip_metadata_dirty()
                 continue
             if generic_item.kind == "clip":
                 path = data.get("path")
                 if type(path) is CapturedPath and path.has_segments():
                     clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
-                    mark_clip_metadata_dirty()
                 continue
             if generic_item.kind == "group-begin":
                 # A transparency group starts from a transparent backdrop, not
@@ -255,7 +235,7 @@ class RenderedPage:
             if generic_item.kind == "group-end":
                 if len(buffer_stack) > 1:
                     child, group_alpha, group_blend_mode = raster_target.pop_group()
-                    composite_group(
+                    raster_target.composite_group(
                         child,
                         group_alpha if pdf_number(group_alpha) else data.get("fill_opacity"),
                         group_blend_mode
@@ -267,7 +247,7 @@ class RenderedPage:
                 if data.get("visible") is False:
                     continue
                 rgba = internal_color_rgba(data.get("fill_color"), None)
-                draw_glyph_bitmap(
+                raster_target.draw_glyph_bitmap(
                     data.get("bbox"),
                     data.get("bitmap"),
                     rgba,
@@ -276,7 +256,7 @@ class RenderedPage:
                     data.get("bitmap_height"),
                 )
             elif generic_item.kind == "shading":
-                paint_shading(data, blend_mode)
+                raster_target.paint_shading(data, blend_mode)
             elif generic_item.kind == "stroke":
                 path = data.get("path")
                 if type(path) is not CapturedPath:
@@ -287,7 +267,7 @@ class RenderedPage:
                 soft_mask_alpha = data.get("soft_mask_alpha")
                 if pdf_number(soft_mask_alpha):
                     stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-                stroke_path(
+                raster_target.stroke_path(
                     path,
                     float(data.get("line_width") or 1.0),
                     stroke_rgba,
@@ -310,9 +290,9 @@ class RenderedPage:
                 pattern_painted = generic_item.kind in {
                     "fill",
                     "fillstroke",
-                } and paint_fill_pattern(data, blend_mode)
+                } and raster_target.paint_fill_pattern(data, blend_mode)
                 if generic_item.kind in {"fill", "fillstroke"} and not pattern_painted:
-                    fill_path(
+                    raster_target.fill_path(
                         path,
                         rgba,
                         blend_mode,
@@ -324,7 +304,7 @@ class RenderedPage:
                     )
                     if pdf_number(soft_mask_alpha):
                         stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-                    stroke_path(
+                    raster_target.stroke_path(
                         path,
                         float(data.get("line_width") or 1.0),
                         stroke_rgba,
@@ -370,11 +350,6 @@ class RenderedPage:
             # A rotation that is not a multiple of 90 rasterizes unrotated; the
             # reported dimensions match the buffer's unrotated layout.
             result = RasterImage(raster_target.pixels, width, height, 4)
-        if cache:
-            if self.image_cache is not None:
-                self.image_cache.put(cache_key, result)
-            else:
-                self.raster_cache[raster_options] = result
         return result
 
     def to_dict(self) -> dict[str, Any]:
@@ -400,14 +375,6 @@ class RenderedPage:
 
 
 # ===== page =====
-
-# Plain ints so the event loop compares list elements without constructing an
-# IntEnum per event.
-internal_EVENT_TEXT = int(PageEventKind.TEXT)
-internal_EVENT_GLYPH = int(PageEventKind.GLYPH)
-internal_EVENT_DRAWING = int(PageEventKind.DRAWING)
-internal_EVENT_IMAGE = int(PageEventKind.IMAGE)
-internal_EVENT_INLINE_IMAGE = int(PageEventKind.INLINE_IMAGE)
 
 
 def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
@@ -478,6 +445,8 @@ def compose_page(
     options: RenderOptions | None = None,
     *,
     page_program: PageProgram | None = None,
+    fields: Iterable[Any] | None = None,
+    annotations: Iterable[Any] | None = None,
 ) -> RenderedPage:
     options = options or RenderOptions()
     media_box = page.media_box or (0.0, 0.0, page.width, page.height)
@@ -490,17 +459,11 @@ def compose_page(
         page_program = page.get_page_program()
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")
-    products = page_program.products
-
-    event_indexes = (
-        range(len(page_program.events.sequence))
-        if options.include_text
-        else page_program.events.non_text_indexes
-    )
+    events = page_program.events
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
 
-    def append_text_run(run: Any) -> None:
+    def append_text_run(run: TextRun) -> None:
         display_list.append(
             "text",
             run.seqno,
@@ -524,18 +487,17 @@ def compose_page(
         )
         text_clipping_subpaths.clear()
 
-    event_kinds: list[int] = page_program.events.kind.tolist()
-    event_payloads: list[int] = page_program.events.payload.tolist()
-    for event_index in event_indexes:
-        event_index = int(event_index)
-        kind = event_kinds[event_index]
-        payload = event_payloads[event_index]
-        if kind == internal_EVENT_TEXT:
-            if not options.include_text:
-                continue
-            append_text_run(products.runs[payload])
-        elif kind == internal_EVENT_GLYPH:
-            glyph = products.glyphs[payload]
+    for event in events:
+        kind = event.kind
+        if not options.include_text and kind in (PageEventKind.TEXT, PageEventKind.GLYPH):
+            continue
+        payload = event.payload
+        if kind == PageEventKind.TEXT:
+            assert isinstance(payload, TextRun)
+            append_text_run(payload)
+        elif kind == PageEventKind.GLYPH:
+            assert isinstance(payload, GlyphObservation)
+            glyph = payload
             glyph_text_object_id = glyph.text_object_id
             if (
                 current_text_object_id is not None
@@ -567,11 +529,13 @@ def compose_page(
                 bitmap_width=glyph.bitmap_width,
                 bitmap_height=glyph.bitmap_height,
             )
-        elif kind in (internal_EVENT_DRAWING, internal_EVENT_IMAGE):
-            flush_text_clip(products.drawings[payload].seqno)
-            display_list.append_captured_drawing(products.drawings[payload])
-        elif kind == internal_EVENT_INLINE_IMAGE:
-            inline_image = products.inline_images[payload]
+        elif kind in (PageEventKind.DRAWING, PageEventKind.IMAGE):
+            assert isinstance(payload, CapturedDrawing)
+            flush_text_clip(payload.seqno)
+            display_list.append_captured_drawing(payload)
+        elif kind == PageEventKind.INLINE_IMAGE:
+            assert isinstance(payload, CapturedInlineImage)
+            inline_image = payload
             flush_text_clip(inline_image.seqno)
             display_list.append(
                 "inline-image",
@@ -585,7 +549,7 @@ def compose_page(
                 bbox=None,
                 raw_data=inline_image.data,
             )
-    flush_text_clip(len(page_program.events.sequence))
+    flush_text_clip(len(events))
 
     def append_capture(state: TextState) -> None:
         if options.include_text:
@@ -642,22 +606,23 @@ def compose_page(
         state = TextState(
             page.document,
             getattr(page, "page_dict", {}),
-            decoder_cache=getattr(page.document, "decoder_cache", {}),
         )
         resources = (
-            page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.cached_resources
+            page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.resources
         )
         state.consume_stream(normal, resources, nested_ctm, 0)
         append_capture(state)
         return True
 
     if options.include_layers:
-        try:
-            fields = page.get_fields()
-        except ValueError:
-            # A malformed AcroForm must not prevent rendering the page's text and images.
-            fields = ()
-        for field in fields:
+        field_records = fields
+        if field_records is None:
+            try:
+                field_records = page.get_fields()
+            except ValueError:
+                # A malformed AcroForm must not prevent rendering the page's text and images.
+                field_records = ()
+        for field in field_records:
             widget = field.widget or field.dict
             rect = field.rect
             appearance = None
@@ -681,7 +646,8 @@ def compose_page(
                 else False,
             )
     if options.include_annotations:
-        for annot in page.get_annotations():
+        annotation_records = page.get_annotations() if annotations is None else annotations
+        for annot in annotation_records:
             appearance = annot.dict.get("AP") if isinstance(annot.dict, dict) else None
             appearance_state = annot.dict.get("AS") if isinstance(annot.dict, dict) else None
             rendered = False
@@ -704,17 +670,6 @@ def compose_page(
         height=height,
         rotate=(getattr(page, "rotation", 0) + options.rotate) % 360,
         display_list=display_list,
-        image_cache=getattr(getattr(page, "document", None), "image_cache", None),
-        cache_identity=(
-            "page",
-            getattr(page, "page_number", 0),
-            id(page_program),
-            options.rotate,
-            options.include_annotations,
-            options.include_layers,
-            options.include_text,
-            options.crop,
-        ),
         metadata={
             "crop": options.crop,
             "group_alpha": (

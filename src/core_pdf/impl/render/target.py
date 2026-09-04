@@ -18,7 +18,6 @@ from core_pdf.impl.render.blend import (
 from core_pdf.impl.render.clipping import internal_ClipState
 from core_pdf.impl.render.image_affine_target import internal_ImageAffineTargetMixin
 from core_pdf.impl.render.image_axis_target import internal_ImageAxisTargetMixin
-from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.model import PathPaintItem, PathPaintKind
 from core_pdf.impl.render.path_fill_target import internal_PathFillTargetMixin
 from core_pdf.impl.render.path_shape_target import internal_PathShapeTargetMixin
@@ -27,6 +26,19 @@ from core_pdf.impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
+
+internal_CLIP_MEMBERS = frozenset(
+    {
+        "page_box_to_pixels",
+        "clipped_pixel_box",
+        "current_clip",
+        "clip_paths_are_axis_aligned_rects",
+        "clip_row_visible_spans",
+        "pixel_in_clip",
+        "path_bbox",
+        "clip_path_stack",
+    }
+)
 
 
 class internal_RasterTarget(
@@ -44,14 +56,13 @@ class internal_RasterTarget(
     goes to, and ``group-end`` pops it and composites it back down. That is why
     this is an object with explicit push/pop rather than a plain buffer.
 
-    Every method hoists ``self.pixels`` into a local before touching it — these
-    run per pixel and per span, where a repeated attribute load is not free.
+    Painting helpers operate against this target instead of capturing duplicate
+    renderer state in closures.
     """
 
     __slots__ = (
         "pixels",
         "buffer_stack",
-        "pixel_views",
         "clip",
         "width",
         "height",
@@ -60,26 +71,7 @@ class internal_RasterTarget(
         "crop_y1",
         "page_pixels",
         "page_buffer",
-        "raster_x_coordinate_cache",
-        "raster_y_coordinate_cache",
-        "raster_x_sample_cache",
-        "raster_y_sample_cache",
-        # Bound clip methods cached at construction. Reading them back is a plain
-        # attribute load; going through `self.clip.<name>` would allocate a fresh
-        # bound method on every call, and fill_rect alone makes ~1.8M of them.
-        "page_box_to_pixels",
-        "clipped_pixel_box",
-        "current_clip",
-        "clip_paths_are_axis_aligned_rects",
-        "clip_row_visible_spans",
-        "pixel_in_clip",
-        "page_x_coordinate_cache",
-        "page_y_coordinate_cache",
         "crop_y0",
-        "color_cache",
-        "mark_clip_metadata_dirty",
-        "path_bbox",
-        "clip_path_stack",
     )
 
     def __init__(
@@ -100,7 +92,6 @@ class internal_RasterTarget(
         self.buffer_stack: list[tuple[bytearray, float | None, str | None]] = [
             (pixels, group_alpha, None)
         ]
-        self.pixel_views: dict[int, numpy.ndarray[Any, Any]] = {id(pixels): page_view}
         self.clip = clip
         self.width = width
         self.height = height
@@ -109,23 +100,13 @@ class internal_RasterTarget(
         self.crop_y1 = crop_y1
         self.page_pixels = page_view
         self.page_buffer = pixels
-        self.raster_x_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
-        self.raster_y_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
-        self.raster_x_sample_cache: dict[int, tuple[float, ...]] = {}
-        self.raster_y_sample_cache: dict[int, tuple[float, ...]] = {}
-        self.page_box_to_pixels = clip.page_box_to_pixels
-        self.clipped_pixel_box = clip.clipped_pixel_box
-        self.current_clip = clip.current_clip
-        self.clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-        self.clip_row_visible_spans = clip.clip_row_visible_spans
-        self.pixel_in_clip = clip.pixel_in_clip
-        self.page_x_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
-        self.page_y_coordinate_cache: dict[tuple[int, int], numpy.ndarray[Any, Any]] = {}
         self.crop_y0 = crop_y0
-        self.color_cache: dict[tuple[int, int], tuple[int, int, int, int]] = {}
-        self.mark_clip_metadata_dirty = clip.mark_clip_metadata_dirty
-        self.path_bbox = clip.path_bbox
-        self.clip_path_stack = clip.clip_path_stack
+
+    def __getattr__(self, name: str) -> Any:
+        """Expose clip operations through the single raster target boundary."""
+        if name in internal_CLIP_MEMBERS:
+            return getattr(self.clip, name)
+        raise AttributeError(name)
 
     def push_group(
         self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
@@ -139,14 +120,8 @@ class internal_RasterTarget(
         return child
 
     def pixel_view(self, buffer: bytearray | bytes) -> numpy.ndarray[Any, Any]:
-        """Return a reusable array view for an active RGBA byte buffer."""
-        pixel_views = self.pixel_views
-        key = id(buffer)
-        view = pixel_views.get(key)
-        if view is None:
-            view = uint8_image_view(buffer, (self.height, self.width, 4))
-            pixel_views[key] = view
-        return view
+        """Return an array view for an RGBA byte buffer."""
+        return uint8_image_view(buffer, (self.height, self.width, 4))
 
     def internal_resolved_blend(self, blend_mode: str | None) -> tuple[float | None, str | None]:
         """Resolve the half of `blend_px`'s arguments that is span-invariant.
@@ -339,28 +314,18 @@ class internal_RasterTarget(
         )
 
     def paint_typed_path(self, item: PathPaintItem) -> None:
-        color_cache = self.color_cache
         fill_path = self.fill_path
         stroke_path = self.stroke_path
         path = item.path
         if type(path) is not CapturedPath:
             return
-        item_bbox = item.bbox
-        if item_bbox is not None:
-            # compose_page already computed ``path.bbox()`` for the item.
-            self.clip.path_bbox_cache.setdefault(id(path), item_bbox)
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
         soft_mask_alpha = item.soft_mask_alpha
         paint_kind = item.paint_kind
         if paint_kind is not PathPaintKind.STROKE:
-            color_key = (id(item.fill), id(item.fill_opacity))
-            rgba = color_cache.get(color_key)
-            if rgba is None:
-                rgba = internal_color_rgba(item.fill, item.fill_opacity)
-                if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                    color_cache[color_key] = rgba
+            rgba = internal_color_rgba(item.fill, item.fill_opacity)
             if pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
             fill_path(
@@ -370,12 +335,7 @@ class internal_RasterTarget(
                 item.fill_rule or "nonzero",
             )
         if paint_kind is not PathPaintKind.FILL:
-            color_key = (id(item.stroke_color), id(item.stroke_opacity))
-            stroke_rgba = color_cache.get(color_key)
-            if stroke_rgba is None:
-                stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
-                if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                    color_cache[color_key] = stroke_rgba
+            stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if pdf_number(soft_mask_alpha):
                 stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
             stroke_path(

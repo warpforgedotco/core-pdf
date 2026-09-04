@@ -13,7 +13,6 @@ from core_pdf.impl.render.blend import (
     internal_color_component,
     internal_color_rgba,
 )
-from core_pdf.impl.render.kernels import RASTER_COORDINATE_CACHE_MAX_ENTRIES
 from core_pdf.impl.render.paths import internal_intersect_box, internal_translate_rect
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -93,8 +92,6 @@ class internal_PatternTargetMixin:
         data: dict[str, Any],
         shading: PreparedShading,
     ) -> tuple[float, float, float, float]:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         crop_x0 = self.crop_x0
         crop_y0 = self.crop_y0
         crop_y1 = self.crop_y1
@@ -109,8 +106,6 @@ class internal_PatternTargetMixin:
         return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
 
     def paint_shading(self: Any, data: dict[str, Any], blend_mode: str | None) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -122,9 +117,7 @@ class internal_PatternTargetMixin:
         scale = self.scale
         shading_box = self.shading_box
         width = self.width
-        shading = data.get("prepared_shading")
-        if not isinstance(shading, PreparedShading):
-            shading = prepare_shading(data.get("dictionary"))
+        shading = prepare_shading(data.get("dictionary"))
         if shading is None:
             return
         shading_type = shading.shading_type
@@ -146,12 +139,6 @@ class internal_PatternTargetMixin:
         # page_x only depends on the column, so it is identical on every row;
         # computing it once here avoids redoing the same division per pixel.
         page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
-        # A gradient function is evaluated purely from unit_t, and real pages
-        # spend most of their pixels in a clamped extend region or an
-        # axis-aligned band where unit_t repeats exactly -- cache per call so
-        # evaluate_pdf_function (which can run an arbitrary PDF function,
-        # including a PostScript calculator) is not repeated for the same t.
-        color_cache: dict[float, tuple[int, int, int, int]] = {}
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -178,20 +165,12 @@ class internal_PatternTargetMixin:
                         if not extend1:
                             continue
                         unit_t = 1.0
-                    rgba = color_cache.get(unit_t)
-                    if rgba is None:
-                        value = domain[0] + unit_t * domain_span
-                        rgba = internal_shading_color_rgba(
-                            shading.color_model,
-                            shading.evaluate(value),
-                            fill_opacity,
-                        )
-                        # Bounded like the raster coordinate caches below: a
-                        # diagonal or radial gradient can produce a near-unique
-                        # unit_t per pixel, so an unbounded cache would grow to
-                        # one entry per pixel on a large fill.
-                        if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                            color_cache[unit_t] = rgba
+                    value = domain[0] + unit_t * domain_span
+                    rgba = internal_shading_color_rgba(
+                        shading.color_model,
+                        shading.evaluate(value),
+                        fill_opacity,
+                    )
                     if shading_alpha is not None:
                         rgba = (
                             rgba[0],
@@ -211,8 +190,6 @@ class internal_PatternTargetMixin:
         ty: float,
         blend_mode: str | None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         draw_glyph_bitmap = self.draw_glyph_bitmap
         for glyph in glyphs:
             if not glyph.visible:
@@ -235,8 +212,6 @@ class internal_PatternTargetMixin:
         ty: float,
         parent_blend_mode: str | None,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         fill_path = self.fill_path
         paint_shading = self.paint_shading
         stroke_path = self.stroke_path
@@ -285,8 +260,6 @@ class internal_PatternTargetMixin:
         target_data: dict[str, Any],
         blend_mode: str | None,
     ) -> bool:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         crop_x0 = self.crop_x0
         crop_y0 = self.crop_y0
         crop_y1 = self.crop_y1
@@ -361,7 +334,6 @@ class internal_PatternTargetMixin:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
         clip_path_stack = self.clip_path_stack
-        mark_clip_metadata_dirty = self.mark_clip_metadata_dirty
         paint_shading = self.paint_shading
         paint_tiling_pattern = self.paint_tiling_pattern
         path_bbox = self.path_bbox
@@ -372,7 +344,6 @@ class internal_PatternTargetMixin:
         pushed_clip = False
         if type(path) is CapturedPath and path.has_segments():
             clip_path_stack.append((path, data.get("fill_rule") or "nonzero"))
-            mark_clip_metadata_dirty()
             pushed_clip = True
         try:
             if isinstance(pattern, ShadingPattern):
@@ -391,5 +362,4 @@ class internal_PatternTargetMixin:
         finally:
             if pushed_clip:
                 clip_path_stack.pop()
-                mark_clip_metadata_dirty()
         return False

@@ -91,9 +91,6 @@ class Table:
     row_bands: tuple[TableRowBand, ...] = ()
     column_bands: tuple[TableColumnBand, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
-    internal_content_bbox_cache: tuple[Rectangle | None] | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
@@ -113,13 +110,8 @@ class Table:
 
     @property
     def content_bbox(self) -> Rectangle | None:
-        cached = self.internal_content_bbox_cache
-        if cached is not None:
-            return cached[0]
         boxes = [cell.bbox for row in self.rows for cell in row if cell.bbox is not None]
-        result = bbox_union(boxes) if boxes else self.bbox
-        object.__setattr__(self, "internal_content_bbox_cache", (result,))
-        return result
+        return bbox_union(boxes) if boxes else self.bbox
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,21 +231,15 @@ class Block:
     confidence: float | None = None
     level: int | None = None
     provenance: tuple[str, ...] = ()
-    internal_text_cache: str | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def text(self) -> str:
-        cached = self.internal_text_cache
-        if cached is not None:
-            return cached
         parts: list[str] = []
         for line in self.lines:
             if parts:
                 parts.append("\n" * max(1, line.break_before))
             parts.append(line.text)
-        joined = "".join(parts)
-        object.__setattr__(self, "internal_text_cache", joined)
-        return joined
+        return "".join(parts)
 
 
 PageElement: TypeAlias = Block | Table | Figure
@@ -462,21 +448,12 @@ class Page:
     footer: str = ""
     diagnostics: tuple[Diagnostic, ...] = ()
     cropbox: Rectangle | None = None
-    internal_elements_cache: tuple[PageElement, ...] | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
 
     @property
     def elements(self) -> tuple[PageElement, ...]:
-        cached = self.internal_elements_cache
-        if cached is not None:
-            return cached
-        ordered: list[PageElement] = sorted(
-            (*self.blocks, *self.tables, *self.figures), key=lambda item: item.order
+        return tuple(
+            sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)
         )
-        result = tuple(ordered)
-        object.__setattr__(self, "internal_elements_cache", result)
-        return result
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:

@@ -32,7 +32,6 @@ def internal_type1_curve_program() -> Type1FontProgram:
     program.font_matrix = (0.0, 0.002, -0.001, 0.0, 0.01, -0.02)
     program.glyph_names = ("curve",)
     program.glyph_name_to_id = {"curve": 0}
-    program.internal_contour_cache = {}
     program.subrs = []
     return cast(Type1FontProgram, program)
 
@@ -50,13 +49,14 @@ class internal_FakeOpenTypeFont:
             raise IndexError(glyph_id)
         return "curve"
 
+    def getGlyphSet(self) -> dict[str, internal_CubicGlyph]:
+        return {"curve": internal_CubicGlyph()}
+
 
 def internal_opentype_curve_program() -> OpenTypeFontProgram:
     program = cast(Any, object.__new__(OpenTypeFontProgram))
     program.font = internal_FakeOpenTypeFont()
     program.glyph_count = 1
-    program.internal_contour_cache = {}
-    program.internal_glyph_set = {"curve": internal_CubicGlyph()}
     program.reverse_glyph_map = {"curve": 0}
     program.units_per_em = 2000.0
     return cast(OpenTypeFontProgram, program)

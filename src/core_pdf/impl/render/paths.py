@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-from operator import itemgetter
 from typing import Any
 
 import numpy
@@ -27,7 +26,6 @@ RASTER_SAMPLE_OFFSETS = (0.125, 0.375, 0.625, 0.875)
 # Above this many (row, edge) pairs the activity mask costs more memory than the
 # per-row loop costs time, so the loop stays the fallback.
 INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
-internal_first_item = itemgetter(0)
 
 
 def rasterize_unclipped_line_normal(
@@ -591,9 +589,9 @@ def internal_fill_path_crossing_spans(
             first_x, second_x = second_x, first_x
         return [(first_x, second_x)] if second_x > first_x else []
     if fill_rule == "evenodd":
-        xs = sorted(map(internal_first_item, crossings))
+        xs = sorted(crossing[0] for crossing in crossings)
         return [(start, end) for start, end in zip(xs[0::2], xs[1::2], strict=False) if end > start]
-    crossings.sort(key=internal_first_item)
+    crossings.sort(key=lambda crossing: crossing[0])
     spans: list[tuple[float, float]] = []
     winding = 0
     previous_x: float | None = None

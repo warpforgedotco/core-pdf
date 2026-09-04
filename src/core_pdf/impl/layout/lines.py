@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Grouped layout lines and their cached text reconstruction.
+"""Grouped layout lines and text reconstruction.
 
 A ``LayoutLine`` is what the line-grouping heuristics produce, not what capture
 emits, so it lives here rather than with the capture records in ``model/``.
@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import islice
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
-from core_pdf.impl.model.runs import TextRun, internal_track_text_run
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.records import TextWord
 from core_pdf.impl.types import Rectangle
 
@@ -24,44 +24,8 @@ if TYPE_CHECKING:
     )
 
 
-LayoutLineReconstructionKey: TypeAlias = tuple[
-    bool | None,
-    tuple[tuple[TextRun, int, tuple[float, ...]], ...],
-]
-
-
-def reconstruct_cached_layout_line_text(
-    runs: list[TextRun],
-    *,
-    is_all_caps_text: bool | None = None,
-    internal_key: LayoutLineReconstructionKey | None = None,
-) -> LayoutLineText:
-    """Reconstruct a line once for every revision of its constituent runs."""
-    from core_pdf.impl.layout.reconstruction import reconstruct_layout_line_text
-
-    key: LayoutLineReconstructionKey = (
-        internal_key
-        if internal_key is not None
-        else (
-            is_all_caps_text,
-            tuple((run, run.internal_revision, tuple(run.coords)) for run in runs),
-        )
-    )
-    first_run = runs[0] if runs else None
-    shared_cache = first_run.internal_layout_reconstruction_cache if first_run is not None else None
-    if shared_cache is not None and shared_cache[0] == key:
-        return shared_cache[1]
-    reconstructed = reconstruct_layout_line_text(runs, is_all_caps_text=is_all_caps_text)
-    if first_run is not None:
-        internal_track_text_run(first_run)
-        object.__setattr__(first_run, "internal_layout_reconstruction_cache", (key, reconstructed))
-    return reconstructed
-
-
 class LayoutLine:
     __slots__ = (
-        "internal_reconstructed_cache",
-        "internal_reconstructed_cache_key",
         "runs",
         "x0",
         "y0",
@@ -91,8 +55,6 @@ class LayoutLine:
     is_all_caps_text: bool
 
     def __init__(self, runs: list[TextRun] | None = None) -> None:
-        self.internal_reconstructed_cache: LayoutLineText | None = None
-        self.internal_reconstructed_cache_key: LayoutLineReconstructionKey | None = None
         self.runs = run_list = runs if runs is not None else []
         if not run_list:
             self.x0 = self.y0 = self.x1 = self.y1 = 0.0
@@ -107,30 +69,22 @@ class LayoutLine:
             return
 
         first_run = run_list[0]
-        first_coords = first_run.coords
-        x0 = first_coords[TextRun.X0]
-        y0 = first_coords[TextRun.Y0]
-        x1 = first_coords[TextRun.X1]
-        y1 = first_coords[TextRun.Y1]
+        x0 = first_run.x0
+        y0 = first_run.y0
+        x1 = first_run.x1
+        y1 = first_run.y1
         max_order = first_run.order
         min_order = first_run.order
         max_depth = first_run.xobject_depth
-        max_font_size = first_coords[TextRun.FONT_SIZE]
+        max_font_size = first_run.font_size
         is_all_caps_text = not first_run.has_text or first_run.text_is_upper
 
-        text_run_x0 = TextRun.X0
-        text_run_y0 = TextRun.Y0
-        text_run_x1 = TextRun.X1
-        text_run_y1 = TextRun.Y1
-        text_run_font_size = TextRun.FONT_SIZE
-
         for run in islice(run_list, 1, None):
-            coords = run.coords
-            run_x0 = coords[text_run_x0]
-            run_y0 = coords[text_run_y0]
-            run_x1 = coords[text_run_x1]
-            run_y1 = coords[text_run_y1]
-            font_size = coords[text_run_font_size]
+            run_x0 = run.x0
+            run_y0 = run.y0
+            run_x1 = run.x1
+            run_y1 = run.y1
+            font_size = run.font_size
             if run_x0 < x0:
                 x0 = run_x0
             if run_y0 < y0:
@@ -163,27 +117,12 @@ class LayoutLine:
         self.max_font_size = max_font_size
         self.is_all_caps_text = is_all_caps_text
 
-    def reconstruction_key(self) -> LayoutLineReconstructionKey:
-        return (
-            self.is_all_caps_text,
-            tuple((run, run.internal_revision, tuple(run.coords)) for run in self.runs),
-        )
-
     def reconstructed_text(self) -> LayoutLineText:
-        key = self.reconstruction_key()
-        cached = self.internal_reconstructed_cache
-        if cached is not None and key == self.internal_reconstructed_cache_key:
-            return cached
-        reconstructed = reconstruct_cached_layout_line_text(
-            self.runs,
-            is_all_caps_text=self.is_all_caps_text,
-            internal_key=key,
-        )
-        self.internal_reconstructed_cache = reconstructed
-        self.internal_reconstructed_cache_key = key
-        return reconstructed
+        from core_pdf.impl.layout.reconstruction import reconstruct_layout_line_text
 
-    def internal_build_text_and_words(self) -> tuple[str, tuple[TextWord, ...]]:
+        return reconstruct_layout_line_text(self.runs, is_all_caps_text=self.is_all_caps_text)
+
+    def text_and_words(self) -> tuple[str, tuple[TextWord, ...]]:
         reconstructed = self.reconstructed_text()
         parts: list[str] = []
         words: list[TextWord] = []
@@ -232,18 +171,6 @@ class LayoutLine:
         flush_word()
         return "".join(parts).rstrip(), tuple(words)
 
-    def cached_text_and_words(self) -> tuple[str, tuple[TextWord, ...]]:
-        key = self.reconstruction_key()
-        first_run = self.runs[0] if self.runs else None
-        cache = first_run.internal_layout_words_cache if first_run is not None else None
-        if cache is not None and cache[0] == key:
-            return cache[1]
-        result = self.internal_build_text_and_words()
-        if first_run is not None:
-            internal_track_text_run(first_run)
-            object.__setattr__(first_run, "internal_layout_words_cache", (key, result))
-        return result
-
 
 def layout_line_segment_char_bbox(
     segment: LayoutLineTextSegment,
@@ -284,23 +211,6 @@ class LayoutGeometrySummary:
 
 
 def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
-    key = (
-        run.internal_revision,
-        tuple(run.coords),
-        run.advance_bbox,
-        run.ink_bbox,
-        id(run.glyph_clusters),
-    )
-    cache = run.internal_geometry_issues_cache
-    if cache is not None and cache[0] == key:
-        return cast(tuple[LayoutGeometryIssue, ...], cache[1])
-    issues = internal_compute_text_run_geometry_issues(run)
-    internal_track_text_run(run)
-    object.__setattr__(run, "internal_geometry_issues_cache", (key, issues))
-    return issues
-
-
-def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
     issues: list[LayoutGeometryIssue] = []
     run_bbox = (run.x0, run.y0, run.x1, run.y1)
     visible_text = run.visible and bool(run.text.strip())
@@ -521,7 +431,7 @@ def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, 
                 )
             )
 
-    words = line.cached_text_and_words()[1]
+    words = line.text_and_words()[1]
     word_bboxes = tuple(
         bbox for word in words if (bbox := word.bbox) is not None and bbox_is_positive(bbox)
     )

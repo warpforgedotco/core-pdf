@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import threading
 from typing import Any, cast
 
 from core_pdf.impl.document import PdfDocument
@@ -17,18 +16,10 @@ SAMPLE_PDF = SCORE_BENCH / "g-325a.pdf"
 
 class FakeDocument:
     def __init__(self, fields: list[RawFormField]) -> None:
-        self.internal_cache_lock = threading.RLock()
         self.recovery_enabled = False
-        self.internal_page_locks: dict[int, threading.RLock] = {}
         self.resolver = IdentityResolver()
         self.internal_fields = fields
         self.pages: list[Any] = []
-        self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
-        self.page_extraction_caches: dict[int, object] | None = None
-
-    def page_lock(self, page_number: int) -> threading.RLock:
-        with self.internal_cache_lock:
-            return self.internal_page_locks.setdefault(page_number, threading.RLock())
 
     def fields(self) -> list[RawFormField]:
         return self.internal_fields
@@ -40,9 +31,7 @@ class FakeDocument:
         return 0 if isinstance(page_obj, dict) else None
 
     def fields_by_page(self) -> dict[int, list[RawFormField]]:
-        if self.fields_by_page_cache is None:
-            self.fields_by_page_cache = PdfDocument.build_fields_by_page(cast(Any, self))
-        return self.fields_by_page_cache
+        return PdfDocument.fields_by_page(cast(Any, self))
 
 
 def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> None:
@@ -74,7 +63,6 @@ def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> 
     )
     document = FakeDocument([field, unrelated])
     page = PdfPage(cast(Any, document), {"Annots": [widget]}, 1)
-    page.inherited_values_cache = {"Annots": [widget]}
     document.pages = [page]
 
     assert page.get_fields() == [field]
@@ -112,19 +100,20 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
     )
     document = FakeDocument([field, unrelated])
     page = PdfPage(cast(Any, document), {"Annots": [widget]}, 1)
-    page.inherited_values_cache = {"Annots": [widget]}
     document.pages = [page]
 
     assert page.get_fields() == [field]
 
 
-def test_page_program_contains_capture_products_and_read_only_events() -> None:
+def test_page_program_contains_capture_products_and_immutable_events() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
         program = page.get_page_program()
 
-        assert program.products.runs
-        assert program.events.sequence.flags.writeable is False
+        assert program.runs
+        events = program.events
+        assert isinstance(events, tuple)
+        assert any(event.payload is program.runs[0] for event in events)
 
 
 def test_page_program_is_shared_by_extraction_and_rendering(monkeypatch) -> None:

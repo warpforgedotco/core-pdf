@@ -30,13 +30,7 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
 
 
 def internal_compile_pdf_function(function: Any) -> Callable[[float], tuple[float, ...]]:
-    """Resolve a PDF Function's constants once, returning its evaluator.
-
-    The renderer evaluates a shading per distinct parametric value, and past
-    its 256-entry colour cache a diagonal or radial gradient produces a
-    near-unique value per pixel. Re-reading N, C0, C1 (or Bounds/Encode) from
-    the PDF dictionary on each of those was most of the cost.
-    """
+    """Normalize a PDF Function into a scalar evaluator."""
     if isinstance(function, (list, tuple)):
         # ISO 32000-1 Table 78: Function is "A 1-in, n-out function or an array
         # of n 1-in, 1-out functions (where n is the number of colour components

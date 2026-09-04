@@ -39,8 +39,6 @@ class internal_PathFillTargetMixin:
         blend_mode: str | None,
         fill_rule: str,
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         blend_normal_pixel = self.blend_normal_pixel
         blend_normal_solid_span = self.blend_normal_solid_span
         blend_px = self.blend_px
@@ -180,8 +178,6 @@ class internal_PathFillTargetMixin:
         edges: list[tuple[float, float, float, float]],
         bbox: tuple[float, float, float, float],
     ) -> bool:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         blend_normal_solid_span = self.blend_normal_solid_span
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
@@ -251,8 +247,6 @@ class internal_PathFillTargetMixin:
         blend_mode: str | None = None,
         fill_rule: str = "nonzero",
     ) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         clipped_pixel_box = self.clipped_pixel_box
         clip = self.clip
         axis_aligned_rect_box = clip.axis_aligned_rect_box
@@ -269,7 +263,6 @@ class internal_PathFillTargetMixin:
         fill_path_scanlines = self.fill_path_scanlines
         fill_rect = self.fill_rect
         path_bbox = clip.path_bbox
-        path_edges = clip.path_edges
         pixel_in_clip = self.pixel_in_clip
         pixel_view = self.pixel_view
         pixels = self.pixels
@@ -279,7 +272,7 @@ class internal_PathFillTargetMixin:
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
             return
-        edges = path_edges(path)
+        edges = path.fill_edges()
         if not edges:
             return
         bbox = path_bbox(path)
