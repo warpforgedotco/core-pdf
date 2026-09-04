@@ -15,41 +15,30 @@ ImageDict = dict[str, object]
 ImageBuffer = ByteBuffer
 
 
-def decode_translation_tables(
-    max_sample: int,
-    pairs: tuple[tuple[float, float], ...],
-) -> tuple[bytes, ...]:
-    values = numpy.arange(256, dtype=numpy.float64)
-    normalized = values / max_sample if max_sample > 0 else numpy.zeros(256)
-    tables: list[bytes] = []
-    for dmin, dmax in pairs:
-        span = dmax - dmin
-        decoded = numpy.rint((dmin + normalized * span) * 255.0)
-        tables.append(numpy.clip(decoded, 0, 255).astype(numpy.uint8).tobytes())
-    return tuple(tables)
-
-
 def apply_decode_array(
     samples: ImageBuffer,
     pairs: tuple[tuple[float, float], ...],
     max_sample: int,
 ) -> numpy.ndarray:
-    tables = decode_translation_tables(max_sample, pairs)
+    sample_values = numpy.arange(256, dtype=numpy.float64)
+    normalized = sample_values / max_sample if max_sample > 0 else numpy.zeros(256)
+    tables = tuple(
+        numpy.clip(numpy.rint((dmin + normalized * (dmax - dmin)) * 255.0), 0, 255).astype(
+            numpy.uint8
+        )
+        for dmin, dmax in pairs
+    )
     values = uint8_view(samples)
     if len(tables) == 1:
-        return numpy.frombuffer(tables[0], dtype=numpy.uint8)[values]
+        return tables[0][values]
     components = len(tables)
     result = numpy.empty(len(values), dtype=numpy.uint8)
     for index, table in enumerate(tables):
-        result[index::components] = numpy.frombuffer(table, dtype=numpy.uint8)[
-            values[index::components]
-        ]
+        result[index::components] = table[values[index::components]]
     return result
 
 
-def image_dimension(image_dict: ImageDict | ImageColorSpec, key: str) -> int:
-    if not isinstance(image_dict, dict):
-        return 0
+def image_dimension(image_dict: ImageDict, key: str) -> int:
     value = image_dict.get(key)
     if type(value) is bool:
         return 0

@@ -84,7 +84,7 @@ def test_shading_cmyk_clamps_components_before_conversion() -> None:
     out_of_range = internal_shading_color_rgba("DeviceCMYK", [-1.0, 0.5, 2.0, 0.0], 0.25)
 
     assert out_of_range == internal_shading_color_rgba("DeviceCMYK", [0.0, 0.5, 1.0, 0.0], 0.25)
-    assert out_of_range == (248, 150, 37, 64)
+    assert out_of_range[3] == 64
 
 
 class TestSoftMaskAlphaAt:

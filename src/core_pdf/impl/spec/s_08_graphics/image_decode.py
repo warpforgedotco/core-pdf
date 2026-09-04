@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy
@@ -16,7 +16,10 @@ from core_pdf.impl.spec.s_07_filters.pipeline import (
     decode_stream_image_data,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
-from core_pdf.impl.spec.s_08_graphics.color import ImageColorManager
+from core_pdf.impl.spec.s_08_graphics.color import (
+    internal_convert_cmyk,
+    internal_convert_image_data,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +32,7 @@ class DecodedRaster:
 
 @dataclass(frozen=True, slots=True)
 class ImageRaster:
-    """Immutable canonical samples shared by all consumers of one image source."""
+    """Immutable canonical samples for one decoded image."""
 
     array: numpy.ndarray[Any, Any]
     color_model: str
@@ -67,21 +70,10 @@ class ImageRaster:
     def stride(self) -> int:
         return int(self.array.strides[0])
 
-    @property
-    def nbytes(self) -> int:
-        return int(self.array.nbytes)
-
 
 @dataclass(frozen=True, slots=True)
 class PreparedImage:
-    """Consumer-ready image data produced by :class:`ImageSource`.
-
-    ``raster`` preserves the existing shared-image contract: when a colour image
-    carries a soft mask it includes a same-resolution alpha channel.  Renderers
-    additionally need the mask at its native resolution so a high-resolution
-    scan mask is not reduced to the colour image's dimensions.  Keeping that
-    immutable plane here keeps both representations together for each consumer.
-    """
+    """A decoded image plus its optional native-resolution soft mask."""
 
     raster: ImageRaster
     soft_mask: ImageRaster | None = None
@@ -91,11 +83,6 @@ class PreparedImage:
         soft_mask = self.soft_mask
         if soft_mask is not None and (soft_mask.color_model != "gray" or soft_mask.has_alpha):
             raise ValueError("prepared image soft mask must be grayscale without alpha")
-
-    @property
-    def nbytes(self) -> int:
-        soft_mask = self.soft_mask
-        return self.raster.nbytes + (soft_mask.nbytes if soft_mask is not None else 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,36 +98,16 @@ class SoftMask:
     dictionary: dict[Any, Any]
 
 
+@dataclass(slots=True, eq=False)
 class ImageSource:
     """Raw inputs and preparation logic for one embedded image source."""
 
-    __slots__ = (
-        "raw",
-        "dictionary",
-        "soft_mask",
-    )
-
-    def __init__(
-        self,
-        raw: bytes | memoryview,
-        dictionary: dict[Any, Any],
-        *,
-        soft_mask: SoftMask | None = None,
-    ) -> None:
-        self.raw = raw
-        self.dictionary = dictionary
-        self.soft_mask = soft_mask
+    raw: bytes | memoryview
+    dictionary: dict[Any, Any]
+    soft_mask: SoftMask | None = field(default=None, kw_only=True)
 
     def prepare(self) -> PreparedImage | None:
         """Decode and return an immutable prepared image."""
-        return self.internal_prepare()
-
-    def decode(self) -> ImageRaster | None:
-        """Decode and return the canonical raster for extraction consumers."""
-        prepared = self.prepare()
-        return prepared.raster if prepared is not None else None
-
-    def internal_prepare(self) -> PreparedImage | None:
         is_stencil = self.dictionary.get("ImageMask") is True
         decoded = (
             self.internal_decode_mask()
@@ -171,6 +138,11 @@ class ImageSource:
             self.internal_apply_soft_mask(raster, soft_mask),
             soft_mask=soft_mask,
         )
+
+    def decode(self) -> ImageRaster | None:
+        """Decode and return the canonical raster for extraction consumers."""
+        prepared = self.prepare()
+        return prepared.raster if prepared is not None else None
 
     def internal_decode_mask(self) -> DecodedRaster | None:
         width = parse_int(self.dictionary.get("Width"), 0)
@@ -252,7 +224,7 @@ def internal_canonical_image_array(
     else:
         return None
     if channels == 4:
-        converted = ImageColorManager.convert_image_data(array.reshape(-1), dictionary)
+        converted = internal_convert_image_data(array.reshape(-1), dictionary)
         expected_rgb = int(array.shape[0]) * int(array.shape[1]) * 3
         if converted is not None and len(converted) == expected_rgb:
             array = numpy.asarray(converted, dtype=numpy.uint8).reshape(
@@ -267,32 +239,32 @@ def internal_canonical_image_array(
     return array.reshape(-1), channels
 
 
-def decode_pdf_image_samples(
+def internal_decode_image_samples(
     raw: bytes | memoryview,
     dictionary: dict[Any, Any],
-) -> tuple[bytes | memoryview | DecodedImage, dict[Any, Any]] | None:
+) -> bytes | memoryview | DecodedImage | None:
     width = parse_int(dictionary.get("Width"), 0)
     height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     native = decode_stream_image_data(raw, dictionary)
     if native is not None and native.width == width and native.height == height:
-        return native, dictionary
+        return native
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
     expected_gray = width * height
     expected_rgb = expected_gray * 3
     if len(raw) in {expected_gray, expected_rgb}:
-        return raw, dictionary
+        return raw
     try:
         decoded = decode_stream_data(raw, dictionary)
     except Exception:
         return None
     if len(decoded) in {expected_gray, expected_rgb}:
-        return decoded, dictionary
+        return decoded
     if bits_per_component in {1, 2, 4}:
         row_bytes = (width * bits_per_component + 7) // 8
         if len(decoded) >= row_bytes * height:
-            return decoded, dictionary
+            return decoded
     return None
 
 
@@ -301,18 +273,17 @@ def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> Dec
     height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
-    result = decode_pdf_image_samples(raw, dictionary)
-    if result is None:
+    samples = internal_decode_image_samples(raw, dictionary)
+    if samples is None:
         return None
-    samples, sample_dictionary = result
     if isinstance(samples, DecodedImage):
-        canonical = internal_canonical_image_array(samples, sample_dictionary)
+        canonical = internal_canonical_image_array(samples, dictionary)
         if canonical is None:
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
     try:
-        converted = ImageColorManager.convert_image_data(samples, sample_dictionary)
+        converted = internal_convert_image_data(samples, dictionary)
     except ValueError:
         # Broken PDFs sometimes retain an unresolved or malformed ICCBased
         # reference even though the decoded stream contains ordinary device
@@ -322,7 +293,7 @@ def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> Dec
         if len(samples) in {pixels, pixels * 3}:
             converted = samples
         elif len(samples) == pixels * 4:
-            converted = ImageColorManager.convert_cmyk(samples)
+            converted = internal_convert_cmyk(samples)
         else:
             return None
     if converted is None:
@@ -341,6 +312,6 @@ __all__ = (
     "ImageRaster",
     "ImageSource",
     "PreparedImage",
+    "SoftMask",
     "decode_pdf_image",
-    "decode_pdf_image_samples",
 )

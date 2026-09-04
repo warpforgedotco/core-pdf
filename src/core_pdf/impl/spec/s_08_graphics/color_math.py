@@ -41,10 +41,6 @@ def linear_to_srgb(values: ColorSamples) -> ColorSamples:
     ).astype(numpy.float32, copy=False)
 
 
-def xyz_to_srgb(values: ColorSamples) -> ColorSamples:
-    return linear_to_srgb(values @ SRGB_MATRIX.T)
-
-
 def lab_to_xyz(
     values: ColorSamples,
     white_point: tuple[float, float, float],
@@ -64,10 +60,6 @@ def lab_to_xyz(
         white_point,
         dtype=numpy.float32,
     )
-
-
-def adapt_d50_to_d65(values: ColorSamples) -> ColorSamples:
-    return (values @ D50_TO_D65_MATRIX.T).astype(numpy.float32, copy=False)
 
 
 def d50_xyz_to_srgb(values: ColorSamples) -> ColorSamples:

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ImageColorManager conversions: CMYK, sampled Separation and Indexed samples."""
+"""Image color conversions: CMYK, sampled Separation, and Indexed samples."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import numpy
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.color import (
-    ImageColorManager,
+    internal_convert_cmyk,
+    internal_convert_indexed,
+    internal_convert_separation,
     internal_sampled_separation_rgb_lut,
     internal_tint_operands_to_srgb,
 )
@@ -25,14 +27,14 @@ def test_cmyk_conversion_handles_process_inks_and_black() -> None:
     expected = bytes.fromhex("ffffff 00aef0 ec098d fff300 d6cdc6 292628")
 
     numpy.testing.assert_array_equal(
-        ImageColorManager.convert_cmyk(samples),
+        internal_convert_cmyk(samples),
         numpy.frombuffer(expected, dtype=numpy.uint8),
     )
 
 
 def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
     """Properties any usable CMYK profile has, independent of which one ships."""
-    no_ink = ImageColorManager.convert_cmyk(bytes(4))
+    no_ink = internal_convert_cmyk(bytes(4))
     assert tuple(no_ink) == (255, 255, 255)
 
     for channel in range(4):
@@ -41,17 +43,17 @@ def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
             ink = [0, 0, 0, 0]
             ink[channel] = level
             ramp.extend(ink)
-        luminance = ImageColorManager.convert_cmyk(bytes(ramp)).reshape(-1, 3).sum(axis=1)
+        luminance = internal_convert_cmyk(bytes(ramp)).reshape(-1, 3).sum(axis=1)
         assert list(luminance) == sorted(luminance, reverse=True), (
             f"channel {channel} does not darken monotonically: {luminance}"
         )
 
-    black = ImageColorManager.convert_cmyk(bytes.fromhex("000000ff")).reshape(3)
+    black = internal_convert_cmyk(bytes.fromhex("000000ff")).reshape(3)
     assert black.max() < 64
     assert int(black.max()) - int(black.min()) <= 8
 
 
-def test_sampled_separation_conversion_builds_exact_readonly_rgb_lut() -> None:
+def test_sampled_separation_conversion_builds_exact_rgb_lut() -> None:
     tint_function = PdfStream(
         {
             "FunctionType": 0,
@@ -71,8 +73,8 @@ def test_sampled_separation_conversion_builds_exact_readonly_rgb_lut() -> None:
     )
     samples = bytes((0, 64, 128, 192, 255, 64, 0))
 
-    first = ImageColorManager.convert_separation(samples, spec)
-    second = ImageColorManager.convert_separation(samples, spec)
+    first = internal_convert_separation(samples, spec)
+    second = internal_convert_separation(samples, spec)
     expected = numpy.repeat(numpy.frombuffer(samples, dtype=numpy.uint8), 3)
 
     numpy.testing.assert_array_equal(first, expected)
@@ -80,7 +82,6 @@ def test_sampled_separation_conversion_builds_exact_readonly_rgb_lut() -> None:
     lut = internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
     expected_lut = numpy.repeat(numpy.arange(256, dtype=numpy.uint8)[:, None], 3, axis=1)
     numpy.testing.assert_array_equal(lut, expected_lut)
-    assert not lut.flags.writeable
 
     # An equivalent function built from fresh bytes must produce the same table.
     twin = PdfStream(dict(tint_function.dictionary), bytes(range(256)))
@@ -95,7 +96,7 @@ def test_indexed_conversion_uses_rgb_lookup_entries() -> None:
     spec = ImageColorSpec("Indexed", {}, base="DeviceRGB", hival=3, lookup=lookup)
 
     numpy.testing.assert_array_equal(
-        ImageColorManager.convert_indexed(bytes((3, 0, 2)), spec),
+        internal_convert_indexed(bytes((3, 0, 2)), spec),
         numpy.asarray((3, 13, 23, 0, 10, 20, 2, 12, 22), dtype=numpy.uint8),
     )
 
@@ -138,5 +139,5 @@ def test_separation_image_matches_the_same_tint_used_as_a_fill_colour() -> None:
         for byte in (0, 64, 128, 255):
             operand = internal_tint_operands_to_srgb(spec, [byte / 255.0])
             assert operand is not None
-            image = numpy.asarray(ImageColorManager.convert_separation(bytes([byte]), spec))[:3]
+            image = numpy.asarray(internal_convert_separation(bytes([byte]), spec))[:3]
             assert tuple(image) == tuple(round(value * 255.0) for value in operand)
