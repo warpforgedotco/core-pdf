@@ -56,9 +56,7 @@ FUSION_NOISY_NATIVE_MIN_CONFIDENCE = 90.0
 
 COVERAGE_CHUNK = 256
 
-# Upper bound on elements materialized per vectorized overlap chunk. The chunked
-# path broadcasts COVERAGE_CHUNK candidates against the full native set, so only
-# the native box count bounds per-chunk memory.
+# Upper bound on elements materialized per vectorized overlap chunk.
 COVERAGE_VECTORIZED_ELEMENTS = 1_000_000
 
 
@@ -74,8 +72,12 @@ def maximum_candidate_coverage(
     native_y0 = native_boxes[:, 1][None, :]
     native_x1 = native_boxes[:, 2][None, :]
     native_y1 = native_boxes[:, 3][None, :]
-    for start in range(0, len(candidate_boxes), COVERAGE_CHUNK):
-        stop = min(len(candidate_boxes), start + COVERAGE_CHUNK)
+    chunk_size = min(
+        COVERAGE_CHUNK,
+        max(1, COVERAGE_VECTORIZED_ELEMENTS // len(native_boxes)),
+    )
+    for start in range(0, len(candidate_boxes), chunk_size):
+        stop = min(len(candidate_boxes), start + chunk_size)
         boxes = candidate_boxes[start:stop]
         widths = numpy.maximum(
             0.0,
@@ -91,7 +93,8 @@ def maximum_candidate_coverage(
             1.0,
             (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]),
         )
-        output[start:stop] = numpy.max(widths * heights, axis=1) / areas
+        numpy.multiply(widths, heights, out=widths)
+        output[start:stop] = numpy.max(widths, axis=1) / areas
     return output
 
 
