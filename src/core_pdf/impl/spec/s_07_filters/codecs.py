@@ -11,6 +11,9 @@ import imagecodecs
 
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
+from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
+    PDF_CONTENT_OPERATOR_BYTES,
+)
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
     skip_comment,
@@ -19,7 +22,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
-    PDF_CONTENT_OPERATOR_BYTES,
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,

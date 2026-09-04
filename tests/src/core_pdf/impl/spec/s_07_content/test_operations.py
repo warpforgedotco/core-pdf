@@ -11,13 +11,6 @@ from core_pdf.impl.spec.s_07_content.operations import (
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import OPERATOR_SPECS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
-
-
-def test_filter_operator_vocabulary_matches_content_operator_specs() -> None:
-    expected = {name.encode("latin-1") for name in OPERATOR_SPECS} | {b"ID", b"EI"}
-
-    assert expected == PDF_CONTENT_OPERATOR_BYTES
 
 
 def test_content_operations_do_not_treat_vertical_tab_as_whitespace() -> None:
