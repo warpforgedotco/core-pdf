@@ -52,11 +52,10 @@ from core_pdf.impl.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
     ContentOperands,
-    NestedStreamRequest,
     OperationHandler,
-    dispatch_operations,
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import build_operator_handlers
+from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecutor
 from core_pdf.impl.spec.s_07_content.stream_state import (
     STREAM_STATE_MIRRORED,
     ContentStreamFrame,
@@ -70,7 +69,6 @@ from core_pdf.impl.spec.s_07_content.text_helpers import (
     is_garbage_text,
     normalize_extracted_text,
 )
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
@@ -348,6 +346,7 @@ class TextState:
         "combined_C",
         "combined_D",
         "inline_images",
+        "stream_executor",
     )
 
     def __init__(
@@ -470,6 +469,7 @@ class TextState:
         self.combined_C = 0.0
         self.combined_D = 1.0
         self.inline_images: list[CapturedInlineImage] = []
+        self.stream_executor = ContentStreamExecutor(self)
 
     def append_text(
         self,
@@ -605,7 +605,7 @@ class TextState:
 
     @staticmethod
     def stream_execution_key(stream: PdfStream) -> StreamKey:
-        return ("stream", id(stream), len(stream.raw_data))
+        return ContentStreamExecutor.execution_key(stream)
 
     def queue_stream(
         self,
@@ -621,24 +621,18 @@ class TextState:
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
     ) -> None:
-        if depth > 10:
-            return
-        execution_key = stream_key or self.stream_execution_key(stream)
-        if execution_key in self.active_streams:
-            return
-        self.queued_stream = ContentStreamFrame(
+        self.stream_executor.queue(
             stream,
             resources,
             ctm,
             depth,
-            clip_bbox,
-            group_alpha,
+            clip_bbox=clip_bbox,
             layout_form_bbox=layout_form_bbox,
             layout_form_id=layout_form_id,
-            stream_key=execution_key,
+            group_alpha=group_alpha,
+            stream_key=stream_key,
             swallow_parse_errors=swallow_parse_errors,
         )
-        raise NestedStreamRequest
 
     def enter_stream_frame(
         self,
@@ -646,74 +640,10 @@ class TextState:
         *,
         initialize_lexer: bool = True,
     ) -> bool:
-        if frame.depth > 10:
-            return False
-        stream_key = frame.stream_key or self.stream_execution_key(frame.stream)
-        if stream_key in self.active_streams:
-            return False
-
-        self.active_streams.add(stream_key)
-        frame.stream_key = stream_key
-        if frame.group_alpha is not None:
-            frame.outer_group_alpha = self.group_alpha
-            self.drawings.append(
-                CapturedDrawing(
-                    seqno=self.sequence,
-                    fill=None,
-                    fill_opacity=frame.group_alpha,
-                    blend_mode=self.blend_mode,
-                    kind="group-begin",
-                )
-            )
-            # The group buffer carries the constant alpha: it is applied once,
-            # when the finished group composites into its backdrop. Propagating
-            # it to each drawing inside as well would square it -- a 0.34 group
-            # would paint its contents at 0.12.
-            self.group_alpha = None
-
-        frame.old_state = self.capture_stream_state()
-        self.resources = frame.resources
-        self.resources_id = id(frame.resources)
-        self.ctm = frame.ctm
-        self.xobject_depth = frame.depth
-        self.layout_form_bbox = frame.layout_form_bbox
-        self.layout_form_id = frame.layout_form_id
-        if frame.clip_bbox is not None:
-            if self.clip_bbox is None:
-                self.clip_bbox = frame.clip_bbox
-            else:
-                self.clip_bbox = (
-                    max(self.clip_bbox[0], frame.clip_bbox[0]),
-                    max(self.clip_bbox[1], frame.clip_bbox[1]),
-                    min(self.clip_bbox[2], frame.clip_bbox[2]),
-                    min(self.clip_bbox[3], frame.clip_bbox[3]),
-                )
-
-        self.pending_line_break = False
-        self.stream_order += 1
-        if initialize_lexer:
-            frame.lexer = PdfLexer(frame.stream.data)
-        frame.entered = True
-        return True
+        return self.stream_executor.enter(frame, initialize_lexer=initialize_lexer)
 
     def exit_stream_frame(self, frame: ContentStreamFrame) -> None:
-        old_state = frame.old_state
-        stream_key = frame.stream_key
-        if old_state is not None:
-            self.restore_stream_state(old_state)
-        if stream_key is not None:
-            self.active_streams.remove(stream_key)
-        if frame.group_alpha is not None:
-            self.group_alpha = frame.outer_group_alpha
-            self.drawings.append(
-                CapturedDrawing(
-                    seqno=self.sequence,
-                    fill=None,
-                    fill_opacity=frame.group_alpha,
-                    blend_mode=self.blend_mode,
-                    kind="group-end",
-                )
-            )
+        self.stream_executor.exit(frame)
 
     def consume_stream(
         self,
@@ -724,43 +654,7 @@ class TextState:
         *,
         clip_bbox: Rectangle | None = None,
     ) -> None:
-        stream_stack = [
-            ContentStreamFrame(stream, resources, ctm, depth, clip_bbox),
-        ]
-        while stream_stack:
-            frame = stream_stack.pop()
-            if not frame.entered and not self.enter_stream_frame(frame):
-                continue
-            lexer = frame.lexer
-            if lexer is None:
-                self.exit_stream_frame(frame)
-                continue
-            try:
-                dispatch_operations(
-                    lexer,
-                    self.op_handlers.get,
-                    self,
-                    frame.depth,
-                )
-
-                self.flush_run()
-            except NestedStreamRequest:
-                queued_stream = self.queued_stream
-                self.queued_stream = None
-                stream_stack.append(frame)
-                if queued_stream is not None:
-                    stream_stack.append(queued_stream)
-                continue
-            except PdfParseError:
-                self.exit_stream_frame(frame)
-                if not frame.swallow_parse_errors:
-                    raise
-                continue
-            except Exception:
-                self.exit_stream_frame(frame)
-                raise
-            else:
-                self.exit_stream_frame(frame)
+        self.stream_executor.consume(stream, resources, ctm, depth, clip_bbox=clip_bbox)
 
     def lookup_page_resource(
         self, category: str, name: str, parent_category: str | None = None

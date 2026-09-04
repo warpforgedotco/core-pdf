@@ -270,15 +270,9 @@ class EnginePageAdapter:
         )
 
         internal_pdfminer_validate_page_resources(self.page)
-        compatibility_glyphs: list[Any] = []
-        for glyph in self.page.get_page_program().glyphs:
-            provenance = dict(glyph.provenance) if glyph.provenance else {}
-            underlying = provenance.get("compatibility_glyphs")
-            if glyph.unicode_source == "actual_text" and isinstance(underlying, tuple):
-                compatibility_glyphs.extend(underlying)
-            else:
-                compatibility_glyphs.append(glyph)
-        projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(compatibility_glyphs)
+        projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(
+            self.page.get_page_program().glyphs
+        )
         pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
         ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
         for glyph in projected_glyphs:
@@ -302,7 +296,7 @@ class EnginePageAdapter:
             width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
             provenance = dict(glyph.provenance) if glyph.provenance else {}
             matrix = provenance.get("text_matrix")
-            origin = provenance.get("pdfminer_origin")
+            origin = None
             upright = glyph.rotation_angle % 180 == 0
             advance = x1 - x0
             if isinstance(matrix, (tuple, list)) and len(matrix) == 4:

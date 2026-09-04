@@ -325,8 +325,6 @@ class internal_RasterTarget(
         )
 
     def paint_typed_path(self, item: PathPaintItem) -> None:
-        fill_path = self.fill_path
-        stroke_path = self.stroke_path
         path = item.path
         if type(path) is not CapturedPath:
             return
@@ -339,7 +337,7 @@ class internal_RasterTarget(
             rgba = internal_color_rgba(item.fill, item.fill_opacity)
             if pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
-            fill_path(
+            self.fill_path(
                 path,
                 rgba,
                 blend_mode,
@@ -349,7 +347,7 @@ class internal_RasterTarget(
             stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if pdf_number(soft_mask_alpha):
                 stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-            stroke_path(
+            self.stroke_path(
                 path,
                 float(item.line_width or 1.0),
                 stroke_rgba,

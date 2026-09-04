@@ -13,6 +13,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_table_has_grid_shape,
 )
 from core_pdf.impl.model.geometry import overlap_ratio_min, overlap_ratio_of
+from core_pdf.impl.model.spatial import SpatialFrame
 from core_pdf.impl.output import Block, Table, TableCell
 
 internal_EMITTED_TEXT_TOKEN_RE = re.compile(r"\w+")
@@ -449,6 +450,7 @@ def internal_remove_table_duplicate_blocks(
         return blocks
     table_profiles = [(table.bbox, internal_table_profile(table)) for table in tables]
     table_boxes = [(box, profile.token_set) for box, profile in table_profiles if box is not None]
+    table_frame = SpatialFrame.from_boxes(box for box, ignored_tokens in table_boxes)
     table_token_counts: Counter[str] = Counter()
     for ignored_box, profile in table_profiles:
         table_token_counts.update(profile.token_counts)
@@ -473,13 +475,12 @@ def internal_remove_table_duplicate_blocks(
             continue
         duplicate = False
         contained_line_boxes: list[tuple[float, float, float, float]] = []
-        for table_bbox, tokens in table_boxes:
-            overlap_ratio = overlap_ratio_min(block.bbox, table_bbox)
-            if overlap_ratio >= 0.9:
-                if sum(token in tokens for token in block_tokens) / len(block_tokens) >= 0.85:
-                    duplicate = True
-                    break
-                contained_line_boxes.append(table_bbox)
+        for table_index in table_frame.matching_overlap_min(block.bbox, 0.9):
+            table_bbox, tokens = table_boxes[int(table_index)]
+            if sum(token in tokens for token in block_tokens) / len(block_tokens) >= 0.85:
+                duplicate = True
+                break
+            contained_line_boxes.append(table_bbox)
         if duplicate:
             continue
         if contained_line_boxes:

@@ -327,16 +327,10 @@ class internal_PathStrokeTargetMixin:
         line_cap: int = 0,
         line_join: int = 0,
     ) -> None:
-        clip_path_stack = self.clip_path_stack
-        current_clip = self.current_clip
-        fill_cap = self.fill_cap
-        fill_join = self.fill_join
-        fill_line = self.fill_line
-        path_bbox = self.path_bbox
         scale = self.scale
-        if clip_path_stack:
-            clip_box = current_clip() if clip_path_stack else None
-            path_box = path_bbox(path)
+        if self.clip_path_stack:
+            clip_box = self.current_clip()
+            path_box = self.path_bbox(path)
             if clip_box is not None and path_box is not None:
                 stroke_pad = max(0.5 / scale, float(line_width) * 0.5)
                 stroke_box = (
@@ -357,7 +351,7 @@ class internal_PathStrokeTargetMixin:
                 and (not dash_pattern or not dash_pattern[0])
             ):
                 (x0, y0), (x1, y1) = points
-                fill_line(
+                self.fill_line(
                     x0,
                     y0,
                     x1,
@@ -369,14 +363,14 @@ class internal_PathStrokeTargetMixin:
                     0,
                 )
                 if line_cap != 0:
-                    fill_cap(x0, y0, line_width, rgba, line_cap, blend_mode)
-                    fill_cap(x1, y1, line_width, rgba, line_cap, blend_mode)
+                    self.fill_cap(x0, y0, line_width, rgba, line_cap, blend_mode)
+                    self.fill_cap(x1, y1, line_width, rgba, line_cap, blend_mode)
                 continue
             if dash_pattern and dash_pattern[0]:
                 for index in range(len(points) - 1):
                     x0, y0 = points[index]
                     x1, y1 = points[index + 1]
-                    fill_line(
+                    self.fill_line(
                         x0,
                         y0,
                         x1,
@@ -390,7 +384,7 @@ class internal_PathStrokeTargetMixin:
                 if subpath.closed and points[0] != points[-1]:
                     x0, y0 = points[-1]
                     x1, y1 = points[0]
-                    fill_line(
+                    self.fill_line(
                         x0,
                         y0,
                         x1,
@@ -405,7 +399,7 @@ class internal_PathStrokeTargetMixin:
             for index in range(len(points) - 1):
                 x0, y0 = points[index]
                 x1, y1 = points[index + 1]
-                fill_line(
+                self.fill_line(
                     x0,
                     y0,
                     x1,
@@ -419,7 +413,7 @@ class internal_PathStrokeTargetMixin:
             if subpath.closed and points[0] != points[-1]:
                 x0, y0 = points[-1]
                 x1, y1 = points[0]
-                fill_line(
+                self.fill_line(
                     x0,
                     y0,
                     x1,
@@ -431,12 +425,12 @@ class internal_PathStrokeTargetMixin:
                     0,
                 )
             for x, y in points[1:-1]:
-                fill_join(x, y, line_width, rgba, line_join, blend_mode)
+                self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
             if subpath.closed:
                 x, y = points[0]
-                fill_join(x, y, line_width, rgba, line_join, blend_mode)
+                self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
             elif line_cap != 0:
-                fill_cap(
+                self.fill_cap(
                     points[0][0],
                     points[0][1],
                     line_width,
@@ -444,7 +438,7 @@ class internal_PathStrokeTargetMixin:
                     line_cap,
                     blend_mode,
                 )
-                fill_cap(
+                self.fill_cap(
                     points[-1][0],
                     points[-1][1],
                     line_width,
