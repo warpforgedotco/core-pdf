@@ -6,8 +6,8 @@ from __future__ import annotations
 from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import Rectangle
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.model.geometry import Rectangle, intersect_bbox
+from core_pdf.impl.spec.s_07_content.capture import marker_drawing
 from core_pdf.impl.spec.s_07_content.operations import NestedStreamRequest, dispatch_operations
 from core_pdf.impl.spec.s_07_content.stream_state import (
     ContentStreamFrame,
@@ -66,7 +66,7 @@ class ContentStreamExecutor:
         )
         raise NestedStreamRequest
 
-    def enter(self, frame: ContentStreamFrame, *, initialize_lexer: bool = True) -> bool:
+    def enter(self, frame: ContentStreamFrame) -> bool:
         state = self.state
         if frame.depth > 10:
             return False
@@ -78,12 +78,11 @@ class ContentStreamExecutor:
         if frame.group_alpha is not None:
             frame.outer_group_alpha = state.group_alpha
             state.drawings.append(
-                CapturedDrawing(
-                    seqno=state.sequence,
-                    fill=None,
+                marker_drawing(
+                    "group-begin",
+                    state.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=state.blend_mode,
-                    kind="group-begin",
                 )
             )
             state.group_alpha = None
@@ -95,20 +94,10 @@ class ContentStreamExecutor:
         state.layout_form_bbox = frame.layout_form_bbox
         state.layout_form_id = frame.layout_form_id
         if frame.clip_bbox is not None:
-            state.clip_bbox = (
-                frame.clip_bbox
-                if state.clip_bbox is None
-                else (
-                    max(state.clip_bbox[0], frame.clip_bbox[0]),
-                    max(state.clip_bbox[1], frame.clip_bbox[1]),
-                    min(state.clip_bbox[2], frame.clip_bbox[2]),
-                    min(state.clip_bbox[3], frame.clip_bbox[3]),
-                )
-            )
+            state.clip_bbox = intersect_bbox(state.clip_bbox, frame.clip_bbox)
         state.pending_line_break = False
         state.stream_order += 1
-        if initialize_lexer:
-            frame.lexer = PdfLexer(frame.stream.data)
+        frame.lexer = PdfLexer(frame.stream.data)
         frame.entered = True
         return True
 
@@ -121,12 +110,11 @@ class ContentStreamExecutor:
         if frame.group_alpha is not None:
             state.group_alpha = frame.outer_group_alpha
             state.drawings.append(
-                CapturedDrawing(
-                    seqno=state.sequence,
-                    fill=None,
+                marker_drawing(
+                    "group-end",
+                    state.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=state.blend_mode,
-                    kind="group-end",
                 )
             )
 
@@ -149,7 +137,7 @@ class ContentStreamExecutor:
                 self.exit(frame)
                 continue
             try:
-                dispatch_operations(frame.lexer, state.op_handlers.get, state, frame.depth)
+                dispatch_operations(frame.lexer, state.op_handlers.get, frame.depth)
                 state.flush_run()
             except NestedStreamRequest:
                 queued_stream = state.queued_stream

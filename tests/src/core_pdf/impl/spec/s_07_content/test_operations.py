@@ -9,10 +9,7 @@ from core_pdf.impl.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import (
-    OPERATOR_SPECS,
-    TEXT_ONLY_SKIP_OPERATORS,
-)
+from core_pdf.impl.spec.s_07_content.operator_tables import OPERATOR_SPECS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
 
@@ -68,29 +65,11 @@ def test_content_operations_skip_comments_after_whitespace(
     assert list(iter_content_operations(PdfLexer(data))) == expected
 
 
-class internal_DispatchTarget:
-    """Minimal target carrying the capture flags used by the dispatcher."""
-
-    def __init__(
-        self,
-        *,
-        capture_graphics: bool = True,
-        capture_glyphs: bool = True,
-        capture_clipping: bool = True,
-    ) -> None:
-        self.capture_graphics = capture_graphics
-        self.capture_glyphs = capture_glyphs
-        self.capture_clipping = capture_clipping
-
-
 def internal_dispatch_with_handlers(
     data: bytes,
-    target: internal_DispatchTarget | None = None,
 ) -> list[tuple[str, tuple[object, ...], int]]:
     """Dispatch through a complete recording handler map."""
     seen: list[tuple[str, tuple[object, ...], int]] = []
-    if target is None:
-        target = internal_DispatchTarget()
 
     def make(name: str):
         def handler(window: ContentOperands, depth: int) -> None:
@@ -99,7 +78,7 @@ def internal_dispatch_with_handlers(
         return handler
 
     handlers = {name: make(name) for name in OPERATOR_SPECS}
-    dispatch_operations(PdfLexer(data), handlers.get, target, 0)
+    dispatch_operations(PdfLexer(data), handlers.get, 0)
     return seen
 
 
@@ -163,31 +142,3 @@ def test_registered_handlers_receive_parsed_operand_windows(
     expected: list[tuple[str, tuple[object, ...], int]],
 ) -> None:
     assert internal_dispatch_with_handlers(data) == expected
-
-
-# BI opens an inline image and consumes the bytes that follow, so it cannot
-# be probed with a synthetic operand-only stream.
-@pytest.mark.parametrize("operator", sorted(set(OPERATOR_SPECS) - {"BI"}))
-def test_text_only_skip_matches_the_operator_table(operator: str) -> None:
-    """Every operator is skipped in text-only mode iff its spec says so.
-
-    This keeps the parser's compact skip tables aligned with OPERATOR_SPECS.
-    """
-    target = internal_DispatchTarget(
-        capture_graphics=False, capture_glyphs=False, capture_clipping=False
-    )
-    fired = internal_dispatch_with_handlers(
-        b"0 0 0 0 0 0 " + operator.encode("latin-1") + b"\n", target
-    )
-    skipped = not fired
-    assert skipped == OPERATOR_SPECS[operator].text_only_skip
-
-
-def test_synthetic_skip_entry_has_no_operator_spec() -> None:
-    """`N` is skipped in text-only mode but is not a real operator.
-
-    It is a damaged-producer no-op with no handler, so it cannot be covered by
-    the table-driven test above.
-    """
-    assert "N" not in OPERATOR_SPECS
-    assert b"N" in TEXT_ONLY_SKIP_OPERATORS

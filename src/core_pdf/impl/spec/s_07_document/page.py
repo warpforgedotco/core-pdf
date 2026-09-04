@@ -275,7 +275,6 @@ class PdfPage:
         """Interpret the page and return its immutable program."""
         state = TextState(
             self.document,
-            self.page_dict,
             hidden_layers=(
                 self.document.oc_hidden_layers() if hidden_layers is None else hidden_layers
             ),

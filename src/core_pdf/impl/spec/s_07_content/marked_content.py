@@ -34,7 +34,6 @@ class MarkedContentEntry:
     y0: float = 0.0
     x1: float = 0.0
     y1: float = 0.0
-    nbytes: int = 0
     tx: float = 0.0
     ty: float = 0.0
     font_size: float = 0.0
@@ -62,7 +61,6 @@ class MarkedContentEntry:
         y0: float,
         x1: float,
         y1: float,
-        nbytes: int,
         tx: float,
         ty: float,
         font_size: float,
@@ -116,4 +114,3 @@ class MarkedContentEntry:
             self.font_decoder = font_decoder
             self.effective_font_height = effective_font_height
             self.has_text_extents = True
-        self.nbytes += nbytes

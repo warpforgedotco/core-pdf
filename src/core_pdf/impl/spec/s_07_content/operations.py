@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from typing import Protocol, TypeAlias, cast
+from typing import TypeAlias, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -14,7 +14,6 @@ from core_pdf.impl.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import TEXT_ONLY_SKIP_OPERATORS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
@@ -34,14 +33,6 @@ ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
 
-TEXT_CLIP_PREFIX_RE = re.compile(
-    b"[\x00\t\n\f\r ]*"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
-)
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
 
 
@@ -94,21 +85,8 @@ def _advance_past_lexical_markers(
     return None
 
 
-def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
-    match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
-    if match is None:
-        return None
-    return match.end()
-
-
 class NestedStreamRequest(Exception):
     """Internal control flow used to pause a content stream for a nested one."""
-
-
-class OperationTarget(Protocol):
-    capture_graphics: bool
-    capture_glyphs: bool
-    capture_clipping: bool
 
 
 OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
@@ -117,9 +95,17 @@ OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
 def dispatch_operations(
     lexer: PdfLexer,
     get_handler: Callable[[str], OperationHandler | None],
-    target: OperationTarget | None,
     depth: int,
+    *,
+    handlers_reject_unknown: bool = True,
 ) -> None:
+    """Tokenize `lexer` and drive each operator through `get_handler`.
+
+    `handlers_reject_unknown` states whether `get_handler` returns None for a
+    word that is not a real operator. Inline-image recovery uses it to tell an
+    operator boundary from arbitrary image bytes; callers that record every
+    word indiscriminately must pass False.
+    """
     operands: list[ContentOperand] = []
 
     def append_operand(value: ContentOperand) -> None:
@@ -132,14 +118,7 @@ def dispatch_operations(
     source_bytes = full_source_bytes(raw_data)
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
-    text_only = (
-        target is not None
-        and not target.capture_graphics
-        and not target.capture_glyphs
-        and not target.capture_clipping
-    )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
-    skipped_clip_q_count = 0
 
     pos = lexer.pos
     while pos < data_len:
@@ -175,7 +154,7 @@ def dispatch_operations(
                                 lexer,
                                 pos,
                                 (lambda token: get_handler(token.decode("latin-1")) is not None)
-                                if target is not None
+                                if handlers_reject_unknown
                                 else None,
                             )
                             if recovered_pos is None:
@@ -195,23 +174,6 @@ def dispatch_operations(
                         handler(tuple(operands), depth)
                     operands.clear()
                     continue
-
-                # Skip irrelevant graphics operators before the normal handler lookup.
-                if text_only:
-                    if raw_key == b"q" and not operands:
-                        skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
-                        if skipped_pos is not None:
-                            skipped_clip_q_count += 1
-                            pos = skipped_pos
-                            operands.clear()
-                            continue
-                    if raw_key == b"Q" and skipped_clip_q_count:
-                        skipped_clip_q_count -= 1
-                        operands.clear()
-                        continue
-                    if raw_key in TEXT_ONLY_SKIP_OPERATORS:
-                        operands.clear()
-                        continue
 
                 if raw_key in (
                     b"R",
@@ -271,8 +233,7 @@ def dispatch_operations(
             raw_string = lexer.read_string()
             if should_decipher:
                 raw_string = lexer.apply_decipher(raw_string)
-            string_value = raw_string if text_only else PdfString(raw_string, is_literal=True)
-            append_operand(string_value)
+            append_operand(PdfString(raw_string, is_literal=True))
             pos = lexer.pos
             continue
         if byte == 47:
@@ -300,12 +261,7 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
 
         return collect
 
-    dispatch_operations(
-        lexer,
-        get_handler,
-        None,
-        0,
-    )
+    dispatch_operations(lexer, get_handler, 0, handlers_reject_unknown=False)
     yield from results
 
 

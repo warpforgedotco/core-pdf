@@ -84,7 +84,6 @@ class PageProgram:
                 drawing,
             )
             for drawing in drawings
-            if drawing.kind != "inline-image"
         )
         commands.extend(PageCommand(PageCommandKind.INLINE_IMAGE, image) for image in inline_images)
         commands.sort(key=lambda command: command.seqno)

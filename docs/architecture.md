@@ -52,46 +52,6 @@ bytes → │ capture_page│ → plan_page ────────────
                                     assemble_page → Page (extract_page)
 ```
 
-| Module | Role |
-| --- | --- |
-| `extract/contracts.py` | Shared evidence, plan, observation, and recognition result records. |
-| `extract/capture.py` | Runs the page program once and produces a cached `CapturedPage`. |
-| `extract/observations.py` | Chooses native extraction, OCR, or both, then fuses observations. |
-| `extract/ocr/` | Owns recognition orchestration, candidates, rasters, regions, backends, and stroked text. |
-| `extract/tables.py` | Detects chart, ruled-grid, and whitespace-inferred tables. |
-| `extract/grids.py` | Owns shared ruling geometry, ruled tables, and OCR grid tasks. |
-| `extract/table_cleanup.py` | Normalizes, filters, merges, annotates, and bands table candidates. |
-| `extract/table_reconcile.py` | Reconciles detected tables with emitted page elements. |
-| `extract/block_layout.py` | Groups observations into blocks and repairs their reading order. |
-| `extract/regions.py` | Partitions pages with projection gaps, obstacles, and XY cuts. |
-| `layout/reconstruction.py` | Builds line text from positioned glyph runs. |
-| `layout/text_rules.py` | Owns pure spacing, script, formula, and text-repair decisions. |
-| `extract/emit.py` | Normalizes text and assembles the canonical output `Page`. |
-| `extract/pipeline.py` | Owns the locked page-local stage lifecycle and product cache. |
-| `extract/selection.py` | Owns cross-page enrichment, scheduling, and document extraction. |
-
-OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition and rescue; `pass_tasks.py`
-owns adaptive preflight, shared raster resources, and scope-specific task materialization;
-`execution.py` owns pass admission, completion, diagnostics, and candidate-selection transitions;
-`candidates.py` verifies, merges, and ranks candidate batches; `extract/grids.py` owns ruled-grid
-cell recognition; `raster.py`, `regions.py`, `tesseract.py`, `vector.py`, `strokes.py`, and
-`newstroke.py` own their respective mechanisms; and `types.py` holds their shared records.
-`internal_PageExtraction` remains the locked owner of page-local capture, recognition, fusion,
-layout, report, and assembly products.
-
-Document extraction creates an immutable enrichment snapshot for the selected pages. Learned font
-and stroked-glyph mappings apply to selection-local captures without mutating page caches or font
-decoders, so direct page extraction does not depend on earlier document extraction.
-
-### Table projections
-
-Table extraction produces one canonical view. The table stage adds row and column bands and nearby
-titles or captions; emission reconciles those tables with text blocks and assigns page-wide order.
-`Page.tables`, `Document.table_view`, and the serializers consume the resulting tuple
-without rerunning extraction heuristics.
-
----
-
 ## 3. Source layout
 
 ```text
@@ -117,23 +77,6 @@ src/core_pdf/
     render/              display lists, raster kernels, targets, and page composition
     document.py          PdfDocument, PdfPage, and their shared operation lifecycle
 ```
-
-Rendering uses direct module owners rather than a barrel module: `render/model.py` owns display
-records, render options, plans, and the raster value object. `blend.py`, `paths.py`, and
-`kernels.py` own pure compositing, path, image-resampling, and coordinate kernels. Stateful image
-painting is divided between `image_affine_target.py` and `image_axis_target.py`; stateful path
-painting is divided among `path_shape_target.py`, `path_fill_target.py`, and
-`path_stroke_target.py`. `patterns.py` owns pattern behavior and `clipping.py` owns clip-mask
-operations. `target.py` composes those behaviors around the mutable buffer state and owns common
-blend and typed-path dispatch, while `page.py` owns page composition.
-
-Extraction layout follows the same ownership rule. `extract/block_layout.py` owns line grouping,
-block classification, ordering, and its evidence; `extract/regions.py` owns geometric partitioning;
-and `extract/grids.py` owns vector and raster ruled-grid processing. The remaining `layout/`
-modules own text-line reconstruction: `lines.py` holds line records and geometry diagnostics,
-`reconstruction.py` builds positioned text, and `text_rules.py` owns pure reconstruction decisions
-and word-frequency data. Generic spatial indexing lives with the geometry primitives in
-`model/geometry.py`.
 
 ### Dependency direction
 

@@ -599,10 +599,7 @@ def compose_page(
             ry0 - by0 * ((ry1 - ry0) / bh),
         )
         nested_ctm = matrix.multiply(scale)
-        state = TextState(
-            page.document,
-            getattr(page, "page_dict", {}),
-        )
+        state = TextState(page.document)
         resources = (
             page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.resources
         )

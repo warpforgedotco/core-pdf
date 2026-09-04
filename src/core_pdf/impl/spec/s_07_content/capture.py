@@ -9,10 +9,12 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any, TypeAlias
 
-from core_pdf.impl.model.geometry import RectBox, bbox_union, transform_bbox
+from core_pdf.impl.model.geometry import RectBox, bbox_union, points_bbox, transform_bbox
 from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.spec.s_07_content.marked_content import min_optional_confidence
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.spec.s_09_fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.types import Rectangle
 
 # (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
@@ -40,7 +42,7 @@ def should_capture_glyph_bitmap(text: str) -> bool:
 
 def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
     """Capture shapes for non-ligature CMap values that look concatenated."""
-    if len(text) <= 1 or text in {"ff", "fi", "fl", "ffi", "ffl", "st"}:
+    if len(text) <= 1 or text in LEGITIMATE_MULTI_CHAR_GLYPHS:
         return False
     nonspace = [char for char in text if not char.isspace()]
     if len(nonspace) < 2:
@@ -231,9 +233,7 @@ class RunGeometry:
             bx1 if bx1 > ix1 else ix1,
             by1 if by1 > iy1 else iy1,
         )
-        current = self.confidence
-        if confidence is not None and (current is None or confidence < current):
-            self.confidence = confidence
+        self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
@@ -292,11 +292,6 @@ class CapturedSubpath:
             closed=self.closed,
         )
 
-    def line_to(self, x: float, y: float) -> None:
-        if self.closed:
-            return
-        self.points.append((x, y))
-
     def close(self) -> None:
         if len(self.points) > 1:
             self.closed = True
@@ -305,11 +300,7 @@ class CapturedSubpath:
         return len(self.points) > 1
 
     def bbox(self) -> Rectangle | None:
-        if not self.points:
-            return None
-        xs = [point[0] for point in self.points]
-        ys = [point[1] for point in self.points]
-        return min(xs), min(ys), max(xs), max(ys)
+        return points_bbox(self.points)
 
     def edges(self, *, close_open: bool = False) -> list[tuple[float, float, float, float]]:
         if len(self.points) < 2:
@@ -509,6 +500,27 @@ class CapturedDrawing:
             fill=self.fill,
             fill_opacity=self.fill_opacity,
         )
+
+
+def marker_drawing(
+    kind: str,
+    seqno: int,
+    *,
+    fill_opacity: float | None = None,
+    blend_mode: str | None = None,
+) -> CapturedDrawing:
+    """A zero-geometry drawing that only marks a scope boundary in page order.
+
+    Used for the `state-push`/`state-pop` clip scopes and the
+    `group-begin`/`group-end` transparency-group boundaries.
+    """
+    return CapturedDrawing(
+        seqno=seqno,
+        fill=None,
+        fill_opacity=fill_opacity,
+        blend_mode=blend_mode,
+        kind=kind,
+    )
 
 
 @dataclass(frozen=True, slots=True)
