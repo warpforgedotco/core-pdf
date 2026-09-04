@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native image color-space specification parsing."""
+"""Native PDF color-space specification parsing."""
 
 from __future__ import annotations
 
@@ -52,6 +52,42 @@ class ImageColorSpec:
     alt: str | None = None
     tint_fn: object = None
     channels: int = 1
+
+
+def describe_color_space(value: object) -> str | None:
+    """Return a compact name for an image or shading color-space value."""
+    prefixes: list[str] = []
+    seen: set[int] = set()
+    current = value
+    while True:
+        name = normalize_pdf_name(current)
+        if name is not None:
+            return ":".join((*prefixes, name))
+        if not isinstance(current, (list, tuple)) or not current:
+            return ":".join(prefixes) if prefixes else None
+        marker = id(current)
+        if marker in seen:
+            return ":".join(prefixes) if prefixes else None
+        seen.add(marker)
+        kind = normalize_pdf_name(current[0])
+        if kind == "Indexed":
+            prefixes.append("Indexed")
+            if len(current) <= 1:
+                return ":".join(prefixes)
+            current = current[1]
+            continue
+        if kind == "ICCBased":
+            prefixes.append("ICCBased")
+            if len(current) <= 1 or not isinstance(current[1], dict):
+                return ":".join(prefixes)
+            alternate = current[1].get("Alternate")
+            if alternate is None:
+                return ":".join(prefixes)
+            current = alternate
+            continue
+        if kind is None:
+            return ":".join(prefixes) if prefixes else None
+        return ":".join((*prefixes, kind))
 
 
 def normalize_indexed_base_color_space_name(value: object) -> str | None:

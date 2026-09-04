@@ -20,8 +20,8 @@ from core_pdf.impl.runtime.array_views import (
     uint8_view,
     unit_sample_positions,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
 
 
 class internal_ImageAxisTargetMixin:
@@ -138,7 +138,7 @@ class internal_ImageAxisTargetMixin:
                     width_px = reduced_width
                     height_px = reduced_height
         soft_mask_alpha = item.soft_mask_alpha
-        constant_alpha_value = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
+        constant_alpha_value = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         quad = item.quad
         comps = source_channels
         if quad is not None and source_alpha is None:
@@ -178,7 +178,7 @@ class internal_ImageAxisTargetMixin:
             if soft_mask is not None
             else numpy.empty(0, dtype=numpy.float64)
         )
-        if pdf_number(soft_mask_alpha):
+        if is_pdf_number(soft_mask_alpha):
             has_constant_alpha = True
             constant_alpha = float(soft_mask_alpha)
         else:
@@ -191,7 +191,7 @@ class internal_ImageAxisTargetMixin:
             and soft_mask is None
             and source_alpha is None
             and (not has_constant_alpha or constant_alpha >= 1.0)
-            and not pdf_number(target_alpha)
+            and not is_pdf_number(target_alpha)
         )
         normal_fast = can_blend_normal_fast(blend_mode)
         if can_write_opaque_rows:
@@ -341,7 +341,7 @@ class internal_ImageAxisTargetMixin:
         if (
             (not clip_path_stack or clip_paths_are_axis_aligned_rects())
             and blend_mode is None
-            and not pdf_number(target_alpha)
+            and not is_pdf_number(target_alpha)
         ):
             source_mask = uint8_image_view(mask, (height_px, width_px), allow_trailing=True)
             source_x = src_x_map

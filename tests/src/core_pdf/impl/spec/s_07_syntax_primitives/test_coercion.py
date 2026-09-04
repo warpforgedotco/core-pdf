@@ -7,6 +7,7 @@ from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
     coerce_value,
+    is_pdf_number,
     normalize_pdf_name,
     parse_float,
     parse_int,
@@ -33,6 +34,13 @@ def test_scalar_parsers_accept_explicit_pdf_scalar_forms() -> None:
     assert parse_int(memoryview(b"14")) == 14
     assert parse_float(2) == 2.0
     assert parse_float(b"1.25") == 1.25
+
+
+def test_pdf_number_accepts_only_builtin_numeric_scalars() -> None:
+    assert is_pdf_number(7)
+    assert is_pdf_number(1.25)
+    assert not is_pdf_number(True)
+    assert not is_pdf_number(b"7")
 
 
 def test_scalar_parsers_do_not_call_arbitrary_conversion_hooks() -> None:

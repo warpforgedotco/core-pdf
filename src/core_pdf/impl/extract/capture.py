@@ -38,9 +38,7 @@ from core_pdf.impl.model.glyphs import (
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.spec.s_08_graphics.image_metadata import (
-    image_filter_names,
-)
+from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
 
 internal_STRUCTURE_UNSET = object()
 WORD_TOKEN_RE = re.compile(r"\w+")
@@ -846,7 +844,7 @@ def internal_capture_from_program(
         if getattr(drawing, "kind", None) in {"image", "inline-image"}
         for dictionary in (getattr(drawing, "dictionary", None),)
         if isinstance(dictionary, dict)
-        for filter_name in image_filter_names(dictionary.get("Filter"))
+        for filter_name in declared_filter_names(dictionary.get("Filter"))
     )
     if inline_images:
         image_filters = (
@@ -854,7 +852,7 @@ def internal_capture_from_program(
             *(
                 filter_name
                 for image in inline_images
-                for filter_name in image_filter_names(image.dictionary.get("Filter"))
+                for filter_name in declared_filter_names(image.dictionary.get("Filter"))
             ),
         )
     page_width = float(page.width)

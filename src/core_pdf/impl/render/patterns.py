@@ -20,8 +20,8 @@ from core_pdf.impl.spec.s_07_content.capture import (
     ShadingPattern,
     TilingPattern,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.device_profiles import cmyk_floats_to_srgb
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
 from core_pdf.impl.spec.s_08_graphics.shading import PreparedShading, prepare_shading
 
 
@@ -132,9 +132,9 @@ class internal_PatternTargetMixin:
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
         normal_fast = can_blend_normal_fast(blend_mode)
-        # Fixed for the whole shading; resolving it per pixel re-ran pdf_number
+        # Fixed for the whole shading; resolving it per pixel re-ran is_pdf_number
         # and float() once per device pixel of the fill.
-        shading_alpha = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
+        shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         domain_span = domain[1] - domain[0]
         # page_x only depends on the column, so it is identical on every row;
         # computing it once here avoids redoing the same division per pixel.

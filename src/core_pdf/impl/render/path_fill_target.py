@@ -23,7 +23,7 @@ from core_pdf.impl.render.paths import (
     internal_signed_area_coverage,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 
 class internal_PathFillTargetMixin:
@@ -71,7 +71,7 @@ class internal_PathFillTargetMixin:
         blend_target = None
         if not normal_fast:
             group_alpha = buffer_stack[-1][1]
-            if pdf_number(group_alpha):
+            if is_pdf_number(group_alpha):
                 sr, sg, sb, sa = rgba
                 sa = max(0, min(255, int(round(sa * float(group_alpha)))))
                 blended_rgba = (sr, sg, sb, sa)

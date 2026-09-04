@@ -25,7 +25,7 @@ from core_pdf.impl.render.path_stroke_target import internal_PathStrokeTargetMix
 from core_pdf.impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 
 class internal_RasterTarget(
@@ -145,7 +145,7 @@ class internal_RasterTarget(
         buffer_stack = self.buffer_stack
         target_alpha = buffer_stack[-1][1] if buffer_stack else None
         return (
-            float(target_alpha) if pdf_number(target_alpha) else None,
+            float(target_alpha) if is_pdf_number(target_alpha) else None,
             blend_mode.lower() if isinstance(blend_mode, str) else None,
         )
 
@@ -303,8 +303,8 @@ class internal_RasterTarget(
         if normalized_blend_mode in {None, "normal"} and len(child) >= 4_096:
             source_pixels = self.pixel_view(child)
             target_pixels = self.pixel_view(self.pixels)
-            source_scale = float(group_alpha) if pdf_number(group_alpha) else 1.0
-            target_scale = float(parent_alpha) if pdf_number(parent_alpha) else 1.0
+            source_scale = float(group_alpha) if is_pdf_number(group_alpha) else 1.0
+            target_scale = float(parent_alpha) if is_pdf_number(parent_alpha) else 1.0
             internal_composite_normal_group_numpy(
                 target_pixels,
                 source_pixels,
@@ -319,8 +319,8 @@ class internal_RasterTarget(
         internal_composite_blended_group_numpy(
             self.pixel_view(self.pixels),
             self.pixel_view(child),
-            float(group_alpha) if pdf_number(group_alpha) else None,
-            float(parent_alpha) if pdf_number(parent_alpha) else None,
+            float(group_alpha) if is_pdf_number(group_alpha) else None,
+            float(parent_alpha) if is_pdf_number(parent_alpha) else None,
             group_blend_mode,
         )
 
@@ -335,7 +335,7 @@ class internal_RasterTarget(
         paint_kind = item.paint_kind
         if paint_kind is not PathPaintKind.STROKE:
             rgba = internal_color_rgba(item.fill, item.fill_opacity)
-            if pdf_number(soft_mask_alpha):
+            if is_pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
             self.fill_path(
                 path,
@@ -345,7 +345,7 @@ class internal_RasterTarget(
             )
         if paint_kind is not PathPaintKind.FILL:
             stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
-            if pdf_number(soft_mask_alpha):
+            if is_pdf_number(soft_mask_alpha):
                 stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
             self.stroke_path(
                 path,

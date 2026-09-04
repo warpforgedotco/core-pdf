@@ -47,9 +47,7 @@ from core_pdf.impl.spec.s_07_content.state import (
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
     select_appearance_stream,
 )
-from core_pdf.impl.spec.s_08_graphics.image_metadata import (
-    pdf_number,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 
@@ -165,7 +163,7 @@ class RenderedPage:
         page_pixels = uint8_image_view(pixels, (height, width, 4))
 
         page_group_alpha = self.metadata.get("group_alpha")
-        if not pdf_number(page_group_alpha):
+        if not is_pdf_number(page_group_alpha):
             page_group_alpha = None
         clip_state = internal_ClipState(
             crop_x0=crop_x0,
@@ -233,7 +231,7 @@ class RenderedPage:
                     child, group_alpha, group_blend_mode = raster_target.pop_group()
                     raster_target.composite_group(
                         child,
-                        group_alpha if pdf_number(group_alpha) else data.get("fill_opacity"),
+                        group_alpha if is_pdf_number(group_alpha) else data.get("fill_opacity"),
                         group_blend_mode
                         if type(group_blend_mode) is str
                         else data.get("blend_mode"),
@@ -261,7 +259,7 @@ class RenderedPage:
                     data.get("stroke_color"), data.get("stroke_opacity")
                 )
                 soft_mask_alpha = data.get("soft_mask_alpha")
-                if pdf_number(soft_mask_alpha):
+                if is_pdf_number(soft_mask_alpha):
                     stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
                 raster_target.stroke_path(
                     path,
@@ -278,7 +276,7 @@ class RenderedPage:
                     data.get("fill_opacity"),
                 )
                 soft_mask_alpha = data.get("soft_mask_alpha")
-                if pdf_number(soft_mask_alpha):
+                if is_pdf_number(soft_mask_alpha):
                     rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
                 path = data.get("path")
                 if type(path) is not CapturedPath:
@@ -298,7 +296,7 @@ class RenderedPage:
                     stroke_rgba = internal_color_rgba(
                         data.get("stroke_color"), data.get("stroke_opacity")
                     )
-                    if pdf_number(soft_mask_alpha):
+                    if is_pdf_number(soft_mask_alpha):
                         stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
                     raster_target.stroke_path(
                         path,

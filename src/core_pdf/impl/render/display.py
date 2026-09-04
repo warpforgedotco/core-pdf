@@ -15,17 +15,63 @@ from core_pdf.impl.render.model import (
     PathPaintKind,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
-from core_pdf.impl.spec.s_08_graphics.image_metadata import (
-    image_display_metadata,
-    pdf_number,
+from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
+    is_pdf_number,
+    parse_int,
 )
+from core_pdf.impl.spec.s_08_graphics.color_spec import describe_color_space
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
 }
 MAX_COALESCED_STROKE_SUBPATHS = 256
 RASTER_CONTROL_KINDS = frozenset({"state-push", "state-pop", "clip", "group-begin", "group-end"})
+
+
+def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Describe an image while adapting captured data into a display item."""
+    dictionary = data.get("dictionary")
+    if not isinstance(dictionary, dict):
+        return {}
+
+    width = parse_int(dictionary.get("Width"), 0)
+    height = parse_int(dictionary.get("Height"), 0)
+    width = width if width > 0 else 0
+    height = height if height > 0 else 0
+    image_mask = dictionary.get("ImageMask") is True
+    default_bpc = 1 if image_mask else 0
+    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), default_bpc)
+    bits_per_component = bits_per_component if bits_per_component > 0 else default_bpc
+
+    metadata: dict[str, Any] = {
+        "kind": kind,
+        "width": width,
+        "height": height,
+        "pixels": width * height if width > 0 and height > 0 else 0,
+        "bits_per_component": bits_per_component if bits_per_component > 0 else None,
+        "color_space": describe_color_space(dictionary.get("ColorSpace")),
+        "filters": declared_filter_names(dictionary.get("Filter")),
+        "image_mask": image_mask,
+        "has_mask": dictionary.get("Mask") is not None,
+        "has_soft_mask": dictionary.get("SMask") is not None,
+    }
+
+    raw_data = data.get("raw_data", data.get("data"))
+    if isinstance(raw_data, (bytes, bytearray, memoryview)):
+        metadata["raw_bytes"] = len(raw_data)
+
+    bbox = rect_tuple(data.get("bbox"))
+    if bbox is not None:
+        x0, y0, x1, y1 = bbox
+        display_width = abs(x1 - x0)
+        display_height = abs(y1 - y0)
+        metadata["display_width"] = display_width
+        metadata["display_height"] = display_height
+        metadata["display_area"] = display_width * display_height
+
+    return metadata
 
 
 def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
@@ -59,7 +105,7 @@ class DisplayList:
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         if kind in {"image", "inline-image"}:
-            metadata = image_display_metadata(kind, data)
+            metadata = internal_image_display_metadata(kind, data)
             if metadata:
                 explicit = data.get("source_metadata")
                 if isinstance(explicit, dict):
@@ -227,7 +273,7 @@ def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, f
             return None
         if item.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
             line_width = item.line_width
-            if pdf_number(line_width):
+            if is_pdf_number(line_width):
                 pad = max(0.0, float(line_width) * 0.5)
                 box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
@@ -248,7 +294,7 @@ def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, f
     box = rect_tuple(value)
     if box is None:
         return None
-    if generic_item.kind in {"stroke", "fillstroke"} and pdf_number(data.get("line_width")):
+    if generic_item.kind in {"stroke", "fillstroke"} and is_pdf_number(data.get("line_width")):
         pad = max(0.0, float(data["line_width"]) * 0.5)
         box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
     return box

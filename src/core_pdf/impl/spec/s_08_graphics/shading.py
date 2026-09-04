@@ -12,9 +12,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float, pars
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function,
 )
-from core_pdf.impl.spec.s_08_graphics.image_metadata import (
-    image_color_space_name,
-)
+from core_pdf.impl.spec.s_08_graphics.color_spec import describe_color_space
 
 
 def internal_number_array(value: Any) -> tuple[float, ...]:
@@ -161,7 +159,7 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
         domain=domain,
         extend_start=extend_start,
         extend_end=extend_end,
-        color_model=image_color_space_name(dictionary.get("ColorSpace")) or "DeviceRGB",
+        color_model=describe_color_space(dictionary.get("ColorSpace")) or "DeviceRGB",
         bbox=bbox,
         internal_evaluator=internal_compile_pdf_function(dictionary.get("Function")),
     )

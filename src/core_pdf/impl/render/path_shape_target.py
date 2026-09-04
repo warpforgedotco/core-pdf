@@ -17,8 +17,7 @@ from core_pdf.impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
     internal_intersect_box,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
 
 
 class internal_PathShapeTargetMixin:
@@ -128,7 +127,7 @@ class internal_PathShapeTargetMixin:
         blended_rgba = rgba
         if normal_target is None:
             group_alpha = buffer_stack[-1][1]
-            if pdf_number(group_alpha):
+            if is_pdf_number(group_alpha):
                 sr, sg, sb, sa = rgba
                 sa = max(0, min(255, int(round(sa * float(group_alpha)))))
                 blended_rgba = (sr, sg, sb, sa)

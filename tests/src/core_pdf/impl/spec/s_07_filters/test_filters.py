@@ -27,7 +27,7 @@ from core_pdf.impl.spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_tiff_predictor,
 )
-from core_pdf.impl.spec.s_07_filters.registry import PREDICTOR_FILTERS
+from core_pdf.impl.spec.s_07_filters.registry import PREDICTOR_FILTERS, declared_filter_names
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
     PDF_CONTENT_OPERATOR_BYTES,
 )
@@ -48,6 +48,14 @@ def raw_deflate_compress(data: bytes) -> bytes:
 
 def test_filter_registry_pins_predictor_policy() -> None:
     assert frozenset({"FlateDecode", "Fl", "LZWDecode", "LZW"}) == PREDICTOR_FILTERS
+
+
+def test_declared_filter_names_accepts_one_name_or_an_array() -> None:
+    assert declared_filter_names(PdfName.of("FlateDecode")) == ["FlateDecode"]
+    assert declared_filter_names([PdfName.of("DCTDecode"), "/FlateDecode", None]) == [
+        "DCTDecode",
+        "FlateDecode",
+    ]
 
 
 @pytest.mark.parametrize("alias", ["FlateDecode", "FLATEDECODE", "PlateDecode"])
