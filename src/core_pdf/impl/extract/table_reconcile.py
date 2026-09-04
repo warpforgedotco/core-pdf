@@ -349,6 +349,10 @@ def internal_remove_block_duplicate_table_rows(
             continue
         block_counts = Counter(token for tokens in line_tokens for token in tokens)
         line_sets = [set(tokens) for tokens in line_tokens]
+        line_indexes_by_token: dict[str, set[int]] = {}
+        for line_index, line_set in enumerate(line_sets):
+            for token in line_set:
+                line_indexes_by_token.setdefault(token, set()).add(line_index)
         kept_rows: list[tuple[TableCell, ...]] = []
         for row in table.rows:
             cells = [cell for cell in row if cell.text]
@@ -357,7 +361,12 @@ def internal_remove_block_duplicate_table_rows(
                 kept_rows.append(row)
                 continue
             duplicated = False
-            for line, line_set in zip(line_tokens, line_sets):
+            candidate_line_indexes: set[int] = set()
+            for token in row_tokens:
+                candidate_line_indexes.update(line_indexes_by_token.get(token, ()))
+            for line_index in candidate_line_indexes:
+                line = line_tokens[line_index]
+                line_set = line_sets[line_index]
                 matched = sum(1 for token in row_tokens if token in line_set)
                 if matched / len(row_tokens) >= 0.9 and matched / len(line) >= 0.9:
                     duplicated = True
@@ -366,9 +375,20 @@ def internal_remove_block_duplicate_table_rows(
                 matched = sum(
                     min(count, block_counts[token]) for token, count in Counter(row_tokens).items()
                 )
-                fragment = any(
-                    all(token in line_set for token in row_tokens) for line_set in line_sets
-                )
+                shared_line_indexes: set[int] | None = None
+                for token in set(row_tokens):
+                    indexes = line_indexes_by_token.get(token)
+                    if not indexes:
+                        shared_line_indexes = set()
+                        break
+                    shared_line_indexes = (
+                        set(indexes)
+                        if shared_line_indexes is None
+                        else shared_line_indexes.intersection(indexes)
+                    )
+                    if not shared_line_indexes:
+                        break
+                fragment = bool(shared_line_indexes)
                 duplicated = matched / len(row_tokens) >= 0.9 and not fragment
             if not duplicated:
                 kept_rows.append(row)
