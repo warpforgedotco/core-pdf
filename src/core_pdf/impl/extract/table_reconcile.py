@@ -243,16 +243,32 @@ def internal_remove_block_duplicate_tables(
     if not blocks or not tables:
         return tables
     filtered: list[Table] = []
-    tokenized_blocks = tuple(
-        (block.bbox, internal_emitted_text_tokens(block.text))
-        for block in blocks
-        if block.bbox is not None and block.text
-    )
-    block_boxes = tuple(box for box, ignored_tokens in tokenized_blocks)
-    page_token_counts = Counter(
-        token for ignored_box, tokens in tokenized_blocks for token in tokens
-    )
     profiles = tuple(internal_table_profile(table) for table in tables)
+    needs_block_tokens = any(
+        not profile.structured_stream and not profile.has_grid_shape and len(profile.tokens) >= 4
+        for profile in profiles
+    )
+    tokenized_blocks = (
+        tuple(
+            (block.bbox, internal_emitted_text_tokens(block.text))
+            for block in blocks
+            if block.bbox is not None and block.text
+        )
+        if needs_block_tokens
+        else ()
+    )
+    block_boxes = tuple(block.bbox for block in blocks if block.bbox is not None and block.text)
+    needs_page_token_counts = any(
+        table.metadata.get("source") != "stream"
+        and not profile.has_grid_shape
+        and 4 <= len(profile.tokens) < 24
+        for table, profile in zip(tables, profiles)
+    )
+    page_token_counts = (
+        Counter(token for ignored_box, tokens in tokenized_blocks for token in tokens)
+        if needs_page_token_counts
+        else Counter()
+    )
     for table, profile in zip(tables, profiles):
         covers_synthetic_chart = internal_covers_synthetic_chart_table(
             table, tables, profiles=profiles, profile=profile
