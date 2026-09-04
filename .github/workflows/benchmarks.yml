@@ -43,7 +43,11 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install English Tesseract data
-        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
+        run: |
+          if ! tesseract --list-langs 2>/dev/null | grep -qx eng; then
+            sudo apt-get update
+            sudo apt-get install --yes tesseract-ocr-eng
+          fi
 
       - name: Run CodSpeed benchmarks
         uses: CodSpeedHQ/action@v3
@@ -67,5 +71,5 @@ jobs:
           token: ${{ secrets.CODSPEED_TOKEN }}
 
       - name: Prune uv cache
-        if: always()
+        if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
