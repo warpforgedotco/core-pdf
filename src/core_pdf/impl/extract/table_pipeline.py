@@ -29,13 +29,17 @@ class internal_TableExtractor:
         evidence = self.capture.evidence
         if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
             return ()
-        tables = internal_detect_tables(self.capture, self.observations)
+        text_rows = internal_text_rows(self.observations)
+        tables = internal_detect_tables(
+            self.capture,
+            self.observations,
+            text_rows=text_rows,
+        )
         chart_table = extract_chart_table(self.capture, self.observations)
         if chart_table is not None:
             tables = (*tables, chart_table)
         if not tables:
             return ()
-        text_rows = internal_text_rows(self.observations)
         return tuple(
             internal_table_with_bands(
                 internal_annotate_table_associations(

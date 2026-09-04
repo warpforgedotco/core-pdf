@@ -145,6 +145,8 @@ def extract_chart_table(capture: CapturedPage, observations: ObservationBatch) -
 def internal_detect_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
+    *,
+    text_rows: list[list[int]] | None = None,
 ) -> tuple[Table, ...]:
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
@@ -167,6 +169,7 @@ def internal_detect_tables(
         capture,
         observations,
         len(tables),
+        rows=text_rows,
     ):
         conflicts = [
             table
@@ -594,13 +597,11 @@ def internal_stream_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
     start_order: int,
+    *,
+    rows: list[list[int]] | None = None,
 ) -> tuple[Table, ...]:
-    horizontal = (observations.rotation % 180) == 0
-    horizontal_count = int(numpy.count_nonzero(horizontal & observations.visible))
-    visible_count = int(numpy.count_nonzero(observations.visible))
-    if horizontal_count >= 4 and horizontal_count * 5 >= visible_count * 2:
-        observations = observations.select(horizontal & observations.visible)
-    rows = internal_text_rows(observations)
+    if rows is None:
+        rows = internal_text_rows(observations)
     row_centers = internal_row_centers(observations, rows)
     tables: list[Table] = []
     candidate_columns = internal_aligned_column_clusters(
