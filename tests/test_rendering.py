@@ -10,7 +10,7 @@ import pytest
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
+from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     ImagePaintItem,
     PathPaintItem,
@@ -114,7 +114,7 @@ def test_rasterize_accepts_a_crop_without_recomposing_the_display_list() -> None
     assert cropped.nbytes == 30 * 40 * 4
 
 
-def test_compiled_render_plan_culls_distant_paint_but_preserves_state() -> None:
+def test_crop_render_items_cull_distant_paint_but_preserve_state() -> None:
     display_list = DisplayList(width=2_000, height=200)
     display_list.append("state-push", 0)
     for index in range(10):
@@ -129,8 +129,8 @@ def test_compiled_render_plan_culls_distant_paint_but_preserves_state() -> None:
         )
     display_list.append("state-pop", 11)
 
-    plan = CompiledRenderPlan.compile(display_list)
-    selected = plan.items_for_crop((0.0, 0.0, 100.0, 100.0))
+    page = RenderedPage(1, 2_000, 200, 0, display_list)
+    selected = page.internal_render_items((0.0, 0.0, 100.0, 100.0))
 
     assert len(selected) == 3
     assert [item.kind for item in selected] == ["state-push", "fill", "state-pop"]

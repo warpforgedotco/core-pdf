@@ -15,7 +15,11 @@ from core_pdf.impl.render.blend import (
     internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.display import CompiledRenderPlan, DisplayList
+from core_pdf.impl.render.display import (
+    RASTER_CONTROL_KINDS,
+    DisplayList,
+    internal_display_item_box,
+)
 from core_pdf.impl.render.model import (
     DisplayItem,
     DisplayListItem,
@@ -55,7 +59,6 @@ class RenderedPage:
     height: float
     rotate: int
     display_list: DisplayList
-    render_plan: CompiledRenderPlan | None = field(default=None, repr=False)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def internal_render_items(
@@ -64,11 +67,20 @@ class RenderedPage:
     ) -> list[DisplayItem] | tuple[DisplayItem, ...]:
         if crop is None:
             return self.display_list.items
-        plan = self.render_plan
-        if plan is None or len(plan.items) != len(self.display_list.items):
-            plan = CompiledRenderPlan.compile(self.display_list)
-            self.render_plan = plan
-        return plan.items_for_crop(crop)
+        selected: list[DisplayItem] = []
+        for item in self.display_list.items:
+            if type(item) is DisplayListItem and item.kind == "text":
+                continue
+            box = internal_display_item_box(item)
+            always_render = box is None or (
+                type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS
+            )
+            outside_crop = box is not None and (
+                box[2] <= crop[0] or box[0] >= crop[2] or box[3] <= crop[1] or box[1] >= crop[3]
+            )
+            if always_render or not outside_crop:
+                selected.append(item)
+        return selected
 
     def internal_effective_crop(
         self,
@@ -176,29 +188,16 @@ class RenderedPage:
             page_view=page_pixels,
         )
         buffer_stack = raster_target.buffer_stack
-        # Same dict objects the target owns; the not-yet-extracted painters
-        # below still reach for them by their original names.
-        # Bound methods in locals so the painting call sites keep their single
-        # LOAD_FAST + CALL; each method re-reads self.pixels, so group push/pop
-        # still redirects painting the way the closures' cell did.
-        composite_group = raster_target.composite_group
-        draw_glyph_bitmap = raster_target.draw_glyph_bitmap
-        fill_path = raster_target.fill_path
-        blit_image = raster_target.blit_image
-        paint_fill_pattern = raster_target.paint_fill_pattern
-        paint_typed_path = raster_target.paint_typed_path
-        stroke_path = raster_target.stroke_path
-        paint_shading = raster_target.paint_shading
         rotate = self.rotate % 360
 
         clip_state_stack: list[int] = []
 
         for item in self.internal_render_items(crop):
             if type(item) is PathPaintItem:
-                paint_typed_path(item)
+                raster_target.paint_typed_path(item)
                 continue
             if type(item) is ImagePaintItem:
-                blit_image(item)
+                raster_target.blit_image(item)
                 continue
             generic_item = cast(DisplayListItem, item)
             data = generic_item.data
@@ -235,7 +234,7 @@ class RenderedPage:
             if generic_item.kind == "group-end":
                 if len(buffer_stack) > 1:
                     child, group_alpha, group_blend_mode = raster_target.pop_group()
-                    composite_group(
+                    raster_target.composite_group(
                         child,
                         group_alpha if pdf_number(group_alpha) else data.get("fill_opacity"),
                         group_blend_mode
@@ -247,7 +246,7 @@ class RenderedPage:
                 if data.get("visible") is False:
                     continue
                 rgba = internal_color_rgba(data.get("fill_color"), None)
-                draw_glyph_bitmap(
+                raster_target.draw_glyph_bitmap(
                     data.get("bbox"),
                     data.get("bitmap"),
                     rgba,
@@ -256,7 +255,7 @@ class RenderedPage:
                     data.get("bitmap_height"),
                 )
             elif generic_item.kind == "shading":
-                paint_shading(data, blend_mode)
+                raster_target.paint_shading(data, blend_mode)
             elif generic_item.kind == "stroke":
                 path = data.get("path")
                 if type(path) is not CapturedPath:
@@ -267,7 +266,7 @@ class RenderedPage:
                 soft_mask_alpha = data.get("soft_mask_alpha")
                 if pdf_number(soft_mask_alpha):
                     stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-                stroke_path(
+                raster_target.stroke_path(
                     path,
                     float(data.get("line_width") or 1.0),
                     stroke_rgba,
@@ -290,9 +289,9 @@ class RenderedPage:
                 pattern_painted = generic_item.kind in {
                     "fill",
                     "fillstroke",
-                } and paint_fill_pattern(data, blend_mode)
+                } and raster_target.paint_fill_pattern(data, blend_mode)
                 if generic_item.kind in {"fill", "fillstroke"} and not pattern_painted:
-                    fill_path(
+                    raster_target.fill_path(
                         path,
                         rgba,
                         blend_mode,
@@ -304,7 +303,7 @@ class RenderedPage:
                     )
                     if pdf_number(soft_mask_alpha):
                         stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-                    stroke_path(
+                    raster_target.stroke_path(
                         path,
                         float(data.get("line_width") or 1.0),
                         stroke_rgba,
