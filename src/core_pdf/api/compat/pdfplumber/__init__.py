@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 import math
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from io import BytesIO
 from itertools import groupby
@@ -19,6 +19,8 @@ from core_pdf.impl._impl.model.geometry import (
     bbox_union,
     flip_rect_vertical,
 )
+from core_pdf.impl._impl.output.model import Table as StructuredTable
+from core_pdf.impl._impl.output.model import TableCell
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import PdfReference
 
@@ -941,10 +943,10 @@ class Page:
         settings = TableSettings.resolve(table_settings)
         result = self.pdf._document.extract(pages=(self.page_number,))
         page = result.pages[0]
-        tables = page.tables
+        tables: tuple[StructuredTable | _CompatNativeTable, ...] = page.tables
         if tables:
             if len(tables) == 1:
-                table_box = getattr(tables[0], "bbox", None)
+                table_box = tables[0].bbox
                 if table_box is not None and table_box[3] - table_box[1] < self.height * 0.05:
                     body = [char for char in self.chars if char["bottom"] < self.height - 45]
                     if len(body) > 500:
@@ -957,29 +959,32 @@ class Page:
                         tables = (_CompatNativeTable(body_box, list(tables[0].rows)),)
             if len(tables) > 1:
                 first = tables[0]
-                first_box = getattr(first, "bbox", None)
-                same_columns = first_box is not None and all(
-                    (box := getattr(table, "bbox", None)) is not None
-                    and abs(box[0] - first_box[0]) < 2
-                    and abs(box[2] - first_box[2]) < 2
-                    for table in tables[1:]
-                )
-                if same_columns:
-                    first_bbox = cast(BBox, first_box)
-                    merged_rows = [row for table in tables for row in table.rows]
-                    merged_rows.sort(
-                        key=lambda merged_row: min(
-                            cell.bbox[1] for cell in merged_row if cell.bbox
-                        ),
-                        reverse=True,
+                first_box = first.bbox
+                boxes = [box for table in tables if (box := table.bbox) is not None]
+                same_columns = (
+                    first_box is not None
+                    and len(boxes) == len(tables)
+                    and all(
+                        abs(box[0] - first_box[0]) < 2 and abs(box[2] - first_box[2]) < 2
+                        for box in boxes[1:]
                     )
-                    boxes = [table.bbox for table in tables]
+                )
+                if same_columns and first_box is not None:
+                    merged_rows = [row for table in tables for row in table.rows]
+                    # Geometry-free rows retain the structured model's row order.
+                    if all(any(cell.bbox is not None for cell in row) for row in merged_rows):
+                        merged_rows.sort(
+                            key=lambda merged_row: min(
+                                cell.bbox[1] for cell in merged_row if cell.bbox is not None
+                            ),
+                            reverse=True,
+                        )
                     tables = (
                         _CompatNativeTable(
                             (
-                                first_bbox[0],
+                                first_box[0],
                                 min(box[1] for box in boxes),
-                                first_bbox[2],
+                                first_box[2],
                                 max(box[3] for box in boxes),
                             ),
                             merged_rows,
@@ -1343,7 +1348,7 @@ class _CompatCell:
 
 
 class _CompatNativeTable:
-    def __init__(self, bbox: BBox, rows: list[list[_CompatCell]]) -> None:
+    def __init__(self, bbox: BBox, rows: Sequence[Sequence[TableCell | _CompatCell]]) -> None:
         self.bbox = bbox
         self.rows = rows
 
@@ -1371,7 +1376,7 @@ class Column(CellGroup):
 
 
 class Table:
-    def __init__(self, native: Any) -> None:
+    def __init__(self, native: StructuredTable | _CompatNativeTable) -> None:
         self._native = native
         self.page: Page | None = None
 
@@ -1382,7 +1387,7 @@ class Table:
     @property
     def bbox(self) -> BBox:
         box = self._native.bbox
-        return tuple(box) if box is not None else (0.0, 0.0, 0.0, 0.0)
+        return box if box is not None else (0.0, 0.0, 0.0, 0.0)
 
     @property
     def rows(self) -> list[Row]:
@@ -1397,18 +1402,19 @@ class Table:
 
     def extract(self, **_: Any) -> list[list[str | None]]:
         width = max((len(row) for row in self._native.rows), default=0)
-        return [
-            [
+        rows: list[list[str | None]] = []
+        for row in self._native.rows:
+            values: list[str | None] = [
                 self.page.crop(cell.bbox, strict=False).extract_text(layout=True)
-                if _.get("text_layout") and self.page is not None
+                if _.get("text_layout") and self.page is not None and cell.bbox is not None
                 else cell.text
                 if cell.text is not None
                 else ""
                 for cell in row
             ]
-            + [""] * (width - len(row))
-            for row in self._native.rows
-        ]
+            values.extend([""] * (width - len(row)))
+            rows.append(values)
+        return rows
 
 
 class TableFinder:
