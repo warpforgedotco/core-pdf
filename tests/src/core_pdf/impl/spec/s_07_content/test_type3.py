@@ -85,7 +85,7 @@ def test_repeated_type3_char_proc_does_not_leak_stream_state() -> None:
     assert len(state.drawings) == 3
     assert not state.stream_executor.active_streams
     assert not state.stack
-    assert not state.clip_scope_stack
+    assert state.graphics_stack_floor == 0
 
 
 def test_type3_char_proc_with_unresolved_xobject_does_not_leak_stream_state() -> None:

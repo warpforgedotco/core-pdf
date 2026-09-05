@@ -54,6 +54,7 @@ from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecut
 from core_pdf.impl.spec.s_07_content.stream_state import (
     GRAPHICS_STATE_FIELDS,
     STREAM_STATE_MIRRORED,
+    GraphicsSave,
     LayoutFormId,
     StreamState,
 )
@@ -62,12 +63,12 @@ from core_pdf.impl.spec.s_07_content.text_runs import (
     is_garbage_text,
     normalize_extracted_text,
 )
+from core_pdf.impl.spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_float_strict,
-    parse_int,
     parse_int_strict,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
@@ -156,8 +157,8 @@ class TextState:
     current_path: CapturedPath
     current_point: tuple[float, float] | None
     subpath_start: tuple[float, float] | None
-    stack: list[tuple[Any, ...]]
-    clip_scope_stack: list[bool]
+    stack: list[GraphicsSave]
+    graphics_stack_floor: int
     fill_color: tuple[float, ...] | None
     fill_pattern: PatternPaint | None
     # Always a real number: __init__ seeds 1.0, `gs` clamps into [0, 1], and a
@@ -205,7 +206,7 @@ class TextState:
         "current_point",
         "subpath_start",
         "stack",
-        "clip_scope_stack",
+        "graphics_stack_floor",
         "tm_a",
         "tm_b",
         "tm_c",
@@ -353,7 +354,7 @@ class TextState:
         self.miter_limit = 10.0
         self.dash_pattern = ([], 0.0)
         self.stack = []
-        self.clip_scope_stack = []
+        self.graphics_stack_floor = 0
         self.runs = []
         self.glyphs = []
         self.glyph_clusters = []
@@ -517,8 +518,8 @@ class TextState:
     def restore_stream_state(self, state: StreamState) -> None:
         for name in STREAM_STATE_MIRRORED:
             setattr(self, name, getattr(state, name))
-        del self.stack[state.graphics_stack_len :]
-        del self.clip_scope_stack[state.graphics_stack_len :]
+        while len(self.stack) > state.graphics_stack_len:
+            self.internal_pop_graphics_save()
         del self.marked_content_stack[state.marked_content_stack_len :]
         self.restore_graphics_state(state.graphics_state)
 
@@ -541,17 +542,9 @@ class TextState:
         self.stream_executor.consume(stream, resources, ctm, depth, clip_bbox=clip_bbox)
 
     def lookup_page_resource(self, category: str, name: str) -> object:
-        raw_category = self.resources.get(category)
-        category_res = (
-            self.document.resolver.resolve_dict(raw_category) if raw_category is not None else None
-        )
-
-        if isinstance(category_res, dict):
-            res = category_res.get(name)
-            if res is not None:
-                return self.document.resolver.resolve(res)
-
-        return None
+        """Return the raw selected entry; its consumer chooses how far to resolve it."""
+        entries = resolve_resource_dict(self.resources.get(category), self.document.resolver)
+        return entries.get(name) if entries is not None else None
 
     def decode_operand(
         self, operand: object, decoder: FontDecoder
@@ -654,16 +647,13 @@ class TextState:
         name = self.document.resolver.resolve_name(name_obj)
         if not name:
             return
-        xobjects = self.resources.get("XObject")
-        raw_xobj = xobjects.get(name) if isinstance(xobjects, dict) else None
+        raw_xobj = self.lookup_page_resource("XObject", name)
         stream_key = (
             ("ref", raw_xobj.object_number, raw_xobj.generation_number)
             if isinstance(raw_xobj, PdfReference)
             else None
         )
-        xobj = self.document.resolver.resolve(raw_xobj) if raw_xobj is not None else None
-        if xobj is None:
-            xobj = self.lookup_page_resource("XObject", name)
+        xobj = self.document.resolver.resolve(raw_xobj)
         if not isinstance(xobj, PdfStream):
             return
         xobj_dict = xobj.dictionary
@@ -689,7 +679,7 @@ class TextState:
                     CapturedDrawing(
                         seqno=self.sequence,
                         fill=self.fill_color if image_is_stencil else None,
-                        fill_opacity=self.fill_opacity if image_is_stencil else None,
+                        fill_opacity=self.fill_opacity,
                         blend_mode=self.blend_mode,
                         dash_pattern=self.transformed_dash_pattern(),
                         soft_mask_alpha=smask_alpha,
@@ -724,21 +714,15 @@ class TextState:
                 # group entirely -- the contents then painted straight onto the
                 # page at full opacity in Normal mode, losing the blend.
                 #
-                # Only isolate the group when compositing would actually differ;
-                # at ca == 1 in Normal mode a group buffer is a no-op, and
-                # painting directly stays the cheaper path.
+                # An explicitly isolated group has its own transparent backdrop,
+                # even at full opacity: a child's blend must not see the page.
                 blend = self.blend_mode
-                if self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
+                isolated = self.document.resolver.resolve(group_dict.get("I")) is True
+                if isolated or self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
                     group_alpha = max(0.0, min(1.0, self.fill_opacity))
-        raw_resources = xobj_dict.get("Resources")
-        resources = cast(
-            PdfDict,
-            (
-                raw_resources
-                if isinstance(raw_resources, dict)
-                else self.document.resolver.resolve_dict(raw_resources)
-            )
-            or self.resources,
+        resources = (
+            resolve_resource_dict(xobj_dict.get("Resources"), self.document.resolver)
+            or self.resources
         )
         xobj_matrix = xobj_dict.get("Matrix")
         if isinstance(xobj_matrix, (list, tuple)) and len(xobj_matrix) > 6:
@@ -1184,9 +1168,9 @@ class TextState:
             glyph_names = type3_glyph_names(decoder)
             decoder.type3_glyph_names = glyph_names
 
-        resources = font.get("Resources")
-        if not isinstance(resources, dict):
-            resources = self.resources
+        resources = (
+            resolve_resource_dict(font.get("Resources"), self.document.resolver) or self.resources
+        )
         font_matrix = type3_font_matrix(font)
         widths = self.font_widths or decoder.fast_widths
         cs = self.char_space_scale
@@ -1535,7 +1519,9 @@ class TextState:
             data = getattr(image, "data", b"")
             color_name = normalize_pdf_name(dictionary.get("ColorSpace"))
             if color_name is not None:
-                color_resource = self.lookup_page_resource("ColorSpace", color_name)
+                color_resource = self.document.resolver.deep_resolve(
+                    self.lookup_page_resource("ColorSpace", color_name)
+                )
                 if color_resource is not None:
                     dictionary[PdfName.of("ColorSpace")] = cast(PdfObject, color_resource)
             source, _ = image_source_from_stream(
@@ -1554,7 +1540,7 @@ class TextState:
                     soft_mask_alpha=self.group_alpha,
                     stream_order=self.stream_order,
                     fill=self.fill_color if dictionary.get("ImageMask") is True else None,
-                    fill_opacity=self.fill_opacity if dictionary.get("ImageMask") is True else None,
+                    fill_opacity=self.fill_opacity,
                 )
             )
             self.sequence += 1
@@ -1733,9 +1719,9 @@ class TextState:
         self.internal_end_path()
 
     def internal_emit_clip_scope_push(self) -> None:
-        if not self.clip_scope_stack or self.clip_scope_stack[-1]:
+        if not self.stack or self.stack[-1].clip_scope_emitted:
             return
-        self.clip_scope_stack[-1] = True
+        self.stack[-1].clip_scope_emitted = True
         self.drawings.append(marker_drawing("state-push", self.sequence))
         self.sequence += 1
 
@@ -1817,14 +1803,10 @@ class TextState:
         name = self.document.resolver.resolve_name(name_obj)
         if name is None:
             return "DeviceGray", None
-        resolve = self.document.resolver.resolve
-        value = self.lookup_page_resource("ColorSpace", name)
+        value = self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
         if value is None:
             # An inline device space (`/DeviceRGB cs`) names no resource.
             value = name
-        if isinstance(value, (list, tuple)):
-            # Tint functions and Indexed palettes may be indirect references.
-            value = [resolve(entry) for entry in value]
         base = value[0] if isinstance(value, (list, tuple)) and value else value
         color_space = normalize_pdf_name(base) or name
         try:
@@ -1867,16 +1849,17 @@ class TextState:
         pattern_name = self.document.resolver.resolve_name(operands[-1])
         if not pattern_name:
             return None
-        pattern = self.lookup_page_resource("Pattern", pattern_name)
+        pattern = self.document.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
+        pattern_dict: PdfDict | None
         if isinstance(pattern, PdfStream):
-            pattern_dict = self.document.resolver.resolve_dict(pattern.dictionary)
+            pattern_dict = cast(PdfDict, pattern.dictionary)
         else:
             pattern_dict = (
                 self.document.resolver.resolve_dict(pattern) if pattern is not None else None
             )
         if not isinstance(pattern_dict, dict):
             return None
-        pattern_type = parse_int(pattern_dict.get("PatternType"), None)
+        pattern_type = self.document.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
             shading: object = pattern_dict.get("Shading")
             shading = self.document.resolver.resolve(shading)
@@ -1888,7 +1871,7 @@ class TextState:
             return ShadingPattern(dict(shading_dict))
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
-        paint_type = parse_int(pattern_dict.get("PaintType"), 1)
+        paint_type = self.document.resolver.resolve_int(pattern_dict.get("PaintType"), 1)
         if paint_type not in {1, 2}:
             return None
         base_color = None
@@ -1904,10 +1887,14 @@ class TextState:
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
             return None
         try:
-            matrix = Matrix.from_operand(pattern_dict.get("Matrix"))
+            matrix = Matrix.from_operand(
+                self.document.resolver.deep_resolve(pattern_dict.get("Matrix"))
+            )
         except ValueError:
             matrix = IDENTITY_MATRIX
-        resources = self.document.resolver.resolve_dict(pattern_dict.get("Resources")) or {}
+        resources = (
+            resolve_resource_dict(pattern_dict.get("Resources"), self.document.resolver) or {}
+        )
         nested_state = type(self)(self.document, hidden_layers=self.hidden_layers)
         try:
             nested_state.consume_stream(pattern, resources, matrix, 0)
@@ -2029,7 +2016,7 @@ class TextState:
         name = self.document.resolver.resolve_name(value)
         if not name:
             return None
-        props = self.lookup_page_resource("Properties", name)
+        props = self.document.resolver.resolve(self.lookup_page_resource("Properties", name))
         return cast("dict[str, Any]", props) if isinstance(props, dict) else None
 
     def resolve_marked_content_layer(self, value: Any) -> str | None:
@@ -2062,7 +2049,9 @@ class TextState:
         shading_ref = self.document.resolver.resolve_name(operands[0])
         if not shading_ref:
             return
-        shading = self.lookup_page_resource("Shading", shading_ref)
+        shading = self.document.resolver.resolve_dict(
+            self.lookup_page_resource("Shading", shading_ref)
+        )
         if not isinstance(shading, dict):
             return
         self.drawings.append(
@@ -2128,23 +2117,25 @@ class TextState:
             return None
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
-        resolved = self.lookup_page_resource("ExtGState", name)
+        resolved = self.document.resolver.resolve_dict(self.lookup_page_resource("ExtGState", name))
         if not isinstance(resolved, dict):
             return None
         return cast("dict[str, Any]", resolved)
 
     def op_q(self, operands: ContentOperands, depth: int) -> None:
-        self.clip_scope_stack.append(False)
-        self.stack.append(internal_capture_graphics_state(self))
+        self.stack.append(GraphicsSave(internal_capture_graphics_state(self)))
 
-    def op_Q(self, operands: ContentOperands, depth: int) -> None:
-        clip_scope_emitted = self.clip_scope_stack.pop() if self.clip_scope_stack else False
-        if clip_scope_emitted:
+    def internal_pop_graphics_save(self) -> tuple[Any, ...]:
+        saved = self.stack.pop()
+        if saved.clip_scope_emitted:
             self.drawings.append(marker_drawing("state-pop", self.sequence))
             self.sequence += 1
-        if not self.stack:
+        return saved.graphics_state
+
+    def op_Q(self, operands: ContentOperands, depth: int) -> None:
+        if len(self.stack) <= self.graphics_stack_floor:
             return
-        self.restore_graphics_state(self.stack.pop())
+        self.restore_graphics_state(self.internal_pop_graphics_save())
 
     def op_cm(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 6)) is None:

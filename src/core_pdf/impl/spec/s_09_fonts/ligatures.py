@@ -23,7 +23,7 @@ class FontResourceDocument(Protocol):
 def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream | None:
     if not isinstance(font_obj, dict):
         return None
-    descriptor = font_obj.get("FontDescriptor")
+    descriptor = document.resolve(font_obj.get("FontDescriptor"))
     if not isinstance(descriptor, dict):
         return None
     font_file = document.resolve(descriptor.get("FontFile2"))
@@ -45,7 +45,7 @@ def find_companion_font(
 ) -> tuple[dict[int, float], dict[str, float], bytes | None]:
     if not isinstance(resources, dict):
         return {}, {}, None
-    font_resources = resources.get("Font")
+    font_resources = document.resolve(resources.get("Font"))
     if not isinstance(font_resources, dict):
         return {}, {}, None
 
@@ -53,12 +53,14 @@ def find_companion_font(
         fobj = document.resolve(fref)
         if not isinstance(fobj, dict):
             continue
-        comp_base = strip_subset_tag(normalize_pdf_name(fobj.get("BaseFont")) or "")
+        comp_base = strip_subset_tag(
+            normalize_pdf_name(document.resolve(fobj.get("BaseFont"))) or ""
+        )
         if comp_base != base_name:
             continue
 
-        fc = fobj.get("FirstChar")
-        lc = fobj.get("LastChar")
+        fc = document.resolve(fobj.get("FirstChar"))
+        lc = document.resolve(fobj.get("LastChar"))
         try:
             fc_int = parse_int_strict(fc, "invalid font FirstChar")
             lc_int = parse_int_strict(lc, "invalid font LastChar")
@@ -78,7 +80,9 @@ def find_companion_font(
         starter_chars: dict[str, float] = {}
         for i, width_value in enumerate(widths_raw):
             try:
-                width = parse_float_strict(width_value, "invalid font widths array")
+                width = parse_float_strict(
+                    document.resolve(width_value), "invalid font widths array"
+                )
             except ValueError:
                 continue
             if width <= 0:

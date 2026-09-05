@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.page_program import AppearanceProgram, CapturedProgram
+from core_pdf.impl.spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -186,11 +187,8 @@ def capture_annotation_appearances(
             nested_ctm = matrix.multiply(placement)
             clip = transform_bbox(bbox, nested_ctm) if bbox is not None else rect
 
-            raw_resources = stream.dictionary.get("Resources")
-            resolved_resources = (
-                raw_resources
-                if isinstance(raw_resources, dict)
-                else document.resolver.resolve_dict(raw_resources)
+            resolved_resources = resolve_resource_dict(
+                stream.dictionary.get("Resources"), document.resolver
             )
             resources = cast(PdfDict, resolved_resources if resolved_resources else page.resources)
 

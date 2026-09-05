@@ -32,7 +32,7 @@ def internal_consume(content: bytes) -> TextState:
 def internal_capture_drawing_kinds(content: bytes) -> list[str]:
     state = internal_consume(content)
     assert not state.stack
-    assert not state.clip_scope_stack
+    assert state.graphics_stack_floor == 0
     return [drawing.kind for drawing in state.drawings]
 
 

@@ -91,6 +91,11 @@ class ContentStreamExecutor:
         # A failed stream entry must leave its parent exactly as it was.
         frame.lexer = PdfLexer(frame.stream.data)
         frame.old_state = state.capture_stream_state()
+        # The implicit Form save also owns clips made without an explicit q.
+        # Its floor prevents malformed child Q operators from consuming any
+        # caller saves, while exit can discard unfinished child scopes safely.
+        state.op_q((), frame.depth)
+        state.graphics_stack_floor = len(state.stack)
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key
         if frame.group_alpha is not None:
@@ -103,6 +108,11 @@ class ContentStreamExecutor:
                 )
             )
             state.sequence += 1
+            # The parent's alpha/blend composite the completed group once.
+            # Children start with default transparency until their own gs.
+            state.fill_opacity = 1.0
+            state.stroke_opacity = 1.0
+            state.blend_mode = None
             state.group_alpha = None
         state.resources = frame.resources
         state.resources_id = id(frame.resources)

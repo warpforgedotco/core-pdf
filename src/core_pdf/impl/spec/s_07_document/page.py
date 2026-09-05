@@ -21,6 +21,7 @@ from core_pdf.impl.spec.s_07_document.page_links import (
 )
 from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawLink
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
+from core_pdf.impl.spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
@@ -354,15 +355,10 @@ class PdfPage:
         return rotate
 
     def resolve_resources(self) -> PdfDict:
-        resources = self.inherited_values.get("Resources")
-        if resources is None:
-            return {}
-        if type(resources) is dict:
-            return cast(PdfDict, resources)
-        resolved = self.document.resolver.resolve_dict(resources)
-        if resolved is None:
-            return {}
-        return resolved
+        return (
+            resolve_resource_dict(self.inherited_values.get("Resources"), self.document.resolver)
+            or {}
+        )
 
     def resolve_transparency_group_alpha(self) -> float | None:
         group = self.document.resolver.resolve(self.page_dict.get("Group"))

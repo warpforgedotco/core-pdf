@@ -80,7 +80,7 @@ def test_escaping_nested_error_unwinds_every_entered_parent(
 
     state.op_handlers["fail"] = fail
     inner = PdfStream(
-        dictionary={"Subtype": "Form", "Group": {"S": "Transparency"}},
+        dictionary={"Subtype": "Form", "Group": {"S": "Transparency", "I": True}},
         raw_data=b"q 2 w /Tag BMC fail",
     )
     outer = PdfStream(
@@ -102,7 +102,7 @@ def test_escaping_nested_error_unwinds_every_entered_parent(
     assert state.capture_stream_state() == before
     assert state.stack == before_stack
     assert state.marked_content_stack == before_marked_content
-    assert len(state.clip_scope_stack) == len(before_stack)
+    assert state.graphics_stack_floor == before.graphics_stack_floor
     assert not state.stream_executor.active_streams
     assert [drawing.kind for drawing in state.drawings] == [
         "group-begin",
@@ -111,6 +111,41 @@ def test_escaping_nested_error_unwinds_every_entered_parent(
         "group-end",
     ]
     assert state.group_alpha == 0.6
+
+
+@pytest.mark.parametrize("opacity", [0.4, 1.0])
+def test_isolated_group_resets_child_transparency_and_restores_parent(opacity: float) -> None:
+    state = internal_state()
+    state.fill_opacity = opacity
+    state.stroke_opacity = 0.3
+    state.group_alpha = 0.6
+    state.blend_mode = "Multiply" if opacity < 1 else None
+    before = state.capture_stream_state()
+    form = PdfStream(
+        dictionary={"Subtype": "Form", "Group": {"S": "Transparency", "I": True}},
+        raw_data=b"0 0 10 10 re B",
+    )
+
+    state.consume_stream(
+        PdfStream(raw_data=b"/Child Do 0 0 10 10 re B"),
+        {"XObject": {"Child": form}},
+        IDENTITY_MATRIX,
+        0,
+    )
+
+    begin, child, end, parent = state.drawings
+    assert begin.kind == "group-begin"
+    assert end.kind == "group-end"
+    assert begin.fill_opacity == end.fill_opacity == opacity
+    assert begin.blend_mode == end.blend_mode == state.blend_mode
+    assert child.fill_opacity == child.stroke_opacity == 1.0
+    assert child.blend_mode is None
+    assert child.soft_mask_alpha is None
+    assert parent.fill_opacity == opacity
+    assert parent.stroke_opacity == 0.3
+    assert parent.soft_mask_alpha == 0.6
+    assert state.capture_stream_state() == before
+    assert not state.stack
 
 
 def test_form_parse_error_restores_parent_and_balances_group_markers() -> None:

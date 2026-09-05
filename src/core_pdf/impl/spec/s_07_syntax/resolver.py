@@ -231,10 +231,21 @@ class ObjectResolver:
         return box
 
     def resolve_font_dict(self, font: PdfDict) -> PdfDict:
-        resolved_font = self.deep_resolve(font)
+        # Type 3 fonts carry their own resources. Those remain demand-driven,
+        # while the decoder needs the font's metrics and character programs.
+        has_resources = "Resources" in font
+        font_values = (
+            {key: value for key, value in font.items() if key != "Resources"}
+            if has_resources
+            else font
+        )
+        resolved_font = self.deep_resolve(font_values)
         if not isinstance(resolved_font, dict):
             raise ValueError("invalid font dictionary")
-        return cast(PdfDict, resolved_font)
+        result = cast(PdfDict, resolved_font)
+        if has_resources:
+            result["Resources"] = font["Resources"]
+        return result
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
         if type(value) is int:

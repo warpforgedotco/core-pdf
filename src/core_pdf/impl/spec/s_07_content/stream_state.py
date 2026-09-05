@@ -69,6 +69,14 @@ GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
 )
 
 
+@dataclass(slots=True)
+class GraphicsSave:
+    """One saved graphics state and the raster clipping scope it owns."""
+
+    graphics_state: tuple[Any, ...]
+    clip_scope_emitted: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class StreamState:
     """Graphics snapshot and the additional state isolated by a nested stream."""
@@ -78,6 +86,7 @@ class StreamState:
     resources_id: int
     text_matrix: Matrix
     line_matrix: Matrix
+    graphics_stack_floor: int
     graphics_stack_len: int
     marked_content_stack_len: int
     layout_form_bbox: tuple[float, float, float, float] | None
