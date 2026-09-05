@@ -462,6 +462,23 @@ def test_font_decoder_identity_fallback_does_not_emit_surrogates() -> None:
     assert decoder.decode(b"\xd8\x00") == "\ufffd"
 
 
+@pytest.mark.parametrize("text", ["\ufffd", "a\ufffdb"])
+def test_explicit_replacement_mapping_survives_without_a_supported_repair(text: str) -> None:
+    # Poppler 26.07.0 also honors these bfchar values for CID 0x0039. The
+    # content-stream code is a font identifier, not evidence for the digit 9.
+    font = cid_type0_font("Identity-H", ordering="Identity")
+    font["ToUnicode"] = to_unicode_stream(
+        b"1 begincodespacerange <0000> <ffff> endcodespacerange\n"
+        b"1 beginbfchar <0039> <" + text.encode("utf-16-be").hex().encode() + b"> endbfchar"
+    )
+
+    glyph = FontDecoder(font).decode_glyphs(b"\x00\x39")[0]
+
+    assert glyph.unicode == text
+    assert glyph.unicode_source == "to_unicode"
+    assert glyph.alternates == ()
+
+
 def test_cid_decoder_rejects_private_use_true_type_cmap_values() -> None:
     class FakeTrueTypeFont(TrueTypeFontProgram):
         def glyph_id_for_code(self, code: int) -> int:

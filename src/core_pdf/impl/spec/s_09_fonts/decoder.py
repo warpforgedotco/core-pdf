@@ -735,6 +735,11 @@ class FontDecoder:
 
         if gid is not None:
             tt_text = self.internal_true_type_unicode_for_gid(gid)
+            if tt_text == to_unicode_text == "\ufffd":
+                # An embedded replacement glyph confirms that the explicit
+                # ToUnicode value is intentional, despite its usual role as a
+                # failure sentinel in malformed font mappings.
+                return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
             if tt_text and not has_untrusted_unicode_semantics(tt_text):
                 return UnicodeChoice(
                     tt_text,
@@ -776,6 +781,12 @@ class FontDecoder:
                     UnicodeSource.CID_COLLECTION,
                     dedupe_alternates(alternates, cid_text),
                 )
+
+        if to_unicode_text is not None and "\ufffd" in to_unicode_text:
+            # Keep explicit replacement text when no font or encoding supplies
+            # a supported repair. A numeric character code alone cannot justify
+            # replacing it, and may erase other characters in the same mapping.
+            return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
 
         if fallback_code == 0:
             return UnicodeChoice(
