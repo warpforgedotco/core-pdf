@@ -4,13 +4,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
-
-import numpy
 
 from core_pdf.impl._impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
-    internal_blend_normal_solid_span_numpy,
+    internal_blend_normal_solid_array_numpy,
     internal_color_rgba,
     internal_composite_blended_group_numpy,
     internal_composite_normal_group_numpy,
@@ -30,7 +27,7 @@ from core_pdf.impl._impl.render.path_fill_target import internal_PathFillTargetM
 from core_pdf.impl._impl.render.path_shape_target import internal_PathShapeTargetMixin
 from core_pdf.impl._impl.render.path_stroke_target import internal_PathStrokeTargetMixin
 from core_pdf.impl._impl.render.patterns import internal_PatternTargetMixin
-from core_pdf.impl._impl.runtime.array_views import uint8_image_view
+from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
@@ -84,7 +81,7 @@ class internal_RasterTarget(
         crop_x0: float,
         crop_y0: float,
         crop_y1: float,
-        page_view: numpy.ndarray[Any, Any],
+        page_view: UInt8Array,
     ) -> None:
         self.pixels = pixels
         self.buffer_stack: list[tuple[bytearray, float | None, str | None]] = [
@@ -216,7 +213,7 @@ class internal_RasterTarget(
         self.pixels = self.buffer_stack[-1][0]
         return child
 
-    def pixel_view(self, buffer: bytearray | bytes) -> numpy.ndarray[Any, Any]:
+    def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
         """Return an array view for an RGBA byte buffer."""
         return uint8_image_view(buffer, (self.height, self.width, 4))
 
@@ -345,7 +342,7 @@ class internal_RasterTarget(
         width = self.width
         if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
             target = self.pixel_view(pixels)
-            internal_blend_normal_solid_span_numpy(target, row // (width * 4), start, end, rgba)
+            internal_blend_normal_solid_array_numpy(target[row // (width * 4), start:end], rgba)
             return
         start_offset = row + start * 4
         stop_offset = row + end * 4

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -457,15 +458,17 @@ class Page:
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:
-        return tuple(
-            ContentNode(
+        return tuple(self.internal_nodes())
+
+    def internal_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
+        """Construct nodes with IDs assigned directly in the owning projection."""
+        for index, element in enumerate(self.elements, start=start_id):
+            yield ContentNode(
                 node_id=index,
                 kind=type(element).__name__.casefold(),
                 payload=element,
                 page_number=self.page_number,
             )
-            for index, element in enumerate(self.elements)
-        )
 
     @property
     def text_view(self) -> TextView:
@@ -528,8 +531,7 @@ class Document:
         """Return one reading-order node stream with page ownership preserved."""
         nodes: list[ContentNode] = []
         for page in self.pages:
-            offset = len(nodes)
-            nodes.extend(replace(node, node_id=offset + node.node_id) for node in page.nodes)
+            nodes.extend(page.internal_nodes(start_id=len(nodes)))
         return tuple(nodes)
 
     def edit(self) -> DocumentEditor:

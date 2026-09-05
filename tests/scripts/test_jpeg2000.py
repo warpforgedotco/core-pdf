@@ -4,9 +4,7 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.spec.s_07_filters.jpeg2000 import (
-    internal_jpx_uses_irreversible_wavelet,
-)
+from scripts.jpeg2000 import internal_jpx_uses_irreversible_wavelet
 
 
 @pytest.mark.parametrize(

@@ -2,8 +2,10 @@
 
 from core_pdf.impl._impl.extract.table_cleanup import internal_table_with_bands
 from core_pdf.impl._impl.extract.table_reconcile import (
+    internal_profile_tables,
     internal_remove_block_duplicate_table_rows,
     internal_remove_block_duplicate_tables,
+    internal_remove_duplicate_tables,
 )
 from core_pdf.impl._impl.output.model import (
     Block,
@@ -110,5 +112,46 @@ def test_page_wide_duplicate_coverage_includes_text_without_geometry() -> None:
         lines=(TextLine("Unrelated note"),),
     )
 
-    assert internal_remove_block_duplicate_tables([matching_text], (table,)) == ()
-    assert internal_remove_block_duplicate_tables([matching_text, unrelated_text], (table,)) == ()
+    tables = internal_profile_tables((table,))
+    assert internal_remove_block_duplicate_tables([matching_text], tables) == ()
+    assert internal_remove_block_duplicate_tables([matching_text, unrelated_text], tables) == ()
+
+
+def test_table_profiles_remain_aligned_after_reordering_and_rejection() -> None:
+    retained = Table(order=0, rows=((TableCell(0, 0, "Meaningful label"),),))
+    artifact = Table(order=1, rows=((TableCell(0, 0, "b i"),),))
+    rejected = Table(order=2, rows=((TableCell(0, 0, "Explicitly rejected"),),))
+    original = internal_profile_tables((retained, artifact, rejected))
+    reordered = tuple(reversed(original))
+
+    filtered = internal_remove_duplicate_tables(reordered, rejected_table_indexes=frozenset({0}))
+
+    assert filtered == original[:1]
+    assert filtered[0][0] is retained
+    assert filtered[0][1] is original[0][1]
+    assert filtered[0][1].tokens == ("meaningful", "label")
+
+
+def test_changed_table_rows_get_new_profiles_without_invalidating_original_snapshots() -> None:
+    table = Table(
+        order=0,
+        bbox=(0, 0, 100, 100),
+        rows=(
+            (TableCell(0, 0, "Repeated title"),),
+            (TableCell(1, 0, "Retained value"),),
+        ),
+    )
+    block = Block(
+        order=0,
+        kind=BlockKind.HEADING,
+        bbox=(0, 80, 100, 100),
+        lines=(TextLine("Repeated title"),),
+    )
+    original = internal_profile_tables((table,))
+
+    projected = internal_remove_block_duplicate_table_rows([block], (table,))
+    changed = internal_profile_tables(projected)
+
+    assert changed[0][1].tokens == ("retained", "value")
+    assert original[0][1].tokens == ("repeated", "title", "retained", "value")
+    assert projected[0] is not table

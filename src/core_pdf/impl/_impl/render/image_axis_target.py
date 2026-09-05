@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -15,6 +15,8 @@ from core_pdf.impl._impl.render.kernels import (
 )
 from core_pdf.impl._impl.render.model import ImagePaintItem
 from core_pdf.impl._impl.runtime.array_views import (
+    ByteBuffer,
+    UInt8Array,
     nearest_indices,
     uint8_image_view,
     uint8_view,
@@ -23,6 +25,9 @@ from core_pdf.impl._impl.runtime.array_views import (
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.render.target_state import internal_RasterState
+
 
 class internal_ImageAxisTargetMixin:
     """Decoded-image dispatch and axis-aligned painting for a raster target."""
@@ -30,7 +35,7 @@ class internal_ImageAxisTargetMixin:
     __slots__ = ()
 
     def blit_image(
-        self: Any,
+        self: internal_RasterState,
         item: ImagePaintItem,
     ) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
@@ -284,7 +289,7 @@ class internal_ImageAxisTargetMixin:
                     blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def blit_image_mask(
-        self: Any,
+        self: internal_RasterState,
         item: ImagePaintItem,
         prepared: PreparedImage,
         blend_mode: str | None,
@@ -376,24 +381,24 @@ class internal_ImageAxisTargetMixin:
         return
 
     def blit_image_rows_blended(
-        self: Any,
-        converted: Any,
-        comps: Any,
-        source_alpha: Any,
-        constant_alpha: Any,
-        has_constant_alpha: Any,
-        soft_mask: Any,
-        x_unit_map: Any,
-        y_unit_map: Any,
-        src_x_map: Any,
-        src_y_map: Any,
-        ix0: Any,
-        iy0: Any,
-        ix1: Any,
-        iy1: Any,
-        x_span: Any,
-        y_span: Any,
-        width_px: Any,
+        self: internal_RasterState,
+        converted: ByteBuffer,
+        comps: int,
+        source_alpha: UInt8Array | None,
+        constant_alpha: float,
+        has_constant_alpha: bool,
+        soft_mask: UInt8Array | None,
+        x_unit_map: numpy.ndarray[Any, Any],
+        y_unit_map: numpy.ndarray[Any, Any],
+        src_x_map: numpy.ndarray[Any, Any],
+        src_y_map: numpy.ndarray[Any, Any],
+        ix0: int,
+        iy0: int,
+        ix1: int,
+        iy1: int,
+        x_span: int,
+        y_span: int,
+        width_px: int,
     ) -> None:
         """Blend an axis-aligned image over the buffer with NumPy, row band by band.
 
@@ -458,17 +463,17 @@ class internal_ImageAxisTargetMixin:
             target_region[selected] = blended_output.astype(numpy.uint8)
 
     def blit_image_rows_opaque(
-        self: Any,
-        converted: Any,
-        comps: Any,
-        src_x_map: Any,
-        src_y_map: Any,
-        ix0: Any,
-        iy0: Any,
-        ix1: Any,
-        iy1: Any,
-        width_px: Any,
-        height_px: Any,
+        self: internal_RasterState,
+        converted: ByteBuffer,
+        comps: int,
+        src_x_map: numpy.ndarray[Any, Any],
+        src_y_map: numpy.ndarray[Any, Any],
+        ix0: int,
+        iy0: int,
+        ix1: int,
+        iy1: int,
+        width_px: int,
+        height_px: int,
     ) -> None:
         """Copy an opaque axis-aligned image into the target region.
 

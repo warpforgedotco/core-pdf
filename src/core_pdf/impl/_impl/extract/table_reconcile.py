@@ -37,6 +37,14 @@ class internal_TableProfile:
     noisy_stream: bool
 
 
+internal_ProfiledTables = tuple[tuple[Table, internal_TableProfile], ...]
+
+
+def internal_profile_tables(tables: tuple[Table, ...]) -> internal_ProfiledTables:
+    """Bind each immutable table snapshot to the facts used during one projection."""
+    return tuple((table, internal_table_profile(table)) for table in tables)
+
+
 def internal_emitted_text_tokens(text: str) -> tuple[str, ...]:
     return tuple(
         match.group(0).casefold() for match in internal_EMITTED_TEXT_TOKEN_RE.finditer(text)
@@ -203,18 +211,17 @@ def internal_small_table_duplicated_by_page_text(
 
 def internal_remove_block_duplicate_tables(
     blocks: list[Block],
-    tables: tuple[Table, ...],
+    tables: internal_ProfiledTables,
     *,
     protected_table_indexes: frozenset[int] = frozenset(),
     rejected_table_indexes: frozenset[int] = frozenset(),
-) -> tuple[Table, ...]:
+) -> internal_ProfiledTables:
     if not blocks or not tables:
         return tables
-    filtered: list[Table] = []
-    profiles = tuple(internal_table_profile(table) for table in tables)
+    filtered: list[tuple[Table, internal_TableProfile]] = []
     needs_block_tokens = any(
         not profile.structured_stream and not profile.has_grid_shape and len(profile.tokens) >= 4
-        for profile in profiles
+        for _, profile in tables
     )
     tokenized_blocks = (
         tuple(
@@ -230,18 +237,18 @@ def internal_remove_block_duplicate_tables(
         table.metadata.get("source") != "stream"
         and not profile.has_grid_shape
         and 4 <= len(profile.tokens) < 24
-        for table, profile in zip(tables, profiles)
+        for table, profile in tables
     )
     page_token_counts = (
         Counter(token for block in blocks for token in internal_emitted_text_tokens(block.text))
         if needs_page_token_counts
         else Counter()
     )
-    for index, (table, profile) in enumerate(zip(tables, profiles)):
+    for index, (table, profile) in enumerate(tables):
         if index in rejected_table_indexes:
             continue
         if index in protected_table_indexes:
-            filtered.append(table)
+            filtered.append((table, profile))
             continue
         if (
             (
@@ -273,7 +280,7 @@ def internal_remove_block_duplicate_tables(
             )
         ):
             continue
-        filtered.append(table)
+        filtered.append((table, profile))
     return tuple(filtered)
 
 
@@ -403,30 +410,30 @@ def internal_table_profile_token_coverage(
 
 
 def internal_remove_duplicate_tables(
-    tables: tuple[Table, ...],
+    tables: internal_ProfiledTables,
     *,
     rejected_table_indexes: frozenset[int] = frozenset(),
-) -> tuple[Table, ...]:
-    filtered: list[Table] = []
-    profiles = tuple(internal_table_profile(table) for table in tables)
-    for index, (table, profile) in enumerate(zip(tables, profiles)):
+) -> internal_ProfiledTables:
+    filtered: list[tuple[Table, internal_TableProfile]] = []
+    for index, (table, profile) in enumerate(tables):
         if index in rejected_table_indexes:
             continue
         tokens = profile.tokens
         if not table.metadata and 0 < len(tokens) <= 8 and profile.token_set <= {"b", "i"}:
             continue
-        filtered.append(table)
+        filtered.append((table, profile))
     return tuple(filtered)
 
 
 def internal_remove_table_duplicate_blocks(
     blocks: list[Block],
-    tables: tuple[Table, ...],
+    tables: internal_ProfiledTables,
 ) -> list[Block]:
     if not blocks or not tables:
         return blocks
-    table_profiles = [(table.bbox, internal_table_profile(table)) for table in tables]
-    table_boxes = [(box, profile.token_set) for box, profile in table_profiles if box is not None]
+    table_boxes = [
+        (table.bbox, profile.token_set) for table, profile in tables if table.bbox is not None
+    ]
     table_frame = SpatialFrame.from_boxes(box for box, ignored_tokens in table_boxes)
     if not table_boxes:
         return blocks
@@ -472,8 +479,12 @@ def internal_project_text_and_tables(
 ) -> tuple[list[Block], tuple[Table, ...]]:
     """Resolve overlap once, producing explicit text and table projections."""
     tables = internal_remove_duplicate_tables(
-        internal_remove_block_duplicate_tables(blocks, parsed_tables),
+        internal_remove_block_duplicate_tables(blocks, internal_profile_tables(parsed_tables)),
     )
     text_blocks = internal_remove_table_duplicate_blocks(blocks, tables)
-    tables = internal_remove_block_duplicate_table_rows(text_blocks, tables)
-    return text_blocks, tables
+    # Profiles describe the original row snapshots. Discard them before the
+    # final row rewrite; another projection will derive facts from its new rows.
+    projected_tables = internal_remove_block_duplicate_table_rows(
+        text_blocks, tuple(table for table, _ in tables)
+    )
+    return text_blocks, projected_tables

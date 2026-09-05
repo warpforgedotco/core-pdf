@@ -286,25 +286,15 @@ def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, f
         return box
     generic_item = cast(DisplayListItem, item)
     data = generic_item.data
-    if generic_item.kind in {"text", "glyph", "image", "inline-image"}:
+    if generic_item.kind in {"text", "glyph"}:
         value = data.get("bbox")
     elif generic_item.kind in {"annotation", "widget"}:
         value = data.get("rect")
     elif generic_item.kind == "shading":
         value = data.get("bbox") or data.get("rect")
-    elif generic_item.kind in {"fill", "fillstroke", "stroke"}:
-        value = data.get("bbox")
-        if value is None and type(data.get("path")) is CapturedPath:
-            value = data["path"].bbox()
     else:
         return None
-    box = rect_tuple(value)
-    if box is None:
-        return None
-    if generic_item.kind in {"stroke", "fillstroke"} and is_pdf_number(data.get("line_width")):
-        pad = max(0.0, float(data["line_width"]) * 0.5)
-        box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
-    return box
+    return rect_tuple(value)
 
 
 __all__ = (

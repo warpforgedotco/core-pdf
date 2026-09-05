@@ -5,7 +5,10 @@ import numpy
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl._impl.extract.contracts import ObservationBatch, ParsedBlock, ParsedLine
 from core_pdf.impl._impl.extract.emit import internal_compose_page, internal_normalized_blocks
-from core_pdf.impl._impl.extract.table_reconcile import internal_remove_block_duplicate_tables
+from core_pdf.impl._impl.extract.table_reconcile import (
+    internal_profile_tables,
+    internal_remove_block_duplicate_tables,
+)
 from core_pdf.impl._impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 from core_pdf.impl.records import TextWord
 
@@ -88,10 +91,14 @@ def test_table_projection_accepts_explicit_protections_and_rejections() -> None:
     duplicate = Table(order=0, rows=((TableCell(0, 0, text),),), bbox=bbox)
     rejected = Table(order=1, rows=((TableCell(0, 0, "unique"),),), bbox=bbox)
 
-    assert internal_remove_block_duplicate_tables(blocks, (duplicate, rejected)) == (rejected,)
-    assert internal_remove_block_duplicate_tables(
-        blocks,
-        (duplicate, rejected),
-        protected_table_indexes=frozenset({0}),
-        rejected_table_indexes=frozenset({1}),
-    ) == (duplicate,)
+    tables = internal_profile_tables((duplicate, rejected))
+    assert internal_remove_block_duplicate_tables(blocks, tables) == tables[1:]
+    assert (
+        internal_remove_block_duplicate_tables(
+            blocks,
+            tables,
+            protected_table_indexes=frozenset({0}),
+            rejected_table_indexes=frozenset({1}),
+        )
+        == tables[:1]
+    )

@@ -54,7 +54,6 @@ def internal_collected_records(
 
 @dataclass(frozen=True, slots=True)
 class internal_PageProducts:
-    observations: ObservationBatch
     tables: tuple[Table, ...]
     blocks: tuple[ParsedBlock, ...]
     order_evidence: ReadingOrderEvidence
@@ -147,7 +146,7 @@ class internal_PageExtraction:
             page_width=capture.width,
             page_height=capture.height,
         )
-        return internal_PageProducts(observations, tables, blocks, order_evidence)
+        return internal_PageProducts(tables, blocks, order_evidence)
 
     def assembled_page(self, context: ExtractionScope) -> Any:
         capture = self.capture

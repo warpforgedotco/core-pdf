@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import mmap
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from os import PathLike
 from types import TracebackType
@@ -34,11 +34,11 @@ from core_pdf.impl.spec.s_07_document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.spec.s_07_security import (
-    create_standard_security_handler,
+from core_pdf.impl.spec.s_07_security.pdf_mac import (
     validate_pdf_mac_extension,
     validate_pdf_mac_if_present,
 )
+from core_pdf.impl.spec.s_07_security.standard import create_standard_security_handler
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -81,6 +81,69 @@ class internal_PageNode:
 
     dictionary: PdfDict
     inherited_values: InheritedValueMap
+
+
+class internal_PageLookup(Generic[internal_PageT]):
+    """Lazy page snapshot shared only by one navigation or structure operation."""
+
+    __slots__ = (
+        "document",
+        "internal_nodes",
+        "internal_indexes",
+        "internal_pages",
+        "internal_names",
+    )
+
+    def __init__(self, document: PdfDocument[internal_PageT]) -> None:
+        self.document = document
+        self.internal_nodes: tuple[internal_PageNode, ...] | None = None
+        self.internal_indexes: dict[int, int] = {}
+        self.internal_pages: tuple[internal_PageT, ...] | None = None
+        self.internal_names: dict[str, RawNamedDestination] | None = None
+
+    @property
+    def nodes(self) -> tuple[internal_PageNode, ...]:
+        if self.internal_nodes is None:
+            self.internal_nodes = tuple(self.document.internal_iter_page_nodes())
+            for index, node in enumerate(self.internal_nodes):
+                self.internal_indexes.setdefault(id(node.dictionary), index)
+        return self.internal_nodes
+
+    @property
+    def pages(self) -> tuple[internal_PageT, ...]:
+        if self.internal_pages is None:
+            self.internal_pages = self.document.internal_build_pages(self.nodes)
+        return self.internal_pages
+
+    def page_index_for(self, page_obj: object) -> int | None:
+        from core_pdf.impl.spec.s_07_document.page import PdfPage
+
+        if isinstance(page_obj, PdfPage):
+            return page_obj.page_number - 1
+        if not isinstance(page_obj, dict):
+            return None
+        nodes = self.nodes
+        index = self.internal_indexes.get(id(page_obj))
+        if index is not None:
+            return index
+        page_struct_parents = page_obj.get("StructParents")
+        if page_struct_parents is not None:
+            for index, node in enumerate(nodes):
+                if node.dictionary.get("StructParents") == page_struct_parents:
+                    return index
+        for index, node in enumerate(nodes):
+            if node.dictionary == page_obj:
+                return index
+        signature = self.document.recovered_page_signature(cast(PdfDict, page_obj))
+        for index, node in enumerate(nodes):
+            if self.document.recovered_page_signature(node.dictionary) == signature:
+                return index
+        return None
+
+    def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
+        if self.internal_names is None:
+            self.internal_names = self.document.named_destinations(internal_lookup=self)
+        return self.internal_names.get(name)
 
 
 def internal_unresolved_destination(name: str) -> RawNamedDestination:
@@ -252,7 +315,11 @@ class PdfDocument(
     @property
     def structure(self) -> StructureTree | None:
         root = self.internal_catalog_dict("StructTreeRoot")
-        return None if root is None else StructureTree(self, root)
+        return (
+            None
+            if root is None
+            else StructureTree(self, root, internal_lookup=internal_PageLookup(self))
+        )
 
     @property
     def mark_info(self) -> PdfDict | None:
@@ -641,6 +708,11 @@ class PdfDocument(
 
     @property
     def pages(self) -> tuple[internal_PageT, ...]:
+        return self.internal_build_pages(self.internal_iter_page_nodes())
+
+    def internal_build_pages(
+        self, nodes: Iterable[internal_PageNode]
+    ) -> tuple[internal_PageT, ...]:
         page_class = self.page_class
         if page_class is None:
             from core_pdf.impl.spec.s_07_document.page import PdfPage
@@ -654,7 +726,7 @@ class PdfDocument(
                 page_number,
                 inherited_values=page_node.inherited_values,
             )
-            for page_number, page_node in enumerate(self.internal_iter_page_nodes(), 1)
+            for page_number, page_node in enumerate(nodes, 1)
         )
 
     @property
@@ -667,7 +739,7 @@ class PdfDocument(
             return None
         return labels[page_index]
 
-    def build_page_labels(self) -> list[str] | None:
+    def build_page_labels(self, *, page_count: int | None = None) -> list[str] | None:
         try:
             labels_root = self.resolve(self.catalog().get("PageLabels"))
         except ValueError:
@@ -696,7 +768,8 @@ class PdfDocument(
                 raise ValueError("PageLabels is missing page index 0")
             specs.insert(0, (0, {}))
 
-        page_count = len(self.build_page_dicts())
+        if page_count is None:
+            page_count = len(self.build_page_dicts())
         labels: list[str] = []
         spec_pos = 0
         current_index, current_spec = specs[0]
@@ -708,29 +781,7 @@ class PdfDocument(
         return labels
 
     def page_index_for(self, page_obj: object) -> int | None:
-        from core_pdf.impl.spec.s_07_document.page import PdfPage
-
-        if isinstance(page_obj, PdfPage):
-            return page_obj.page_number - 1
-        if not isinstance(page_obj, dict):
-            return None
-        page_dicts = self.build_page_dicts()
-        for index, candidate in enumerate(page_dicts):
-            if candidate is page_obj:
-                return index
-        page_struct_parents = page_obj.get("StructParents")
-        if page_struct_parents is not None:
-            for index, cached_page in enumerate(page_dicts):
-                if cached_page.get("StructParents") == page_struct_parents:
-                    return index
-        for index, candidate in enumerate(page_dicts):
-            if candidate == page_obj:
-                return index
-        signature = self.recovered_page_signature(cast(PdfDict, page_obj))
-        for index, candidate in enumerate(page_dicts):
-            if self.recovered_page_signature(candidate) == signature:
-                return index
-        return None
+        return internal_PageLookup(self).page_index_for(page_obj)
 
     def selected_page_indexes(self, pages: PageSelection | None = None) -> list[int]:
         return resolve_page_selection(pages, len(self.pages))
@@ -755,7 +806,15 @@ class PdfDocument(
             return []
         return self.walk_outlines(first, 0)
 
-    def walk_outlines(self, item: object, level: int) -> list[RawOutlineItem]:
+    def walk_outlines(
+        self,
+        item: object,
+        level: int,
+        *,
+        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+    ) -> list[RawOutlineItem]:
+        if internal_lookup is None:
+            internal_lookup = internal_PageLookup(self)
         recover_outlines = self.recovery_enabled
         if level > 200:
             raise ValueError("invalid outline depth")
@@ -795,7 +854,7 @@ class PdfDocument(
                         title=title or "",
                         level=level,
                         dest=cast(PdfObject | str | None, dest),
-                        page_index=self.resolve_destination(dest),
+                        page_index=self.resolve_destination(dest, internal_lookup=internal_lookup),
                         count=self.extract_outline_count(cast(PdfDict, current)),
                     )
                 )
@@ -810,7 +869,7 @@ class PdfDocument(
                         current = current.get("Next")
                         continue
                     raise ValueError("invalid outline child")
-                result.extend(self.walk_outlines(first, level + 1))
+                result.extend(self.walk_outlines(first, level + 1, internal_lookup=internal_lookup))
             current = current.get("Next")
         return result
 
@@ -831,10 +890,12 @@ class PdfDocument(
             raise ValueError("invalid outline count")
         return self.validate_outline_count(current_count)
 
-    def resolve_destination(self, dest: object) -> int | None:
+    def resolve_destination(
+        self, dest: object, *, internal_lookup: internal_PageLookup[internal_PageT] | None = None
+    ) -> int | None:
         if dest is None:
             return None
-        normalized = self.normalize_destination_value(dest)
+        normalized = self.normalize_destination_value(dest, internal_lookup=internal_lookup)
         if (
             normalized.raw is None
             and normalized.page_index is None
@@ -847,13 +908,19 @@ class PdfDocument(
     def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
         return self.named_destinations().get(name)
 
-    def destination_from_list(self, resolved_list: PdfArray) -> RawNamedDestination:
+    def destination_from_list(
+        self,
+        resolved_list: PdfArray,
+        *,
+        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+    ) -> RawNamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
         page_obj = self.resolver.resolve(resolved_list[0])
         if page_obj is None:
             raise ValueError("invalid destination page reference")
-        page_index = self.page_index_for(page_obj)
+        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        page_index = lookup.page_index_for(page_obj)
         if page_index is None:
             raise ValueError("invalid destination page reference")
         dest_type = None
@@ -871,24 +938,34 @@ class PdfDocument(
     def normalize_destination_value(
         self,
         val: object,
+        *,
+        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
     ) -> RawNamedDestination:
-        return self.internal_normalize_destination_value(val, self.resolve_named_destination)
+        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        return self.internal_normalize_destination_value(
+            val, lookup.resolve_named_destination, lookup
+        )
 
     def internal_normalize_destination_value(
         self,
         val: object,
         resolve_name: Callable[[str], RawNamedDestination | None],
+        internal_lookup: internal_PageLookup[internal_PageT],
     ) -> RawNamedDestination:
         resolved = self.resolver.resolve(val)
         if isinstance(resolved, dict):
             dest_value = resolved.get("D")
             if dest_value is not None:
-                return self.internal_normalize_destination_value(dest_value, resolve_name)
+                return self.internal_normalize_destination_value(
+                    dest_value, resolve_name, internal_lookup
+                )
         resolved_list = val if isinstance(val, list) else resolved
         if isinstance(resolved_list, tuple):
             resolved_list = list(resolved_list)
         if isinstance(resolved_list, list) and resolved_list:
-            return self.destination_from_list(cast(PdfArray, resolved_list))
+            return self.destination_from_list(
+                cast(PdfArray, resolved_list), internal_lookup=internal_lookup
+            )
         if isinstance(resolved_list, list):
             raise ValueError("invalid destination array")
 
@@ -899,7 +976,10 @@ class PdfDocument(
                 return nested
         raise ValueError("invalid destination")
 
-    def named_destinations(self) -> dict[str, RawNamedDestination]:
+    def named_destinations(
+        self, *, internal_lookup: internal_PageLookup[internal_PageT] | None = None
+    ) -> dict[str, RawNamedDestination]:
+        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
         targets: dict[str, object] = {}
         dests = self.resolver.resolve(self.catalog().get("Dests"))
         if isinstance(dests, dict):
@@ -935,7 +1015,7 @@ class PdfDocument(
                 result = (
                     internal_unresolved_destination(name)
                     if target is None
-                    else self.internal_normalize_destination_value(target, normalize_name)
+                    else self.internal_normalize_destination_value(target, normalize_name, lookup)
                 )
                 normalized[name] = result
                 return result

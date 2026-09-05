@@ -136,20 +136,22 @@ def load_data(
         raise ValueError("PDF does not contain a startxref marker")
     with PdfDocument.open(source_data) as pdf:
         internal_validate_pypdf_page_tree(pdf)
-        for page in pdf.pages:
+        pages = pdf.pages
+        for page in pages:
             for stream in page.content_streams:
                 with contextlib.suppress(FilterParseError):
                     validate_inline_images(stream.data)
+        labels = pdf.build_page_labels(page_count=len(pages)) if pages else None
         return [
             Document(
                 OperatorTextProjection(page).extract_text(),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
-                    "page_label": page.label or str(page_number),
+                    "page_label": (labels[page_number - 1] if labels else None) or str(page_number),
                     "file_name": source_path.name,
                 },
             )
-            for page_number, page in enumerate(pdf.pages, 1)
+            for page_number, page in enumerate(pages, 1)
         ]
 
 

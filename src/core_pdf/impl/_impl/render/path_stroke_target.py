@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy
 
@@ -16,6 +16,9 @@ from core_pdf.impl._impl.render.paths import (
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.render.target_state import internal_RasterState
+
 
 class internal_PathStrokeTargetMixin:
     """Line, join, cap, and path-stroke painting operations."""
@@ -23,7 +26,7 @@ class internal_PathStrokeTargetMixin:
     __slots__ = ()
 
     def fill_line(
-        self: Any,
+        self: internal_RasterState,
         x0: float,
         y0: float,
         x1: float,
@@ -269,7 +272,7 @@ class internal_PathStrokeTargetMixin:
                         )
 
     def fill_join(
-        self: Any,
+        self: internal_RasterState,
         px: float,
         py: float,
         line_width: float,
@@ -292,7 +295,7 @@ class internal_PathStrokeTargetMixin:
                 )
 
     def fill_cap(
-        self: Any,
+        self: internal_RasterState,
         px: float,
         py: float,
         line_width: float,
@@ -317,7 +320,7 @@ class internal_PathStrokeTargetMixin:
                 )
 
     def stroke_path(
-        self: Any,
+        self: internal_RasterState,
         path: CapturedPath,
         line_width: float,
         rgba: tuple[int, int, int, int],

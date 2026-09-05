@@ -190,30 +190,30 @@ def internal_detect_tables(
         if not internal_table_character_spaced_prose(segment, facts=facts)
         and not internal_table_is_single_column_prose(segment, facts=facts)
     ]
-    for order, table in enumerate(tables):
-        if table.order != order:
-            tables[order] = replace(table, order=order)
-    tables = [
-        replace(
-            table,
-            rows=tuple(
-                tuple(
-                    replace(
-                        cell,
-                        text=internal_repair_table_cell_spaced_digits(
-                            internal_collapse_character_spaced_cell(
-                                internal_clean_table_cell_leader_runs(cell.text)
-                            )
-                        ),
-                    )
-                    for cell in row
+    return tuple(internal_clean_table_cells(table) for table in tables)
+
+
+def internal_clean_table_cells(table: Table) -> Table:
+    """Normalize candidate cell text, retaining every unchanged immutable record."""
+    changed_rows: list[tuple[TableCell, ...]] | None = None
+    for row_index, row in enumerate(table.rows):
+        changed_cells: list[TableCell] | None = None
+        for column_index, cell in enumerate(row):
+            text = internal_repair_table_cell_spaced_digits(
+                internal_collapse_character_spaced_cell(
+                    internal_clean_table_cell_leader_runs(cell.text)
                 )
-                for row in table.rows
-            ),
-        )
-        for table in tables
-    ]
-    return tuple(sorted(tables, key=internal_table_vertical_sort_key))
+            )
+            if text == cell.text:
+                continue
+            if changed_cells is None:
+                changed_cells = list(row)
+            changed_cells[column_index] = replace(cell, text=text)
+        if changed_cells is not None:
+            if changed_rows is None:
+                changed_rows = list(table.rows)
+            changed_rows[row_index] = tuple(changed_cells)
+    return replace(table, rows=tuple(changed_rows)) if changed_rows is not None else table
 
 
 # Whitespace-aligned stream table inference.

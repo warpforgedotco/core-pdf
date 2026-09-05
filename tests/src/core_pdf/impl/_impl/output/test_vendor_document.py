@@ -84,6 +84,31 @@ def test_nested_ir_metadata_is_immutable() -> None:
     assert document.to_json_dict()["metadata"] == {"nested": {"values": [1]}}
 
 
+def test_document_nodes_preserve_payload_identity_page_ownership_and_local_numbering() -> None:
+    text = Block(order=2, kind=BlockKind.PARAGRAPH, lines=(TextLine("Body"),))
+    table = Table(order=0, rows=((TableCell(0, 0, "Value"),),))
+    figure = Figure(order=1)
+    last = Block(order=0, kind=BlockKind.HEADING, lines=(TextLine("Last page"),))
+    first_page = Page(page_number=4, blocks=(text,), tables=(table,), figures=(figure,))
+    last_page = Page(page_number=9, blocks=(last,))
+    document = Document(pages=(first_page, Page(page_number=5), last_page))
+
+    nodes = document.nodes
+
+    assert [(node.node_id, node.page_number, node.kind) for node in nodes] == [
+        (0, 4, "table"),
+        (1, 4, "figure"),
+        (2, 4, "block"),
+        (3, 9, "block"),
+    ]
+    assert all(
+        node.payload is payload
+        for node, payload in zip(nodes, (table, figure, text, last), strict=True)
+    )
+    assert [node.node_id for node in first_page.nodes] == [0, 1, 2]
+    assert [node.node_id for node in last_page.nodes] == [0]
+
+
 def test_document_serializes_to_versioned_json() -> None:
     document = Document(
         metadata={"title": "Example"},

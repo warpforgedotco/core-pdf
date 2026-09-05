@@ -11,43 +11,37 @@ from core_pdf.impl._impl.output.model import Block, Table
 
 def internal_covers_synthetic_chart_table(
     table: Table,
-    tables: tuple[Table, ...],
-    *,
-    profiles: tuple[native_reconcile.internal_TableProfile, ...] | None = None,
-    profile: native_reconcile.internal_TableProfile | None = None,
+    profile: native_reconcile.internal_TableProfile,
+    tables: native_reconcile.internal_ProfiledTables,
 ) -> bool:
-    table_profile = profile or native_reconcile.internal_table_profile(table)
     return any(
         other is not table
         and other.metadata.get("source") == "chart-ocr"
         and other.metadata.get("synthetic")
         and native_reconcile.internal_table_profile_token_coverage(
-            profiles[index]
-            if profiles is not None
-            else native_reconcile.internal_table_profile(other),
-            table_profile,
+            other_profile,
+            profile,
         )
         >= 0.95
-        for index, other in enumerate(tables)
+        for other, other_profile in tables
     )
 
 
 def internal_remove_block_duplicate_tables(
     blocks: list[Block],
-    tables: tuple[Table, ...],
-) -> tuple[Table, ...]:
+    tables: native_reconcile.internal_ProfiledTables,
+) -> native_reconcile.internal_ProfiledTables:
     if not blocks or not tables:
         return tables
-    profiles = tuple(native_reconcile.internal_table_profile(table) for table in tables)
     chart_coverage = frozenset(
         index
-        for index, (table, profile) in enumerate(zip(tables, profiles))
-        if internal_covers_synthetic_chart_table(table, tables, profiles=profiles, profile=profile)
+        for index, (table, profile) in enumerate(tables)
+        if internal_covers_synthetic_chart_table(table, profile, tables)
     )
     rejected = frozenset(
         index
         for index in chart_coverage
-        if tables[index].metadata.get("source") == "stream" and tables[index].bbox is not None
+        if tables[index][0].metadata.get("source") == "stream" and tables[index][0].bbox is not None
     )
     return native_reconcile.internal_remove_block_duplicate_tables(
         blocks,
@@ -57,21 +51,20 @@ def internal_remove_block_duplicate_tables(
     )
 
 
-def internal_remove_duplicate_tables(tables: tuple[Table, ...]) -> tuple[Table, ...]:
-    profiles = tuple(native_reconcile.internal_table_profile(table) for table in tables)
+def internal_remove_duplicate_tables(
+    tables: native_reconcile.internal_ProfiledTables,
+) -> native_reconcile.internal_ProfiledTables:
     rejected = frozenset(
         index
-        for index, (table, profile) in enumerate(zip(tables, profiles))
+        for index, (table, profile) in enumerate(tables)
         if table.metadata.get("source") == "chart-ocr"
         and table.metadata.get("synthetic")
         and 0 < len(profile.tokens) <= 24
         and any(
             other_index != index
-            and native_reconcile.internal_table_profile_token_coverage(
-                profile, profiles[other_index]
-            )
+            and native_reconcile.internal_table_profile_token_coverage(profile, other_profile)
             >= 0.95
-            for other_index in range(len(tables))
+            for other_index, (_, other_profile) in enumerate(tables)
         )
     )
     return native_reconcile.internal_remove_duplicate_tables(
@@ -81,13 +74,11 @@ def internal_remove_duplicate_tables(tables: tuple[Table, ...]) -> tuple[Table, 
 
 def internal_remove_table_duplicate_blocks(
     blocks: list[Block],
-    tables: tuple[Table, ...],
+    tables: native_reconcile.internal_ProfiledTables,
 ) -> list[Block]:
     if not blocks or not tables:
         return blocks
-    token_counts = Counter(
-        token for table in tables for token in native_reconcile.internal_table_profile(table).tokens
-    )
+    token_counts = Counter(token for _, profile in tables for token in profile.tokens)
     blocks = [
         block
         for block in blocks
@@ -107,8 +98,12 @@ def internal_project_text_and_tables(
 ) -> tuple[list[Block], tuple[Table, ...]]:
     """Apply recognition policies at the same stages as native projection."""
     tables = internal_remove_duplicate_tables(
-        internal_remove_block_duplicate_tables(blocks, parsed_tables)
+        internal_remove_block_duplicate_tables(
+            blocks, native_reconcile.internal_profile_tables(parsed_tables)
+        )
     )
     blocks = internal_remove_table_duplicate_blocks(blocks, tables)
-    tables = native_reconcile.internal_remove_block_duplicate_table_rows(blocks, tables)
-    return blocks, tables
+    projected_tables = native_reconcile.internal_remove_block_duplicate_table_rows(
+        blocks, tuple(table for table, _ in tables)
+    )
+    return blocks, projected_tables

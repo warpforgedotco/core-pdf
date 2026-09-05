@@ -12,25 +12,6 @@ from core_pdf.impl.spec.s_08_graphics.device_profiles import cmyk_floats_to_srgb
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
 
 
-def internal_blend_normal_solid_span_numpy(
-    target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
-    row: int,
-    start: int,
-    end: int,
-    rgba: tuple[int, int, int, int],
-) -> None:
-    """Blend one contiguous RGBA span through a zero-copy page view.
-
-    The target is an existing ``(height, width, 4)`` view over the active
-    raster buffer.  Only the temporary floating-point working arrays are
-    allocated; the result is written directly back into the page view.
-    """
-    sa = rgba[3]
-    if sa <= 0 or end <= start:
-        return
-    internal_blend_normal_solid_array_numpy(target[row, start:end], rgba)
-
-
 def internal_blend_normal_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],

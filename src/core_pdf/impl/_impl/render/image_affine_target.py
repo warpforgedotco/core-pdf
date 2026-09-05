@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -15,6 +15,9 @@ from core_pdf.impl._impl.runtime.array_views import (
     uint8_view,
 )
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.render.target_state import internal_RasterState
+
 
 class internal_ImageAffineTargetMixin:
     """Affine decoded-image sampling and blitting for a raster target."""
@@ -22,7 +25,7 @@ class internal_ImageAffineTargetMixin:
     __slots__ = ()
 
     def blit_opaque_sampled_tiles(
-        self: Any,
+        self,
         source_pixels: numpy.ndarray[Any, Any],
         target_region: numpy.ndarray[Any, Any],
         source_y: numpy.ndarray[Any, Any],
@@ -86,7 +89,7 @@ class internal_ImageAffineTargetMixin:
                 del sampled, visible
 
     def blit_affine_image(
-        self: Any,
+        self: internal_RasterState,
         quad: tuple[tuple[float, float], ...],
         converted: ByteBuffer,
         width_px: int,

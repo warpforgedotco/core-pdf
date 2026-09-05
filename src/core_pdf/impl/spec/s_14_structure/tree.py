@@ -15,7 +15,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_07_document.document import PdfDocument
+    from core_pdf.impl.spec.s_07_document.document import PdfDocument, internal_PageLookup
     from core_pdf.impl.spec.s_07_document.page import PdfPage
 
 
@@ -118,6 +118,7 @@ class StructureElement:
         "attributes_value",
         "class_name_value",
         "document",
+        "internal_lookup",
         "kids_value",
         "language_value",
         "parent_value",
@@ -127,8 +128,15 @@ class StructureElement:
         "type_value",
     )
 
-    def __init__(self, document: PdfDocument, props: StructureDict) -> None:
+    def __init__(
+        self,
+        document: PdfDocument,
+        props: StructureDict,
+        *,
+        internal_lookup: internal_PageLookup | None = None,
+    ) -> None:
         self.document = document
+        self.internal_lookup = internal_lookup
         self.props = props if isinstance(props, dict) else {}
         self.role_value: str | None = None
         self.type_value: Any = MISSING
@@ -162,7 +170,11 @@ class StructureElement:
         if page_ref is None:
             return None
         page_obj = self.document.resolver.resolve(page_ref)
-        page_index = self.document.page_index_for(page_obj)
+        page_index = (
+            self.document.page_index_for(page_obj)
+            if self.internal_lookup is None
+            else self.internal_lookup.page_index_for(page_obj)
+        )
         if page_index is None:
             raise ValueError("invalid structure page reference")
         return page_index
@@ -172,7 +184,7 @@ class StructureElement:
         page_index = self.page_index
         if page_index is None:
             return None
-        pages = self.document.pages
+        pages = self.document.pages if self.internal_lookup is None else self.internal_lookup.pages
         if 0 <= page_index < len(pages):
             return pages[page_index]
         return None
@@ -268,16 +280,27 @@ class StructureElement:
             raise ValueError("invalid structure parent entry")
         if self.document.resolver.resolve_name(parent.get("Type")) == "StructTreeRoot":
             tree = self.document.structure
+            if tree is not None and self.internal_lookup is not None:
+                tree.internal_lookup = self.internal_lookup
             self.parent_value = tree
             return tree
-        self.parent_value = StructureElement(self.document, cast(PdfDict, parent))
+        self.parent_value = StructureElement(
+            self.document, cast(PdfDict, parent), internal_lookup=self.internal_lookup
+        )
         return self.parent_value
 
     def __iter__(
         self,
     ) -> Iterator[StructureChild]:
         if self.kids_value is MISSING:
-            self.kids_value = tuple(make_kids(self.props.get("K"), self.page, self.document))
+            self.kids_value = tuple(
+                make_kids(
+                    self.props.get("K"),
+                    self.page,
+                    self.document,
+                    internal_lookup=self.internal_lookup,
+                )
+            )
         yield from self.kids_value
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator["StructureElement"]:
@@ -294,6 +317,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
 
     __slots__ = (
         "document",
+        "internal_lookup",
         "props",
         "role_map_value",
         "parent_tree_value",
@@ -305,8 +329,15 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
     role_map_value: dict[str, str] | None
     parent_tree_value: ParentTree | None
 
-    def __init__(self, document: PdfDocument, props: StructureDict) -> None:
+    def __init__(
+        self,
+        document: PdfDocument,
+        props: StructureDict,
+        *,
+        internal_lookup: internal_PageLookup | None = None,
+    ) -> None:
         self.document = document
+        self.internal_lookup = internal_lookup
         self.props = props if isinstance(props, dict) else {}
         self.role_map_value: dict[str, str] | None = None
         self.parent_tree_value: ParentTree | None = None
@@ -370,7 +401,14 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         self,
     ) -> Iterator[StructureChild]:
         if self.kids_value is MISSING:
-            self.kids_value = tuple(make_kids(self.props.get("K"), None, self.document))
+            self.kids_value = tuple(
+                make_kids(
+                    self.props.get("K"),
+                    None,
+                    self.document,
+                    internal_lookup=self.internal_lookup,
+                )
+            )
         yield from self.kids_value
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
@@ -389,20 +427,23 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         parents = parent_tree[key]
         if not isinstance(parents, list):
             raise ValueError("invalid page structure parents")
-        return PageStructure(page, parents)
+        return PageStructure(page, parents, internal_lookup=self.internal_lookup)
 
 
 class PageStructure(Sequence[StructureElement | None]):
     """Per-page parent-tree slice indexed by marked-content id."""
 
-    __slots__ = ("elements", "page", "parents")
+    __slots__ = ("elements", "page", "parents", "internal_lookup")
 
     page: PdfPage
     parents: ParentTreeParents
     elements: dict[int, StructureElement]
 
-    def __init__(self, page: PdfPage, parents: Any) -> None:
+    def __init__(
+        self, page: PdfPage, parents: Any, *, internal_lookup: internal_PageLookup | None = None
+    ) -> None:
         self.page = page
+        self.internal_lookup = internal_lookup
         if isinstance(parents, list):
             self.parents = parents
         elif parents is None:
@@ -422,7 +463,7 @@ class PageStructure(Sequence[StructureElement | None]):
 
     def __getitem__(self, idx: int | slice) -> PageStructure | StructureElement | None:
         if isinstance(idx, slice):
-            return PageStructure(self.page, self.parents[idx])
+            return PageStructure(self.page, self.parents[idx], internal_lookup=self.internal_lookup)
         obj = self.parents[idx]
         if obj is None:
             return None
@@ -431,7 +472,9 @@ class PageStructure(Sequence[StructureElement | None]):
         if isinstance(obj, dict):
             marker = id(obj)
             if marker not in self.elements:
-                self.elements[marker] = StructureElement(self.page.document, obj)
+                self.elements[marker] = StructureElement(
+                    self.page.document, obj, internal_lookup=self.internal_lookup
+                )
             return self.elements[marker]
         if isinstance(obj, PdfReference):
             resolved = self.page.document.resolver.resolve(obj)
@@ -439,7 +482,9 @@ class PageStructure(Sequence[StructureElement | None]):
                 marker = id(resolved)
                 if marker not in self.elements:
                     self.elements[marker] = StructureElement(
-                        self.page.document, cast(PdfDict, resolved)
+                        self.page.document,
+                        cast(PdfDict, resolved),
+                        internal_lookup=self.internal_lookup,
                     )
                 return self.elements[marker]
             raise ValueError("invalid page structure parent entry")
@@ -467,11 +512,20 @@ class PageStructure(Sequence[StructureElement | None]):
 StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureContentObject
 
 
-def get_kid_page_index(document: PdfDocument, page: PdfPage | None, kid: PdfDict) -> int | None:
+def get_kid_page_index(
+    document: PdfDocument,
+    page: PdfPage | None,
+    kid: PdfDict,
+    internal_lookup: internal_PageLookup | None = None,
+) -> int | None:
     pg = kid.get("Pg")
     if pg is not None:
         page_obj = document.resolver.resolve(pg)
-        index = document.page_index_for(page_obj)
+        index = (
+            document.page_index_for(page_obj)
+            if internal_lookup is None
+            else internal_lookup.page_index_for(page_obj)
+        )
         if index is None:
             raise ValueError("invalid structure page reference")
         return index
@@ -485,6 +539,8 @@ def make_kids(
     page: PdfPage | None,
     document: PdfDocument,
     depth: int = 0,
+    *,
+    internal_lookup: internal_PageLookup | None = None,
 ) -> Iterator[StructureChild]:
     recover_structure = document.recovery_enabled
     stack: list[tuple[Any, int]] = [(kid, depth)]
@@ -527,7 +583,7 @@ def make_kids(
                         continue
                     raise ValueError("invalid structure content mcid")
                 yield StructureContentItem(
-                    page_index=get_kid_page_index(document, page, current),
+                    page_index=get_kid_page_index(document, page, current, internal_lookup),
                     mcid=mcid,
                     stream=current.get("Stm"),
                 )
@@ -543,11 +599,11 @@ def make_kids(
                         continue
                     raise ValueError("invalid structure object reference")
                 yield StructureContentObject(
-                    page_index=get_kid_page_index(document, page, current),
+                    page_index=get_kid_page_index(document, page, current, internal_lookup),
                     props=cast(PdfDict, obj),
                 )
                 continue
-            yield StructureElement(document, current)
+            yield StructureElement(document, current, internal_lookup=internal_lookup)
             continue
         if recover_structure:
             continue

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy
 
@@ -26,6 +26,9 @@ from core_pdf.impl._impl.render.paths import (
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.render.target_state import internal_RasterState
+
 
 class internal_PathFillTargetMixin:
     """Scanline and sampled path-fill painting operations."""
@@ -33,7 +36,7 @@ class internal_PathFillTargetMixin:
     __slots__ = ()
 
     def fill_path_scanlines(
-        self: Any,
+        self: internal_RasterState,
         edge_segments: list[tuple[float, float, float, float, float, float]],
         pixel_box: tuple[int, int, int, int],
         rgba: tuple[int, int, int, int],
@@ -173,7 +176,7 @@ class internal_PathFillTargetMixin:
                             blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def fast_fill_path(
-        self: Any,
+        self: internal_RasterState,
         edges: list[tuple[float, float, float, float]],
         bbox: tuple[float, float, float, float],
     ) -> bool:
@@ -240,7 +243,7 @@ class internal_PathFillTargetMixin:
         return True
 
     def fill_path(
-        self: Any,
+        self: internal_RasterState,
         path: CapturedPath,
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,

@@ -4,7 +4,6 @@ import pytest
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import PdfName
-from core_pdf.impl.spec.s_07_security import create_standard_decipher
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
@@ -13,6 +12,7 @@ from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_rc4_crypt,
 )
 from core_pdf.impl.spec.s_07_security.standard import (
+    create_standard_decipher,
     internal_CryptMethod,
     internal_normalize_password,
     internal_parse_config,

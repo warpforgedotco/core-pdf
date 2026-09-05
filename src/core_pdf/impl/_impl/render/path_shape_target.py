@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -20,6 +20,9 @@ from core_pdf.impl._impl.render.paths import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.render.target_state import internal_RasterState
+
 
 class internal_PathShapeTargetMixin:
     """Rectangle, circle, and glyph-bitmap painting operations."""
@@ -27,7 +30,7 @@ class internal_PathShapeTargetMixin:
     __slots__ = ()
 
     def fill_rect(
-        self: Any,
+        self: internal_RasterState,
         box: tuple[float, float, float, float] | None,
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
@@ -166,7 +169,7 @@ class internal_PathShapeTargetMixin:
                         blend_px(row + x * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def draw_glyph_bitmap(
-        self: Any,
+        self: internal_RasterState,
         box: tuple[float, float, float, float] | None,
         bitmap: Any,
         rgba: tuple[int, int, int, int],
@@ -279,7 +282,7 @@ class internal_PathShapeTargetMixin:
                 fill_rect((cell_x0, cell_y0, cell_x1, cell_y1), rgba, blend_mode)
 
     def fill_circle(
-        self: Any,
+        self: internal_RasterState,
         cx: float,
         cy: float,
         radius: float,

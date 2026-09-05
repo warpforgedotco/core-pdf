@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl._impl.model.geometry import RectBox, rect_tuple
 from core_pdf.impl._impl.render.blend import (
@@ -84,13 +84,17 @@ def internal_shading_color_rgba(
     return rgb[0], rgb[1], rgb[2], alpha
 
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.render.target_state import internal_RasterState
+
+
 class internal_PatternTargetMixin:
     """Stateful gradient and tiling-pattern painting operations."""
 
     __slots__ = ()
 
     def shading_box(
-        self: Any,
+        self: internal_RasterState,
         data: dict[str, Any],
         shading: PreparedShading,
     ) -> tuple[float, float, float, float]:
@@ -107,7 +111,9 @@ class internal_PatternTargetMixin:
         x0, y0, x1, y1 = box
         return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
 
-    def paint_shading(self: Any, data: dict[str, Any], blend_mode: str | None) -> None:
+    def paint_shading(
+        self: internal_RasterState, data: dict[str, Any], blend_mode: str | None
+    ) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -181,7 +187,7 @@ class internal_PatternTargetMixin:
                         blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def paint_tiling_pattern(
-        self: Any,
+        self: internal_RasterState,
         pattern: TilingPattern,
         target_data: PathPaintItem,
         blend_mode: str | None,
@@ -265,7 +271,9 @@ class internal_PatternTargetMixin:
             y += y_step
         return True
 
-    def paint_fill_pattern(self: Any, data: PathPaintItem, blend_mode: str | None) -> bool:
+    def paint_fill_pattern(
+        self: internal_RasterState, data: PathPaintItem, blend_mode: str | None
+    ) -> bool:
         clip_state = self.clip
         pattern = data.fill_pattern
         if not isinstance(pattern, (ShadingPattern, TilingPattern)):

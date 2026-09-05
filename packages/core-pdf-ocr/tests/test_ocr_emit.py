@@ -140,7 +140,8 @@ def test_emit_removes_tiny_ocr_fragments_duplicated_by_table_tokens() -> None:
     assert [block.text for block in page.blocks] == ["IRB Statistics"]
 
 
-def test_emit_removes_stream_table_covered_by_synthetic_chart_table() -> None:
+@pytest.mark.parametrize("reverse_tables", [False, True])
+def test_emit_removes_stream_table_covered_by_synthetic_chart_table(reverse_tables: bool) -> None:
     synthetic = Table(
         order=0,
         bbox=(20.0, 140.0, 260.0, 180.0),
@@ -156,7 +157,7 @@ def test_emit_removes_stream_table_covered_by_synthetic_chart_table() -> None:
     parsed = page_of(
         route=PageRoute.HYBRID,
         blocks=(block("Caption", (20.0, 300.0, 260.0, 320.0)),),
-        tables=(synthetic, stream),
+        tables=(stream, synthetic) if reverse_tables else (synthetic, stream),
     )
 
     page = emit_page(parsed)
