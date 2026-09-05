@@ -117,6 +117,7 @@ def internal_tint_operands_to_srgb(
 
 
 def internal_evaluate_tint(tint_fn: object, tints: list[float]) -> tuple[float, ...]:
+    """Evaluate a tint transform, propagating unsupported or malformed functions."""
     return internal_compile_pdf_function(tint_fn)(*tints)
 
 
@@ -142,7 +143,10 @@ def internal_separation_rgb_lut(
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
     """Compile a one-input Separation function to an 8-bit RGB lookup table."""
     expected = internal_alternate_color_component_count(alt_name)
-    evaluate = internal_compile_pdf_function(tint_fn)
+    try:
+        evaluate = internal_compile_pdf_function(tint_fn)
+    except ValueError as exc:
+        raise ValueError("invalid separation tint function") from exc
     table = numpy.empty((256, 3), dtype=numpy.uint8)
     for value in range(256):
         try:
@@ -353,7 +357,10 @@ def internal_convert_devicen(
     samples = uint8_view(raw).reshape(-1, channels)
     distinct, inverse = numpy.unique(samples, axis=0, return_inverse=True)
     tinted = numpy.empty((len(distinct), expected), dtype=numpy.float64)
-    evaluate = internal_compile_pdf_function(tint_fn)
+    try:
+        evaluate = internal_compile_pdf_function(tint_fn)
+    except ValueError as exc:
+        raise ValueError("invalid DeviceN tint function") from exc
     for index, row in enumerate(distinct.tolist()):
         components: ColorComponents = [value / 255.0 for value in row]
         try:

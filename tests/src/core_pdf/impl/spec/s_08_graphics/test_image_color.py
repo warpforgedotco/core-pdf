@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import imagecodecs
 import numpy
+import pytest
 
 from core_pdf.impl.spec.s_07_filters import pipeline as stream_pipeline
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -146,6 +147,48 @@ def test_sampled_devicen_function_decodes_its_stream_once() -> None:
     assert converted is not None
     assert tuple(converted) == (0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255)
     assert decode_stream_data.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "tint_function",
+    [
+        pytest.param({"FunctionType": 4}, id="unsupported"),
+        pytest.param(
+            PdfStream(
+                {
+                    "FunctionType": 0,
+                    "BitsPerSample": 8,
+                    "Size": [2],
+                    "Domain": [0, 1],
+                    "Range": [0, 1],
+                },
+                decoded_data=b"\x00",
+            ),
+            id="malformed-sampled",
+        ),
+    ],
+)
+def test_invalid_tint_function_does_not_fall_back_to_identity(tint_function: object) -> None:
+    separation = ImageColorSpec(
+        kind="Separation",
+        params={},
+        alt="DeviceGray",
+        tint_fn=tint_function,
+    )
+
+    assert internal_tint_operands_to_srgb(separation, [0.0]) == (1.0, 1.0, 1.0)
+    with pytest.raises(ValueError, match="invalid separation tint function"):
+        internal_separation_rgb_lut(tint_function, "DeviceGray")
+
+    devicen = ImageColorSpec(
+        kind="DeviceN",
+        params={},
+        alt="DeviceGray",
+        channels=1,
+        tint_fn=tint_function,
+    )
+    with pytest.raises(ValueError, match="invalid DeviceN tint function"):
+        internal_convert_devicen(b"\x00", devicen)
 
 
 def test_embedded_icc_profile_is_applied_before_its_alternate() -> None:

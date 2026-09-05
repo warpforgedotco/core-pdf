@@ -52,6 +52,10 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
         if len(bbox_values) >= 4
         else None
     )
+    try:
+        evaluator = internal_compile_pdf_function(dictionary.get("Function"))
+    except ValueError:
+        return None
     return PreparedShading(
         shading_type=shading_type,
         coords=coords,
@@ -60,7 +64,7 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
         extend_end=extend_end,
         color_model=describe_color_space(dictionary.get("ColorSpace")) or "DeviceRGB",
         bbox=bbox,
-        internal_evaluator=internal_compile_pdf_function(dictionary.get("Function")),
+        internal_evaluator=evaluator,
     )
 
 

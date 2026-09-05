@@ -114,6 +114,85 @@ def test_prepared_sampled_shading_decodes_its_function_stream_once() -> None:
         )
         assert shading is not None
         assert shading.evaluate(0.0) == (0.0,)
+        assert shading.evaluate(0.25) == pytest.approx((0.25,))
         assert shading.evaluate(1.0) == (1.0,)
 
     assert decode_stream_data.call_count == 1
+
+
+def test_sampled_function_interpolates_across_every_input_dimension() -> None:
+    function = PdfStream(
+        {
+            "FunctionType": 0,
+            "BitsPerSample": 8,
+            "Size": [2, 2],
+            "Domain": [0, 1, 0, 1],
+            "Range": [0, 1],
+        },
+        decoded_data=bytes((0, 255, 0, 255)),
+    )
+
+    assert internal_evaluate_pdf_function(function, 0.25, 0.75) == pytest.approx((0.25,))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(-0.25, 0.0), (0.25, 0.5), (1.25, 1.0)],
+)
+def test_exponential_function_clips_input_to_its_domain(value: float, expected: float) -> None:
+    function = {
+        "FunctionType": 2,
+        "Domain": [0, 1],
+        "C0": [0],
+        "C1": [1],
+        "N": 0.5,
+    }
+
+    assert internal_evaluate_pdf_function(function, value) == pytest.approx((expected,))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(1.0, 0.0), (2.5, 0.25), (3.0, 0.5), (3.5, 0.75), (5.0, 1.0)],
+)
+def test_stitching_function_uses_and_clips_to_its_outer_domain(
+    value: float, expected: float
+) -> None:
+    function = {
+        "FunctionType": 3,
+        "Domain": [2, 4],
+        "Bounds": [3],
+        "Encode": [0, 1, 0, 1],
+        "Functions": [
+            {
+                "FunctionType": 2,
+                "Domain": [0, 1],
+                "C0": [0],
+                "C1": [0.5],
+                "N": 1,
+            },
+            {
+                "FunctionType": 2,
+                "Domain": [0, 1],
+                "C0": [0.5],
+                "C1": [1],
+                "N": 1,
+            },
+        ],
+    }
+
+    assert internal_evaluate_pdf_function(function, value) == pytest.approx((expected,))
+
+
+def test_prepare_shading_rejects_an_unsupported_function() -> None:
+    assert (
+        prepare_shading(
+            {
+                "ShadingType": 2,
+                "Coords": [0, 0, 10, 0],
+                "ColorSpace": "DeviceGray",
+                "Function": {"FunctionType": 4},
+            }
+        )
+        is None
+    )
