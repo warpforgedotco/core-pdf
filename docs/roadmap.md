@@ -64,7 +64,8 @@ writing, and inspecting PDF documents.
 ## Dependency policy
 
 The core remains Python 3.13+, local, deterministic, and based on the existing parser,
-OCR, NumPy, and image-codec stack. No LLM, VLLM, hosted API, vector database, or server
+NumPy, and image-codec stack. OCR lives in the separate `core-pdf-ocr` package, which depends
+on core-pdf; the core never imports or discovers it. No LLM, VLLM, hosted API, vector database, or server
 is required. Future non-generative local model adapters may be optional extensions, but
 they must not become dependencies of the core contracts.
 

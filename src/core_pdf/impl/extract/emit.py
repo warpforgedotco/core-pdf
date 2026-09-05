@@ -6,6 +6,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import replace
 from statistics import fmean
 
@@ -14,7 +15,6 @@ from core_pdf.impl.extract.block_layout import (
     layout_element_order,
 )
 from core_pdf.impl.extract.contracts import (
-    PageRoute,
     ParsedBlock,
     ParsedLine,
 )
@@ -171,8 +171,7 @@ def internal_corrupt_native_block(block: Block) -> bool:
         # symbols.  Blocks made up solely of symbols/marks are semantic
         # emptiness -- isolated Braille glyphs, stray combining marks that
         # lost their base, ornaments, column rules -- and almost never appear
-        # in the reference text; this mirrors `internal_corrupt_ocr_block`,
-        # which drops short symbol-only OCR blocks.  Pure letter-like
+        # in the reference text. Pure letter-like
         # punctuation (e.g. CJK fullwidth brackets "（）") and longer symbol
         # runs (which may be diagrams or math notation) are preserved.
         return nonspace_count <= 4 and any(
@@ -204,22 +203,8 @@ def internal_corrupt_native_block(block: Block) -> bool:
     return symbol_ratio > 0.25 or non_ascii_ratio > 0.02
 
 
-def internal_corrupt_ocr_block(block: Block) -> bool:
-    if block.provenance != ("ocr",):
-        return False
-    text = block.text.strip()
-    if not text:
-        return True
-    nonspace = [character for character in text if not character.isspace()]
-    return len(nonspace) <= 2 and not any(character.isalnum() for character in nonspace)
-
-
 def internal_remove_corrupt_native_blocks(blocks: list[Block]) -> list[Block]:
-    return [
-        block
-        for block in blocks
-        if not internal_corrupt_native_block(block) and not internal_corrupt_ocr_block(block)
-    ]
+    return [block for block in blocks if not internal_corrupt_native_block(block)]
 
 
 def internal_block_inside_page(block: Block, width: float, height: float) -> bool:
@@ -251,12 +236,11 @@ internal_ARABIC_INDIC_DIGITS = str.maketrans(
 )
 
 
-internal_NUMERIC_PIPE_TOKEN = re.compile(r"^[($+-]?\d+(?:[.,]\d+)?[%)]?$")
 internal_STANDALONE_ARTIFACT_TOKENS = frozenset({"]", "_", "□", "☐", "☒", "❖"})
 internal_ARTIFACT_PROBE_TOKENS = (*internal_STANDALONE_ARTIFACT_TOKENS, ";", "�")
 internal_BRACKET_JOIN_RE = re.compile(r"(?<=[0-9A-Za-z])\[(?=[0-9A-Za-z])")
 internal_EXCLAMATION_NOISE_RE = re.compile(r"(?<=[%([])!(?=\s|$)")
-internal_LINE_INITIAL_OCR_SUFFIX_FRAGMENTS = frozenset(
+internal_LINE_INITIAL_SUFFIX_FRAGMENTS = frozenset(
     {
         "able",
         "ating",
@@ -274,29 +258,9 @@ internal_LINE_INITIAL_OCR_SUFFIX_FRAGMENTS = frozenset(
 )
 
 
-def internal_numeric_pipe_token(token: str) -> bool:
-    return bool(internal_NUMERIC_PIPE_TOKEN.match(token.strip()))
-
-
 def internal_wordlike_pipe_token(token: str) -> bool:
     letters = [character for character in token.casefold() if character.isalpha()]
     return len(letters) >= 3 and any(character in "aeiou" for character in letters)
-
-
-def internal_ocr_artifact_token(token: str, line_tokens: list[str]) -> bool:
-    if token in {"'", "[", "!"}:
-        return True
-    if (
-        len(line_tokens) <= 2
-        and len(token) == 2
-        and token.startswith("0")
-        and token[1].isdigit()
-        and not any(internal_wordlike_pipe_token(line_token) for line_token in line_tokens)
-    ):
-        return True
-    return token == "•" and not any(
-        internal_wordlike_pipe_token(line_token) for line_token in line_tokens
-    )
 
 
 def internal_remove_line_initial_suffix_fragments(text: str) -> str:
@@ -305,42 +269,11 @@ def internal_remove_line_initial_suffix_fragments(text: str) -> str:
         tokens = line.split()
         if (
             len(tokens) >= 2
-            and tokens[0].casefold() in internal_LINE_INITIAL_OCR_SUFFIX_FRAGMENTS
+            and tokens[0].casefold() in internal_LINE_INITIAL_SUFFIX_FRAGMENTS
             and any(internal_wordlike_pipe_token(token) for token in tokens[1:3])
         ):
             tokens = tokens[1:]
             lines.append(" ".join(tokens))
-            continue
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def internal_remove_sparse_ocr_artifacts(text: str) -> str:
-    lines: list[str] = []
-    for line in text.splitlines():
-        tokens = line.split()
-        original_tokens = tokens
-        if len(tokens) == 2 and tokens[0] == ">" and re.fullmatch(r"\d+(?:[.,]\d+)?", tokens[1]):
-            lines.append(tokens[1])
-            continue
-        artifact_flags = [internal_ocr_artifact_token(token, tokens) for token in tokens]
-        if any(artifact_flags):
-            tokens = [
-                token
-                for token, is_artifact in zip(tokens, artifact_flags, strict=True)
-                if not is_artifact
-            ]
-        if "|" not in tokens:
-            lines.append(" ".join(tokens) if tokens != original_tokens else line)
-            continue
-        non_pipe_tokens = [token for token in tokens if token != "|"]
-        if not non_pipe_tokens:
-            continue
-        if (
-            all(internal_numeric_pipe_token(token) for token in non_pipe_tokens)
-            or sum(internal_wordlike_pipe_token(token) for token in non_pipe_tokens) <= 1
-        ):
-            lines.append(" ".join(non_pipe_tokens))
             continue
         lines.append(line)
     return "\n".join(lines)
@@ -381,7 +314,7 @@ def internal_normalize_latin_confusables(text: str) -> str:
         text = internal_remove_standalone_artifact_tokens(text)
     if "•" in text:
         text = internal_remove_nonword_bullet_lines(text)
-    if any(fragment in text for fragment in internal_LINE_INITIAL_OCR_SUFFIX_FRAGMENTS):
+    if any(fragment in text for fragment in internal_LINE_INITIAL_SUFFIX_FRAGMENTS):
         text = internal_remove_line_initial_suffix_fragments(text)
     # The test only asks whether at least three Latin letters are present, so stop
     # there rather than folding every character in the line.  ASCII letters answer
@@ -423,8 +356,6 @@ def internal_normalize_emitted_text(text: str, source: str) -> str:
     normalized = internal_normalize_intrusive_punctuation(normalized)
     if source == "native" and '"' in normalized:
         normalized = internal_remove_standalone_artifact_tokens(normalized)
-    if source == "ocr":
-        normalized = internal_remove_sparse_ocr_artifacts(normalized)
     return normalized
 
 
@@ -495,6 +426,8 @@ def internal_remove_soft_line_end_hyphens(lines: list[str]) -> list[str]:
 def internal_normalized_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
+    *,
+    normalize_text: Callable[[str, str], str] = internal_normalize_emitted_text,
 ) -> list[Block]:
     """Build the normalized text candidate projection from parsed lines."""
     decoration_boxes = tuple(
@@ -512,7 +445,7 @@ def internal_normalized_blocks(
         )
         sources = tuple(dict.fromkeys(line.source for line in parsed_block.lines))
         normalized_line_texts = internal_remove_soft_line_end_hyphens(
-            [internal_normalize_emitted_text(line.text, line.source) for line in parsed_block.lines]
+            [normalize_text(line.text, line.source) for line in parsed_block.lines]
         )
         lines: list[TextLine] = []
         for line, text in zip(parsed_block.lines, normalized_line_texts, strict=True):
@@ -562,7 +495,7 @@ def assemble_page(
     width: float,
     height: float,
     rotation: int,
-    route: PageRoute,
+    route: str,
     tables: tuple[Table, ...] = (),
     figures: tuple[Figure, ...] = (),
     diagnostics: tuple[str, ...] = (),
@@ -578,6 +511,36 @@ def assemble_page(
     normalized_blocks, projected_tables = internal_project_text_and_tables(
         normalized_blocks, tables
     )
+    return internal_compose_page(
+        blocks,
+        normalized_blocks,
+        projected_tables,
+        page_number=page_number,
+        width=width,
+        height=height,
+        rotation=rotation,
+        route=route,
+        figures=figures,
+        diagnostics=diagnostics,
+        full_page_image=full_page_image,
+    )
+
+
+def internal_compose_page(
+    blocks: tuple[ParsedBlock, ...],
+    normalized_blocks: list[Block],
+    projected_tables: tuple[Table, ...],
+    *,
+    page_number: int,
+    width: float,
+    height: float,
+    rotation: int,
+    route: str,
+    figures: tuple[Figure, ...] = (),
+    diagnostics: tuple[str, ...] = (),
+    full_page_image: bool = False,
+) -> Page:
+    """Order projected products and attach semantic page context."""
     elements: list[tuple[str, object, tuple[float, float, float, float]]] = [
         ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in normalized_blocks
     ]
@@ -634,8 +597,8 @@ def assemble_page(
         height=height,
         rotation=rotation,
         blocks=tuple(ordered_blocks),
-        page_class=route.value,
-        base_route=route.value,
+        page_class=route,
+        base_route=route,
         tables=tuple(ordered_tables),
         figures=tuple(ordered_figures),
         header="\n".join(header_parts),

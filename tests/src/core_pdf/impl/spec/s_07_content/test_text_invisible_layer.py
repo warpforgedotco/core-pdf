@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Whether an unpainted text layer is the page's real text is a whole-page property.
 
-Render mode 3 and sub-0.1pt text paint nothing. A scan carrying an OCR layer is
+Render mode 3 and sub-0.1pt text paint nothing. A scan carrying an embedded hidden text layer is
 made entirely of such text and must still extract; a normal page's hidden
 watermark must not. Deciding that per show-text operator, from the runs captured
 so far, made the answer depend on the order the operators appear in -- the first
@@ -39,7 +39,7 @@ def test_hidden_text_visibility_does_not_depend_on_operator_order() -> None:
 
 
 def test_an_unpainted_layer_survives_being_split_across_text_objects() -> None:
-    """One BT per line is ordinary in an OCR layer; every line must still extract."""
+    """Every line of an embedded hidden text layer must still extract."""
     split = extracted_text(HIDDEN_ALPHA + HIDDEN_BETA)
     single = extracted_text(
         b"BT /F1 12 Tf 3 Tr 50 700 Td (HiddenAlpha) Tj 0 -20 Td (HiddenBeta) Tj ET\n"

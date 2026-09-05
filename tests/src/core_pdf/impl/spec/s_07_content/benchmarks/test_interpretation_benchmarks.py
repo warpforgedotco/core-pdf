@@ -3,7 +3,7 @@
 
 Interpretation is the largest block of Python this project runs. Profiling
 ``PdfDocument.extract`` over the SCORE-Bench corpus put ``get_page_program`` at
-roughly a quarter of the non-OCR time, and its two hottest leaves --
+roughly a quarter of the native extraction time, and its two hottest leaves --
 ``record_glyph_observations`` and the ``append_cubic_curve`` path builder --
 belong to the two different shapes of page benchmarked here. Text pages and
 drawing-heavy pages regress independently, so they are measured separately

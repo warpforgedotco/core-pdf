@@ -11,6 +11,7 @@ import unicodedata
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
+from functools import partial
 from pathlib import Path
 from random import Random
 from time import perf_counter
@@ -411,7 +412,7 @@ def is_correct_truth_path(path: Path) -> bool:
     return path.stem.endswith(CORRECT_TRUTH_SUFFIX)
 
 
-def score_case(case: ScoreBenchCase) -> CaseScore:
+def score_case(case: ScoreBenchCase, document_class: type[PdfDocument] = PdfDocument) -> CaseScore:
     started = perf_counter()
     if not is_materialized_pdf(case.pdf):
         return CaseScore(
@@ -431,7 +432,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
     gt_text = case.content_gt.read_text(encoding="utf-8")
     try:
         open_started = perf_counter()
-        document = PdfDocument(case.pdf)
+        document = document_class(case.pdf)
         open_elapsed = perf_counter() - open_started
         with document:
             text_started = perf_counter()
@@ -883,6 +884,7 @@ def tokenize(text: str) -> list[str]:
 
 @dataclass
 class ScoreBench:
+    document_class: type[PdfDocument] = field(default=PdfDocument, repr=False, kw_only=True)
     root: Path = SCORE_BENCH_ROOT
     limit: int | None = None
     case_filters: tuple[str, ...] = ()
@@ -986,6 +988,11 @@ class ScoreBench:
         return cases if self.limit is None else cases[: self.limit]
 
     def internal_score_cases(self, cases: list[ScoreBenchCase]) -> list[CaseScore]:
+        worker = (
+            score_case
+            if self.document_class is PdfDocument
+            else partial(score_case, document_class=self.document_class)
+        )
         configure_native_thread_budget()
         workers = min(os.cpu_count() or 4, len(cases)) if len(cases) > 1 else 1
         is_picklable = (
@@ -998,11 +1005,11 @@ class ScoreBench:
                 chunksize = max(1, len(cases) // (workers * 4))
                 with ProcessPoolExecutor(max_workers=workers) as executor:
                     return self.internal_collect_scores(
-                        executor.map(score_case, cases, chunksize=chunksize)
+                        executor.map(worker, cases, chunksize=chunksize)
                     )
             except Exception:
                 pass
-        return self.internal_collect_scores(map(score_case, cases))
+        return self.internal_collect_scores(map(worker, cases))
 
     def internal_collect_scores(self, scored: Iterable[CaseScore]) -> list[CaseScore]:
         scores = list(scored)

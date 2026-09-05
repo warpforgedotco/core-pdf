@@ -588,7 +588,7 @@ def should_insert_tight_word_space(
     return bool(prev.isupper() and current_first.islower() and len(prev) <= 8)
 
 
-def should_insert_hidden_ocr_overlap_space(
+def should_insert_hidden_text_overlap_space(
     *,
     prev_text: str,
     text: str,

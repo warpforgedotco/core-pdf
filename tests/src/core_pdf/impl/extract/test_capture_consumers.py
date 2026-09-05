@@ -3,12 +3,12 @@
 
 import pytest
 
-from core_pdf.impl.extract.capture import internal_normalized_tokens, internal_vector_complexity
+from core_pdf.impl.extract.capture import internal_normalized_tokens
 from core_pdf.impl.extract.contracts import ParsedBlock, ParsedLine
 from core_pdf.impl.extract.emit import internal_line_decoration_bbox, internal_normalized_blocks
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.records import TextWord
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedLine, CapturedPath
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from tests.helpers.extract_fakes import text_run
 
 
@@ -50,15 +50,6 @@ def test_token_normalization_accepts_an_iterable_of_validated_runs() -> None:
     runs = (text_run("Hello, STRAẞE!"), text_run("123"))
 
     assert internal_normalized_tokens(iter(runs)) == ("hello", "strasse", "123")
-
-
-def test_vector_evidence_counts_paint_but_not_scope_markers() -> None:
-    drawings = tuple(
-        CapturedDrawing(index, None, None, kind=kind)
-        for index, kind in enumerate(("clip", "state-push", "stroke", "fill", "group-end"))
-    )
-
-    assert internal_vector_complexity(drawings, (CapturedLine(0, 0, 10, 10),)) == 7
 
 
 def test_decoration_projects_directly_without_rebuilding_parsed_lines(

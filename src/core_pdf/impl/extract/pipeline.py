@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
@@ -15,15 +15,9 @@ from core_pdf.impl.extract.contracts import (
     PageAnalysis,
     ParsedBlock,
     ReadingOrderEvidence,
-    RecognitionResult,
-    WorkPlan,
 )
 from core_pdf.impl.extract.emit import (
     assemble_page,
-)
-from core_pdf.impl.extract.observations import (
-    fuse_observations,
-    plan_page,
 )
 from core_pdf.impl.extract.table_detection import extract_tables
 from core_pdf.impl.output.model import (
@@ -35,9 +29,6 @@ from core_pdf.impl.output.model import (
 )
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
-
-if TYPE_CHECKING:
-    from core_pdf.impl.extract.ocr.strokes import StrokedTextProfile
 
 internal_T = TypeVar("internal_T")
 
@@ -70,26 +61,34 @@ class internal_PageProducts:
 
 
 class internal_PageExtraction:
-    """Explicit inputs for deriving one page's extraction products."""
+    """Native extraction with reusable metadata and layout orchestration."""
+
+    internal_capture_page = staticmethod(capture_page)
+    internal_assemble_page = staticmethod(assemble_page)
+
+    @property
+    def internal_route(self) -> str:
+        return "native"
+
+    @property
+    def capture(self) -> PageAnalysis:
+        return self.internal_capture
 
     def __init__(
         self,
         page: Any,
         *,
         capture: PageAnalysis | None = None,
-        plan: WorkPlan | None = None,
-        recognition: RecognitionResult | None = None,
         fields: Iterable[Any] | None = None,
         structure: Any = internal_STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
-        stroked_profile: StrokedTextProfile | None = None,
     ) -> None:
         self.page = page
         self.internal_structure = structure
         self.internal_hidden_layers = hidden_layers
         field_records = tuple(fields) if fields is not None else None
         if capture is not None:
-            self.capture = (
+            self.internal_capture = (
                 replace(capture, fields=field_records) if field_records is not None else capture
             )
         else:
@@ -103,51 +102,34 @@ class internal_PageExtraction:
                 # to suppress appearances. Let capture enumerate tolerant raw
                 # annotation dictionaries; its output metadata remains empty.
                 annotation_records = None
-            self.capture = capture_page(
+            self.internal_capture = self.internal_capture_page(
                 page,
                 structure=structure,
                 hidden_layers=hidden_layers,
                 fields=field_records,
                 annotations=annotation_records,
             )
-        self.plan = plan if plan is not None else plan_page(self.capture)
-        self.recognition_result = recognition
-        self.internal_stroked_profile = stroked_profile
-
-    @property
-    def stroked_profile(self) -> StrokedTextProfile | None:
-        """Materialize the immutable stroke geometry only for a trusted vector-text layer."""
-        evidence = self.capture.evidence.stroked_vector_text
-        if not evidence.trusted or not evidence.drawing_indexes:
-            return None
-        if self.internal_stroked_profile is None:
-            from core_pdf.impl.extract.ocr.strokes import profile_stroked_text
-
-            self.internal_stroked_profile = profile_stroked_text(
-                self.capture.program.drawings, evidence.drawing_indexes
-            )
-        return self.internal_stroked_profile
-
-    def recognize(self, context: ExtractionScope) -> RecognitionResult:
-        if self.recognition_result is not None:
-            return self.recognition_result
-        plan = self.plan
-        if plan.ocr_passes or plan.verify_hidden_text:
-            from core_pdf.impl.extract.ocr.pipeline import recognize_page
-
-            return recognize_page(self.capture, plan, context, stroked_profile=self.stroked_profile)
-        return RecognitionResult(ObservationBatch.empty())
 
     def run(self, context: ExtractionScope) -> internal_PageProducts:
-        """Materialize the fused, table, and layout products exactly once per call."""
-        capture = self.capture
-        plan = self.plan
-        observations = fuse_observations(
-            capture.observations,
-            self.recognize(context).observations,
-            plan,
+        """Derive tables and layout solely from embedded PDF text."""
+        context.raise_if_cancelled()
+        observations = self.capture.observations
+        return self.internal_layout_products(
+            observations,
+            extract_tables(self.capture, observations),
         )
-        tables = extract_tables(capture, observations)
+
+    def internal_layout_products(
+        self,
+        observations: ObservationBatch,
+        tables: tuple[Table, ...],
+        *,
+        layout: Callable[
+            ..., tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]
+        ] = layout_blocks_with_evidence,
+    ) -> internal_PageProducts:
+        """Use shared page geometry to lay out an already chosen observation set."""
+        capture = self.capture
         table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
         image_obstacles = tuple(
             box
@@ -157,7 +139,7 @@ class internal_PageExtraction:
         use_xy_cut = not (
             capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
         )
-        blocks, order_evidence = layout_blocks_with_evidence(
+        blocks, order_evidence = layout(
             observations,
             obstacles=(*table_obstacles, *image_obstacles),
             use_xy_cut=use_xy_cut,
@@ -180,13 +162,13 @@ class internal_PageExtraction:
                 for index, box in enumerate(capture.evidence.image_boxes)
             )
         )
-        assembled = assemble_page(
+        assembled = self.internal_assemble_page(
             blocks,
             page_number=int(self.page.page_number),
             width=capture.width,
             height=capture.height,
             rotation=capture.rotation,
-            route=self.plan.route,
+            route=self.internal_route,
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),

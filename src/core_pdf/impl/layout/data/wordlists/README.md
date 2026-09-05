@@ -1,7 +1,7 @@
-# OCR word lists
+# Text reconstruction word lists
 
 This directory vendors full compressed upstream word-frequency data used for
-pure-Python OCR text repair.
+native PDF text reconstruction and word-boundary repair.
 
 ## Files
 

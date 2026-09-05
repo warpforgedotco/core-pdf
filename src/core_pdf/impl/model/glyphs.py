@@ -26,7 +26,6 @@ class UnicodeSource(StrEnum):
     CFF_GLYPH_REPAIR = "cff_glyph_repair"
     LIGATURE_OVERRIDE = "ligature_override"
     PREDEFINED_CMAP = "predefined_cmap"
-    LEARNED_OCR = "learned_ocr"
     GLYPH_NAME = "glyph_name"
     TRUETYPE_CMAP = "truetype_cmap"
     TRUETYPE_GLYPH_SHAPE = "truetype_glyph_shape"
@@ -47,7 +46,6 @@ UNICODE_SOURCE_CONFIDENCE: dict[str, float] = {
     UnicodeSource.TRUETYPE_CMAP: 0.90,
     UnicodeSource.TRUETYPE_GLYPH_SHAPE: 0.90,
     UnicodeSource.PREDEFINED_CMAP: 0.94,
-    UnicodeSource.LEARNED_OCR: 0.93,
     UnicodeSource.CID_COLLECTION: 0.88,
     UnicodeSource.ENCODING: 0.84,
     UnicodeSource.IDENTITY: 0.58,
@@ -72,7 +70,7 @@ AUTHORITATIVE_UNICODE_SOURCES: frozenset[str] = frozenset(
     }
 )
 HEURISTIC_UNICODE_SOURCES: frozenset[str] = frozenset(
-    {UnicodeSource.CID_COLLECTION, UnicodeSource.ENCODING, UnicodeSource.LEARNED_OCR}
+    {UnicodeSource.CID_COLLECTION, UnicodeSource.ENCODING}
 )
 
 
@@ -204,7 +202,7 @@ def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSeman
     Identity CMaps map character codes to glyph identifiers.  Their numeric value
     can happen to be a Unicode scalar, but that coincidence is not semantic text.
     Keeping that distinction explicit lets extraction retain identifiers for
-    diagnostics and learning while preventing them from suppressing OCR.
+    diagnostics without presenting them as decoded Unicode text.
     """
     if not text or glyph_text_has_unsupported_codepoint(text):
         return GlyphUnicodeSemantics.UNSUPPORTED

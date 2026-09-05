@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "core-pdf"
-version = "0.0.5"
+version = "0.0.6"
 description = "High-Performance PDF Engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
@@ -14,7 +14,6 @@ requires-python = ">=3.13"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "numpy>=2.5.1",
-    "tesserocr>=2.10.0",
     "imagecodecs>=2026.6.26",
     "cryptography>=50.0.0",
     "asn1crypto>=1.5.1",
@@ -26,6 +25,9 @@ core-pdf = "core_pdf.cli:main"
 
 [tool.uv]
 python-preference = "system"
+
+[tool.uv.workspace]
+members = ["packages/core-pdf-ocr"]
 
 # [tool.uv.sources]
 # nuitka = { path = "../Nuitka", editable = true }
@@ -83,15 +85,15 @@ vendor-test = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages/core-pdf-ocr/tests"]
 norecursedirs = ["tests/fixtures"]
-pythonpath = ["."]
+pythonpath = [".", "packages/core-pdf-ocr/tests"]
 markers = [
     "compat_differential: compares supported facades against reference libraries",
 ]
 
 [tool.coverage.run]
-source = ["src/core_pdf"]
+source = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr"]
 parallel = true
 # The pymupdf facade is quarantined (see api/compat/_unsupported) and nothing
 # imports it, so it can only ever measure 0%. Keeping it in `source` weighed the
@@ -122,6 +124,7 @@ exclude_also = [
 ]
 
 [tool.ruff]
+src = ["src", "packages/core-pdf-ocr/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
@@ -178,8 +181,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.13"
-files = ["src/core_pdf"]
-mypy_path = "src"
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr"]
+mypy_path = ["src", "packages/core-pdf-ocr/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -195,7 +198,7 @@ disallow_incomplete_defs = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = ["."]
+root = [".", "src", "packages/core-pdf-ocr/src"]
 
 [tool.ty.src]
 exclude = [
@@ -228,12 +231,24 @@ core_pdf = ["py.typed"]
 ]
 
 [tool.importlinter]
-root_package = "core_pdf"
+root_packages = ["core_pdf", "core_pdf_ocr"]
 # The documented invariant is that there are no *runtime* import cycles between
 # packages; annotation-only imports are excluded so the tool checks that, and not a
 # stricter rule this codebase has never held. See "Dependency direction" in
 # docs/architecture.md for the deliberate annotation-only knots.
 exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Core never depends on OCR"
+type = "forbidden"
+source_modules = ["core_pdf"]
+forbidden_modules = ["core_pdf_ocr"]
+
+[[tool.importlinter.contracts]]
+name = "OCR implementation stays below public APIs"
+type = "forbidden"
+source_modules = ["core_pdf_ocr.impl"]
+forbidden_modules = ["core_pdf.api", "core_pdf_ocr.api"]
 
 [[tool.importlinter.contracts]]
 name = "Derived-processing spine"

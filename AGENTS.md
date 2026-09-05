@@ -2,10 +2,15 @@
 
 ## Project Structure & Module Organization
 
+OCR and vector text recognition live in the separately installable uv workspace member
+`packages/core-pdf-ocr/src/core_pdf_ocr`, with tests in `packages/core-pdf-ocr/tests`.
+The companion depends on the exact matching core version. Core must never import or discover
+it; users opt in through `core_pdf_ocr.PdfDocument` or the `core-pdf-ocr` command.
+
 This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. `src/core_pdf/api/document.py` owns the public `PdfDocument` and `PdfPage` APIs; third-party compatibility facades live in `src/core_pdf/api/compat`. Nothing under `impl/` may import from `api/`. Internal implementation is organized under `src/core_pdf/impl`:
 
 - `impl/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
-- `impl/extract/` is the extraction pipeline, with OCR internals grouped under `extract/ocr/`. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
+- `impl/extract/` is the native extraction pipeline. Recognition routing, learning, OCR tasks, and recognition-specific output policies belong to the companion. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
 - `impl/render/` rasterizes; `impl/output/model.py` defines structured output and `impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/records.py` holds capture records, `impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
@@ -18,26 +23,26 @@ Start with `docs/architecture.md` — it describes the pipeline and how the sour
 Use `uv` for environments and locked dependencies:
 
 ```sh
-uv sync --all-groups                 # install development dependencies
-uv run pytest tests/ -n auto          # run the full test suite in parallel
-uv run --group lint ruff check .     # lint Python files
-uv run --group lint ruff format --check .
-uv run --group lint mypy             # static type checking
-uv run --group lint lint-imports     # architecture: layer and dependency contracts
-uv run --group lint --group test --group benchmark ty check
+uv sync --all-packages --all-groups                 # install development dependencies
+uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto          # run the full test suite in parallel
+uv run --all-packages --group lint ruff check .     # lint Python files
+uv run --all-packages --group lint ruff format --check .
+uv run --all-packages --group lint mypy             # static type checking
+uv run --all-packages --group lint lint-imports     # architecture: layer and dependency contracts
+uv run --all-packages --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
-After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
+After making broad changes, run the full suite with `uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
 
 ### Coverage
 
 ```sh
-uv run pytest tests/ -n auto --ignore=tests/benchmarks --cov --cov-report=term
+uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto --ignore=tests/benchmarks --cov --cov-report=term
 ```
 
-Coverage is configured in `[tool.coverage]` and excludes vendored fontTools, so
-the total describes code this project owns. `fail_under` is a ratchet set just
+Coverage is configured in `[tool.coverage]` and measures both packages together; it retains
+the existing vendored-code policy and omits the quarantined PyMuPDF facade. `fail_under` is a ratchet set just
 below the measured figure — raise it as gaps close rather than lowering it.
 
 Rendering changes are additionally pinned by golden rasters; see the "Golden
@@ -50,7 +55,7 @@ A Nuitka module build can leave a `<module>.cpython-*.so` next to its `.py` in
 `src/`. Python's `ExtensionFileLoader` wins over `SourceFileLoader`, so the stale
 binary is imported instead of the source — and it still reports the `.py` path as
 `__file__`, so nothing looks wrong. Edits to that module then silently do nothing.
-`tests/conftest.py` fails the session if any such pair exists; delete the `.so`.
+The root `conftest.py` checks both source roots and fails the session if any such pair exists; delete the `.so`.
 
 ### Two type checkers, contradictory advice
 
@@ -75,7 +80,7 @@ Third-party code belongs in `src/core_pdf/_vendor/`; do not add new third-party 
 
 ## Testing Guidelines
 
-Tests use pytest and pytest-xdist, and are named `test_*.py`, with test functions named `test_<behavior>`. Place unit tests beside the corresponding implementation area under `tests/src/core_pdf`; broader pipeline and regression tests belong at the top level of `tests/`. Add or update fixtures and expected extraction output when behavior changes. For broad changes, use `uv run pytest tests/ -n auto`; for focused changes, run the subset of tests that exercises the recently modified code.
+Tests use pytest and pytest-xdist, and are named `test_*.py`, with test functions named `test_<behavior>`. Place unit tests beside the corresponding implementation area under `tests/src/core_pdf`; broader pipeline and regression tests belong at the top level of `tests/`. Add or update fixtures and expected extraction output when behavior changes. For broad changes, use `uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto`; for focused changes, run the subset of tests that exercises the recently modified code.
 
 ## Commit & Pull Request Guidelines
 

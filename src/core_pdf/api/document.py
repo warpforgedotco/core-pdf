@@ -10,7 +10,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf.impl.extract.pipeline import extract_page
 from core_pdf.impl.extract.selection import extract_document
 from core_pdf.impl.layout.lines import (
@@ -37,10 +36,6 @@ from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocu
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.types import PdfSource
-
-# Claim process signal ownership when the public document class is imported on
-# the application's main thread. Extraction submodules remain side-effect free.
-internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_document.records import RawFormField

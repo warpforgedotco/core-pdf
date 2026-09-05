@@ -13,6 +13,12 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "core-pdf",
+    "core-pdf-ocr",
+]
+
 [[package]]
 name = "accelerate"
 version = "1.14.0"
@@ -477,7 +483,7 @@ wheels = [
 
 [[package]]
 name = "core-pdf"
-version = "0.0.5"
+version = "0.0.6"
 source = { editable = "." }
 dependencies = [
     { name = "asn1crypto" },
@@ -485,7 +491,6 @@ dependencies = [
     { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
-    { name = "tesserocr" },
 ]
 
 [package.dev-dependencies]
@@ -547,7 +552,6 @@ requires-dist = [
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
-    { name = "tesserocr", specifier = ">=2.10.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -596,6 +600,23 @@ vendor-test = [
     { name = "pypdf", specifier = ">=6.15.0" },
     { name = "pypdfium2", specifier = ">=5.9.0" },
     { name = "unstructured", extras = ["pdf"], specifier = ">=0.25.2" },
+]
+
+[[package]]
+name = "core-pdf-ocr"
+version = "0.0.6"
+source = { editable = "packages/core-pdf-ocr" }
+dependencies = [
+    { name = "core-pdf" },
+    { name = "numpy" },
+    { name = "tesserocr" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "core-pdf", editable = "." },
+    { name = "numpy", specifier = ">=2.5.1" },
+    { name = "tesserocr", specifier = ">=2.10.0" },
 ]
 
 [[package]]

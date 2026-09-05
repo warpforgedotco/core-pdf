@@ -199,30 +199,12 @@ def internal_small_table_duplicated_by_page_text(
     return matched / len(table_tokens) >= 0.90
 
 
-def internal_covers_synthetic_chart_table(
-    table: Table,
-    tables: tuple[Table, ...],
-    *,
-    profiles: tuple[internal_TableProfile, ...] | None = None,
-    profile: internal_TableProfile | None = None,
-) -> bool:
-    table_profile = profile or internal_table_profile(table)
-    return any(
-        other is not table
-        and other.metadata.get("source") == "chart-ocr"
-        and other.metadata.get("synthetic")
-        and internal_table_profile_token_coverage(
-            profiles[index] if profiles is not None else internal_table_profile(other),
-            table_profile,
-        )
-        >= 0.95
-        for index, other in enumerate(tables)
-    )
-
-
 def internal_remove_block_duplicate_tables(
     blocks: list[Block],
     tables: tuple[Table, ...],
+    *,
+    protected_table_indexes: frozenset[int] = frozenset(),
+    rejected_table_indexes: frozenset[int] = frozenset(),
 ) -> tuple[Table, ...]:
     if not blocks or not tables:
         return tables
@@ -253,31 +235,29 @@ def internal_remove_block_duplicate_tables(
         if needs_page_token_counts
         else Counter()
     )
-    for table, profile in zip(tables, profiles):
-        covers_synthetic_chart = internal_covers_synthetic_chart_table(
-            table, tables, profiles=profiles, profile=profile
-        )
+    for index, (table, profile) in enumerate(zip(tables, profiles)):
+        if index in rejected_table_indexes:
+            continue
+        if index in protected_table_indexes:
+            filtered.append(table)
+            continue
         if (
             (
-                (
-                    internal_table_duplicated_by_blocks(
-                        table, blocks, profile=profile, tokenized_blocks=tokenized_blocks
-                    )
-                    or internal_small_table_duplicated_by_page_text(
-                        table,
-                        blocks,
-                        profile=profile,
-                        page_token_counts=page_token_counts,
-                    )
+                internal_table_duplicated_by_blocks(
+                    table, blocks, profile=profile, tokenized_blocks=tokenized_blocks
                 )
-                and not covers_synthetic_chart
+                or internal_small_table_duplicated_by_page_text(
+                    table,
+                    blocks,
+                    profile=profile,
+                    page_token_counts=page_token_counts,
+                )
             )
             or table.metadata.get("source") == "stream"
             and table.bbox is not None
             and (
                 profile.fragmented_stream
                 or profile.noisy_stream
-                or covers_synthetic_chart
                 or (
                     profile.character_spaced_ratio >= 0.20
                     and any(
@@ -400,26 +380,16 @@ def internal_table_profile_token_coverage(
 
 def internal_remove_duplicate_tables(
     tables: tuple[Table, ...],
+    *,
+    rejected_table_indexes: frozenset[int] = frozenset(),
 ) -> tuple[Table, ...]:
     filtered: list[Table] = []
     profiles = tuple(internal_table_profile(table) for table in tables)
     for index, (table, profile) in enumerate(zip(tables, profiles)):
+        if index in rejected_table_indexes:
+            continue
         tokens = profile.tokens
         if not table.metadata and 0 < len(tokens) <= 8 and profile.token_set <= {"b", "i"}:
-            continue
-        if len(tables) < 2:
-            filtered.append(table)
-            continue
-        if (
-            table.metadata.get("source") == "chart-ocr"
-            and table.metadata.get("synthetic")
-            and 0 < len(tokens) <= 24
-            and any(
-                other_index != index
-                and internal_table_profile_token_coverage(profile, profiles[other_index]) >= 0.95
-                for other_index, other in enumerate(tables)
-            )
-        ):
             continue
         filtered.append(table)
     return tuple(filtered)
@@ -434,10 +404,7 @@ def internal_remove_table_duplicate_blocks(
     table_profiles = [(table.bbox, internal_table_profile(table)) for table in tables]
     table_boxes = [(box, profile.token_set) for box, profile in table_profiles if box is not None]
     table_frame = SpatialFrame.from_boxes(box for box, ignored_tokens in table_boxes)
-    table_token_counts: Counter[str] = Counter()
-    for ignored_box, profile in table_profiles:
-        table_token_counts.update(profile.token_counts)
-    if not table_boxes and not table_token_counts:
+    if not table_boxes:
         return blocks
     deduplicated: list[Block] = []
     for block in blocks:
@@ -447,14 +414,6 @@ def internal_remove_table_duplicate_blocks(
         block_tokens = internal_emitted_text_tokens(block.text)
         if not block_tokens:
             deduplicated.append(block)
-            continue
-        if (
-            block.provenance == ("ocr",)
-            and len(block_tokens) <= 3
-            and all(
-                table_token_counts[token] >= count for token, count in Counter(block_tokens).items()
-            )
-        ):
             continue
         duplicate = False
         contained_line_boxes: list[tuple[float, float, float, float]] = []

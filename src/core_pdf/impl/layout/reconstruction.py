@@ -826,7 +826,7 @@ class GlyphLineBuilder:
             space_width=space_width,
         ):
             return " "
-        if rules.should_insert_hidden_ocr_overlap_space(
+        if rules.should_insert_hidden_text_overlap_space(
             prev_text=prev_stripped,
             text=stripped,
             x_gap=spacing_gap,

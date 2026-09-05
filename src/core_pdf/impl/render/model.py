@@ -178,10 +178,6 @@ class RasterImage:
             raise ValueError("raster byte length does not match its dimensions")
         object.__setattr__(self, "pixels", pixels)
 
-    def tesseract_bytes(self) -> bytes:
-        """Return the immutable bytes object required by tesserocr."""
-        return bytes(self.pixels)
-
     @property
     def stride(self) -> int:
         return self.width * self.channels

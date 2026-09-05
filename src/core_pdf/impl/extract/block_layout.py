@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from heapq import heappop, heappush
 from typing import cast
@@ -36,9 +35,6 @@ from core_pdf.impl.records import (
 )
 from core_pdf.impl.runtime.array_views import finite_median
 
-# ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized
-# comparison against a preconverted scalar rather than a per-observation Python loop.
-internal_OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
 internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
 internal_CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
@@ -104,41 +100,7 @@ def internal_style_enabled(reference: object, name: str) -> bool:
 def internal_group_text_and_words(
     observations: ObservationBatch,
     indexes: numpy.ndarray,
-    *,
-    may_contain_ocr: bool = True,
 ) -> tuple[str, tuple[TextWord, ...]]:
-    # A group whose source range collapses to NATIVE cannot hold an OCR observation,
-    # and the caller already has that range from its columnar reduction.  Native pages
-    # therefore reach the reordering test without touching the source column at all.
-    if may_contain_ocr and bool((observations.source[indexes] == internal_OCR_SOURCE).any()):
-        rotation = int(observations.rotation[indexes[0]]) % 360
-        boxes = observations.bbox[indexes]
-        if rotation == 90:
-            positions = (boxes[:, 1] + boxes[:, 3]) * 0.5
-        elif rotation == 180:
-            positions = -(boxes[:, 0] + boxes[:, 2]) * 0.5
-        elif rotation == 270:
-            positions = -(boxes[:, 1] + boxes[:, 3]) * 0.5
-        else:
-            positions = (boxes[:, 0] + boxes[:, 2]) * 0.5
-        # One pass over the text counts both directions; ASCII text can only
-        # contribute L characters, and only letters carry a strong class.
-        rtl = 0
-        ltr = 0
-        bidirectional = unicodedata.bidirectional
-        for index in indexes:
-            observation_text = observations.text[index]
-            if observation_text.isascii():
-                ltr += sum(map(str.isalpha, observation_text))
-                continue
-            for character in observation_text:
-                direction_class = bidirectional(character)
-                if direction_class == "L":
-                    ltr += 1
-                elif direction_class in {"R", "AL", "AN"}:
-                    rtl += 1
-        order = numpy.argsort(-positions if rtl > ltr else positions, kind="stable")
-        indexes = indexes[order]
     references = tuple(observations.references[index] for index in indexes)
     if references and all(isinstance(reference, TextRun) for reference in references):
         runs = cast(list[TextRun], list(references))
@@ -172,8 +134,8 @@ def internal_looks_like_native_artifact(text: str) -> bool:
     """Reject symbol-heavy native lines produced by damaged text layers.
 
     Some PDFs expose decorative rules, malformed glyph mappings, and dotted
-    leaders as ordinary text runs.  They are not OCR observations and are
-    therefore safe to reject only after line reconstruction, where the whole
+    leaders as ordinary text runs. Reject these only after line reconstruction,
+    where the whole
     artifact is visible.  Requiring a small alphanumeric count keeps compact
     identifiers and schematic labels intact.
     """
@@ -225,7 +187,13 @@ def internal_color_is_emphasis(color: object) -> bool:
     return max(components) - min(components) >= 0.15
 
 
-def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
+def internal_build_lines(
+    observations: ObservationBatch,
+    *,
+    source_labels: Mapping[int, str] | None = None,
+    group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
+) -> internal_BuiltLines:
+    labels = source_labels if source_labels is not None else {internal_NATIVE_SOURCE: "native"}
     line_groups = internal_line_group_indexes(observations)
     if not len(line_groups.starts):
         return internal_BuiltLines((), numpy.empty((0, 4), dtype=numpy.float32))
@@ -257,11 +225,12 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
         all_native = (
             source_minimum[group_index] == source_maximum[group_index] == internal_NATIVE_SOURCE
         )
-        text, words = internal_group_text_and_words(
-            observations,
-            indexes,
-            may_contain_ocr=not all_native,
+        text_indexes = (
+            group_order(observations, indexes)
+            if group_order is not None and not all_native
+            else indexes
         )
+        text, words = internal_group_text_and_words(observations, text_indexes)
         if not text:
             continue
         if all_native and internal_looks_like_native_artifact(text):
@@ -331,12 +300,7 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             spans = ()
         source_low = int(source_minimum[group_index])
         source_high = int(source_maximum[group_index])
-        if source_low == source_high == int(ObservationSource.NATIVE):
-            source = "native"
-        elif source_low == source_high == int(ObservationSource.OCR):
-            source = "ocr"
-        else:
-            source = "hybrid"
+        source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
         words = tuple(replace(word, source=source) for word in words)
         group_box = group_boxes[group_index]
         output.append(
@@ -509,9 +473,13 @@ def layout_blocks(
     rotation: int = 0,
     page_width: float = 0.0,
     page_height: float = 0.0,
+    source_labels: Mapping[int, str] | None = None,
+    group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
 ) -> tuple[ParsedBlock, ...]:
     """Reduce fused observations into geometrically ordered, structured blocks."""
-    built_lines = internal_build_lines(observations)
+    built_lines = internal_build_lines(
+        observations, source_labels=source_labels, group_order=group_order
+    )
     lines = built_lines.lines
     if not lines:
         return ()
@@ -585,6 +553,8 @@ def layout_blocks_with_evidence(
     rotation: int = 0,
     page_width: float = 0.0,
     page_height: float = 0.0,
+    source_labels: Mapping[int, str] | None = None,
+    group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
 ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
     """Return ordered blocks together with validation evidence."""
     blocks = layout_blocks(
@@ -594,6 +564,8 @@ def layout_blocks_with_evidence(
         rotation=rotation,
         page_width=page_width,
         page_height=page_height,
+        source_labels=source_labels,
+        group_order=group_order,
     )
     return blocks, internal_reading_order_evidence(blocks)
 

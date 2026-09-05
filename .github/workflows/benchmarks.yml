@@ -42,13 +42,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install English Tesseract data
-        run: |
-          if ! tesseract --list-langs 2>/dev/null | grep -qx eng; then
-            sudo apt-get update
-            sudo apt-get install --yes tesseract-ocr-eng
-          fi
-
       - name: Run CodSpeed benchmarks
         uses: CodSpeedHQ/action@v3
         env:
@@ -66,7 +59,7 @@ jobs:
           # is not a benchmark, so this runs all of them wherever they live and
           # picks up new ones automatically.
           run: >-
-            uv run --locked --package core-pdf --group benchmark pytest
+            uv run --locked --all-packages --group benchmark pytest
             --codspeed
           token: ${{ secrets.CODSPEED_TOKEN }}
 

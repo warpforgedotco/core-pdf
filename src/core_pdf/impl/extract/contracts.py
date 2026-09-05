@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from typing import Any, cast
 
 import numpy
@@ -17,32 +17,10 @@ from core_pdf.impl.records import TextWord, internal_reconcile_text_words
 from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 
-# Tesseract page-segmentation modes. Shared stage vocabulary: observations.py chooses a
-# mode, ocr.py applies it, so neither owns the constants.
-PSM_AUTO = 3
-PSM_SPARSE_TEXT = 11
-PSM_SPARSE_TEXT_OSD = 12
-
-# Drawing paint kinds that put ink on the page. capture.py classifies with these,
-# ocr.py filters with them.
-VECTOR_PAINT_KINDS = frozenset({"fill", "fillstroke", "shading", "stroke"})
-
-
 FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]
 ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
-
-PRIMARY_OCR_PIXELS = 6_000_000
-OCR_PREFLIGHT_PIXELS = 1_000_000
-HIDDEN_TEXT_VERIFY_PIXELS = 2_000_000
-MAX_OCR_PIXELS = 16_000_000
-MAX_OCR_RASTER_BYTES = MAX_OCR_PIXELS * 4
-OCR_RESCUE_MIN_WEAK_INK_RATIO = 0.03
-OCR_RESCUE_SATURATED_MEAN_INK = 0.85
-OCR_RESCUE_MIN_CONFIDENCE = 95.0
-internal_OCR_RESCUE_DENSE_MIN_CHARACTERS: int = 2_000
-internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE: float = 92.0
 
 
 def internal_column(
@@ -66,76 +44,12 @@ def internal_bbox_tuple(row: object) -> tuple[float, float, float, float]:
     return (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
 
 
-# An image covering this fraction of the page is the page, for capture evidence and
-# for choosing the OCR raster crop alike.
 FULL_PAGE_IMAGE_COVERAGE = 0.90
-OCR_RESCUE_LARGE_TEXT_HEIGHT = 32.0
-OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY = 100_000
-HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE = 80.0
-HIDDEN_TEXT_VERIFY_MIN_MATCHED_TOKENS = 24
-# Promoting a hidden layer replaces recognition entirely, so a borderline
-# match is worse than re-recognizing: an archive-era OCR layer that agrees
-# with the preview on only two words in three reads as its own document.
-# 0.72 keeps genuinely faithful layers and sends the mediocre ones to OCR.
-HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP = 0.72
-HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP = 0.55
 
 
 class ObservationSource(IntEnum):
     NATIVE = 0
-    OCR = 1
     STRUCTURE = 2
-
-
-class PageRoute(StrEnum):
-    NATIVE = "native"
-    HYBRID = "hybrid"
-    OCR = "ocr"
-
-
-class OcrPassScope(StrEnum):
-    PAGE = "page"
-    TILES = "tiles"
-    WEAK_REGIONS = "weak-regions"
-    IMAGE_REGIONS = "image-regions"
-    STROKED_VECTOR_TEXT = "stroked-vector-text"
-
-
-class PagePlanReason(StrEnum):
-    """Stable explanations for why the router chose a page plan."""
-
-    UNSPECIFIED = "unspecified"
-    NATIVE_TEXT_CORRUPT = "native-text-corrupt"
-    NEWSTROKE_VECTOR_TEXT = "newstroke-vector-text"
-    TRUSTED_HIDDEN_NATIVE_TEXT = "trusted-hidden-native-text"
-    UNPAINTED_NATIVE_TEXT_LAYER = "unpainted-native-text-layer"
-    STROKED_VECTOR_TEXT = "stroked-vector-text"
-    NATIVE_TEXT_WITH_RECTANGULAR_VECTORS = "native-text-with-rectangular-vectors"
-    GLYPH_TRUSTED_VECTOR_TEXT = "glyph-trusted-vector-text"
-    FULL_PAGE_IMAGE_NATIVE_TEXT = "full-page-image-native-text"
-    MOSTLY_COVERED_NATIVE_TEXT = "mostly-covered-native-text"
-    NATIVE_TEXT_WITHOUT_IMAGES = "native-text-without-images"
-    DENSE_NATIVE_TEXT = "dense-native-text"
-    UNCOVERED_VECTOR_TEXT = "uncovered-vector-text"
-    NOISY_NATIVE_TEXT = "noisy-native-text"
-    EMBEDDED_IMAGE_TEXT_SUPPLEMENT = "embedded-image-text-supplement"
-    GLYPH_TRUSTED_ROTATED_TEXT = "glyph-trusted-rotated-text"
-    MINOR_ROTATED_NATIVE_TEXT = "minor-rotated-native-text"
-    ROTATED_NATIVE_TEXT = "rotated-native-text"
-    HEALTHY_NATIVE_TEXT = "healthy-native-text"
-    USABLE_NATIVE_TEXT = "usable-native-text"
-    CLEAN_SHORT_NATIVE_TEXT = "clean-short-native-text"
-    NATIVE_TEXT_UNAVAILABLE = "native-text-unavailable"
-    NATIVE_TEXT_NEEDS_AUGMENTATION = "native-text-needs-augmentation"
-
-
-class FusionPolicy(StrEnum):
-    """How hybrid OCR observations interact with the native text layer."""
-
-    DEFAULT = "default"
-    SPARSE_NATIVE = "sparse-native"
-    NOISY_NATIVE = "noisy-native"
-    UNCOVERED_VECTOR = "uncovered-vector"
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,7 +117,7 @@ class ObservationBatch:
         bbox: Iterable[tuple[float, float, float, float]],
         *,
         polygon: Iterable[tuple[float, ...]] | None = None,
-        source: ObservationSource,
+        source: int,
         confidence: Iterable[float] | None = None,
         sequence: Iterable[int] | None = None,
         visible: Iterable[bool] | None = None,
@@ -425,16 +339,6 @@ class GlyphEvidence:
 
 
 @dataclass(frozen=True, slots=True)
-class StrokedVectorTextEvidence:
-    """Compact path families that are likely to be flattened single-line text."""
-
-    trusted: bool = False
-    drawing_indexes: tuple[int, ...] = ()
-    bbox: tuple[float, float, float, float] | None = None
-    candidate_paths: int = 0
-
-
-@dataclass(frozen=True, slots=True)
 class PageEvidence:
     """Reusable, capture-time evidence for routing and progressive extraction."""
 
@@ -444,27 +348,15 @@ class PageEvidence:
     suspicious_characters: int
     image_count: int
     image_area_ratio: float
-    vector_complexity: int
     image_boxes: tuple[tuple[float, float, float, float], ...] = ()
-    image_filters: tuple[str, ...] = ()
     text_coverage: float = 0.0
     full_page_image: bool = False
-    uncovered_vector_area: float | None = None
     text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     all_text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     glyphs: GlyphEvidence = field(default_factory=GlyphEvidence)
     painted_native_characters: int | None = None
     painted_text_coverage: float | None = None
     trusted_hidden_text: bool = False
-    vector_text_characters: int = 0
-    vector_text_candidate_segments: int = 0
-    vector_text_matched_segments: int = 0
-    vector_text_sequences: int = 0
-    vector_text_maximum_error: float = 0.0
-    vector_text_trusted: bool = False
-    stroked_vector_text: StrokedVectorTextEvidence = field(
-        default_factory=StrokedVectorTextEvidence
-    )
 
     @property
     def suspicious_ratio(self) -> float:
@@ -483,10 +375,6 @@ class PageEvidence:
         )
         return self.native_characters >= 100 and painted < self.native_characters * 0.20
 
-    @property
-    def vector_text_segment_coverage(self) -> float:
-        return self.vector_text_matched_segments / max(1, self.vector_text_candidate_segments)
-
 
 @dataclass(frozen=True, slots=True)
 class PageAnalysis:
@@ -499,63 +387,6 @@ class PageAnalysis:
     program: PageProgram
     observations: ObservationBatch
     evidence: PageEvidence
-
-
-@dataclass(frozen=True, slots=True)
-class OcrPass:
-    """One independently measurable OCR operation over a declared raster scope."""
-
-    name: str
-    scope: OcrPassScope
-    scale: float
-    modes: tuple[int, ...]
-    tiles: int = 1
-    parallel_tiles: int = 1
-    region_columns: int = 2
-    max_regions: int = 3
-    minimum_confidence: float = 20.0
-    run_if_characters_below: int | None = None
-    minimum_utility_gain: float = 1.10
-    adaptive_scale: bool = False
-    minimum_characters_for_rescue: int = 0
-    character_confidence_threshold: float | None = None
-    run_if_additions_below: int | None = None
-    seed_with_native: bool = False
-    region_first: bool = True
-    preprocess: str = "none"
-    pixel_budget: int = MAX_OCR_PIXELS
-    include_native_text: bool = False
-    recognize_words: bool = False
-    collect_symbols: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class WorkPlan:
-    route: PageRoute
-    reason: PagePlanReason = PagePlanReason.UNSPECIFIED
-    ocr_passes: tuple[OcrPass, ...] = ()
-    verify_hidden_text: bool = False
-    fusion_policy: FusionPolicy = FusionPolicy.DEFAULT
-    allow_direct_image_ocr: bool = True
-    augment_page_candidates: bool = False
-
-    def __post_init__(self) -> None:
-        # Keep direct construction ergonomic for tests and downstream internal
-        # callers while guaranteeing that the stored contract is typed.
-        if not isinstance(self.reason, PagePlanReason):
-            object.__setattr__(self, "reason", PagePlanReason(self.reason))
-
-    @property
-    def image_regions_only(self) -> bool:
-        return bool(self.ocr_passes) and all(
-            ocr_pass.scope is OcrPassScope.IMAGE_REGIONS for ocr_pass in self.ocr_passes
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RecognitionResult:
-    observations: ObservationBatch
-    stroked_vector_alphabet: tuple[tuple[Any, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

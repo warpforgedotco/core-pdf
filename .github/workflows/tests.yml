@@ -37,6 +37,9 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
+      - name: Install both workspace packages and quality tools
+        run: uv sync --locked --all-packages --group lint --group test --group benchmark
+
       - name: Run prek
         run: uvx prek run --all-files --stage pre-push
 
@@ -68,12 +71,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install English Tesseract data
-        run: |
-          if ! tesseract --list-langs 2>/dev/null | grep -qx eng; then
-            sudo apt-get update
-            sudo apt-get install --yes tesseract-ocr-eng
-          fi
+      - name: Install core without OCR
+        run: uv sync --locked --package core-pdf --group test
+
+      - name: Verify OCR is absent
+        run: >-
+          uv run --locked --package core-pdf python -c
+          "import importlib.util; assert importlib.util.find_spec('tesserocr') is None;
+          assert importlib.util.find_spec('core_pdf_ocr') is None"
 
       - name: Fetch public security specification evidence
         run: ./scripts/fetch_pdf_specs.sh security
@@ -94,7 +99,43 @@ jobs:
         # -n auto was measured and reverted: 108s against 106s and 118s for
         # -n 2 on the same suite, i.e. inside the run-to-run noise. The job is
         # not CPU-parallel-bound, so widening the worker pool buys nothing.
-        run: uv run --locked --package core-pdf --group test pytest -n 2
+        run: uv run --locked --package core-pdf --group test pytest tests/ -n 2
+
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
+  ocr-test:
+    name: core-pdf-ocr / Python 3.13
+    needs: quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install English Tesseract data
+        run: |
+          if ! tesseract --list-langs 2>/dev/null | grep -qx eng; then
+            sudo apt-get update
+            sudo apt-get install --yes tesseract-ocr-eng
+          fi
+
+      - name: Run OCR companion tests
+        run: >-
+          uv run --locked --all-packages --group test pytest
+          packages/core-pdf-ocr/tests/ -n 2
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}

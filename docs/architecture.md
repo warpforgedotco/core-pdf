@@ -5,9 +5,20 @@ dependency direction.
 
 ---
 
-The `extract/` package owns extraction. Its initializer exposes only `extract_page`,
-`extract_document`, and the lazy OCR prewarmer; stage internals are imported from their owning
-modules. The stages run in roughly this order:
+The root package, `src/core_pdf`, owns PDF parsing, native extraction, rendering, and structured
+output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recognition. The two
+distributions share a uv workspace and release version; the companion pins that exact core
+version because it reuses internal extraction stages.
+
+Core's `extract/` initializer exposes only `extract_page` and `extract_document`; stage internals
+are imported from their owning modules. Native extraction runs in this order:
+
+```text
+bytes → capture_page → native observations → extract_tables → layout → assemble_page
+```
+
+The companion enriches captured PDF evidence, selects recognition work, and combines native
+and recovered text before using core's generic layout and output stages:
 
 ```text
         ┌── capture ──┐
@@ -48,8 +59,20 @@ src/core_pdf/
     model/               shared geometry/text models, text rules, and page selections
     layout/              text-line records, reconstruction, diagnostics, and word rules
     spec/                PDF specification implementation (see below)
-    extract/             extraction, block layout, tables, and OCR (see section 2)
+    extract/             native extraction, block layout, and tables
     render/              display lists, raster kernels, targets, and page composition
+```
+
+```text
+packages/core-pdf-ocr/
+  pyproject.toml         independently installable companion distribution
+  src/core_pdf_ocr/
+    api/document.py     PdfDocument/PdfPage subclasses with recognition extraction
+    cli.py, __main__.py  core-pdf-ocr and python -m core_pdf_ocr
+    _vendor/            Newstroke templates with their original license notices
+    impl/extract/       routing, fusion, learned text, recognition-specific output policies
+      ocr/              Tesseract, raster tasks, rescue passes, and vector recognition
+  tests/                OCR unit, integration, and benchmark tests
 ```
 
 ### The `spec/s_NN_*` scheme
@@ -69,6 +92,40 @@ Subpackages under `spec/` mirror chapters of the PDF specification:
 | `s_14_structure` | 14 — logical structure tree |
 
 ---
+
+## Dependency direction
+
+`core_pdf_ocr` depends on `core_pdf`; core never imports, discovers, or registers the companion.
+Installing OCR therefore cannot change native extraction or compatibility-facade behavior.
+Both implementation packages stay below their public APIs. Runtime cancellation, PDF capture,
+ordinary rendering, text geometry, native tables, and structured output remain core-owned.
+
+Recognition-specific routing, evidence, rasterization, artifact cleanup, and learned text live
+in the companion. Core accepts prepared text and output products through internal generic stage
+boundaries. Source/provenance labels in structured records remain ordinary data, so the companion
+can preserve `ocr` and `hybrid` output without recognition branches in core. Word reconstruction
+for text already embedded in PDFs, including hidden text layers, stays in core.
+
+Import-linter contracts in the root `pyproject.toml` enforce package direction and the existing
+core layer boundaries. Type-only imports are excluded from runtime cycle checks.
+
+## Workspace validation
+
+Run `uv sync --all-packages --all-groups` to install both distributions and the development tools.
+The default pytest test paths include `tests/` and `packages/core-pdf-ocr/tests/`:
+
+```sh
+uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto
+uv run --all-packages --group lint ruff check .
+uv run --all-packages --group lint mypy
+uv run --all-packages --group lint --group test --group benchmark ty check
+uv run --all-packages --group lint lint-imports
+```
+
+CI runs the native suite in a core-only environment without Tesseract and the companion suite
+with English tessdata. Shared root test guards reject compiled extensions shadowing sources in
+either package; tessdata discovery is confined to the companion test configuration. Coverage
+measures both source roots together and retains the existing ratchet.
 
 ## Rendering constraints
 

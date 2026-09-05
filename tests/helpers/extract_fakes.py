@@ -40,7 +40,6 @@ def page_evidence(**overrides: Any) -> PageEvidence:
         suspicious_characters=0,
         image_count=0,
         image_area_ratio=0.0,
-        vector_complexity=0,
     )
     return replace(base, **overrides) if overrides else base
 

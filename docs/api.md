@@ -11,6 +11,29 @@ with PdfDocument.open("document.pdf") as document:
     print(document.structured_document.text)
 ```
 
+## OCR extraction
+
+Starting with 0.0.6, `core_pdf.PdfDocument` and the compatibility facades extract only PDF-native
+text. Existing hidden text layers remain PDF-native text; image-only or flattened vector text
+requires the separate `core-pdf-ocr` package. Installing it never changes core's behavior.
+
+```python
+from core_pdf_ocr import PdfDocument
+
+with PdfDocument("scanned.pdf") as document:
+    result = document.extract(pages=[1, 2])
+    print(result.to_markdown())
+```
+
+`core_pdf_ocr.PdfDocument` and `PdfPage` subclass the core public classes and preserve their
+constructor, selection, adapters, rendering, and close/cancellation behavior. Their extraction
+includes native, OCR, and hybrid routes and returns the same structured model types. Shared
+records and errors remain exported from `core_pdf`. The companion pins its exact matching core
+release; its internal stage imports are not a public extension API.
+
+Use `core-pdf-ocr document.pdf --print` or `python -m core_pdf_ocr document.pdf --print` to
+select recognition from the command line. The options match `core-pdf`.
+
 ## Structured JSON
 
 `Document.to_json_dict()` and `Document.to_json()` emit schema 5.0. The document is a normalized
@@ -89,6 +112,6 @@ The vendored x-ray behavior suite can be run with:
 
 ```sh
 PYTHONPATH=src uv run --with requests --with PyMuPDF \
-  --with numpy --with tesserocr --with imagecodecs \
+  --with numpy --with imagecodecs \
   python scripts/run_xray_compat_tests.py -q
 ```

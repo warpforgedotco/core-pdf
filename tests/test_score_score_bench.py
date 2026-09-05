@@ -5,7 +5,6 @@ from runpy import run_path
 
 import pytest
 
-from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from tests.helpers.paths import REPO_ROOT
 
 score_bench = run_path(
@@ -364,8 +363,6 @@ def test_cli_has_no_extraction_track_flags() -> None:
 
     assert benchmark.html_output == score_bench["DEFAULT_HTML_OUTPUT"]
     with pytest.raises(SystemExit):
-        score_bench["ScoreBench"].from_cli(["--ocr"])
-    with pytest.raises(SystemExit):
         score_bench["ScoreBench"].from_cli(["--native"])
     with pytest.raises(SystemExit):
         score_bench["ScoreBench"].from_cli(["--candidate-analysis"])
@@ -377,25 +374,3 @@ def test_cli_can_disable_default_html_report() -> None:
     benchmark = score_bench["ScoreBench"].from_cli(["--no-html-output"])
 
     assert benchmark.html_output is None
-
-
-def test_backend_is_created_for_each_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    import tesserocr
-
-    class FakeApi:
-        def __init__(self, **internal_kwargs: object) -> None:
-            pass
-
-        def SetVariable(self, *internal_args: object) -> None:
-            pass
-
-        def SetPageSegMode(self, internal_mode: int) -> None:
-            pass
-
-    monkeypatch.setattr(tesserocr, "PyTessBaseAPI", FakeApi)
-    # Resolving real tessdata is not part of this lifecycle test.
-    monkeypatch.setattr(ocr_tesseract, "internal_tessdata_path", lambda: "")
-    first = ocr_tesseract.internal_api(3)
-    second = ocr_tesseract.internal_api(3)
-
-    assert first is not second

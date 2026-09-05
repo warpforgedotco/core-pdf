@@ -462,15 +462,6 @@ def test_font_decoder_identity_fallback_does_not_emit_surrogates() -> None:
     assert decoder.decode(b"\xd8\x00") == "\ufffd"
 
 
-def test_font_decoder_has_no_mutable_document_learning_state() -> None:
-    decoder = FontDecoder(cid_type0_font("Identity-H", ordering="Unknown"))
-    encoded = b"\x00A"
-
-    assert decoder.decode(encoded) == "A"
-    assert not hasattr(decoder, "learned_unicode")
-    assert not hasattr(decoder, "install_learned_unicode")
-
-
 def test_cid_decoder_rejects_private_use_true_type_cmap_values() -> None:
     class FakeTrueTypeFont(TrueTypeFontProgram):
         def glyph_id_for_code(self, code: int) -> int:

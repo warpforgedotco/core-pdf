@@ -93,7 +93,7 @@ REPLACEMENTS: dict[str, Any] = {
     "advance_bbox": (10.0, 20.0, 30.0, 40.0),
     "ink_bbox": (15.0, 25.0, 35.0, 45.0),
     "baseline": (10.0, 20.0, 30.0, 20.0),
-    "provenance": (("source", "ocr"),),
+    "provenance": (("source", "external"),),
     "confidence": 0.25,
     "glyph_clusters": (OTHER_CLUSTER,),
 }
