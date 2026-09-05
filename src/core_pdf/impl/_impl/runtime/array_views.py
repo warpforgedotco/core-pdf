@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from operator import index
 from typing import Any, TypeAlias
 
 import numpy
@@ -59,6 +60,8 @@ def uint8_view(
     offset: int = 0,
 ) -> UInt8Array:
     """Return a flat uint8 view, copying only non-contiguous/wrong-typed arrays."""
+    count = index(count)
+    offset = index(offset)
     if isinstance(buffer, numpy.ndarray):
         array = numpy.asarray(buffer)
         if array.dtype.type is numpy.uint8:
@@ -68,6 +71,10 @@ def uint8_view(
                 view = numpy.ascontiguousarray(array).reshape(-1)
         else:
             view = numpy.asarray(array, dtype=numpy.uint8).reshape(-1)
+        if offset < 0 or offset > view.size:
+            raise ValueError("offset must be non-negative and no greater than buffer length")
+        if count > view.size - offset:
+            raise ValueError("buffer is smaller than requested size")
         if offset:
             view = view[offset:]
         if count >= 0:

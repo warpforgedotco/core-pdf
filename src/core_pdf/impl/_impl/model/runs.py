@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
 if TYPE_CHECKING:
@@ -30,36 +30,8 @@ EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 
+@dataclass(slots=True, eq=False, init=False)
 class TextRun:
-    __slots__ = (
-        "text",
-        "x0",
-        "y0",
-        "x1",
-        "y1",
-        "tx",
-        "ty",
-        "font_size",
-        "space_width",
-        "font_name",
-        "order",
-        "stream_order",
-        "xobject_depth",
-        "is_vertical",
-        "rotation_angle",
-        "visible",
-        "inside_active_clip",
-        "line_break_before",
-        "seqno",
-        "fill_color",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "provenance",
-        "confidence",
-        "glyph_clusters",
-    )
-
     X0: ClassVar[int] = 0
     Y0: ClassVar[int] = 1
     X1: ClassVar[int] = 2
@@ -214,50 +186,27 @@ class TextRun:
         return "italic" in fn or "oblique" in fn or "slanted" in fn
 
     def replace(self, **kwargs: Any) -> TextRun:
-        x0 = kwargs.get("x0", self.x0)
-        y0 = kwargs.get("y0", self.y0)
-        x1 = kwargs.get("x1", self.x1)
-        y1 = kwargs.get("y1", self.y1)
+        """Copy a run, discarding evidence invalidated by text or geometry edits."""
         coords_changed = any(key in kwargs for key in ("x0", "y0", "x1", "y1"))
-        advance_bbox = kwargs.get(
-            "advance_bbox",
-            (x0, y0, x1, y1) if coords_changed else self.advance_bbox,
+        if coords_changed:
+            box = (
+                kwargs.get("x0", self.x0),
+                kwargs.get("y0", self.y0),
+                kwargs.get("x1", self.x1),
+                kwargs.get("y1", self.y1),
+            )
+            kwargs.setdefault("advance_bbox", box)
+            kwargs.setdefault("ink_bbox", box)
+        position_changed = coords_changed or any(
+            key in kwargs for key in ("tx", "ty", "rotation_angle")
         )
-        ink_bbox = kwargs.get(
-            "ink_bbox",
-            (x0, y0, x1, y1) if coords_changed else self.ink_bbox,
-        )
+        if position_changed:
+            kwargs.setdefault("baseline", None)
         text_changed = "text" in kwargs and kwargs["text"] != self.text
-        glyph_clusters = kwargs.get(
-            "glyph_clusters",
-            () if coords_changed or text_changed else self.glyph_clusters,
-        )
-        r = TextRun(
-            text=kwargs.get("text", self.text),
-            x0=x0,
-            y0=y0,
-            x1=x1,
-            y1=y1,
-            tx=kwargs.get("tx", self.tx),
-            ty=kwargs.get("ty", self.ty),
-            font_size=kwargs.get("font_size", self.font_size),
-            space_width=kwargs.get("space_width", self.space_width),
-            order=kwargs.get("order", self.order),
-            stream_order=kwargs.get("stream_order", self.stream_order),
-            xobject_depth=kwargs.get("xobject_depth", self.xobject_depth),
-            font_name=kwargs.get("font_name", self.font_name),
-            is_vertical=kwargs.get("is_vertical", self.is_vertical),
-            rotation_angle=kwargs.get("rotation_angle", self.rotation_angle),
-            visible=kwargs.get("visible", self.visible),
-            inside_active_clip=kwargs.get("inside_active_clip", self.inside_active_clip),
-            line_break_before=kwargs.get("line_break_before", self.line_break_before),
-            seqno=kwargs.get("seqno", self.seqno),
-            fill_color=kwargs.get("fill_color", self.fill_color),
-            advance_bbox=advance_bbox,
-            ink_bbox=ink_bbox,
-            baseline=kwargs.get("baseline", self.baseline),
-            provenance=kwargs.get("provenance", self.provenance),
-            confidence=kwargs.get("confidence", self.confidence),
-            glyph_clusters=glyph_clusters,
-        )
-        return r
+        if (
+            position_changed
+            or text_changed
+            or any(key in kwargs for key in ("advance_bbox", "ink_bbox", "baseline"))
+        ):
+            kwargs.setdefault("glyph_clusters", ())
+        return replace(self, **kwargs)

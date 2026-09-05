@@ -1,19 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""``TextRun.replace`` field-preservation contract.
+"""Run replacement preserves fields and invalidates evidence after edits.
 
-``replace`` rebuilds a run from a hand-written list of ``kwargs.get(...)``
-lines, one per constructor parameter. A parameter missing from that list is
-silently dropped -- ``font_name`` was, so every run on a rotated page
-(``spec/s_07_document/page.py``) came back with ``font_name=None``.
-The signature check below fails when a new field is added to ``__init__``
-without being added here, and the round-trips then prove ``replace`` carries
-it both when defaulted and when passed explicitly.
+A former handwritten copier lost ``font_name`` on rotated pages. Keep full-field
+round trips alongside the dependent-evidence checks for the dataclass copier.
 """
 
 from __future__ import annotations
 
 import inspect
 from typing import Any
+
+import pytest
 
 from core_pdf.impl._impl.model.glyphs import GlyphCluster
 from core_pdf.impl._impl.model.runs import TextRun
@@ -135,3 +132,51 @@ def test_replace_preserves_font_name_when_geometry_changes() -> None:
 
     assert rotated.font_name == "Helvetica"
     assert rotated.rotation_angle == 180
+
+
+def test_runs_remain_mutable_identity_records() -> None:
+    run = TextRun(**FIELDS)
+    copy = run.replace()
+
+    assert copy is not run
+    assert copy != run
+    assert len({run, copy}) == 2
+    copy.text = "changed"
+    assert run.text == "sample"
+    assert not hasattr(run, "__dict__")
+
+
+def test_replace_rejects_unknown_fields() -> None:
+    with pytest.raises(TypeError, match="font_szie"):
+        TextRun(**FIELDS).replace(font_szie=999)
+
+
+def test_replace_text_discards_source_clusters_but_preserves_geometry() -> None:
+    run = TextRun(**FIELDS)
+
+    updated = run.replace(text="other")
+
+    assert updated.glyph_clusters == ()
+    assert updated.baseline == run.baseline
+    assert updated.ink_bbox == run.ink_bbox
+
+
+@pytest.mark.parametrize("changes", [{"x0": 0.0}, {"tx": 0.0}, {"rotation_angle": 180}])
+def test_repositioning_a_run_discards_untransformed_evidence(changes: dict[str, Any]) -> None:
+    run = TextRun(**FIELDS)
+
+    updated = run.replace(**changes)
+
+    assert updated.baseline is None
+    assert updated.glyph_clusters == ()
+    assert run.baseline == CLUSTER.baseline
+    assert run.glyph_clusters == (CLUSTER,)
+
+
+def test_refining_ink_bounds_keeps_baseline_and_invalidates_stale_clusters() -> None:
+    run = TextRun(**FIELDS)
+
+    updated = run.replace(ink_bbox=(1.6, 2.6, 3.4, 4.4))
+
+    assert updated.baseline == run.baseline
+    assert updated.glyph_clusters == ()

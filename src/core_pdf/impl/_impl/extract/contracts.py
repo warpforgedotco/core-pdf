@@ -38,9 +38,17 @@ def internal_column(
         if default is None:
             raise ValueError("observation column is required")
         return default()
-    return numpy.asarray(
-        values if isinstance(values, (list, tuple, range)) else tuple(values), dtype=dtype
+    return numpy.array(
+        values if isinstance(values, (list, tuple, range, numpy.ndarray)) else tuple(values),
+        dtype=dtype,
     )
+
+
+def internal_validate_selection_mask(mask: BoolArray, size: int) -> None:
+    if mask.dtype != numpy.bool_:
+        raise TypeError("observation selection mask must have boolean dtype")
+    if mask.shape != (size,):
+        raise ValueError("observation selection mask must have shape (n,)")
 
 
 def internal_bbox_tuple(row: object) -> tuple[float, float, float, float]:
@@ -75,25 +83,25 @@ class ObservationBatch:
 
     def __post_init__(self) -> None:
         size = len(self.text)
-        if self.bbox.shape != (size, 4):
-            raise ValueError("observation bboxes must have shape (n, 4)")
-        if self.polygon.shape != (size, 8):
-            raise ValueError("observation polygons must have shape (n, 8)")
         if len(self.references) != size:
             raise ValueError("observation references must match the text column")
-        for column in (
-            self.bbox,
-            self.polygon,
-            self.source,
-            self.confidence,
-            self.sequence,
-            self.visible,
-            self.rotation,
-            self.font_size,
-            self.line_break_before,
-        ):
-            if len(column) != size:
-                raise ValueError("observation columns must have equal length")
+        columns = (
+            ("bbox", self.bbox, (size, 4), numpy.float32),
+            ("polygon", self.polygon, (size, 8), numpy.float32),
+            ("source", self.source, (size,), numpy.uint8),
+            ("confidence", self.confidence, (size,), numpy.float32),
+            ("sequence", self.sequence, (size,), numpy.int64),
+            ("visible", self.visible, (size,), numpy.bool_),
+            ("rotation", self.rotation, (size,), numpy.int64),
+            ("font_size", self.font_size, (size,), numpy.float32),
+            ("line_break_before", self.line_break_before, (size,), numpy.bool_),
+        )
+        for name, column, shape, dtype in columns:
+            if column.shape != shape:
+                raise ValueError(f"observation {name} must have shape {shape}")
+            if column.dtype != dtype:
+                raise TypeError(f"observation {name} must have dtype {numpy.dtype(dtype)}")
+        for _, column, _, _ in columns:
             readonly(column)
 
     def __len__(self) -> int:
@@ -133,12 +141,15 @@ class ObservationBatch:
     ) -> ObservationBatch:
         texts = tuple(text)
         size = len(texts)
-        if size == 0:
-            return cls.empty()
-        boxes = internal_column(bbox, numpy.float32).reshape((size, 4))
+        boxes = internal_column(bbox, numpy.float32)
         polygons = internal_column(
             polygon, numpy.float32, lambda: numpy.full((size, 8), numpy.nan, dtype=numpy.float32)
-        ).reshape((size, 8))
+        )
+        if size == 0:
+            if boxes.shape == (0,):
+                boxes = boxes.reshape((0, 4))
+            if polygons.shape == (0,):
+                polygons = polygons.reshape((0, 8))
         conf_arr = internal_column(
             confidence, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
@@ -175,17 +186,19 @@ class ObservationBatch:
         )
 
     def take(self, indexes: Sequence[int] | IntArray) -> ObservationBatch:
-        if (
-            isinstance(indexes, (list, tuple, range))
-            and len(indexes) == len(self)
-            and all(int(cast(Any, index)) == position for position, index in enumerate(indexes))
-        ):
-            # A no-op selection is already immutable and does not need a
-            # second allocation of every column.
-            return self
-        indexes = numpy.asarray(indexes, dtype=numpy.int64)
+        if isinstance(indexes, (list, tuple, range)) and not len(indexes):
+            return self if not len(self) else ObservationBatch.empty()
+        indexes = numpy.asarray(indexes)
+        if indexes.ndim != 1:
+            raise ValueError("observation indexes must be one-dimensional")
+        if indexes.dtype.kind not in "iu":
+            raise TypeError("observation indexes must be integers")
+        if numpy.any(indexes >= len(self)) or numpy.any(indexes < -len(self)):
+            raise IndexError("observation index out of range")
         if not len(indexes):
-            return ObservationBatch.empty()
+            return self if not len(self) else ObservationBatch.empty()
+        if numpy.array_equal(indexes, numpy.arange(len(self))):
+            return self
         return ObservationBatch(
             tuple(self.text[int(index)] for index in indexes),
             self.bbox[indexes],
@@ -201,6 +214,7 @@ class ObservationBatch:
         )
 
     def select(self, mask: BoolArray) -> ObservationBatch:
+        internal_validate_selection_mask(mask, len(self))
         selected = int(numpy.count_nonzero(mask))
         if selected == len(self):
             return self
@@ -241,6 +255,7 @@ class ObservationBatch:
         NumPy boolean indexing materializes a copy. Building a selected batch and then
         concatenating it would therefore copy every selected numeric column twice.
         """
+        internal_validate_selection_mask(secondary_mask, len(secondary))
         if not len(primary) and bool(numpy.all(secondary_mask)):
             return secondary
         indexes = numpy.flatnonzero(secondary_mask)

@@ -1,3 +1,5 @@
+from typing import cast
+
 import numpy
 import pytest
 
@@ -50,6 +52,41 @@ def test_uint8_view_copies_non_contiguous_array() -> None:
     view[0] = 99
 
     assert source[0] != 99
+
+
+@pytest.mark.parametrize(("count", "offset"), [(4, 0), (2, 2), (-1, -1), (-1, 4), (0, 4)])
+def test_uint8_view_rejects_out_of_bounds_requests_for_every_buffer(
+    count: int, offset: int
+) -> None:
+    buffers = (
+        b"abc",
+        bytearray(b"abc"),
+        memoryview(b"abc"),
+        numpy.asarray([97, 98, 99], dtype=numpy.uint8),
+        numpy.asarray([97, 0, 98, 0, 99, 0], dtype=numpy.uint8)[::2],
+        numpy.asarray([97, 98, 99], dtype=numpy.int16),
+    )
+    for buffer in buffers:
+        with pytest.raises(ValueError):
+            uint8_view(buffer, count=count, offset=offset)
+
+
+@pytest.mark.parametrize(
+    ("count", "offset", "expected"),
+    [(-1, 1, [98, 99]), (-2, 1, [98, 99]), (0, 3, []), (1, 2, [99])],
+)
+def test_uint8_view_applies_the_same_valid_slice_to_bytes_and_arrays(
+    count: int, offset: int, expected: list[int]
+) -> None:
+    for buffer in (b"abc", numpy.asarray([97, 98, 99], dtype=numpy.uint8)):
+        assert uint8_view(buffer, count=count, offset=offset).tolist() == expected
+
+
+@pytest.mark.parametrize("argument", ["count", "offset"])
+def test_uint8_view_requires_integer_slice_arguments(argument: str) -> None:
+    for buffer in (b"abc", numpy.asarray([97, 98, 99], dtype=numpy.uint8)):
+        with pytest.raises(TypeError):
+            uint8_view(buffer, **{argument: cast(int, 0.0)})
 
 
 def test_uint8_image_view_validates_shape() -> None:
