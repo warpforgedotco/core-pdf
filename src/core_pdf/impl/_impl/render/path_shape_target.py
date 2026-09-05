@@ -12,13 +12,12 @@ from core_pdf.impl._impl.render.blend import (
     internal_blend_normal_alpha_array_numpy,
     internal_blend_normal_solid_array_numpy,
     internal_blend_solid_array_numpy,
-    internal_scale_rgba_alpha,
 )
 from core_pdf.impl._impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
     internal_intersect_box,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
@@ -37,8 +36,7 @@ class internal_PathShapeTargetMixin:
     ) -> None:
         if box is None:
             return
-        buffer_stack = self.buffer_stack
-        if blend_mode == "Normal" and rgba[3] == 255 and buffer_stack[-1][1] is None:
+        if blend_mode == "Normal" and rgba[3] == 255:
             blend_mode = None
         clipped_box = self.clip.clipped_pixel_box(box)
         if clipped_box is None:
@@ -62,7 +60,6 @@ class internal_PathShapeTargetMixin:
         if (
             rectangular_clip
             and blend_mode is None
-            and buffer_stack[-1][1] is None
             and not (
                 left <= ix0 + 1e-9
                 and right >= ix1 - 1e-9
@@ -84,12 +81,7 @@ class internal_PathShapeTargetMixin:
                 numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(numpy.uint8),
             )
             return
-        if (
-            rgba[3] == 255
-            and blend_mode is None
-            and buffer_stack[-1][1] is None
-            and rectangular_clip
-        ):
+        if rgba[3] == 255 and blend_mode is None and rectangular_clip:
             span = ix1 - ix0
             if span <= 0:
                 return
@@ -103,7 +95,7 @@ class internal_PathShapeTargetMixin:
             )
             return
         pixel_view = self.pixel_view
-        normal_fast = blend_mode is None and buffer_stack[-1][1] is None
+        normal_fast = blend_mode is None
         normal_target = pixel_view(pixels) if normal_fast else None
         if rectangular_clip and normal_fast and ix1 > ix0 and iy1 > iy0:
             target_pixels = pixel_view(pixels)
@@ -112,37 +104,21 @@ class internal_PathShapeTargetMixin:
                 rgba,
             )
             return
-        # Only the clipped / blended scanline path below needs these. A
-        # transparency-group alpha is invariant for this whole call (it comes
-        # from `buffer_stack`, which `fill_rect` never pushes/pops), so it is
-        # folded into `blended_rgba` once here instead of on every pixel the
-        # way `blend_px` does it -- mirrors the group-alpha scale it would
-        # otherwise redo per pixel, and lets wide spans go through one NumPy
-        # blend instead of a Python loop.
-        # `rectangular_clip and normal_fast` is unreachable below: the
-        # `page_box_to_pixels` result already guarantees ix1 > ix0 and
-        # iy1 > iy0, so that combination always takes the whole-box return
-        # above instead of reaching this scanline loop.
+        # Only non-Normal blending and nonrectangular clips reach this path.
         width = self.width
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         blend_normal_pixel = self.blend_normal_pixel
         clip_row_visible_spans = self.clip.clip_row_visible_spans
-        blended_rgba = rgba
         if normal_target is None:
-            group_alpha = buffer_stack[-1][1]
-            if is_pdf_number(group_alpha):
-                blended_rgba = internal_scale_rgba_alpha(rgba, group_alpha)
-            if blended_rgba[3] <= 0:
+            if rgba[3] <= 0:
                 return
             blend_target = pixel_view(pixels)
             if rectangular_clip:
                 # The whole ix0:ix1/iy0:iy1 box is visible with no gaps (same
                 # invariant the opaque/Normal fast paths above rely on), so
                 # one array-wide blend replaces a numpy call per row.
-                internal_blend_solid_array_numpy(
-                    blend_target[iy0:iy1, ix0:ix1], blended_rgba, blend_mode
-                )
+                internal_blend_solid_array_numpy(blend_target[iy0:iy1, ix0:ix1], rgba, blend_mode)
                 return
         for y in range(iy0, iy1):
             row = y * width * 4
@@ -161,12 +137,10 @@ class internal_PathShapeTargetMixin:
                         for x in range(start, end):
                             blend_normal_pixel(row + x * 4, *rgba)
                 elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
-                    internal_blend_solid_array_numpy(
-                        blend_target[y, start:end], blended_rgba, blend_mode
-                    )
+                    internal_blend_solid_array_numpy(blend_target[y, start:end], rgba, blend_mode)
                 else:
                     for x in range(start, end):
-                        blend_px(row + x * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                        blend_px(row + x * 4, rgba, blend_resolved_mode)
 
     def draw_glyph_bitmap(
         self: internal_RasterState,
@@ -178,7 +152,6 @@ class internal_PathShapeTargetMixin:
         bitmap_height: Any = None,
     ) -> None:
         clip = self.clip
-        buffer_stack = self.buffer_stack
         clip_regions = clip.regions
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
@@ -206,11 +179,7 @@ class internal_PathShapeTargetMixin:
         cell_h = (y1 - y0) / bitmap_h
         if cell_w <= 0 or cell_h <= 0:
             return
-        opaque_glyph = (
-            rgba[3] == 255
-            and (blend_mode is None or blend_mode == "Normal")
-            and buffer_stack[-1][1] is None
-        )
+        opaque_glyph = rgba[3] == 255 and (blend_mode is None or blend_mode == "Normal")
         if opaque_glyph and not clip_regions and bitmap_w <= 64:
             pixel_box = page_box_to_pixels(x0, y0, x1, y1)
             pixel_width = (x1 - x0) * scale
@@ -292,7 +261,7 @@ class internal_PathShapeTargetMixin:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -365,4 +334,4 @@ class internal_PathShapeTargetMixin:
                     if normal_fast:
                         blend_normal_pixel(row + px * 4, *rgba)
                     else:
-                        blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                        blend_px(row + px * 4, rgba, blend_resolved_mode)

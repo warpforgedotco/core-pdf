@@ -22,7 +22,6 @@ from core_pdf.impl.spec.s_08_graphics.shading import PreparedShading
 
 class internal_RasterState(Protocol):
     pixels: bytearray
-    buffer_stack: list[tuple[bytearray, float | None, str | None]]
     clip: internal_ClipState
     width: int
     height: int
@@ -43,7 +42,6 @@ class internal_RasterState(Protocol):
         self,
         idx: int,
         rgba: tuple[int, int, int, int],
-        target_alpha_scale: float | None,
         mode: str | None,
     ) -> None: ...
 
@@ -169,6 +167,14 @@ class internal_RasterState(Protocol):
         fill_rule: str,
     ) -> None: ...
 
+    def fill_path(
+        self,
+        path: CapturedPath,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None = None,
+        fill_rule: str = "nonzero",
+    ) -> None: ...
+
     def fill_rect(
         self,
         box: tuple[float, float, float, float] | None,
@@ -176,9 +182,7 @@ class internal_RasterState(Protocol):
         blend_mode: str | None = None,
     ) -> None: ...
 
-    def internal_resolved_blend(
-        self, blend_mode: str | None
-    ) -> tuple[float | None, str | None]: ...
+    def internal_resolved_blend(self, blend_mode: str | None) -> str | None: ...
 
     def paint_items(
         self,
@@ -200,3 +204,14 @@ class internal_RasterState(Protocol):
     def shading_box(
         self, data: dict[str, Any], shading: PreparedShading
     ) -> tuple[float, float, float, float]: ...
+
+    def stroke_path(
+        self,
+        path: CapturedPath,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        dash_pattern: tuple[list[float], float] | None = None,
+        blend_mode: str | None = None,
+        line_cap: int = 0,
+        line_join: int = 0,
+    ) -> None: ...

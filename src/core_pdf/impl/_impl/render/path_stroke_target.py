@@ -11,10 +11,12 @@ from core_pdf.impl._impl.render.model import LineCap, LineJoin
 from core_pdf.impl._impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
     RASTER_SAMPLE_OFFSETS,
+    internal_circle_path,
+    internal_dash_subpath,
     internal_intersect_box,
     rasterize_unclipped_line_normal,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
@@ -41,73 +43,27 @@ class internal_PathStrokeTargetMixin:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        buffer_stack = self.buffer_stack
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         fill_circle = self.fill_circle
-        fill_line = self.fill_line
         fill_rect = self.fill_rect
         pixel_in_clip = clip.pixel_in_clip
         pixels = self.pixels
         scale = self.scale
         width = self.width
         if dash_pattern and dash_pattern[0]:
-            dash_array, phase = dash_pattern
-            total = sum((max(0.0, float(v)) for v in dash_array), 0.0)
-            if total > 0:
-                seg_len = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
-                if seg_len > 0:
-                    # The prefix-sum walk over `dash_array` is loop-invariant:
-                    # normalize once and precompute the cumulative sums, so the
-                    # per-step lookup scans plain floats instead of redoing the
-                    # max/float conversions on every dash step.
-                    dash_cumulative: list[float] = []
-                    acc = 0.0
-                    for val in dash_array:
-                        acc += max(0.0, float(val))
-                        dash_cumulative.append(acc)
-                    pos = float(phase) % total
-                    on = True
-                    remaining = seg_len
-                    while remaining > 0:
-                        dash_idx = 0
-                        dash_end = dash_cumulative[-1]
-                        for i, acc in enumerate(dash_cumulative):
-                            if pos < acc:
-                                dash_idx = i
-                                dash_end = acc
-                                break
-                        on = (dash_idx % 2) == 0
-                        step = min(
-                            remaining,
-                            dash_end - pos if dash_end > pos else total - pos,
-                        )
-                        if on and step > 0:
-                            t0 = (seg_len - remaining) / seg_len
-                            t1 = (seg_len - remaining + step) / seg_len
-                            sx0 = x0 + (x1 - x0) * t0
-                            sy0 = y0 + (y1 - y0) * t0
-                            sx1 = x0 + (x1 - x0) * t1
-                            sy1 = y0 + (y1 - y0) * t1
-                            fill_line(
-                                sx0,
-                                sy0,
-                                sx1,
-                                sy1,
-                                line_width,
-                                rgba,
-                                None,
-                                blend_mode,
-                                line_cap,
-                            )
-                        remaining -= step
-                        pos = (pos + step) % total
-                        if step <= 0:
-                            break
-                    return
+            self.stroke_path(
+                CapturedPath([CapturedSubpath([(x0, y0), (x1, y1)])]),
+                line_width,
+                rgba,
+                dash_pattern,
+                blend_mode,
+                line_cap,
+            )
+            return
         dx = x1 - x0
         dy = y1 - y0
         if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
@@ -175,7 +131,7 @@ class internal_PathStrokeTargetMixin:
         half2 = half * half
         inv_seg_len2 = 1.0 / seg_len2
         extension_t = cap_extension / seg_len
-        normal_fast = blend_mode is None and buffer_stack[-1][1] is None
+        normal_fast = blend_mode is None
         if (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
             and normal_fast
@@ -267,7 +223,6 @@ class internal_PathStrokeTargetMixin:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
-                            blend_alpha_scale,
                             blend_resolved_mode,
                         )
 
@@ -344,15 +299,27 @@ class internal_PathStrokeTargetMixin:
                 if internal_intersect_box(stroke_box, clip_box) is None:
                     return
         for subpath in path.subpaths:
+            if dash_pattern and dash_pattern[0]:
+                self.stroke_path(
+                    CapturedPath(internal_dash_subpath(subpath, dash_pattern)),
+                    line_width,
+                    rgba,
+                    None,
+                    blend_mode,
+                    line_cap,
+                    line_join,
+                )
+                continue
             points = subpath.points
             if len(points) < 2:
                 continue
-            if (
-                len(points) == 2
-                and not subpath.closed
-                and (not dash_pattern or not dash_pattern[0])
-            ):
+            if len(points) == 2 and not subpath.closed:
                 (x0, y0), (x1, y1) = points
+                if (x0, y0) == (x1, y1):
+                    if line_cap == LineCap.ROUND:
+                        radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
+                        self.fill_path(internal_circle_path(x0, y0, radius), rgba, blend_mode)
+                    continue
                 self.fill_line(
                     x0,
                     y0,
@@ -368,9 +335,6 @@ class internal_PathStrokeTargetMixin:
                     self.fill_cap(x0, y0, line_width, rgba, line_cap, blend_mode)
                     self.fill_cap(x1, y1, line_width, rgba, line_cap, blend_mode)
                 continue
-            dashed = bool(dash_pattern and dash_pattern[0])
-            segment_dash = dash_pattern if dashed else None
-            segment_cap = line_cap if dashed else 0
             for index in range(len(points) - 1):
                 x0, y0 = points[index]
                 x1, y1 = points[index + 1]
@@ -381,9 +345,9 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    segment_dash,
+                    None,
                     blend_mode,
-                    segment_cap,
+                    0,
                 )
             if subpath.closed and points[0] != points[-1]:
                 x0, y0 = points[-1]
@@ -395,12 +359,10 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    segment_dash,
+                    None,
                     blend_mode,
-                    segment_cap,
+                    0,
                 )
-            if dashed:
-                continue
             for x, y in points[1:-1]:
                 self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
             if subpath.closed:

@@ -117,7 +117,7 @@ class internal_PatternTargetMixin:
         clipped_pixel_box = self.clip.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
@@ -184,7 +184,7 @@ class internal_PatternTargetMixin:
                     if normal_fast:
                         blend_normal_pixel(row + px * 4, *rgba)
                     else:
-                        blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                        blend_px(row + px * 4, rgba, blend_resolved_mode)
 
     def paint_tiling_pattern(
         self: internal_RasterState,

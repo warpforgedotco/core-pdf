@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""`blend_px` takes its span-invariant arguments pre-resolved; the pixels must not move.
-
-`internal_resolved_blend` lifts the enclosing group's alpha and the lowercased blend
-mode out of the per-pixel loop that every paint method runs. This pins that pair
-against the semantics `blend_px` had when it re-derived both on each call: the oracle in
-``tests.helpers.raster_reference`` takes the *raw* `buffer_stack` entry and the *raw*
-blend mode, exactly as the method used to.
-"""
+"""Object blending is independent of its enclosing group's composite opacity."""
 
 from __future__ import annotations
 
@@ -14,6 +7,7 @@ import random
 
 import pytest
 
+from core_pdf.impl._impl.render.model import internal_RasterGroup
 from core_pdf.impl._impl.render.target import internal_RasterTarget
 from tests.helpers.raster_reference import random_rgba, reference_blend_px
 
@@ -25,13 +19,13 @@ def internal_bare_target(pixels: bytearray, group_alpha: float | None) -> intern
     """A target carrying only the two slots the blend path reads."""
     target = object.__new__(internal_RasterTarget)
     target.pixels = pixels
-    target.buffer_stack = [(pixels, group_alpha, None)]
+    target.buffer_stack = [internal_RasterGroup(pixels, group_alpha)]
     return target
 
 
 @pytest.mark.parametrize("blend_mode", BLEND_MODES)
 @pytest.mark.parametrize("group_alpha", GROUP_ALPHAS)
-def test_blend_px_matches_unresolved_semantics(
+def test_blend_px_does_not_apply_enclosing_group_opacity(
     blend_mode: str | None, group_alpha: float | None
 ) -> None:
     count = 256
@@ -44,38 +38,33 @@ def test_blend_px_matches_unresolved_semantics(
 
     expected = random_rgba(count, seed)
     for index, rgba in enumerate(sources):
-        reference_blend_px(expected, index * 4, rgba, group_alpha, blend_mode)
+        reference_blend_px(expected, index * 4, rgba, None, blend_mode)
 
     actual = random_rgba(count, seed)
     target = internal_bare_target(actual, group_alpha)
-    alpha_scale, mode = target.internal_resolved_blend(blend_mode)
+    mode = target.internal_resolved_blend(blend_mode)
     for index, rgba in enumerate(sources):
-        target.blend_px(index * 4, rgba, alpha_scale, mode)
+        target.blend_px(index * 4, rgba, mode)
 
     assert bytes(actual) == bytes(expected)
 
 
 @pytest.mark.parametrize("blend_mode", BLEND_MODES)
 @pytest.mark.parametrize("group_alpha", GROUP_ALPHAS)
-def test_resolved_blend_reports_the_hoisted_pair(
+def test_resolved_blend_only_normalizes_the_object_blend_mode(
     blend_mode: str | None, group_alpha: float | None
 ) -> None:
     target = internal_bare_target(bytearray(4), group_alpha)
-    alpha_scale, mode = target.internal_resolved_blend(blend_mode)
+    mode = target.internal_resolved_blend(blend_mode)
 
     assert mode == (blend_mode.lower() if isinstance(blend_mode, str) else None)
-    if group_alpha is None:
-        assert alpha_scale is None
-    else:
-        assert alpha_scale == float(group_alpha)
-        assert isinstance(alpha_scale, float)
 
 
 def test_resolved_blend_tolerates_an_empty_buffer_stack() -> None:
     target = object.__new__(internal_RasterTarget)
     target.pixels = bytearray(4)
     target.buffer_stack = []
-    assert target.internal_resolved_blend("Multiply") == (None, "multiply")
+    assert target.internal_resolved_blend("Multiply") == "multiply"
 
 
 def test_blend_px_opaque_source_matches_the_general_path() -> None:
@@ -85,8 +74,8 @@ def test_blend_px_opaque_source_matches_the_general_path() -> None:
     general = internal_bare_target(bytearray(pixels), None)
     for index in range(64):
         rgba = (index * 3 % 256, index * 5 % 256, index * 7 % 256, 255)
-        shortcut.blend_px(index * 4, rgba, None, None)
+        shortcut.blend_px(index * 4, rgba, None)
         # "darken" is not a mode blend_px premultiplies, so it takes the full
         # compositing path while computing a plain source-over blend.
-        general.blend_px(index * 4, rgba, None, "darken")
+        general.blend_px(index * 4, rgba, "darken")
     assert bytes(shortcut.pixels) == bytes(general.pixels)

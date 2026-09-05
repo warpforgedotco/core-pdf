@@ -60,6 +60,8 @@ class RenderedPage:
     def internal_render_items(
         self,
         crop: tuple[float, float, float, float] | None,
+        *,
+        scale: float = 1.0,
     ) -> list[DisplayItem] | tuple[DisplayItem, ...]:
         if crop is None:
             return self.display_list.items
@@ -67,7 +69,7 @@ class RenderedPage:
         for item in self.display_list.items:
             if type(item) is DisplayListItem and item.kind == "text":
                 continue
-            box = internal_display_item_box(item)
+            box = internal_display_item_box(item, scale=scale)
             always_render = box is None or (
                 type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS
             )
@@ -182,7 +184,9 @@ class RenderedPage:
             page_view=page_pixels,
         )
         rotate = self.rotate % 360
-        raster_target.paint_items(self.internal_render_items(crop))
+        raster_target.paint_items(self.internal_render_items(crop, scale=scale))
+        while len(raster_target.buffer_stack) > 1:
+            raster_target.composite_group(raster_target.pop_group())
         if rotate in {90, 180, 270}:
             rotated = bytearray(background_bytes * (width * height))
             source_pixels = memoryview(raster_target.pixels).cast("I")

@@ -14,7 +14,6 @@ from core_pdf.impl._impl.render.blend import (
     internal_blend_normal_alpha_array_numpy,
     internal_blend_normal_solid_array_numpy,
     internal_blend_solid_array_numpy,
-    internal_scale_rgba_alpha,
 )
 from core_pdf.impl._impl.render.paths import (
     internal_fill_path_crossing_spans,
@@ -24,7 +23,6 @@ from core_pdf.impl._impl.render.paths import (
     internal_signed_area_coverage,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
@@ -46,8 +44,7 @@ class internal_PathFillTargetMixin:
         blend_normal_pixel = self.blend_normal_pixel
         blend_normal_solid_span = self.blend_normal_solid_span
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        buffer_stack = self.buffer_stack
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip.clip_row_visible_spans
@@ -61,24 +58,10 @@ class internal_PathFillTargetMixin:
         width = self.width
         ix0, iy0, ix1, iy1 = pixel_box
         rectangular_clip = clip_paths_are_axis_aligned_rects()
-        simple_opaque = (
-            rgba[3] == 255
-            and blend_mode is None
-            and buffer_stack[-1][1] is None
-            and rectangular_clip
-        )
+        simple_opaque = rgba[3] == 255 and blend_mode is None and rectangular_clip
         normal_fast = can_blend_normal_fast(blend_mode)
         normal_target = pixel_view(pixels) if normal_fast and not simple_opaque else None
-        # Same group-alpha hoist as `fill_rect`: invariant for this whole call,
-        # so folded into `blended_rgba` once instead of per pixel in `blend_px`.
-        blended_rgba = rgba
-        blend_target = None
-        if not normal_fast:
-            group_alpha = buffer_stack[-1][1]
-            if is_pdf_number(group_alpha):
-                blended_rgba = internal_scale_rgba_alpha(rgba, group_alpha)
-            if blended_rgba[3] > 0:
-                blend_target = pixel_view(pixels)
+        blend_target = pixel_view(pixels) if not normal_fast and rgba[3] > 0 else None
 
         def span_pixels(start_x: float, end_x: float) -> tuple[int, int] | None:
             if end_x <= start_x:
@@ -165,7 +148,7 @@ class internal_PathFillTargetMixin:
                     ):
                         internal_blend_solid_array_numpy(
                             blend_target[py, visible_start:visible_end],
-                            blended_rgba,
+                            rgba,
                             blend_mode,
                         )
                         continue
@@ -173,7 +156,7 @@ class internal_PathFillTargetMixin:
                         if normal_fast:
                             blend_normal_pixel(row + px * 4, *rgba)
                         else:
-                            blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                            blend_px(row + px * 4, rgba, blend_resolved_mode)
 
     def fast_fill_path(
         self: internal_RasterState,
@@ -253,7 +236,7 @@ class internal_PathFillTargetMixin:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -439,6 +422,5 @@ class internal_PathFillTargetMixin:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
-                            blend_alpha_scale,
                             blend_resolved_mode,
                         )

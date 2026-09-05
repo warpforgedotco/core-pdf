@@ -22,6 +22,7 @@ from core_pdf.impl._impl.render.model import (
     ImagePaintItem,
     PathPaintItem,
     PathPaintKind,
+    internal_RasterGroup,
 )
 from core_pdf.impl._impl.render.path_fill_target import internal_PathFillTargetMixin
 from core_pdf.impl._impl.render.path_shape_target import internal_PathShapeTargetMixin
@@ -84,9 +85,7 @@ class internal_RasterTarget(
         page_view: UInt8Array,
     ) -> None:
         self.pixels = pixels
-        self.buffer_stack: list[tuple[bytearray, float | None, str | None]] = [
-            (pixels, group_alpha, None)
-        ]
+        self.buffer_stack = [internal_RasterGroup(pixels)]
         self.clip = clip
         self.width = width
         self.height = height
@@ -100,6 +99,9 @@ class internal_RasterTarget(
         self.clip_floor = 0
         self.group_floor = 1
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
+        if group_alpha is not None:
+            self.push_group(bytearray(len(pixels)), group_alpha, None)
+            self.group_floor = len(self.buffer_stack)
 
     def push_scope(self, clip_path: CapturedPath | None = None) -> None:
         """Isolate a source scope from malformed q/Q or group boundaries."""
@@ -123,7 +125,7 @@ class internal_RasterTarget(
             return
         clip_depth, clip_stack, clip_floor, buffer_depth, group_floor = self.scope_stack.pop()
         while len(self.buffer_stack) > buffer_depth:
-            self.composite_group(*self.pop_group())
+            self.composite_group(self.pop_group())
         self.clip.restore(clip_depth)
         self.clip_stack = clip_stack
         self.clip_floor = clip_floor
@@ -184,12 +186,7 @@ class internal_RasterTarget(
                 data.get("blend_mode"),
             )
         elif item.kind == "group-end" and len(self.buffer_stack) > self.group_floor:
-            child, alpha, mode = self.pop_group()
-            self.composite_group(
-                child,
-                alpha if is_pdf_number(alpha) else data.get("fill_opacity"),
-                mode if isinstance(mode, str) else data.get("blend_mode"),
-            )
+            self.composite_group(self.pop_group())
         elif item.kind == "glyph" and data.get("visible") is not False:
             self.draw_glyph_bitmap(
                 data.get("bbox"),
@@ -205,62 +202,39 @@ class internal_RasterTarget(
     def push_group(
         self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
     ) -> None:
-        self.buffer_stack.append((buffer, group_alpha, blend_mode))
+        self.buffer_stack.append(internal_RasterGroup(buffer, group_alpha, blend_mode))
         self.pixels = buffer
 
-    def pop_group(self) -> tuple[bytearray, float | None, str | None]:
+    def pop_group(self) -> internal_RasterGroup:
         child = self.buffer_stack.pop()
-        self.pixels = self.buffer_stack[-1][0]
+        self.pixels = self.buffer_stack[-1].pixels
         return child
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
         """Return an array view for an RGBA byte buffer."""
         return uint8_image_view(buffer, (self.height, self.width, 4))
 
-    def internal_resolved_blend(self, blend_mode: str | None) -> tuple[float | None, str | None]:
-        """Resolve the half of `blend_px`'s arguments that is span-invariant.
-
-        The enclosing group's alpha comes from `buffer_stack`, which none of the
-        paint methods push or pop, and the lowercased blend mode is fixed for a
-        whole call. Callers resolve both once and pass them down rather than
-        making `blend_px` re-derive them on every pixel.
-        """
-        buffer_stack = self.buffer_stack
-        target_alpha = buffer_stack[-1][1] if buffer_stack else None
-        return (
-            float(target_alpha) if is_pdf_number(target_alpha) else None,
-            blend_mode.lower() if isinstance(blend_mode, str) else None,
-        )
+    def internal_resolved_blend(self, blend_mode: str | None) -> str | None:
+        """Normalize object blend state without consulting group composite state."""
+        return blend_mode.lower() if isinstance(blend_mode, str) else None
 
     def blend_px(
         self,
         idx: int,
         rgba: tuple[int, int, int, int],
-        target_alpha_scale: float | None,
         mode: str | None,
     ) -> None:
-        """Blend one pixel, with the span-invariant arguments already resolved.
-
-        `target_alpha_scale` is the enclosing group's alpha (`None` when absent)
-        and `mode` the lowercased blend mode, both from `internal_resolved_blend`.
-        This is the rasterizer's hottest method -- `fill_rect` alone reaches it
-        ~1.8M times over the corpus -- so it takes them pre-resolved instead of
-        re-reading `buffer_stack` and re-lowercasing `mode` on each call.
-        """
+        """Blend object paint into the current buffer at its own opacity."""
         pixels = self.pixels
         sr, sg, sb, sa = rgba
         if sa <= 0:
             return
-        if sa >= 255 and target_alpha_scale is None and mode is None:
+        if sa >= 255 and mode is None:
             pixels[idx] = sr
             pixels[idx + 1] = sg
             pixels[idx + 2] = sb
             pixels[idx + 3] = 255
             return
-        if target_alpha_scale is not None:
-            sa = max(0, min(255, int(round(sa * target_alpha_scale))))
-            if sa <= 0:
-                return
         dr = pixels[idx]
         dg = pixels[idx + 1]
         db = pixels[idx + 2]
@@ -274,13 +248,13 @@ class internal_RasterTarget(
         dst_g = dg / 255.0
         dst_b = db / 255.0
         if mode == "multiply":
-            src_r *= dst_r
-            src_g *= dst_g
-            src_b *= dst_b
+            src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * dst_r)
+            src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * dst_g)
+            src_b = src_b * (1.0 - dst_a) + dst_a * (src_b * dst_b)
         elif mode == "screen":
-            src_r = 1.0 - (1.0 - src_r) * (1.0 - dst_r)
-            src_g = 1.0 - (1.0 - src_g) * (1.0 - dst_g)
-            src_b = 1.0 - (1.0 - src_b) * (1.0 - dst_b)
+            src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dst_r))
+            src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dst_g))
+            src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - dst_b))
         out_a = src_a + dst_a * (1.0 - src_a)
         if out_a <= 0:
             pixels[idx] = 0
@@ -298,7 +272,7 @@ class internal_RasterTarget(
         pixels[idx + 3] = max(0, min(255, out_a_i))
 
     def can_blend_normal_fast(self, blend_mode: str | None) -> bool:
-        return blend_mode is None and self.buffer_stack[-1][1] is None
+        return blend_mode is None
 
     def blend_normal_pixel(self, idx: int, sr: int, sg: int, sb: int, sa: int) -> None:
         if sa <= 0:
@@ -375,35 +349,29 @@ class internal_RasterTarget(
             pixels[idx + 2] = max(0, min(255, out_b))
             pixels[idx + 3] = max(0, min(255, out_a_i))
 
-    def composite_group(
-        self, child: bytearray, group_alpha: float | None, group_blend_mode: str | None
-    ) -> None:
-        buffer_stack = self.buffer_stack
+    def composite_group(self, group: internal_RasterGroup) -> None:
+        child = group.pixels
+        group_alpha = group.composite_alpha
+        group_blend_mode = group.blend_mode
         normalized_blend_mode = (
             group_blend_mode.casefold() if isinstance(group_blend_mode, str) else None
         )
-        parent_alpha = buffer_stack[-1][1] if buffer_stack else None
         if normalized_blend_mode in {None, "normal"} and len(child) >= 4_096:
             source_pixels = self.pixel_view(child)
             target_pixels = self.pixel_view(self.pixels)
             source_scale = float(group_alpha) if is_pdf_number(group_alpha) else 1.0
-            target_scale = float(parent_alpha) if is_pdf_number(parent_alpha) else 1.0
             internal_composite_normal_group_numpy(
                 target_pixels,
                 source_pixels,
                 source_scale,
-                target_scale,
             )
             return
-        # Both group alphas and the blend mode are invariant across the whole
-        # buffer, so they are resolved once here rather than re-derived on every
-        # pixel the way a `blend_px` loop would; the blend then runs as a single
-        # vectorized pass instead of one Python call per pixel.
+        # The parent retains its own composite opacity until it is closed.
         internal_composite_blended_group_numpy(
             self.pixel_view(self.pixels),
             self.pixel_view(child),
             float(group_alpha) if is_pdf_number(group_alpha) else None,
-            float(parent_alpha) if is_pdf_number(parent_alpha) else None,
+            None,
             group_blend_mode,
         )
 
@@ -421,17 +389,17 @@ class internal_RasterTarget(
             if is_pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
             if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
-                self.fill_path(path, rgba, blend_mode, item.fill_rule or "nonzero")
+                self.fill_path(path, rgba, blend_mode, item.fill_rule)
         if paint_kind is not PathPaintKind.FILL:
             stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if is_pdf_number(soft_mask_alpha):
                 stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
             self.stroke_path(
                 path,
-                float(item.line_width or 1.0),
+                item.line_width,
                 stroke_rgba,
                 item.dash_pattern,
                 blend_mode,
-                int(item.line_cap or 0),
-                int(item.line_join or 0),
+                item.line_cap,
+                item.line_join,
             )

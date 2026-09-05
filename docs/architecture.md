@@ -17,6 +17,17 @@ stage internals are imported from their owning modules. Native extraction runs i
 bytes → capture_page → native observations → extract_tables → layout → assemble_page
 ```
 
+Native observations validate column shapes, dtypes, and selection bounds before applying
+allocation-saving fast paths. Table detection owns candidate acceptance. Final projection
+removes duplicate text using complete content and local geometry; it does not reject accepted
+tables based on cell vocabulary or column count. Layout reconstructs text from positioned runs,
+and emission preserves its character spacing and word boundaries.
+
+Output lines own their canonical text. Words are reconciled with that text, and inline spans
+are retained only when they reproduce it, keeping plain text, Markdown, HTML, and JSON
+consistent. JSON payloads are interned by object identity within each page; repeated ordered
+nodes may reference one payload, while distinct objects with equal content remain distinct.
+
 The companion enriches captured PDF evidence, selects recognition work, and combines native
 and recovered text before using core's generic layout and output stages:
 
@@ -132,6 +143,15 @@ either package; tessdata discovery is confined to the companion test configurati
 measures both source roots together and retains the existing ratchet.
 
 ## Rendering constraints
+
+Content frames own their graphics saves and clipping markers. A nested stream cannot pop a
+parent frame's state, and leaving a stream unwinds its local clipping even after malformed
+content. Resource lookup resolves dictionaries on demand while retaining indirect references,
+so equivalent direct and indirect resource dictionaries preserve Form identity.
+
+Raster paint state separates object opacity from isolated-group compositing opacity. A group's
+opacity is applied once when it is composited into its parent. Stroke dash phase advances across
+the segments of one subpath, and a zero-width stroke retains its device-pixel hairline semantics.
 
 ### Device colour
 

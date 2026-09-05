@@ -93,13 +93,13 @@ def internal_blend_channels_f64(
     one_minus_src_a = 1.0 - src_a
     dst_a = da / 255.0
     if mode == "multiply":
-        src_r = src_r * (dr / 255.0)
-        src_g = src_g * (dg / 255.0)
-        src_b = src_b * (db / 255.0)
+        src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * (dr / 255.0))
+        src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * (dg / 255.0))
+        src_b = src_b * (1.0 - dst_a) + dst_a * (src_b * (db / 255.0))
     elif mode == "screen":
-        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
-        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
-        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
+        src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dr / 255.0))
+        src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dg / 255.0))
+        src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - db / 255.0))
     out_a = src_a + dst_a * one_minus_src_a
     safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
     out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)

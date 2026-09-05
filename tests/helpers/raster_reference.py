@@ -35,13 +35,13 @@ def reference_blend_px(
     dst_r, dst_g, dst_b = dr / 255.0, dg / 255.0, db / 255.0
     mode = blend_mode.lower() if isinstance(blend_mode, str) else None
     if mode == "multiply":
-        src_r *= dst_r
-        src_g *= dst_g
-        src_b *= dst_b
+        src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * dst_r)
+        src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * dst_g)
+        src_b = src_b * (1.0 - dst_a) + dst_a * (src_b * dst_b)
     elif mode == "screen":
-        src_r = 1.0 - (1.0 - src_r) * (1.0 - dst_r)
-        src_g = 1.0 - (1.0 - src_g) * (1.0 - dst_g)
-        src_b = 1.0 - (1.0 - src_b) * (1.0 - dst_b)
+        src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dst_r))
+        src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dst_g))
+        src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - dst_b))
     out_a = src_a + dst_a * (1.0 - src_a)
     if out_a <= 0:
         pixels[idx : idx + 4] = b"\x00\x00\x00\x00"

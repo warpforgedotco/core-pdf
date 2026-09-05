@@ -42,7 +42,6 @@ class internal_ImageAxisTargetMixin:
         clip = self.clip
         blend_px = self.blend_px
         blit_affine_image = self.blit_affine_image
-        buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -57,7 +56,7 @@ class internal_ImageAxisTargetMixin:
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         try:
             prepared = source.prepare()
         except Exception:
@@ -142,8 +141,16 @@ class internal_ImageAxisTargetMixin:
                     converted = reduced
                     width_px = reduced_width
                     height_px = reduced_height
-        soft_mask_alpha = item.soft_mask_alpha
-        constant_alpha_value = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
+        # A captured mean of an image's soft mask describes that image; the
+        # actual mask plane already supplies coverage and must be applied once.
+        soft_mask_alpha = item.soft_mask_alpha if soft_mask is None else None
+        opacity = item.fill_opacity
+        constant_alpha_value = (
+            (float(opacity) if is_pdf_number(opacity) else 1.0)
+            * (float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else 1.0)
+            if is_pdf_number(opacity) or is_pdf_number(soft_mask_alpha)
+            else None
+        )
         quad = item.quad
         comps = source_channels
         if quad is not None and source_alpha is None:
@@ -183,20 +190,18 @@ class internal_ImageAxisTargetMixin:
             if soft_mask is not None
             else numpy.empty(0, dtype=numpy.float64)
         )
-        if is_pdf_number(soft_mask_alpha):
+        if constant_alpha_value is not None:
             has_constant_alpha = True
-            constant_alpha = float(soft_mask_alpha)
+            constant_alpha = constant_alpha_value
         else:
             has_constant_alpha = False
             constant_alpha = 1.0
-        target_alpha = buffer_stack[-1][1] if buffer_stack else None
         can_write_opaque_rows = (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
             and blend_mode is None
             and soft_mask is None
             and source_alpha is None
             and (not has_constant_alpha or constant_alpha >= 1.0)
-            and not is_pdf_number(target_alpha)
         )
         normal_fast = can_blend_normal_fast(blend_mode)
         if can_write_opaque_rows:
@@ -286,7 +291,7 @@ class internal_ImageAxisTargetMixin:
                             )
                     if has_constant_alpha:
                         rgba = internal_scale_rgba_alpha(rgba, constant_alpha)
-                    blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                    blend_px(row + px * 4, rgba, blend_resolved_mode)
 
     def blit_image_mask(
         self: internal_RasterState,
@@ -307,8 +312,7 @@ class internal_ImageAxisTargetMixin:
         clipped_pixel_box = self.clip.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        buffer_stack = self.buffer_stack
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = self.clip.regions
         clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
@@ -320,6 +324,10 @@ class internal_ImageAxisTargetMixin:
             item.fill,
             item.fill_opacity,
         )
+        if is_pdf_number(item.soft_mask_alpha) and prepared.soft_mask is None:
+            stencil_alpha = max(0, min(255, round(stencil_alpha * item.soft_mask_alpha)))
+        if stencil_alpha <= 0:
+            return
         raster = prepared.raster
         width_px = raster.width
         height_px = raster.height
@@ -337,11 +345,10 @@ class internal_ImageAxisTargetMixin:
         y_span = max(1, iy1 - iy0)
         src_x_map = nearest_indices(x_span, width_px)
         src_y_map = nearest_indices(y_span, height_px)
-        target_alpha = buffer_stack[-1][1] if buffer_stack else None
         if (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
             and blend_mode is None
-            and not is_pdf_number(target_alpha)
+            and stencil_alpha == 255
         ):
             source_mask = uint8_image_view(mask, (height_px, width_px), allow_trailing=True)
             source_x = src_x_map
@@ -366,7 +373,7 @@ class internal_ImageAxisTargetMixin:
                 for px in range(max(ix0, span_start), min(ix1, span_end)):
                     src_x = src_x_map[px - ix0]
                     src_idx = src_y * width_px + src_x
-                    alpha = mask[src_idx]
+                    alpha = round(int(mask[src_idx]) * stencil_alpha / 255.0)
                     if normal_fast:
                         blend_normal_pixel(
                             row + px * 4, stencil_red, stencil_green, stencil_blue, alpha
@@ -375,7 +382,6 @@ class internal_ImageAxisTargetMixin:
                         blend_px(
                             row + px * 4,
                             (stencil_red, stencil_green, stencil_blue, alpha),
-                            blend_alpha_scale,
                             blend_resolved_mode,
                         )
         return

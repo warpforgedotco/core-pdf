@@ -102,9 +102,8 @@ class internal_ImageAffineTargetMixin:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
-        buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -140,7 +139,7 @@ class internal_ImageAffineTargetMixin:
         alpha = 255
         if constant_alpha is not None:
             alpha = max(0, min(255, int(round(alpha * constant_alpha))))
-        can_write_opaque = alpha == 255 and blend_mode is None and buffer_stack[-1][1] is None
+        can_write_opaque = alpha == 255 and blend_mode is None
         normal_fast = can_blend_normal_fast(blend_mode)
         rect_tolerance = max(abs(ux), abs(vy), 1.0) * 1e-6
         if (
@@ -366,5 +365,5 @@ class internal_ImageAffineTargetMixin:
                 if normal_fast:
                     blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3])
                 else:
-                    blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                    blend_px(row + px * 4, rgba, blend_resolved_mode)
         return True

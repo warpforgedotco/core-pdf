@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy
 
 from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.runtime.array_views import uint8_view
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
 # NumPy's coordinate mask remains cheaper than Python pixel loops for modest
@@ -18,6 +20,90 @@ RASTER_SAMPLE_OFFSETS = (0.125, 0.375, 0.625, 0.875)
 # Above this many (row, edge) pairs the activity mask costs more memory than the
 # per-row loop costs time, so the loop stays the fallback.
 INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
+internal_CIRCLE_VERTICES = tuple(
+    (math.cos(index * math.tau / 32), math.sin(index * math.tau / 32)) for index in range(32)
+)
+
+
+def internal_circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
+    """Build a round dot for the ordinary path painter's analytic coverage."""
+    return CapturedPath(
+        [
+            CapturedSubpath(
+                [(cx + radius * x, cy + radius * y) for x, y in internal_CIRCLE_VERTICES],
+                closed=True,
+            )
+        ]
+    )
+
+
+def internal_dash_subpath(
+    subpath: CapturedSubpath, dash_pattern: tuple[list[float], float]
+) -> list[CapturedSubpath]:
+    """Split one subpath into continuous painted dashes, retaining its vertices."""
+    lengths = [max(0.0, float(value)) for value in dash_pattern[0]]
+    if len(lengths) % 2:
+        lengths *= 2
+    total = sum(lengths)
+    if not lengths or total <= 0.0:
+        return [subpath]
+    points = subpath.points
+    if len(points) < 2:
+        return []
+    vertices = [*points, points[0]] if subpath.closed and points[-1] != points[0] else points
+    phase = float(dash_pattern[1]) % total
+    index = 0
+    while phase > 0.0 and phase >= lengths[index]:
+        phase -= lengths[index]
+        index = (index + 1) % len(lengths)
+    remaining = lengths[index] - phase
+    pieces: list[CapturedSubpath] = []
+    current: list[tuple[float, float]] = []
+    for start, end in zip(vertices, vertices[1:]):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        distance = (dx * dx + dy * dy) ** 0.5
+        if distance <= 0.0:
+            continue
+        position = 0.0
+        while position < distance or remaining <= 0.0:
+            point = (
+                start[0] + dx * (position / distance),
+                start[1] + dy * (position / distance),
+            )
+            if remaining <= 0.0:
+                if index % 2 == 0 and lengths[index] == 0.0:
+                    pieces.append(CapturedSubpath([point, point]))
+                index = (index + 1) % len(lengths)
+                remaining = lengths[index]
+                continue
+            if position >= distance:
+                break
+            step = min(remaining, distance - position)
+            endpoint = (
+                start[0] + dx * ((position + step) / distance),
+                start[1] + dy * ((position + step) / distance),
+            )
+            if index % 2 == 0:
+                if not current:
+                    current.append(point)
+                if endpoint != current[-1]:
+                    current.append(endpoint)
+            elif current:
+                pieces.append(CapturedSubpath(current))
+                current = []
+            position += step
+            remaining -= step
+    if current:
+        pieces.append(CapturedSubpath(current))
+    if subpath.closed and pieces:
+        first, last = pieces[0], pieces[-1]
+        if first.points[0] == vertices[0] and last.points[-1] == vertices[-1]:
+            if first is last:
+                first.closed = True
+            else:
+                pieces[0] = CapturedSubpath([*last.points, *first.points[1:]])
+                pieces.pop()
+    return pieces
 
 
 def rasterize_unclipped_line_normal(

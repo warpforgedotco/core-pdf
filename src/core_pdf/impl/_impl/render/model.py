@@ -66,16 +66,16 @@ class PathPaintItem:
     bbox: Any
     path: Any
     fill: Any
-    fill_opacity: Any
+    fill_opacity: float | None
     stroke_color: Any
-    stroke_opacity: Any
-    line_width: Any
-    line_cap: Any
-    line_join: Any
-    dash_pattern: Any
-    fill_rule: Any
-    blend_mode: Any
-    soft_mask_alpha: Any
+    stroke_opacity: float | None
+    line_width: float
+    line_cap: int
+    line_join: int
+    dash_pattern: tuple[list[float], float] | None
+    fill_rule: str
+    blend_mode: str | None
+    soft_mask_alpha: float | None
     coalesced_path: bool = False
     fill_pattern: PatternPaint | None = None
     stroke_pattern: PatternPaint | None = None
@@ -114,9 +114,9 @@ class ImagePaintItem:
     source: ImageSource | None
     quad: tuple[tuple[float, float], ...] | None
     fill: Any
-    fill_opacity: Any
-    blend_mode: Any
-    soft_mask_alpha: Any
+    fill_opacity: float | None
+    blend_mode: str | None
+    soft_mask_alpha: float | None
     image_clip: Any
     source_metadata: dict[str, Any]
     ctm: Any = None
@@ -148,6 +148,15 @@ class ImagePaintItem:
 
 
 DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
+
+
+@dataclass(frozen=True, slots=True)
+class internal_RasterGroup:
+    """A group's pixels and the state used only when compositing that group."""
+
+    pixels: bytearray
+    composite_alpha: float | None = None
+    blend_mode: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

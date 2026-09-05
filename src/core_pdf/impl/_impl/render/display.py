@@ -162,11 +162,13 @@ class DisplayList:
                     fill_opacity=data.get("fill_opacity"),
                     stroke_color=data.get("stroke_color"),
                     stroke_opacity=data.get("stroke_opacity"),
-                    line_width=data.get("line_width"),
-                    line_cap=data.get("line_cap"),
-                    line_join=data.get("line_join"),
+                    line_width=(
+                        float(width) if is_pdf_number(width := data.get("line_width")) else 1.0
+                    ),
+                    line_cap=int(data.get("line_cap") or 0),
+                    line_join=int(data.get("line_join") or 0),
                     dash_pattern=data.get("dash_pattern"),
-                    fill_rule=data.get("fill_rule"),
+                    fill_rule=data.get("fill_rule") or "nonzero",
                     blend_mode=data.get("blend_mode"),
                     soft_mask_alpha=data.get("soft_mask_alpha"),
                     fill_pattern=data.get("fill_pattern"),
@@ -267,7 +269,9 @@ class DisplayList:
         )
 
 
-def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, float] | None:
+def internal_display_item_box(
+    item: DisplayItem, *, scale: float = 1.0
+) -> tuple[float, float, float, float] | None:
     """Compute conservative bounds for crop-aware rasterization."""
     if type(item) is ImagePaintItem:
         return rect_tuple(item.bbox)
@@ -279,10 +283,10 @@ def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, f
         if box is None:
             return None
         if item.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
-            line_width = item.line_width
-            if is_pdf_number(line_width):
-                pad = max(0.0, float(line_width) * 0.5)
-                box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
+            # Hairlines occupy a device pixel even when their user-space bounds
+            # have zero thickness. Match the stroke painter's minimum width.
+            pad = max(0.5 / scale, item.line_width * 0.5)
+            box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
     generic_item = cast(DisplayListItem, item)
     data = generic_item.data
