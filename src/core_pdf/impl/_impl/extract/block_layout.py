@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from heapq import heappop, heappush
@@ -130,23 +130,6 @@ def internal_group_text_and_words(
     return combined, internal_reconcile_text_words(combined, tuple(candidate_words))
 
 
-def internal_repeated_native_label_tokens(
-    observations: ObservationBatch,
-    indexes: numpy.ndarray,
-) -> frozenset[str]:
-    counts: Counter[str] = Counter()
-    for index in indexes:
-        text = collapse_ws(observations.text[index])
-        if len(text) == 1 and text.isascii() and text.isalpha():
-            counts[text.casefold()] += 1
-    return frozenset(token for token, count in counts.items() if count >= 4)
-
-
-def internal_is_repeated_native_label(text: str, repeated_tokens: frozenset[str]) -> bool:
-    parts = text.casefold().split()
-    return bool(parts) and all(len(part) == 1 and part in repeated_tokens for part in parts)
-
-
 def internal_color_is_emphasis(color: object) -> bool:
     if not isinstance(color, (tuple, list)) or len(color) < 3:
         return False
@@ -183,10 +166,6 @@ def internal_build_lines(
     source_minimum = numpy.minimum.reduceat(selected_sources, starts)
     source_maximum = numpy.maximum.reduceat(selected_sources, starts)
     group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
-    repeated_native_labels = internal_repeated_native_label_tokens(
-        observations,
-        selected,
-    )
     output: list[ParsedLine] = []
     output_boxes: list[numpy.ndarray] = []
     for group_index, (start, stop) in enumerate(
@@ -203,12 +182,6 @@ def internal_build_lines(
         )
         text, words = internal_group_text_and_words(observations, text_indexes)
         if not text:
-            continue
-        if (
-            repeated_native_labels
-            and all_native
-            and internal_is_repeated_native_label(text, repeated_native_labels)
-        ):
             continue
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]

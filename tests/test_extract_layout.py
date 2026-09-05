@@ -225,7 +225,9 @@ def test_native_layout_preserves_symbol_heavy_decoded_lines() -> None:
     ]
 
 
-def test_native_layout_drops_repeated_single_letter_artifacts() -> None:
+def test_native_layout_preserves_repeated_single_letter_labels() -> None:
+    # qpdf 12.3.2 validates a PDF printing these lines at 20-point intervals;
+    # Poppler 26.07.0 pdftotext -layout retains all four I/B pairs in order.
     batch = ObservationBatch.from_columns(
         ("heading", "I", "B", "I", "B", "I", "B", "I", "B", "body"),
         tuple(
@@ -239,7 +241,18 @@ def test_native_layout_drops_repeated_single_letter_artifacts() -> None:
 
     blocks = layout_blocks(batch)
 
-    assert [line.text for block in blocks for line in block.lines] == ["heading", "body"]
+    assert [line.text for block in blocks for line in block.lines] == [
+        "heading",
+        "I",
+        "B",
+        "I",
+        "B",
+        "I",
+        "B",
+        "I",
+        "B",
+        "body",
+    ]
 
 
 def test_layout_assigns_conservative_semantic_block_roles() -> None:
