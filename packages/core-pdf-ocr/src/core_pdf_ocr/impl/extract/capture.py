@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from typing import Any, cast
@@ -21,6 +21,7 @@ from core_pdf.impl._impl.extract.capture import (
     internal_capture_runs,
     internal_observations_from_runs,
     internal_promoted_hidden_runs,
+    internal_run_uses_actual_text,
 )
 from core_pdf.impl._impl.extract.capture import (
     internal_glyph_evidence_fields as native_glyph_evidence_fields,
@@ -37,10 +38,15 @@ from core_pdf.impl._impl.extract.contracts import (
 )
 from core_pdf.impl._impl.extract.quality import internal_analyze_text
 from core_pdf.impl._impl.model.geometry import bbox_union, rect_tuple
-from core_pdf.impl._impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl._impl.model.glyphs import (
+    GlyphObservation,
+    GlyphUnicodeSemantics,
+    glyph_unicode_semantics,
+)
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedLine
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.spec.s_07_content.text_runs import normalize_extracted_text
 from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
@@ -103,31 +109,75 @@ def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationB
 def internal_apply_learned_unicode_to_run(
     run: TextRun,
     learned_unicode: LearnedUnicodeMap | None = None,
+    *,
+    glyph_replacements: dict[int, str] | None = None,
 ) -> TextRun:
-    if not run.glyph_clusters or not learned_unicode:
+    if not run.glyph_clusters or not learned_unicode or internal_run_uses_actual_text(run):
         return run
     source = run.text
     cursor = 0
     output: list[str] = []
     changed = False
-    previous_decoder: object | None = None
-    learned: Mapping[bytes, str] | None = None
+    applied: dict[int, str] = {}
+    previous_seqno: int | None = None
+    previous_x: float | None = None
     for cluster in run.glyph_clusters:
-        for decoder, code_bytes, glyph_text in cluster.iter_decode_fields():
-            if decoder is not previous_decoder:
-                learned = learned_unicode.get(decoder)
-                previous_decoder = decoder
-            replacement = learned.get(code_bytes) if learned is not None else None
-            original = glyph_text
-            if not isinstance(replacement, str) or len(replacement) != 1 or not original:
-                continue
-            position = source.find(original, cursor)
-            if position < 0:
-                continue
-            output.append(source[cursor:position])
-            output.append(replacement)
-            cursor = position + len(original)
-            changed = changed or replacement != original
+        if cluster.glyphs:
+            seqno = cluster.glyphs[0].seqno
+            x = cluster.advance_bbox[0]
+            # Run accumulation can prepend a later text-show operation while
+            # retaining cluster emission order. Identical text conceals that
+            # mismatch, so decline the overlay when geometry proves a reversal.
+            if previous_seqno != seqno and previous_x is not None:
+                if run.rotation_angle == 0 and x < previous_x:
+                    return run
+                if run.rotation_angle not in {0, 90} and x > previous_x:
+                    return run
+            previous_seqno = seqno
+            previous_x = x
+        original = normalize_extracted_text(cluster.text)
+        if not original:
+            continue
+        position = source.find(original, cursor)
+        # Consume every cluster, including unmapped glyphs. Only spacing inserted
+        # by run accumulation may lie between them; other gaps mean that this
+        # run no longer has a reliable alignment with its captured glyphs.
+        if position < 0 or source[cursor:position].strip():
+            return run
+        output.append(source[cursor:position])
+        cursor = position + len(original)
+        replacement: str | None = None
+        if cluster.glyphs:
+            first = cluster.glyphs[0]
+            learned = learned_unicode.get(first.font_decoder)
+            candidate = learned.get(first.code_bytes) if learned is not None else None
+            if (
+                first.code_bytes
+                and original.strip()
+                and isinstance(candidate, str)
+                and len(candidate) == 1
+                and candidate.isprintable()
+                and not candidate.isspace()
+                and all(
+                    glyph.font_decoder is first.font_decoder
+                    and glyph.code_bytes == first.code_bytes
+                    for glyph in cluster.glyphs
+                )
+            ):
+                replacement = candidate
+                # A ligature may have several observations for one source code.
+                # Its learned text replaces that source glyph exactly once.
+                applied.update((id(glyph), "") for glyph in cluster.glyphs)
+                for glyph in cluster.glyphs:
+                    if glyph.text and not glyph.text.isspace():
+                        applied[id(glyph)] = candidate
+                        break
+        output.append(original if replacement is None else replacement)
+        changed = changed or (replacement is not None and replacement != original)
+    if source[cursor:].strip():
+        return run
+    if glyph_replacements is not None:
+        glyph_replacements.update(applied)
     if not changed:
         return run
     output.append(source[cursor:])
@@ -392,16 +442,29 @@ def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
 
 
 def internal_glyph_evidence_fields(
-    glyph_fields: Iterable[tuple[str, bool, object, bytes, str, float | None]],
+    glyphs: tuple[GlyphObservation, ...],
     runs: tuple[TextRun, ...],
-    learned_unicode: LearnedUnicodeMap | None = None,
+    replacements: Mapping[int, str],
 ) -> GlyphEvidence:
-    """Adjust native evidence using an operation-local learned Unicode overlay."""
-    if not learned_unicode:
-        return native_glyph_evidence_fields(glyph_fields, runs)
-    fields = tuple(glyph_fields)
-    evidence = native_glyph_evidence_fields(fields, runs)
+    """Adjust native evidence only for learned substitutions aligned with emitted runs."""
+    evidence = native_glyph_evidence_fields(
+        (
+            (
+                glyph.text,
+                glyph.visible,
+                glyph.font_decoder,
+                glyph.code_bytes,
+                glyph.unicode_source,
+                glyph.confidence,
+            )
+            for glyph in glyphs
+        ),
+        runs,
+    )
+    if not replacements:
+        return evidence
     changes = {
+        "glyph_count": evidence.glyph_count,
         "semantic_characters": evidence.semantic_characters,
         "authoritative_glyphs": evidence.authoritative_glyphs,
         "heuristic_glyphs": evidence.heuristic_glyphs,
@@ -415,20 +478,21 @@ def internal_glyph_evidence_fields(
         GlyphUnicodeSemantics.UNSUPPORTED: "unsupported_glyphs",
         GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER: "unknown_glyphs",
     }
-    for text, ignored_visible, decoder, code_bytes, source, confidence in fields:
-        if not text or text.isspace():
+    for glyph in glyphs:
+        replacement = replacements.get(id(glyph))
+        text = glyph.text
+        if replacement is None or not text or text.isspace():
             continue
-        mapping = learned_unicode.get(decoder)
-        replacement = mapping.get(code_bytes) if mapping is not None else None
-        if not isinstance(replacement, str) or len(replacement) != 1:
-            continue
-        semantics = glyph_unicode_semantics(text, source)
+        semantics = glyph_unicode_semantics(text, glyph.unicode_source)
         changes[counts[semantics]] -= 1
-        changes["heuristic_glyphs"] += 1
         if semantics in {GlyphUnicodeSemantics.AUTHORITATIVE, GlyphUnicodeSemantics.HEURISTIC}:
             changes["semantic_characters"] -= sum(not character.isspace() for character in text)
-        changes["semantic_characters"] += 1
-        if confidence is None or confidence < 0.50:
+        if replacement:
+            changes["heuristic_glyphs"] += 1
+            changes["semantic_characters"] += 1
+        else:
+            changes["glyph_count"] -= 1
+        if glyph.confidence is None or glyph.confidence < 0.50:
             changes["low_confidence_glyphs"] -= 1
     return replace(evidence, **changes)
 
@@ -502,24 +566,17 @@ def internal_capture_from_program(
     runs: tuple[TextRun, ...] | None = None
     evidence: GlyphEvidence | None = None
     if learned_unicode:
+        replacements: dict[int, str] = {}
         runs = tuple(
-            internal_apply_learned_unicode_to_run(run, learned_unicode)
+            internal_apply_learned_unicode_to_run(
+                run, learned_unicode, glyph_replacements=replacements
+            )
             for run in internal_capture_runs(page, program, structure)
         )
         evidence = internal_glyph_evidence_fields(
-            (
-                (
-                    glyph.text,
-                    glyph.visible,
-                    glyph.font_decoder,
-                    glyph.code_bytes,
-                    glyph.unicode_source,
-                    glyph.confidence,
-                )
-                for glyph in program.glyphs
-            ),
+            program.glyphs,
             runs,
-            learned_unicode,
+            replacements,
         )
     return internal_enrich_capture(
         native_capture_from_program(
