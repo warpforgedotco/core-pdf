@@ -51,7 +51,6 @@ class PageProgram:
             if not all(isinstance(product, product_type) for product in products):
                 raise PdfContractError(f"page program contains an invalid {name} product")
 
-        drawings = tuple(drawing for drawing in drawings if drawing.kind != "inline-image")
         commands: list[PageCommand] = [*runs]
         commands.extend(glyph for glyph in glyphs if glyph.has_paint)
         commands.extend(drawings)

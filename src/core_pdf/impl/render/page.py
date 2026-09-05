@@ -453,26 +453,10 @@ def internal_append_glyph_paint(
     return True
 
 
-def compose_page(
-    page: internal_RenderablePage,
-    options: RenderOptions | None = None,
-    *,
-    page_program: PageProgram | None = None,
-    fields: Iterable[Any] | None = None,
-    annotations: Iterable[Any] | None = None,
-) -> RenderedPage:
-    options = options or RenderOptions()
-    internal_page = cast(Any, page)
-    media_box = getattr(page, "media_box", None) or (0.0, 0.0, page.width, page.height)
-    x0, y0, x1, y1 = media_box
-    width = max(0.0, x1 - x0)
-    height = max(0.0, y1 - y0)
-    display_list = DisplayList(width=width, height=height)
-
-    if page_program is None and hasattr(internal_page, "get_page_program"):
-        page_program = internal_page.get_page_program()
-    if page_program is None:
-        raise ValueError("compose_page requires the canonical page program")
+def internal_append_page_program(
+    display_list: DisplayList, page_program: PageProgram, *, include_text: bool
+) -> None:
+    """Translate page and appearance captures through the same ordered paint path."""
     commands = page_program.commands
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
@@ -502,7 +486,7 @@ def compose_page(
         text_clipping_subpaths.clear()
 
     for command in commands:
-        if not options.include_text and isinstance(command, TextRun):
+        if not include_text and isinstance(command, TextRun):
             continue
         if isinstance(command, TextRun):
             append_text_run(command)
@@ -519,13 +503,10 @@ def compose_page(
                 display_list,
                 glyph,
                 text_clipping_subpaths,
-                include_paint=options.include_text,
+                include_paint=include_text,
             ):
                 continue
-            if (
-                not options.include_text
-                or glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES
-            ):
+            if not include_text or glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES:
                 continue
             bitmap = glyph.resolved_bitmap()
             if not bitmap:
@@ -563,17 +544,35 @@ def compose_page(
                 image_clip=inline_image.image_clip,
                 ctm=inline_image.ctm,
                 xobject_depth=inline_image.xobject_depth,
+                blend_mode=inline_image.blend_mode,
+                soft_mask_alpha=inline_image.soft_mask_alpha,
                 bbox=None,
                 raw_data=inline_image.data,
             )
     flush_text_clip(len(commands))
 
-    def append_capture(state: TextState) -> None:
-        if options.include_text:
-            for run in state.runs:
-                append_text_run(run)
-        for drawing in state.drawings:
-            display_list.append_captured_drawing(drawing)
+
+def compose_page(
+    page: internal_RenderablePage,
+    options: RenderOptions | None = None,
+    *,
+    page_program: PageProgram | None = None,
+    fields: Iterable[Any] | None = None,
+    annotations: Iterable[Any] | None = None,
+) -> RenderedPage:
+    options = options or RenderOptions()
+    internal_page = cast(Any, page)
+    media_box = getattr(page, "media_box", None) or (0.0, 0.0, page.width, page.height)
+    x0, y0, x1, y1 = media_box
+    width = max(0.0, x1 - x0)
+    height = max(0.0, y1 - y0)
+    display_list = DisplayList(width=width, height=height)
+
+    if page_program is None and hasattr(internal_page, "get_page_program"):
+        page_program = internal_page.get_page_program()
+    if page_program is None:
+        raise ValueError("compose_page requires the canonical page program")
+    internal_append_page_program(display_list, page_program, include_text=options.include_text)
 
     def append_form_appearance(
         appearance: Any,
@@ -628,7 +627,17 @@ def compose_page(
             or internal_page.resources
         )
         state.consume_stream(normal, resources, nested_ctm, 0)
-        append_capture(state)
+        internal_append_page_program(
+            display_list,
+            PageProgram(
+                runs=tuple(state.runs),
+                # The page program already owns appearance glyph paint. This
+                # supplemental layer retains the existing run/drawing policy.
+                drawings=tuple(state.drawings),
+                inline_images=tuple(state.inline_images),
+            ),
+            include_text=options.include_text,
+        )
         return True
 
     if options.include_layers:

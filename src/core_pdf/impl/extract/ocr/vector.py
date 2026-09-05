@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from dataclasses import replace
 from typing import Any
 
 import numpy
@@ -221,7 +222,8 @@ def internal_stroked_vector_text_raster(
             # display-list stroke coalescer so thousands of tiny glyph paths do
             # not become thousands of renderer dispatches.
             display_list.append_captured_drawing(
-                drawing.replace(
+                replace(
+                    drawing,
                     bbox=None,
                     path=path.translated(tx, ty),
                     fill_pattern=None,

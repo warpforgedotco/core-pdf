@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.spec.s_07_content.text_helpers import normalize_extracted_text
+from core_pdf.impl.spec.s_07_content.text_runs import normalize_extracted_text
 from tests.helpers.pdf_bytes import first_page_runs, one_page_pdf
 
 

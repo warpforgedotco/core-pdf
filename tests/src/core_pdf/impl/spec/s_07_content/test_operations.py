@@ -9,8 +9,8 @@ from core_pdf.impl.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import OPERATOR_SPECS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 
 
 def test_content_operations_do_not_treat_vertical_tab_as_whitespace() -> None:
@@ -70,7 +70,7 @@ def internal_dispatch_with_handlers(
 
         return handler
 
-    handlers = {name: make(name) for name in OPERATOR_SPECS}
+    handlers = {name: make(name) for name in CONTENT_OPERATOR_HANDLERS}
     dispatch_operations(PdfLexer(data), handlers.get, 0)
     return seen
 

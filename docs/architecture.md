@@ -107,9 +107,22 @@ Chapter numbers do not determine dependency order. `s_07_syntax_primitives` cont
 shared by filters and the upper COS layer; `s_07_syntax` owns the mutually dependent lexer,
 streams, object model, xref, and resolution machinery.
 
-Declarative metadata has one owner: content-operator behavior belongs in
-`s_07_content/operator_tables.py`, and stream-filter behavior belongs in
+Declarative metadata has one owner: the content-operator vocabulary belongs in
+`s_07_syntax_primitives/content_operators.py`, and stream-filter behavior belongs in
 `s_07_filters/registry.py`. Extend those registries instead of creating parallel tables.
+
+Within `s_07_content`, `state.py` owns PDF graphics/text state and operator handlers;
+`stream_execution.py` owns nested execution and unwinds suspended streams on failure.
+`stream_state.py` defines the graphics fields shared by q/Q and stream snapshots, with
+text/line matrices and resource scope saved only across streams. `glyph_capture.py`
+captures decoded glyphs from explicit geometry and paint inputs, while `text_runs.py`
+owns normalization and adjacent-run accumulation. `marked_content.py` retains an
+ActualText span's first run metadata while collecting its geometry. `capture.py`
+defines captured paths, drawings, and inline images; inline images have one canonical
+record, projected through `PageProgram` for both page and appearance rendering.
+Capture ordering still has legacy sequence-number ties between paints and scope markers.
+Any sequencing change must account for clip/group boundaries and paint commands together;
+advancing inline images alone can clip subsequent text before its state is restored.
 
 Shared literal-string decoding belongs in `s_07_syntax_primitives/scanning.py`; the lexer and
 CMap tokenizer retain their own error handling. The complete table stage is `extract_tables`

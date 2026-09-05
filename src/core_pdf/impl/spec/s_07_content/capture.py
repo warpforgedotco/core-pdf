@@ -3,220 +3,25 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass
-from math import ceil
 from typing import Any, TypeAlias
 
-from core_pdf.impl.model.geometry import RectBox, bbox_union, points_bbox, transform_bbox
+from core_pdf.impl.model.geometry import RectBox, bbox_union, points_bbox
 from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.spec.s_07_content.marked_content import min_optional_confidence
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.s_09_fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
+from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.types import Rectangle
 
-# (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
-# glyph in one text-showing operation, so callers looping over glyphs compute it once and
-# pass it in rather than re-deriving it from `state` on every glyph.
-TextBasis = tuple[float, float, float, float, float, float]
 
-
-GLYPH_BITMAP_REPAIR_LABELS = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
-)
-SUSPICIOUS_GLYPH_BITMAP_TEXT = {"\ufffd", "\ufffc"}
-
-
-def should_capture_glyph_bitmap(text: str) -> bool:
-    if len(text) != 1:
-        return False
-    if text in GLYPH_BITMAP_REPAIR_LABELS:
-        return True
-    if text in SUSPICIOUS_GLYPH_BITMAP_TEXT:
-        return True
-    code = ord(text)
-    return 0xE000 <= code <= 0xF8FF or code < 32
-
-
-def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
-    """Capture shapes for non-ligature CMap values that look concatenated."""
-    if len(text) <= 1 or text in LEGITIMATE_MULTI_CHAR_GLYPHS:
-        return False
-    nonspace = [char for char in text if not char.isspace()]
-    if len(nonspace) < 2:
-        return False
-    punctuation = sum(not char.isalnum() for char in nonspace)
-    return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
-
-
-def glyph_bitmap_dimensions(
-    glyph_bbox: Rectangle | None,
-    font_size: float,
-) -> tuple[int, int]:
-    if glyph_bbox is None:
-        return (24, 32)
-    x0, y0, x1, y1 = glyph_bbox
-    width = x1 - x0
-    height = y1 - y0
-    if width <= 0.0 or height <= 0.0:
-        return (24, 32)
-    bitmap_h = max(16, min(64, ceil(max(font_size, 1.0) * 2.5)))
-    bitmap_w = max(1, min(96, ceil(bitmap_h * width / height)))
-    return (bitmap_w, bitmap_h)
-
-
-def internal_text_basis_rect(
-    x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
-) -> Rectangle:
-    """Axis-aligned device bounds of a text-space rect under ``text_basis``."""
-    base_x, base_y, a, b, c, d = text_basis
-    return transform_bbox((x0, y0, x1, y1), (a, b, c, d, base_x, base_y))
-
-
-def glyph_ink_rect(
-    glyph_bbox: Rectangle | None,
-    advance_start: float,
-    fallback_bbox: Rectangle,
-    text_basis: TextBasis,
-    text_advance_scale: float,
-    rise: float,
-    font_scale: float,
-) -> Rectangle:
-    if glyph_bbox is None:
-        return fallback_bbox
-    gx0, gy0, gx1, gy1 = glyph_bbox
-    if gx1 <= gx0 or gy1 <= gy0:
-        return fallback_bbox
-    text_x0 = advance_start + gx0 * text_advance_scale
-    text_x1 = advance_start + gx1 * text_advance_scale
-    text_y0 = rise + gy0 * font_scale
-    text_y1 = rise + gy1 * font_scale
-    rect = internal_text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
-    fallback_height = fallback_bbox[3] - fallback_bbox[1]
-    fallback_width = fallback_bbox[2] - fallback_bbox[0]
-    rect_x0, rect_y0, rect_x1, rect_y1 = rect
-    rect_height = rect_y1 - rect_y0
-    rect_width = rect_x1 - rect_x0
-    if rect_width <= 0.01 or rect_height <= 0.01:
-        return fallback_bbox
-    if fallback_width > 0.0 and rect_width > fallback_width * 4.0:
-        return fallback_bbox
-    if fallback_height > 0.0 and rect_height > fallback_height * 1.5:
-        return fallback_bbox
-    return rect
-
-
-def transformed_text_line(
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    text_basis: TextBasis,
-) -> tuple[float, float, float, float]:
-    base_x, base_y, a, b, c, d = text_basis
-    return (
-        base_x + x0 * a + y0 * c,
-        base_y + x0 * b + y0 * d,
-        base_x + x1 * a + y1 * c,
-        base_y + x1 * b + y1 * d,
-    )
-
-
-def glyph_text_space_boxes(
-    offset: float,
-    advance: float,
-    *,
-    is_vertical: bool,
-    rise: float,
-    font_ascent: float,
-    font_descent: float,
-    position: tuple[float, float] = (0.0, 0.0),
-) -> tuple[
-    Rectangle,
-    tuple[float, float, float, float],
-]:
-    if is_vertical:
-        position_x, position_y = position
-        start_y = rise + position_y - offset
-        end_y = start_y - advance
-        ar = font_ascent
-        dr = font_descent
-        x0 = position_x + (dr if dr < ar else ar)
-        x1 = position_x + (ar if ar > dr else dr)
-        y0 = end_y if end_y < start_y else start_y
-        y1 = start_y if start_y > end_y else end_y
-        return (
-            (x0, y0, x1, y1),
-            (0.0, start_y, 0.0, end_y),
-        )
-    ar = font_ascent + rise
-    dr = font_descent + rise
-    return (
-        (offset, dr, offset + advance, ar),
-        (offset, rise, offset + advance, rise),
-    )
-
-
-def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
+def type3_glyph_names(decoder: FontDecoder) -> dict[int, str]:
     """Project the decoder's normalized simple-font encoding onto byte codes."""
-    # Keep ``font`` in the API until Type 3 program ownership moves out of
-    # FontDecoder. The decoder was constructed from this dictionary and already
-    # normalized its base encoding and Differences.
-    del font
     return {
         code: name
         for code in range(256)
         if (name := decoder.internal_simple_glyph_name(code)) not in {"", ".notdef"}
     }
-
-
-class RunGeometry:
-    """Running union of glyph advance/ink boxes plus the minimum confidence.
-
-    Accumulated as observations are appended so a caller never has to rescan
-    the slice it just wrote. Empty until the first `add`, which is what
-    distinguishes "no glyphs recorded" from "a run at the origin".
-    """
-
-    __slots__ = ("started", "advance", "ink", "confidence")
-
-    def __init__(self) -> None:
-        self.started = False
-        self.advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
-        self.ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
-        self.confidence: float | None = None
-
-    def add(
-        self,
-        advance_bbox: Rectangle,
-        ink_bbox: Rectangle,
-        confidence: float | None,
-    ) -> None:
-        if not self.started:
-            self.started = True
-            self.advance = advance_bbox
-            self.ink = ink_bbox
-            self.confidence = confidence
-            return
-        ax0, ay0, ax1, ay1 = self.advance
-        bx0, by0, bx1, by1 = advance_bbox
-        self.advance = (
-            bx0 if bx0 < ax0 else ax0,
-            by0 if by0 < ay0 else ay0,
-            bx1 if bx1 > ax1 else ax1,
-            by1 if by1 > ay1 else ay1,
-        )
-        ix0, iy0, ix1, iy1 = self.ink
-        bx0, by0, bx1, by1 = ink_bbox
-        self.ink = (
-            bx0 if bx0 < ix0 else ix0,
-            by0 if by0 < iy0 else iy0,
-            bx1 if bx1 > ix1 else ix1,
-            by1 if by1 > iy1 else iy1,
-        )
-        self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
@@ -248,6 +53,9 @@ class CapturedInlineImage:
     image_clip: Rectangle | None
     ctm: Matrix
     xobject_depth: int
+    blend_mode: str | None = None
+    soft_mask_alpha: float | None = None
+    stream_order: int = 0
 
 
 class CapturedSubpath:
@@ -439,9 +247,6 @@ class CapturedDrawing:
         if not self.items:
             self.items = internal_EMPTY_DRAWING_ITEMS
 
-    def replace(self, **kwargs: Any) -> CapturedDrawing:
-        return dataclasses.replace(self, **kwargs)
-
     def stroke_style_key(self) -> StrokeStyleKey | None:
         """Hashable stroke paint style, or None when a pattern paints the stroke.
 
@@ -527,6 +332,7 @@ class TilingPattern:
     y_step: float
     drawings: list[CapturedDrawing]
     glyphs: list[GlyphObservation]
+    inline_images: list[CapturedInlineImage]
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

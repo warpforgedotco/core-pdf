@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from core_pdf.impl.spec.s_07_content.state import GRAPHICS_STATE_FIELDS, TextState
+from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecutor
+from core_pdf.impl.spec.s_07_content.stream_state import GRAPHICS_STATE_FIELDS
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from tests.helpers.resolvers import IdentityResolver
@@ -86,8 +87,8 @@ def test_text_showing_consumes_the_top_operand_from_a_malformed_stack() -> None:
 
     state.op_Tj((b"stale", b"visible"), 0)
 
-    assert state.pending_run is not None
-    assert state.pending_run.text == "visible"
+    state.run_accumulator.flush()
+    assert state.runs[-1].text == "visible"
 
 
 def test_curve_y_doubles_the_endpoint_as_its_second_control_point() -> None:

@@ -1427,7 +1427,7 @@ def test_stroked_vector_text_evidence_requires_distributed_compact_paths() -> No
         page_height=800.0,
     )
     clustered = parse_capture.internal_stroked_vector_text_evidence(
-        tuple(drawing.replace(bbox=RectBox(20.0, 20.0, 22.0, 23.0)) for drawing in drawings),
+        tuple(replace(drawing, bbox=RectBox(20.0, 20.0, 22.0, 23.0)) for drawing in drawings),
         page_width=1_000.0,
         page_height=800.0,
     )

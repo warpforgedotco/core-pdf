@@ -841,7 +841,7 @@ def internal_capture_from_program(
     image_filters = tuple(
         filter_name
         for drawing in drawings
-        if getattr(drawing, "kind", None) in {"image", "inline-image"}
+        if drawing.kind == "image"
         for dictionary in (getattr(drawing, "dictionary", None),)
         if isinstance(dictionary, dict)
         for filter_name in declared_filter_names(dictionary.get("Filter"))

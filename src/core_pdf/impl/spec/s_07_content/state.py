@@ -8,12 +8,8 @@ from __future__ import annotations
 
 import operator
 import typing
-from collections import deque
-from itertools import chain
 from math import ceil, hypot
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
-
-import numpy
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
@@ -23,12 +19,9 @@ from core_pdf.impl.model.geometry import RectBox, intersect_bbox, transform_bbox
 from core_pdf.impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
-    glyph_cluster_from_observations,
-    glyph_unicode_confidence,
 )
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
-    PdfName,
     PdfReference,
     PdfString,
 )
@@ -38,38 +31,35 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedLine,
     CapturedPath,
     PatternPaint,
-    RunGeometry,
     ShadingPattern,
     TilingPattern,
-    glyph_bitmap_dimensions,
-    glyph_ink_rect,
-    glyph_text_space_boxes,
-    internal_text_basis_rect,
     marker_drawing,
-    should_capture_glyph_bitmap,
-    should_capture_suspicious_multi_glyph_bitmap,
-    transformed_text_line,
     type3_font_matrix,
     type3_glyph_names,
 )
+from core_pdf.impl.spec.s_07_content.glyph_capture import (
+    GlyphCapture,
+    GlyphPaint,
+    TextBasis,
+    TextGeometry,
+    capture_glyphs,
+)
+from core_pdf.impl.spec.s_07_content.image_capture import image_source_from_stream
 from core_pdf.impl.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
     ContentOperands,
     OperationHandler,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import build_operator_handlers
 from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecutor
 from core_pdf.impl.spec.s_07_content.stream_state import (
+    GRAPHICS_STATE_FIELDS,
     STREAM_STATE_MIRRORED,
-    ContentStreamFrame,
     LayoutFormId,
-    StreamKey,
     StreamState,
 )
-from core_pdf.impl.spec.s_07_content.text_helpers import (
-    can_merge_cross_font_word,
-    gap_separator,
+from core_pdf.impl.spec.s_07_content.text_runs import (
+    RunAccumulator,
     is_garbage_text,
     normalize_extracted_text,
 )
@@ -81,61 +71,14 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int,
     parse_int_strict,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
-
-DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
-
-
-#: Graphics state saved by ``q`` and restored by ``Q`` (ISO 32000-1 8.4.2).
-#: Text-state values are included for compatibility with malformed producers
-#: that change them inside a q/Q pair. Capture, restore and the drift test all
-#: drive off this one list, so a new field cannot fall out of just one of them.
-GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
-    "ca",
-    "cb",
-    "cc",
-    "cd",
-    "ce",
-    "cf",
-    "fill_color",
-    "fill_pattern",
-    "fill_opacity",
-    "stroke_color",
-    "stroke_pattern",
-    "stroke_opacity",
-    "fill_color_space",
-    "stroke_color_space",
-    "fill_color_spec",
-    "stroke_color_spec",
-    "compatibility_depth",
-    "blend_mode",
-    "group_alpha",
-    "flatness",
-    "render_intent",
-    "clip_bbox",
-    "line_width",
-    "line_cap",
-    "line_join",
-    "miter_limit",
-    "dash_pattern",
-    "font_size",
-    "font_operand",
-    "font_size_operand",
-    "horizontal_scale",
-    "char_space",
-    "word_space",
-    "rise",
-    "leading",
-    "render_mode",
-    "current_font",
-    "current_decoder",
-)
 
 #: Reads every saved field off a ``TextState`` in one C-level call.
 internal_capture_graphics_state = operator.attrgetter(*GRAPHICS_STATE_FIELDS)
@@ -200,83 +143,6 @@ class TextDocument(typing.Protocol):
 internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
-class internal_PendingRunText:
-    """Text and glyph clusters accumulated for the run currently being merged.
-
-    Merging appended to the joined string on every fragment, so a line emitted
-    as K separate show operations -- what kerned LaTeX and Word output does --
-    cost O(K^2) in copying. Fragments are collected here instead and joined once
-    when the run is retired. Only the first and last characters are consulted
-    while merging, so both are tracked directly rather than re-derived.
-    """
-
-    __slots__ = ("parts", "clusters", "head", "tail")
-
-    def __init__(self, run: TextRun) -> None:
-        self.parts: deque[str] = deque((run.text,))
-        self.clusters: list[tuple[GlyphCluster, ...]] = [run.glyph_clusters]
-        self.head = run.text[:1]
-        self.tail = run.text[-1:]
-
-    def append(self, separator: str, run: TextRun) -> None:
-        added = separator + run.text
-        self.parts.append(added)
-        self.clusters.append(run.glyph_clusters)
-        if not self.head:
-            self.head = added[:1]
-        if added:
-            self.tail = added[-1:]
-
-    def prepend(self, separator: str, run: TextRun) -> None:
-        added = run.text + separator
-        self.parts.appendleft(added)
-        # Clusters stay in emission order even when the text reads right-to-left.
-        self.clusters.append(run.glyph_clusters)
-        if added:
-            self.head = added[:1]
-        if not self.tail:
-            self.tail = added[-1:]
-
-    def settle(self, run: TextRun) -> None:
-        """Write the accumulated text and clusters back onto `run`."""
-        if len(self.parts) > 1:
-            run.text = "".join(self.parts)
-            run.glyph_clusters = tuple(chain.from_iterable(self.clusters))
-
-
-def internal_merge_runs(
-    pending: TextRun,
-    accumulated: internal_PendingRunText,
-    new_run: TextRun,
-    gap: float,
-    threshold: float,
-    *,
-    widen: str,
-    reverse: bool = False,
-) -> bool:
-    """Fold `new_run` into `pending` when `gap` puts the two on one line.
-
-    `reverse` places the new run's text first, for a right-to-left pair.
-    `widen` names the pending edge the new run may push outward: an edge ending
-    in "0" moves to the minimum of the two, one ending in "1" to the maximum.
-    """
-    if not -2.0 <= gap < threshold:
-        return False
-    # `gap_separator` only inspects the adjacent characters, so the accumulated
-    # side is represented by the one character that touches the join.
-    if reverse:
-        separator = gap_separator(new_run.text, accumulated.head, gap, pending)
-        accumulated.prepend(separator, new_run)
-    else:
-        separator = gap_separator(accumulated.tail, new_run.text, gap, pending)
-        accumulated.append(separator, new_run)
-    pending.union_ink_bbox(new_run.ink_bbox)
-    edge = getattr(new_run, widen)
-    keep = min if widen.endswith("0") else max
-    setattr(pending, widen, keep(edge, getattr(pending, widen)))
-    return True
-
-
 class TextState:
     document: TextDocument
     runs: list[TextRun]
@@ -320,12 +186,9 @@ class TextState:
     current_decoder: FontDecoder | None
     current_decoder_resources_id: int | None
     marked_content_stack: list[MarkedContentEntry]
-    active_streams: set[StreamKey]
-    queued_stream: ContentStreamFrame | None
     type3_uncolored: bool
     resources: PdfDict
-    pending_run: TextRun | None
-    pending_text: internal_PendingRunText | None
+    run_accumulator: RunAccumulator
     op_handlers: dict[str, OperationHandler]
 
     __slots__ = (
@@ -408,15 +271,12 @@ class TextState:
         "xobject_depth",
         "capture_source",
         "marked_content_stack",
-        "active_streams",
-        "queued_stream",
         "type3_uncolored",
         "resources",
         "resources_id",
         "hidden_layers",
         "pending_line_break",
-        "pending_run",
-        "pending_text",
+        "run_accumulator",
         "op_handlers",
         "combined_A",
         "combined_B",
@@ -526,16 +386,15 @@ class TextState:
         self.capture_source = "native_text"
         self.compatibility_depth = 0
         self.marked_content_stack = []
-        self.active_streams = set()
-        self.queued_stream = None
         self.type3_uncolored = False
         self.resources = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
         self.pending_line_break = False
-        self.pending_run = None
-        self.pending_text = None
-        self.op_handlers = build_operator_handlers(self)
+        self.run_accumulator = RunAccumulator(self.runs)
+        self.op_handlers = {
+            name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
+        }
 
         self.combined_A = 1.0
         self.combined_B = 0.0
@@ -646,6 +505,7 @@ class TextState:
 
     def capture_stream_state(self) -> StreamState:
         return StreamState(
+            graphics_state=internal_capture_graphics_state(self),
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
             **{name: getattr(self, name) for name in STREAM_STATE_MIRRORED},
@@ -657,6 +517,12 @@ class TextState:
         del self.stack[state.graphics_stack_len :]
         del self.clip_scope_stack[state.graphics_stack_len :]
         del self.marked_content_stack[state.marked_content_stack_len :]
+        self.restore_graphics_state(state.graphics_state)
+
+    def restore_graphics_state(self, state: tuple[Any, ...]) -> None:
+        for name, value in zip(GRAPHICS_STATE_FIELDS, state, strict=True):
+            setattr(self, name, value)
+        self.update_combined()
         self.update_text_scales()
         self.update_font_metrics()
 
@@ -671,9 +537,7 @@ class TextState:
     ) -> None:
         self.stream_executor.consume(stream, resources, ctm, depth, clip_bbox=clip_bbox)
 
-    def lookup_page_resource(
-        self, category: str, name: str, parent_category: str | None = None
-    ) -> object:
+    def lookup_page_resource(self, category: str, name: str) -> object:
         raw_category = self.resources.get(category)
         category_res = (
             self.document.resolver.resolve_dict(raw_category) if raw_category is not None else None
@@ -684,45 +548,11 @@ class TextState:
             if res is not None:
                 return self.document.resolver.resolve(res)
 
-        if parent_category:
-            raw_parent = self.resources.get(parent_category)
-            parent_res = (
-                self.document.resolver.resolve_dict(raw_parent) if raw_parent is not None else None
-            )
-
-            if isinstance(parent_res, dict):
-                for p_val in parent_res.values():
-                    sub_res_dict = None
-                    if isinstance(p_val, dict):
-                        sub_res_dict = p_val.get("Resources")
-                    if isinstance(sub_res_dict, dict):
-                        sub_cat = sub_res_dict.get(category)
-                        if isinstance(sub_cat, dict):
-                            found = sub_cat.get(name)
-                            if found is not None:
-                                return self.document.resolver.resolve(found)
-
         return None
-
-    def chunk_advance(
-        self, code: int, decoder: "FontDecoder", *, word_space: bool = False
-    ) -> float:
-        advance_x, advance_y = decoder.glyph_advance_vector(
-            code,
-            font_size=self.font_size,
-            char_space=self.char_space,
-            word_space=self.word_space,
-            horizontal_scale=self.horizontal_scale,
-            encoded_space=word_space,
-        )
-        # Capture's vertical geometry uses a positive distance down the writing
-        # line, while the PDF text matrix uses the signed (normally negative)
-        # y displacement returned above.
-        return -advance_y if decoder.is_vertical else advance_x
 
     def decode_operand(
         self, operand: object, decoder: FontDecoder
-    ) -> tuple[str, bytes, DecodedGlyphs]:
+    ) -> tuple[str, bytes, tuple[DecodedGlyph, ...]]:
         text: str | None
         if type(operand) is PdfString:
             data, text = operand.data, None
@@ -733,7 +563,7 @@ class TextState:
         else:
             text = self.document.resolver.resolve_str(operand)
             if text is None:
-                return "", b"", None
+                return "", b"", ()
             data = text.encode("latin-1", "replace")
 
         glyphs = decoder.decode_glyphs(data)
@@ -859,44 +689,7 @@ class TextState:
                         max(xs),
                         max(ys),
                     )
-                smask_alpha = None
-                soft_mask_raw_data = None
-                soft_mask_dictionary = None
-                smask = xobj_dict.get("SMask")
-                if smask is not None:
-                    smask_stream = self.document.resolver.resolve(smask)
-                    if isinstance(smask_stream, PdfStream):
-                        smask_dict = (
-                            self.document.resolver.resolve_dict(smask_stream.dictionary) or {}
-                        )
-                        smask_data = getattr(smask_stream, "raw_data", b"")
-                        soft_mask_raw_data = smask_data
-                        soft_mask_dictionary = dict(smask_dict)
-                        width = self.document.resolver.resolve_int(smask_dict.get("Width")) or 0
-                        height = self.document.resolver.resolve_int(smask_dict.get("Height")) or 0
-                        if width > 0 and height > 0 and smask_data:
-                            total = min(len(smask_data), width * height)
-                            if total > 0:
-                                smask_sum = numpy.frombuffer(
-                                    smask_data, numpy.uint8, count=total
-                                ).sum(dtype=numpy.uint64)
-                                smask_alpha = int(smask_sum) / (255.0 * total)
-                drawing_dictionary = dict(xobj_dict)
-                soft_mask = (
-                    SoftMask(soft_mask_raw_data, soft_mask_dictionary or {})
-                    if soft_mask_raw_data is not None
-                    else None
-                )
-                source_dictionary = dict(drawing_dictionary)
-                # The colour manager reads the palette and base space straight
-                # off this dictionary, so an indirect /ColorSpace (or one whose
-                # Indexed lookup table is indirect) left it unable to convert
-                # the samples and the whole image was dropped.
-                color_space = source_dictionary.get("ColorSpace")
-                if color_space is not None:
-                    source_dictionary[PdfName.of("ColorSpace")] = (
-                        self.document.resolver.deep_resolve(color_space)
-                    )
+                source, smask_alpha = image_source_from_stream(xobj, self.document.resolver)
                 # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
                 # set bits in the current fill colour. Every other image ignores
                 # the fill, so recording it is only meaningful for the mask case,
@@ -911,11 +704,9 @@ class TextState:
                         dash_pattern=self.transformed_dash_pattern(),
                         soft_mask_alpha=smask_alpha,
                         kind="image",
-                        image_source=ImageSource(
-                            getattr(xobj, "raw_data", b""),
-                            source_dictionary,
-                            soft_mask=soft_mask,
-                        ),
+                        image_source=source,
+                        raw_data=xobj.raw_data,
+                        dictionary=dict(xobj_dict),
                         image_clip=self.clip_bbox,
                         items=[("quad", quad)] if quad is not None else [],
                         bbox=bbox,
@@ -923,8 +714,6 @@ class TextState:
                         xobject_depth=self.xobject_depth,
                     )
                 )
-                self.drawings[-1].raw_data = getattr(xobj, "raw_data", b"")
-                self.drawings[-1].dictionary = drawing_dictionary
             return
         if subtype != "Form":
             return
@@ -1010,17 +799,6 @@ class TextState:
             stream_key=stream_key,
             swallow_parse_errors=True,
         )
-
-    def flush_run(self) -> None:
-        """Retire the pending run, joining the text merging accumulated for it."""
-        pending = self.pending_run
-        if pending is None:
-            return
-        if self.pending_text is not None:
-            self.pending_text.settle(pending)
-        self.runs.append(pending)
-        self.pending_run = None
-        self.pending_text = None
 
     def transform_point(self, x: float, y: float) -> tuple[float, float]:
         return (
@@ -1108,62 +886,6 @@ class TextState:
             # replay paint a cell background over the run's first glyphs.
             self.sequence += 1
 
-    def alloc_run(
-        self,
-        text: str,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        tx: float,
-        ty: float,
-        font_size: float,
-        space_width: float,
-        order: int,
-        stream_order: int,
-        xobject_depth: int,
-        font_name: str | None,
-        is_vertical: bool,
-        rotation_angle: int,
-        visible: bool,
-        line_break_before: bool,
-        seqno: int,
-        fill_color: tuple[float, ...] | None,
-        advance_bbox: Rectangle | None = None,
-        ink_bbox: Rectangle | None = None,
-        baseline: tuple[float, float, float, float] | None = None,
-        provenance: tuple[tuple[str, object], ...] = (),
-        confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
-    ) -> TextRun:
-        return TextRun(
-            text=normalize_extracted_text(text),
-            x0=x0,
-            y0=y0,
-            x1=x1,
-            y1=y1,
-            tx=tx,
-            ty=ty,
-            font_size=font_size,
-            space_width=space_width,
-            order=order,
-            stream_order=stream_order,
-            xobject_depth=xobject_depth,
-            font_name=font_name,
-            is_vertical=is_vertical,
-            rotation_angle=rotation_angle,
-            visible=visible,
-            line_break_before=line_break_before,
-            seqno=seqno,
-            fill_color=fill_color,
-            advance_bbox=advance_bbox,
-            ink_bbox=ink_bbox,
-            baseline=baseline,
-            provenance=provenance,
-            confidence=confidence,
-            glyph_clusters=glyph_clusters,
-        )
-
     def internal_is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
         """Report whether a box falls entirely outside the active clip.
 
@@ -1180,525 +902,80 @@ class TextState:
         return False
 
     def update_pending_run(self, new_run: TextRun) -> None:
-        if self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
-            return
-
-        if self.pending_run is None:
-            self.pending_run = new_run
-            self.pending_text = internal_PendingRunText(new_run)
-            return
-
-        p = self.pending_run
-        accumulated = self.pending_text
-        assert accumulated is not None
-        new_text = new_run.text
-        p_font_size = p.font_size
-        p_space_width = p.space_width
-        p_rotation = p.rotation_angle
-        merge_threshold = max(p_space_width * 0.45, 2.0)
-
-        is_same_style = (
-            p_rotation == new_run.rotation_angle
-            and p.visible == new_run.visible
-            and not new_run.line_break_before
-            and p_font_size == new_run.font_size
-            and (
-                p.font_name == new_run.font_name
-                or can_merge_cross_font_word(accumulated.tail, new_text)
-                or can_merge_cross_font_word(new_text, accumulated.head)
-            )
-            and p.fill_color == new_run.fill_color
-        )
-
-        if is_same_style and p_rotation == 90:
-            y_gap = new_run.y0 - p.y1
-            max_y_gap = max(p_space_width * 0.5, p_font_size * 0.8, 2.0)
-            if abs(y_gap) > max_y_gap:
-                is_same_style = False
-        elif is_same_style and p_rotation == 0:
-            if abs(p.y0 - new_run.y0) > p_font_size * 0.5:
-                is_same_style = False
-
-        merged = False
-        if is_same_style:
-            if p_rotation == 0:
-                merged = internal_merge_runs(
-                    p, accumulated, new_run, new_run.x0 - p.x1, merge_threshold, widen="x1"
-                ) or internal_merge_runs(
-                    p,
-                    accumulated,
-                    new_run,
-                    p.x0 - new_run.x1,
-                    merge_threshold,
-                    widen="x0",
-                    reverse=True,
-                )
-            elif p_rotation == 90:
-                merged = internal_merge_runs(
-                    p, accumulated, new_run, new_run.y0 - p.y1, merge_threshold, widen="y1"
-                )
-            else:
-                merged = internal_merge_runs(
-                    p, accumulated, new_run, p.x0 - new_run.x1, merge_threshold, widen="x0"
-                ) or internal_merge_runs(
-                    p,
-                    accumulated,
-                    new_run,
-                    new_run.x0 - p.x1,
-                    merge_threshold,
-                    widen="x1",
-                    reverse=True,
-                )
-
-        if not merged:
-            self.flush_run()
-            self.pending_run = new_run
-            self.pending_text = internal_PendingRunText(new_run)
-        else:
-            p.advance_bbox = (p.x0, p.y0, p.x1, p.y1)
+        if not self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
+            self.run_accumulator.append(new_run)
 
     def record_glyph_observations(
         self,
         text: str,
-        data: bytes | bytearray | memoryview,
         decoder: FontDecoder,
         rotation_angle: int,
         visible: bool,
-        glyphs: tuple[DecodedGlyph, ...] | None = None,
-    ) -> (
-        tuple[tuple[float, float, float, float], tuple[float, float, float, float], float | None]
-        | None
-    ):
-        """Record observations and return their (advance union, ink union, min
-        confidence) aggregate, or ``None`` when nothing was recorded.
-
-        The union is accumulated as observations are appended, in append
-        order, so the caller can skip re-scanning the appended slice.
-        """
-        if glyphs is None:
-            glyphs = decoder.decode_glyphs(data)
-        if not glyphs:
-            return None
-
-        offset = 0.0
-        seqno = self.sequence
-        fill = self.fill_color
-        font_name = self.current_font
-        font_size = self.font_size
-        combined_a = self.combined_A
-        combined_b = self.combined_B
-        combined_c = self.combined_C
-        combined_d = self.combined_D
-        effective_font_size = font_size * (
-            hypot(combined_c, combined_d) if decoder.is_vertical else hypot(combined_a, combined_b)
+        *,
+        glyphs: tuple[DecodedGlyph, ...],
+        text_basis: TextBasis,
+        effective_font_size: float,
+        effective_font_height: float,
+    ) -> GlyphCapture:
+        """Snapshot this text show's inputs for the independent glyph recorder."""
+        geometry = TextGeometry(
+            basis=text_basis,
+            font_size=self.font_size,
+            font_scale=self.font_scale,
+            font_ascent=self.font_ascent,
+            font_descent=self.font_descent,
+            advance_scale=self.text_advance_scale,
+            char_space_scale=self.char_space_scale,
+            word_space_scale=self.word_space_scale,
+            char_space=self.char_space,
+            word_space=self.word_space,
+            horizontal_scale=self.horizontal_scale,
+            rise=self.rise,
+            rotation_angle=rotation_angle,
+            effective_font_size=effective_font_size,
+            effective_font_height=effective_font_height,
         )
-        effective_font_height = font_size * (
-            hypot(combined_a, combined_b) if decoder.is_vertical else hypot(combined_c, combined_d)
+        paint = GlyphPaint(
+            visible=visible,
+            clip_bbox=self.clip_bbox,
+            page_clip=self.page_clip,
+            fill=self.fill_color,
+            render_mode=self.render_mode,
+            fill_opacity=self.fill_opacity,
+            stroke_color=self.stroke_color,
+            stroke_opacity=self.stroke_opacity,
+            line_width=self.transformed_line_width(),
+            line_cap=self.line_cap,
+            line_join=self.line_join,
+            dash_pattern=self.transformed_dash_pattern(),
+            blend_mode=self.blend_mode,
+            group_alpha=self.group_alpha,
         )
-        glyph_provenance = (
+        provenance = (
             ("source", self.capture_source),
             ("stream_order", self.stream_order),
             ("xobject_depth", self.xobject_depth),
             ("clip_bbox", self.clip_bbox),
             ("layout_form_bbox", self.layout_form_bbox),
             ("layout_form_id", self.layout_form_id),
-            ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
+            ("text_matrix", text_basis[2:]),
             ("line_matrix_origin", (self.lm_e, self.lm_f)),
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
             ("text_rise", self.rise),
         )
-        text_basis = (
-            self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
-            self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
-            combined_a,
-            combined_b,
-            combined_c,
-            combined_d,
+        return capture_glyphs(
+            text,
+            glyphs,
+            decoder,
+            geometry=geometry,
+            paint=paint,
+            font_name=self.current_font,
+            provenance=provenance,
+            seqno=self.sequence,
+            text_object_id=self.text_object_id,
+            cluster_start=len(self.glyph_clusters),
         )
-        append_glyph = self.glyphs.append
-        chunk_advance = self.chunk_advance
-        glyph_bbox_for_code = decoder.glyph_bbox
-        vertical_position = decoder.vertical_glyph_position
-        clusters = self.glyph_clusters
-        cursor = 0
-        is_vertical = decoder.is_vertical
-        effective_font_name = decoder.font_name or font_name
-        advance_scale = self.text_advance_scale
-        char_space_scale = self.char_space_scale
-        word_space_scale = self.word_space_scale
-        axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
-        rise = self.rise
-        font_scale = self.font_scale
-        font_ascent = self.font_ascent
-        font_descent = self.font_descent
-        glyph_line_width = self.transformed_line_width()
-        glyph_dash_pattern = self.transformed_dash_pattern()
-        # Per-glyph invariants hoisted out of the loop: clip rectangles for the
-        # inlined visibility test, graphics-state fields copied into every
-        # observation, and the constant part of the outline transform.
-        clip_primary = self.clip_bbox
-        clip_page = self.page_clip
-        render_mode = self.render_mode
-        fill_opacity = self.fill_opacity
-        stroke_color = self.stroke_color
-        stroke_opacity = self.stroke_opacity
-        line_cap = self.line_cap
-        line_join = self.line_join
-        blend_mode = self.blend_mode
-        group_alpha = self.group_alpha
-        text_object_id = self.text_object_id
-        state_line_width = self.line_width
-        transform_a = advance_scale * combined_a
-        transform_b = advance_scale * combined_b
-        transform_c = font_scale * combined_c
-        transform_d = font_scale * combined_d
-        rise_offset_x = rise * combined_c
-        rise_offset_y = rise * combined_d
-
-        if axis_aligned_horizontal:
-            axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
-            axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
-            if axis_advance_y0 > axis_advance_y1:
-                axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
-            axis_baseline_y = text_basis[1] + rise * combined_d
-        # Accumulated during the append loop so the caller need not rescan
-        # the slice it just wrote.
-        run_geometry = RunGeometry()
-        add_run_geometry = run_geometry.add
-        for glyph in glyphs:
-            if is_vertical:
-                advance = chunk_advance(
-                    glyph.width_code,
-                    decoder,
-                    word_space=glyph.code_bytes == b" ",
-                )
-            else:
-                advance = (
-                    decoder.glyph_width(glyph.width_code)
-                    + char_space_scale
-                    + (word_space_scale if glyph.code_bytes == b" " else 0.0)
-                ) * advance_scale
-            chunk_text = glyph.unicode
-            if not chunk_text:
-                chunk_text = text[cursor : cursor + 1]
-            chunk_length = len(chunk_text)
-            cursor += max(1, chunk_length)
-            if not chunk_text:
-                offset += advance
-                continue
-
-            observation_provenance = glyph_provenance
-
-            cluster_id = len(clusters)
-            cluster_provenance_id = (seqno, cluster_id)
-            if is_vertical:
-                glyph_vertical_position = vertical_position(
-                    glyph.cid,
-                    font_size=font_size,
-                )
-                text_box, baseline_text = glyph_text_space_boxes(
-                    offset,
-                    advance,
-                    is_vertical=True,
-                    rise=rise,
-                    font_ascent=font_ascent,
-                    font_descent=font_descent,
-                    position=glyph_vertical_position,
-                )
-                advance_bbox = internal_text_basis_rect(*text_box, text_basis)
-                baseline = transformed_text_line(*baseline_text, text_basis)
-                origin_x, position_y = glyph_vertical_position
-                origin_y = rise + position_y - offset
-                outline_transform = (
-                    transform_a,
-                    transform_b,
-                    transform_c,
-                    transform_d,
-                    text_basis[0] + origin_x * combined_a + origin_y * combined_c,
-                    text_basis[1] + origin_x * combined_b + origin_y * combined_d,
-                )
-            else:
-                # The sums are written out rather than factored so that the
-                # evaluation order -- and therefore the floats -- stay identical
-                # to the vertical branch above.
-                outline_transform = (
-                    transform_a,
-                    transform_b,
-                    transform_c,
-                    transform_d,
-                    text_basis[0] + offset * combined_a + rise_offset_x,
-                    text_basis[1] + offset * combined_b + rise_offset_y,
-                )
-                if axis_aligned_horizontal:
-                    advance_x0 = text_basis[0] + offset * combined_a
-                    advance_x1 = text_basis[0] + (offset + advance) * combined_a
-                    advance_bbox = (
-                        advance_x0 if advance_x0 < advance_x1 else advance_x1,
-                        axis_advance_y0,
-                        advance_x1 if advance_x1 > advance_x0 else advance_x0,
-                        axis_advance_y1,
-                    )
-                    baseline = (
-                        advance_x0,
-                        axis_baseline_y,
-                        advance_x1,
-                        axis_baseline_y,
-                    )
-                else:
-                    text_box, baseline_text = glyph_text_space_boxes(
-                        offset,
-                        advance,
-                        is_vertical=False,
-                        rise=rise,
-                        font_ascent=font_ascent,
-                        font_descent=font_descent,
-                    )
-                    advance_bbox = internal_text_basis_rect(*text_box, text_basis)
-                    baseline = transformed_text_line(*baseline_text, text_basis)
-            observation_visible = visible
-            if observation_visible:
-                box_x0, box_y0, box_x1, box_y1 = advance_bbox
-                if (
-                    clip_primary is not None
-                    and (
-                        box_x1 <= clip_primary[0]
-                        or box_x0 >= clip_primary[2]
-                        or box_y1 <= clip_primary[1]
-                        or box_y0 >= clip_primary[3]
-                    )
-                ) or (
-                    clip_page is not None
-                    and (
-                        box_x1 <= clip_page[0]
-                        or box_x0 >= clip_page[2]
-                        or box_y1 <= clip_page[1]
-                        or box_y0 >= clip_page[3]
-                    )
-                ):
-                    observation_visible = False
-            if is_vertical:
-                glyph_bbox = None
-            else:
-                glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code)
-            if (
-                axis_aligned_horizontal
-                and glyph_bbox is not None
-                and glyph_bbox[0] == 0.0
-                and glyph_bbox[1] * font_scale == font_descent
-                and glyph_bbox[2] * advance_scale == advance
-                and glyph_bbox[3] * font_scale == font_ascent
-            ):
-                rect = advance_bbox
-            else:
-                rect = glyph_ink_rect(
-                    glyph_bbox,
-                    offset,
-                    advance_bbox,
-                    text_basis,
-                    advance_scale,
-                    rise,
-                    font_scale,
-                )
-            observation_confidence = glyph_unicode_confidence(
-                chunk_text,
-                glyph.unicode_source,
-                glyph.alternates,
-            )
-
-            single_character = chunk_length == 1
-            suspicious_multi = (
-                False
-                if single_character
-                else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
-            )
-            if single_character or suspicious_multi:
-                bitmap_width = 0
-                bitmap_height = 0
-                bitmap_code: int | None = None
-                if (
-                    should_capture_glyph_bitmap(chunk_text)
-                    if single_character
-                    else suspicious_multi
-                ):
-                    bitmap_width, bitmap_height = glyph_bitmap_dimensions(
-                        glyph_bbox,
-                        font_size,
-                    )
-                    bitmap_code = glyph.bitmap_code
-                observation = GlyphObservation(
-                    text=chunk_text,
-                    ink_bbox=rect,
-                    advance_bbox=advance_bbox,
-                    seqno=seqno,
-                    code_bytes=glyph.code_bytes,
-                    char_code=glyph.char_code,
-                    cid=glyph.cid,
-                    gid=glyph.gid,
-                    font_name=effective_font_name,
-                    font_size=font_size,
-                    baseline=baseline,
-                    rotation_angle=rotation_angle,
-                    fill=fill,
-                    visible=observation_visible,
-                    confidence=observation_confidence,
-                    unicode_source=glyph.unicode_source,
-                    alternates=glyph.alternates,
-                    bitmap_width=bitmap_width,
-                    bitmap_height=bitmap_height,
-                    bitmap_code=bitmap_code,
-                    font_decoder=decoder,
-                    effective_font_size=effective_font_size,
-                    effective_font_height=effective_font_height,
-                    provenance=observation_provenance,
-                    glyph_transform=outline_transform,
-                    text_render_mode=render_mode,
-                    fill_opacity=fill_opacity,
-                    stroke_color=stroke_color,
-                    stroke_opacity=stroke_opacity,
-                    line_width=glyph_line_width,
-                    line_cap=line_cap,
-                    line_join=line_join,
-                    dash_pattern=glyph_dash_pattern,
-                    blend_mode=blend_mode,
-                    soft_mask_alpha=group_alpha,
-                    text_object_id=text_object_id,
-                    cluster_key=cluster_provenance_id,
-                )
-                append_glyph(observation)
-                clusters.append(
-                    GlyphCluster(
-                        cluster_id=cluster_id,
-                        text=chunk_text,
-                        glyphs=(observation,),
-                        advance_bbox=advance_bbox,
-                        ink_bbox=rect,
-                        baseline=baseline,
-                        confidence=observation_confidence,
-                    )
-                )
-                add_run_geometry(advance_bbox, rect, observation_confidence)
-                offset += advance
-                continue
-
-            cluster_observations: list[GlyphObservation] = []
-            if glyph.split_unicode:
-                per_char_advance = advance / len(chunk_text)
-                char_offset = offset
-                for char_index, ch in enumerate(chunk_text):
-                    char_confidence = glyph_unicode_confidence(
-                        ch,
-                        glyph.unicode_source,
-                        glyph.alternates,
-                    )
-                    char_box, char_baseline_text = glyph_text_space_boxes(
-                        char_offset,
-                        per_char_advance,
-                        is_vertical=is_vertical,
-                        rise=rise,
-                        font_ascent=font_ascent,
-                        font_descent=font_descent,
-                    )
-                    char_advance_rect = internal_text_basis_rect(*char_box, text_basis)
-                    char_baseline = transformed_text_line(*char_baseline_text, text_basis)
-                    cluster_observations.append(
-                        GlyphObservation(
-                            ch,
-                            char_advance_rect,
-                            char_advance_rect,
-                            seqno,
-                            glyph.code_bytes,
-                            glyph.char_code,
-                            glyph.cid,
-                            glyph.gid,
-                            effective_font_name,
-                            font_size,
-                            char_baseline,
-                            rotation_angle,
-                            fill,
-                            observation_visible,
-                            char_confidence,
-                            glyph.unicode_source,
-                            glyph.alternates,
-                            (),
-                            0,
-                            0,
-                            None,
-                            decoder,
-                            effective_font_size,
-                            effective_font_height,
-                            observation_provenance,
-                            glyph_transform=outline_transform,
-                            text_render_mode=render_mode,
-                            fill_opacity=fill_opacity,
-                            stroke_color=stroke_color,
-                            stroke_opacity=stroke_opacity,
-                            line_width=state_line_width,
-                            blend_mode=blend_mode,
-                            soft_mask_alpha=group_alpha,
-                            paint_glyph=char_index == 0,
-                            text_object_id=text_object_id,
-                            cluster_key=cluster_provenance_id,
-                        )
-                    )
-                    char_offset += per_char_advance
-            else:
-                cluster_observations.append(
-                    GlyphObservation(
-                        chunk_text,
-                        rect,
-                        advance_bbox,
-                        seqno,
-                        glyph.code_bytes,
-                        glyph.char_code,
-                        glyph.cid,
-                        glyph.gid,
-                        effective_font_name,
-                        font_size,
-                        baseline,
-                        rotation_angle,
-                        fill,
-                        observation_visible,
-                        observation_confidence,
-                        glyph.unicode_source,
-                        glyph.alternates,
-                        (),
-                        0,
-                        0,
-                        None,
-                        decoder,
-                        effective_font_size,
-                        effective_font_height,
-                        observation_provenance,
-                        glyph_transform=outline_transform,
-                        text_render_mode=render_mode,
-                        fill_opacity=fill_opacity,
-                        stroke_color=stroke_color,
-                        stroke_opacity=stroke_opacity,
-                        line_width=state_line_width,
-                        blend_mode=blend_mode,
-                        soft_mask_alpha=group_alpha,
-                        text_object_id=text_object_id,
-                        cluster_key=cluster_provenance_id,
-                    )
-                )
-            for observation in cluster_observations:
-                append_glyph(observation)
-                add_run_geometry(
-                    observation.advance_bbox, observation.ink_bbox, observation.confidence
-                )
-            cluster = glyph_cluster_from_observations(
-                cluster_id,
-                chunk_text,
-                tuple(cluster_observations),
-            )
-            if cluster is not None:
-                clusters.append(cluster)
-            offset += advance
-
-        if not run_geometry.started:
-            return None
-        return run_geometry.advance, run_geometry.ink, run_geometry.confidence
 
     def append_text(
         self,
@@ -1709,7 +986,7 @@ class TextState:
     ) -> None:
         decoder = decoder if decoder is not None else self.get_decoder()
 
-        glyphs: DecodedGlyphs
+        glyphs: tuple[DecodedGlyph, ...]
         if data is not None:
             glyphs = decoder.decode_glyphs(data)
             # Keep undecodable painted glyphs in the page program. Native
@@ -1719,7 +996,6 @@ class TextState:
             text = "".join([glyph.unicode for glyph in glyphs])
         else:
             text, data, glyphs = self.decode_operand(operand, decoder)
-        data_len = len(data)
         rendered_type3_glyphs = False
         if decoder.is_type3 and data:
             text_matrix = self.text_matrix
@@ -1750,42 +1026,14 @@ class TextState:
         fs = self.font_size
         rise = self.rise
 
-        if (
-            glyphs is None
-            and not decoder.is_cid_font
-            and decoder.to_unicode is None
-            and decoder.cmap is None
-        ):
-            widths = self.font_widths or decoder.fast_widths
-            cs = self.char_space_scale
-            ws = self.word_space_scale
-            scale = self.text_advance_scale
-            if data_len == 1:
-                byte = data[0]
-                total = widths[byte] + cs
-                if byte == 32:
-                    total += ws
-            else:
-                total = 0.0
-                space_count = 0
-                for b in data:
-                    total += widths[b]
-                    if b == 32:
-                        space_count += 1
-                total += data_len * cs + space_count * ws
-            if decoder.is_vertical:
-                adv_x, adv_y = 0.0, -total * scale
-            else:
-                adv_x, adv_y = total * scale, 0.0
-        else:
-            adv_x, adv_y = decoder.text_advance_vector(
-                data,
-                font_size=fs,
-                char_space=self.char_space,
-                word_space=self.word_space,
-                horizontal_scale=self.horizontal_scale,
-                glyphs=glyphs,
-            )
+        adv_x, adv_y = decoder.text_advance_vector(
+            data,
+            font_size=fs,
+            char_space=self.char_space,
+            word_space=self.word_space,
+            horizontal_scale=self.horizontal_scale,
+            glyphs=glyphs,
+        )
 
         ascent = self.font_ascent
         descent = self.font_descent
@@ -1867,41 +1115,8 @@ class TextState:
         )
         advance_bbox = (x0, y0, x1, y1)
 
-        actual_text_span = self.current_actual_text_span()
-        if actual_text_span is not None:
-            actual_text_span.add_extents(
-                x0=x0,
-                y0=y0,
-                x1=x1,
-                y1=y1,
-                tx=te,
-                ty=tf,
-                font_size=effective_font_size,
-                space_width=effective_space_width,
-                stream_order=self.stream_order,
-                xobject_depth=self.xobject_depth,
-                font_name=self.current_font,
-                is_vertical=decoder.is_vertical,
-                rotation_angle=rot,
-                visible=visible,
-                line_break_before=self.pending_line_break,
-                seqno=seqno,
-                fill_color=self.fill_color,
-                advance_bbox=advance_bbox,
-                baseline=baseline,
-                provenance=provenance,
-                confidence=1.0,
-                font_decoder=decoder,
-                effective_font_height=effective_font_height,
-            )
-            self.sequence = seqno + 1
-            self.tm_e = te + adv_x * ta + adv_y * tc
-            self.tm_f = tf + adv_x * tb + adv_y * td
-            self.pending_line_break = False
-            return
-
-        new_run = self.alloc_run(
-            text=text,
+        new_run = TextRun(
+            text=normalize_extracted_text(text),
             x0=x0,
             y0=y0,
             x1=x1,
@@ -1926,26 +1141,34 @@ class TextState:
             provenance=provenance,
             confidence=None,
         )
-        cluster_start = len(self.glyph_clusters)
-        run_geometry = self.record_glyph_observations(
-            text,
-            data,
-            decoder,
-            rot,
-            visible,
-            glyphs=glyphs,
-        )
-        recorded_clusters = tuple(self.glyph_clusters[cluster_start:])
-        if recorded_clusters:
-            new_run.glyph_clusters = recorded_clusters
-        if run_geometry is not None:
-            run_advance_bbox, run_ink_bbox, run_confidence = run_geometry
-            new_run.advance_bbox = run_advance_bbox
-            new_run.ink_bbox = run_ink_bbox
-            if run_confidence is not None:
-                new_run.confidence = run_confidence
-
-        self.update_pending_run(new_run)
+        actual_text_span = self.current_actual_text_span()
+        if actual_text_span is not None:
+            new_run.confidence = 1.0
+            actual_text_span.add_run(
+                new_run,
+                font_decoder=decoder,
+                effective_font_height=effective_font_height,
+            )
+        else:
+            captured = self.record_glyph_observations(
+                text,
+                decoder,
+                rot,
+                visible,
+                glyphs=glyphs,
+                text_basis=(E, F, A, B, C, D),
+                effective_font_size=effective_font_size,
+                effective_font_height=effective_font_height,
+            )
+            self.glyphs.extend(captured.glyphs)
+            self.glyph_clusters.extend(captured.clusters)
+            new_run.glyph_clusters = tuple(captured.clusters)
+            geometry = captured.geometry
+            if geometry.started:
+                new_run.advance_bbox = geometry.advance
+                new_run.ink_bbox = geometry.ink
+                new_run.confidence = geometry.confidence
+            self.update_pending_run(new_run)
 
         self.sequence = seqno + 1
 
@@ -1967,7 +1190,7 @@ class TextState:
             return
         glyph_names = decoder.type3_glyph_names
         if glyph_names is None:
-            glyph_names = type3_glyph_names(font, decoder)
+            glyph_names = type3_glyph_names(decoder)
             decoder.type3_glyph_names = glyph_names
 
         resources = font.get("Resources")
@@ -2098,59 +1321,39 @@ class TextState:
 
     def emit_actual_text_span(self, entry: MarkedContentEntry) -> None:
         actual_text = entry.actual_text
-        if actual_text is None or not entry.has_text_extents:
+        captured = entry.run
+        if actual_text is None or captured is None:
             return
-        new_run = self.alloc_run(
-            text=actual_text,
-            x0=entry.x0,
-            y0=entry.y0,
-            x1=entry.x1,
-            y1=entry.y1,
-            tx=entry.tx,
-            ty=entry.ty,
-            font_size=entry.font_size,
-            font_name=entry.font_name,
-            space_width=entry.space_width,
-            order=entry.seqno,
-            stream_order=entry.stream_order,
-            xobject_depth=entry.xobject_depth,
-            is_vertical=entry.is_vertical,
-            rotation_angle=entry.rotation_angle,
-            visible=entry.visible,
-            line_break_before=entry.line_break_before,
-            seqno=entry.seqno,
-            fill_color=entry.fill_color,
-            advance_bbox=entry.advance_bbox,
-            ink_bbox=entry.advance_bbox,
-            baseline=entry.baseline,
-            provenance=(*entry.provenance, ("unicode_source", "actual_text")),
-            confidence=entry.confidence,
-        )
-        self.update_pending_run(new_run)
-        if entry.advance_bbox is not None:
-            self.glyphs.append(
-                GlyphObservation(
-                    text=actual_text,
-                    ink_bbox=entry.advance_bbox,
-                    advance_bbox=entry.advance_bbox,
-                    seqno=entry.seqno,
-                    font_name=entry.font_name,
-                    font_size=entry.font_size,
-                    baseline=entry.baseline,
-                    rotation_angle=entry.rotation_angle,
-                    fill=entry.fill_color,
-                    visible=entry.visible,
-                    confidence=entry.confidence,
-                    unicode_source="actual_text",
-                    font_decoder=entry.font_decoder,
-                    effective_font_size=entry.font_size,
-                    effective_font_height=entry.effective_font_height,
-                    provenance=entry.provenance,
-                )
+        self.update_pending_run(
+            captured.replace(
+                text=normalize_extracted_text(actual_text),
+                ink_bbox=captured.advance_bbox,
+                provenance=(*captured.provenance, ("unicode_source", "actual_text")),
             )
+        )
+        self.glyphs.append(
+            GlyphObservation(
+                text=actual_text,
+                ink_bbox=captured.advance_bbox,
+                advance_bbox=captured.advance_bbox,
+                seqno=captured.seqno,
+                font_name=captured.font_name,
+                font_size=captured.font_size,
+                baseline=captured.baseline,
+                rotation_angle=captured.rotation_angle,
+                fill=captured.fill_color,
+                visible=captured.visible,
+                confidence=captured.confidence,
+                unicode_source="actual_text",
+                font_decoder=entry.font_decoder,
+                effective_font_size=captured.font_size,
+                effective_font_height=entry.effective_font_height,
+                provenance=captured.provenance,
+            )
+        )
 
     def internal_begin_text(self) -> None:
-        self.flush_run()
+        self.run_accumulator.flush()
         self.tm_a = self.lm_a = 1.0
         self.tm_b = self.lm_b = 0.0
         self.tm_c = self.lm_c = 0.0
@@ -2160,10 +1363,10 @@ class TextState:
         self.update_combined()
 
     def op_ET(self, operands: ContentOperands, depth: int) -> None:
-        self.flush_run()
+        self.run_accumulator.flush()
 
     def internal_move_text(self, tx: float, ty: float) -> None:
-        self.flush_run()
+        self.run_accumulator.flush()
         # Preserve the specification's affine operation order. Exact layout
         # grouping can hinge on the final ULP at a character-margin boundary.
         self.tm_e = tx * self.lm_a + ty * self.lm_c + self.lm_e
@@ -2217,7 +1420,7 @@ class TextState:
         if (values := self.as_floats(operands, 6)) is None:
             return
         a, b, c, d_, e, f = values
-        self.flush_run()
+        self.run_accumulator.flush()
         self.tm_a = self.lm_a = a
         self.tm_b = self.lm_b = b
         self.tm_c = self.lm_c = c
@@ -2349,22 +1552,9 @@ class TextState:
                     image_clip=self.clip_bbox,
                     ctm=self.ctm,
                     xobject_depth=self.xobject_depth,
-                )
-            )
-            self.drawings.append(
-                CapturedDrawing(
-                    seqno=self.sequence,
-                    fill=None,
-                    fill_opacity=None,
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
-                    kind="inline-image",
-                    image_source=source,
-                    image_clip=self.clip_bbox,
-                    dash_pattern=self.transformed_dash_pattern(),
-                    items=[],
                     stream_order=self.stream_order,
-                    xobject_depth=self.xobject_depth,
                 )
             )
 
@@ -2397,19 +1587,13 @@ class TextState:
             self.emit_actual_text_span(self.marked_content_stack.pop())
 
     def op_G(self, operands: ContentOperands, depth: int) -> None:
-        if operands and not self.type3_uncolored:
-            self.stroke_color_space = "DeviceGray"
-            self.set_stroke_color(operands[0])
+        self.internal_set_device_color(operands, "DeviceGray", 1, stroke=True)
 
     def op_RG(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) >= 3 and not self.type3_uncolored:
-            self.stroke_color_space = "DeviceRGB"
-            self.set_stroke_color(operands[0], operands[1], operands[2])
+        self.internal_set_device_color(operands, "DeviceRGB", 3, stroke=True)
 
     def op_K(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) >= 4 and not self.type3_uncolored:
-            self.stroke_color_space = "DeviceCMYK"
-            self.set_stroke_color(operands[0], operands[1], operands[2], operands[3])
+        self.internal_set_device_color(operands, "DeviceCMYK", 4, stroke=True)
 
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
@@ -2591,19 +1775,24 @@ class TextState:
             return None
         return tuple(values)
 
-    def set_stroke_color(self, *components: Any) -> None:
-        if self.type3_uncolored:
+    def internal_set_device_color(
+        self, operands: ContentOperands, color_space: str, count: int, *, stroke: bool
+    ) -> None:
+        if self.type3_uncolored or len(operands) < count:
             return
-        normalized = self.normalize_colors(*components)
-        if normalized is not None:
+        normalized = self.normalize_color_operands(operands[:count])
+        if normalized is None:
+            return
+        # Device operators select both a space and its components. Leaving a
+        # previous Indexed/Separation spec behind misinterprets a later sc/SC.
+        if stroke:
+            self.stroke_color_space = color_space
+            self.stroke_color_spec = None
             self.stroke_color = normalized
             self.stroke_pattern = None
-
-    def set_fill_color(self, *components: Any) -> None:
-        if self.type3_uncolored:
-            return
-        normalized = self.normalize_colors(*components)
-        if normalized is not None:
+        else:
+            self.fill_color_space = color_space
+            self.fill_color_spec = None
             self.fill_color = normalized
             self.fill_pattern = None
 
@@ -2615,37 +1804,26 @@ class TextState:
             return tuple(max(0.0, min(1.0, float(c))) for c in o)
         return self.normalize_colors(*o)
 
-    def internal_color_space_value(self, name_obj: Any) -> object:
-        """The colour-space resource behind a `cs`/`CS` operand, indirects resolved.
-
-        A colour-space array carries the tint function and the Indexed palette
-        as indirect references, so the entries have to be resolved before the
-        array can be parsed.
-        """
+    def resolve_color_space(self, name_obj: Any) -> tuple[str, ImageColorSpec | None]:
+        """Resolve a cs/CS resource once for both its name and conversion spec."""
         name = self.document.resolver.resolve_name(name_obj)
         if name is None:
-            return None
+            return "DeviceGray", None
         resolve = self.document.resolver.resolve
         value = self.lookup_page_resource("ColorSpace", name)
         if value is None:
             # An inline device space (`/DeviceRGB cs`) names no resource.
-            return name
-        value = resolve(value)
+            value = name
         if isinstance(value, (list, tuple)):
-            return [resolve(entry) for entry in value]
-        return value
-
-    def internal_resolve_color_spec(self, name_obj: Any) -> ImageColorSpec | None:
-        """Resolve a `cs`/`CS` operand to its full colour space, not just a name.
-
-        The parse walks the colour-space array and, for Indexed, pulls the
-        palette out of a stream.
-        """
-        value = self.internal_color_space_value(name_obj)
+            # Tint functions and Indexed palettes may be indirect references.
+            value = [resolve(entry) for entry in value]
+        base = value[0] if isinstance(value, (list, tuple)) and value else value
+        color_space = normalize_pdf_name(base) or name
         try:
-            return color_spec_from_value(value) if value is not None else None
+            spec = color_spec_from_value(value)
         except (ValueError, TypeError):
-            return None
+            spec = None
+        return color_space, spec
 
     def internal_color_from_operands(
         self, operands: Any, spec: ImageColorSpec | None
@@ -2674,29 +1852,6 @@ class TextState:
             else:
                 return None
         return values or None
-
-    def resolve_color_space(self, name_obj: Any, *, default_fallback: bool = False) -> str | None:
-        name = self.document.resolver.resolve_name(name_obj)
-        if name is None:
-            return "DeviceGray" if default_fallback else None
-
-        color_space: object = self.lookup_page_resource("ColorSpace", name)
-        if color_space is None:
-            return name if default_fallback else None
-
-        color_space_name = normalize_pdf_name(color_space)
-        if color_space_name is not None:
-            return color_space_name
-        if isinstance(color_space, (list, tuple)) and color_space:
-            base = color_space[0]
-            base_name = normalize_pdf_name(base)
-            if base_name is not None:
-                return base_name
-
-        if isinstance(name, str) and not name.startswith("/"):
-            return name
-
-        return name if default_fallback else None
 
     def resolve_pattern_color(self, operands: tuple[Any, ...]) -> PatternPaint | None:
         if not operands:
@@ -2764,6 +1919,7 @@ class TextState:
             y_step=float(y_step),
             drawings=nested_state.drawings,
             glyphs=[glyph for glyph in nested_state.glyphs if glyph.has_paint],
+            inline_images=nested_state.inline_images,
         )
 
     def internal_set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
@@ -2774,16 +1930,13 @@ class TextState:
             # a colour space describing a colour it was not allowed to set.
             return
         if operands:
-            name_obj = operands[0]
-            color_space = self.resolve_color_space(name_obj, default_fallback=True)
-            if color_space is not None:
-                spec = self.internal_resolve_color_spec(name_obj)
-                if stroke:
-                    self.stroke_color_space = color_space
-                    self.stroke_color_spec = spec
-                else:
-                    self.fill_color_space = color_space
-                    self.fill_color_spec = spec
+            color_space, spec = self.resolve_color_space(operands[0])
+            if stroke:
+                self.stroke_color_space = color_space
+                self.stroke_color_spec = spec
+            else:
+                self.fill_color_space = color_space
+                self.fill_color_spec = spec
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
@@ -2977,14 +2130,7 @@ class TextState:
             self.drawings.append(marker_drawing("state-pop", self.sequence))
         if not self.stack:
             return
-        for name, value in zip(GRAPHICS_STATE_FIELDS, self.stack.pop(), strict=True):
-            setattr(self, name, value)
-        self.update_combined()
-        # Text-state values are included in our graphics-state snapshot for
-        # compatibility with malformed producers that change them inside q/Q.
-        # Restore their derived scales and metrics together with the raw values.
-        self.update_text_scales()
-        self.update_font_metrics()
+        self.restore_graphics_state(self.stack.pop())
 
     def op_cm(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 6)) is None:
@@ -2992,19 +2138,13 @@ class TextState:
         self.ctm = Matrix(*values).multiply(self.ctm)
 
     def op_g(self, operands: ContentOperands, depth: int) -> None:
-        if operands and not self.type3_uncolored:
-            self.fill_color_space = "DeviceGray"
-            self.set_fill_color(operands[0])
+        self.internal_set_device_color(operands, "DeviceGray", 1, stroke=False)
 
     def op_rg(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) >= 3 and not self.type3_uncolored:
-            self.fill_color_space = "DeviceRGB"
-            self.set_fill_color(operands[0], operands[1], operands[2])
+        self.internal_set_device_color(operands, "DeviceRGB", 3, stroke=False)
 
     def op_k(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) >= 4 and not self.type3_uncolored:
-            self.fill_color_space = "DeviceCMYK"
-            self.set_fill_color(operands[0], operands[1], operands[2], operands[3])
+        self.internal_set_device_color(operands, "DeviceCMYK", 4, stroke=False)
 
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:

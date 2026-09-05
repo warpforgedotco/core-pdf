@@ -125,9 +125,19 @@ def test_inline_image_validation_rejects_unterminated_data() -> None:
         b"/BI /ID /missing q Q",
         b"[BI /W 1 ID missing] q Q",
         b"<< /Key BI /W 1 ID missing >> q Q",
+        b"[<< /Key [(BI /W 1 ID missing)] >>] q Q",
+        b"<4249> Tj /Not#20BI Do xBI BIx",
+        b"(escaped \\(BI missing\\)) ' 1 2 (text) \"",
     ],
 )
 def test_inline_image_validation_ignores_tokens_in_lexical_operands(prefix: bytes) -> None:
     valid_image = b" BI /W 1 /H 1 /BPC 8 /CS /G ID \x00\nEI Q"
 
     assert validate_inline_images(prefix + valid_image) is None
+
+
+def test_inline_image_validation_checks_images_after_a_valid_payload() -> None:
+    valid = b"BI /W 1 /H 1 /BPC 8 /CS /G ID x EI "
+    malformed = b"BI /W 1 /H 1 /BPC 8 /CS /G ID missing"
+    with pytest.raises(PdfParseError, match="unterminated inline image data"):
+        validate_inline_images(memoryview(valid + malformed))

@@ -38,7 +38,7 @@ def test_type3_names_include_base_encoding_and_differences() -> None:
             "Differences": [65, PdfName(b"custom")],
         },
     }
-    names = type3_glyph_names(font, FontDecoder(font))
+    names = type3_glyph_names(FontDecoder(font))
 
     assert names[32] == "space"
     assert names[65] == "custom"
@@ -83,7 +83,7 @@ def test_repeated_type3_char_proc_does_not_leak_stream_state() -> None:
     state.internal_render_type3_glyphs(b"AAA", decoder)
 
     assert len(state.drawings) == 3
-    assert not state.active_streams
+    assert not state.stream_executor.active_streams
     assert not state.stack
     assert not state.clip_scope_stack
 
@@ -95,7 +95,7 @@ def test_type3_char_proc_with_unresolved_xobject_does_not_leak_stream_state() ->
     state.internal_render_type3_glyphs(b"AA", decoder)
 
     assert not state.drawings
-    assert not state.active_streams
+    assert not state.stream_executor.active_streams
 
 
 def test_type3_dash_operator_preserves_dash() -> None:

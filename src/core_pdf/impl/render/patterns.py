@@ -264,7 +264,7 @@ class internal_PatternTargetMixin:
             return False
         drawings = pattern.drawings
         glyphs = pattern.glyphs
-        if not drawings and not glyphs:
+        if not drawings and not glyphs and not pattern.inline_images:
             return False
         target_box = target_data.get("bbox") or self.clip.path_bbox(target_data.get("path"))
         target_box_type = type(target_box)

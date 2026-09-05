@@ -4,9 +4,8 @@
 The single table of PDF 7.8.2 operators. It lives at the spec floor because two
 layers need it and neither may import the other: `s_07_filters` recognizes
 content streams before parsing them, and `s_07_content` binds each operator to
-the interpreter method that implements it. `s_07_content/operator_tables.py`
-re-exports it as `OPERATOR_SPECS`, which is where content-operator behavior is
-extended.
+the interpreter method that implements it. Add operators here and implement
+their handlers in `s_07_content/state.py`.
 """
 
 from __future__ import annotations

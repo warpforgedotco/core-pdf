@@ -33,16 +33,17 @@ ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
 
-TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
+internal_INLINE_IMAGE_MARKER_RE = re.compile(rb"[%(/<>\[\]]|BI")
 
 
-def _advance_past_lexical_markers(
+def internal_next_inline_image(
     raw_bytes: bytes,
     pos: int,
     data_len: int,
-    container_depth: int,
-) -> tuple[int, int, bytes, int, bool] | None:
-    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
+) -> int | None:
+    """Find a top-level BI token, ignoring names, strings and containers."""
+    container_depth = 0
+    while match := internal_INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -81,12 +82,10 @@ def _advance_past_lexical_markers(
             (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]])
             and (after == data_len or SEPARATOR_TABLE[raw_bytes[after]])
         )
-        return marker, after, token, container_depth, delimited
+        if not container_depth and delimited:
+            return after
+        pos = after
     return None
-
-
-class NestedStreamRequest(Exception):
-    """Internal control flow used to pause a content stream for a nested one."""
 
 
 OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
@@ -272,13 +271,8 @@ def validate_inline_images(data: bytes | memoryview) -> None:
         raw_bytes = bytes(data)
     data_len = len(raw_bytes)
     pos = 0
-    container_depth = 0
     lexer = PdfLexer(raw_bytes)
-    while scan := _advance_past_lexical_markers(raw_bytes, pos, data_len, container_depth):
-        _marker, after, token, container_depth, delimited = scan
-        if token != b"BI" or container_depth or not delimited:
-            pos = after
-            continue
+    while (after := internal_next_inline_image(raw_bytes, pos, data_len)) is not None:
         lexer.pos = after
         parse_inline_image(lexer)
         pos = lexer.pos
