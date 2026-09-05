@@ -5,11 +5,6 @@ import numpy
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl._impl.extract.contracts import ObservationBatch, ParsedBlock, ParsedLine
 from core_pdf.impl._impl.extract.emit import internal_compose_page, internal_normalized_blocks
-from core_pdf.impl._impl.extract.table_reconcile import (
-    internal_profile_tables,
-    internal_remove_block_duplicate_tables,
-)
-from core_pdf.impl._impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 from core_pdf.impl.types import TextWord
 
 
@@ -41,26 +36,14 @@ def test_layout_uses_supplied_source_labels_and_group_order_without_mutating_obs
     assert evidence.rotation_count == 1
 
 
-def test_block_normalizer_reconciles_words_before_composition() -> None:
+def test_block_normalizer_preserves_prepared_text_and_word_geometry() -> None:
     bbox = (10.0, 10.0, 40.0, 20.0)
+    word = TextWord("value", bbox)
     parsed = ParsedBlock(
-        lines=(
-            ParsedLine(
-                "bad",
-                bbox,
-                "external",
-                words=(TextWord("bad", bbox),),
-            ),
-        ),
+        lines=(ParsedLine("value", bbox, "external", words=(word,)),),
         bbox=bbox,
     )
-    calls: list[tuple[str, str]] = []
-
-    def normalize(text: str, source: str) -> str:
-        calls.append((text, source))
-        return "good value"
-
-    normalized = internal_normalized_blocks((parsed,), (), normalize_text=normalize)
+    normalized = internal_normalized_blocks((parsed,), ())
     page = internal_compose_page(
         (parsed,),
         normalized,
@@ -71,38 +54,6 @@ def test_block_normalizer_reconciles_words_before_composition() -> None:
         rotation=0,
         route="external",
     )
-
-    assert calls == [("bad", "external")]
-    assert page.blocks[0].text == "good value"
-    assert [(word.text, word.bbox) for word in page.blocks[0].lines[0].words] == [
-        ("good", None),
-        ("value", None),
-    ]
-    assert parsed.lines[0].text == "bad"
+    assert page.blocks[0].text == "value"
+    assert page.blocks[0].lines[0].words == (word,)
     assert page.base_route == "external"
-
-
-def test_table_projection_preserves_explicitly_protected_table_snapshots() -> None:
-    bbox = (10.0, 10.0, 80.0, 20.0)
-    text = (
-        "one two three four five six seven eight nine ten eleven twelve thirteen "
-        "fourteen fifteen sixteen"
-    )
-    blocks = [
-        Block(order=0, kind=BlockKind.PARAGRAPH, lines=(TextLine(text, bbox=bbox),), bbox=bbox)
-    ]
-    duplicate = Table(
-        order=0, rows=((TableCell(0, 0, text),),), bbox=bbox, metadata={"source": "stream"}
-    )
-    distinct = Table(order=1, rows=((TableCell(0, 0, "unique"),),), bbox=bbox)
-
-    tables = internal_profile_tables((duplicate, distinct))
-    assert internal_remove_block_duplicate_tables(blocks, tables) == tables[1:]
-    assert (
-        internal_remove_block_duplicate_tables(
-            blocks,
-            tables,
-            protected_table_indexes=frozenset({0}),
-        )
-        == tables
-    )

@@ -38,21 +38,19 @@ class internal_TableFacts:
     columns: int
     spanned_columns: int
     cell_count: int
-    divided_rows: int
     single_cell_rows: int
     filled_texts: tuple[str, ...]
 
     @classmethod
     def from_rows(cls, rows: Sequence[Sequence[TableCell]]) -> internal_TableFacts:
         nonempty_rows = populated_rows = columns = spanned_columns = cell_count = 0
-        divided_rows = single_cell_rows = 0
+        single_cell_rows = 0
         filled_texts: list[str] = []
         for row in rows:
             size = len(row)
             nonempty_rows += bool(size)
             columns = max(columns, size)
             cell_count += size
-            divided_rows += size >= 2
             single_cell_rows += size == 1
             previous_count = len(filled_texts)
             for cell in row:
@@ -68,7 +66,6 @@ class internal_TableFacts:
             columns,
             spanned_columns,
             cell_count,
-            divided_rows,
             single_cell_rows,
             tuple(filled_texts),
         )

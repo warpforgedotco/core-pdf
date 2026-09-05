@@ -2,9 +2,8 @@
 
 from core_pdf.impl._impl.extract.table_cleanup import internal_table_with_bands
 from core_pdf.impl._impl.extract.table_reconcile import (
-    internal_profile_tables,
+    internal_project_text_and_tables,
     internal_remove_block_duplicate_table_rows,
-    internal_remove_block_duplicate_tables,
 )
 from core_pdf.impl._impl.output.model import (
     Block,
@@ -116,12 +115,15 @@ def test_text_without_geometry_cannot_establish_a_duplicate_table() -> None:
         lines=(TextLine("Unrelated note"),),
     )
 
-    tables = internal_profile_tables((table,))
-    assert internal_remove_block_duplicate_tables([matching_text], tables) == tables
-    assert internal_remove_block_duplicate_tables([matching_text, unrelated_text], tables) == tables
+    assert internal_project_text_and_tables([matching_text], (table,)) == (
+        [matching_text],
+        (table,),
+    )
+    blocks = [matching_text, unrelated_text]
+    assert internal_project_text_and_tables(blocks, (table,)) == (blocks, (table,))
 
 
-def test_changed_table_rows_get_new_profiles_without_invalidating_original_snapshots() -> None:
+def test_changed_table_rows_preserve_original_snapshots() -> None:
     # Poppler 26.07.0 pdftotext -bbox confirms snapshot.pdf places the title
     # at y=84 and the retained value at y=14, in the separate boxes below.
     table = Table(
@@ -138,11 +140,10 @@ def test_changed_table_rows_get_new_profiles_without_invalidating_original_snaps
         bbox=(0, 80, 100, 100),
         lines=(TextLine("Repeated title"),),
     )
-    original = internal_profile_tables((table,))
-
     projected = internal_remove_block_duplicate_table_rows([block], (table,))
-    changed = internal_profile_tables(projected)
-
-    assert changed[0][1].tokens == ("retained", "value")
-    assert original[0][1].tokens == ("repeated", "title", "retained", "value")
+    assert [[cell.text for cell in row] for row in projected[0].rows] == [["Retained value"]]
+    assert [[cell.text for cell in row] for row in table.rows] == [
+        ["Repeated title"],
+        ["Retained value"],
+    ]
     assert projected[0] is not table

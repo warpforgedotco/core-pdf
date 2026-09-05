@@ -240,17 +240,6 @@ def internal_semantic_header_row(row: tuple[TableCell, ...]) -> bool:
     return numeric == 0 and len(populated) >= 2
 
 
-def internal_structured_stream_table(
-    table: Table, *, facts: internal_TableFacts | None = None
-) -> bool:
-    """Identify stream tables with enough structured values to preserve."""
-    if table.metadata.get("source") != "stream":
-        return False
-    facts = facts or internal_TableFacts.from_rows(table.rows)
-    numeric_cells = table.metadata.get("numeric_cells", 0)
-    return facts.numeric_density >= 0.10 or (isinstance(numeric_cells, int) and numeric_cells >= 2)
-
-
 def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
     """Split long grid regions at repeated section-header rows."""
     if len(table.rows) < 6 or internal_TableFacts.from_rows(table.rows).numeric_density < 0.3:
@@ -320,30 +309,6 @@ def internal_table_character_spaced_prose(
     ) or (
         len(table.rows) >= 40 and facts.average_cell_length < 8.0 and facts.numeric_density < 0.20
     )
-
-
-def internal_table_has_grid_shape(
-    table: Table, *, facts: internal_TableFacts | None = None
-) -> bool:
-    """Report whether a table's rows actually use its columns.
-
-    This complements :func:`internal_table_is_single_column_prose`, but is not
-    its negation: ties satisfy neither, and this gate admits two-row grids.
-    A grid inferred from alignment or from rules can describe either a real
-    table or a column of prose, and what separates them is whether the rows
-    divide: a table's rows hold several cells because there are several
-    columns to fill, while prose yields one cell per row spanning the width.
-
-    Deciding this on shape alone keeps it free of assumptions about what a
-    table contains, so it holds for a schedule of numbers and a grid of
-    sentences alike.
-    """
-    facts = facts or internal_TableFacts.from_rows(table.rows)
-    if facts.nonempty_rows < 2:
-        return False
-    if facts.spanned_columns < 2:
-        return False
-    return facts.divided_rows * 2 > facts.nonempty_rows
 
 
 def internal_table_is_single_column_prose(

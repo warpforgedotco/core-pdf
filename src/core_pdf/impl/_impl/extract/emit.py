@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import replace
 from statistics import fmean
 
@@ -24,7 +23,6 @@ from core_pdf.impl._impl.model.geometry import (
     interval_overlap,
     rect_tuple,
 )
-from core_pdf.impl._impl.model.text import collapse_character_spaced
 from core_pdf.impl._impl.output.model import (
     Block,
     BlockKind,
@@ -115,19 +113,6 @@ def internal_remove_off_page_blocks(
     return [block for block in blocks if internal_block_inside_page(block, width, height)]
 
 
-def internal_collapse_character_spaced_line(text: str) -> str:
-    """Repair a native line whose glyph spacing was mistaken for word spacing."""
-    return collapse_character_spaced(text, min_tokens=20, single_char_ratio=0.75)
-
-
-def internal_normalize_emitted_text(text: str, source: str) -> str:
-    # Emission has no evidence that a decoded word, operator, or symbol is
-    # spurious. Keep text intact apart from physical glyph-spacing repair.
-    if source == "native":
-        return internal_collapse_character_spaced_line(text)
-    return text
-
-
 def internal_line_decoration_flags(
     line: ParsedLine,
     drawings: tuple[CapturedDrawing, ...],
@@ -195,8 +180,6 @@ def internal_remove_soft_line_end_hyphens(lines: list[str]) -> list[str]:
 def internal_normalized_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
-    *,
-    normalize_text: Callable[[str, str], str] = internal_normalize_emitted_text,
 ) -> list[Block]:
     """Build the normalized text candidate projection from parsed lines."""
     decoration_boxes = tuple(
@@ -214,7 +197,7 @@ def internal_normalized_blocks(
         )
         sources = tuple(dict.fromkeys(line.source for line in parsed_block.lines))
         normalized_line_texts = internal_remove_soft_line_end_hyphens(
-            [normalize_text(line.text, line.source) for line in parsed_block.lines]
+            [line.text for line in parsed_block.lines]
         )
         lines: list[TextLine] = []
         for line, text in zip(parsed_block.lines, normalized_line_texts, strict=True):

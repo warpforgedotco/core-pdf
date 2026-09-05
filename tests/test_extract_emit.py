@@ -326,7 +326,7 @@ def test_emit_preserves_structured_stream_table_with_sparse_numeric_values() -> 
     assert len(page.tables) == 1
 
 
-def test_emit_removes_character_spaced_stream_table_duplicated_by_block() -> None:
+def test_emit_preserves_character_spaced_table_and_distinct_block() -> None:
     parsed = page_of(
         width=200.0,
         height=300.0,
@@ -350,11 +350,13 @@ def test_emit_removes_character_spaced_stream_table_duplicated_by_block() -> Non
 
     page = emit_page(parsed)
 
+    # Different text and unknown cell boxes cannot establish a duplicate.
     assert [block.text for block in page.blocks] == ["NGL Pipelines & Services $ 10 $ 9"]
-    assert page.tables == ()
+    assert len(page.tables) == 1
+    assert page.tables[0].rows == parsed.tables[0].rows
 
 
-def test_emit_removes_stream_table_covered_by_overlapping_blocks() -> None:
+def test_emit_preserves_stream_table_and_only_removes_complete_duplicate_lines() -> None:
     parsed = page_of(
         route="native",
         blocks=(
@@ -392,8 +394,9 @@ def test_emit_removes_stream_table_covered_by_overlapping_blocks() -> None:
 
     page = emit_page(parsed)
 
-    assert len(page.blocks) == 2
-    assert page.tables == ()
+    assert [item.text for item in page.blocks] == [parsed.blocks[0].lines[0].text]
+    assert len(page.tables) == 1
+    assert page.tables[0].rows == parsed.tables[0].rows
 
 
 def test_emit_keeps_a_grid_shaped_table_and_drops_the_duplicate_block() -> None:
@@ -506,7 +509,7 @@ def test_emit_preserves_decoded_identifiers_regardless_of_their_shape() -> None:
     ]
 
 
-def test_emit_removes_fragmented_stream_table() -> None:
+def test_emit_preserves_accepted_table_with_character_spaced_cells() -> None:
     parsed = page_of(
         route="native",
         blocks=(block("Scheduled maturities of debt", (20.0, 300.0, 260.0, 320.0)),),
@@ -528,10 +531,13 @@ def test_emit_removes_fragmented_stream_table() -> None:
 
     page = emit_page(parsed)
 
-    assert page.tables == ()
+    # The real PDFs in test_extract_column_preservation independently verify
+    # these cells; their vocabulary is not evidence that a table is spurious.
+    assert len(page.tables) == 1
+    assert page.tables[0].rows == parsed.tables[0].rows
 
 
-def test_emit_removes_noisy_stream_table() -> None:
+def test_emit_preserves_accepted_table_with_identifier_cells() -> None:
     parsed = page_of(
         route="native",
         blocks=(block("Mass properties table", (20.0, 300.0, 260.0, 320.0)),),
@@ -553,7 +559,10 @@ def test_emit_removes_noisy_stream_table() -> None:
 
     page = emit_page(parsed)
 
-    assert page.tables == ()
+    # The real PDFs in test_extract_column_preservation independently verify
+    # these cells; their vocabulary is not evidence that a table is spurious.
+    assert len(page.tables) == 1
+    assert page.tables[0].rows == parsed.tables[0].rows
 
 
 def test_emit_preserves_short_decoded_native_fragments() -> None:

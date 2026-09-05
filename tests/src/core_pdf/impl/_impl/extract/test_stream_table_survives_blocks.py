@@ -1,20 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""A table whose cells are sentences is still a table.
-
-Blocks and a stream table covering the same region hold the same glyphs, so
-one of them has to go. The ruled path already answers this the right way round
--- the text survives either way, but only the table carries the rows and
-columns -- and keeps anything shaped like a grid. The stream path asked instead
-whether the cells were numeric, so comparison tables and schedules written in
-prose were discarded whole, and the page kept no table at all.
-"""
+"""Emission retains accepted tables regardless of cell vocabulary or column count."""
 
 from __future__ import annotations
 
-from core_pdf.impl._impl.extract.table_reconcile import (
-    internal_stream_table_duplicated_by_blocks,
-    internal_table_profile,
-)
+import pytest
+
+from core_pdf.impl._impl.extract.table_reconcile import internal_project_text_and_tables
 from core_pdf.impl._impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 from tests.helpers.structured import cell, stream_table
 
@@ -56,27 +47,19 @@ PROSE_CELLS = (
 )
 
 
-def test_a_prose_comparison_table_survives_the_blocks_that_repeat_it() -> None:
-    table = table_of(PROSE_CELLS)
-    # The premise: the blocks do repeat it, so the coverage test alone would drop it.
-    assert internal_table_profile(table).stream_is_tabular
-    assert not internal_stream_table_duplicated_by_blocks(table, blocks_covering(table))
-
-
-def test_two_columns_of_prose_are_not_mistaken_for_a_table() -> None:
-    # A page set in two columns divides its rows exactly as a table does, so
-    # shape alone cannot keep it; the third column is what it never produces.
-    columns = tuple(
-        ("Left column line of running text", "Right column line of running text") for _ in range(6)
-    )
-    table = table_of(columns)
-
-    assert not internal_table_profile(table).stream_is_tabular
-    assert internal_stream_table_duplicated_by_blocks(table, blocks_covering(table))
-
-
-def test_a_two_row_fragment_is_not_mistaken_for_a_table() -> None:
-    # A wrapped caption can divide into three columns once; a table does it again.
-    table = table_of(PROSE_CELLS[:2])
-
-    assert not internal_table_profile(table).stream_is_tabular
+@pytest.mark.parametrize(
+    "rows",
+    [
+        PROSE_CELLS,
+        PROSE_CELLS[:2],
+        tuple(("Alpha beta gamma delta", "Epsilon zeta eta theta") for _ in range(9)),
+        tuple(("I 0 ll 13 8 7 o o", "531o6 10llfo2 relDc c t2 l") for _ in range(9)),
+    ],
+)
+def test_accepted_tables_survive_blocks_repeating_their_complete_text(
+    rows: tuple[tuple[str, ...], ...],
+) -> None:
+    table = table_of(rows)
+    blocks, tables = internal_project_text_and_tables(blocks_covering(table), (table,))
+    assert tables == (table,)
+    assert blocks == []

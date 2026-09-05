@@ -9,7 +9,6 @@ import pytest
 
 from core_pdf.impl._impl.extract.table_cleanup import (
     internal_stream_table_reads_like_prose,
-    internal_table_has_grid_shape,
     internal_table_is_single_column_prose,
     internal_table_quality,
 )
@@ -18,20 +17,20 @@ from core_pdf.impl._impl.output.model import Table, TableCell
 
 
 @pytest.mark.parametrize(
-    ("widths", "has_grid", "single_column"),
+    ("widths", "single_column"),
     [
-        ((), False, False),
-        ((1,), False, False),
-        ((2, 2), True, False),
-        ((1, 1), False, False),
-        ((1, 1, 1), False, True),
-        ((1, 1, 2, 2), False, False),
-        ((0, 1, 1, 2), False, True),
-        ((0, 1, 2, 2), True, False),
+        ((), False),
+        ((1,), False),
+        ((2, 2), False),
+        ((1, 1), False),
+        ((1, 1, 1), True),
+        ((1, 1, 2, 2), False),
+        ((0, 1, 1, 2), True),
+        ((0, 1, 2, 2), False),
     ],
 )
 def test_shape_rules_preserve_row_minima_ties_and_spans(
-    widths: tuple[int, ...], has_grid: bool, single_column: bool
+    widths: tuple[int, ...], single_column: bool
 ) -> None:
     rows = tuple(
         tuple(
@@ -43,7 +42,6 @@ def test_shape_rules_preserve_row_minima_ties_and_spans(
     table = Table(order=0, rows=rows)
     facts = internal_TableFacts.from_rows(rows)
 
-    assert internal_table_has_grid_shape(table, facts=facts) is has_grid
     assert internal_table_is_single_column_prose(table, facts=facts) is single_column
 
 
@@ -60,7 +58,7 @@ def test_table_facts_distinguish_physical_shape_population_and_spans() -> None:
 
     assert (facts.row_count, facts.nonempty_rows, facts.populated_rows) == (3, 2, 1)
     assert (facts.columns, facts.spanned_columns, facts.cell_count) == (2, 3, 3)
-    assert (facts.divided_rows, facts.single_cell_rows) == (1, 1)
+    assert facts.single_cell_rows == 1
     assert facts.filled_texts == ("123", "a b c d")
     assert facts.numeric_cells == 1
     assert facts.numeric_density == 0.5
