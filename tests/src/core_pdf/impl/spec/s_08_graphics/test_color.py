@@ -2,6 +2,7 @@ import imagecodecs
 import numpy
 import pytest
 
+from core_pdf.impl.spec.s_08_graphics import device_profiles
 from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_bytes_to_srgb,
     cmyk_floats_to_srgb,
@@ -112,6 +113,21 @@ def test_default_cmyk_profile_loads() -> None:
     assert transform.color_space == "CMYK"
     assert transform.input_channels == 4
     assert transform.alternate_color_space == "DeviceCMYK"
+
+
+def test_cmyk_conversion_falls_back_when_profile_application_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingTransform:
+        def apply_uint8(self, samples: object) -> None:
+            raise IccProfileError("broken transform")
+
+    monkeypatch.setattr(device_profiles, "default_cmyk_transform", lambda: FailingTransform())
+    samples = numpy.asarray([[26, 51, 77, 102]], dtype=numpy.uint8)
+
+    converted = cmyk_bytes_to_srgb(samples)
+
+    numpy.testing.assert_array_equal(converted, ((137, 122, 106),))
 
 
 def test_default_cmyk_profile_reproduces_the_process_inks() -> None:

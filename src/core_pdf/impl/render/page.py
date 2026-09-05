@@ -401,17 +401,23 @@ def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
 
 
 def internal_append_glyph_paint(
-    display_list: DisplayList, glyph: GlyphObservation, clipping_subpaths: list[CapturedSubpath]
+    display_list: DisplayList,
+    glyph: GlyphObservation,
+    clipping_subpaths: list[CapturedSubpath],
+    *,
+    include_paint: bool = True,
 ) -> bool:
     if glyph.visible is False:
+        return True
+    mode = int(glyph.text_render_mode)
+    if not include_paint and mode < 4:
         return True
     path = internal_glyph_outline_path(glyph)
     if path is None:
         return False
-    mode = int(glyph.text_render_mode)
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
-    if mode in internal_NON_PAINTING_RENDER_MODES:
+    if not include_paint or mode in internal_NON_PAINTING_RENDER_MODES:
         return True
     paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
     display_list.append(
@@ -482,7 +488,7 @@ def compose_page(
         text_clipping_subpaths.clear()
 
     for command in commands:
-        if not options.include_text and isinstance(command, (TextRun, GlyphObservation)):
+        if not options.include_text and isinstance(command, TextRun):
             continue
         if isinstance(command, TextRun):
             append_text_run(command)
@@ -495,9 +501,17 @@ def compose_page(
             ):
                 flush_text_clip(glyph.seqno)
             current_text_object_id = glyph_text_object_id
-            if internal_append_glyph_paint(display_list, glyph, text_clipping_subpaths):
+            if internal_append_glyph_paint(
+                display_list,
+                glyph,
+                text_clipping_subpaths,
+                include_paint=options.include_text,
+            ):
                 continue
-            if glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES:
+            if (
+                not options.include_text
+                or glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES
+            ):
                 continue
             bitmap = glyph.resolved_bitmap()
             if not bitmap:

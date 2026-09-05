@@ -53,6 +53,10 @@ from core_pdf.impl.runtime.array_views import finite_median
 internal_CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
 
 
+def internal_table_vertical_sort_key(table: Table) -> float:
+    return -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]
+
+
 @dataclass(frozen=True, slots=True)
 class internal_ObservationCoordinates:
     """Python scalar columns shared by stream-table candidate construction."""
@@ -118,6 +122,7 @@ class internal_TableAnalysis:
         chart_table = extract_chart_table(capture, self.observations)
         if chart_table is not None:
             tables = (*tables, chart_table)
+        tables = tuple(sorted(tables, key=internal_table_vertical_sort_key))
         return tuple(
             internal_table_with_bands(
                 internal_annotate_table_associations(
@@ -298,7 +303,7 @@ def internal_detect_tables(
         )
         for table in tables
     ]
-    return tuple(sorted(tables, key=lambda table: -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]))
+    return tuple(sorted(tables, key=internal_table_vertical_sort_key))
 
 
 # Whitespace-aligned stream table inference.

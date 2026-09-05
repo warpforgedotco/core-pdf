@@ -3,17 +3,25 @@
 
 from __future__ import annotations
 
+import zlib
+from unittest.mock import patch
+
+import imagecodecs
 import numpy
 
+from core_pdf.impl.spec.s_07_filters import pipeline as stream_pipeline
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.color import (
     internal_convert_cmyk,
+    internal_convert_devicen,
+    internal_convert_image_data,
     internal_convert_indexed,
     internal_convert_separation,
-    internal_sampled_separation_rgb_lut,
+    internal_separation_rgb_lut,
     internal_tint_operands_to_srgb,
 )
-from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, describe_color_space
+from core_pdf.impl.spec.s_08_graphics.icc_profiles import parse_icc_transform
 
 
 def test_cmyk_conversion_handles_process_inks_and_black() -> None:
@@ -54,15 +62,18 @@ def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
 
 
 def test_sampled_separation_conversion_builds_exact_rgb_lut() -> None:
+    function_dictionary = {
+        "FunctionType": 0,
+        "BitsPerSample": 8,
+        "Size": [256],
+        "Domain": [0, 1],
+        "Range": [0, 1],
+        "Filter": "FlateDecode",
+    }
     tint_function = PdfStream(
-        {
-            "FunctionType": 0,
-            "BitsPerSample": 8,
-            "Size": [256],
-            "Domain": [0, 1],
-            "Range": [0, 1],
-        },
-        bytes(range(256)),
+        function_dictionary,
+        zlib.compress(bytes(range(256))),
+        spec=function_dictionary,
     )
     spec = ImageColorSpec(
         kind="Separation",
@@ -73,22 +84,118 @@ def test_sampled_separation_conversion_builds_exact_rgb_lut() -> None:
     )
     samples = bytes((0, 64, 128, 192, 255, 64, 0))
 
-    first = internal_convert_separation(samples, spec)
+    with patch.object(
+        stream_pipeline,
+        "decode_stream_data",
+        wraps=stream_pipeline.decode_stream_data,
+    ) as decode_stream_data:
+        first = internal_convert_separation(samples, spec)
+        assert decode_stream_data.call_count == 1
     second = internal_convert_separation(samples, spec)
     expected = numpy.repeat(numpy.frombuffer(samples, dtype=numpy.uint8), 3)
 
     numpy.testing.assert_array_equal(first, expected)
     numpy.testing.assert_array_equal(second, expected)
-    lut = internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
+    lut = internal_separation_rgb_lut(tint_function, "DeviceGray")
     expected_lut = numpy.repeat(numpy.arange(256, dtype=numpy.uint8)[:, None], 3, axis=1)
     numpy.testing.assert_array_equal(lut, expected_lut)
 
     # An equivalent function built from fresh bytes must produce the same table.
-    twin = PdfStream(dict(tint_function.dictionary), bytes(range(256)))
+    twin_dictionary = dict(tint_function.dictionary)
+    twin = PdfStream(
+        twin_dictionary,
+        zlib.compress(bytes(range(256))),
+        spec=twin_dictionary,
+    )
     numpy.testing.assert_array_equal(
-        internal_sampled_separation_rgb_lut(twin, "DeviceGray"),
+        internal_separation_rgb_lut(twin, "DeviceGray"),
         lut,
     )
+
+
+def test_sampled_devicen_function_decodes_its_stream_once() -> None:
+    function_dictionary = {
+        "FunctionType": 0,
+        "BitsPerSample": 8,
+        "Size": [2, 2],
+        "Domain": [0, 1, 0, 1],
+        "Range": [0, 1, 0, 1, 0, 1],
+        "Filter": "FlateDecode",
+    }
+    function_samples = bytes((0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255))
+    tint_function = PdfStream(
+        function_dictionary,
+        zlib.compress(function_samples),
+        spec=function_dictionary,
+    )
+    spec = ImageColorSpec(
+        kind="DeviceN",
+        params={},
+        alt="DeviceRGB",
+        tint_fn=tint_function,
+        channels=2,
+    )
+
+    with patch.object(
+        stream_pipeline,
+        "decode_stream_data",
+        wraps=stream_pipeline.decode_stream_data,
+    ) as decode_stream_data:
+        converted = internal_convert_devicen(bytes((0, 0, 255, 0, 0, 255, 255, 255)), spec)
+
+    assert converted is not None
+    assert tuple(converted) == (0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255)
+    assert decode_stream_data.call_count == 1
+
+
+def test_embedded_icc_profile_is_applied_before_its_alternate() -> None:
+    profile = bytes(imagecodecs.cms_profile("gray", gamma=1.0))
+    profile_dictionary = {
+        "N": 1,
+        "Alternate": "DeviceGray",
+        "Filter": "FlateDecode",
+    }
+    profile_stream = PdfStream(
+        profile_dictionary,
+        zlib.compress(profile),
+        spec=profile_dictionary,
+    )
+    image_dictionary: dict[str, object] = {
+        "Width": 1,
+        "Height": 1,
+        "BitsPerComponent": 8,
+        "ColorSpace": ["ICCBased", profile_stream],
+    }
+
+    converted = internal_convert_image_data(bytes((128,)), image_dictionary)
+    expected = parse_icc_transform(profile).apply_uint8(numpy.asarray([[128]], dtype=numpy.uint8))
+
+    numpy.testing.assert_array_equal(converted, expected.reshape(-1))
+    assert tuple(expected[0]) != (128, 128, 128)
+
+
+def test_invalid_embedded_icc_profile_uses_its_alternate() -> None:
+    profile_stream = PdfStream(
+        {"N": 1, "Alternate": "DeviceGray"},
+        decoded_data=b"not an ICC profile",
+    )
+    image_dictionary: dict[str, object] = {
+        "Width": 1,
+        "Height": 1,
+        "BitsPerComponent": 8,
+        "ColorSpace": ["ICCBased", profile_stream],
+    }
+
+    converted = internal_convert_image_data(bytes((128,)), image_dictionary)
+
+    assert converted is not None
+    assert tuple(converted) == (128, 128, 128)
+
+
+def test_iccbased_description_reads_the_profile_stream_dictionary() -> None:
+    profile_stream = PdfStream({"N": 4, "Alternate": "DeviceCMYK"})
+
+    assert describe_color_space(["ICCBased", profile_stream]) == "ICCBased:DeviceCMYK"
 
 
 def test_indexed_conversion_uses_rgb_lookup_entries() -> None:

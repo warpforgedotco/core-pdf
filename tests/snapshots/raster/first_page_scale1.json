@@ -146,7 +146,7 @@
   "VBA-29-0975-ARE-p002.pdf": "2fe87e1ab83b220a75904b6aa661faaa667a2317b3864ed4a2a6d11571b8ac3a",
   "VCAs_REV2_SCHEMATIC-p001.pdf": "cce546813d7ac5cb3a7a79f15d5e2e73c9f79fee2114d5dfcfff04089db4b700",
   "VCAs_REV2_SCHEMATIC-p002.pdf": "42d3bbcb1f9c949de3da279431139115c6f2dafe50f68cf5955ab3e1f06e66d4",
-  "Williamson_SpringCooking-p001.pdf": "35f96b8c2d0e5160800bf096b09a72eaea464a96782df320fd6db1483c69b2f8",
+  "Williamson_SpringCooking-p001.pdf": "7a7fbc8f70cbcd87e8e27b2a9884a2067ba8fd9ab6f2641c8975ad7935ed9147",
   "Williamson_SpringCooking-p002.pdf": "9353931d858054599ad55e3ca6f9a8e6a754bb2ef1e7dfac05c5876e490b5295",
   "Zhand-Ilavsky-p004.pdf": "0a4efe6300b0ecbd4f91b44f58fb197f6cb4461db5fdd92038d549a92f9a12d9",
   "Zhand-Ilavsky-p012.pdf": "f7cc6d3a60aacad621cf514e4edd3e77c9d49872c80e9597186c5c4baa5ab11a",
@@ -154,7 +154,7 @@
   "bns_roadmap_10212019_p48-48.pdf": "0034826811b31c08e1b5ad24fb252bcfbf7583947acf3bba41571a2a51478542",
   "cb9722en_p35-36-p001.pdf": "18cf1735b007ac3d8a3bc1fe92ebfb41c0530f31134d80617b267b5474f9ddeb",
   "cb9722en_p35-36-p002.pdf": "ec47d08ef6198f3a74ce48d72b0562563946028b803bce7b359ca98e2240b931",
-  "change-of-address-1_FILLED_p001.pdf": "3ae351f107ea6fe808b5150453d06988c61d638bf57cb3f5771ed1f3453f300f",
+  "change-of-address-1_FILLED_p001.pdf": "969b8153d6c0c62cc70c6600ca395327a553c87461d9b9fd73fd031a2fbd55ce",
   "chp_manuscripts_grants_2020.pdf": "7d14b25a2562a953af8408bce4a58e994a8841519e2a5269617fef82d688c48c",
   "circuit schematic.pdf": "ea0e753c71a59909e5ce76bf645cfd5736aa1a9c81d1cdb367213eeeecab41fd",
   "citycar_19830107_Payments-p001.pdf": "4810df00bbde2b71a54bea14180d20d872c00a644bad8cd850ecc0854c760087",
@@ -266,8 +266,8 @@
    }
   },
   "Roosevelt-Letter-Oppenheimer-p001.pdf": {
-   "canonical_sha256": "42131724fe2b741a475061a2300bd513a52c818ca6adcc4907c01f3ec526e0b7",
-   "reference": "first_page_scale1_refs/Roosevelt-Letter-Oppenheimer-p001.42131724fe2b741a.png",
+   "canonical_sha256": "4c2b38445191ae4eb1f31479fc051949c3e03733cd43d8da26cff5bef84d7963",
+   "reference": "first_page_scale1_refs/Roosevelt-Letter-Oppenheimer-p001.4c2b38445191ae4e.png",
    "limits": {
     "max_rgb_channel_delta": 1,
     "max_changed_rgb_samples": 47,

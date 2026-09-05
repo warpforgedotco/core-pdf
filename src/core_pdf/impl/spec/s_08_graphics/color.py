@@ -4,19 +4,17 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Callable, Sequence
-from typing import Any, TypeAlias, cast
+from collections.abc import Sequence
+from typing import Any, TypeAlias
 
 import numpy
 
 from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     apply_decode_array as apply_decode_array_kernel,
 )
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
-    evaluate_sampled_tint_function,
     image_component_count,
     image_dimension,
     unpack_subbyte_image_samples,
@@ -36,7 +34,8 @@ from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_floats_to_srgb,
     internal_component_byte,
 )
-from core_pdf.impl.spec.s_08_graphics.shading import internal_compile_pdf_function
+from core_pdf.impl.spec.s_08_graphics.icc_profiles import IccProfileError, IccSampleError
+from core_pdf.impl.spec.s_08_graphics.pdf_function import internal_compile_pdf_function
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
@@ -101,7 +100,7 @@ def internal_tint_operands_to_srgb(
         try:
             expected = internal_alternate_color_component_count(alt)
             evaluated = internal_evaluate_tint(spec.tint_fn, tints)
-            if evaluated is not None and len(evaluated) == expected:
+            if len(evaluated) == expected:
                 converted = internal_srgb_bytes_to_floats(
                     internal_apply_alt_color(list(evaluated), alt)
                 )
@@ -117,14 +116,8 @@ def internal_tint_operands_to_srgb(
     return (level, level, level)
 
 
-def internal_evaluate_tint(tint_fn: object, tints: list[float]) -> tuple[float, ...] | None:
-    from core_pdf.impl.spec.s_08_graphics.shading import internal_evaluate_pdf_function
-
-    if len(tints) > 1:
-        if not isinstance(tint_fn, PdfStream):
-            return None
-        return tuple(evaluate_sampled_tint_function(tint_fn, *tints))
-    return internal_evaluate_pdf_function(tint_fn, tints[0])
+def internal_evaluate_tint(tint_fn: object, tints: list[float]) -> tuple[float, ...]:
+    return internal_compile_pdf_function(tint_fn)(*tints)
 
 
 def internal_srgb_bytes_to_floats(rgb: bytes | None) -> tuple[float, float, float] | None:
@@ -143,15 +136,19 @@ def internal_alternate_color_component_count(alt_name: str) -> int:
     raise ValueError("invalid Separation color space")
 
 
-def internal_sampled_separation_rgb_lut(
-    tint_fn: PdfStream,
+def internal_separation_rgb_lut(
+    tint_fn: object,
     alt_name: str,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    """Compile an 8-bit sampled Separation function to an RGB lookup table."""
+    """Compile a one-input Separation function to an 8-bit RGB lookup table."""
     expected = internal_alternate_color_component_count(alt_name)
+    evaluate = internal_compile_pdf_function(tint_fn)
     table = numpy.empty((256, 3), dtype=numpy.uint8)
     for value in range(256):
-        components = evaluate_sampled_tint_function(tint_fn, value / 255.0)
+        try:
+            components = list(evaluate(value / 255.0))
+        except Exception as exc:
+            raise ValueError("invalid separation tint function") from exc
         if len(components) != expected:
             raise ValueError("invalid separation tint function")
         rgb = internal_apply_alt_color(components, alt_name)
@@ -159,37 +156,6 @@ def internal_sampled_separation_rgb_lut(
             raise ValueError("invalid Separation color space")
         table[value] = tuple(rgb)
     return table
-
-
-def internal_tint_components_evaluator(
-    tint_fn: object, error: str
-) -> Callable[[float], ColorComponents]:
-    """One-input tint transform as a callable, whatever form it arrived in.
-
-    Mirrors internal_evaluate_tint, which the *operand* path already uses, so a
-    Separation renders the same as a fill colour and as image samples. Before
-    this, a FunctionType 2 or 3 tint -- a plain dictionary, and the simplest
-    form the spec allows -- fell through to the identity and then failed the
-    component-count check, and image_decode swallowed that ValueError as if it
-    were a malformed ICCBased reference.
-    """
-    if tint_fn is None:
-        return lambda value: [value]
-    if isinstance(tint_fn, (list, tuple)):
-        if tint_fn and callable(tint_fn[0]):
-            tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
-
-            def call_python(value: float) -> ColorComponents:
-                try:
-                    return cast(ColorComponents, tint_callable(value))
-                except Exception as exc:
-                    raise ValueError(error) from exc
-
-            return call_python
-        constant = cast(ColorComponents, list(tint_fn))
-        return lambda value: constant
-    compiled = internal_compile_pdf_function(tint_fn)
-    return lambda value: list(compiled(value))
 
 
 def internal_convert_image_data(raw: ImageBuffer, image_dict: ImageDict) -> ImageBuffer | None:
@@ -236,6 +202,16 @@ def internal_convert_color_samples(
     if kind != "ICCBased":
         return None
 
+    transform = spec.icc_transform
+    if transform is not None and transform.input_channels == spec.channels:
+        values = uint8_view(samples)
+        if len(values) % transform.input_channels == 0:
+            try:
+                return transform.apply_uint8(values.reshape(-1, transform.input_channels)).reshape(
+                    -1
+                )
+            except (IccProfileError, IccSampleError):
+                pass
     fallback = spec.alt or {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(spec.channels)
     if fallback is None:
         raise ValueError("invalid ICCBased color space")
@@ -331,11 +307,6 @@ def internal_convert_separation(
 ) -> ImageBuffer | None:
     alt_name = color_space.alt or "DeviceGray"
     tint_fn = color_space.tint_fn
-    expected = internal_alternate_color_component_count(alt_name)
-    if isinstance(tint_fn, PdfStream):
-        samples = uint8_view(raw)
-        return internal_sampled_separation_rgb_lut(tint_fn, alt_name)[samples].reshape(-1)
-
     if tint_fn is None and alt_name in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
         samples = uint8_view(raw)
         result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
@@ -346,17 +317,7 @@ def internal_convert_separation(
         inks[:, 0] = samples
         return cmyk_bytes_to_srgb(inks).reshape(-1)
 
-    evaluate = internal_tint_components_evaluator(tint_fn, "invalid separation tint function")
-    table = numpy.empty((256, 3), dtype=numpy.uint8)
-    for value in range(256):
-        components = evaluate(value / 255.0)
-        if len(components) != expected:
-            raise ValueError("invalid separation tint function")
-        rgb = internal_apply_alt_color(components, alt_name)
-        if rgb is None:
-            raise ValueError("invalid Separation color space")
-        table[value] = tuple(rgb)
-    return table[uint8_view(raw)].reshape(-1)
+    return internal_separation_rgb_lut(tint_fn, alt_name)[uint8_view(raw)].reshape(-1)
 
 
 def internal_convert_devicen(
@@ -392,16 +353,13 @@ def internal_convert_devicen(
     samples = uint8_view(raw).reshape(-1, channels)
     distinct, inverse = numpy.unique(samples, axis=0, return_inverse=True)
     tinted = numpy.empty((len(distinct), expected), dtype=numpy.float64)
+    evaluate = internal_compile_pdf_function(tint_fn)
     for index, row in enumerate(distinct.tolist()):
         components: ColorComponents = [value / 255.0 for value in row]
-        if isinstance(tint_fn, (list, tuple)) and tint_fn and callable(tint_fn[0]):
-            tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
-            try:
-                components = cast(ColorComponents, tint_callable(*components))
-            except Exception as exc:
-                raise ValueError("invalid DeviceN tint function") from exc
-        elif isinstance(tint_fn, PdfStream):
-            components = evaluate_sampled_tint_function(tint_fn, *components)
+        try:
+            components = list(evaluate(*components))
+        except Exception as exc:
+            raise ValueError("invalid DeviceN tint function") from exc
         if len(components) != expected:
             raise ValueError("invalid DeviceN tint function")
         tinted[index] = components

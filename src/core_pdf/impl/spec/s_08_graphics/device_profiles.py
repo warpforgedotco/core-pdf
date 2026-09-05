@@ -56,7 +56,7 @@ def cmyk_bytes_to_srgb(samples: ByteSamples) -> ByteSamples:
     if transform is not None:
         try:
             return transform.apply_uint8(samples)
-        except IccSampleError:
+        except (IccProfileError, IccSampleError):
             pass
     # Keep the uncalibrated ink formula as a direct fallback for a damaged or
     # stripped installation. There is no retained channel table to manage.

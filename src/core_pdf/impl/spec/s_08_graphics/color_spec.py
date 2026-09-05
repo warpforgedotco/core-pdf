@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypeAlias, cast
 
 from core_pdf.impl.primitives import MISSING
@@ -16,6 +16,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     IccProfileError,
+    IccTransform,
     parse_icc_transform,
 )
 
@@ -52,6 +53,7 @@ class ImageColorSpec:
     alt: str | None = None
     tint_fn: object = None
     channels: int = 1
+    icc_transform: IccTransform | None = field(default=None, repr=False)
 
 
 def describe_color_space(value: object) -> str | None:
@@ -78,9 +80,16 @@ def describe_color_space(value: object) -> str | None:
             continue
         if kind == "ICCBased":
             prefixes.append("ICCBased")
-            if len(current) <= 1 or not isinstance(current[1], dict):
+            if len(current) <= 1:
                 return ":".join(prefixes)
-            alternate = current[1].get("Alternate")
+            profile = current[1]
+            if isinstance(profile, PdfStream):
+                profile_dictionary = profile.dictionary
+            elif isinstance(profile, dict):
+                profile_dictionary = profile
+            else:
+                return ":".join(prefixes)
+            alternate = profile_dictionary.get("Alternate")
             if alternate is None:
                 return ":".join(prefixes)
             current = alternate
@@ -197,19 +206,26 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             n = cs_param(icc_dict, "N", 3)
             channels = parse_channel_count(n)
             # PdfStream.data re-runs the filter pipeline on every access, so a
-            # compressed profile would otherwise be inflated twice here.
+            # compressed profile is decoded once while parsing this spec.
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
-            if alt is None and icc_profile is not None:
+            transform: IccTransform | None = None
+            if icc_profile is not None:
                 try:
-                    alt = parse_icc_transform(icc_profile).alternate_color_space
+                    parsed_transform = parse_icc_transform(icc_profile)
                 except IccProfileError:
-                    alt = None
+                    pass
+                else:
+                    if parsed_transform.input_channels == channels:
+                        transform = parsed_transform
+                    if alt is None:
+                        alt = parsed_transform.alternate_color_space
             return ImageColorSpec(
                 kind="ICCBased",
                 params=cast(ColorParams, icc_dict),
                 bits_per_component=bits_per_component,
                 alt=alt,
                 channels=channels,
+                icc_transform=transform,
             )
         if kind == "ICCBased":
             raise ValueError("invalid ICCBased color space")

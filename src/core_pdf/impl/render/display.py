@@ -44,6 +44,13 @@ def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str
     default_bpc = 1 if image_mask else 0
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), default_bpc)
     bits_per_component = bits_per_component if bits_per_component > 0 else default_bpc
+    image_source = data.get("image_source")
+    has_soft_mask = (
+        dictionary.get("SMask") is not None
+        or isinstance(data.get("soft_mask"), SoftMask)
+        or isinstance(image_source, ImageSource)
+        and image_source.soft_mask is not None
+    )
 
     metadata: dict[str, Any] = {
         "kind": kind,
@@ -55,7 +62,7 @@ def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str
         "filters": declared_filter_names(dictionary.get("Filter")),
         "image_mask": image_mask,
         "has_mask": dictionary.get("Mask") is not None,
-        "has_soft_mask": dictionary.get("SMask") is not None,
+        "has_soft_mask": has_soft_mask,
     }
 
     raw_data = data.get("raw_data", data.get("data"))

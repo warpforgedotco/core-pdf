@@ -5,6 +5,7 @@ from collections.abc import Callable
 import numpy
 import pytest
 
+from core_pdf.impl.extract import table_detection
 from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
@@ -315,6 +316,55 @@ def observations(runs: tuple[TextRun, ...]) -> ObservationBatch:
         visible=(run.visible for run in runs),
         references=runs,
     )
+
+
+def test_extract_tables_orders_a_synthetic_chart_above_a_ruled_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs = (
+        text("top-left", 20.0, 70.0, 0),
+        text("top-right", 60.0, 70.0, 1),
+        text("bottom-left", 20.0, 30.0, 2),
+        text("bottom-right", 60.0, 30.0, 3),
+    )
+    ocr = ObservationBatch.from_columns(
+        ("chart-a", "chart-b", "chart-c"),
+        (
+            (10.0, 300.0, 25.0, 310.0),
+            (35.0, 300.0, 50.0, 310.0),
+            (60.0, 300.0, 75.0, 310.0),
+        ),
+        source=ObservationSource.OCR,
+    )
+    batch = ObservationBatch.concatenate(observations(runs), ocr)
+    capture = make_capture(
+        page_evidence(page_area=40_000.0, uncovered_vector_area=25_000.0),
+        runs=runs,
+        grid_lines=RULED_GRID,
+        width=100.0,
+        height=400.0,
+        batch=batch,
+    )
+    # Keep this focused on the ruled-grid and chart paths; otherwise the same
+    # lower observations also form a redundant whitespace-inferred table.
+    monkeypatch.setattr(
+        table_detection,
+        "internal_stream_tables",
+        lambda capture, start_order, analysis: (),
+    )
+
+    tables = extract_tables(capture, batch)
+
+    assert [table.bbox for table in tables] == [
+        (10.0, 300.0, 75.0, 310.0),
+        (10.0, 10.0, 90.0, 90.0),
+    ]
+    assert [table.order for table in tables] == [0, 1]
+    assert tables[0].metadata["source"] == "chart-ocr"
+    assert [[cell.text for cell in row] for row in tables[1].rows] == [
+        ["top-left", "top-right"],
+        ["bottom-left", "bottom-right"],
+    ]
 
 
 def test_extract_tables_assigns_runs_to_ruled_cells() -> None:

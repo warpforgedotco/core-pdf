@@ -8,10 +8,16 @@ the golden raster corpus rasters only first pages, so neither caught them.
 
 from __future__ import annotations
 
+import zlib
+from unittest.mock import patch
+
 import pytest
 
+from core_pdf.impl.spec.s_07_filters import pipeline as stream_pipeline
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.spec.s_08_graphics.shading import internal_evaluate_pdf_function
+from core_pdf.impl.spec.s_08_graphics.pdf_function import internal_evaluate_pdf_function
+from core_pdf.impl.spec.s_08_graphics.shading import prepare_shading
 
 # Row of 8 samples, only the first bit set.
 ONE_HIGH_BIT = bytes((0b10000000,))
@@ -76,3 +82,38 @@ def test_shading_function_array_produces_all_components() -> None:
     assert internal_evaluate_pdf_function(RED_RAMP_COMPONENTS, 0.5) == pytest.approx(
         (0.5, 0.0, 0.0)
     )
+
+
+def test_prepared_sampled_shading_decodes_its_function_stream_once() -> None:
+    function_dictionary = {
+        "FunctionType": 0,
+        "BitsPerSample": 8,
+        "Size": [2],
+        "Domain": [0, 1],
+        "Range": [0, 1],
+        "Filter": "FlateDecode",
+    }
+    function = PdfStream(
+        function_dictionary,
+        zlib.compress(bytes((0, 255))),
+        spec=function_dictionary,
+    )
+
+    with patch.object(
+        stream_pipeline,
+        "decode_stream_data",
+        wraps=stream_pipeline.decode_stream_data,
+    ) as decode_stream_data:
+        shading = prepare_shading(
+            {
+                "ShadingType": 2,
+                "Coords": [0, 0, 10, 0],
+                "ColorSpace": "DeviceGray",
+                "Function": function,
+            }
+        )
+        assert shading is not None
+        assert shading.evaluate(0.0) == (0.0,)
+        assert shading.evaluate(1.0) == (1.0,)
+
+    assert decode_stream_data.call_count == 1
