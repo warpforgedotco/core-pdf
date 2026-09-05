@@ -2,6 +2,10 @@ name: Update raster goldens
 
 on:
   workflow_dispatch:
+  # Bootstrap this workflow before it is available on the default branch.
+  push:
+    branches: [refactor/core-architecture]
+    paths: [.github/workflows/update-raster-goldens.yml]
 
 permissions:
   contents: read
