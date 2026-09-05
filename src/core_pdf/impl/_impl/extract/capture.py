@@ -33,6 +33,7 @@ from core_pdf.impl._impl.model.glyphs import (
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.spec.s_07_content.stream_state import LayoutFormId
 
 
 class internal_StructureUnset:
@@ -43,12 +44,10 @@ internal_STRUCTURE_UNSET = internal_StructureUnset()
 WORD_TOKEN_RE = re.compile(r"\w+")
 
 # Thresholds for discarding a text layer that merely repeats another one. A layer needs
-# enough tokens for an overlap ratio to mean anything, then enough overlap to be judged a
-# duplicate. The two overlap floors differ because nested XObject layers repeat the page
-# almost exactly, while separately clipped boxes can repeat only a localized region.
-#
+# enough matching tokens to distinguish duplication from incidental repetition. Nested
+# streams require full local coverage of each discarded run; clipped layers retain their
+# overlap threshold because separately clipped boxes can repeat only a localized region.
 DUPLICATE_LAYER_MIN_TOKENS = 24
-DUPLICATE_NESTED_LAYER_MIN_OVERLAP = 0.60
 DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP = 0.50
 
 
@@ -76,25 +75,57 @@ def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None
 
 
 def internal_discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:
-    by_depth: dict[int, list[TextRun]] = {}
-    for run in runs:
-        by_depth.setdefault(run.xobject_depth, []).append(run)
-    page_runs = by_depth.get(0, [])
-    if not page_runs or len(by_depth) == 1:
+    page_runs: list[TextRun] = []
+    by_form: dict[tuple[int, LayoutFormId | int], list[int]] = {}
+    for index, run in enumerate(runs):
+        if run.xobject_depth == 0:
+            page_runs.append(run)
+        else:
+            form_id = next(
+                (value for key, value in reversed(run.provenance) if key == "layout_form_id"),
+                None,
+            )
+            # The form path and transformed bounds survive child invocations;
+            # stream_order advances when entering a child and is not restored.
+            group = cast(LayoutFormId, form_id) if isinstance(form_id, tuple) else run.stream_order
+            by_form.setdefault((run.xobject_depth, group), []).append(index)
+    if not page_runs or not by_form:
         return runs
-    tokens_by_depth = {
-        depth: internal_normalized_tokens(nested) for depth, nested in by_depth.items()
-    }
-    page_tokens = tokens_by_depth[0]
-    duplicate_depths = {
-        depth
-        for depth, nested in by_depth.items()
-        if depth > 0
-        and len(tokens_by_depth[depth]) >= DUPLICATE_LAYER_MIN_TOKENS
-        and internal_token_overlap(tokens_by_depth[depth], page_tokens)
-        >= DUPLICATE_NESTED_LAYER_MIN_OVERLAP
-    }
-    return tuple(run for run in runs if run.xobject_depth not in duplicate_depths)
+    page_geometry = numpy.asarray(
+        [(run.x0, run.y0, run.x1, run.y1) for run in page_runs], dtype=numpy.float64
+    )
+    page_tokens = [internal_normalized_tokens((run,)) for run in page_runs]
+    duplicate_indices: set[int] = set()
+    for indices in by_form.values():
+        tokens_by_index = {index: internal_normalized_tokens((runs[index],)) for index in indices}
+        if sum(map(len, tokens_by_index.values())) < DUPLICATE_LAYER_MIN_TOKENS:
+            continue
+        matched_indices: list[int] = []
+        matched_tokens = 0
+        for index, tokens in tokens_by_index.items():
+            if not tokens:
+                continue
+            run = runs[index]
+            intersects = (
+                (page_geometry[:, 0] < run.x1)
+                & (page_geometry[:, 2] > run.x0)
+                & (page_geometry[:, 1] < run.y1)
+                & (page_geometry[:, 3] > run.y0)
+            )
+            local_tokens = Counter(
+                token
+                for page_index in numpy.flatnonzero(intersects)
+                for token in page_tokens[int(page_index)]
+            )
+            if Counter(tokens) <= local_tokens:
+                matched_indices.append(index)
+                matched_tokens += len(tokens)
+        # A stream may mix a duplicate overlay with unique text. Discard only
+        # locally matched runs, never every form at the same nesting depth or
+        # an entire run merely because some of its words repeat page text.
+        if matched_tokens >= DUPLICATE_LAYER_MIN_TOKENS:
+            duplicate_indices.update(matched_indices)
+    return tuple(run for index, run in enumerate(runs) if index not in duplicate_indices)
 
 
 def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:

@@ -3,8 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
 from core_pdf import PdfDocument
 from core_pdf.impl._impl.extract.capture import (
+    capture_page,
     internal_apply_structure_actual_text,
     internal_extractable_runs,
     internal_layout_bbox_for_run,
@@ -13,6 +16,7 @@ from core_pdf.impl._impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl._impl.model.runs import TextRun
 from tests.helpers.extract_fakes import text_run
 from tests.helpers.paths import SCORE_BENCH
+from tests.helpers.pdf_bytes import one_page_pdf, stream_obj
 
 
 def run(
@@ -37,6 +41,79 @@ def test_capture_discards_duplicate_nested_text_layer() -> None:
         page_run,
         distinct_nested_run,
     )
+
+
+@pytest.mark.parametrize("variant", ["sibling", "mixed", "translated", "extended"])
+def test_capture_preserves_distinct_content_beside_duplicate_form_text(variant: str) -> None:
+    repeated = " ".join(f"word{index}" for index in range(24))
+    unique = "UNIQUE FORM CONTENT MUST SURVIVE"
+
+    def content(text: str, y: int = 700) -> bytes:
+        return f"BT /F1 6 Tf 10 {y} Td ({text}) Tj ET".encode()
+
+    form_metadata = (
+        b"/Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >>"
+    )
+    forms = [stream_obj(content(repeated), form_metadata)]
+    expected = (repeated, unique)
+    match variant:
+        case "sibling":
+            invocation = b"/Dup Do /Other Do"
+            forms.append(stream_obj(content(unique, 600), form_metadata))
+        case "mixed":
+            invocation = b"/Other Do"
+            forms.append(stream_obj(content(repeated) + b" " + content(unique, 600), form_metadata))
+        case "translated":
+            invocation = b"/Dup Do q 1 0 0 1 0 -100 cm /Dup Do Q"
+            expected = (repeated, repeated)
+        case "extended":
+            invocation = b"/Other Do"
+            forms.append(stream_obj(content(repeated + " " + unique), form_metadata))
+            expected = (repeated, repeated + " " + unique)
+        case _:
+            raise AssertionError(variant)
+    pdf = one_page_pdf(
+        content(repeated) + b" " + invocation,
+        resources=(b"<< /Font << /F1 5 0 R >> /XObject << /Dup 6 0 R /Other 7 0 R >> >>"),
+        extra_objects=forms,
+    )
+
+    with PdfDocument(pdf) as document:
+        captured = capture_page(document.pages[0])
+        assert captured.observations.text == expected
+        extracted = document.extract().text
+        if variant == "translated":
+            assert extracted.count("word0") == 2
+        else:
+            assert unique in extracted
+
+
+def test_capture_deduplicates_parent_form_across_nested_drawing() -> None:
+    first = " ".join(f"word{index}" for index in range(12))
+    second = " ".join(f"word{index}" for index in range(12, 24))
+
+    def content(text: str, y: int) -> bytes:
+        return f"BT /F1 6 Tf 10 {y} Td ({text}) Tj ET".encode()
+
+    form_metadata = b"/Type /XObject /Subtype /Form /BBox [0 0 612 792] "
+    page_content = content(first, 700) + b" " + content(second, 680)
+    form_content = content(first, 700) + b" /Inner Do " + content(second, 680)
+    pdf = one_page_pdf(
+        page_content + b" /Outer Do",
+        resources=b"<< /Font << /F1 5 0 R >> /XObject << /Outer 6 0 R >> >>",
+        extra_objects=(
+            stream_obj(
+                form_content,
+                form_metadata + b"/Resources << /Font << /F1 5 0 R >> "
+                b"/XObject << /Inner 7 0 R >> >>",
+            ),
+            stream_obj(b"0 0 5 5 re f", form_metadata),
+        ),
+    )
+
+    with PdfDocument(pdf) as document:
+        assert capture_page(document.pages[0]).observations.text == (first, second)
+        assert document.extract().text.count("word0") == 1
 
 
 def test_capture_discards_duplicate_alternate_clip_layer() -> None:
