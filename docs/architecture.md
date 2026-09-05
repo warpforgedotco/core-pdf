@@ -125,19 +125,22 @@ optimized byte path alongside the code.
 ### Golden rasters
 
 `tests/test_rendering_golden.py` pins corpus output. Ordinary pages use exact RGBA digests; pages
-containing irreversible JPEG 2000 images use canonical PNG references with bounded RGB differences
-because OpenJPEG output can vary across CPU implementations. CI runs the complete corpus, while the
-default local test uses a covering subset.
+containing irreversible JPEG 2000 images use lossless PNG references with sparse, per-sample RGB
+envelopes because OpenJPEG output can vary across CPU implementations. Only values observed on
+every supported CI platform are admitted; shape, alpha, and every unlisted RGB sample remain exact.
+CI runs the complete corpus, while the default local test uses a covering subset.
 
 A behavior-preserving refactor must leave the manifest and reference images unchanged. After an
 intentional output change, regenerate them with:
 
 ```sh
-uv run python scripts/update_raster_golden.py
+uv run python scripts/update_raster_golden.py collect \
+  --platform-id macos-arm64 --output /tmp/raster-observation
 ```
 
-Review the complete artifact diff. Canonical references must be generated in the pinned Ubuntu
-x86_64 codec environment; the noncanonical override is only a bootstrap mechanism and deliberately
-leaves provenance validation failing. The test and updater module documentation describes the
-snapshot format and regeneration mechanics. Recompute the local covering subset with
-`scripts/raster_cover.py` after substantial renderer restructuring.
+Collection never changes tracked files. To update the checked-in baseline, run the manual
+**Update raster goldens** workflow on the target branch. It collects the same revision on pinned
+Linux/x86_64 and macOS/ARM64 runners and publishes a binary patch for review; apply it from the
+repository root with `git apply --binary raster-golden.patch`. A single host cannot redefine the
+portable envelope. Recompute the local covering subset with `scripts/raster_cover.py` after
+substantial renderer restructuring.

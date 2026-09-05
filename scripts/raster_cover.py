@@ -124,7 +124,7 @@ def main() -> int:
     started = time.time()
     per_document = {pdf.name: trace_document(pdf) for pdf in pdfs}
     universe = set().union(*per_document.values()) if per_document else set()
-    tolerant_names = frozenset(load_snapshot().tolerant)
+    tolerant_names = frozenset(load_snapshot().portable)
     chosen = greedy_cover(per_document, precovered_names=tolerant_names)
     print(
         f"traced {len(pdfs)} documents in {time.time() - started:.0f}s; "

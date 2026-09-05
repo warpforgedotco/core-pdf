@@ -127,7 +127,7 @@ jobs:
         run: >-
           uv run --locked --package core-pdf --group test pytest
           tests/test_rendering_golden.py
-          -k "irreversible_jpx or tolerant_raster_references"
+          -k "irreversible_jpx or portable_raster_references"
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
