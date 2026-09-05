@@ -89,7 +89,7 @@ def test_actual_text_replaces_a_multi_style_span_once() -> None:
         (
             b"/Span << /ActualText (outer) >> BDC "
             b"/Span << /ActualText (inner) >> BDC (A) Tj EMC (B) Tj EMC",
-            ["innerouter"],
+            ["inner", "outer"],
             ["inner", "outer"],
         ),
     ],

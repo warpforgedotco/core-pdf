@@ -1560,6 +1560,9 @@ class TextState:
             self.sequence += 1
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
+        # A run owns one marked-content context. Finish neighboring text before
+        # changing that context so ActualText cannot replace unrelated glyphs.
+        self.run_accumulator.flush()
         tag = self.document.resolver.resolve_name(operands[0]) if operands else None
         layer: str | None = None
         actual_text: str | None = None
@@ -1581,11 +1584,13 @@ class TextState:
         )
 
     def op_BMC(self, operands: ContentOperands, depth: int) -> None:
+        self.run_accumulator.flush()
         self.marked_content_stack.append(MarkedContentEntry())
 
     def op_EMC(self, operands: ContentOperands, depth: int) -> None:
         if self.marked_content_stack:
             self.emit_actual_text_span(self.marked_content_stack.pop())
+            self.run_accumulator.flush()
 
     def op_G(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_device_color(operands, "DeviceGray", 1, stroke=True)
