@@ -5,7 +5,6 @@ import pytest
 
 from core_pdf.impl._impl.model.text import (
     collapse_character_spaced,
-    collapse_leader_runs,
     collapse_ws,
     compact_text,
     is_leader_run,
@@ -46,7 +45,6 @@ def test_leader_detection_requires_multiple_punctuation_characters(
 
 
 def test_leader_cleanup_preserves_single_punctuation() -> None:
-    assert collapse_leader_runs(" Chapter 1 . . . 12 ") == "Chapter 1 12"
     assert strip_edge_leaders(". . Chapter...") == "Chapter"
     assert strip_edge_leaders("Chapter.") == "Chapter."
     assert strip_edge_leaders("Chapter..") == "Chapter.."

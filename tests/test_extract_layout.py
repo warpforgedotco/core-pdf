@@ -201,7 +201,9 @@ def test_full_width_obstacle_keeps_surrounding_regions_separate() -> None:
     ]
 
 
-def test_native_layout_drops_symbol_heavy_artifact_lines() -> None:
+def test_native_layout_preserves_symbol_heavy_decoded_lines() -> None:
+    # pdftotext -layout and pdftoppm 26.07.0 preserve and render this exact
+    # line, including its arrow, dashes, and dots, in a WinAnsi PDF.
     batch = ObservationBatch.from_columns(
         ("heading", "2Y--> -- a IIIISCI...........................", "R1 +5V"),
         (
@@ -216,7 +218,11 @@ def test_native_layout_drops_symbol_heavy_artifact_lines() -> None:
 
     blocks = layout_blocks(batch)
 
-    assert [line.text for block in blocks for line in block.lines] == ["heading", "R1 +5V"]
+    assert [line.text for block in blocks for line in block.lines] == [
+        "heading",
+        "2Y--> -- a IIIISCI...........................",
+        "R1 +5V",
+    ]
 
 
 def test_native_layout_drops_repeated_single_letter_artifacts() -> None:

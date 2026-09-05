@@ -23,10 +23,7 @@ from core_pdf.impl._impl.extract.contracts import (
     ParsedBlock,
     ParsedLine,
 )
-from core_pdf.impl._impl.extract.emit import (
-    internal_corrupt_native_block,
-    internal_symbol_characters,
-)
+from core_pdf.impl._impl.extract.emit import assemble_page
 from core_pdf.impl._impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl._impl.extract.regions import internal_peel_spanning_band
 from core_pdf.impl._impl.extract.table_cleanup import (
@@ -35,29 +32,21 @@ from core_pdf.impl._impl.extract.table_cleanup import (
 )
 from core_pdf.impl._impl.output.model import Table, TableCell
 from tests.helpers.paths import score_bench_pdf
-from tests.helpers.structured import cell, native_block, stream_table
+from tests.helpers.structured import cell, stream_table
 
 
-def test_decimal_separators_are_not_symbols() -> None:
-    """A number's separators belong to the number, not to punctuation.
-
-    Counting them made a table of measurements read as symbol soup, which is
-    how this module recognizes a damaged text layer.
-    """
-    assert internal_symbol_characters("79.4 105.1 108.9 102.3") == 0
-    assert internal_symbol_characters("1,056.1 (58.6) 39.9") > 0  # brackets still count
-    # Digits and punctuation interleaved without forming numbers stay visible:
-    # the exemption is granted per token, never per character.
-    assert internal_symbol_characters("1911*2.1,z,z") >= 4
+def internal_emit_native_text(text: str) -> str:
+    bbox = (20.0, 100.0, 260.0, 160.0)
+    block = ParsedBlock(lines=(ParsedLine(text, bbox, "native"),), bbox=bbox)
+    return assemble_page(
+        (block,), page_number=1, width=300.0, height=400.0, rotation=0, route="native"
+    ).text
 
 
-def test_numeric_table_block_survives_corruption_filter() -> None:
+def test_numeric_table_block_survives_emission() -> None:
     """Regression: whole numeric tables were deleted as corrupt native text."""
-    numeric = native_block(
-        "79.4 105.1 108.9 102.3\n5.1 6.5 5.0 4.5\n6.4 6.2 7.3 4.4",
-        (20.0, 100.0, 260.0, 160.0),
-    )
-    assert not internal_corrupt_native_block(numeric)
+    text = "79.4 105.1 108.9 102.3\n5.1 6.5 5.0 4.5\n6.4 6.2 7.3 4.4"
+    assert internal_emit_native_text(text) == text
 
 
 @pytest.mark.parametrize(
@@ -68,18 +57,17 @@ def test_numeric_table_block_survives_corruption_filter() -> None:
         "13–32 (Revision 3 or greater) Reserved; must be 1.",
     ],
 )
-def test_short_specification_table_rows_survive_corruption_filter(text: str) -> None:
+def test_short_specification_table_rows_survive_emission(text: str) -> None:
     """Regression: valid permission rows were deleted as corrupt native text."""
-    assert not internal_corrupt_native_block(native_block(text, (20.0, 100.0, 260.0, 120.0)))
+    assert internal_emit_native_text(text) == text
 
 
-def test_damaged_native_layer_is_still_rejected() -> None:
-    """The corruption filter must keep catching mojibake after the fix."""
-    corrupt = native_block(
-        "76391*11 IOIIlo6 I * 9 2*0 118)96 '1'1322) '1'19)20 IZZO 1911*2.1,z,z CSM/l\":OST L*O*Io",
-        (20.0, 200.0, 260.0, 260.0),
+def test_decoded_identifier_block_is_not_rejected_by_text_shape() -> None:
+    """Poppler 26.07.0 preserves this exact text when authored in a WinAnsi PDF."""
+    text = (
+        "76391*11 IOIIlo6 I * 9 2*0 118)96 '1'1322) '1'19)20 IZZO 1911*2.1,z,z CSM/l\":OST L*O*Io"
     )
-    assert internal_corrupt_native_block(corrupt)
+    assert internal_emit_native_text(text) == text
 
 
 def test_column_major_reorder_partitions_lines_exactly() -> None:

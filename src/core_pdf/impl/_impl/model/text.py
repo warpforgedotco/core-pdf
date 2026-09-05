@@ -19,7 +19,6 @@ WORD_GAP_MIN = 0.75
 # that reference text omits. One character class for every stage that strips it.
 LEADER_CHARS = frozenset(".-\u2013\u2014~\u2026")
 internal_LEADER_CLASS = "[.\\-\u2013\u2014~\u2026]"
-internal_LEADER_RUN_RE = re.compile(rf"(?:[ \t]*{internal_LEADER_CLASS}){{2,}}")
 internal_TRAILING_LEADER_RE = re.compile(rf"(?<=\S)(?:[ \t]*{internal_LEADER_CLASS}){{3,}}[ \t]*$")
 internal_LEADING_LEADER_RE = re.compile(rf"^(?:{internal_LEADER_CLASS}[ \t]+){{2,}}")
 
@@ -39,11 +38,6 @@ def strip_edge_leaders(text: str) -> str:
     """Drop a leader run at the end (3+) or the start (2+ spaced) of a fragment."""
     text = internal_TRAILING_LEADER_RE.sub("", text)
     return internal_LEADING_LEADER_RE.sub("", text)
-
-
-def collapse_leader_runs(text: str) -> str:
-    """Replace interior leader runs with a single space and collapse whitespace."""
-    return collapse_ws(internal_LEADER_RUN_RE.sub(" ", text))
 
 
 def collapse_ws(text: str) -> str:

@@ -25,7 +25,6 @@ from core_pdf.impl._impl.layout.lines import LayoutLine
 from core_pdf.impl._impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.model.text import (
-    collapse_leader_runs,
     collapse_ws,
     internal_reconcile_text_words,
     internal_text_word_tokens,
@@ -131,35 +130,6 @@ def internal_group_text_and_words(
     return combined, internal_reconcile_text_words(combined, tuple(candidate_words))
 
 
-def internal_looks_like_native_artifact(text: str) -> bool:
-    """Reject symbol-heavy native lines produced by damaged text layers.
-
-    Some PDFs expose decorative rules, malformed glyph mappings, and dotted
-    leaders as ordinary text runs. Reject these only after line reconstruction,
-    where the whole
-    artifact is visible.  Requiring a small alphanumeric count keeps compact
-    identifiers and schematic labels intact.
-    """
-    # Unicode punctuation and scripts can be valid standalone text runs.  The
-    # damaged mappings this targets are emitted as ASCII-looking rules and
-    # dotted leaders, so leave non-ASCII lines untouched.
-    if not text.isascii():
-        return False
-    nonspace_count = 0
-    alphanumeric = 0
-    for character in text:
-        if character.isspace():
-            continue
-        nonspace_count += 1
-        if character.isalnum():
-            alphanumeric += 1
-            if alphanumeric >= 12:
-                return False
-    if not nonspace_count:
-        return False
-    return (nonspace_count - alphanumeric) / nonspace_count >= 0.60
-
-
 def internal_repeated_native_label_tokens(
     observations: ObservationBatch,
     indexes: numpy.ndarray,
@@ -234,18 +204,12 @@ def internal_build_lines(
         text, words = internal_group_text_and_words(observations, text_indexes)
         if not text:
             continue
-        if all_native and internal_looks_like_native_artifact(text):
-            continue
         if (
             repeated_native_labels
             and all_native
             and internal_is_repeated_native_label(text, repeated_native_labels)
         ):
             continue
-        if all_native:
-            text = collapse_leader_runs(text)
-            if not text:
-                continue
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]
         finite_confidences = confidences[numpy.isfinite(confidences)]

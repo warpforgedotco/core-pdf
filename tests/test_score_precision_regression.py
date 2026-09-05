@@ -22,6 +22,6 @@ def test_tokenize_attaches_superscript_unit_into_single_token() -> None:
 def test_tokenize_treats_orphan_symbol_as_own_token() -> None:
     # A lone non-alphanumeric character is its own token, so an orphan symbol
     # block (e.g. Braille "⠭") in the prediction is counted as an extra
-    # token against precision.  Dropping such blocks (see
-    # ``internal_corrupt_native_block``) is therefore what protects precision.
+    # token against precision. Emission preserves decoded symbols even when
+    # a corpus reference omits them; spelling alone does not establish noise.
     assert tokenize("Amendment 110\n\u282d\n") == ["amendment", "110", "\u282d"]

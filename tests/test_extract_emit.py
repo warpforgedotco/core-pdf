@@ -118,7 +118,7 @@ def test_emit_preserves_distinct_word_boxes_computed_by_layout() -> None:
     assert page.blocks[0].lines[0].bbox == (10.0, 100.0, 80.0, 110.0)
 
 
-def test_emit_reconciles_word_geometry_with_normalized_text() -> None:
+def test_emit_preserves_word_text_and_geometry_without_spelling_rewrites() -> None:
     parsed = page_of(
         width=200.0,
         height=200.0,
@@ -151,9 +151,12 @@ def test_emit_reconciles_word_geometry_with_normalized_text() -> None:
 
     first, second = page.blocks[0].lines
     assert [(word.text, word.bbox) for word in first.words] == [
-        ("ABHCD", (10.0, 100.0, 60.0, 110.0))
+        ("ABΗCD", (10.0, 100.0, 60.0, 110.0))
     ]
-    assert [(word.text, word.bbox) for word in second.words] == [("value", None)]
+    assert [(word.text, word.bbox) for word in second.words] == [
+        ("value", (10.0, 80.0, 50.0, 90.0)),
+        ('"', (60.0, 80.0, 70.0, 90.0)),
+    ]
 
 
 def test_emit_attaches_caption_and_section_to_table() -> None:
@@ -476,7 +479,7 @@ def test_emit_removes_small_table_duplicated_by_page_text() -> None:
     assert page.tables == ()
 
 
-def test_emit_removes_corrupt_native_blocks() -> None:
+def test_emit_preserves_decoded_identifiers_regardless_of_their_shape() -> None:
     parsed = page_of(
         route="native",
         blocks=(
@@ -495,7 +498,8 @@ def test_emit_removes_corrupt_native_blocks() -> None:
     page = emit_page(parsed)
 
     assert [block.text for block in page.blocks] == [
-        "Service module loading parameters remain available as ordinary text"
+        parsed.blocks[0].lines[0].text,
+        "Service module loading parameters remain available as ordinary text",
     ]
 
 
@@ -549,7 +553,7 @@ def test_emit_removes_noisy_stream_table() -> None:
     assert page.tables == ()
 
 
-def test_emit_removes_short_corrupt_native_fragments() -> None:
+def test_emit_preserves_short_decoded_native_fragments() -> None:
     parsed = page_of(
         route="native",
         blocks=(
@@ -560,7 +564,7 @@ def test_emit_removes_short_corrupt_native_fragments() -> None:
 
     page = emit_page(parsed)
 
-    assert [block.text for block in page.blocks] == ["Normal short text"]
+    assert [block.text for block in page.blocks] == ["r • r-", "Normal short text"]
 
 
 def test_emit_keeps_short_non_latin_native_text() -> None:
@@ -582,15 +586,16 @@ def test_emit_keeps_short_non_latin_native_text() -> None:
     }
 
 
-def test_emit_removes_symbol_only_native_blocks() -> None:
-    # Isolated Braille glyphs or stray symbols with no alphanumeric content
-    # carry no semantic text.
+def test_emit_preserves_symbol_only_native_blocks() -> None:
+    # Poppler 26.07.0 preserves these Braille characters in an embedded Apple
+    # Symbols PDF; pdftoppm also visibly paints both patterns. Symbol category
+    # alone does not establish that a decoded character is spurious.
     parsed = page_of(
         route="native",
         blocks=(
             block("⠭ ⠬", (20.0, 300.0, 260.0, 320.0)),
             block("Real sentence describing the payload", (20.0, 250.0, 260.0, 270.0)),
-            # CJK fullwidth punctuation is preserved (letter-like content).
+            # Fullwidth punctuation is also authored text.
             block("（）", (20.0, 200.0, 260.0, 220.0)),
         ),
     )
@@ -598,12 +603,15 @@ def test_emit_removes_symbol_only_native_blocks() -> None:
     page = emit_page(parsed)
 
     assert [emitted_block.text for emitted_block in page.blocks] == [
+        "⠭ ⠬",
         "Real sentence describing the payload",
         "（）",
     ]
 
 
-def test_emit_normalizes_latin_context_confusable_characters() -> None:
+def test_emit_preserves_unicode_and_symbols_in_latin_context() -> None:
+    # All lines were checked with pdftotext -layout and pdftoppm 26.07.0 in
+    # an embedded Arial Unicode PDF before replacing the destructive expectations.
     parsed = page_of(
         route="native",
         blocks=(
@@ -620,13 +628,13 @@ def test_emit_normalizes_latin_context_confusable_characters() -> None:
     page = emit_page(parsed)
 
     assert {block.text for block in page.blocks} == {
-        "Fax: 699-3395 35149",
-        "Model 1H64-061 and count 1 6",
-        "Reading Order Detection",
-        "Check one selected note",
-        "GREEN OLED",
-        "Total amount due",
-        "Footer continued",
+        "Fax: 699-3395 35149؛",
+        "Model 1Η64-061 and count ١ ٦",
+        "□ Reading Order Detection",
+        "☐ Check one ☒ selected ❖ note",
+        "GREEN OLED |;",
+        "Total ] amount _ due",
+        'Footer " continued',
     }
 
 
@@ -636,21 +644,21 @@ def test_emit_normalizes_latin_context_confusable_characters() -> None:
         pytest.param(
             "native",
             "7!19/71 T[34 G! (%! Warning!",
-            "7!19/71 T34 G! (% Warning!",
-            id="normalizes-intrusive-punctuation",
+            "7!19/71 T[34 G! (%! Warning!",
+            id="preserves-intrusive-looking-punctuation",
         ),
-        pytest.param("native", "• 42 87", "42 87", id="removes-nonword-bullets-for-native"),
+        pytest.param("native", "• 42 87", "• 42 87", id="preserves-numeric-list-bullets"),
         pytest.param(
             "native",
             "ence on global dynamics\ntions within states\nating shifts continue\nducted studies",
-            "on global dynamics\nwithin states\nshifts continue\nstudies",
-            id="removes-expanded-line-initial-suffix-fragments",
+            "ence on global dynamics\ntions within states\nating shifts continue\nducted studies",
+            id="preserves-decoded-line-initial-fragments",
         ),
         pytest.param(
             "native",
             "valid � text",
-            "valid text",
-            id="removes-native-replacement-characters",
+            "valid � text",
+            id="preserves-decoding-replacement-characters",
         ),
     ],
 )

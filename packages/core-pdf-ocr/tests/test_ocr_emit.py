@@ -1,18 +1,29 @@
 from __future__ import annotations
 
+import zlib
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
+from core_pdf import PdfDocument as NativePdfDocument
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.output.model import Figure, Page, Table, TableCell
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
+from core_pdf_ocr import PdfDocument
 from core_pdf_ocr.impl.extract.contracts import (
+    ObservationSource,
+    PageAnalysis,
     PageRoute,
     ParsedBlock,
     ParsedLine,
+    RecognitionResult,
+    WorkPlan,
 )
 from core_pdf_ocr.impl.extract.emit import assemble_page
+from core_pdf_ocr.impl.extract.ocr import pipeline as recognition_pipeline
+from tests.helpers.pdf_bytes import one_page_pdf, stream_obj
 
 
 def block(
@@ -87,7 +98,7 @@ def emit_page(parsed: PageInput, drawings: tuple[CapturedDrawing, ...] = ()) -> 
     )
 
 
-def test_emit_removes_punctuation_only_ocr_fragments() -> None:
+def test_emit_preserves_punctuation_only_ocr_fragments() -> None:
     parsed = page_of(
         route=PageRoute.OCR,
         blocks=(
@@ -110,7 +121,7 @@ def test_emit_removes_punctuation_only_ocr_fragments() -> None:
 
     page = emit_page(parsed)
 
-    assert [block.text for block in page.blocks] == ["Civil Division"]
+    assert [block.text for block in page.blocks] == ["~", "Civil Division"]
 
 
 def test_emit_removes_tiny_ocr_fragments_duplicated_by_table_tokens() -> None:
@@ -237,16 +248,16 @@ def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
         pytest.param(
             PageRoute.OCR,
             "400 | 400 | 400\n137.0 | 128.1",
-            "400 400 400\n137.0 128.1",
-            id="removes-numeric-only-pipes",
+            "400 | 400 | 400\n137.0 | 128.1",
+            id="keeps-numeric-only-pipes",
         ),
         pytest.param(
             PageRoute.OCR,
             "total | 46 | 69\nR-21 | | 12",
-            "total 46 69\nR-21 12",
-            id="removes-sparse-pipes",
+            "total | 46 | 69\nR-21 | | 12",
+            id="keeps-sparse-pipes",
         ),
-        pytest.param(PageRoute.OCR, "|\nvalid text", "valid text", id="removes-lone-pipe-lines"),
+        pytest.param(PageRoute.OCR, "|\nvalid text", "|\nvalid text", id="keeps-lone-pipe-lines"),
         pytest.param(
             PageRoute.OCR,
             "55 Cyril Magnin Street | San Francisco, CA | 94102",
@@ -256,23 +267,26 @@ def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
         pytest.param(
             PageRoute.OCR,
             "> 1\n> quoted text remains",
-            "1\n> quoted text remains",
-            id="removes-numeric-angle-markers",
+            "> 1\n> quoted text remains",
+            id="keeps-numeric-comparison-signs",
         ),
         pytest.param(
-            PageRoute.OCR, "• 42 87\nvalid � text", "42 87\nvalid text", id="removes-sparse-symbols"
+            PageRoute.OCR,
+            "• 42 87\nvalid � text",
+            "• 42 87\nvalid � text",
+            id="keeps-bullets-and-recognizer-replacement-markers",
         ),
         pytest.param(
             PageRoute.OCR,
             "I agree [ to pay\n' Business Fax Number\n! Excess mark",
-            "I agree to pay\nBusiness Fax Number\nExcess mark",
-            id="removes-standalone-punctuation",
+            "I agree [ to pay\n' Business Fax Number\n! Excess mark",
+            id="keeps-standalone-punctuation",
         ),
         pytest.param(
             PageRoute.OCR,
             "04\n07 U6.2\nModel 01 remains",
-            "\nU6.2\nModel 01 remains",
-            id="removes-isolated-leading-zero-tokens",
+            "04\n07 U6.2\nModel 01 remains",
+            id="keeps-isolated-leading-zero-tokens",
         ),
         pytest.param(
             PageRoute.OCR,
@@ -289,17 +303,95 @@ def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
         pytest.param(
             PageRoute.OCR,
             "ing groups include, for example",
-            "groups include, for example",
-            id="removes-line-initial-suffix-fragment",
+            "ing groups include, for example",
+            id="keeps-line-initial-suffix-fragment",
         ),
         pytest.param(PageRoute.OCR, "ing 12", "ing 12", id="keeps-short-ocr-suffix-lines"),
     ],
 )
 def test_emit_normalizes_single_block_text(route: PageRoute, text: str, expected: str) -> None:
+    # Verified before correcting these expectations with Poppler 26.07.0:
+    # pdftotext -layout reference.pdf -; pdftoppm -singlefile -r 150 -png reference.pdf reference
+    # Printed bullets, identifiers, punctuation, and "ing" survive. An embedded Menlo
+    # reference also preserves and visibly renders the literal U+FFFD in "valid � text".
     assert emit_page(single_block_page(text, route)).text == expected
 
 
-def test_emit_removes_corrupt_mixed_native_fragments() -> None:
+def test_document_extraction_preserves_verified_recognized_symbols_and_identifiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # These exact lines were independently extracted by pdftotext 26.07.0 and
+    # visually checked in its pdftoppm raster before fixing emission. Tesseract
+    # 5.5.2 (--psm 6) also retains >5, 01, ! urgent, and 07 U6.2; its uncertain
+    # pipe recognition is excluded by the controlled recognition boundary here.
+    expected = (
+        "> 5",
+        "01",
+        "[ 01 ]",
+        "! urgent",
+        "' quote",
+        "3 | 4",
+        "R-21 | 12",
+        "~",
+        "!",
+        "07 U6.2",
+        "• 42 87",
+        "ing groups include, for example",
+    )
+    content = (
+        b"BT /F1 24 Tf 36 740 Td 48 TL "
+        + b" T* ".join(b"(" + line.encode("cp1252") + b") Tj" for line in expected)
+        + b" ET"
+    )
+    reference = one_page_pdf(
+        content,
+        font=b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    )
+    with NativePdfDocument(reference) as source:
+        page = source.pages[0]
+        boxes = tuple((run.x0, run.y0, run.x1, run.y1) for run in page.get_page_program().runs)
+        raster = page.render().rasterize(background=(255, 255, 255, 255))
+        pixels = raster.array()[:, :, :3].tobytes()
+        image_metadata = (
+            f"/Type /XObject /Subtype /Image /Width {raster.width} /Height {raster.height} "
+            "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode"
+        ).encode()
+    scanned_pdf = one_page_pdf(
+        b"q 612 0 0 792 0 0 cm /Scan Do Q",
+        resources=b"<< /XObject << /Scan 6 0 R >> >>",
+        extra_objects=(stream_obj(zlib.compress(pixels), image_metadata),),
+    )
+    recognized = ObservationBatch.from_columns(
+        expected,
+        boxes,
+        source=ObservationSource.OCR,
+        confidence=(99.0,) * len(expected),
+    )
+    calls = 0
+
+    def recognize(
+        capture: PageAnalysis, plan: WorkPlan, context: ExtractionScope, **kwargs: object
+    ) -> RecognitionResult:
+        nonlocal calls
+        calls += 1
+        assert capture.evidence.full_page_image
+        assert capture.observations.text == ()
+        assert plan.route is PageRoute.OCR
+        context.raise_if_cancelled()
+        return RecognitionResult(recognized)
+
+    monkeypatch.setattr(recognition_pipeline, "recognize_page", recognize)
+    with PdfDocument(scanned_pdf) as document:
+        result = document.extract()
+
+    assert calls == 1
+    assert result.pages[0].base_route == "ocr"
+    assert tuple(line for line in result.text.splitlines() if line) == expected
+
+
+def test_emit_preserves_decoded_mixed_native_fragments() -> None:
+    # Poppler 26.07.0 extracts and visibly renders these exact strings when
+    # authored in a WinAnsi PDF. Their spelling is insufficient evidence to delete.
     parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
@@ -324,4 +416,7 @@ def test_emit_removes_corrupt_mixed_native_fragments() -> None:
 
     page = emit_page(parsed)
 
-    assert [block.text for block in page.blocks] == ["Normal short text"]
+    assert [block.text for block in page.blocks] == [
+        "2 C5M 11 2/LHt O ExECTEo 5[8U[NTIAL HA55 ·RO¸ERTt[5\ncOORDINAT£5 TARLE loi•21CONTfNUEOI",
+        "Normal short text",
+    ]
