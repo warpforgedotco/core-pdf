@@ -4,22 +4,23 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, TypeAlias, cast
+from typing import TypeAlias
 
 PageSelection: TypeAlias = int | str | range | Sequence[int]
 
 
 def resolve_page_selection(pages: PageSelection | None, page_count: int) -> list[int]:
     """Return normalized, deduplicated 0-based indexes for a 1-based page selection."""
+    segments: list[int | range]
     match pages:
         case None:
-            selected = list(range(page_count))
+            segments = [range(1, page_count + 1)]
         case int() if type(pages) is int:
-            selected = [pages - 1]
+            segments = [pages]
         case range() as page_range:
-            selected = [page_number - 1 for page_number in page_range]
+            segments = [page_range]
         case str() as page_spec:
-            selected = []
+            segments = []
             for part in page_spec.split(","):
                 part = part.strip()
                 if not part:
@@ -34,31 +35,55 @@ def resolve_page_selection(pages: PageSelection | None, page_count: int) -> list
                     except ValueError as exc:
                         raise ValueError(f"invalid page selection: {pages!r}") from exc
                     step = 1 if end >= start else -1
-                    selected.extend(range(start - 1, end - 1 + step, step))
+                    segments.append(range(start, end + step, step))
                 else:
                     try:
-                        selected.append(int(part) - 1)
+                        segments.append(int(part))
                     except ValueError as exc:
                         raise ValueError(f"invalid page selection: {pages!r}") from exc
+        case bytes() | bytearray() | memoryview():
+            raise TypeError(f"invalid page selection: {pages!r}")
         case Sequence() as page_sequence:
-            try:
-                selected = [int(cast(Any, page_number)) - 1 for page_number in page_sequence]
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"invalid page selection: {pages!r}") from exc
+            segments = []
+            for page_number in page_sequence:
+                if type(page_number) is not int:
+                    raise ValueError(f"invalid page selection: {pages!r}")
+                segments.append(page_number)
         case _:
             raise TypeError(f"invalid page selection: {pages!r}")
 
-    if not selected:
+    # Finish syntax/type validation before bounds checks, and validate every
+    # compact segment before allocating any expanded range.
+    has_pages = False
+    for segment in segments:
+        if isinstance(segment, range):
+            if not segment:
+                continue
+            first, last, step = segment.start, segment[-1], segment.step
+        else:
+            first = last = segment
+            step = 1
+        has_pages = True
+        if first < 1 or first > page_count:
+            invalid_page = first
+        elif last > page_count:
+            invalid_page = first + ((page_count - first) // step + 1) * step
+        elif last < 1:
+            invalid_page = first + ((first - 1) // -step + 1) * step
+        else:
+            continue
+        raise IndexError(f"page selection out of range: {invalid_page}")
+    if not has_pages:
         raise ValueError(f"invalid page selection: {pages!r}")
 
     normalized: list[int] = []
     seen: set[int] = set()
-    for page_index in selected:
-        if page_index < 0 or page_index >= page_count:
-            raise IndexError(f"page selection out of range: {page_index + 1}")
-        if page_index not in seen:
-            normalized.append(page_index)
-            seen.add(page_index)
+    for segment in segments:
+        for page_number in segment if isinstance(segment, range) else (segment,):
+            page_index = page_number - 1
+            if page_index not in seen:
+                normalized.append(page_index)
+                seen.add(page_index)
     return normalized
 
 
