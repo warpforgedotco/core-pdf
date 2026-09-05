@@ -165,7 +165,13 @@ class ObjectResolver:
             self.internal_store_object(ref, cast(CachedPdfObject, resolved))
         return resolved
 
-    def deep_resolve(self, value: object, seen: set[int] | None = None) -> object:
+    def deep_resolve(
+        self,
+        value: object,
+        seen: set[int] | None = None,
+        internal_memo: dict[int, tuple[object, object]] | None = None,
+    ) -> object:
+        """Resolve a graph with cycle detection and operation-local sharing."""
         t = type(value)
         terminal_types = TERMINAL_TYPES
         if t in terminal_types:
@@ -187,13 +193,18 @@ class ObjectResolver:
                 chain.add(reference_key)
                 res = self.resolve(res)
             if type(res) in (dict, list, PdfStream, tuple):
-                return self.deep_resolve(res, seen)
+                return self.deep_resolve(res, seen, internal_memo)
             return res
 
         if t not in (dict, list, tuple, PdfStream):
             return value
 
         val_id = id(value)
+        if internal_memo is None:
+            internal_memo = {}
+        cached = internal_memo.get(val_id)
+        if cached is not None and cached[0] is value:
+            return cached[1]
         if seen is None:
             seen = set()
         if val_id in seen:
@@ -202,30 +213,41 @@ class ObjectResolver:
         try:
             if t is PdfStream:
                 stream = cast(PdfStream, value)
-                resolved_dict = self.deep_resolve(stream.dictionary, seen)
-                return (
+                resolved_dict = self.deep_resolve(stream.dictionary, seen, internal_memo)
+                resolved_stream = (
                     stream
                     if resolved_dict is stream.dictionary
                     else stream.replace(dictionary=resolved_dict)
                 )
+                internal_memo[val_id] = (value, resolved_stream)
+                return resolved_stream
             if t is list:
                 items = cast(list[object], value)
-                resolved = [self.deep_resolve(item, seen) for item in items]
-                return (
+                resolved = [self.deep_resolve(item, seen, internal_memo) for item in items]
+                result: object = (
                     items if all(a is b for a, b in zip(items, resolved, strict=True)) else resolved
                 )
+                internal_memo[val_id] = (value, result)
+                return result
             if t is dict:
                 mapping = cast(PdfDict, value)
                 resolved_mapping = {
-                    key: cast(PdfObject, self.deep_resolve(item, seen))
+                    key: cast(PdfObject, self.deep_resolve(item, seen, internal_memo))
                     for key, item in mapping.items()
                 }
-                return (
+                result = (
                     mapping
                     if all(resolved_mapping[key] is item for key, item in mapping.items())
                     else resolved_mapping
                 )
-            return [self.deep_resolve(item, seen) for item in cast(tuple[object, ...], value)]
+                internal_memo[val_id] = (value, result)
+                return result
+            result = [
+                self.deep_resolve(item, seen, internal_memo)
+                for item in cast(tuple[object, ...], value)
+            ]
+            internal_memo[val_id] = (value, result)
+            return result
         finally:
             seen.remove(val_id)
 

@@ -400,6 +400,18 @@ def internal_recognition_timeout(task: internal_OcrTask) -> int:
     return min(OCR_TIMEOUT_MAX_MILLISECONDS, budget)
 
 
+@contextmanager
+def internal_owned_api(mode: int) -> Iterator[Any]:
+    """Acquire one Tesseract API and end it at the ownership boundary."""
+    api = internal_api(mode)
+    try:
+        yield api
+    finally:
+        end = getattr(api, "End", None)
+        if callable(end):
+            end()
+
+
 def internal_recognize(
     task: internal_OcrTask,
     *,
@@ -407,11 +419,8 @@ def internal_recognize(
     image_prepared: bool = False,
 ) -> internal_Candidate:
     if api_override is None:
-        api = internal_api(task.mode)
-        try:
+        with internal_owned_api(task.mode) as api:
             return internal_recognize(task, api_override=api, image_prepared=image_prepared)
-        finally:
-            api.End()
     tesserocr = internal_ensure_tesserocr()
     api = api_override
     api.SetPageSegMode(task.mode)
@@ -579,14 +588,11 @@ def internal_recognize_group(tasks: tuple[internal_OcrTask, ...]) -> tuple[inter
     if not tasks:
         return ()
     first = tasks[0]
-    api = internal_api(first.mode)
-    try:
+    with internal_owned_api(first.mode) as api:
         candidates = [internal_recognize(first, api_override=api)]
         for task in tasks[1:]:
             candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
         return tuple(candidates)
-    finally:
-        api.End()
 
 
 def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask | None:

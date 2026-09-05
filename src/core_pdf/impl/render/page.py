@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
@@ -49,6 +49,19 @@ from core_pdf.impl.spec.s_07_document.annotation_appearance import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+
+
+class internal_RenderablePage(Protocol):
+    """The stable page geometry required when composing a display list."""
+
+    @property
+    def width(self) -> float: ...
+
+    @property
+    def height(self) -> float: ...
+
+    @property
+    def media_box(self) -> tuple[float, float, float, float] | None: ...
 
 
 @dataclass(slots=True)
@@ -441,7 +454,7 @@ def internal_append_glyph_paint(
 
 
 def compose_page(
-    page: Any,
+    page: internal_RenderablePage,
     options: RenderOptions | None = None,
     *,
     page_program: PageProgram | None = None,
@@ -449,14 +462,15 @@ def compose_page(
     annotations: Iterable[Any] | None = None,
 ) -> RenderedPage:
     options = options or RenderOptions()
-    media_box = page.media_box or (0.0, 0.0, page.width, page.height)
+    internal_page = cast(Any, page)
+    media_box = getattr(page, "media_box", None) or (0.0, 0.0, page.width, page.height)
     x0, y0, x1, y1 = media_box
     width = max(0.0, x1 - x0)
     height = max(0.0, y1 - y0)
     display_list = DisplayList(width=width, height=height)
 
-    if page_program is None and hasattr(page, "get_page_program"):
-        page_program = page.get_page_program()
+    if page_program is None and hasattr(internal_page, "get_page_program"):
+        page_program = internal_page.get_page_program()
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")
     commands = page_program.commands
@@ -571,11 +585,13 @@ def compose_page(
         # then whatever /N happened to hold first when /AS named a state /N did
         # not contain -- so a checkbox with /AS /Off whose /N carries only the
         # checked stream rendered as checked. It must render as nothing.
-        normal = select_appearance_stream(page.document.resolver, appearance, appearance_state)
+        normal = select_appearance_stream(
+            internal_page.document.resolver, appearance, appearance_state
+        )
         if normal is None:
             return False
-        form_dict = page.document.resolver.resolve_dict(normal.dictionary) or {}
-        bbox = page.document.resolver.resolve_box(form_dict.get("BBox"))
+        form_dict = internal_page.document.resolver.resolve_dict(normal.dictionary) or {}
+        bbox = internal_page.document.resolver.resolve_box(form_dict.get("BBox"))
         if bbox is None:
             bbox = rect
         try:
@@ -595,7 +611,7 @@ def compose_page(
         bh = by1 - by0
         if bw == 0 or bh == 0:
             return False
-        if not hasattr(page.document.resolver, "resolve"):
+        if not hasattr(internal_page.document.resolver, "resolve"):
             return False
         scale = Matrix(
             (rx1 - rx0) / bw,
@@ -606,9 +622,10 @@ def compose_page(
             ry0 - by0 * ((ry1 - ry0) / bh),
         )
         nested_ctm = matrix.multiply(scale)
-        state = TextState(page.document)
+        state = TextState(internal_page.document)
         resources = (
-            page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.resources
+            internal_page.document.resolver.resolve_dict(form_dict.get("Resources"))
+            or internal_page.resources
         )
         state.consume_stream(normal, resources, nested_ctm, 0)
         append_capture(state)
@@ -618,7 +635,7 @@ def compose_page(
         field_records = fields
         if field_records is None:
             try:
-                field_records = page.get_fields()
+                field_records = internal_page.get_fields()
             except ValueError:
                 # A malformed AcroForm must not prevent rendering the page's text and images.
                 field_records = ()
@@ -646,7 +663,7 @@ def compose_page(
                 else False,
             )
     if options.include_annotations:
-        annotation_records = page.get_annotations() if annotations is None else annotations
+        annotation_records = internal_page.get_annotations() if annotations is None else annotations
         for annot in annotation_records:
             appearance = annot.dict.get("AP") if isinstance(annot.dict, dict) else None
             appearance_state = annot.dict.get("AS") if isinstance(annot.dict, dict) else None
@@ -673,8 +690,8 @@ def compose_page(
         metadata={
             "crop": options.crop,
             "group_alpha": (
-                page.resolve_transparency_group_alpha()
-                if hasattr(page, "resolve_transparency_group_alpha")
+                internal_page.resolve_transparency_group_alpha()
+                if hasattr(internal_page, "resolve_transparency_group_alpha")
                 else None
             ),
         },

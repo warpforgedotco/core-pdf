@@ -505,8 +505,8 @@ class PageAnalysis:
     width: float
     height: float
     rotation: int
-    fields: tuple[Any, ...] | None
-    annotations: tuple[Any, ...] | None
+    fields: tuple[Any, ...]
+    annotations: tuple[Any, ...]
     program: PageProgram
     observations: ObservationBatch
     evidence: PageEvidence

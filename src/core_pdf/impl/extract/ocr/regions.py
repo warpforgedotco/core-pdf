@@ -356,7 +356,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
     if (
         capture.evidence.vector_complexity >= 180
         and capture.evidence.text_coverage < 0.05
-        and (not native_boxes or len(native_boxes) >= 8)
+        and (len(native_boxes) == 0 or len(native_boxes) >= 8)
     ):
         # Component labels are often isolated from the larger paths they
         # annotate. Use finer cells for these vector-only pages so the region

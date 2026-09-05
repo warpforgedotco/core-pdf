@@ -86,26 +86,25 @@ class internal_PageExtraction:
         self.internal_structure = structure
         self.internal_hidden_layers = hidden_layers
         field_records = tuple(fields) if fields is not None else None
-        if capture is not None and capture.annotations is not None:
+        if capture is not None:
             annotation_records = capture.annotations
         else:
             try:
                 annotation_records = tuple(page.get_annotations())
-            except (TypeError, ValueError):
+            except (AttributeError, TypeError, ValueError):
                 annotation_records = ()
-        self.capture = (
-            replace(capture, fields=field_records, annotations=annotation_records)
-            if capture is not None and fields is not None
-            else replace(capture, annotations=annotation_records)
-            if capture is not None
-            else capture_page(
+        if capture is not None:
+            if field_records is not None:
+                capture = replace(capture, fields=field_records)
+            self.capture = replace(capture, annotations=annotation_records)
+        else:
+            self.capture = capture_page(
                 page,
                 structure=structure,
                 hidden_layers=hidden_layers,
                 fields=field_records,
                 annotations=annotation_records,
             )
-        )
         self.plan = plan if plan is not None else plan_page(self.capture)
         self.recognition_result = recognition
 

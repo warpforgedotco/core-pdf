@@ -44,6 +44,7 @@ from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import drawing, page_evidence, text_run
 from tests.helpers.ocr_fakes import (
@@ -706,7 +707,10 @@ def test_verified_hidden_text_bypasses_full_ocr(
     patch_dominant_region(monkeypatch, raster, (0.0, 0.0, 300.0, 100.0))
     recognized_word_passes = 0
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         nonlocal recognized_word_passes
         assert task.recognize_words is True
         recognized_word_passes += 1
@@ -930,7 +934,10 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
     patch_dominant_region(monkeypatch, raster)
     executed_modes: list[int] = []
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         executed_modes.append(task.mode)
         text = "x" if task.mode == 3 else "strong fallback"
         return ocr_quality.internal_candidate(
@@ -970,7 +977,10 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
     patch_dominant_region(monkeypatch, raster)
     executed_modes: list[int] = []
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         executed_modes.append(task.mode)
         if task.mode != 3:
             raise AssertionError("full-page fallback should not run")
@@ -1014,7 +1024,10 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
     raster = ocr_types.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
     patch_dominant_region(monkeypatch, raster)
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         if task.mode == 3:
             return ocr_quality.internal_candidate(3, candidate_observations("x", 90.0))
         return ocr_quality.internal_candidate(
@@ -1048,7 +1061,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
 
     patch_ocr_helper(monkeypatch, "internal_high_resolution_weak_region_tasks", weak_region_crops)
 
-    capture = make_capture(program=object(), width=10.0, height=10.0)
+    capture = make_capture(program=PageProgram(), width=10.0, height=10.0)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -1116,7 +1129,7 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
     monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
     patch_engine(monkeypatch)
 
-    capture = make_capture(program=object(), width=10.0, height=10.0)
+    capture = make_capture(program=PageProgram(), width=10.0, height=10.0)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -1168,7 +1181,7 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
     )
     patch_engine(monkeypatch)
 
-    capture = make_capture(program=object(), width=10.0, height=10.0)
+    capture = make_capture(program=PageProgram(), width=10.0, height=10.0)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -1205,7 +1218,10 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", unexpected_render)
     executed_modes: list[int] = []
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         executed_modes.append(task.mode)
         text = "orientation preview" if task.mode == 12 else "complete fallback text"
         return ocr_quality.internal_candidate(
@@ -1289,7 +1305,10 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
     patch_engine(monkeypatch)
 
     capture = make_capture(
-        page_evidence(vector_complexity=100_000), program=object(), width=10.0, height=10.0
+        page_evidence(vector_complexity=100_000),
+        program=PageProgram(),
+        width=10.0,
+        height=10.0,
     )
     plan = WorkPlan(
         PageRoute.OCR,

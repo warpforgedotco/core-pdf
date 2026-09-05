@@ -59,6 +59,7 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 )
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_09_fonts.fallback import internal_RasterFontRepository
 from core_pdf.impl.spec.s_14_structure.tree import StructureTree
 from core_pdf.impl.types import (
     PathSource,
@@ -68,7 +69,10 @@ from core_pdf.impl.types import (
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
+    from core_pdf.impl.spec.s_09_fonts.fallback import (
+        RasterFontProviderLike,
+        internal_RasterFontRepository,
+    )
 
 
 internal_PageT = TypeVar("internal_PageT")
@@ -113,7 +117,7 @@ class PdfDocument(
     xref_was_recovered: bool
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
-    raster_font_provider: RasterFontProviderLike | None
+    raster_font_provider: RasterFontProviderLike | internal_RasterFontRepository | None
     page_tree_was_recovered: bool
     internal_closed: bool
 
@@ -136,7 +140,7 @@ class PdfDocument(
         self.xref_was_recovered = False
         self.xref_recovery_reason = None
         self.recovery_scan_all_revisions = recovery_scan_all_revisions
-        self.raster_font_provider = raster_font_provider
+        self.raster_font_provider = internal_RasterFontRepository(raster_font_provider)
         self.page_tree_was_recovered = False
         try:
             self.raw_data = self.load_data(source)
@@ -190,6 +194,10 @@ class PdfDocument(
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
             resolver.close()
+
+        raster_fonts = self.raster_font_provider
+        if isinstance(raster_fonts, internal_RasterFontRepository):
+            raster_fonts.close()
 
         raw_data = self.raw_data
         self.raw_data = b""

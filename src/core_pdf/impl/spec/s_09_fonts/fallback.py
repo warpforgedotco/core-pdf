@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.resources import files
@@ -42,6 +41,50 @@ class PdfRasterFontProvider(Protocol):
 RasterFontProviderLike = (
     PdfRasterFontProvider | Callable[[PdfRasterFontRequest], PdfRasterFontFace | None]
 )
+
+
+class internal_RasterFontRepository:
+    """Document-owned parsed fonts used by raster fallback.
+
+    Font programs are immutable after construction. Keeping them beside the
+    document avoids both process-global state and reparsing a font for every
+    painted glyph.
+    """
+
+    __slots__ = ("provider", "internal_builtin_programs", "internal_provider_programs")
+
+    def __init__(self, provider: RasterFontProviderLike | None = None) -> None:
+        self.provider = provider
+        self.internal_builtin_programs: dict[str, TrueTypeFontProgram | None] = {}
+        self.internal_provider_programs: dict[str, TrueTypeFontProgram | None] = {}
+
+    def internal_provider_program(
+        self, request: PdfRasterFontRequest
+    ) -> TrueTypeFontProgram | None:
+        face = internal_provider_face(self.provider, request)
+        if face is None:
+            return None
+        if face.identifier not in self.internal_provider_programs:
+            try:
+                program = TrueTypeFontProgram(face.data, use_cmap=True)
+            except (OSError, ValueError):
+                program = None
+            self.internal_provider_programs[face.identifier] = program
+        return self.internal_provider_programs[face.identifier]
+
+    def internal_builtin_program(self, face_name: str) -> TrueTypeFontProgram | None:
+        if face_name not in self.internal_builtin_programs:
+            try:
+                program = internal_builtin_font(face_name)
+            except (OSError, ValueError):
+                program = None
+            self.internal_builtin_programs[face_name] = program
+        return self.internal_builtin_programs[face_name]
+
+    def close(self) -> None:
+        """Release all document-scoped references to parsed font programs."""
+        self.internal_builtin_programs.clear()
+        self.internal_provider_programs.clear()
 
 
 def internal_provider_face(
@@ -98,7 +141,7 @@ def fallback_glyph_outline(
     is_vertical: bool,
     cid_registry: str | None = None,
     cid_ordering: str | None = None,
-    provider: RasterFontProviderLike | None = None,
+    provider: RasterFontProviderLike | internal_RasterFontRepository | None = None,
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
     """Resolve one Unicode scalar through a custom provider, then bundled fonts."""
     if len(text) != 1:
@@ -111,16 +154,19 @@ def fallback_glyph_outline(
         cid_registry,
         cid_ordering,
     )
-    face = internal_provider_face(provider, request)
+    repository = (
+        provider
+        if isinstance(provider, internal_RasterFontRepository)
+        else internal_RasterFontRepository(provider)
+    )
     programs: list[TrueTypeFontProgram] = []
-    if face is not None:
-        with contextlib.suppress(OSError, ValueError):
-            programs.append(TrueTypeFontProgram(face.data, use_cmap=True))
+    provider_program = repository.internal_provider_program(request)
+    if provider_program is not None:
+        programs.append(provider_program)
     for face_name in internal_builtin_face_names(font_name):
-        try:
-            programs.append(internal_builtin_font(face_name))
-        except (OSError, ValueError):
-            continue
+        program = repository.internal_builtin_program(face_name)
+        if program is not None:
+            programs.append(program)
     for program in programs:
         glyph_id = program.glyph_id_for_unicode(ord(text))
         if glyph_id != 0:

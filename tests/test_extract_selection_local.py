@@ -102,8 +102,9 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
         program: object,
         *,
         learned_unicode: parse_selection.LearnedUnicodeMap,
+        **internal_kwargs: object,
     ) -> PageAnalysis:
-        del program
+        del program, internal_kwargs
         mapping = learned_unicode[decoder]
         marker = mapping[b"x"]
         page_number = int(getattr(page, "page_number"))

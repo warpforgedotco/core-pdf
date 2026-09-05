@@ -6,7 +6,11 @@ import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontFace, PdfRasterFontRequest
 from core_pdf.impl.render.model import RasterImage, RenderOptions
-from core_pdf.impl.spec.s_09_fonts.fallback import fallback_glyph_outline
+from core_pdf.impl.spec.s_09_fonts import fallback as font_fallback
+from core_pdf.impl.spec.s_09_fonts.fallback import (
+    fallback_glyph_outline,
+    internal_RasterFontRepository,
+)
 from tests.helpers.paths import FIXTURES, FONT_PROGRAMS
 
 SIMPLE1 = FIXTURES / "pdfminer.six" / "samples" / "simple1.pdf"
@@ -61,6 +65,28 @@ def test_custom_raster_font_provider_is_consulted_only_for_rendering() -> None:
 def test_symbol_and_zapf_fallbacks_cover_representative_glyphs() -> None:
     assert fallback_glyph_outline("Symbol", "Ω", is_cid_font=False, is_vertical=False)
     assert fallback_glyph_outline("ZapfDingbats", "✂", is_cid_font=False, is_vertical=False)
+
+
+def test_document_font_repository_parses_each_builtin_face_once(monkeypatch) -> None:
+    repository = internal_RasterFontRepository()
+    original = font_fallback.internal_builtin_font
+    loaded: list[str] = []
+
+    def load(face_name: str):
+        loaded.append(face_name)
+        return original(face_name)
+
+    monkeypatch.setattr(font_fallback, "internal_builtin_font", load)
+    for text in "Hello World":
+        fallback_glyph_outline(
+            "Helvetica",
+            text,
+            is_cid_font=False,
+            is_vertical=False,
+            provider=repository,
+        )
+
+    assert loaded == ["LiberationSans-Regular.ttf"]
 
 
 def test_cjk_provider_supplies_deterministic_vertical_outline() -> None:

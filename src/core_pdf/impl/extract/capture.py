@@ -919,8 +919,8 @@ def internal_capture_from_program(
         width=page_width,
         height=page_height,
         rotation=page_rotation,
-        fields=fields,
-        annotations=annotations,
+        fields=fields or (),
+        annotations=annotations or (),
         program=program,
         observations=observations,
         evidence=PageEvidence(

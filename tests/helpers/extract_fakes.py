@@ -28,6 +28,7 @@ class FakePage:
     width: float = 600.0
     height: float = 800.0
     page_number: int = 1
+    media_box: tuple[float, float, float, float] | None = None
 
 
 def page_evidence(**overrides: Any) -> PageEvidence:
@@ -96,8 +97,8 @@ def capture(
         width=width,
         height=height,
         rotation=rotation,
-        fields=None,
-        annotations=None,
+        fields=(),
+        annotations=(),
         program=program,
         observations=batch,
         evidence=evidence if evidence is not None else page_evidence(),

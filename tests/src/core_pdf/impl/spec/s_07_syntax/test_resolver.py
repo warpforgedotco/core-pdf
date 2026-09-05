@@ -62,6 +62,24 @@ def test_deep_resolve_terminates_on_a_cyclic_reference_chain(
         assert resolver.deep_resolve(PdfReference(1, 0)) == PdfReference(1, 0)
 
 
+def test_deep_resolve_preserves_shared_subgraphs_within_one_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared = {"Value": PdfReference(1, 0)}
+    root = [shared, shared]
+    with closing(ObjectResolver(b"", {}, {})) as resolver:
+        monkeypatch.setattr(
+            type(resolver),
+            "resolve",
+            lambda self, ref: "resolved" if type(ref) is PdfReference else ref,
+        )
+        resolved = resolver.deep_resolve(root)
+
+    assert isinstance(resolved, list)
+    assert resolved[0] is resolved[1]
+    assert resolved[0] == {"Value": "resolved"}
+
+
 def test_resolve_str_does_not_expand_composite_object_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
