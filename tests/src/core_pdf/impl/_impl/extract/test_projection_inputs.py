@@ -82,23 +82,27 @@ def test_block_normalizer_reconciles_words_before_composition() -> None:
     assert page.base_route == "external"
 
 
-def test_table_projection_accepts_explicit_protections_and_rejections() -> None:
+def test_table_projection_preserves_explicitly_protected_table_snapshots() -> None:
     bbox = (10.0, 10.0, 80.0, 20.0)
-    text = "one two three four"
+    text = (
+        "one two three four five six seven eight nine ten eleven twelve thirteen "
+        "fourteen fifteen sixteen"
+    )
     blocks = [
         Block(order=0, kind=BlockKind.PARAGRAPH, lines=(TextLine(text, bbox=bbox),), bbox=bbox)
     ]
-    duplicate = Table(order=0, rows=((TableCell(0, 0, text),),), bbox=bbox)
-    rejected = Table(order=1, rows=((TableCell(0, 0, "unique"),),), bbox=bbox)
+    duplicate = Table(
+        order=0, rows=((TableCell(0, 0, text),),), bbox=bbox, metadata={"source": "stream"}
+    )
+    distinct = Table(order=1, rows=((TableCell(0, 0, "unique"),),), bbox=bbox)
 
-    tables = internal_profile_tables((duplicate, rejected))
+    tables = internal_profile_tables((duplicate, distinct))
     assert internal_remove_block_duplicate_tables(blocks, tables) == tables[1:]
     assert (
         internal_remove_block_duplicate_tables(
             blocks,
             tables,
             protected_table_indexes=frozenset({0}),
-            rejected_table_indexes=frozenset({1}),
         )
-        == tables[:1]
+        == tables
     )

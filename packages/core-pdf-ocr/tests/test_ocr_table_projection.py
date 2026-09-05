@@ -84,15 +84,26 @@ def test_ocr_pdf_extraction_keeps_separate_heading_and_numbers_with_table(
     )
 
 
-@pytest.mark.parametrize("table_has_geometry", [True, False])
+@pytest.mark.parametrize(
+    ("table_has_geometry", "cell_has_geometry"), [(True, True), (True, False), (False, False)]
+)
 def test_table_projection_requires_spatial_evidence_to_remove_short_ocr_blocks(
     table_has_geometry: bool,
+    cell_has_geometry: bool,
 ) -> None:
+    # Cell regions follow the independently verified ruled PDF above. A table
+    # bbox alone cannot place the particular cell repeating a short OCR line.
     table = Table(
         0,
         rows=(
-            (TableCell(0, 0, "Total"), TableCell(0, 1, "10")),
-            (TableCell(1, 0, "CCPS"), TableCell(1, 1, "23")),
+            (
+                TableCell(0, 0, "Total", bbox=(20, 170, 140, 220) if cell_has_geometry else None),
+                TableCell(0, 1, "10", bbox=(140, 170, 260, 220) if cell_has_geometry else None),
+            ),
+            (
+                TableCell(1, 0, "CCPS", bbox=(20, 120, 140, 170) if cell_has_geometry else None),
+                TableCell(1, 1, "23", bbox=(140, 120, 260, 170) if cell_has_geometry else None),
+            ),
         ),
         bbox=(20.0, 120.0, 260.0, 220.0) if table_has_geometry else None,
         metadata={"source": "lattice"},
@@ -117,7 +128,7 @@ def test_table_projection_requires_spatial_evidence_to_remove_short_ocr_blocks(
     projected, tables = internal_project_text_and_tables(blocks, (table,))
 
     assert [block.text for block in projected] == (
-        ["Total", "10 23"] if table_has_geometry else ["Total", "10 23", "Total"]
+        ["Total", "10 23"] if cell_has_geometry else ["Total", "10 23", "Total"]
     )
     assert tables == (table,)
     assert [block.text for block in blocks] == ["Total", "10 23", "Total"]

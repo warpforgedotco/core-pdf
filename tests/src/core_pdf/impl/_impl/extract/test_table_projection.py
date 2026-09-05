@@ -5,7 +5,6 @@ from core_pdf.impl._impl.extract.table_reconcile import (
     internal_profile_tables,
     internal_remove_block_duplicate_table_rows,
     internal_remove_block_duplicate_tables,
-    internal_remove_duplicate_tables,
 )
 from core_pdf.impl._impl.output.model import (
     Block,
@@ -62,21 +61,26 @@ def test_removing_a_duplicate_title_row_preserves_table_bands_and_serialization(
 
 
 def test_removing_a_middle_row_shortens_a_surviving_row_span() -> None:
+    # Poppler 26.07.0 pdftotext -bbox verifies these row positions in span.pdf;
+    # the repeated middle label occupies the right column at y=44.
     table = internal_table_with_bands(
         Table(
             order=0,
             bbox=(0, 0, 100, 100),
             rows=(
-                (TableCell(0, 0, "Group", row_span=3), TableCell(0, 1, "First")),
-                (TableCell(1, 1, "Repeated row label"),),
-                (TableCell(2, 1, "Last"),),
+                (
+                    TableCell(0, 0, "Group", row_span=3, bbox=(0, 10, 50, 100)),
+                    TableCell(0, 1, "First", bbox=(50, 80, 100, 100)),
+                ),
+                (TableCell(1, 1, "Repeated row label", bbox=(50, 40, 100, 60)),),
+                (TableCell(2, 1, "Last", bbox=(50, 10, 100, 30)),),
             ),
         )
     )
     block = Block(
         order=0,
         kind=BlockKind.PARAGRAPH,
-        bbox=(0, 40, 100, 60),
+        bbox=(50, 40, 100, 60),
         lines=(TextLine("Repeated row label"),),
     )
 
@@ -89,7 +93,7 @@ def test_removing_a_middle_row_shortens_a_surviving_row_span() -> None:
     assert table.rows[0][0].row_span == 3
 
 
-def test_page_wide_duplicate_coverage_includes_text_without_geometry() -> None:
+def test_text_without_geometry_cannot_establish_a_duplicate_table() -> None:
     table = Table(
         order=0,
         bbox=(0, 0, 100, 20),
@@ -113,32 +117,19 @@ def test_page_wide_duplicate_coverage_includes_text_without_geometry() -> None:
     )
 
     tables = internal_profile_tables((table,))
-    assert internal_remove_block_duplicate_tables([matching_text], tables) == ()
-    assert internal_remove_block_duplicate_tables([matching_text, unrelated_text], tables) == ()
-
-
-def test_table_profiles_remain_aligned_after_reordering_and_rejection() -> None:
-    retained = Table(order=0, rows=((TableCell(0, 0, "Meaningful label"),),))
-    artifact = Table(order=1, rows=((TableCell(0, 0, "b i"),),))
-    rejected = Table(order=2, rows=((TableCell(0, 0, "Explicitly rejected"),),))
-    original = internal_profile_tables((retained, artifact, rejected))
-    reordered = tuple(reversed(original))
-
-    filtered = internal_remove_duplicate_tables(reordered, rejected_table_indexes=frozenset({0}))
-
-    assert filtered == original[:1]
-    assert filtered[0][0] is retained
-    assert filtered[0][1] is original[0][1]
-    assert filtered[0][1].tokens == ("meaningful", "label")
+    assert internal_remove_block_duplicate_tables([matching_text], tables) == tables
+    assert internal_remove_block_duplicate_tables([matching_text, unrelated_text], tables) == tables
 
 
 def test_changed_table_rows_get_new_profiles_without_invalidating_original_snapshots() -> None:
+    # Poppler 26.07.0 pdftotext -bbox confirms snapshot.pdf places the title
+    # at y=84 and the retained value at y=14, in the separate boxes below.
     table = Table(
         order=0,
         bbox=(0, 0, 100, 100),
         rows=(
-            (TableCell(0, 0, "Repeated title"),),
-            (TableCell(1, 0, "Retained value"),),
+            (TableCell(0, 0, "Repeated title", bbox=(0, 80, 100, 100)),),
+            (TableCell(1, 0, "Retained value", bbox=(0, 10, 100, 30)),),
         ),
     )
     block = Block(

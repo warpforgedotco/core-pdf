@@ -14,9 +14,11 @@ from core_pdf.impl._impl.extract.table_cleanup import (
     internal_table_with_bands,
 )
 from core_pdf.impl._impl.extract.table_facts import internal_TableFacts
-from core_pdf.impl._impl.model.geometry import overlap_ratio_min, overlap_ratio_of
+from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_min, overlap_ratio_of
 from core_pdf.impl._impl.model.spatial import SpatialFrame
+from core_pdf.impl._impl.model.text import complete_text_covered, content_tokens
 from core_pdf.impl._impl.output.model import Block, Table
+from core_pdf.impl.types import Rectangle
 
 internal_EMITTED_TEXT_TOKEN_RE = re.compile(r"\w+")
 internal_BlockTokens = tuple[tuple[tuple[float, float, float, float], tuple[str, ...]], ...]
@@ -183,38 +185,11 @@ def internal_table_duplicated_by_blocks(
     )
 
 
-def internal_small_table_duplicated_by_page_text(
-    table: Table,
-    blocks: list[Block],
-    *,
-    profile: internal_TableProfile | None = None,
-    page_token_counts: Counter[str] | None = None,
-) -> bool:
-    table_profile = profile or internal_table_profile(table)
-    if table.metadata.get("source") == "stream":
-        return False
-    if table_profile.has_grid_shape:
-        return False
-    table_tokens = table_profile.tokens
-    if not 4 <= len(table_tokens) < 24:
-        return False
-    token_counts = page_token_counts or Counter(
-        token for block in blocks for token in internal_emitted_text_tokens(block.text)
-    )
-    if not token_counts:
-        return False
-    matched = sum(
-        min(count, token_counts[token]) for token, count in table_profile.token_counts.items()
-    )
-    return matched / len(table_tokens) >= 0.90
-
-
 def internal_remove_block_duplicate_tables(
     blocks: list[Block],
     tables: internal_ProfiledTables,
     *,
     protected_table_indexes: frozenset[int] = frozenset(),
-    rejected_table_indexes: frozenset[int] = frozenset(),
 ) -> internal_ProfiledTables:
     if not blocks or not tables:
         return tables
@@ -233,34 +208,13 @@ def internal_remove_block_duplicate_tables(
         else ()
     )
     block_boxes = tuple(block.bbox for block in blocks if block.bbox is not None and block.text)
-    needs_page_token_counts = any(
-        table.metadata.get("source") != "stream"
-        and not profile.has_grid_shape
-        and 4 <= len(profile.tokens) < 24
-        for table, profile in tables
-    )
-    page_token_counts = (
-        Counter(token for block in blocks for token in internal_emitted_text_tokens(block.text))
-        if needs_page_token_counts
-        else Counter()
-    )
     for index, (table, profile) in enumerate(tables):
-        if index in rejected_table_indexes:
-            continue
         if index in protected_table_indexes:
             filtered.append((table, profile))
             continue
         if (
-            (
-                internal_table_duplicated_by_blocks(
-                    table, blocks, profile=profile, tokenized_blocks=tokenized_blocks
-                )
-                or internal_small_table_duplicated_by_page_text(
-                    table,
-                    blocks,
-                    profile=profile,
-                    page_token_counts=page_token_counts,
-                )
+            internal_table_duplicated_by_blocks(
+                table, blocks, profile=profile, tokenized_blocks=tokenized_blocks
             )
             or table.metadata.get("source") == "stream"
             and table.bbox is not None
@@ -288,85 +242,45 @@ def internal_remove_block_duplicate_table_rows(
     blocks: list[Block],
     tables: tuple[Table, ...],
 ) -> tuple[Table, ...]:
-    """Drop table rows whose text is already emitted by an overlapping block.
-
-    This mirrors internal_remove_table_duplicate_blocks in the opposite
-    direction: block text is the primary reading order, so a row that
-    repeats it (for example a schedule rendered both as body lines and as a
-    stream table) is removed.  A row is dropped only when it and one block
-    line share roughly the same token multiset, or when its tokens are
-    scattered through the surrounding blocks without forming a fragment of a
-    single line, so rows whose words merely echo a longer heading are kept.
-    """
+    """Drop rows reproduced completely by a surviving line in the same region."""
     if not blocks or not tables:
         return tables
+    line_boxes_by_text: dict[str, list[Rectangle]] = {}
+    for block in blocks:
+        for line in block.lines:
+            box = line.bbox or (block.bbox if len(block.lines) == 1 else None)
+            text = " ".join(line.text.split())
+            if box is not None and text:
+                line_boxes_by_text.setdefault(text, []).append(box)
     filtered: list[Table] = []
     for table in tables:
-        if table.bbox is None or not table.rows:
+        if not table.rows:
             filtered.append(table)
             continue
-        block_lines = [
-            line
-            for block in blocks
-            if block.bbox is not None and overlap_ratio_min(block.bbox, table.bbox) >= 0.45
-            for line in block.lines
-        ]
-        line_tokens = [
-            tokens
-            for line in block_lines
-            for tokens in [internal_emitted_text_tokens(line.text)]
-            if tokens
-        ]
-        if not line_tokens:
-            filtered.append(table)
-            continue
-        block_counts = Counter(token for tokens in line_tokens for token in tokens)
-        line_sets = [set(tokens) for tokens in line_tokens]
-        line_indexes_by_token: dict[str, set[int]] = {}
-        for line_index, line_set in enumerate(line_sets):
-            for token in line_set:
-                line_indexes_by_token.setdefault(token, set()).add(line_index)
         kept_row_indexes: list[int] = []
         for row_index, row in enumerate(table.rows):
             cells = [cell for cell in row if cell.text]
-            row_tokens = internal_emitted_text_tokens(" ".join(cell.text for cell in cells))
-            if not row_tokens:
+            text = " ".join(" ".join(cell.text.split()) for cell in cells)
+            cell_boxes = tuple(cell.bbox for cell in cells if cell.bbox is not None)
+            row_box = bbox_union(cell_boxes)
+            if not text or row_box is None or len(cell_boxes) != len(cells):
                 kept_row_indexes.append(row_index)
                 continue
-            duplicated = False
-            candidate_line_indexes: set[int] = set()
-            for token in row_tokens:
-                candidate_line_indexes.update(line_indexes_by_token.get(token, ()))
-            for line_index in candidate_line_indexes:
-                line = line_tokens[line_index]
-                line_set = line_sets[line_index]
-                matched = sum(1 for token in row_tokens if token in line_set)
-                if matched / len(row_tokens) >= 0.9 and matched / len(line) >= 0.9:
-                    duplicated = True
-                    break
-            if not duplicated:
-                matched = sum(
-                    min(count, block_counts[token]) for token, count in Counter(row_tokens).items()
-                )
-                shared_line_indexes: set[int] | None = None
-                for token in set(row_tokens):
-                    indexes = line_indexes_by_token.get(token)
-                    if not indexes:
-                        shared_line_indexes = set()
-                        break
-                    shared_line_indexes = (
-                        set(indexes)
-                        if shared_line_indexes is None
-                        else shared_line_indexes.intersection(indexes)
-                    )
-                    if not shared_line_indexes:
-                        break
-                fragment = bool(shared_line_indexes)
-                duplicated = matched / len(row_tokens) >= 0.9 and not fragment
+            duplicated = any(
+                overlap_ratio_of(line_box, row_box) >= 0.90
+                and all(overlap_ratio_min(line_box, cell_box) > 0 for cell_box in cell_boxes)
+                for line_box in line_boxes_by_text.get(text, ())
+            )
             if not duplicated:
                 kept_row_indexes.append(row_index)
         if len(kept_row_indexes) == len(table.rows):
             filtered.append(table)
+            continue
+        if not kept_row_indexes:
+            # The blocks cover the rows, but need not include associated text.
+            # Keep its table until that text can be projected independently.
+            if table.title is not None or table.caption is not None:
+                filtered.append(table)
             continue
         rows = tuple(
             tuple(
@@ -394,35 +308,68 @@ def internal_remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-def internal_table_profile_token_coverage(
-    candidate_facts: internal_TableProfile,
-    reference_facts: internal_TableProfile,
-) -> float:
-    candidate_tokens = candidate_facts.tokens
-    if not candidate_tokens:
-        return 0.0
-    reference_counts = reference_facts.token_counts
-    matched = sum(
-        min(count, reference_counts.get(token, 0))
-        for token, count in candidate_facts.token_counts.items()
+def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> bool:
+    """Require complete text in the same cell region before dropping a line."""
+    normalized = " ".join(text.split())
+    if not normalized or table.bbox is None or overlap_ratio_of(box, table.bbox) < 0.90:
+        return False
+    tokens = content_tokens(normalized)
+    participating_cells = []
+    total_cells = 0
+    for row in table.rows:
+        row_cells = [cell for cell in row if cell.text]
+        total_cells += len(row_cells)
+        cells = [
+            cell for cell in row_cells if cell.bbox is None or overlap_ratio_min(box, cell.bbox) > 0
+        ]
+        if not cells:
+            continue
+        participating_cells.extend(cells)
+        cell_texts = [" ".join(cell.text.split()) for cell in cells]
+        for cell, cell_text in zip(cells, cell_texts, strict=True):
+            if (
+                cell.bbox is not None
+                and overlap_ratio_of(box, cell.bbox) >= 0.90
+                and complete_text_covered(tokens, content_tokens(cell_text))
+            ):
+                return True
+        for start in range(len(cells)):
+            candidate = ""
+            for end in range(start, len(cells)):
+                candidate = f"{candidate} {cell_texts[end]}" if candidate else cell_texts[end]
+                if not normalized.startswith(candidate):
+                    break
+                if normalized != candidate:
+                    continue
+                matched_cells = cells[start : end + 1]
+                # Inferred column boundaries can graze the line's last glyph.
+                # Test exact cell sequences instead of forcing neighboring
+                # text into a match because of a small geometric intersection.
+                if all(cell.bbox is not None for cell in matched_cells):
+                    row_box = bbox_union(
+                        cell.bbox for cell in matched_cells if cell.bbox is not None
+                    )
+                    if row_box is not None and overlap_ratio_of(box, row_box) >= 0.90:
+                        return True
+                elif start == 0 and end + 1 == len(cells) == len(row_cells):
+                    # Without cell geometry, only the complete row can be
+                    # compared using the containing table's known bounds.
+                    return True
+    # A single text line can represent an entire table in a competing layout.
+    # Keep case, punctuation, order, and repeated values in this comparison.
+    known_geometry = all(cell.bbox is not None for cell in participating_cells)
+    if not known_geometry and len(participating_cells) != total_cells:
+        return False
+    covered_box = (
+        bbox_union(cell.bbox for cell in participating_cells if cell.bbox is not None)
+        if participating_cells and known_geometry
+        else table.bbox
     )
-    return matched / len(candidate_tokens)
-
-
-def internal_remove_duplicate_tables(
-    tables: internal_ProfiledTables,
-    *,
-    rejected_table_indexes: frozenset[int] = frozenset(),
-) -> internal_ProfiledTables:
-    filtered: list[tuple[Table, internal_TableProfile]] = []
-    for index, (table, profile) in enumerate(tables):
-        if index in rejected_table_indexes:
-            continue
-        tokens = profile.tokens
-        if not table.metadata and 0 < len(tokens) <= 8 and profile.token_set <= {"b", "i"}:
-            continue
-        filtered.append((table, profile))
-    return tuple(filtered)
+    return (
+        covered_box is not None
+        and overlap_ratio_of(box, covered_box) >= 0.90
+        and normalized == " ".join(" ".join(cell.text.split()) for cell in participating_cells)
+    )
 
 
 def internal_remove_table_duplicate_blocks(
@@ -431,45 +378,33 @@ def internal_remove_table_duplicate_blocks(
 ) -> list[Block]:
     if not blocks or not tables:
         return blocks
-    table_boxes = [
-        (table.bbox, profile.token_set) for table, profile in tables if table.bbox is not None
-    ]
-    table_frame = SpatialFrame.from_boxes(box for box, ignored_tokens in table_boxes)
-    if not table_boxes:
+    located_tables = [table for table, _ in tables if table.bbox is not None]
+    if not located_tables:
         return blocks
+    table_frame = SpatialFrame.from_boxes(
+        table.bbox for table in located_tables if table.bbox is not None
+    )
     deduplicated: list[Block] = []
     for block in blocks:
-        if block.bbox is None:
+        kept_lines = []
+        for line in block.lines:
+            # A tall block can include a heading well outside the table. Only
+            # its individual lines establish which text actually repeats cells.
+            box = line.bbox or (block.bbox if len(block.lines) == 1 else None)
+            if box is None or not any(
+                internal_line_duplicates_table(line.text, box, located_tables[int(index)])
+                for index in table_frame.matching_overlap_min(box, 0.90)
+            ):
+                kept_lines.append(line)
+        if len(kept_lines) == len(block.lines):
             deduplicated.append(block)
-            continue
-        block_tokens = internal_emitted_text_tokens(block.text)
-        if not block_tokens:
-            deduplicated.append(block)
-            continue
-        duplicate = False
-        contained_line_boxes: list[tuple[float, float, float, float]] = []
-        for table_index in table_frame.matching_overlap_min(block.bbox, 0.9):
-            table_bbox, tokens = table_boxes[int(table_index)]
-            if sum(token in tokens for token in block_tokens) / len(block_tokens) >= 0.85:
-                duplicate = True
-                break
-            contained_line_boxes.append(table_bbox)
-        if duplicate:
-            continue
-        if contained_line_boxes:
-            # A block that surrounds (or is surrounded by) a table but carries
-            # additional non-table text: drop only the lines whose bbox lies
-            # inside a table region so the table content is not emitted twice.
-            filtered = tuple(
-                line
-                for line in block.lines
-                if line.bbox is None
-                or not any(overlap_ratio_of(line.bbox, box) >= 0.9 for box in contained_line_boxes)
+        elif kept_lines:
+            box = (
+                bbox_union(line.bbox for line in kept_lines if line.bbox is not None)
+                if all(line.bbox is not None for line in kept_lines)
+                else block.bbox
             )
-            if filtered and len(filtered) != len(block.lines):
-                deduplicated.append(replace(block, lines=filtered))
-                continue
-        deduplicated.append(block)
+            deduplicated.append(replace(block, lines=tuple(kept_lines), bbox=box))
     return deduplicated
 
 
@@ -478,9 +413,7 @@ def internal_project_text_and_tables(
     parsed_tables: tuple[Table, ...],
 ) -> tuple[list[Block], tuple[Table, ...]]:
     """Resolve overlap once, producing explicit text and table projections."""
-    tables = internal_remove_duplicate_tables(
-        internal_remove_block_duplicate_tables(blocks, internal_profile_tables(parsed_tables)),
-    )
+    tables = internal_remove_block_duplicate_tables(blocks, internal_profile_tables(parsed_tables))
     text_blocks = internal_remove_table_duplicate_blocks(blocks, tables)
     # Profiles describe the original row snapshots. Discard them before the
     # final row rewrite; another projection will derive facts from its new rows.

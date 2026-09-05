@@ -83,18 +83,23 @@ def test_chart_replacement_survives_partial_block_coverage(reverse: bool) -> Non
         "one two three four five six seven eight nine ten eleven twelve thirteen "
         "fourteen fifteen sixteen"
     )
-    chart = internal_chart("one two three")
+    # Poppler -bbox-layout places the full text at x20..429.66 and its
+    # suffix at x83.37..429.66, on baseline y160 in this 800x220 PDF.
+    chart = replace(internal_chart("one two three"), bbox=(20.0, 157.93, 80.59, 167.18))
+    complete_box = (20.0, 157.93, 429.66, 167.18)
+    suffix_box = (83.37, 157.93, 429.66, 167.18)
     stream = replace(
         chart,
         order=1,
-        rows=((TableCell(0, 0, complete_text),),),
+        rows=((TableCell(0, 0, complete_text, bbox=complete_box),),),
+        bbox=complete_box,
         metadata={"source": "stream"},
     )
     block = Block(
         0,
         BlockKind.PARAGRAPH,
-        (TextLine(complete_text.removeprefix("one two three "), bbox=chart.bbox),),
-        bbox=chart.bbox,
+        (TextLine(complete_text.removeprefix("one two three "), bbox=suffix_box),),
+        bbox=suffix_box,
     )
 
     blocks, projected = internal_project_text_and_tables(

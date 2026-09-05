@@ -450,7 +450,9 @@ def test_emit_keeps_a_grid_shaped_table_and_drops_the_duplicate_block() -> None:
     assert page.blocks == ()
 
 
-def test_emit_removes_small_table_duplicated_by_page_text() -> None:
+def test_emit_preserves_a_small_table_beside_matching_page_text() -> None:
+    # Poppler 26.07.0 preserves the heading and separate ruled row in
+    # original-small-table-expectation.pdf before changing this expectation.
     parsed = page_of(
         route="native",
         blocks=(
@@ -476,7 +478,8 @@ def test_emit_removes_small_table_duplicated_by_page_text() -> None:
     page = emit_page(parsed)
 
     assert len(page.blocks) == 1
-    assert page.tables == ()
+    assert len(page.tables) == 1
+    assert page.tables[0].rows == parsed.tables[0].rows
 
 
 def test_emit_preserves_decoded_identifiers_regardless_of_their_shape() -> None:
@@ -734,7 +737,9 @@ def test_emit_removes_blocks_outside_page_bounds() -> None:
     assert [block.text for block in page.blocks] == ["visible"]
 
 
-def test_emit_removes_tiny_bi_artifact_table() -> None:
+def test_emit_preserves_small_tables_containing_b_and_i() -> None:
+    # Poppler 26.07.0 and qpdf 12.3.2 confirm that B/I are ordinary cell
+    # contents in the ruled fixtures exercised by test_extract_small_tables.py.
     parsed = page_of(
         route="native",
         blocks=(block("Figure caption", (20.0, 300.0, 260.0, 320.0), "caption"),),
@@ -752,4 +757,5 @@ def test_emit_removes_tiny_bi_artifact_table() -> None:
 
     page = emit_page(parsed)
 
-    assert page.tables == ()
+    assert len(page.tables) == 1
+    assert page.tables[0].rows == parsed.tables[0].rows

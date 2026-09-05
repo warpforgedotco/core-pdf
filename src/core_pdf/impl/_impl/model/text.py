@@ -21,6 +21,29 @@ LEADER_CHARS = frozenset(".-\u2013\u2014~\u2026")
 internal_LEADER_CLASS = "[.\\-\u2013\u2014~\u2026]"
 internal_TRAILING_LEADER_RE = re.compile(rf"(?<=\S)(?:[ \t]*{internal_LEADER_CLASS}){{3,}}[ \t]*$")
 internal_LEADING_LEADER_RE = re.compile(rf"^(?:{internal_LEADER_CLASS}[ \t]+){{2,}}")
+internal_CONTENT_TOKEN_RE = re.compile(r"\w+|[^\w\s]")
+
+
+def content_tokens(text: str) -> tuple[str, ...]:
+    """Keep words, case, and every non-whitespace symbol for content comparisons."""
+    return tuple(internal_CONTENT_TOKEN_RE.findall(text))
+
+
+def complete_text_covered(candidate: tuple[str, ...], reference: tuple[str, ...]) -> bool:
+    """Require the complete ordered content without dropping surrounding operators."""
+    if not candidate:
+        return False
+    size = len(candidate)
+    for start in range(len(reference) - size + 1):
+        if reference[start : start + size] != candidate:
+            continue
+        # A bare 5 is not equivalent to > 5, even though its word token matches.
+        if start and not reference[start - 1].isalnum():
+            continue
+        if start + size < len(reference) and not reference[start + size].isalnum():
+            continue
+        return True
+    return False
 
 
 def word_gap_threshold(space_width: float, size: float) -> float:
@@ -134,7 +157,9 @@ def text_tokens(text: str) -> tuple[str, ...]:
 __all__ = (
     "collapse_character_spaced",
     "collapse_ws",
+    "complete_text_covered",
     "compact_text",
+    "content_tokens",
     "is_neutral_character",
     "is_rtl_character",
     "search_key",
