@@ -277,6 +277,13 @@ def internal_merge_grid_cells(
         max_row = max(row for row, internal_column in cells)
         min_column = min(column for internal_row, column in cells)
         max_column = max(column for internal_row, column in cells)
+        if len(cells) != (max_row - min_row + 1) * (max_column - min_column + 1):
+            # Missing rules can connect an L-shaped region. A rectangular span
+            # would cover cells owned by another region, so retain its source
+            # cells until the ruling supports an unambiguous rectangular merge.
+            for row, column in cells:
+                merged[row].append(rows[row][column])
+            continue
         source_cells = [rows[row][column] for row, column in cells]
         text = " ".join(cell.text for cell in source_cells if cell.text).strip()
         boxes = [cell.bbox for cell in source_cells if cell.bbox is not None]

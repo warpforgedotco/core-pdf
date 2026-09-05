@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
+from collections import Counter
 from collections.abc import Callable
 
 import numpy
@@ -31,6 +33,7 @@ from core_pdf.impl._impl.output.model import Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedLine
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import page_evidence, text_run
+from tests.helpers.pdf_bytes import one_page_pdf, open_pdf
 
 
 def test_split_grid_component_separates_vertical_table_regions() -> None:
@@ -84,6 +87,91 @@ def test_merge_grid_cells_infers_horizontal_span_from_missing_rule() -> None:
     assert merged[0][0].text == "Header"
     assert merged[0][0].column_span == 2
     assert [cell.text for cell in merged[1]] == ["A", "B"]
+
+
+def test_nonrectangular_grid_fallback_preserves_unrelated_rectangular_spans() -> None:
+    rows = [
+        [
+            TableCell(
+                row,
+                column,
+                text,
+                bbox=(column * 10, 10 - row * 10, column * 10 + 10, 20 - row * 10),
+            )
+            for column, text in enumerate(texts)
+        ]
+        for row, texts in enumerate((("A", "B", "Header", ""), ("C", "D", "E", "F")))
+    ]
+    horizontal = numpy.asarray([(0.0, 40.0, 20.0), (10.0, 40.0, 10.0), (0.0, 40.0, 0.0)])
+    vertical = numpy.asarray(
+        [
+            (0.0, 0.0, 20.0),
+            (10.0, 0.0, 10.0),
+            (20.0, 0.0, 20.0),
+            (30.0, 0.0, 10.0),
+            (40.0, 0.0, 20.0),
+        ]
+    )
+
+    merged = internal_merge_grid_cells(
+        rows,
+        horizontal,
+        vertical,
+        numpy.asarray((0.0, 10.0, 20.0, 30.0, 40.0)),
+        numpy.asarray((20.0, 10.0, 0.0)),
+    )
+
+    assert [[cell.text for cell in row] for row in merged] == [
+        ["A", "B", "Header"],
+        ["C", "D", "E", "F"],
+    ]
+    assert merged[0][0] is rows[0][0]
+    assert merged[0][1] is rows[0][1]
+    assert merged[1][0] is rows[1][0]
+    assert merged[0][2].column_span == 2
+    coverage = Counter(
+        (row, column)
+        for cells in merged
+        for cell in cells
+        for row in range(cell.row, cell.row + cell.row_span)
+        for column in range(cell.column, cell.column + cell.column_span)
+    )
+    assert coverage == {(row, column): 1 for row in range(2) for column in range(4)}
+
+
+def test_pdf_extraction_keeps_nonrectangular_grid_cells_disjoint_in_html() -> None:
+    # The absent top vertical and left horizontal rules connect three cells.
+    # The lower-right cell remains separated by both of its interior rules.
+    content = b"""
+        40 100 m 120 100 l 120 140 l 40 140 l 40 100 l S
+        80 120 m 120 120 l S
+        80 100 m 80 120 l S
+        BT /F1 10 Tf 50 127 Td (12) Tj ET
+        BT /F1 10 Tf 90 107 Td (78) Tj ET
+    """
+    with open_pdf(one_page_pdf(content)) as document:
+        extracted = document.extract()
+
+    assert len(extracted.pages[0].tables) == 1
+    table = extracted.pages[0].tables[0]
+    assert [[cell.text for cell in row] for row in table.rows] == [["12", ""], ["", "78"]]
+    coverage = Counter(
+        (row, column)
+        for cells in table.rows
+        for cell in cells
+        for row in range(cell.row, cell.row + cell.row_span)
+        for column in range(cell.column, cell.column + cell.column_span)
+    )
+    assert coverage == {(row, column): 1 for row in range(2) for column in range(2)}
+
+    html = ET.fromstring(extracted.to_html())
+    html_rows = html.findall(".//table//tr")
+    assert [[cell.text or "" for cell in row] for row in html_rows] == [["12", ""], ["", "78"]]
+    assert all(
+        int(cell.get("rowspan", "1")) == int(cell.get("colspan", "1")) == 1
+        for row in html_rows
+        for cell in row
+    )
 
 
 def test_stream_table_accepts_compact_two_row_table() -> None:

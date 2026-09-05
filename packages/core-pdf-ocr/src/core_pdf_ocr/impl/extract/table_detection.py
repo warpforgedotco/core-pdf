@@ -8,17 +8,19 @@ from dataclasses import replace
 
 import numpy
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch, internal_bbox_tuple
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.extract.table_detection import (
     internal_detect_tables,
     internal_finalize_tables,
     internal_TableAnalysis,
 )
-from core_pdf.impl._impl.model.geometry import bbox_union
+from core_pdf.impl._impl.model.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
 from core_pdf.impl._impl.output.model import Table, TableCell
+from core_pdf.impl.types import Rectangle
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis
 
 internal_CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
+internal_CHART_DUPLICATE_OVERLAP = 0.5
 
 
 def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
@@ -65,16 +67,26 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
 
     cells: list[TableCell] = []
     boxes: list[tuple[float, float, float, float]] = []
-    seen: set[str] = set()
-    column = 0
-    for index in sorted(ocr_indexes, key=lambda item: observations.bbox[item, 0]):
+    chart_observations: list[tuple[str, Rectangle]] = []
+    for index in ocr_indexes:
         text = observations.text[int(index)].strip()
-        if not text or text.casefold() in seen:
+        box = finite_rect(observations.bbox[int(index)])
+        if not text or box is None:
             continue
-        seen.add(text.casefold())
-        box = internal_bbox_tuple(observations.bbox[int(index)])
-        if box[2] <= box[0] or box[3] <= box[1]:
+        chart_observations.append((text, box))
+
+    seen: dict[str, list[Rectangle]] = {}
+    column = 0
+    for text, box in sorted(chart_observations, key=lambda item: item[1][0]):
+        matching_boxes = seen.setdefault(text.casefold(), [])
+        # Repeated values belong to distinct chart positions; suppress only
+        # another reading of the same text over substantially the same area.
+        if any(
+            overlap_ratio_min_exact(box, previous) >= internal_CHART_DUPLICATE_OVERLAP
+            for previous in matching_boxes
+        ):
             continue
+        matching_boxes.append(box)
         parts = internal_chart_cell_texts(text)
         if len(parts) == 1:
             boxes.append(box)
