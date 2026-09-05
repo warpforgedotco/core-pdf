@@ -49,23 +49,13 @@ class internal_StructureUnset:
 internal_STRUCTURE_UNSET = internal_StructureUnset()
 WORD_TOKEN_RE = re.compile(r"\w+")
 
-# Thresholds for discarding a text layer that merely repeats another one. A layer needs
-# enough matching tokens to distinguish duplication from incidental repetition. Nested
-# streams require full local coverage of each discarded run; clipped layers retain their
-# overlap threshold because separately clipped boxes can repeat only a localized region.
+# Require enough locally matched text to distinguish a duplicate layer from
+# incidental repetition. Neither form identity nor a shared clip proves duplication.
 DUPLICATE_LAYER_MIN_TOKENS = 24
-DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP = 0.50
 
 
 def internal_normalized_tokens(runs: Iterable[TextRun]) -> tuple[str, ...]:
     return tuple(token.casefold() for run in runs for token in WORD_TOKEN_RE.findall(run.text))
-
-
-def internal_token_overlap(left: tuple[str, ...], right: tuple[str, ...]) -> float:
-    if not left or not right:
-        return 0.0
-    matched = (Counter(left) & Counter(right)).total()
-    return matched / min(len(left), len(right))
 
 
 def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None:
@@ -80,12 +70,82 @@ def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None
     return None
 
 
+def internal_glyphs_covered_by_extended_run(run: TextRun, extended: TextRun) -> bool:
+    """Require exact glyph evidence before preferring an overlay with extra text."""
+    if not run.glyph_clusters or len(extended.text) <= len(run.text):
+        return False
+    # ActualText and inferred spaces can differ from the captured glyph text.
+    # Such runs cannot be safely compared using source glyphs alone.
+    if "".join(cluster.text for cluster in run.glyph_clusters) != run.text:
+        return False
+    if "".join(cluster.text for cluster in extended.glyph_clusters) != extended.text:
+        return False
+    return Counter(
+        (cluster.text, cluster.advance_bbox) for cluster in run.glyph_clusters
+    ) <= Counter((cluster.text, cluster.advance_bbox) for cluster in extended.glyph_clusters)
+
+
+def internal_discard_duplicate_layer_runs(
+    runs: tuple[TextRun, ...],
+    primary_indices: list[int],
+    candidate_groups: Iterable[list[int]],
+) -> tuple[TextRun, ...]:
+    primary_runs = [runs[index] for index in primary_indices]
+    primary_geometry = numpy.asarray(
+        [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
+    )
+    primary_tokens = [internal_normalized_tokens((run,)) for run in primary_runs]
+    primary_text = [" ".join(run.text.split()) for run in primary_runs]
+    duplicate_indices: set[int] = set()
+    for indices in candidate_groups:
+        tokens_by_index = {index: internal_normalized_tokens((runs[index],)) for index in indices}
+        if sum(map(len, tokens_by_index.values())) < DUPLICATE_LAYER_MIN_TOKENS:
+            continue
+        matched_indices: list[int] = []
+        matched_tokens = 0
+        covered_primary: set[int] = set()
+        for index, tokens in tokens_by_index.items():
+            if not tokens:
+                continue
+            run = runs[index]
+            intersects = (
+                (primary_geometry[:, 0] < run.x1)
+                & (primary_geometry[:, 2] > run.x0)
+                & (primary_geometry[:, 1] < run.y1)
+                & (primary_geometry[:, 3] > run.y0)
+            )
+            nearby = numpy.flatnonzero(intersects)
+            local_text = " ".join(primary_text[int(position)] for position in nearby)
+            # Punctuation, case, and word boundaries are content too. Never
+            # equate "now here" with "nowhere", or a word with part of another.
+            candidate_text = " ".join(run.text.split())
+            if f" {candidate_text} " in f" {local_text} ":
+                matched_indices.append(index)
+                matched_tokens += len(tokens)
+            else:
+                covered_primary.update(
+                    int(position)
+                    for position in nearby
+                    if internal_glyphs_covered_by_extended_run(primary_runs[int(position)], run)
+                )
+        # Discard only locally matched runs, never a whole form or clip group.
+        if matched_tokens >= DUPLICATE_LAYER_MIN_TOKENS:
+            duplicate_indices.update(matched_indices)
+        # An overlay may contain the same glyphs followed by a unique suffix.
+        # Keep that complete run and remove the shorter copy when proven identical.
+        if sum(len(primary_tokens[position]) for position in covered_primary) >= (
+            DUPLICATE_LAYER_MIN_TOKENS
+        ):
+            duplicate_indices.update(primary_indices[position] for position in covered_primary)
+    return tuple(run for index, run in enumerate(runs) if index not in duplicate_indices)
+
+
 def internal_discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:
-    page_runs: list[TextRun] = []
+    page_indices: list[int] = []
     by_form: dict[tuple[int, LayoutFormId | int], list[int]] = {}
     for index, run in enumerate(runs):
         if run.xobject_depth == 0:
-            page_runs.append(run)
+            page_indices.append(index)
         else:
             form_id = next(
                 (value for key, value in reversed(run.provenance) if key == "layout_form_id"),
@@ -95,96 +155,25 @@ def internal_discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple
             # stream_order advances when entering a child and is not restored.
             group = cast(LayoutFormId, form_id) if isinstance(form_id, tuple) else run.stream_order
             by_form.setdefault((run.xobject_depth, group), []).append(index)
-    if not page_runs or not by_form:
+    if not page_indices or not by_form:
         return runs
-    page_geometry = numpy.asarray(
-        [(run.x0, run.y0, run.x1, run.y1) for run in page_runs], dtype=numpy.float64
-    )
-    page_tokens = [internal_normalized_tokens((run,)) for run in page_runs]
-    duplicate_indices: set[int] = set()
-    for indices in by_form.values():
-        tokens_by_index = {index: internal_normalized_tokens((runs[index],)) for index in indices}
-        if sum(map(len, tokens_by_index.values())) < DUPLICATE_LAYER_MIN_TOKENS:
-            continue
-        matched_indices: list[int] = []
-        matched_tokens = 0
-        for index, tokens in tokens_by_index.items():
-            if not tokens:
-                continue
-            run = runs[index]
-            intersects = (
-                (page_geometry[:, 0] < run.x1)
-                & (page_geometry[:, 2] > run.x0)
-                & (page_geometry[:, 1] < run.y1)
-                & (page_geometry[:, 3] > run.y0)
-            )
-            local_tokens = Counter(
-                token
-                for page_index in numpy.flatnonzero(intersects)
-                for token in page_tokens[int(page_index)]
-            )
-            if Counter(tokens) <= local_tokens:
-                matched_indices.append(index)
-                matched_tokens += len(tokens)
-        # A stream may mix a duplicate overlay with unique text. Discard only
-        # locally matched runs, never every form at the same nesting depth or
-        # an entire run merely because some of its words repeat page text.
-        if matched_tokens >= DUPLICATE_LAYER_MIN_TOKENS:
-            duplicate_indices.update(matched_indices)
-    return tuple(run for index, run in enumerate(runs) if index not in duplicate_indices)
+    return internal_discard_duplicate_layer_runs(runs, page_indices, by_form.values())
 
 
 def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:
-    groups: dict[tuple[float, float, float, float], list[TextRun]] = {}
-    run_boxes: list[tuple[TextRun, tuple[float, float, float, float] | None]] = []
-    for run in runs:
+    groups: dict[tuple[float, float, float, float], list[int]] = {}
+    for index, run in enumerate(runs):
         box = internal_clip_bbox(run)
-        run_boxes.append((run, box))
         if box is not None:
-            groups.setdefault(box, []).append(run)
+            groups.setdefault(box, []).append(index)
     if len(groups) < 2:
         return runs
-    primary_box, primary_runs = max(
+    primary_box, primary_indices = max(
         groups.items(), key=lambda item: (item[0][2] - item[0][0]) * (item[0][3] - item[0][1])
     )
-    tokens_by_box = {box: internal_normalized_tokens(group) for box, group in groups.items()}
-    primary_tokens = tokens_by_box[primary_box]
-    if len(primary_tokens) < DUPLICATE_LAYER_MIN_TOKENS:
-        return runs
-    candidate_boxes = [
-        box
-        for box in groups
-        if box != primary_box and len(tokens_by_box[box]) >= DUPLICATE_LAYER_MIN_TOKENS
-    ]
-    if not candidate_boxes:
-        return runs
-    candidate_geometry = numpy.asarray(candidate_boxes, dtype=numpy.float64)
-    primary_geometry = numpy.asarray(
-        [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs],
-        dtype=numpy.float64,
+    return internal_discard_duplicate_layer_runs(
+        runs, primary_indices, (indices for box, indices in groups.items() if box != primary_box)
     )
-    intersections = (
-        (candidate_geometry[:, None, 0] < primary_geometry[None, :, 2])
-        & (candidate_geometry[:, None, 2] > primary_geometry[None, :, 0])
-        & (candidate_geometry[:, None, 1] < primary_geometry[None, :, 3])
-        & (candidate_geometry[:, None, 3] > primary_geometry[None, :, 1])
-    )
-    duplicate_boxes: set[tuple[float, float, float, float]] = set()
-    for box, intersects in zip(candidate_boxes, intersections, strict=True):
-        # Compare with primary-layer text painted in the same region. A page's
-        # table cells legitimately have separate clipping boxes and repeat much
-        # of the surrounding vocabulary; comparing each cell with every token
-        # on the page deleted non-duplicate rows from ISO 32000-2:2020 Table 22.
-        local_tokens = internal_normalized_tokens(
-            tuple(primary_runs[int(index)] for index in numpy.flatnonzero(intersects))
-        )
-        if (
-            len(local_tokens) >= DUPLICATE_LAYER_MIN_TOKENS
-            and internal_token_overlap(tokens_by_box[box], local_tokens)
-            >= DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP
-        ):
-            duplicate_boxes.add(box)
-    return tuple(run for run, box in run_boxes if box not in duplicate_boxes)
 
 
 def internal_extractable_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:
@@ -206,6 +195,28 @@ def internal_run_mcid(run: TextRun) -> int | None:
         if key == "mcid" and type(value) is int:
             return value
     return None
+
+
+def internal_structure_actual_text_owner(element: Any) -> tuple[int, str] | None:
+    """Find the enclosing replacement, sharing owners across parent wrappers."""
+    owner: tuple[int, str] | None = None
+    visited: set[int] = set()
+    while element is not None:
+        try:
+            props = getattr(element, "props", None)
+            marker = id(props if isinstance(props, dict) else element)
+            if marker in visited:
+                break
+            visited.add(marker)
+            actual_text = getattr(element, "actual_text", None)
+            if isinstance(actual_text, str):
+                # An enclosing element replaces all of its descendants, even
+                # when a child provides another replacement or an empty string.
+                owner = (marker, actual_text)
+            element = getattr(element, "parent", None)
+        except (IndexError, TypeError, ValueError):
+            break
+    return owner
 
 
 def internal_apply_structure_actual_text(
@@ -231,15 +242,15 @@ def internal_apply_structure_actual_text(
             continue
         try:
             element = structure[mcid] if 0 <= mcid < len(structure) else None
-            actual_text = getattr(element, "actual_text", None)
         except (IndexError, TypeError, ValueError):
-            actual_text = None
-        if not isinstance(actual_text, str):
+            element = None
+        owner = internal_structure_actual_text_owner(element)
+        if owner is None:
             output.append(run)
             continue
-        # Several MCIDs may belong to one structure element. Its ActualText
-        # replaces the entire element, and an empty string deliberately removes it.
-        marker = id(element)
+        # Several MCIDs may share an ancestor. Its ActualText replaces the
+        # entire element, and an empty string deliberately removes it.
+        marker, actual_text = owner
         replacement = replacements.get(marker)
         if replacement is None:
             replacement = run.replace(

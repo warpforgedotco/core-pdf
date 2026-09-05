@@ -69,7 +69,8 @@ def test_capture_preserves_distinct_content_beside_duplicate_form_text(variant: 
         case "extended":
             invocation = b"/Other Do"
             forms.append(stream_obj(content(repeated + " " + unique), form_metadata))
-            expected = (repeated, repeated + " " + unique)
+            # Poppler 26.07.0 pdftotext -layout preserves the complete overlay once.
+            expected = (repeated + " " + unique,)
         case _:
             raise AssertionError(variant)
     pdf = one_page_pdf(

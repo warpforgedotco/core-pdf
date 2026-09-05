@@ -792,6 +792,20 @@ class GlyphLineBuilder:
         if baseline_delta is not None and baseline_delta > max(height * 0.42, 2.0):
             return " "
 
+        if (
+            prev_run is not run
+            and prev_run.rotation_angle == run.rotation_angle == 0
+            and not (prev_run.is_vertical or run.is_vertical)
+            and not (previous.has_glyph_geometry and atom.has_glyph_geometry)
+            and prev_last_char.isalnum()
+            and first_char.isalnum()
+            and x_gap < -max(prev_run.font_size, run.font_size, prev_run.height, height)
+        ):
+            # A run that restarts well before the preceding text ends is a
+            # separate phrase, even when their painted areas overlap. Preserve
+            # glyph joins and small overlaps used for kerning within a word.
+            return " "
+
         if self.is_column_gap(spacing_gap, height, space_width):
             return " "
 
