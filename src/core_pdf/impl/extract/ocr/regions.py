@@ -3,10 +3,6 @@
 
 from __future__ import annotations
 
-from typing import (
-    cast,
-)
-
 import numpy
 
 from core_pdf.impl.extract.contracts import (
@@ -186,10 +182,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
     candidates: list[internal_OcrRegion] = []
 
     for box in getattr(capture.evidence, "image_boxes", ()):
-        image_box = cast(
-            tuple[float, float, float, float],
-            tuple(float(value) for value in box),
-        )
+        image_box = internal_bbox_tuple(box)
         padded = internal_ocr_region_box(
             image_box,
             page_width=page_width,

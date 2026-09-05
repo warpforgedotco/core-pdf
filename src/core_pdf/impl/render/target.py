@@ -89,36 +89,6 @@ class internal_RasterTarget(
         self.page_buffer = pixels
         self.crop_y0 = crop_y0
 
-    @property
-    def clip_path_stack(self) -> list[Any]:
-        return self.clip.clip_path_stack
-
-    def page_box_to_pixels(
-        self, x0: float, y0: float, x1: float, y1: float
-    ) -> tuple[int, int, int, int] | None:
-        return self.clip.page_box_to_pixels(x0, y0, x1, y1)
-
-    def clipped_pixel_box(
-        self, box: tuple[float, float, float, float]
-    ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
-        return self.clip.clipped_pixel_box(box)
-
-    def current_clip(self) -> tuple[float, float, float, float] | None:
-        return self.clip.current_clip()
-
-    def clip_paths_are_axis_aligned_rects(self) -> bool:
-        return self.clip.clip_paths_are_axis_aligned_rects()
-
-    def clip_row_visible_spans(self, py: int) -> tuple[tuple[int, int], ...]:
-        return self.clip.clip_row_visible_spans(py)
-
-    def pixel_in_clip(self, px: int, py: int) -> bool:
-        return self.clip.pixel_in_clip(px, py)
-
-    @staticmethod
-    def path_bbox(path: Any) -> tuple[float, float, float, float] | None:
-        return internal_ClipState.path_bbox(path)
-
     def push_group(
         self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
     ) -> None:

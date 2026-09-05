@@ -25,9 +25,7 @@ from core_pdf.impl.extract.observations import (
     fuse_observations,
     plan_page,
 )
-from core_pdf.impl.extract.table_pipeline import (
-    extract_tables,
-)
+from core_pdf.impl.extract.table_detection import extract_tables
 from core_pdf.impl.output import (
     Annotation,
     Figure,

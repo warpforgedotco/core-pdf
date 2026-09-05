@@ -8,7 +8,6 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from itertools import combinations
-from typing import cast
 
 import numpy
 
@@ -16,6 +15,7 @@ from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
     PageAnalysis,
+    internal_bbox_tuple,
 )
 from core_pdf.impl.extract.grids import (
     internal_axis_segments,
@@ -113,26 +113,28 @@ class internal_TableAnalysis:
             ),
         )
 
-    def extract(self, capture: PageAnalysis) -> tuple[Table, ...]:
-        """Detect, reconcile, annotate, and band every table in one operation."""
-        evidence = capture.evidence
-        if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
-            return ()
-        tables = internal_detect_tables(capture, self)
-        chart_table = extract_chart_table(capture, self.observations)
-        if chart_table is not None:
-            tables = (*tables, chart_table)
-        tables = tuple(sorted(tables, key=internal_table_vertical_sort_key))
-        return tuple(
-            internal_table_with_bands(
-                internal_annotate_table_associations(
-                    replace(table, order=order) if table.order != order else table,
-                    self.observations,
-                    self.text_rows,
-                )
+
+def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
+    """Detect, reconcile, annotate, and band every table in one operation."""
+    analysis = internal_TableAnalysis.build(observations, capture.width)
+    evidence = capture.evidence
+    if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
+        return ()
+    tables = internal_detect_tables(capture, analysis)
+    chart_table = extract_chart_table(capture, observations)
+    if chart_table is not None:
+        tables = (*tables, chart_table)
+    tables = tuple(sorted(tables, key=internal_table_vertical_sort_key))
+    return tuple(
+        internal_table_with_bands(
+            internal_annotate_table_associations(
+                replace(table, order=order) if table.order != order else table,
+                observations,
+                analysis.text_rows,
             )
-            for order, table in enumerate(tables)
         )
+        for order, table in enumerate(tables)
+    )
 
 
 def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
@@ -173,10 +175,7 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         if not text or text.casefold() in seen:
             continue
         seen.add(text.casefold())
-        box = cast(
-            tuple[float, float, float, float],
-            tuple(float(value) for value in observations.bbox[int(index)]),
-        )
+        box = internal_bbox_tuple(observations.bbox[int(index)])
         if box[2] <= box[0] or box[3] <= box[1]:
             continue
         parts = internal_chart_cell_texts(text)

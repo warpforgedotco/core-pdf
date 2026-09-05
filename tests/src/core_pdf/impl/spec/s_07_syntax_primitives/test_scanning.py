@@ -4,6 +4,7 @@ from __future__ import annotations
 from itertools import product
 
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+    read_literal_string,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
@@ -56,6 +57,12 @@ def test_skip_literal_string_respects_explicit_scan_boundary() -> None:
     data = visible + b") outside (\\"
 
     assert skip_literal_string(data, 0, len(visible)) == len(visible)
+
+
+def test_read_literal_string_respects_position_and_explicit_boundary() -> None:
+    data = memoryview(b"prefix (a\\nb) outside")
+    assert read_literal_string(data, 7, len(data)) == (b"a\nb", 13)
+    assert read_literal_string(data, 7, 12) == (None, 12)
 
 
 def test_simple_scanners_respect_explicit_scan_boundary() -> None:

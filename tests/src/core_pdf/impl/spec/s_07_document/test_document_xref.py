@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from core_pdf import PdfDocument
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_xref import DocumentXRefMixin
@@ -44,6 +46,25 @@ def test_recovered_xref_keeps_exhaustive_metadata_scan() -> None:
 
     assert trailer["Info"] == PdfReference(7, 0)
     assert document.inference_calls == 1
+
+
+@pytest.mark.parametrize("xref_marker", [b"", b"startxref\n999999\n"])
+def test_xref_reconstruction_preserves_catalog_and_metadata(xref_marker: bytes) -> None:
+    data = (
+        b"%PDF-1.7\n"
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+        b"2 0 obj << /Type /Pages /Count 0 /Kids [] >> endobj\n"
+        b"3 0 obj << /Title (Recovered) >> endobj\n"
+        b"trailer << /Root 1 0 R /Info 3 0 R >>\n" + xref_marker + b"%%EOF\n"
+    )
+
+    with PdfDocument.open(data) as document:
+        assert document.xref_was_recovered
+        assert bool(document.xref_recovery_reason) == bool(xref_marker)
+        assert document.trailer_dict["Root"] == PdfReference(1, 0)
+        assert document.trailer_dict["Info"] == PdfReference(3, 0)
+        assert document.get_metadata()["info"]["Title"] == "Recovered"
+        assert len(document.pages) == 0
 
 
 def test_repairs_xref_offsets_measured_from_prefixed_pdf_header() -> None:

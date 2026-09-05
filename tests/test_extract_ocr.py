@@ -288,12 +288,26 @@ def test_tile_tasks_share_one_raster_and_select_rectangles() -> None:
     data = bytes(100 * 120 * 3)
     image = RasterImage(data, 100, 120, 3)
     raster = ocr_types.internal_Raster(image, 100)
-    ocr_pass = OcrPass("primary", OcrPassScope.TILES, 2.0, (3,), tiles=3)
+    ocr_pass = OcrPass(
+        "primary",
+        OcrPassScope.TILES,
+        2.0,
+        (3, 11),
+        tiles=3,
+        minimum_confidence=70.0,
+        character_confidence_threshold=85.0,
+        recognize_words=True,
+        collect_symbols=True,
+    )
 
     tasks = ocr_region_tasks.internal_tile_tasks(raster, (0.0, 0.0, 100.0, 120.0), ocr_pass)
 
-    assert len(tasks) == 3
+    assert [task.mode for task in tasks] == [3, 3, 3, 11, 11, 11]
     assert all(task.image is image for task in tasks)
+    assert all(task.minimum_confidence == 70.0 for task in tasks)
+    assert all(task.character_confidence_threshold == 85.0 for task in tasks)
+    assert all(task.recognize_words and task.collect_symbols for task in tasks)
+    assert [task.rectangle for task in tasks[:3]] == [task.rectangle for task in tasks[3:]]
     assert tasks[0].rectangle[1] == 0
     assert tasks[-1].rectangle[1] > 0
     assert tasks[-1].rectangle[1] + tasks[-1].rectangle[3] == raster.height
@@ -788,6 +802,10 @@ def test_weak_region_tasks_target_ink_without_primary_text() -> None:
         tiles=2,
         region_columns=2,
         max_regions=1,
+        minimum_confidence=70.0,
+        character_confidence_threshold=85.0,
+        recognize_words=True,
+        collect_symbols=True,
     )
 
     tasks = ocr_region_tasks.internal_weak_region_tasks(
@@ -795,6 +813,10 @@ def test_weak_region_tasks_target_ink_without_primary_text() -> None:
     )
 
     assert len(tasks) == 1
+    assert tasks[0].minimum_confidence == 70.0
+    assert tasks[0].character_confidence_threshold == 85.0
+    assert tasks[0].recognize_words
+    assert tasks[0].collect_symbols
     x, y, width, height = tasks[0].rectangle
     assert x + width / 2 > 20
     assert y + height / 2 > 20

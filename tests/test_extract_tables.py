@@ -18,12 +18,12 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_table_character_spaced_prose,
 )
 from core_pdf.impl.extract.table_detection import (
+    extract_tables,
     internal_compact_stream_table,
     internal_stream_table,
     internal_stream_tables,
     internal_TableAnalysis,
 )
-from core_pdf.impl.extract.table_pipeline import extract_tables
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedLine

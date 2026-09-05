@@ -330,40 +330,29 @@ class ObservationBatch:
         if not len(indexes):
             return primary
         size = len(primary) + len(indexes)
+        split = len(primary)
 
-        def combine(column: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-            shape = (size, *column.shape[1:])
-            result = numpy.empty(shape, dtype=column.dtype)
-            split = len(primary)
-            primary_column = getattr(primary, column_name)
+        def combine(
+            primary_column: numpy.ndarray[Any, Any],
+            secondary_column: numpy.ndarray[Any, Any],
+        ) -> numpy.ndarray[Any, Any]:
+            shape = (size, *secondary_column.shape[1:])
+            result = numpy.empty(shape, dtype=secondary_column.dtype)
             result[:split] = primary_column
-            result[split:] = column[indexes]
+            result[split:] = secondary_column[indexes]
             return result
 
-        columns: dict[str, numpy.ndarray[Any, Any]] = {}
-        for column_name in (
-            "bbox",
-            "polygon",
-            "source",
-            "confidence",
-            "sequence",
-            "visible",
-            "rotation",
-            "font_size",
-            "line_break_before",
-        ):
-            columns[column_name] = combine(getattr(secondary, column_name))
         return cls(
             (*primary.text, *(secondary.text[int(index)] for index in indexes)),
-            columns["bbox"],
-            columns["polygon"],
-            columns["source"],
-            columns["confidence"],
-            columns["sequence"],
-            columns["visible"],
-            columns["rotation"],
-            columns["font_size"],
-            columns["line_break_before"],
+            combine(primary.bbox, secondary.bbox),
+            combine(primary.polygon, secondary.polygon),
+            combine(primary.source, secondary.source),
+            combine(primary.confidence, secondary.confidence),
+            combine(primary.sequence, secondary.sequence),
+            combine(primary.visible, secondary.visible),
+            combine(primary.rotation, secondary.rotation),
+            combine(primary.font_size, secondary.font_size),
+            combine(primary.line_break_before, secondary.line_break_before),
             (*primary.references, *(secondary.references[int(index)] for index in indexes)),
         )
 

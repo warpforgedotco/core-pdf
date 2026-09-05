@@ -12,6 +12,7 @@ from core_pdf.impl.render.blend import (
     internal_clamp01,
     internal_color_component,
     internal_color_rgba,
+    internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.paths import internal_intersect_box, internal_translate_rect
 from core_pdf.impl.spec.s_07_content.capture import (
@@ -106,12 +107,12 @@ class internal_PatternTargetMixin:
         return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
 
     def paint_shading(self: Any, data: dict[str, Any], blend_mode: str | None) -> None:
-        clipped_pixel_box = self.clipped_pixel_box
+        clipped_pixel_box = self.clip.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
-        clip_row_visible_spans = self.clip_row_visible_spans
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         scale = self.scale
@@ -172,12 +173,7 @@ class internal_PatternTargetMixin:
                         fill_opacity,
                     )
                     if shading_alpha is not None:
-                        rgba = (
-                            rgba[0],
-                            rgba[1],
-                            rgba[2],
-                            max(0, min(255, int(round(rgba[3] * shading_alpha)))),
-                        )
+                        rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
                     if normal_fast:
                         blend_normal_pixel(row + px * 4, *rgba)
                     else:
@@ -270,7 +266,7 @@ class internal_PatternTargetMixin:
         glyphs = pattern.glyphs
         if not drawings and not glyphs:
             return False
-        target_box = target_data.get("bbox") or self.path_bbox(target_data.get("path"))
+        target_box = target_data.get("bbox") or self.clip.path_bbox(target_data.get("path"))
         target_box_type = type(target_box)
         if target_box_type is RectBox:
             target_rect = cast(RectBox, target_box)
@@ -296,7 +292,7 @@ class internal_PatternTargetMixin:
                 )
         else:
             x0, y0, x1, y1 = crop_x0, crop_y0, crop_x0 + width / scale, crop_y1
-        clip_box = self.current_clip()
+        clip_box = self.clip.current_clip()
         if clip_box is not None:
             clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
             if clipped is None:
@@ -339,7 +335,7 @@ class internal_PatternTargetMixin:
                     return False
                 shading_data = {
                     "dictionary": dictionary,
-                    "bbox": data.get("bbox") or self.path_bbox(path),
+                    "bbox": data.get("bbox") or clip_state.path_bbox(path),
                     "fill_opacity": data.get("fill_opacity"),
                     "soft_mask_alpha": data.get("soft_mask_alpha"),
                 }

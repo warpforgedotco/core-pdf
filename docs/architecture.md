@@ -111,6 +111,15 @@ Declarative metadata has one owner: content-operator behavior belongs in
 `s_07_content/operator_tables.py`, and stream-filter behavior belongs in
 `s_07_filters/registry.py`. Extend those registries instead of creating parallel tables.
 
+Shared literal-string decoding belongs in `s_07_syntax_primitives/scanning.py`; the lexer and
+CMap tokenizer retain their own error handling. The complete table stage is `extract_tables`
+in `extract/table_detection.py`. Raster painters access clipping through the target's `clip`
+state in `render/clipping.py`.
+
+`DocumentOperation` owns the lifetime of an active extraction and defers document resource
+release until it finishes. The `ExtractionScope` passed through the pipeline checks cancellation;
+it does not acquire or release resources.
+
 ---
 
 ## 4. Rendering constraints

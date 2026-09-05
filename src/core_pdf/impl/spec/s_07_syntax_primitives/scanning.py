@@ -23,6 +23,7 @@ STRING_ESCAPE: dict[int, bytes] = {
 }
 
 STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
+internal_STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
 HEX_VALUE = bytes(
     [
         i - 48 if 48 <= i <= 57 else i - 55 if 65 <= i <= 70 else i - 87 if 97 <= i <= 102 else 255
@@ -267,6 +268,87 @@ def skip_literal_string(data: bytes | memoryview, pos: int, data_len: int) -> in
     return pos
 
 
+def read_literal_string(
+    data: bytes | memoryview,
+    pos: int,
+    data_len: int,
+    *,
+    drop_unknown_escapes: bool = False,
+) -> tuple[bytes | None, int]:
+    """Decode a literal string at ``pos``, returning its value and end position.
+
+    An unterminated string returns ``None`` and the exhausted position so callers
+    can preserve their own error type and cursor semantics.
+    """
+    pos += 1
+    if isinstance(data, memoryview) and data.format != "B":
+        # CMap callers may supply numeric elements wider than one byte or signed
+        # bytes. Decode those elements directly; byte offsets and prefix copies
+        # would change their values or consume data past the closing delimiter.
+        end_idx = pos
+    elif isinstance(data, bytes) or data.c_contiguous:
+        match = internal_STRING_SPECIAL_RE.search(data, pos, data_len)
+        end_idx = data_len if match is None else match.start()
+    else:
+        end_idx = pos
+        while end_idx < data_len and not STRING_SPECIAL_TABLE[data[end_idx]]:
+            end_idx += 1
+
+    if end_idx < data_len and data[end_idx] == 41:
+        return bytes(data[pos:end_idx]), end_idx + 1
+
+    out = bytearray()
+    if end_idx > pos:
+        prefix = data[pos:end_idx]
+        out.extend(prefix if isinstance(prefix, bytes) or prefix.c_contiguous else prefix.tobytes())
+        pos = end_idx
+
+    depth = 1
+    while pos < data_len:
+        byte = data[pos]
+        pos += 1
+        if byte == 40:
+            depth += 1
+            out.append(byte)
+        elif byte == 41:
+            depth -= 1
+            if depth == 0:
+                return bytes(out), pos
+            out.append(byte)
+        elif byte == 92:
+            if pos >= data_len:
+                continue
+            esc = data[pos]
+            pos += 1
+            if 48 <= esc <= 55:
+                oct_val = esc - 48
+                count = 1
+                while count < 3 and pos < data_len and 48 <= data[pos] <= 55:
+                    oct_val = (oct_val << 3) | (data[pos] - 48)
+                    pos += 1
+                    count += 1
+                out.append(oct_val & 0xFF)
+            elif esc == 10:
+                if pos < data_len and data[pos] == 13:
+                    pos += 1
+            elif esc == 13:
+                if pos < data_len and data[pos] == 10:
+                    pos += 1
+            elif (mapped := STRING_ESCAPE.get(esc)) is not None:
+                out.extend(mapped)
+            elif not drop_unknown_escapes:
+                out.append(esc)
+        elif byte == 13 or byte == 10:
+            out.append(10)
+            if pos < data_len:
+                next_byte = data[pos]
+                if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
+                    pos += 1
+        else:
+            out.append(byte)
+    return None, pos
+
+
 def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
     marker = data.find(b">", pos + 1, data_len) if type(data) is bytes else -1
     if marker >= 0:
@@ -298,6 +380,7 @@ __all__ = (
     "is_number_word_bytes",
     "looks_like_indirect_object_header",
     "matches_keyword_with_one_substitution",
+    "read_literal_string",
     "skip_comment",
     "skip_hex_string",
     "skip_literal_string",

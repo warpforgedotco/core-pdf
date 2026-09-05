@@ -83,11 +83,6 @@ def internal_tile_tasks(
 ) -> tuple[internal_OcrTask, ...]:
     if ocr_pass.preprocess == "binary-clean":
         raster = internal_adaptive_ocr_raster(raster)
-    image = (
-        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
-        if compact_image
-        else raster.image
-    )
     requested_tiles = ocr_pass.tiles if ocr_pass.scope is OcrPassScope.TILES else 1
     tiles = max(1, min(requested_tiles, raster.height))
     if tiles == 1:
@@ -104,6 +99,25 @@ def internal_tile_tasks(
             )
             for tile_index in range(tiles)
         )
+    return internal_rectangle_tasks(
+        raster, page_box, ocr_pass, rectangles, compact_image=compact_image
+    )
+
+
+def internal_rectangle_tasks(
+    raster: internal_Raster,
+    page_box: tuple[float, float, float, float],
+    ocr_pass: OcrPass,
+    rectangles: tuple[tuple[int, int, int, int], ...],
+    *,
+    compact_image: bool | str,
+) -> tuple[internal_OcrTask, ...]:
+    """Apply one pass's recognition options to rectangles sharing the same raster."""
+    image = (
+        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
+        if compact_image
+        else raster.image
+    )
     return tuple(
         internal_OcrTask(
             mode=mode,
@@ -292,25 +306,12 @@ def internal_weak_region_tasks(
     compact_image: bool | str = False,
 ) -> tuple[internal_OcrTask, ...]:
     """Create OCR tasks for weak regions in an already materialized raster."""
-    image = (
-        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
-        if compact_image
-        else raster.image
-    )
-    return tuple(
-        internal_OcrTask(
-            mode=mode,
-            image=image,
-            rectangle=rectangle,
-            page_box=page_box,
-            resolution=raster.resolution,
-            minimum_confidence=ocr_pass.minimum_confidence,
-            character_confidence_threshold=ocr_pass.character_confidence_threshold,
-            recognize_words=ocr_pass.recognize_words,
-            collect_symbols=ocr_pass.collect_symbols,
-        )
-        for mode in ocr_pass.modes
-        for rectangle in internal_weak_region_rectangles(raster, page_box, ocr_pass, primary)
+    return internal_rectangle_tasks(
+        raster,
+        page_box,
+        ocr_pass,
+        internal_weak_region_rectangles(raster, page_box, ocr_pass, primary),
+        compact_image=compact_image,
     )
 
 

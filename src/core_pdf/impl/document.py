@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -56,10 +56,8 @@ class PdfPage(SpecPdfPage):
 
     def extract(self) -> Any:
         with self.document.acquire_operation() as operation:
-            with ExtractionScope(
-                cancelled=lambda: operation.cancelled,
-            ) as context:
-                return extract_page(self, context)
+            context = ExtractionScope(cancelled=lambda: operation.cancelled)
+            return extract_page(self, context)
 
     def text_diagnostics(self, *, include_invisible: bool = True) -> TextDiagnostics:
         return TextDiagnostics(
@@ -234,32 +232,21 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         """Return resolved outline entries owned by the engine."""
         return tuple(self.iter_outlines())
 
-    def _scoped_records(
+    def internal_scoped_pending[RecordT](
         self,
-        pages: PageSelection | None,
-        per_page: Callable[["PdfPage"], Iterable[Any]],
-    ) -> tuple[PageScoped[Any], ...]:
-        """Fan a per-page extractor out over the selected pages as scoped records."""
-        pending = [
-            (page_index, record)
-            for page_index, page in self.iter_selected_pages(pages)
-            for record in per_page(page)
-        ]
-        return self.internal_scoped_pending(pending)
-
-    def internal_scoped_pending(
-        self,
-        pending: Iterable[tuple[int, Any]],
-    ) -> tuple[PageScoped[Any], ...]:
+        pending: Iterable[tuple[int, RecordT]],
+    ) -> tuple[PageScoped[RecordT], ...]:
+        """Attach page numbers and labels after collecting the selected records."""
         pending = tuple(pending)
         if not pending:
             return ()
         labels = self.page_labels
         return tuple(
-            self.internal_scope(
-                page_index,
-                labels[page_index] if labels is not None else None,
-                record,
+            PageScoped(
+                page_index=page_index,
+                page_number=page_index + 1,
+                page_label=labels[page_index] if labels is not None else None,
+                record=record,
             )
             for page_index, record in pending
         )
@@ -308,8 +295,8 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
     ) -> Any:
         with self.acquire_operation() as operation:
             selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
-            with ExtractionScope(cancelled=lambda: operation.cancelled) as context:
-                result = extract_document(self, context, selected_pages)
+            context = ExtractionScope(cancelled=lambda: operation.cancelled)
+            result = extract_document(self, context, selected_pages)
         for adapter in adapters:
             result = adapter.apply(result)
         return result
@@ -321,19 +308,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             return StructuredDocument(metadata=self.metadata)
         return cast(StructuredDocument, self.extract())
 
-    @staticmethod
-    def internal_scope(
-        page_index: int,
-        page_label: str | None,
-        record: Any,
-    ) -> PageScoped[Any]:
-        return PageScoped(
-            page_index=page_index,
-            page_number=page_index + 1,
-            page_label=page_label,
-            record=record,
-        )
-
     def extract_images(
         self,
         *,
@@ -341,12 +315,13 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[PageScoped[ImageRecord], ...]:
-        return self._scoped_records(
-            pages,
-            lambda page: page.extract_images(
+        return self.internal_scoped_pending(
+            (page_index, record)
+            for page_index, page in self.iter_selected_pages(pages)
+            for record in page.extract_images(
                 include_inline=include_inline,
                 include_xobjects=include_xobjects,
-            ),
+            )
         )
 
 

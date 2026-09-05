@@ -404,7 +404,7 @@ def internal_scale_rgba_alpha(
     rgba: tuple[int, int, int, int],
     alpha_scale: Any,
 ) -> tuple[int, int, int, int]:
-    """Scale a colour's alpha by a soft-mask factor, clamped to a byte."""
+    """Scale a colour's alpha by a mask or transparency-group factor, clamped to a byte."""
     return (
         rgba[0],
         rgba[1],

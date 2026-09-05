@@ -94,11 +94,6 @@ class internal_ClipState:
         )
 
     @property
-    def clip_path_stack(self) -> list[internal_ClipRegion]:
-        """Expose stack presence to painters during the target migration."""
-        return self.regions
-
-    @property
     def depth(self) -> int:
         return len(self.regions)
 
@@ -222,12 +217,6 @@ class internal_ClipState:
     @staticmethod
     def path_bbox(path: Any) -> tuple[float, float, float, float] | None:
         return path.bbox() if type(path) is CapturedPath else None
-
-    @staticmethod
-    def axis_aligned_rect_box(
-        path: CapturedPath,
-    ) -> tuple[float, float, float, float] | None:
-        return path.axis_aligned_rect()
 
     def pixel_in_clip(self, px: int, py: int) -> bool:
         spans = self.clip_row_visible_spans(py)

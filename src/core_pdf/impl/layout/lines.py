@@ -7,9 +7,9 @@ emits, so it lives here rather than with the capture records in ``model/``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
@@ -468,14 +468,17 @@ def page_layout_geometry_issues(
     issues: list[LayoutGeometryIssue] = []
     for line_index, line in enumerate(lines):
         for issue in layout_line_geometry_issues(line):
-            issues.append(with_issue_detail(issue, "line_index", line_index))
+            issues.append(replace(issue, details=(*issue.details, ("line_index", line_index))))
         for run_index, run in enumerate(line.runs):
             for issue in text_run_geometry_issues(run):
                 issues.append(
-                    with_issue_detail(
-                        with_issue_detail(issue, "run_index", run_index),
-                        "line_index",
-                        line_index,
+                    replace(
+                        issue,
+                        details=(
+                            *issue.details,
+                            ("run_index", run_index),
+                            ("line_index", line_index),
+                        ),
                     )
                 )
     return tuple(issues)
@@ -503,22 +506,6 @@ def page_layout_geometry_summary(lines: list[LayoutLine]) -> LayoutGeometrySumma
         repairable_count=repairable_count,
         text_run_count=text_run_count,
         line_count=len(lines),
-    )
-
-
-def with_issue_detail(
-    issue: LayoutGeometryIssue,
-    key: str,
-    value: Any,
-) -> LayoutGeometryIssue:
-    return LayoutGeometryIssue(
-        code=issue.code,
-        severity=issue.severity,
-        subject=issue.subject,
-        bbox=issue.bbox,
-        message=issue.message,
-        details=(*issue.details, (key, value)),
-        repairable=issue.repairable,
     )
 
 
