@@ -7,7 +7,6 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from csv import writer
-from dataclasses import replace
 from html import escape
 from io import StringIO
 from typing import TypeVar
@@ -82,18 +81,23 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             raise ValueError(f"duplicate structured page id: {page_id}")
         seen_page_ids.add(page_id)
 
+        # Payloads may be referenced by several ordered nodes. Intern each identity
+        # once per page, as we do for lines shared between blocks below.
+        page_blocks = {id(block): block for block in page.blocks}
+        page_tables = {id(table): table for table in page.tables}
+        page_figures = {id(figure): figure for figure in page.figures}
         block_ids = {
-            id(block): f"{page_id}:block:{index}" for index, block in enumerate(page.blocks)
+            identity: f"{page_id}:block:{index}" for index, identity in enumerate(page_blocks)
         }
         table_ids = {
-            id(table): f"{page_id}:table:{index}" for index, table in enumerate(page.tables)
+            identity: f"{page_id}:table:{index}" for index, identity in enumerate(page_tables)
         }
         figure_ids = {
-            id(figure): f"{page_id}:figure:{index}" for index, figure in enumerate(page.figures)
+            identity: f"{page_id}:figure:{index}" for index, identity in enumerate(page_figures)
         }
 
         line_ids: dict[int, str] = {}
-        for block in page.blocks:
+        for block in page_blocks.values():
             for line in block.lines:
                 identity = id(line)
                 if identity not in line_ids:
@@ -113,7 +117,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
                 **internal_block_payload(block),
                 "line_ids": [line_ids[id(line)] for line in block.lines],
             }
-            for block in page.blocks
+            for block in page_blocks.values()
         )
         tables.extend(
             {
@@ -121,7 +125,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
                 "page_id": page_id,
                 **table_to_json_dict(table),
             }
-            for table in page.tables
+            for table in page_tables.values()
         )
         figures.extend(
             {
@@ -129,7 +133,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
                 "page_id": page_id,
                 **figure_to_json_dict(figure),
             }
-            for figure in page.figures
+            for figure in page_figures.values()
         )
 
         target_ids = {**block_ids, **table_ids, **figure_ids}
@@ -510,7 +514,7 @@ def block_to_markdown(block: Block) -> str:
     if block.kind is BlockKind.LIST:
         return "\n".join(
             f"{prefix or '- '}{internal_markdown_line(line, start=len(prefix))}"
-            for line in map(internal_list_line, block.lines)
+            for line in block.lines
             for prefix in (internal_list_prefix(line.text),)
         )
     text = "\n".join(internal_markdown_line(line) for line in block.lines)
@@ -548,7 +552,7 @@ def block_to_html(block: Block) -> str:
     if block.kind is BlockKind.LIST:
         items = "".join(
             f"<li>{internal_html_line(line, start=len(internal_list_prefix(line.text)))}</li>"
-            for line in map(internal_list_line, block.lines)
+            for line in block.lines
         )
         return f"<ul{attributes}>{items}</ul>"
     text = "<br />".join(internal_html_line(line) for line in block.lines)
@@ -611,13 +615,6 @@ def internal_table_cell_to_html(cell: TableCell, *, header: bool = False) -> str
         )
     )
     return f"<{tag}{spans}>{escape(cell.text)}</{tag}>"
-
-
-def internal_list_line(line: TextLine) -> TextLine:
-    """Keep canonical list text when earlier normalization invalidated span offsets."""
-    if line.spans and "".join(span.text for span in line.spans) != line.text:
-        return replace(line, spans=())
-    return line
 
 
 def internal_list_prefix(text: str) -> str:

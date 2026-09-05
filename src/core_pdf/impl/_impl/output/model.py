@@ -194,6 +194,8 @@ class TextLine:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "words", internal_reconcile_text_words(self.text, self.words))
+        if self.spans and "".join(span.text for span in self.spans) != self.text:
+            object.__setattr__(self, "spans", ())
 
     def styled_spans(self) -> tuple[TextSpan, ...]:
         if self.spans:
