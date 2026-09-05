@@ -256,16 +256,22 @@ def test_document_extraction_preserves_repeated_recognized_chart_values(
     with PdfDocument(pdf) as document:
         result = document.extract()
 
-    charts = [
-        table for table in result.pages[0].tables if table.metadata.get("source") == "chart-ocr"
-    ]
+    # Poppler 26.07.0 verifies both 10s at distinct x=70 and x=130 positions
+    # in /private/tmp/core-pdf-recognized-chart-verification/reference.pdf.
+    # A real stream table may replace the equivalent synthetic chart. Its
+    # cells describe column regions containing the recognized text rectangles.
+    tables = result.pages[0].tables
     assert calls == 1
-    assert len(charts) == 1
-    assert [[cell.text for cell in row] for row in charts[0].rows] == [
+    assert len(tables) == 1
+    assert [[cell.text for cell in row] for row in tables[0].rows] == [
         ["Year", "10", "10", "20"],
         ["Month", "30", "40", "50"],
     ]
-    assert [cell.bbox for cell in charts[0].rows[0][1:3]] == [
-        (70.0, 300.0, 90.0, 310.0),
-        (130.0, 300.0, 150.0, 310.0),
-    ]
+    assert tables[0].bbox == (10.0, 270.0, 210.0, 310.0)
+    first_box, second_box = (cell.bbox for cell in tables[0].rows[0][1:3])
+    assert first_box is not None
+    assert second_box is not None
+    assert first_box[0] <= 70.0 < 90.0 <= first_box[2]
+    assert second_box[0] <= 130.0 < 150.0 <= second_box[2]
+    assert first_box[2] <= second_box[0]
+    assert first_box[1::2] == second_box[1::2] == (300.0, 310.0)

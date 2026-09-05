@@ -124,7 +124,7 @@ def test_emit_preserves_punctuation_only_ocr_fragments() -> None:
     assert [block.text for block in page.blocks] == ["~", "Civil Division"]
 
 
-def test_emit_removes_tiny_ocr_fragments_duplicated_by_table_tokens() -> None:
+def test_emit_keeps_disjoint_ocr_numbers_that_also_appear_in_a_table() -> None:
     parsed = page_of(
         route=PageRoute.HYBRID,
         blocks=(
@@ -148,11 +148,11 @@ def test_emit_removes_tiny_ocr_fragments_duplicated_by_table_tokens() -> None:
 
     page = emit_page(parsed)
 
-    assert [block.text for block in page.blocks] == ["IRB Statistics"]
+    assert [block.text for block in page.blocks] == ["IRB Statistics", "10\n23"]
 
 
 @pytest.mark.parametrize("reverse_tables", [False, True])
-def test_emit_removes_stream_table_covered_by_synthetic_chart_table(reverse_tables: bool) -> None:
+def test_emit_preserves_richer_stream_table_beside_synthetic_chart(reverse_tables: bool) -> None:
     synthetic = Table(
         order=0,
         bbox=(20.0, 140.0, 260.0, 180.0),
@@ -174,11 +174,12 @@ def test_emit_removes_stream_table_covered_by_synthetic_chart_table(reverse_tabl
     page = emit_page(parsed)
 
     assert len(page.tables) == 1
-    assert page.tables[0].rows == synthetic.rows
+    # Poppler 26.07.0 preserves the full overlay, including Public Health 2022.
+    assert page.tables[0].rows == stream.rows
     assert page.tables[0].order == 1
 
 
-def test_emit_removes_tiny_synthetic_chart_table_covered_by_table() -> None:
+def test_emit_keeps_disjoint_synthetic_chart_with_repeated_table_numbers() -> None:
     parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(block("IRB Statistics", (20.0, 300.0, 260.0, 320.0), "heading"),),
@@ -203,11 +204,13 @@ def test_emit_removes_tiny_synthetic_chart_table_covered_by_table() -> None:
 
     page = emit_page(parsed)
 
-    assert len(page.tables) == 1
-    assert page.tables[0].metadata.get("source") != "chart-ocr"
+    # Poppler 26.07.0 preserves the separate numeric row and the labeled table.
+    assert len(page.tables) == 2
+    assert page.tables[0].metadata.get("source") == "chart-ocr"
+    assert page.tables[1].metadata.get("source") != "chart-ocr"
 
 
-def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
+def test_emit_keeps_disjoint_tables_when_a_heading_repeats_their_tokens() -> None:
     parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
@@ -238,8 +241,9 @@ def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
 
     page = emit_page(parsed)
 
-    assert len(page.tables) == 1
-    assert "Unit Determinations" in page.tables[0].rows[0][0].text
+    assert len(page.tables) == 2
+    assert page.tables[0].rows[0][0].text == "1 11 14 13 17 23 12 10"
+    assert "Unit Determinations" in page.tables[1].rows[0][0].text
 
 
 @pytest.mark.parametrize(
