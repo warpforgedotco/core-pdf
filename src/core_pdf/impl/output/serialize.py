@@ -11,7 +11,8 @@ from io import StringIO
 from typing import TypeVar
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from core_pdf.impl.output import (
+from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
+from core_pdf.impl.output.model import (
     Annotation,
     Block,
     BlockKind,
@@ -31,7 +32,6 @@ from core_pdf.impl.output import (
     TableRowBand,
     TextLine,
 )
-from core_pdf.impl.pages import PageSelection, resolve_page_selection
 
 ElementResultT = TypeVar("ElementResultT")
 

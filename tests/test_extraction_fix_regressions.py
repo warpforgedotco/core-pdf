@@ -33,7 +33,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_merge_wrapped_cell_rows,
     internal_stream_table_reads_like_prose,
 )
-from core_pdf.impl.output import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from tests.helpers.paths import score_bench_pdf
 from tests.helpers.structured import cell, native_block, stream_table
 

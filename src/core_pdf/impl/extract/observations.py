@@ -26,8 +26,8 @@ from core_pdf.impl.extract.contracts import (
     WorkPlan,
 )
 from core_pdf.impl.extract.quality import internal_candidate
+from core_pdf.impl.model.text import compact_text, text_tokens
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.text import compact_text, text_tokens
 
 # Precision-first extraction thresholds.  Raster text below these confidence
 # levels is more likely to be a layout artifact than a useful observation on

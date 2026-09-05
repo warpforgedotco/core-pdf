@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from core_pdf.impl.document import PdfDocument
+from core_pdf.api.document import PdfDocument
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_07_document.records import RawFormField

@@ -26,7 +26,7 @@ from core_pdf.impl.extract.observations import (
     plan_page,
 )
 from core_pdf.impl.extract.table_detection import extract_tables
-from core_pdf.impl.output import (
+from core_pdf.impl.output.model import (
     Annotation,
     Figure,
     FormField,

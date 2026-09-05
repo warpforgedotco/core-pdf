@@ -16,7 +16,13 @@ from core_pdf.impl.model.geometry import (
     interval_overlap,
     union_bbox,
 )
-from core_pdf.impl.output import (
+from core_pdf.impl.model.text import (
+    collapse_character_spaced,
+    collapse_ws,
+    is_leader_run,
+    strip_edge_leaders,
+)
+from core_pdf.impl.output.model import (
     Table,
     TableAssociatedText,
     TableCell,
@@ -24,12 +30,6 @@ from core_pdf.impl.output import (
     TableRowBand,
 )
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.text import (
-    collapse_character_spaced,
-    collapse_ws,
-    is_leader_run,
-    strip_edge_leaders,
-)
 
 TABLE_MERGE_GAP = 36.0  # further increased to allow modestly wider table merges (conservative)
 

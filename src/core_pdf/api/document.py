@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Public PDF document and page APIs over the canonical extraction pipeline."""
+"""Public PDF document and page entry points over the internal processing engine."""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from core_pdf.impl.layout.lines import (
     text_run_geometry_issues,
 )
 from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.output import DiagnosticTextRun, TextDiagnostics
-from core_pdf.impl.output import Document as StructuredDocument
-from core_pdf.impl.pages import PageSelection
+from core_pdf.impl.model.page_selection import PageSelection
+from core_pdf.impl.output.model import DiagnosticTextRun, TextDiagnostics
+from core_pdf.impl.output.model import Document as StructuredDocument
 from core_pdf.impl.records import (
     DrawingRecord,
     ImageMetadata,

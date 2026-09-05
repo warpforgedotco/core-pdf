@@ -25,7 +25,8 @@ from core_pdf.impl.extract.table_reconcile import (
     internal_wordlike_token,
 )
 from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap, rect_tuple
-from core_pdf.impl.output import (
+from core_pdf.impl.model.text import collapse_character_spaced
+from core_pdf.impl.output.model import (
     Block,
     BlockKind,
     Diagnostic,
@@ -35,7 +36,6 @@ from core_pdf.impl.output import (
     TextLine,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
-from core_pdf.impl.text import collapse_character_spaced
 
 
 def internal_caption_for(

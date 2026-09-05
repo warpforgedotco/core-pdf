@@ -16,7 +16,7 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.pages import PageSelection, resolve_page_selection
+from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,

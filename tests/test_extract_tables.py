@@ -25,7 +25,7 @@ from core_pdf.impl.extract.table_detection import (
     internal_TableAnalysis,
 )
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.output import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedLine
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import page_evidence, text_run

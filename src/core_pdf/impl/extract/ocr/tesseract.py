@@ -40,9 +40,9 @@ from core_pdf.impl.extract.ocr.types import (
     internal_raster_rectangle_page_box,
 )
 from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
+from core_pdf.impl.model.text import collapse_ws
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import contiguous_bytes, finite_median, resample_smooth
-from core_pdf.impl.text import collapse_ws
 
 # OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels
 # from creating another layer of workers on top of it.

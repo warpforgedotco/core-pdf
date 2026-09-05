@@ -2,7 +2,7 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.output import (
+from core_pdf.impl.output.model import (
     Block,
     BlockKind,
     Document,

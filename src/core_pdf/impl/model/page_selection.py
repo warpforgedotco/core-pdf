@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared page-selection resolution used across the engine and the structured IR."""
+"""Page-selection values and normalization shared by PDF and structured documents."""
 
 from __future__ import annotations
 

@@ -29,7 +29,7 @@ from core_pdf.impl.extract.ocr.strokes import (
 )
 from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
-from core_pdf.impl.output import SCHEMA_VERSION, Document, Page
+from core_pdf.impl.output.model import SCHEMA_VERSION, Document, Page
 from core_pdf.impl.runtime.execution import ExtractionScope
 
 DOCUMENT_FONT_SEED_LIMIT = 4

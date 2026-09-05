@@ -10,7 +10,7 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.output import (
+from core_pdf.impl.output.model import (
     TextSpan,
 )
 from core_pdf.impl.records import TextWord, internal_reconcile_text_words

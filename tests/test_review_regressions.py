@@ -87,7 +87,7 @@ def test_close_cancels_extraction_before_releasing_owned_resources(
             context.raise_if_cancelled()
 
         entrypoint = "extract_page" if page_only else "extract_document"
-        monkeypatch.setattr(f"core_pdf.impl.document.{entrypoint}", close_during_extraction)
+        monkeypatch.setattr(f"core_pdf.api.document.{entrypoint}", close_during_extraction)
         with pytest.raises(internal_ExtractionCancelled, match="extraction was cancelled"):
             if page_only:
                 document.pages[0].extract()

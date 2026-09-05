@@ -25,7 +25,8 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.output import (
+from core_pdf.impl.model.text import collapse_leader_runs, collapse_ws
+from core_pdf.impl.output.model import (
     TextSpan,
 )
 from core_pdf.impl.records import (
@@ -34,7 +35,6 @@ from core_pdf.impl.records import (
     internal_text_word_tokens,
 )
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.text import collapse_leader_runs, collapse_ws
 
 # ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized
 # comparison against a preconverted scalar rather than a per-observation Python loop.

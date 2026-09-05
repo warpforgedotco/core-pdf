@@ -240,7 +240,6 @@ name = "Derived-processing spine"
 type = "layers"
 containers = ["core_pdf.impl"]
 layers = [
-    "document",
     "extract",
     "render",
     "output : layout",
@@ -250,9 +249,8 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
-source_modules = ["core_pdf.impl.serialize"]
+source_modules = ["core_pdf.impl.output.serialize"]
 forbidden_modules = [
-    "core_pdf.impl.document",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.render",
@@ -283,12 +281,10 @@ name = "Spec stays below derived consumers"
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec"]
 forbidden_modules = [
-    "core_pdf.impl.document",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.serialize",
 ]
 
 [[tool.importlinter.contracts]]
@@ -296,28 +292,24 @@ name = "impl/runtime is the floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl.runtime"]
 forbidden_modules = [
-    "core_pdf.impl.document",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.serialize",
     "core_pdf.impl.spec",
     "core_pdf.api",
 ]
 
 [[tool.importlinter.contracts]]
-name = "The capture model depends on nothing above it"
+name = "The shared model depends on nothing above it"
 type = "forbidden"
 source_modules = ["core_pdf.impl.model"]
 forbidden_modules = [
-    "core_pdf.impl.document",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.serialize",
     "core_pdf.impl.spec",
     "core_pdf.api",
 ]
@@ -338,7 +330,6 @@ forbidden_modules = [
     "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.serialize",
 ]
 
 [[tool.importlinter.contracts]]
@@ -359,33 +350,34 @@ forbidden_modules = [
     "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.serialize",
 ]
 
 [[tool.importlinter.contracts]]
-name = "The implementation never imports the compatibility facades"
+name = "The implementation never imports the public API"
 type = "forbidden"
 source_modules = ["core_pdf.impl"]
 forbidden_modules = ["core_pdf.api"]
+
+[[tool.importlinter.contracts]]
+name = "The public document API does not depend on compatibility facades"
+type = "forbidden"
+source_modules = ["core_pdf.api.document"]
+forbidden_modules = ["core_pdf.api.compat"]
 
 [[tool.importlinter.contracts]]
 name = "Base modules stay beneath the spec and derived processing"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.exceptions",
-    "core_pdf.impl.pages",
     "core_pdf.impl.primitives",
     "core_pdf.impl.records",
-    "core_pdf.impl.text",
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
-    "core_pdf.impl.document",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.serialize",
     "core_pdf.impl.spec",
 ]

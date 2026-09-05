@@ -25,8 +25,8 @@ from core_pdf.impl.extract.quality import (
     internal_text_utility_stats,
 )
 from core_pdf.impl.model.geometry import overlap_ratio_min
+from core_pdf.impl.model.text import search_key, text_tokens
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.text import search_key, text_tokens
 
 internal_OCR_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 

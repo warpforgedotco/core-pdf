@@ -14,7 +14,7 @@ from core_pdf.impl.extract.table_cleanup import (
 )
 from core_pdf.impl.model.geometry import overlap_ratio_min, overlap_ratio_of
 from core_pdf.impl.model.spatial import SpatialFrame
-from core_pdf.impl.output import Block, Table, TableCell
+from core_pdf.impl.output.model import Block, Table, TableCell
 
 internal_EMITTED_TEXT_TOKEN_RE = re.compile(r"\w+")
 internal_BlockTokens = tuple[tuple[tuple[float, float, float, float], tuple[str, ...]], ...]

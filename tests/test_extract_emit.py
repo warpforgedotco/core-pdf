@@ -14,7 +14,7 @@ from core_pdf.impl.extract.contracts import (
     ParsedLine,
 )
 from core_pdf.impl.extract.emit import assemble_page, internal_line_decoration_flags
-from core_pdf.impl.output import BlockKind, Figure, Page, Table, TableCell
+from core_pdf.impl.output.model import BlockKind, Figure, Page, Table, TableCell
 from core_pdf.impl.records import TextWord
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from tests.helpers.extract_fakes import text_run

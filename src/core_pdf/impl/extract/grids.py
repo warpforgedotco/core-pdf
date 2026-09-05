@@ -14,7 +14,7 @@ from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource,
 from core_pdf.impl.extract.ocr.types import internal_OcrTask, internal_pixel_box_to_page_box
 from core_pdf.impl.extract.table_cleanup import internal_cell_text
 from core_pdf.impl.model.geometry import bbox_union
-from core_pdf.impl.output import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import finite_median
 

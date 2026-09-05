@@ -45,7 +45,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_table_with_bands,
 )
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
-from core_pdf.impl.output import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.runtime.array_views import finite_median
 
 # Table-stage orchestration.

@@ -14,10 +14,10 @@ internal and may change without notice.
 
 The two central objects share one public owner:
 
-- **`PdfDocument`** (`impl/document.py`) — opens documents, provides page access and structured
+- **`PdfDocument`** (`api/document.py`) — opens documents, provides page access and structured
   extraction, and owns caches shared across pages. The CLI drives it through `process_pdf` in
   `cli.py`.
-- **`PdfPage`** (`impl/document.py`, extending the spec-level page in
+- **`PdfPage`** (`api/document.py`, extending the spec-level page in
   `impl/spec/s_07_document/page.py`) — provides per-page extraction and rendering.
 
 Compatibility facades under `core_pdf.api.compat.*` project the engine's public objects into
@@ -58,24 +58,21 @@ bytes → │ capture_page│ → plan_page ────────────
 src/core_pdf/
   __init__.py            lazy public export table
   cli.py, __main__.py    command-line entry point
+  api/document.py        PdfDocument, PdfPage, and their shared operation lifecycle
   api/compat/            independent third-party compatibility facades
   _vendor/               vendored third-party source and data
   impl/
     runtime/             engine-independent caching, arrays, and execution support
     exceptions.py        error hierarchy
     records.py           public extraction records
-    output.py            immutable document/page output records and views
-    serialize.py         markdown/HTML/JSON/CSV/TEI serialization
-    pages.py             page-selection normalization
+    output/              structured document/page models, views, and serialization
     primitives.py        PDF primitives
-    text.py              shared text normalization
     types.py             buffers, protocols, and geometry aliases
-    model/               capture geometry, spatial indexes, text runs, and glyph storage
+    model/               shared geometry/text models, text rules, and page selections
     layout/              text-line records, reconstruction, diagnostics, and word rules
     spec/                PDF specification implementation (see below)
     extract/             extraction, block layout, tables, and OCR (see section 2)
     render/              display lists, raster kernels, targets, and page composition
-    document.py          PdfDocument, PdfPage, and their shared operation lifecycle
 ```
 
 ### Dependency direction
@@ -84,8 +81,24 @@ Dependency direction is enforced at stable boundaries by the import-linter contr
 `pyproject.toml`. The broad acyclic processing spine is:
 
 ```text
-document → extract → render → output → model
+api/document → impl/extract → impl/render → impl/output → impl/model
 ```
+
+`api/document.py` composes the internal engine into the public document/page API.
+The low-level catalog, page tree, and security-aware document stay in
+`impl/spec/s_07_document/`. Nothing under `impl/` may import the public API or its
+compatibility facades.
+
+`output/model.py` owns the format-neutral document records, views, and editor;
+`output/serialize.py` projects that model into markdown, HTML, JSON, CSV, and TEI.
+They share one output package because the model's convenience methods invoke its
+serializers. Import their defining modules directly; the package initializer is not
+a forwarding facade.
+
+`model/text.py` owns the text primitives shared by capture, layout, extraction, and
+compatibility adapters. `model/page_selection.py` owns the selection type and its
+normalization, used by both PDF and structured documents. These foundations must stay
+below `spec/` as well as processing: neither is an extraction stage or PDF syntax rule.
 
 ### The `spec/s_NN_*` scheme
 

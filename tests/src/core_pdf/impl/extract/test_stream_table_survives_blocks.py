@@ -15,7 +15,7 @@ from core_pdf.impl.extract.table_reconcile import (
     internal_stream_table_duplicated_by_blocks,
     internal_stream_table_is_tabular,
 )
-from core_pdf.impl.output import Block, BlockKind, Table, TableCell, TextLine
+from core_pdf.impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 from tests.helpers.structured import cell, stream_table
 
 
