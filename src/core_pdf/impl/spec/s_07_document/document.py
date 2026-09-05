@@ -24,11 +24,7 @@ from core_pdf.impl.spec.s_07_document.document_labels import (
     resolve_page_tree_node_type,
 )
 from core_pdf.impl.spec.s_07_document.document_xref import DocumentXRefMixin
-from core_pdf.impl.spec.s_07_document.fields import (
-    FieldTraversalEntry,
-    field_value_text,
-    field_widget_rect,
-)
+from core_pdf.impl.spec.s_07_document.fields import collect_field_records
 from core_pdf.impl.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.spec.s_07_document.page import PAGE_INHERITED_KEYS
 from core_pdf.impl.spec.s_07_document.records import (
@@ -961,142 +957,6 @@ class PdfDocument(
         # list, not the page content every caller came for.
         return self.internal_catalog_dict("AcroForm", recoverable=True)
 
-    def collect_field_records(
-        self,
-        node: object,
-        inherited_name: str = "",
-        inherited_type: str = "",
-        inherited_value: object = None,
-        depth: int = 0,
-        seen: set[int] | None = None,
-    ) -> list[RawFormField]:
-        recover = self.recovery_enabled
-        if seen is None:
-            seen = set()
-        records: list[RawFormField] = []
-        stack: list[FieldTraversalEntry] = [
-            ("node", node, inherited_name, inherited_type, inherited_value, depth)
-        ]
-
-        while stack:
-            entry = stack.pop()
-            if entry[0] == "record":
-                records.append(entry[1])
-                continue
-
-            (
-                ignored,
-                current_node,
-                parent_name,
-                parent_type,
-                parent_value,
-                current_depth,
-            ) = entry
-            if current_depth > 50:
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm depth")
-            current_node = self.resolver.resolve(current_node)
-            if not isinstance(current_node, dict):
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm field entry")
-            marker = id(current_node)
-            if marker in seen:
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm field entry")
-            seen.add(marker)
-
-            title = self.resolver.resolve_str(current_node.get("T"))
-            current_name = (
-                f"{parent_name}.{title}" if parent_name and title else title or parent_name
-            )
-
-            field_type = (
-                self.resolver.resolve_name_or_text(current_node.get("FT"), name_like=True)
-                or parent_type
-            )
-
-            value = current_node.get("V")
-            if value is None:
-                value = parent_value
-            value_text = field_value_text(self, value)
-
-            kids = current_node.get("Kids")
-            if kids is None:
-                kids = []
-            elif not isinstance(kids, list):
-                if recover:
-                    kids = []
-                else:
-                    raise ValueError("invalid AcroForm Kids array")
-            kids = cast(list[PdfObject], kids)
-            subtype = self.resolver.resolve_name_or_text(current_node.get("Subtype")) or ""
-            current_node = cast(PdfDict, current_node)
-            records.append(
-                RawFormField(
-                    current_name,
-                    field_type,
-                    cast(PdfObject, value),
-                    value_text,
-                    field_widget_rect(self, current_node if subtype == "Widget" else None),
-                    current_node,
-                    kids=kids,
-                    widget=current_node if subtype == "Widget" else None,
-                )
-            )
-
-            for kid in reversed(kids):
-                resolved_kid = self.resolver.resolve(kid)
-                if not isinstance(resolved_kid, dict):
-                    if recover:
-                        continue
-                    raise ValueError("invalid AcroForm kid entry")
-                resolved_kid = cast(PdfDict, resolved_kid)
-                subtype = self.resolver.resolve_name_or_text(resolved_kid.get("Subtype")) or ""
-                if subtype == "Widget":
-                    widget_type = (
-                        self.resolver.resolve_name_or_text(resolved_kid.get("FT"), name_like=True)
-                        or field_type
-                    )
-                    widget_title = self.resolver.resolve_str(resolved_kid.get("T"))
-                    widget_name = (
-                        f"{current_name}.{widget_title}"
-                        if current_name and widget_title
-                        else widget_title or current_name
-                    )
-                    widget_value: object = resolved_kid.get("V")
-                    if widget_value is None:
-                        widget_value = value
-                    stack.append(
-                        (
-                            "record",
-                            RawFormField(
-                                widget_name,
-                                widget_type,
-                                cast(PdfObject, widget_value),
-                                field_value_text(self, widget_value),
-                                field_widget_rect(self, resolved_kid),
-                                resolved_kid,
-                                kids=[],
-                                widget=resolved_kid,
-                            ),
-                        )
-                    )
-                else:
-                    stack.append(
-                        (
-                            "node",
-                            resolved_kid,
-                            current_name,
-                            field_type,
-                            value,
-                            current_depth + 1,
-                        )
-                    )
-        return records
-
     def fields(self) -> list[RawFormField]:
         af = self.acroform
         records: list[RawFormField] = []
@@ -1111,7 +971,9 @@ class PdfDocument(
                     raise ValueError("invalid AcroForm Fields array")
             for field in field_list:
                 field_obj = self.resolver.resolve(field)
-                records.extend(self.collect_field_records(field_obj))
+                records.extend(
+                    collect_field_records(self.resolver, field_obj, recover=self.recovery_enabled)
+                )
         # 12.5.6.19 lets a field with a single widget merge both dictionaries
         # into one, so a widget carrying /FT is itself a field and a missing or
         # empty catalog field tree does not mean the document has none.
@@ -1200,7 +1062,9 @@ class PdfDocument(
                     continue
                 seen_widgets.add(id(root))
                 seen_widgets.add(id(annot))
-                records.extend(self.collect_field_records(root))
+                records.extend(
+                    collect_field_records(self.resolver, root, recover=self.recovery_enabled)
+                )
         return records
 
     def internal_widget_field_root(self, annot: PdfDict) -> PdfDict:

@@ -396,20 +396,13 @@ def internal_candidate_region_tasks(
         full_page_region = (
             ocr_pass.scope is OcrPassScope.PAGE
             and len(regions) == 1
-            and region.area
-            >= getattr(
-                getattr(capture, "evidence", None),
-                "page_area",
-                capture.width * capture.height,
-            )
-            * 0.75
+            and region.area >= capture.evidence.page_area * 0.75
             and internal_ocr_region_coverage(
                 region.page_box,
                 (0.0, 0.0, capture.width, capture.height),
             )
             >= 0.90
-            and getattr(getattr(capture, "evidence", None), "vector_complexity", 0)
-            >= OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY
+            and capture.evidence.vector_complexity >= OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY
             and 4_000_000 <= raster.width * raster.height <= PRIMARY_OCR_PIXELS
         )
         tile_count = ocr_pass.parallel_tiles if full_page_region else 1

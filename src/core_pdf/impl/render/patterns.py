@@ -7,20 +7,21 @@ import math
 from typing import Any, cast
 
 from core_pdf.impl.model.geometry import RectBox, rect_tuple
-from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.render.blend import (
     internal_clamp01,
     internal_color_component,
-    internal_color_rgba,
     internal_scale_rgba_alpha,
 )
-from core_pdf.impl.render.paths import internal_intersect_box, internal_translate_rect
+from core_pdf.impl.render.commands import append_captured_program
+from core_pdf.impl.render.display import DisplayList
+from core_pdf.impl.render.model import PathPaintItem
+from core_pdf.impl.render.paths import internal_intersect_box
 from core_pdf.impl.spec.s_07_content.capture import (
-    CapturedDrawing,
     CapturedPath,
     ShadingPattern,
     TilingPattern,
 )
+from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl.spec.s_08_graphics.shading import PreparedShading, prepare_shading
@@ -179,77 +180,10 @@ class internal_PatternTargetMixin:
                     else:
                         blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
-    def paint_tiling_glyphs(
-        self: Any,
-        glyphs: list[GlyphObservation],
-        tx: float,
-        ty: float,
-        blend_mode: str | None,
-    ) -> None:
-        for glyph in glyphs:
-            if not glyph.visible:
-                continue
-            bbox = internal_translate_rect(glyph.ink_bbox, tx, ty)
-            rgba = internal_color_rgba(glyph.fill, None)
-            self.draw_glyph_bitmap(
-                bbox,
-                glyph.resolved_bitmap(),
-                rgba,
-                blend_mode,
-                glyph.bitmap_width,
-                glyph.bitmap_height,
-            )
-
-    def paint_tiling_drawing(
-        self: Any,
-        drawing: CapturedDrawing,
-        tx: float,
-        ty: float,
-        parent_blend_mode: str | None,
-    ) -> None:
-        kind = drawing.kind
-        blend = drawing.blend_mode or parent_blend_mode
-        raw_path = drawing.path
-        path = raw_path.translated(tx, ty) if type(raw_path) is CapturedPath else None
-        if kind == "shading" and isinstance(drawing.dictionary, dict):
-            self.paint_shading(
-                {
-                    "dictionary": drawing.dictionary,
-                    "bbox": internal_translate_rect(drawing.rect, tx, ty),
-                    "fill_opacity": drawing.fill_opacity,
-                    "soft_mask_alpha": drawing.soft_mask_alpha,
-                },
-                blend,
-            )
-            return
-        if kind not in {"fill", "fillstroke", "stroke"}:
-            return
-        if path is None:
-            return
-        fill_rgba = internal_color_rgba(drawing.fill, drawing.fill_opacity)
-        if kind in {"fill", "fillstroke"}:
-            self.fill_path(
-                path,
-                fill_rgba,
-                blend,
-                drawing.fill_rule or "nonzero",
-            )
-        if kind in {"stroke", "fillstroke"}:
-            stroke_rgba = internal_color_rgba(drawing.stroke_color, drawing.stroke_opacity)
-            self.stroke_path(
-                path,
-                float(drawing.line_width or 1.0),
-                stroke_rgba,
-                drawing.dash_pattern,
-                blend,
-                int(drawing.line_cap or 0),
-                int(drawing.line_join or 0),
-            )
-
     def paint_tiling_pattern(
         self: Any,
         pattern: TilingPattern,
-        target_data: dict[str, Any],
+        target_data: PathPaintItem,
         blend_mode: str | None,
     ) -> bool:
         crop_x0 = self.crop_x0
@@ -266,7 +200,19 @@ class internal_PatternTargetMixin:
         glyphs = pattern.glyphs
         if not drawings and not glyphs and not pattern.inline_images:
             return False
-        target_box = target_data.get("bbox") or self.clip.path_bbox(target_data.get("path"))
+        display = DisplayList(width, self.height)
+        cell_clip = CapturedPath()
+        cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
+        append_captured_program(
+            display,
+            CapturedProgram(
+                drawings=tuple(drawings),
+                glyphs=tuple(glyphs),
+                inline_images=tuple(pattern.inline_images),
+            ),
+            include_text=True,
+        )
+        target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         target_box_type = type(target_box)
         if target_box_type is RectBox:
             target_rect = cast(RectBox, target_box)
@@ -308,25 +254,26 @@ class internal_PatternTargetMixin:
                 tx = x - cell_x0
                 ty = y - cell_y0
                 if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
-                    for drawing in drawings:
-                        if type(drawing) is not dict:
-                            continue
-                        self.paint_tiling_drawing(drawing, tx, ty, blend_mode)
-                    self.paint_tiling_glyphs(glyphs, tx, ty, blend_mode)
+                    self.paint_items(
+                        display.items,
+                        translation=(tx, ty),
+                        parent_blend_mode=blend_mode,
+                        clip_path=cell_clip,
+                    )
                 cells += 1
                 x += x_step
             y += y_step
         return True
 
-    def paint_fill_pattern(self: Any, data: dict[str, Any], blend_mode: str | None) -> bool:
+    def paint_fill_pattern(self: Any, data: PathPaintItem, blend_mode: str | None) -> bool:
         clip_state = self.clip
-        pattern = data.get("fill_pattern")
+        pattern = data.fill_pattern
         if not isinstance(pattern, (ShadingPattern, TilingPattern)):
             return False
-        path = data.get("path")
+        path = data.path
         pushed_clip = False
         if type(path) is CapturedPath and path.has_segments():
-            clip_state.push(path, data.get("fill_rule") or "nonzero")
+            clip_state.push(path, data.fill_rule or "nonzero")
             pushed_clip = True
         try:
             if isinstance(pattern, ShadingPattern):
@@ -335,9 +282,9 @@ class internal_PatternTargetMixin:
                     return False
                 shading_data = {
                     "dictionary": dictionary,
-                    "bbox": data.get("bbox") or clip_state.path_bbox(path),
-                    "fill_opacity": data.get("fill_opacity"),
-                    "soft_mask_alpha": data.get("soft_mask_alpha"),
+                    "bbox": data.bbox or clip_state.path_bbox(path),
+                    "fill_opacity": data.fill_opacity,
+                    "soft_mask_alpha": data.soft_mask_alpha,
                 }
                 self.paint_shading(shading_data, blend_mode)
                 return True

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import typing
 import zlib
+from collections.abc import Iterator
 from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
@@ -17,6 +18,8 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+    FindableSizedBuffer,
+    full_source_buffer,
     matches_keyword_with_one_substitution,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE
@@ -842,6 +845,47 @@ def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
         if parsed is not None:
             return parsed[0]
         search_end = marker
+
+
+def iter_indirect_object_headers(
+    data: PdfByteBuffer | memoryview,
+    search_start: int,
+    search_end: int,
+    *,
+    source_buffer: FindableSizedBuffer | None = None,
+    allow_prefix_before_start: bool = False,
+) -> Iterator[tuple[int, int, int]]:
+    """Yield validated headers in marker order within a bounded search window.
+
+    Approximate document offsets may admit a prefix before the marker window;
+    object-level recovery requires the entire header to start inside it. The
+    keyword is validated against the full data, not a truncated search slice.
+    """
+    search_start = max(0, search_start)
+    search_end = min(len(data), search_end)
+    source = source_buffer
+    if source is None:
+        source = (
+            full_source_buffer(data, len(data))
+            if isinstance(data, memoryview)
+            else cast(FindableSizedBuffer, data)
+        )
+    copied_region = bytes(data[search_start:search_end]) if source is None else None
+    pos = search_start
+    while pos < search_end:
+        if source is not None:
+            marker = source.find(b"obj", pos, search_end)
+        else:
+            assert copied_region is not None
+            marker = copied_region.find(b"obj", pos - search_start)
+        if marker < 0:
+            return
+        if source is None:
+            marker += search_start
+        parsed = parse_object_marker_prefix(data, marker)
+        if parsed is not None and (allow_prefix_before_start or parsed[0] >= search_start):
+            yield parsed
+        pos = marker + 3
 
 
 def parse_object_marker_prefix(

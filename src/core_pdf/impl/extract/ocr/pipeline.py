@@ -44,6 +44,7 @@ from core_pdf.impl.extract.ocr.session import (
     internal_raster_tasks,
     internal_region_tasks,
 )
+from core_pdf.impl.extract.ocr.strokes import StrokedTextProfile
 from core_pdf.impl.extract.ocr.types import internal_OcrTask
 from core_pdf.impl.extract.ocr.vector import (
     internal_decode_stroked_vector_text,
@@ -187,12 +188,16 @@ def recognize_page(
     capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
+    *,
+    stroked_profile: StrokedTextProfile | None,
 ) -> RecognitionResult:
     if not plan.ocr_passes:
         return RecognitionResult(ObservationBatch.empty())
     context.raise_if_cancelled()
-    observations = internal_recognize_page_with_reserved_raster(capture, plan, context)
-    observations, alphabet = internal_recover_stroked_vector_text(capture, observations)
+    observations = internal_recognize_page_with_reserved_raster(
+        capture, plan, context, stroked_profile=stroked_profile
+    )
+    observations, alphabet = internal_recover_stroked_vector_text(stroked_profile, observations)
     return RecognitionResult(observations, stroked_vector_alphabet=alphabet)
 
 
@@ -200,6 +205,8 @@ def internal_recognize_page_with_reserved_raster(
     capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
+    *,
+    stroked_profile: StrokedTextProfile | None,
 ) -> ObservationBatch:
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
@@ -213,6 +220,7 @@ def internal_recognize_page_with_reserved_raster(
         plan,
         compact_image,
         context,
+        stroked_profile,
     )
     pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
@@ -279,7 +287,7 @@ def internal_recognize_page_with_reserved_raster(
             task_candidates = tuple(item[0] for item in remapped_with_counts)
             packed_candidate = internal_merge_candidate_batches(task_candidates)
             packed_decode = internal_decode_stroked_vector_text(
-                capture,
+                stroked_profile,
                 packed_candidate.observations,
                 packed_candidate.symbols,
             )
@@ -295,6 +303,7 @@ def internal_recognize_page_with_reserved_raster(
                 isolated_packed = internal_stroked_vector_text_raster(
                     capture,
                     ocr_pass.scale,
+                    profile=stroked_profile,
                     max_pixels=ocr_pass.pixel_budget,
                     variant="isolated",
                 )

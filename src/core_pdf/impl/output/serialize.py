@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from csv import writer
+from dataclasses import replace
 from html import escape
 from io import StringIO
 from typing import TypeVar
@@ -34,6 +36,7 @@ from core_pdf.impl.output.model import (
 )
 
 ElementResultT = TypeVar("ElementResultT")
+internal_LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
 
 
 def node_to_json_dict(
@@ -446,6 +449,7 @@ def internal_render_styled_line(
     strikeout: tuple[str, str],
     bold: tuple[str, str],
     italic: tuple[str, str],
+    start: int = 0,
 ) -> str:
     """Wrap each styled span, innermost style first.
 
@@ -455,7 +459,13 @@ def internal_render_styled_line(
     """
     rendered: list[str] = []
     for span in line.styled_spans():
-        text = escape(span.text) if escape_text else span.text
+        text = span.text
+        if start:
+            text = text[start:]
+            start = max(0, start - len(span.text))
+            if not text:
+                continue
+        text = escape(text) if escape_text else text
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:
@@ -474,35 +484,38 @@ def internal_render_styled_line(
     return "".join(rendered)
 
 
-def internal_markdown_line(line: TextLine) -> str:
+def internal_markdown_line(line: TextLine, *, start: int = 0) -> str:
     return internal_render_styled_line(
         line,
         escape_text=False,
         strikeout=("~~", "~~"),
         bold=("**", "**"),
         italic=("*", "*"),
+        start=start,
     )
 
 
-def internal_html_line(line: TextLine) -> str:
+def internal_html_line(line: TextLine, *, start: int = 0) -> str:
     return internal_render_styled_line(
         line,
         escape_text=True,
         strikeout=("<del>", "</del>"),
         bold=("<strong>", "</strong>"),
         italic=("<em>", "</em>"),
+        start=start,
     )
 
 
 def block_to_markdown(block: Block) -> str:
+    if block.kind is BlockKind.LIST:
+        return "\n".join(
+            f"{prefix or '- '}{internal_markdown_line(line, start=len(prefix))}"
+            for line in map(internal_list_line, block.lines)
+            for prefix in (internal_list_prefix(line.text),)
+        )
     text = "\n".join(internal_markdown_line(line) for line in block.lines)
     if block.kind is BlockKind.HEADING:
         return f"{'#' * (block.level or 2)} {text}"
-    if block.kind is BlockKind.LIST:
-        return "\n".join(
-            line.text if internal_has_list_marker(line.text) else f"- {line.text}"
-            for line in block.lines
-        )
     return text
 
 
@@ -533,7 +546,10 @@ def block_to_html(block: Block) -> str:
         heading = "<br />".join(internal_html_line(line) for line in block.lines)
         return f"<{tag}{attributes}>{heading}</{tag}>"
     if block.kind is BlockKind.LIST:
-        items = "".join(f"<li>{escape(line.text)}</li>" for line in block.lines)
+        items = "".join(
+            f"<li>{internal_html_line(line, start=len(internal_list_prefix(line.text)))}</li>"
+            for line in map(internal_list_line, block.lines)
+        )
         return f"<ul{attributes}>{items}</ul>"
     text = "<br />".join(internal_html_line(line) for line in block.lines)
     return f"<p{attributes}>{text}</p>"
@@ -593,13 +609,17 @@ def internal_table_cell_to_html(cell: TableCell, *, header: bool = False) -> str
     return f"<{tag}{spans}>{escape(cell.text)}</{tag}>"
 
 
-def internal_has_list_marker(text: str) -> bool:
-    stripped = text.lstrip()
-    if not stripped:
-        return False
-    return stripped[0] in "-*•▪◦" or (
-        len(stripped) > 1 and stripped[0].isalnum() and stripped[1:2] in {".", ")"}
-    )
+def internal_list_line(line: TextLine) -> TextLine:
+    """Keep canonical list text when earlier normalization invalidated span offsets."""
+    if line.spans and "".join(span.text for span in line.spans) != line.text:
+        return replace(line, spans=())
+    return line
+
+
+def internal_list_prefix(text: str) -> str:
+    """Return the raw list marker and spacing, before escaping or span styling."""
+    match = internal_LIST_PREFIX_RE.match(text)
+    return match.group(0) if match is not None else ""
 
 
 def json_safe(value: object, *, path: str = "$") -> JsonValue:

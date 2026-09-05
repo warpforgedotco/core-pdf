@@ -8,7 +8,6 @@ import numpy
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     VECTOR_PAINT_KINDS,
-    ObservationBatch,
     OcrPass,
     PageAnalysis,
     internal_bbox_tuple,
@@ -50,7 +49,7 @@ def internal_page_image_regions(
     page_area = max(1.0, page_width * page_height)
     regions: list[internal_RasterRegion] = []
     for image in capture.program.drawings:
-        if getattr(image, "kind", None) != "image":
+        if image.kind != "image":
             continue
         orientation = internal_direct_image_orientation(
             image,
@@ -58,7 +57,7 @@ def internal_page_image_regions(
         )
         if orientation is None:
             continue
-        box = rect_tuple(getattr(image, "rect", None))
+        box = rect_tuple(image.rect)
         if box is None:
             continue
         clipped = (
@@ -181,8 +180,8 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
     padding = max(6.0, min(36.0, min(page_width, page_height) * 0.01))
     candidates: list[internal_OcrRegion] = []
 
-    for box in getattr(capture.evidence, "image_boxes", ()):
-        image_box = internal_bbox_tuple(box)
+    for evidence_box in capture.evidence.image_boxes:
+        image_box = internal_bbox_tuple(evidence_box)
         padded = internal_ocr_region_box(
             image_box,
             page_width=page_width,
@@ -192,7 +191,7 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         if padded is not None:
             candidates.append(internal_OcrRegion(padded, 5.0, ("image",)))
 
-    native = getattr(capture, "observations", ObservationBatch.empty())
+    native = capture.observations
     native_boxes = native.bbox
 
     def native_overlap(box: tuple[float, float, float, float]) -> float:
@@ -208,16 +207,16 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         return min(1.0, float(numpy.sum(overlap_width * overlap_height)) / area)
 
     for drawing in capture.program.drawings:
-        if getattr(drawing, "kind", None) not in {"fill", "fillstroke", "stroke"}:
+        if drawing.kind not in {"fill", "fillstroke", "stroke"}:
             continue
-        box = rect_tuple(getattr(drawing, "rect", None))
+        box = rect_tuple(drawing.rect)
         if box is None:
             continue
         drawing_area = bbox_area(box)
         if drawing_area <= 0.0 or drawing_area >= page_area * 0.80:
             continue
         uncovered = native_overlap(box) < 0.25
-        if uncovered and getattr(drawing, "kind", None) in {"fill", "fillstroke"}:
+        if uncovered and drawing.kind in {"fill", "fillstroke"}:
             padded = internal_ocr_region_box(
                 box,
                 page_width=page_width,
@@ -271,9 +270,9 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
     rows = max(2, min(8, int(round(columns * page_height / max(1.0, page_width)))))
     vector_density = numpy.zeros(rows * columns, dtype=numpy.float32)
     for drawing in capture.program.drawings:
-        if getattr(drawing, "kind", None) not in VECTOR_PAINT_KINDS:
+        if drawing.kind not in VECTOR_PAINT_KINDS:
             continue
-        box = rect_tuple(getattr(drawing, "rect", None))
+        box = rect_tuple(drawing.rect)
         if box is None:
             continue
         center_x = (box[0] + box[2]) * 0.5
@@ -366,9 +365,9 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
             [] for _ in range(label_rows * label_columns)
         ]
         for drawing in capture.program.drawings:
-            if getattr(drawing, "kind", None) not in VECTOR_PAINT_KINDS:
+            if drawing.kind not in VECTOR_PAINT_KINDS:
                 continue
-            box = rect_tuple(getattr(drawing, "rect", None))
+            box = rect_tuple(drawing.rect)
             if box is None:
                 continue
             center_x = (box[0] + box[2]) * 0.5
@@ -442,8 +441,8 @@ def internal_has_distributed_outline_text(capture: PageAnalysis) -> bool:
     boxes = tuple(
         box
         for drawing in capture.program.drawings
-        if getattr(drawing, "kind", None) in {"fill", "fillstroke"}
-        and (box := rect_tuple(getattr(drawing, "rect", None))) is not None
+        if drawing.kind in {"fill", "fillstroke"}
+        and (box := rect_tuple(drawing.rect)) is not None
         and 0.0 < box[2] - box[0] <= max_width
         and 0.0 < box[3] - box[1] <= max_height
     )

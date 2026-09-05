@@ -34,6 +34,110 @@ def to_unicode_stream(body: bytes) -> PdfStream:
     return PdfStream(decoded_data=to_unicode_cmap(body))
 
 
+@pytest.mark.parametrize("cff_succeeds", [True, False])
+def test_embedded_font_preference_decodes_only_attempted_streams(
+    monkeypatch: pytest.MonkeyPatch, cff_succeeds: bool
+) -> None:
+    reads: list[bytes] = []
+    attempts: list[str] = []
+    selected = object()
+
+    def stream_data(stream: PdfStream) -> bytes:
+        data = bytes(stream.raw_data)
+        assert data != b"unused TrueType"
+        reads.append(data)
+        return data
+
+    def cff_program(data: bytes) -> object:
+        assert data == b"CFF"
+        attempts.append("cff")
+        if not cff_succeeds:
+            raise ValueError("invalid CFF")
+        return selected
+
+    def type1_program(data: bytes, *, length1: int | None) -> object:
+        assert data == b"Type1"
+        assert length1 == 12
+        attempts.append("type1")
+        return selected
+
+    monkeypatch.setattr(PdfStream, "data", property(stream_data))
+    monkeypatch.setattr(decoder_module, "CFFFont", cff_program)
+    monkeypatch.setattr(decoder_module, "Type1FontProgram", type1_program)
+    font = {
+        "Subtype": "Type1",
+        "FontDescriptor": {
+            "FontFile": PdfStream({"Length1": 12}, decoded_data=b"Type1"),
+            "FontFile2": PdfStream(decoded_data=b"unused TrueType"),
+            "FontFile3": PdfStream({"Subtype": "Type1C"}, decoded_data=b"CFF"),
+        },
+    }
+    assert decoder_module.internal_font_program_for_pdf_font(font) is selected
+    assert attempts == (["cff"] if cff_succeeds else ["cff", "type1"])
+    assert reads == ([b"CFF"] if cff_succeeds else [b"CFF", b"Type1"])
+
+
+def test_truetype_descendant_keeps_cid_map_and_original_type1_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+    selected = object()
+
+    def truetype_program(data: bytes, cid_to_gid: bytes, *, use_cmap: bool) -> None:
+        calls.append((data, cid_to_gid, use_cmap))
+        raise ValueError("invalid TrueType")
+
+    def type1_program(data: bytes, *, length1: int | None) -> object:
+        calls.append((data, length1))
+        return selected
+
+    monkeypatch.setattr(decoder_module, "TrueTypeFontProgram", truetype_program)
+    monkeypatch.setattr(decoder_module, "Type1FontProgram", type1_program)
+    font = {
+        "Subtype": "Type1",
+        "FontDescriptor": {"FontFile": PdfStream(decoded_data=b"original Type1")},
+        "DescendantFonts": [
+            {
+                "Subtype": "CIDFontType2",
+                "CIDToGIDMap": PdfStream(decoded_data=b"CID map"),
+                "FontDescriptor": {
+                    "FontFile": PdfStream(decoded_data=b"unused descendant Type1"),
+                    "FontFile2": PdfStream(decoded_data=b"TrueType"),
+                },
+            }
+        ],
+    }
+    assert decoder_module.internal_font_program_for_pdf_font(font) is selected
+    assert calls == [(b"TrueType", b"CID map", False), (b"original Type1", None)]
+
+
+def test_opentype_cff_failure_falls_back_to_full_opentype_program(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bytes] = []
+    selected = object()
+
+    def cff_program(data: bytes) -> None:
+        calls.append(data)
+        raise ValueError("invalid CFF table")
+
+    def opentype_program(data: bytes) -> object:
+        calls.append(data)
+        return selected
+
+    monkeypatch.setattr(decoder_module, "internal_extract_cff_table", lambda _: b"CFF table")
+    monkeypatch.setattr(decoder_module, "CFFFont", cff_program)
+    monkeypatch.setattr(decoder_module, "OpenTypeFontProgram", opentype_program)
+    font = {
+        "Subtype": "Type1",
+        "FontDescriptor": {
+            "FontFile3": PdfStream({"Subtype": "OpenType"}, decoded_data=b"OpenType")
+        },
+    }
+    assert decoder_module.internal_font_program_for_pdf_font(font) is selected
+    assert calls == [b"CFF table", b"OpenType"]
+
+
 def test_glyph_name_to_unicode_handles_computer_modern_delimiter_aliases() -> None:
     assert glyph_name_to_unicode("bracketleftbig") == "["
     assert glyph_name_to_unicode("bracketrightBigg") == "]"

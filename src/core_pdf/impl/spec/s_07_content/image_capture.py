@@ -5,10 +5,22 @@ from __future__ import annotations
 
 import numpy
 
+from core_pdf.impl.model.geometry import points_bbox
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfValueResolver
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.types import Rectangle
+
+
+def unit_square_placement(matrix: Matrix) -> tuple[Rectangle, tuple[tuple[float, float], ...]]:
+    """Image bounds and ordered affine sampling corners in page coordinates."""
+    a, b, c, d, e, f = matrix
+    quad = ((e, f), (a + e, b + f), (c + e, d + f), (a + c + e, b + d + f))
+    bbox = points_bbox(quad)
+    assert bbox is not None
+    return bbox, quad
 
 
 def image_source_from_stream(
@@ -43,4 +55,4 @@ def image_source_from_stream(
     return ImageSource(stream.raw_data, source_dictionary, soft_mask=soft_mask), mask_alpha
 
 
-__all__ = ("image_source_from_stream",)
+__all__ = ("image_source_from_stream", "unit_square_placement")

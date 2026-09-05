@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -18,7 +19,6 @@ from core_pdf.impl.extract.contracts import (
     internal_bbox_tuple,
 )
 from core_pdf.impl.extract.observations import maximum_candidate_coverage
-from core_pdf.impl.extract.ocr.tesseract import internal_normalized_ocr_token_key
 from core_pdf.impl.extract.quality import (
     internal_Candidate,
     internal_candidate,
@@ -29,6 +29,24 @@ from core_pdf.impl.model.text import search_key, text_tokens
 from core_pdf.impl.runtime.array_views import finite_median
 
 internal_OCR_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+internal_OCR_TOKEN_TRANSLATION = str.maketrans(
+    {
+        "‐": "-",
+        "‑": "-",
+        "‒": "-",
+        "–": "-",
+        "—": "-",
+        "−": "-",
+        "‘": "'",
+        "’": "'",
+        "“": '"',
+        "”": '"',
+    }
+)
+
+
+def internal_normalized_ocr_token_key(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).translate(internal_OCR_TOKEN_TRANSLATION).casefold()
 
 
 @dataclass(frozen=True, slots=True)

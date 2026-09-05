@@ -14,7 +14,7 @@ from core_pdf.impl.render.model import (
     PathPaintItem,
     PathPaintKind,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     is_pdf_number,
@@ -27,7 +27,9 @@ PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
 }
 MAX_COALESCED_STROKE_SUBPATHS = 256
-RASTER_CONTROL_KINDS = frozenset({"state-push", "state-pop", "clip", "group-begin", "group-end"})
+RASTER_CONTROL_KINDS = frozenset(
+    {"state-push", "state-pop", "clip", "group-begin", "group-end", "scope-begin", "scope-end"}
+)
 
 
 def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -149,11 +151,7 @@ class DisplayList:
             )
             return
         paint_kind = PATH_PAINT_KINDS.get(kind)
-        if (
-            paint_kind is not None
-            and data.get("fill_pattern") is None
-            and data.get("stroke_pattern") is None
-        ):
+        if paint_kind is not None:
             self.items.append(
                 PathPaintItem(
                     paint_kind=paint_kind,
@@ -171,26 +169,26 @@ class DisplayList:
                     fill_rule=data.get("fill_rule"),
                     blend_mode=data.get("blend_mode"),
                     soft_mask_alpha=data.get("soft_mask_alpha"),
+                    fill_pattern=data.get("fill_pattern"),
+                    stroke_pattern=data.get("stroke_pattern"),
                 )
             )
             return
         self.items.append(DisplayListItem(kind=kind, seqno=seqno, data=data))
 
-    def append_captured_drawing(self, drawing: Any) -> None:
+    def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
         """Append a captured drawing without rebuilding its keyword-data mapping."""
         paint_kind = PATH_PAINT_KINDS.get(drawing.kind)
-        if (
-            paint_kind is not None
-            and drawing.fill_pattern is None
-            and drawing.stroke_pattern is None
-        ):
+        if paint_kind is not None:
             path = drawing.path
             previous = self.items[-1] if self.items else None
             if (
                 paint_kind is PathPaintKind.STROKE
+                and drawing.stroke_pattern is None
                 and type(path) is CapturedPath
                 and type(previous) is PathPaintItem
                 and previous.paint_kind is PathPaintKind.STROKE
+                and previous.stroke_pattern is None
                 and type(previous.path) is CapturedPath
                 and len(previous.path.subpaths) + len(path.subpaths)
                 <= MAX_COALESCED_STROKE_SUBPATHS
@@ -238,6 +236,8 @@ class DisplayList:
                     fill_rule=drawing.fill_rule,
                     blend_mode=drawing.blend_mode,
                     soft_mask_alpha=drawing.soft_mask_alpha,
+                    fill_pattern=drawing.fill_pattern,
+                    stroke_pattern=drawing.stroke_pattern,
                 )
             )
             return

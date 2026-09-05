@@ -122,8 +122,12 @@ class LayoutLine:
 
         return reconstruct_layout_line_text(self.runs, is_all_caps_text=self.is_all_caps_text)
 
-    def text_and_words(self) -> tuple[str, tuple[TextWord, ...]]:
-        reconstructed = self.reconstructed_text()
+    def text_and_words(
+        self, reconstructed: LayoutLineText | None = None
+    ) -> tuple[str, tuple[TextWord, ...]]:
+        """Project word geometry from one reconstruction, supplied when already available."""
+        if reconstructed is None:
+            reconstructed = self.reconstructed_text()
         parts: list[str] = []
         words: list[TextWord] = []
         word = ""

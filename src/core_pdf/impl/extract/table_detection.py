@@ -28,14 +28,12 @@ from core_pdf.impl.extract.grids import (
 from core_pdf.impl.extract.table_cleanup import (
     internal_annotate_table_associations,
     internal_cell_text,
-    internal_character_spaced_cell,
     internal_clean_table_cell_leader_runs,
     internal_collapse_character_spaced_cell,
     internal_merge_adjacent_tables,
     internal_merge_stream_text_columns,
     internal_merge_wrapped_cell_rows,
     internal_merge_wrapped_stream_rows,
-    internal_numeric_cell,
     internal_repair_table_cell_spaced_digits,
     internal_split_semantic_table,
     internal_stream_table_reads_like_prose,
@@ -44,6 +42,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_table_quality,
     internal_table_with_bands,
 )
+from core_pdf.impl.extract.table_facts import internal_numeric_cell, internal_TableFacts
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.runtime.array_views import finite_median
@@ -276,8 +275,9 @@ def internal_detect_tables(
         segment
         for table in internal_merge_adjacent_tables(tables)
         for segment in internal_split_semantic_table(table)
-        if not internal_table_character_spaced_prose(segment)
-        and not internal_table_is_single_column_prose(segment)
+        for facts in (internal_TableFacts.from_rows(segment.rows),)
+        if not internal_table_character_spaced_prose(segment, facts=facts)
+        and not internal_table_is_single_column_prose(segment, facts=facts)
     ]
     for order, table in enumerate(tables):
         if table.order != order:
@@ -556,12 +556,13 @@ def internal_stream_table(
     if density < minimum_density:
         return None
     numeric_total = sum(numeric_by_column)
-    filled_texts = [cell.text.strip() for row in table_rows for cell in row if cell.text.strip()]
+    facts = internal_TableFacts.from_rows(table_rows)
+    filled_texts = facts.filled_texts
     long_text_cells = sum(len(text) > 18 for text in filled_texts)
     sentence_like_cells = sum(
         any(mark in text for mark in (". ", ", ", "; ", ": ")) for text in filled_texts
     )
-    character_spaced_cells = sum(internal_character_spaced_cell(text) for text in filled_texts)
+    character_spaced_cells = facts.character_spaced_cells
     if (
         minimum_rows >= 3
         and len(table_rows) >= 5

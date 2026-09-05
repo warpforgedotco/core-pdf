@@ -143,8 +143,9 @@ def internal_group_text_and_words(
     if references and all(isinstance(reference, TextRun) for reference in references):
         runs = cast(list[TextRun], list(references))
         line = LayoutLine(runs)
-        text = line.reconstructed_text().text.strip()
-        layout_words = line.text_and_words()[1]
+        reconstructed = line.reconstructed_text()
+        text = reconstructed.text.strip()
+        layout_words = line.text_and_words(reconstructed)[1]
         return text, internal_reconcile_text_words(text, layout_words)
     parts: list[str] = []
     candidate_words: list[TextWord] = []
@@ -213,10 +214,6 @@ def internal_is_repeated_native_label(text: str, repeated_tokens: frozenset[str]
     return bool(parts) and all(len(part) == 1 and part in repeated_tokens for part in parts)
 
 
-def internal_clean_native_punctuation_runs(text: str) -> str:
-    return collapse_leader_runs(text)
-
-
 def internal_color_is_emphasis(color: object) -> bool:
     if not isinstance(color, (tuple, list)) or len(color) < 3:
         return False
@@ -276,10 +273,9 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
         ):
             continue
         if all_native:
-            text = internal_clean_native_punctuation_runs(text)
+            text = collapse_leader_runs(text)
             if not text:
                 continue
-        words = internal_reconcile_text_words(text, words)
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]
         finite_confidences = confidences[numpy.isfinite(confidences)]

@@ -9,13 +9,8 @@ from typing import Any, Protocol, cast
 
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.render.blend import (
-    internal_color_rgba,
-    internal_scale_rgba_alpha,
-)
 from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import (
     RASTER_CONTROL_KINDS,
     DisplayList,
@@ -34,21 +29,10 @@ from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
 from core_pdf.impl.spec.s_07_content.capture import (
-    CapturedDrawing,
-    CapturedInlineImage,
     CapturedPath,
-    CapturedSubpath,
 )
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.spec.s_07_content.state import (
-    TextState,
-    internal_NON_PAINTING_RENDER_MODES,
-)
-from core_pdf.impl.spec.s_07_document.annotation_appearance import (
-    select_appearance_stream,
-)
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 
 class internal_RenderablePage(Protocol):
@@ -197,137 +181,8 @@ class RenderedPage:
             crop_y1=crop_y1,
             page_view=page_pixels,
         )
-        buffer_stack = raster_target.buffer_stack
         rotate = self.rotate % 360
-
-        clip_state_stack: list[int] = []
-
-        for item in self.internal_render_items(crop):
-            if type(item) is PathPaintItem:
-                raster_target.paint_typed_path(item)
-                continue
-            if type(item) is ImagePaintItem:
-                raster_target.blit_image(item)
-                continue
-            generic_item = cast(DisplayListItem, item)
-            data = generic_item.data
-            blend_mode = data.get("blend_mode")
-            if blend_mode == "Normal":
-                blend_mode = None
-            if generic_item.kind == "state-push":
-                clip_state_stack.append(clip_state.depth)
-                continue
-            if generic_item.kind == "state-pop":
-                if clip_state_stack:
-                    clip_state.restore(clip_state_stack.pop())
-                else:
-                    clip_state.restore(0)
-                continue
-            if generic_item.kind == "clip":
-                path = data.get("path")
-                if type(path) is CapturedPath and path.has_segments():
-                    clip_state.push(path, data.get("fill_rule") or "nonzero")
-                continue
-            if generic_item.kind == "group-begin":
-                # A transparency group starts from a transparent backdrop, not
-                # the page background: composite_group skips zero-alpha pixels,
-                # so an opaque buffer would blend the whole page as though the
-                # group had painted every pixel, flattening what it did paint.
-                raster_target.push_group(
-                    bytearray(width * height * 4),
-                    data.get("fill_opacity"),
-                    data.get("blend_mode"),
-                )
-                continue
-            if generic_item.kind == "group-end":
-                if len(buffer_stack) > 1:
-                    child, group_alpha, group_blend_mode = raster_target.pop_group()
-                    raster_target.composite_group(
-                        child,
-                        group_alpha if is_pdf_number(group_alpha) else data.get("fill_opacity"),
-                        group_blend_mode
-                        if type(group_blend_mode) is str
-                        else data.get("blend_mode"),
-                    )
-                continue
-            if generic_item.kind == "glyph":
-                if data.get("visible") is False:
-                    continue
-                rgba = internal_color_rgba(data.get("fill_color"), None)
-                raster_target.draw_glyph_bitmap(
-                    data.get("bbox"),
-                    data.get("bitmap"),
-                    rgba,
-                    blend_mode,
-                    data.get("bitmap_width"),
-                    data.get("bitmap_height"),
-                )
-            elif generic_item.kind == "shading":
-                raster_target.paint_shading(data, blend_mode)
-            elif generic_item.kind == "stroke":
-                path = data.get("path")
-                if type(path) is not CapturedPath:
-                    continue
-                stroke_rgba = internal_color_rgba(
-                    data.get("stroke_color"), data.get("stroke_opacity")
-                )
-                soft_mask_alpha = data.get("soft_mask_alpha")
-                if is_pdf_number(soft_mask_alpha):
-                    stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-                raster_target.stroke_path(
-                    path,
-                    float(data.get("line_width") or 1.0),
-                    stroke_rgba,
-                    data.get("dash_pattern"),
-                    blend_mode,
-                    int(data.get("line_cap") or 0),
-                    int(data.get("line_join") or 0),
-                )
-            elif generic_item.kind in {"fill", "fillstroke"}:
-                rgba = internal_color_rgba(
-                    data.get("fill") or data.get("fill_color"),
-                    data.get("fill_opacity"),
-                )
-                soft_mask_alpha = data.get("soft_mask_alpha")
-                if is_pdf_number(soft_mask_alpha):
-                    rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
-                path = data.get("path")
-                if type(path) is not CapturedPath:
-                    continue
-                pattern_painted = generic_item.kind in {
-                    "fill",
-                    "fillstroke",
-                } and raster_target.paint_fill_pattern(data, blend_mode)
-                if generic_item.kind in {"fill", "fillstroke"} and not pattern_painted:
-                    raster_target.fill_path(
-                        path,
-                        rgba,
-                        blend_mode,
-                        data.get("fill_rule") or "nonzero",
-                    )
-                if generic_item.kind == "fillstroke":
-                    stroke_rgba = internal_color_rgba(
-                        data.get("stroke_color"), data.get("stroke_opacity")
-                    )
-                    if is_pdf_number(soft_mask_alpha):
-                        stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-                    raster_target.stroke_path(
-                        path,
-                        float(data.get("line_width") or 1.0),
-                        stroke_rgba,
-                        data.get("dash_pattern"),
-                        blend_mode,
-                        int(data.get("line_cap") or 0),
-                        int(data.get("line_join") or 0),
-                    )
-            # An annotation whose appearance stream could not be rendered paints
-            # nothing. This used to drop a translucent gold rectangle over every
-            # such annotation and a blue one over every widget -- diagnostic
-            # scaffolding, not page content. On a fillable form that tinted every
-            # field: composited over white the pair produce (224, 226, 159),
-            # which is exactly the wash that covered IRS-2023-Form-1095-A.
-            # Readers draw nothing here, so neither do we; the items stay in the
-            # display list because their /Rect still carries annotation geometry.
+        raster_target.paint_items(self.internal_render_items(crop))
         if rotate in {90, 180, 270}:
             rotated = bytearray(background_bytes * (width * height))
             source_pixels = memoryview(raster_target.pixels).cast("I")
@@ -384,174 +239,6 @@ class RenderedPage:
 # ===== page =====
 
 
-def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
-    """Resolve and transform one captured embedded-font outline."""
-    if not glyph.paint_glyph:
-        return None
-    transform = glyph.glyph_transform
-    resolver = getattr(glyph.font_decoder, "glyph_outline", None)
-    if transform is None or not callable(resolver):
-        return None
-    code = glyph.bitmap_code
-    if code is None:
-        code = glyph.cid if glyph.cid is not None else glyph.char_code
-    if code is None:
-        return None
-    contours = resolver(code, glyph.gid, glyph.text)
-    if not contours:
-        return None
-    subpaths: list[CapturedSubpath] = []
-    for contour in contours:
-        if len(contour) < 2:
-            continue
-        subpath = CapturedSubpath(list(contour), closed=True).transformed(transform)
-        points = subpath.points
-        if len(points) >= 2 and points[0] == points[-1]:
-            points.pop()
-        if len(points) >= 2:
-            subpaths.append(subpath)
-    return CapturedPath(subpaths) if subpaths else None
-
-
-def internal_append_glyph_paint(
-    display_list: DisplayList,
-    glyph: GlyphObservation,
-    clipping_subpaths: list[CapturedSubpath],
-    *,
-    include_paint: bool = True,
-) -> bool:
-    if glyph.visible is False:
-        return True
-    mode = int(glyph.text_render_mode)
-    if not include_paint and mode < 4:
-        return True
-    path = internal_glyph_outline_path(glyph)
-    if path is None:
-        return False
-    if mode >= 4:
-        clipping_subpaths.extend(path.subpaths)
-    if not include_paint or mode in internal_NON_PAINTING_RENDER_MODES:
-        return True
-    paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
-    display_list.append(
-        paint_kind,
-        glyph.seqno,
-        bbox=path.bbox(),
-        path=path,
-        fill=glyph.fill,
-        fill_opacity=glyph.fill_opacity,
-        stroke_color=glyph.stroke_color,
-        stroke_opacity=glyph.stroke_opacity,
-        line_width=glyph.line_width,
-        line_cap=glyph.line_cap,
-        line_join=glyph.line_join,
-        dash_pattern=glyph.dash_pattern,
-        fill_rule="nonzero",
-        blend_mode=glyph.blend_mode,
-        soft_mask_alpha=glyph.soft_mask_alpha,
-    )
-    return True
-
-
-def internal_append_page_program(
-    display_list: DisplayList, page_program: PageProgram, *, include_text: bool
-) -> None:
-    """Translate page and appearance captures through the same ordered paint path."""
-    commands = page_program.commands
-    text_clipping_subpaths: list[CapturedSubpath] = []
-    current_text_object_id: int | None = None
-
-    def append_text_run(run: TextRun) -> None:
-        display_list.append(
-            "text",
-            run.seqno,
-            text=run.text,
-            bbox=(run.x0, run.y0, run.x1, run.y1),
-            font_name=run.font_name,
-            font_size=run.font_size,
-            visible=run.visible,
-            fill_color=run.fill_color,
-            rotation_angle=run.rotation_angle,
-        )
-
-    def flush_text_clip(seqno: int) -> None:
-        if not text_clipping_subpaths:
-            return
-        display_list.append(
-            "clip",
-            seqno,
-            path=CapturedPath(list(text_clipping_subpaths)),
-            fill_rule="nonzero",
-        )
-        text_clipping_subpaths.clear()
-
-    for command in commands:
-        if not include_text and isinstance(command, TextRun):
-            continue
-        if isinstance(command, TextRun):
-            append_text_run(command)
-        elif isinstance(command, GlyphObservation):
-            glyph = command
-            glyph_text_object_id = glyph.text_object_id
-            if (
-                current_text_object_id is not None
-                and glyph_text_object_id != current_text_object_id
-            ):
-                flush_text_clip(glyph.seqno)
-            current_text_object_id = glyph_text_object_id
-            if internal_append_glyph_paint(
-                display_list,
-                glyph,
-                text_clipping_subpaths,
-                include_paint=include_text,
-            ):
-                continue
-            if not include_text or glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES:
-                continue
-            bitmap = glyph.resolved_bitmap()
-            if not bitmap:
-                continue
-            display_list.append(
-                "glyph",
-                glyph.seqno,
-                text=glyph.text,
-                code=glyph.cid,
-                gid=glyph.gid,
-                font_name=glyph.font_name,
-                unicode_source=glyph.unicode_source,
-                alternates=glyph.alternates,
-                bbox=glyph.ink_bbox,
-                advance_bbox=glyph.advance_bbox,
-                fill_color=glyph.fill,
-                visible=glyph.visible,
-                bitmap=bitmap,
-                bitmap_width=glyph.bitmap_width,
-                bitmap_height=glyph.bitmap_height,
-            )
-        elif isinstance(command, CapturedDrawing):
-            flush_text_clip(command.seqno)
-            display_list.append_captured_drawing(command)
-        else:
-            assert isinstance(command, CapturedInlineImage)
-            inline_image = command
-            flush_text_clip(inline_image.seqno)
-            display_list.append(
-                "inline-image",
-                inline_image.seqno,
-                dictionary=dict(inline_image.dictionary),
-                data=inline_image.data,
-                image_source=inline_image.image_source,
-                image_clip=inline_image.image_clip,
-                ctm=inline_image.ctm,
-                xobject_depth=inline_image.xobject_depth,
-                blend_mode=inline_image.blend_mode,
-                soft_mask_alpha=inline_image.soft_mask_alpha,
-                bbox=None,
-                raw_data=inline_image.data,
-            )
-    flush_text_clip(len(commands))
-
-
 def compose_page(
     page: internal_RenderablePage,
     options: RenderOptions | None = None,
@@ -561,6 +248,8 @@ def compose_page(
     annotations: Iterable[Any] | None = None,
 ) -> RenderedPage:
     options = options or RenderOptions()
+    fields = tuple(fields) if fields is not None else None
+    annotations = tuple(annotations) if annotations is not None else None
     internal_page = cast(Any, page)
     media_box = getattr(page, "media_box", None) or (0.0, 0.0, page.width, page.height)
     x0, y0, x1, y1 = media_box
@@ -569,76 +258,37 @@ def compose_page(
     display_list = DisplayList(width=width, height=height)
 
     if page_program is None and hasattr(internal_page, "get_page_program"):
-        page_program = internal_page.get_page_program()
+        capture_inputs: dict[str, Any] = {}
+        if fields is not None:
+            capture_inputs["fields"] = fields
+        if annotations is not None:
+            capture_inputs["annotations"] = annotations
+        page_program = internal_page.get_page_program(**capture_inputs)
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")
-    internal_append_page_program(display_list, page_program, include_text=options.include_text)
-
-    def append_form_appearance(
-        appearance: Any,
-        rect: tuple[float, float, float, float],
-        appearance_state: Any | None = None,
-    ) -> bool:
-        # One implementation of 12.5.5's substate rule, shared with the capture
-        # path. This used to have its own, which fell back to Off, then Yes,
-        # then whatever /N happened to hold first when /AS named a state /N did
-        # not contain -- so a checkbox with /AS /Off whose /N carries only the
-        # checked stream rendered as checked. It must render as nothing.
-        normal = select_appearance_stream(
-            internal_page.document.resolver, appearance, appearance_state
+    selected_appearances = tuple(
+        appearance
+        for appearance in page_program.appearances
+        if (options.include_layers if appearance.kind == "widget" else options.include_annotations)
+    )
+    # A page's final clipping state does not belong to its annotations. Close
+    # the body scope before replaying independent appearance streams.
+    if selected_appearances:
+        display_list.append("scope-begin", -1)
+    append_captured_program(display_list, page_program.body, include_text=options.include_text)
+    if selected_appearances:
+        display_list.append("scope-end", -1)
+    rendered_appearances: set[int] = set()
+    for appearance_group in selected_appearances:
+        clip_path = CapturedPath()
+        ax0, ay0, ax1, ay1 = appearance_group.clip_bbox
+        clip_path.rect(ax0, ay0, ax1 - ax0, ay1 - ay0)
+        display_list.append("scope-begin", -1, path=clip_path)
+        append_captured_program(
+            display_list, appearance_group.program, include_text=options.include_text
         )
-        if normal is None:
-            return False
-        form_dict = internal_page.document.resolver.resolve_dict(normal.dictionary) or {}
-        bbox = internal_page.document.resolver.resolve_box(form_dict.get("BBox"))
-        if bbox is None:
-            bbox = rect
-        try:
-            matrix_operand = form_dict.get("Matrix")
-            if isinstance(matrix_operand, (list, tuple)) and len(matrix_operand) > 6:
-                matrix_operand = matrix_operand[:6]
-            matrix = (
-                Matrix.from_operand(matrix_operand)
-                if matrix_operand is not None
-                else IDENTITY_MATRIX
-            )
-        except ValueError:
-            matrix = IDENTITY_MATRIX
-        bx0, by0, bx1, by1 = bbox
-        rx0, ry0, rx1, ry1 = rect
-        bw = bx1 - bx0
-        bh = by1 - by0
-        if bw == 0 or bh == 0:
-            return False
-        if not hasattr(internal_page.document.resolver, "resolve"):
-            return False
-        scale = Matrix(
-            (rx1 - rx0) / bw,
-            0.0,
-            0.0,
-            (ry1 - ry0) / bh,
-            rx0 - bx0 * ((rx1 - rx0) / bw),
-            ry0 - by0 * ((ry1 - ry0) / bh),
-        )
-        nested_ctm = matrix.multiply(scale)
-        state = TextState(internal_page.document)
-        resources = (
-            internal_page.document.resolver.resolve_dict(form_dict.get("Resources"))
-            or internal_page.resources
-        )
-        state.consume_stream(normal, resources, nested_ctm, 0)
-        internal_append_page_program(
-            display_list,
-            PageProgram(
-                runs=tuple(state.runs),
-                # The page program already owns appearance glyph paint. This
-                # supplemental layer retains the existing run/drawing policy.
-                drawings=tuple(state.drawings),
-                inline_images=tuple(state.inline_images),
-            ),
-            include_text=options.include_text,
-        )
-        return True
+        display_list.append("scope-end", -1)
+        rendered_appearances.add(id(appearance_group.source))
 
     if options.include_layers:
         field_records = fields
@@ -652,10 +302,8 @@ def compose_page(
             widget = field.widget or field.dict
             rect = field.rect
             appearance = None
-            appearance_state = None
             if isinstance(widget, dict):
                 appearance = widget.get("AP")
-                appearance_state = widget.get("AS")
             if rect is None:
                 continue
             display_list.append(
@@ -667,20 +315,12 @@ def compose_page(
                 rect=rect,
                 widget=dict(widget) if isinstance(widget, dict) else {},
                 appearance=appearance,
-                appearance_rendered=append_form_appearance(appearance, rect, appearance_state)
-                if appearance is not None
-                else False,
+                appearance_rendered=id(widget) in rendered_appearances,
             )
     if options.include_annotations:
         annotation_records = internal_page.get_annotations() if annotations is None else annotations
         for annot in annotation_records:
             appearance = annot.dict.get("AP") if isinstance(annot.dict, dict) else None
-            appearance_state = annot.dict.get("AS") if isinstance(annot.dict, dict) else None
-            rendered = False
-            if appearance is not None:
-                rendered = append_form_appearance(
-                    appearance, annot.rect or (0.0, 0.0, 0.0, 0.0), appearance_state
-                )
             display_list.append(
                 "annotation",
                 -1,
@@ -688,7 +328,7 @@ def compose_page(
                 rect=annot.rect,
                 contents=annot.contents,
                 appearance=appearance,
-                appearance_rendered=rendered,
+                appearance_rendered=id(annot.dict) in rendered_appearances,
             )
     return RenderedPage(
         page_number=getattr(page, "page_number", 0),

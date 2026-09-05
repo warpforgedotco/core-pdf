@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import numpy
+import pytest
 
 from core_pdf.impl.extract.block_layout import (
     internal_column_major_prose,
+    internal_group_text_and_words,
     internal_reading_order_evidence,
     layout_blocks,
     layout_blocks_with_evidence,
@@ -22,7 +24,40 @@ from core_pdf.impl.extract.regions import (
     internal_row_order_indexes,
     internal_row_order_region,
 )
+from core_pdf.impl.layout import reconstruction
+from core_pdf.impl.model.runs import LayoutLineText, LayoutLineTextSegment
 from tests.helpers import extract_fakes
+
+
+def test_native_line_reuses_one_reconstruction_for_text_and_word_geometry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = LayoutLineText(
+        " left\tright ",
+        (
+            LayoutLineTextSegment("left", "", (0.0, 0.0, 4.0, 2.0), 0),
+            LayoutLineTextSegment("right", "\t", (10.0, 0.0, 15.0, 2.0), 0),
+        ),
+    )
+    calls = 0
+
+    def reconstruct(*args: object, **kwargs: object) -> LayoutLineText:
+        nonlocal calls
+        calls += 1
+        return result
+
+    monkeypatch.setattr(reconstruction, "reconstruct_layout_line_text", reconstruct)
+    batch = extract_fakes.observations(
+        (("left right", (0.0, 0.0, 15.0, 2.0)),),
+        references=(extract_fakes.text_run("left right"),),
+    )
+
+    text, words = internal_group_text_and_words(batch, numpy.array([0]))
+
+    assert calls == 1
+    assert text == "left\tright"
+    assert tuple(word.text for word in words) == ("left", "right")
+    assert tuple(word.bbox for word in words) == ((0.0, 0.0, 4.0, 2.0), (10.0, 0.0, 15.0, 2.0))
 
 
 def observations(

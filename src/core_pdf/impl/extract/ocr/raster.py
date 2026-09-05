@@ -30,6 +30,7 @@ from core_pdf.impl.runtime.array_views import (
     resample_nearest,
     uint8_image_view,
 )
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.spec.s_08_graphics.image_decode import decode_pdf_image
 
 # Tesseract's LSTM was trained near 300-400 DPI. Scans below that are enlarged to
@@ -289,14 +290,14 @@ def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
 
 
 def internal_decoded_image_raster(
-    image: Any,
+    image: CapturedDrawing,
     display_area: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
 ) -> internal_Raster | None:
-    source = getattr(image, "image_source", None)
-    shared = source.decode() if source is not None and hasattr(source, "decode") else None
+    source = image.image_source
+    shared = source.decode() if source is not None else None
     samples: numpy.ndarray[Any, Any] | None
     data: bytes | memoryview | None
     if shared is not None:
@@ -306,8 +307,8 @@ def internal_decoded_image_raster(
         decoded_height = shared.height
         decoded_channels = shared.channels
     else:
-        raw = getattr(image, "raw_data", None)
-        dictionary = getattr(image, "dictionary", None)
+        raw = image.raw_data
+        dictionary = image.dictionary
         if not isinstance(raw, (bytes, bytearray, memoryview)) or not isinstance(dictionary, dict):
             return None
         decoded = decode_pdf_image(raw, dictionary)
@@ -397,11 +398,11 @@ internal_DIRECT_IMAGE_ORIENTATIONS: dict[DirectImageOrientation, tuple[int, int,
 
 
 def internal_direct_image_orientation(
-    image: Any,
+    image: CapturedDrawing,
     *,
     maximum_axis_deviation: float = 1e-5,
 ) -> DirectImageOrientation | None:
-    items = getattr(image, "items", ())
+    items = image.items
     quad = next(
         (
             value
@@ -450,7 +451,7 @@ def internal_direct_image_orientation(
 
 
 def internal_orient_direct_image_raster(
-    image: Any,
+    image: CapturedDrawing,
     raster: internal_Raster,
     *,
     orientation: DirectImageOrientation | None = None,

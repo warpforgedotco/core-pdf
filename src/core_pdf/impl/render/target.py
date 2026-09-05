@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 import numpy
@@ -16,9 +17,10 @@ from core_pdf.impl.render.blend import (
     internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.commands import translated_command
 from core_pdf.impl.render.image_affine_target import internal_ImageAffineTargetMixin
 from core_pdf.impl.render.image_axis_target import internal_ImageAxisTargetMixin
-from core_pdf.impl.render.model import PathPaintItem, PathPaintKind
+from core_pdf.impl.render.model import DisplayItem, ImagePaintItem, PathPaintItem, PathPaintKind
 from core_pdf.impl.render.path_fill_target import internal_PathFillTargetMixin
 from core_pdf.impl.render.path_shape_target import internal_PathShapeTargetMixin
 from core_pdf.impl.render.path_stroke_target import internal_PathStrokeTargetMixin
@@ -59,6 +61,10 @@ class internal_RasterTarget(
         "page_pixels",
         "page_buffer",
         "crop_y0",
+        "clip_stack",
+        "clip_floor",
+        "group_floor",
+        "scope_stack",
     )
 
     def __init__(
@@ -88,6 +94,111 @@ class internal_RasterTarget(
         self.page_pixels = page_view
         self.page_buffer = pixels
         self.crop_y0 = crop_y0
+        self.clip_stack: list[int] = []
+        self.clip_floor = 0
+        self.group_floor = 1
+        self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
+
+    def push_scope(self, clip_path: CapturedPath | None = None) -> None:
+        """Isolate a source scope from malformed q/Q or group boundaries."""
+        self.scope_stack.append(
+            (
+                self.clip.depth,
+                self.clip_stack,
+                self.clip_floor,
+                len(self.buffer_stack),
+                self.group_floor,
+            )
+        )
+        self.clip_stack = []
+        if clip_path is not None:
+            self.clip.push(clip_path, "nonzero")
+        self.clip_floor = self.clip.depth
+        self.group_floor = len(self.buffer_stack)
+
+    def pop_scope(self) -> None:
+        if not self.scope_stack:
+            return
+        clip_depth, clip_stack, clip_floor, buffer_depth, group_floor = self.scope_stack.pop()
+        while len(self.buffer_stack) > buffer_depth:
+            self.composite_group(*self.pop_group())
+        self.clip.restore(clip_depth)
+        self.clip_stack = clip_stack
+        self.clip_floor = clip_floor
+        self.group_floor = group_floor
+
+    def paint_items(
+        self,
+        items: Iterable[DisplayItem],
+        *,
+        translation: tuple[float, float] | None = None,
+        parent_blend_mode: str | None = None,
+        clip_path: CapturedPath | None = None,
+    ) -> None:
+        """Replay canonical commands; repeated cells get an isolated clip scope."""
+        if translation is None:
+            for item in items:
+                self.paint_item(item)
+            return
+        self.push_scope(clip_path.translated(*translation) if clip_path is not None else None)
+        try:
+            for item in items:
+                self.paint_item(translated_command(item, *translation, parent_blend_mode))
+        finally:
+            self.pop_scope()
+
+    def paint_item(self, item: DisplayItem) -> None:
+        """One paint/scope dispatcher, shared by pages and pattern cells."""
+        if isinstance(item, PathPaintItem):
+            self.paint_typed_path(item)
+            return
+        if isinstance(item, ImagePaintItem):
+            self.blit_image(item)
+            return
+        data = item.data
+        blend_mode = data.get("blend_mode")
+        if blend_mode == "Normal":
+            blend_mode = None
+        if item.kind == "scope-begin":
+            path = data.get("path")
+            self.push_scope(path if isinstance(path, CapturedPath) else None)
+        elif item.kind == "scope-end":
+            self.pop_scope()
+        elif item.kind == "state-push":
+            self.clip_stack.append(self.clip.depth)
+        elif item.kind == "state-pop":
+            if self.clip_stack:
+                self.clip.restore(self.clip_stack.pop())
+            else:
+                self.clip.restore(self.clip_floor)
+        elif item.kind == "clip":
+            path = data.get("path")
+            if isinstance(path, CapturedPath) and path.has_segments():
+                self.clip.push(path, data.get("fill_rule") or "nonzero")
+        elif item.kind == "group-begin":
+            self.push_group(
+                bytearray(self.width * self.height * 4),
+                data.get("fill_opacity"),
+                data.get("blend_mode"),
+            )
+        elif item.kind == "group-end" and len(self.buffer_stack) > self.group_floor:
+            child, alpha, mode = self.pop_group()
+            self.composite_group(
+                child,
+                alpha if is_pdf_number(alpha) else data.get("fill_opacity"),
+                mode if isinstance(mode, str) else data.get("blend_mode"),
+            )
+        elif item.kind == "glyph" and data.get("visible") is not False:
+            self.draw_glyph_bitmap(
+                data.get("bbox"),
+                data.get("bitmap"),
+                internal_color_rgba(data.get("fill_color"), None),
+                blend_mode,
+                data.get("bitmap_width"),
+                data.get("bitmap_height"),
+            )
+        elif item.kind == "shading":
+            self.paint_shading(data, blend_mode)
 
     def push_group(
         self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
@@ -307,12 +418,8 @@ class internal_RasterTarget(
             rgba = internal_color_rgba(item.fill, item.fill_opacity)
             if is_pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
-            self.fill_path(
-                path,
-                rgba,
-                blend_mode,
-                item.fill_rule or "nonzero",
-            )
+            if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
+                self.fill_path(path, rgba, blend_mode, item.fill_rule or "nonzero")
         if paint_kind is not PathPaintKind.FILL:
             stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if is_pdf_number(soft_mask_alpha):

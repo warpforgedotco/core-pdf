@@ -8,10 +8,10 @@ from collections import Counter
 from dataclasses import dataclass, replace
 
 from core_pdf.impl.extract.table_cleanup import (
-    internal_character_spaced_cell,
     internal_structured_stream_table,
     internal_table_has_grid_shape,
 )
+from core_pdf.impl.extract.table_facts import internal_TableFacts
 from core_pdf.impl.model.geometry import overlap_ratio_min, overlap_ratio_of
 from core_pdf.impl.model.spatial import SpatialFrame
 from core_pdf.impl.output.model import Block, Table, TableCell
@@ -49,16 +49,13 @@ def internal_table_profile(table: Table) -> internal_TableProfile:
     text = " ".join(cell.text for row in table.rows for cell in row if cell.text)
     tokens = internal_emitted_text_tokens(text)
     token_counts = Counter(tokens)
-    filled_texts = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
+    facts = internal_TableFacts.from_rows(table.rows)
+    filled_texts = facts.filled_texts
     character_spaced_ratio = (
-        sum(internal_character_spaced_cell(text) for text in filled_texts) / len(filled_texts)
-        if filled_texts
-        else 0.0
+        facts.character_spaced_cells / len(filled_texts) if filled_texts else 0.0
     )
-    has_grid_shape = internal_table_has_grid_shape(table)
-    rows = [row for row in table.rows if row]
-    columns = max((cell.column + cell.column_span for row in rows for cell in row), default=0)
-    stream_is_tabular = has_grid_shape and columns >= 3 and len(rows) >= 3
+    has_grid_shape = internal_table_has_grid_shape(table, facts=facts)
+    stream_is_tabular = has_grid_shape and facts.spanned_columns >= 3 and facts.nonempty_rows >= 3
     is_stream = table.metadata.get("source") == "stream"
     single_character = sum(len(token) == 1 for token in tokens)
     wordlike = sum(internal_wordlike_token(token) for token in tokens)
@@ -68,7 +65,7 @@ def internal_table_profile(table: Table) -> internal_TableProfile:
         token_set=frozenset(token_counts),
         character_spaced_ratio=character_spaced_ratio,
         has_grid_shape=has_grid_shape,
-        structured_stream=internal_structured_stream_table(table),
+        structured_stream=internal_structured_stream_table(table, facts=facts),
         stream_is_tabular=stream_is_tabular,
         fragmented_stream=(
             is_stream and len(tokens) >= 80 and single_character / len(tokens) >= 0.70
@@ -113,20 +110,6 @@ def internal_overlapping_block_token_coverage(
         min(count, block_counts[token]) for token, count in table_profile.token_counts.items()
     )
     return matched / len(table_tokens)
-
-
-def internal_stream_table_is_tabular(
-    table: Table,
-) -> bool:
-    """Identify a stream table whose shape is tabular rather than two-column prose.
-
-    ``internal_table_has_grid_shape`` asks only that the rows divide, which a
-    page of text set in two columns satisfies as readily as a table does. A
-    third column and a third row are what prose does not produce by accident,
-    and requiring both keeps a wrapped paragraph or a two-line caption from
-    claiming to be a table it merely resembles.
-    """
-    return internal_table_profile(table).stream_is_tabular
 
 
 def internal_stream_table_duplicated_by_blocks(

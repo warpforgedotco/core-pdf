@@ -22,8 +22,8 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 )
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
+    iter_indirect_object_headers,
     key_for,
-    parse_object_marker_prefix,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
@@ -31,10 +31,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int,
     parse_text_string,
-)
-from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
-    FindableSizedBuffer,
-    full_source_buffer,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
@@ -50,36 +46,6 @@ STREAM_DECODE_KEYS = frozenset(
 )
 
 TERMINAL_TYPES = {int, float, str, bool, type(None), PdfName, bytes}
-
-
-def internal_find_indirect_object_header(
-    data: memoryview,
-    search_start: int,
-    search_end: int,
-    source_buffer: FindableSizedBuffer | None = None,
-) -> int | None:
-    """Find a complete ``N G obj`` header within a recovery search window."""
-    data_len = len(data)
-    search_start = max(0, search_start)
-    search_end = min(data_len, search_end)
-    source = source_buffer if source_buffer is not None else full_source_buffer(data, data_len)
-    copied_region = data[search_start:search_end].tobytes() if source is None else None
-    pos = search_start
-    while pos < search_end:
-        if source is not None:
-            marker = source.find(b"obj", pos, search_end)
-        else:
-            assert copied_region is not None
-            marker = copied_region.find(b"obj", pos - search_start)
-        if marker < 0:
-            return None
-        if source is None:
-            marker += search_start
-        parsed = parse_object_marker_prefix(data, marker)
-        if parsed is not None and parsed[0] >= search_start:
-            return parsed[0]
-        pos = marker + 3
-    return None
 
 
 class ObjectResolver:
@@ -398,33 +364,23 @@ class ObjectResolver:
         data = lexer.raw_data
         search_start = max(0, offset - 128)
         search_end = min(len(data), offset + 128)
-        marker = internal_find_indirect_object_header(
-            data,
-            search_start,
-            search_end,
-            lexer.source_buffer,
+        header = next(
+            iter_indirect_object_headers(
+                data, search_start, search_end, source_buffer=lexer.source_buffer
+            ),
+            None,
         )
-        if marker is None:
+        if header is None:
             raise PdfParseError("expected indirect object header")
-        lexer.rewind(marker)
+        lexer.rewind(header[0])
         return lexer.parse_indirect_object()
 
     def internal_recovery_offsets(self, lexer: PdfLexer) -> dict[int, tuple[int, ...]]:
         """Find indirect-object headers for one damaged-xref recovery."""
-        source_buffer = lexer.source_buffer
-        data = (
-            bytes(lexer.raw_data)
-            if source_buffer is None
-            else cast(bytes | mmap.mmap, source_buffer)
-        )
         offsets: dict[int, list[int]] = {}
-        search_pos = 0
-        while (marker := data.find(b"obj", search_pos)) >= 0:
-            search_pos = marker + 3
-            parsed = parse_object_marker_prefix(data, marker)
-            if parsed is None:
-                continue
-            offset, object_number, generation_number = parsed
+        for offset, object_number, generation_number in iter_indirect_object_headers(
+            lexer.raw_data, 0, len(lexer.raw_data), source_buffer=lexer.source_buffer
+        ):
             key = key_for(object_number, generation_number)
             offsets.setdefault(key, []).append(offset)
         return {key: tuple(values) for key, values in offsets.items()}

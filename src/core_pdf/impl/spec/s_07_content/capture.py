@@ -56,6 +56,8 @@ class CapturedInlineImage:
     blend_mode: str | None = None
     soft_mask_alpha: float | None = None
     stream_order: int = 0
+    fill: tuple[float, ...] | None = None
+    fill_opacity: float | None = None
 
 
 class CapturedSubpath:

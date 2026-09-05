@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
@@ -19,8 +19,8 @@ PageCommand: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | Captured
 
 
 @dataclass(frozen=True, slots=True)
-class PageProgram:
-    """The canonical capture shared by extraction and rendering.
+class CapturedProgram:
+    """One capture scope, shared by page bodies, appearances, and pattern cells.
 
     The typed projections are the source of truth. ``commands`` is derived from
     them once, in content-stream order, so every construction path produces the
@@ -65,7 +65,60 @@ class PageProgram:
         object.__setattr__(self, "commands", tuple(commands))
 
 
+@dataclass(frozen=True, slots=True)
+class AppearanceProgram:
+    """An already-interpreted appearance and the source that owns its paint."""
+
+    kind: Literal["widget", "annotation"]
+    source: object
+    clip_bbox: tuple[float, float, float, float]
+    program: CapturedProgram
+
+
+@dataclass(frozen=True, slots=True)
+class PageProgram:
+    """A body and ordered appearance scopes, with flattened extraction views.
+
+    Renderers select whole appearance scopes rather than filtering sequence
+    numbers, which may tie across paints and graphics-state boundaries.
+    """
+
+    body: CapturedProgram = field(default_factory=CapturedProgram)
+    appearances: tuple[AppearanceProgram, ...] = ()
+
+    runs: tuple[TextRun, ...] = field(init=False)
+    glyphs: tuple[GlyphObservation, ...] = field(init=False)
+    drawings: tuple[CapturedDrawing, ...] = field(init=False)
+    inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
+    lines: tuple[CapturedLine, ...] = field(init=False)
+    commands: tuple[PageCommand, ...] = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.body, CapturedProgram):
+            raise PdfContractError("page program contains an invalid body")
+        appearances = tuple(self.appearances)
+        if not all(
+            isinstance(appearance, AppearanceProgram)
+            and appearance.kind in {"widget", "annotation"}
+            and isinstance(appearance.program, CapturedProgram)
+            for appearance in appearances
+        ):
+            raise PdfContractError("page program contains an invalid appearance")
+        object.__setattr__(self, "appearances", appearances)
+        programs = (self.body, *(appearance.program for appearance in appearances))
+        for name in ("runs", "glyphs", "drawings", "inline_images", "lines", "commands"):
+            object.__setattr__(
+                self,
+                name,
+                tuple(item for program in programs for item in getattr(program, name))
+                if appearances
+                else getattr(self.body, name),
+            )
+
+
 __all__ = (
+    "AppearanceProgram",
+    "CapturedProgram",
     "PageCommand",
     "PageProgram",
 )

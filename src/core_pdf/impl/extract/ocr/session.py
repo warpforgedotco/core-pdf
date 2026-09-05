@@ -39,6 +39,7 @@ from core_pdf.impl.extract.ocr.regions import (
     internal_ocr_region_batch,
     internal_page_image_regions,
 )
+from core_pdf.impl.extract.ocr.strokes import StrokedTextProfile
 from core_pdf.impl.extract.ocr.tesseract import (
     internal_recognize_group,
     internal_recover_timed_out_tasks,
@@ -112,6 +113,7 @@ class internal_OcrSession:
         "plan",
         "compact_image",
         "context",
+        "stroked_profile",
         "rendered_without_text",
         "rendered_with_text",
     )
@@ -122,11 +124,13 @@ class internal_OcrSession:
         plan: WorkPlan,
         compact_image: bool | str,
         context: ExtractionScope,
+        stroked_profile: StrokedTextProfile | None,
     ) -> None:
         self.capture = capture
         self.plan = plan
         self.compact_image = compact_image
         self.context = context
+        self.stroked_profile = stroked_profile
         render_modes = {ocr_pass.include_native_text for ocr_pass in plan.ocr_passes}
         self.rendered_without_text = self.internal_compose(False) if False in render_modes else None
         self.rendered_with_text = self.internal_compose(True) if True in render_modes else None
@@ -372,6 +376,7 @@ class internal_OcrSession:
         packed_stroked = internal_stroked_vector_text_raster(
             self.capture,
             ocr_pass.scale,
+            profile=self.stroked_profile,
             max_pixels=ocr_pass.pixel_budget,
         )
         if packed_stroked is not None:

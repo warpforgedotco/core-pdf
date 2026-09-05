@@ -1,10 +1,11 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import ImagePaintItem, PathPaintItem
-from core_pdf.impl.render.page import compose_page, internal_append_page_program
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -53,7 +54,9 @@ def test_inline_image_has_one_capture_with_placement_and_paint_metadata() -> Non
     state.consume_stream(
         PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0, clip_bbox=(1.0, 2.0, 7.0, 9.0)
     )
-    program = PageProgram(drawings=tuple(state.drawings), inline_images=tuple(state.inline_images))
+    program = CapturedProgram(
+        drawings=tuple(state.drawings), inline_images=tuple(state.inline_images)
+    )
 
     assert len(program.inline_images) == 1
     assert [drawing.kind for drawing in state.drawings] == ["fill", "fill"]
@@ -66,7 +69,7 @@ def test_inline_image_has_one_capture_with_placement_and_paint_metadata() -> Non
     assert len(program.commands) == 3
 
     display = DisplayList(10, 10)
-    internal_append_page_program(display, program, include_text=True)
+    append_captured_program(display, program, include_text=True)
 
     painted_image = next(item for item in display.items if isinstance(item, ImagePaintItem))
     assert painted_image.ctm == image.ctm
@@ -90,9 +93,8 @@ def test_appearance_inline_image_reaches_display_with_placement() -> None:
     )
     with open_pdf(data) as document:
         page = document.pages[0]
-        # Supply an empty page program to isolate the separately rendered form
-        # appearance, which formerly read the duplicate drawing projection.
-        rendered = compose_page(page, page_program=PageProgram(), annotations=())
+        # The supplied program owns the already interpreted appearance.
+        rendered = compose_page(page, page_program=page.get_page_program(), annotations=())
         image = next(
             item for item in rendered.display_list.items if isinstance(item, ImagePaintItem)
         )

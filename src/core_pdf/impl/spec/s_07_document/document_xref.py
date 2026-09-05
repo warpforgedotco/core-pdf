@@ -26,7 +26,7 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefScanner,
-    parse_object_marker_prefix,
+    iter_indirect_object_headers,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import PdfByteBuffer
@@ -169,17 +169,14 @@ class DocumentXRefMixin:
         expected_generation_number = key & 0xFFFF
         search_start = max(0, offset - 1024)
         search_end = min(len(data), offset + 1024)
-        marker = data.find(b"obj", search_start, search_end)
-        while marker >= 0:
-            parsed = parse_object_marker_prefix(data, marker)
-            if parsed is not None:
-                parsed_offset, object_number, generation_number = parsed
-                if (
-                    object_number == expected_object_number
-                    and generation_number == expected_generation_number
-                ):
-                    return parsed_offset
-            marker = data.find(b"obj", marker + 3, search_end)
+        for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
+            data, search_start, search_end, allow_prefix_before_start=True
+        ):
+            if (
+                object_number == expected_object_number
+                and generation_number == expected_generation_number
+            ):
+                return parsed_offset
         return None
 
     def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
@@ -222,17 +219,14 @@ class DocumentXRefMixin:
                             return True
 
         search_end = min(data_len, offset + 64)
-        marker = data.find(b"obj", offset, search_end)
-        while marker >= 0:
-            parsed = parse_object_marker_prefix(data, marker)
-            if parsed is not None:
-                parsed_offset, object_number, generation_number = parsed
-                return (
-                    parsed_offset == offset
-                    and object_number == expected_object_number
-                    and generation_number == expected_generation_number
-                )
-            marker = data.find(b"obj", marker + 3, search_end)
+        for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
+            data, offset, search_end, allow_prefix_before_start=True
+        ):
+            return (
+                parsed_offset == offset
+                and object_number == expected_object_number
+                and generation_number == expected_generation_number
+            )
         return False
 
     def is_valid_catalog_root(self, root_ref: object) -> bool:

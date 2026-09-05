@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from core_pdf.impl.extract.table_reconcile import (
     internal_stream_table_duplicated_by_blocks,
-    internal_stream_table_is_tabular,
+    internal_table_profile,
 )
 from core_pdf.impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 from tests.helpers.structured import cell, stream_table
@@ -59,7 +59,7 @@ PROSE_CELLS = (
 def test_a_prose_comparison_table_survives_the_blocks_that_repeat_it() -> None:
     table = table_of(PROSE_CELLS)
     # The premise: the blocks do repeat it, so the coverage test alone would drop it.
-    assert internal_stream_table_is_tabular(table)
+    assert internal_table_profile(table).stream_is_tabular
     assert not internal_stream_table_duplicated_by_blocks(table, blocks_covering(table))
 
 
@@ -71,7 +71,7 @@ def test_two_columns_of_prose_are_not_mistaken_for_a_table() -> None:
     )
     table = table_of(columns)
 
-    assert not internal_stream_table_is_tabular(table)
+    assert not internal_table_profile(table).stream_is_tabular
     assert internal_stream_table_duplicated_by_blocks(table, blocks_covering(table))
 
 
@@ -79,4 +79,4 @@ def test_a_two_row_fragment_is_not_mistaken_for_a_table() -> None:
     # A wrapped caption can divide into three columns once; a table does it again.
     table = table_of(PROSE_CELLS[:2])
 
-    assert not internal_stream_table_is_tabular(table)
+    assert not internal_table_profile(table).stream_is_tabular

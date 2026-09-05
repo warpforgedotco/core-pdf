@@ -24,6 +24,7 @@ from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
+    CapturedLine,
     CapturedPath,
     CapturedSubpath,
 )
@@ -215,7 +216,8 @@ def test_vector_complexity_ignores_graphics_state_control_records() -> None:
         for kind in ("state-push", "clip", "stroke", "state-pop", "image")
     )
 
-    assert internal_vector_complexity(drawings, (object(), object())) == 5
+    lines = (CapturedLine(0, 0, 1, 0), CapturedLine(1, 0, 1, 1))
+    assert internal_vector_complexity(drawings, lines) == 5
 
 
 def test_page_extraction_owns_one_capture_without_page_cache() -> None:

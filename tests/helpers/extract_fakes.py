@@ -16,7 +16,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 
 Box = tuple[float, float, float, float]
 
@@ -87,10 +87,12 @@ def capture(
         )
     if program is None:
         program = PageProgram(
-            runs=runs,
-            drawings=drawings,
-            lines=grid_lines,
-            inline_images=inline_images,
+            body=CapturedProgram(
+                runs=runs,
+                drawings=drawings,
+                lines=grid_lines,
+                inline_images=inline_images,
+            ),
         )
     return PageAnalysis(
         page=page if page is not None else FakePage(width=width, height=height),

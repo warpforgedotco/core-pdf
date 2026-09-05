@@ -10,6 +10,7 @@ from statistics import fmean
 import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract.table_facts import internal_numeric_cell, internal_TableFacts
 from core_pdf.impl.model.geometry import (
     bbox_union,
     horizontal_overlap_ratio,
@@ -107,32 +108,17 @@ def internal_repair_table_cell_spaced_digits(text: str) -> str:
     return internal_TABLE_SPACED_DIGIT_SEQUENCE_RE.sub(rejoin, text)
 
 
-def internal_numeric_cell(text: str) -> bool:
-    alphanumeric = sum(character.isalnum() for character in text)
-    digits = sum(character.isdigit() for character in text)
-    return bool(digits and digits * 2 >= max(1, alphanumeric))
-
-
-def internal_character_spaced_cell(text: str) -> bool:
-    tokens = [token for token in text.split() if any(character.isalpha() for character in token)]
-    if len(tokens) < 4:
-        return False
-    single_character = sum(len(token) == 1 for token in tokens)
-    return single_character / len(tokens) >= 0.50
-
-
 def internal_collapse_character_spaced_cell(text: str) -> str:
     """Collapse glyph-separated prose captured as a table cell."""
     return collapse_character_spaced(text, min_tokens=8, single_char_ratio=0.80)
 
 
 def internal_table_quality(table: Table) -> tuple[int, int, float, int, int]:
-    rows = len(table.rows)
-    columns = max((len(row) for row in table.rows), default=0)
-    populated = sum(bool(cell.text.strip()) for row in table.rows for cell in row)
-    density = populated / max(1, rows * columns)
+    facts = internal_TableFacts.from_rows(table.rows)
+    populated = len(facts.filled_texts)
+    density = populated / max(1, facts.row_count * facts.columns)
     # Allow more columns to be considered valid for table quality (up to 16)
-    return (int(2 <= columns <= 16), populated, density, rows, -columns)
+    return (int(2 <= facts.columns <= 16), populated, density, facts.row_count, -facts.columns)
 
 
 def internal_table_column_bounds(table: Table) -> tuple[tuple[float, float], ...]:
@@ -254,24 +240,20 @@ def internal_semantic_header_row(row: tuple[TableCell, ...]) -> bool:
     return numeric == 0 and len(populated) >= 2
 
 
-def internal_numeric_density(table: Table) -> float:
-    cells = [cell for row in table.rows for cell in row if cell.text.strip()]
-    return sum(internal_numeric_cell(cell.text) for cell in cells) / max(1, len(cells))
-
-
-def internal_structured_stream_table(table: Table) -> bool:
+def internal_structured_stream_table(
+    table: Table, *, facts: internal_TableFacts | None = None
+) -> bool:
     """Identify stream tables with enough structured values to preserve."""
     if table.metadata.get("source") != "stream":
         return False
+    facts = facts or internal_TableFacts.from_rows(table.rows)
     numeric_cells = table.metadata.get("numeric_cells", 0)
-    return internal_numeric_density(table) >= 0.10 or (
-        isinstance(numeric_cells, int) and numeric_cells >= 2
-    )
+    return facts.numeric_density >= 0.10 or (isinstance(numeric_cells, int) and numeric_cells >= 2)
 
 
 def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
     """Split long grid regions at repeated section-header rows."""
-    if len(table.rows) < 6 or internal_numeric_density(table) < 0.3:
+    if len(table.rows) < 6 or internal_TableFacts.from_rows(table.rows).numeric_density < 0.3:
         return (table,)
     boundaries = [
         index
@@ -319,35 +301,34 @@ def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
     return tuple(segments) or (table,)
 
 
-def internal_table_character_spaced_prose(table: Table) -> bool:
+def internal_table_character_spaced_prose(
+    table: Table, *, facts: internal_TableFacts | None = None
+) -> bool:
     if table.metadata.get("source") != "stream":
         return False
-    columns = max((len(row) for row in table.rows), default=0)
+    facts = facts or internal_TableFacts.from_rows(table.rows)
     # Raise the column threshold so only wider multi-column prose is filtered.
-    if columns < 8:
+    if facts.columns < 8:
         return False
-    filled_texts = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
+    filled_texts = facts.filled_texts
     if not filled_texts:
         return False
-    numeric_cells = sum(internal_numeric_cell(text) for text in filled_texts)
-    character_spaced_cells = sum(internal_character_spaced_cell(text) for text in filled_texts)
-    average_cell_length = sum(len(text) for text in filled_texts) / len(filled_texts)
     # Tighten the character-spaced fraction to 0.6 to avoid filtering legitimate
     # tables that have some character-spaced cells.
     return (
-        numeric_cells / len(filled_texts) < 0.12
-        and character_spaced_cells / len(filled_texts) >= 0.60
+        facts.numeric_density < 0.12 and facts.character_spaced_cells / len(filled_texts) >= 0.60
     ) or (
-        len(table.rows) >= 40
-        and average_cell_length < 8.0
-        and numeric_cells / len(filled_texts) < 0.20
+        len(table.rows) >= 40 and facts.average_cell_length < 8.0 and facts.numeric_density < 0.20
     )
 
 
-def internal_table_has_grid_shape(table: Table) -> bool:
+def internal_table_has_grid_shape(
+    table: Table, *, facts: internal_TableFacts | None = None
+) -> bool:
     """Report whether a table's rows actually use its columns.
 
-    This is the positive form of :func:`internal_table_is_single_column_prose`.
+    This complements :func:`internal_table_is_single_column_prose`, but is not
+    its negation: ties satisfy neither, and this gate admits two-row grids.
     A grid inferred from alignment or from rules can describe either a real
     table or a column of prose, and what separates them is whether the rows
     divide: a table's rows hold several cells because there are several
@@ -357,17 +338,17 @@ def internal_table_has_grid_shape(table: Table) -> bool:
     table contains, so it holds for a schedule of numbers and a grid of
     sentences alike.
     """
-    rows = [row for row in table.rows if row]
-    if len(rows) < 2:
+    facts = facts or internal_TableFacts.from_rows(table.rows)
+    if facts.nonempty_rows < 2:
         return False
-    columns = max((cell.column + cell.column_span for row in rows for cell in row), default=0)
-    if columns < 2:
+    if facts.spanned_columns < 2:
         return False
-    divided_rows = sum(1 for row in rows if len(row) >= 2)
-    return divided_rows * 2 > len(rows)
+    return facts.divided_rows * 2 > facts.nonempty_rows
 
 
-def internal_table_is_single_column_prose(table: Table) -> bool:
+def internal_table_is_single_column_prose(
+    table: Table, *, facts: internal_TableFacts | None = None
+) -> bool:
     """Report a detected grid that is really a column of flowing text.
 
     A grid inferred from whitespace alignment can latch onto ordinary prose:
@@ -381,14 +362,12 @@ def internal_table_is_single_column_prose(table: Table) -> bool:
     applies whichever way the grid was inferred: rules drawn on a page are as
     happy to be underlines and dividers as they are to be a table border.
     """
-    rows = [row for row in table.rows if row]
-    if len(rows) < 3:
+    facts = facts or internal_TableFacts.from_rows(table.rows)
+    if facts.nonempty_rows < 3:
         return False
-    columns = max((cell.column + cell.column_span for row in rows for cell in row), default=0)
-    if columns < 2:
+    if facts.spanned_columns < 2:
         return False
-    single_cell_rows = sum(1 for row in rows if len(row) == 1)
-    return single_cell_rows * 2 > len(rows)
+    return facts.single_cell_rows * 2 > facts.nonempty_rows
 
 
 internal_STREAM_PROSE_LONG_CELL_CHARACTERS = 25
@@ -418,10 +397,13 @@ def internal_stream_table_reads_like_prose(table: Table) -> bool:
     detection holds word-level fragments whose lengths say nothing about
     the prose that emerges once the cells are assembled.
     """
-    filled = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
+    facts = internal_TableFacts.from_rows(table.rows)
+    filled = facts.filled_texts
     if not filled:
         return True
-    long_cells = sum(1 for text in filled if len(text) > internal_STREAM_PROSE_LONG_CELL_CHARACTERS)
+    long_cells = sum(
+        length > internal_STREAM_PROSE_LONG_CELL_CHARACTERS for length in facts.text_lengths
+    )
     numeric_cells = sum(
         1
         for text in filled
@@ -440,10 +422,8 @@ def internal_stream_table_reads_like_prose(table: Table) -> bool:
     # (definition tables) stays dense, and a wide word matrix (roadmaps)
     # carries more columns than side-by-side lists ever produce, so
     # requiring all three signals rejects the parallel lists alone.
-    total_cells = sum(len(row) for row in table.rows)
-    narrow = (
-        max((len(row) for row in table.rows), default=0) <= internal_STREAM_SPARSE_PROSE_MAX_COLUMNS
-    )
+    total_cells = facts.cell_count
+    narrow = facts.columns <= internal_STREAM_SPARSE_PROSE_MAX_COLUMNS
     if (
         total_cells
         and narrow
@@ -456,14 +436,12 @@ def internal_stream_table_reads_like_prose(table: Table) -> bool:
     # genuine word-y table (short alphabetic cells), but a real one is small
     # -- a body of text produces dozens of rows, and a real table that wide
     # and tall carries numbers.
-    columns = max((len(row) for row in table.rows), default=0)
-    populated_rows = sum(1 for row in table.rows if any(cell.text.strip() for cell in row))
     if (
-        columns >= internal_STREAM_WORD_GRID_MIN_COLUMNS
-        and populated_rows >= internal_STREAM_WORD_GRID_MIN_ROWS
+        facts.columns >= internal_STREAM_WORD_GRID_MIN_COLUMNS
+        and facts.populated_rows >= internal_STREAM_WORD_GRID_MIN_ROWS
         and numeric_cells < len(filled) * internal_STREAM_WORD_GRID_NUMERIC_RATIO
     ):
-        lengths = sorted(len(text) for text in filled)
+        lengths = sorted(facts.text_lengths)
         median_length = lengths[len(lengths) // 2]
         if median_length <= internal_STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS:
             return True
@@ -478,7 +456,7 @@ def internal_merge_stream_text_columns(table: Table) -> Table:
         or columns < 6
         or columns % 2
         or len(table.rows) < 4
-        or internal_numeric_density(table) >= 0.25
+        or internal_TableFacts.from_rows(table.rows).numeric_density >= 0.25
     ):
         return table
     group_size = columns // 2

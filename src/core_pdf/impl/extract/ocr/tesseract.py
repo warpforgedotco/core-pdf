@@ -17,7 +17,6 @@ import subprocess
 import sys
 import threading
 import time
-import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import replace
@@ -78,36 +77,12 @@ OCR_TIMEOUT_MAX_MILLISECONDS = 30_000
 # enough to finish rather than letting the empty candidate win selection.
 OCR_TIMEOUT_RETRY_PIXELS = 4_000_000
 
-internal_OCR_TOKEN_TRANSLATION = str.maketrans(
-    {
-        "‐": "-",
-        "‑": "-",
-        "‒": "-",
-        "–": "-",
-        "—": "-",
-        "−": "-",
-        "‘": "'",
-        "’": "'",
-        "“": '"',
-        "”": '"',
-    }
-)
-
 
 def internal_import_tesserocr() -> Any:
     """Import tesserocr once cysignals' main-thread setup is in place."""
     if "tesserocr" not in sys.modules:
         internal_prepare_ocr_signals()
     return import_module("tesserocr")
-
-
-def internal_ensure_tesserocr() -> Any:
-    """Return the imported binding after its signal setup is ready."""
-    return internal_import_tesserocr()
-
-
-def internal_normalized_ocr_token_key(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).translate(internal_OCR_TOKEN_TRANSLATION).casefold()
 
 
 def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
@@ -137,7 +112,7 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
         return str(resolved), ""
 
     try:
-        default_path, languages = internal_ensure_tesserocr().get_languages()
+        default_path, languages = internal_import_tesserocr().get_languages()
     except RuntimeError:
         default_path, languages = "", ()
     if "eng" in languages:
@@ -173,7 +148,7 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
 
 
 def internal_api(mode: int) -> Any:
-    tesserocr = internal_ensure_tesserocr()
+    tesserocr = internal_import_tesserocr()
     api = tesserocr.PyTessBaseAPI(
         path=internal_tessdata_path(),
         psm=mode,
@@ -341,7 +316,7 @@ def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> Observation
     iterator = api.GetIterator()
     if iterator is None:
         return ObservationBatch.empty()
-    level = internal_ensure_tesserocr().RIL.SYMBOL
+    level = internal_import_tesserocr().RIL.SYMBOL
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     confidences: list[float] = []
@@ -421,7 +396,7 @@ def internal_recognize(
     if api_override is None:
         with internal_owned_api(task.mode) as api:
             return internal_recognize(task, api_override=api, image_prepared=image_prepared)
-    tesserocr = internal_ensure_tesserocr()
+    tesserocr = internal_import_tesserocr()
     api = api_override
     api.SetPageSegMode(task.mode)
     if not image_prepared:

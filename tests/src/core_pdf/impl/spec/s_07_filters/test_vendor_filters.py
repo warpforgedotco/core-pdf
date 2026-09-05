@@ -6,6 +6,7 @@ import imagecodecs
 import numpy
 import pytest
 
+from core_pdf.impl.spec.s_07_filters import pipeline
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
     apply_ascii_hex,
@@ -54,6 +55,55 @@ def test_image_filter_can_return_array_backed_jpeg_samples() -> None:
     assert decoded.array.shape == (1, 2, 3)
     assert decoded.array.dtype == numpy.uint8
     numpy.testing.assert_allclose(decoded.array, source, atol=2)
+
+
+@pytest.mark.parametrize("filter_name", ["DCT", "JPXDecode"])
+@pytest.mark.parametrize(
+    "dimensions", [{}, {"Width": True, "Height": 1}, {"Width": 0, "Height": 1}]
+)
+def test_self_describing_native_images_do_not_require_preallocation_dimensions(
+    monkeypatch: pytest.MonkeyPatch, filter_name: str, dimensions: dict[str, object]
+) -> None:
+    samples = numpy.zeros((1, 2, 3), dtype=numpy.uint8)
+
+    def decode(data: object, *, out: object) -> numpy.ndarray:
+        assert data == b"image"
+        assert out is None
+        return samples
+
+    monkeypatch.setitem(pipeline.internal_NATIVE_ARRAY_DECODERS, "jpeg", decode)
+    monkeypatch.setitem(pipeline.internal_NATIVE_ARRAY_DECODERS, "jpx", decode)
+    decoded = decode_stream_image_data(b"image", {"Filter": filter_name, **dimensions})
+    assert decoded is not None
+    assert decoded.array is samples
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"ColorSpace": ["DeviceGray"]},
+        {"BitsPerComponent": 16},
+        {"Decode": [1, 0]},
+        {"Filter": ["DCTDecode", "FlateDecode"]},
+    ],
+)
+def test_unsafe_native_image_metadata_never_calls_decoder(
+    monkeypatch: pytest.MonkeyPatch, metadata: dict[str, object]
+) -> None:
+    def reject_decode(*args: object, **kwargs: object) -> None:
+        pytest.fail("unsafe native image was decoded")
+
+    monkeypatch.setitem(pipeline.internal_NATIVE_ARRAY_DECODERS, "jpeg", reject_decode)
+    assert decode_stream_image_data(b"image", {"Filter": "DCTDecode", **metadata}) is None
+
+
+@pytest.mark.parametrize(
+    "dimensions", [{}, {"Width": True, "Height": 1}, {"Width": 0, "Height": 1}]
+)
+def test_raw_native_images_require_valid_preallocation_dimensions(
+    dimensions: dict[str, object],
+) -> None:
+    assert decode_stream_image_data(zlib.compress(b"x"), {"Filter": "Fl", **dimensions}) is None
 
 
 def test_imagecodecs_decoders_reuse_preallocated_output_without_losing_samples() -> None:

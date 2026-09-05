@@ -10,6 +10,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.runtime.array_views import uint8_image_view
+from core_pdf.impl.spec.s_07_content.capture import PatternPaint
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 
 
@@ -76,6 +77,8 @@ class PathPaintItem:
     blend_mode: Any
     soft_mask_alpha: Any
     coalesced_path: bool = False
+    fill_pattern: PatternPaint | None = None
+    stroke_pattern: PatternPaint | None = None
 
     @property
     def kind(self) -> str:
@@ -96,6 +99,8 @@ class PathPaintItem:
             "fill_rule": self.fill_rule,
             "blend_mode": self.blend_mode,
             "soft_mask_alpha": self.soft_mask_alpha,
+            "fill_pattern": self.fill_pattern,
+            "stroke_pattern": self.stroke_pattern,
         }
 
 

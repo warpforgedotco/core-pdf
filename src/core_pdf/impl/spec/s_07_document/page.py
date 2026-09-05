@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, cast
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import rotate_page_runs
 from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
-    consume_annotation_appearances,
+    capture_annotation_appearances,
 )
 from core_pdf.impl.spec.s_07_document.page_links import (
     link_target_direct,
@@ -271,6 +271,8 @@ class PdfPage:
         self,
         *,
         hidden_layers: frozenset[str] | None = None,
+        fields: Iterable[RawFormField] | None = None,
+        annotations: Iterable[RawAnnotation] | None = None,
     ) -> PageProgram:
         """Interpret the page and return its immutable program."""
         state = TextState(
@@ -281,13 +283,19 @@ class PdfPage:
             page_clip=self.effective_page_clip(),
         )
         self.consume_contents(state)
-        consume_annotation_appearances(self, state)
-        return PageProgram(
+        state.run_accumulator.flush()
+        body = CapturedProgram(
             runs=tuple(state.runs),
             glyphs=tuple(state.glyphs),
             drawings=tuple(state.drawings),
             inline_images=tuple(state.inline_images),
             lines=tuple(state.lines),
+        )
+        return PageProgram(
+            body=body,
+            appearances=capture_annotation_appearances(
+                self, state, fields=fields, annotations=annotations
+            ),
         )
 
     def collect_inherited_values(self) -> InheritedValueMap:

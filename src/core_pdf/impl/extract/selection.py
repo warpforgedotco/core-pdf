@@ -265,6 +265,7 @@ def internal_apply_font_enrichment(
                     fields=base.capture.fields,
                     structure=base.internal_structure,
                     hidden_layers=base.internal_hidden_layers,
+                    stroked_profile=base.internal_stroked_profile,
                 )
             )
             continue
@@ -339,8 +340,6 @@ def internal_prepare_document_stroked_mappings(
     )
     if len(indexes) < 2:
         return internal_StrokedEnrichment()
-    from core_pdf.impl.extract.ocr.vector import internal_stroked_text_profile
-
     ordered = tuple(
         sorted(
             indexes,
@@ -355,11 +354,10 @@ def internal_prepare_document_stroked_mappings(
     recognition_by_index: dict[int, RecognitionResult] = {}
     for page_index in ordered:
         extraction = extractions[page_index]
-        capture = extraction.capture
         recognition = extraction.recognition_result
-        if recognition is None and alphabet:
+        if recognition is None and alphabet and (profile := extraction.stroked_profile) is not None:
             decoded = decode_stroked_text_profile_with_alphabet(
-                internal_stroked_text_profile(capture),
+                profile,
                 alphabet,
             )
             if internal_document_stroked_decode_is_sufficient(decoded):
@@ -398,6 +396,7 @@ def internal_apply_stroked_enrichment(
             fields=base.capture.fields,
             structure=base.internal_structure,
             hidden_layers=base.internal_hidden_layers,
+            stroked_profile=base.internal_stroked_profile,
         )
     return tuple(enriched)
 

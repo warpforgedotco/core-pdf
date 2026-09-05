@@ -8,7 +8,6 @@ import re
 import unicodedata
 from dataclasses import replace
 from statistics import fmean
-from typing import Any
 
 from core_pdf.impl.extract.block_layout import (
     internal_has_repeated_block_columns,
@@ -431,7 +430,7 @@ def internal_normalize_emitted_text(text: str, source: str) -> str:
 
 def internal_line_decoration_flags(
     line: ParsedLine,
-    drawings: tuple[Any, ...],
+    drawings: tuple[CapturedDrawing, ...],
     *,
     decoration_boxes: tuple[tuple[float, float, float, float], ...] | None = None,
 ) -> dict[str, bool]:
@@ -446,7 +445,7 @@ def internal_line_decoration_flags(
         candidates = tuple(
             bbox
             for drawing in drawings
-            if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+            if drawing.kind in {"fill", "fillstroke", "stroke"}
             and (bbox := internal_line_decoration_bbox(drawing)) is not None
         )
     for bbox in candidates:
@@ -468,16 +467,11 @@ def internal_line_decoration_flags(
     return flags
 
 
-def internal_line_decoration_bbox(drawing: Any) -> tuple[float, float, float, float] | None:
+def internal_line_decoration_bbox(
+    drawing: CapturedDrawing,
+) -> tuple[float, float, float, float] | None:
     """Return a drawing bbox, materializing path geometry at most once."""
-    bbox = getattr(drawing, "bbox", None)
-    if bbox is None:
-        rect = getattr(drawing, "rect", None)
-        bbox = rect
-        if bbox is None:
-            path = getattr(drawing, "path", None)
-            bbox_method = getattr(path, "bbox", None)
-            bbox = bbox_method() if callable(bbox_method) else None
+    bbox = drawing.bbox if drawing.bbox is not None else drawing.rect
     return rect_tuple(bbox)
 
 
@@ -506,7 +500,7 @@ def internal_normalized_blocks(
     decoration_boxes = tuple(
         bbox
         for drawing in drawings
-        if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+        if drawing.kind in {"fill", "fillstroke", "stroke"}
         and (bbox := internal_line_decoration_bbox(drawing)) is not None
     )
     blocks: list[Block] = []
@@ -520,43 +514,36 @@ def internal_normalized_blocks(
         normalized_line_texts = internal_remove_soft_line_end_hyphens(
             [internal_normalize_emitted_text(line.text, line.source) for line in parsed_block.lines]
         )
-        decorated_lines: list[ParsedLine] = []
-        for line in parsed_block.lines:
+        lines: list[TextLine] = []
+        for line, text in zip(parsed_block.lines, normalized_line_texts, strict=True):
             flags = internal_line_decoration_flags(
                 line,
                 drawings,
                 decoration_boxes=decoration_boxes,
             )
-            decorated_lines.append(
-                replace(
-                    line,
+            lines.append(
+                TextLine(
+                    text,
+                    bbox=line.bbox,
+                    source=line.source,
+                    confidence=line.confidence,
+                    contributing_sources=(line.source,),
+                    bold=line.bold,
+                    italic=line.italic,
                     underline=flags["underline"],
                     strikeout=flags["strikeout"],
+                    mark=line.mark,
+                    superscript=line.superscript,
+                    subscript=line.subscript,
+                    spans=line.spans,
+                    words=line.words,
                 )
             )
         blocks.append(
             Block(
                 order=index,
                 kind=BlockKind(parsed_block.kind),
-                lines=tuple(
-                    TextLine(
-                        text,
-                        bbox=line.bbox,
-                        source=line.source,
-                        confidence=line.confidence,
-                        contributing_sources=(line.source,),
-                        bold=line.bold,
-                        italic=line.italic,
-                        underline=line.underline,
-                        strikeout=line.strikeout,
-                        mark=line.mark,
-                        superscript=line.superscript,
-                        subscript=line.subscript,
-                        spans=line.spans,
-                        words=line.words,
-                    )
-                    for line, text in zip(decorated_lines, normalized_line_texts, strict=True)
-                ),
+                lines=tuple(lines),
                 bbox=parsed_block.bbox,
                 column_index=parsed_block.column_index,
                 rotation=(parsed_block.lines[0].rotation if parsed_block.lines else 0),

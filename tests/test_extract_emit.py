@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -16,7 +16,8 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.emit import assemble_page, internal_line_decoration_flags
 from core_pdf.impl.output.model import BlockKind, Figure, Page, Table, TableCell
 from core_pdf.impl.records import TextWord
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from tests.helpers.extract_fakes import drawing as captured_drawing
 from tests.helpers.extract_fakes import text_run
 
 
@@ -205,7 +206,7 @@ def test_emit_preserves_structured_reading_order_diagnostic() -> None:
 
 def test_line_decoration_flags_support_partial_underlines() -> None:
     line = ParsedLine("prefix B suffix", (10.0, 100.0, 110.0, 110.0), "native")
-    drawing = type("Drawing", (), {"kind": "fill", "bbox": (50.0, 99.5, 56.0, 100.5)})()
+    drawing = captured_drawing("fill", (50.0, 99.5, 56.0, 100.5))
 
     assert internal_line_decoration_flags(line, (drawing,))["underline"]
 
@@ -213,13 +214,13 @@ def test_line_decoration_flags_support_partial_underlines() -> None:
 def test_emit_materializes_line_decoration_bbox_once() -> None:
     calls = 0
 
-    class Path:
+    class Path(CapturedPath):
         def bbox(self) -> tuple[float, float, float, float]:
             nonlocal calls
             calls += 1
             return (50.0, 99.5, 56.0, 100.5)
 
-    drawing = type("Drawing", (), {"kind": "fill", "bbox": None, "path": Path()})()
+    drawing = CapturedDrawing(0, None, None, path=Path())
     parsed = page_of(
         width=200.0,
         height=300.0,
@@ -230,7 +231,7 @@ def test_emit_materializes_line_decoration_bbox_once() -> None:
         ),
     )
 
-    page = emit_page(parsed, (cast(CapturedDrawing, drawing),))
+    page = emit_page(parsed, (drawing,))
 
     assert calls == 1
     assert all(line.underline for block in page.blocks for line in block.lines)

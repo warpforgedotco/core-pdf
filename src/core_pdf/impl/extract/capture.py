@@ -36,7 +36,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_unicode_semantics,
 )
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedLine
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
 
@@ -57,12 +57,8 @@ DUPLICATE_NESTED_LAYER_MIN_OVERLAP = 0.60
 DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP = 0.50
 
 
-def internal_normalized_tokens(runs: tuple[Any, ...] | list[Any]) -> tuple[str, ...]:
-    return tuple(
-        token.casefold()
-        for run in runs
-        for token in WORD_TOKEN_RE.findall(str(getattr(run, "text", "")))
-    )
+def internal_normalized_tokens(runs: Iterable[TextRun]) -> tuple[str, ...]:
+    return tuple(token.casefold() for run in runs for token in WORD_TOKEN_RE.findall(run.text))
 
 
 def internal_token_overlap(left: tuple[str, ...], right: tuple[str, ...]) -> float:
@@ -72,12 +68,12 @@ def internal_token_overlap(left: tuple[str, ...], right: tuple[str, ...]) -> flo
     return matched / min(len(left), len(right))
 
 
-def internal_clip_bbox(run: Any) -> tuple[float, float, float, float] | None:
-    for key, value in reversed(tuple(getattr(run, "provenance", ()))):
+def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None:
+    for key, value in reversed(run.provenance):
         if key != "clip_bbox" or not isinstance(value, (list, tuple)) or len(value) != 4:
             continue
         try:
-            x0, y0, x1, y1 = (float(part) for part in value)
+            x0, y0, x1, y1 = (float(cast(Any, part)) for part in value)
         except (TypeError, ValueError):
             return None
         return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
@@ -498,16 +494,16 @@ def internal_apply_learned_unicode_to_run(
     )
 
 
-def internal_vector_complexity(drawings: tuple[Any, ...], grid_lines: Any) -> int:
+def internal_vector_complexity(
+    drawings: tuple[CapturedDrawing, ...], grid_lines: tuple[CapturedLine, ...]
+) -> int:
     """Estimate vector workload without depending on graphics-state bookkeeping.
 
     Every derived segment contributes geometric work. Paint operations carry a larger
     fixed dispatch and raster cost, while clips, groups, and state markers are control
     records rather than visible vector content.
     """
-    paint_operations = sum(
-        getattr(drawing, "kind", None) in VECTOR_PAINT_KINDS for drawing in drawings
-    )
+    paint_operations = sum(drawing.kind in VECTOR_PAINT_KINDS for drawing in drawings)
     return len(grid_lines) + paint_operations * VECTOR_PAINT_OPERATION_WEIGHT
 
 
@@ -519,11 +515,10 @@ STROKED_VECTOR_MIN_COMPACT_RATIO = 0.60
 STROKED_VECTOR_MIN_AXIS_COVERAGE = 0.35
 
 
-def internal_stroked_vector_style(drawing: Any) -> tuple[object, ...] | None:
+def internal_stroked_vector_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
     """Return a stable paint-style key for an opaque, solid, thin stroked path."""
     if (
-        not isinstance(drawing, CapturedDrawing)
-        or drawing.kind not in {"stroke", "fillstroke"}
+        drawing.kind not in {"stroke", "fillstroke"}
         or drawing.path is None
         or not drawing.stroke_color
     ):
@@ -538,7 +533,7 @@ def internal_stroked_vector_style(drawing: Any) -> tuple[object, ...] | None:
 
 
 def internal_stroked_vector_text_evidence(
-    drawings: tuple[Any, ...],
+    drawings: tuple[CapturedDrawing, ...],
     *,
     page_width: float,
     page_height: float,
@@ -561,7 +556,7 @@ def internal_stroked_vector_text_evidence(
         style = internal_stroked_vector_style(drawing)
         if style is None:
             continue
-        box = rect_tuple(getattr(drawing, "rect", None))
+        box = rect_tuple(drawing.rect)
         if box is None:
             continue
         maximum_dimension = max(box[2] - box[0], box[3] - box[1])
@@ -619,7 +614,7 @@ def internal_stroked_vector_text_evidence(
 
 
 def internal_uncovered_vector_area(
-    drawings: tuple[Any, ...],
+    drawings: tuple[CapturedDrawing, ...],
     observations: ObservationBatch,
     *,
     page_area: float | None = None,
@@ -638,9 +633,9 @@ def internal_uncovered_vector_area(
     native = observations.bbox
     rectangles: list[tuple[float, float, float, float, float]] = []
     for drawing in drawings:
-        if getattr(drawing, "kind", None) not in {"fill", "fillstroke"}:
+        if drawing.kind not in {"fill", "fillstroke"}:
             continue
-        rect = rect_tuple(getattr(drawing, "rect", None))
+        rect = rect_tuple(drawing.rect)
         if rect is None:
             continue
         x0, y0, x1, y1 = rect
@@ -725,7 +720,7 @@ def internal_capture_with_newstroke_text(
     return replace(
         capture,
         observations=observations,
-        program=replace(capture.program, runs=runs),
+        program=replace(capture.program, body=replace(capture.program.body, runs=runs)),
         evidence=evidence,
     )
 
@@ -842,7 +837,7 @@ def internal_capture_from_program(
         filter_name
         for drawing in drawings
         if drawing.kind == "image"
-        for dictionary in (getattr(drawing, "dictionary", None),)
+        for dictionary in (drawing.dictionary,)
         if isinstance(dictionary, dict)
         for filter_name in declared_filter_names(dictionary.get("Filter"))
     )
@@ -877,9 +872,9 @@ def internal_capture_from_program(
     visible_image_areas: list[float] = []
     visible_image_boxes: list[tuple[float, float, float, float]] = []
     for drawing in drawings:
-        if getattr(drawing, "kind", None) != "image":
+        if drawing.kind != "image":
             continue
-        box = rect_tuple(getattr(drawing, "rect", None))
+        box = rect_tuple(drawing.rect)
         if box is None:
             continue
         width = interval_overlap(0.0, page_width, box[0], box[2])
@@ -980,11 +975,14 @@ def capture_page(
     annotations: tuple[Any, ...] | None = None,
 ) -> PageAnalysis:
     """Build the canonical page products once and derive routing evidence from them."""
-    program = (
-        page.get_page_program()
-        if hidden_layers is None
-        else page.get_page_program(hidden_layers=hidden_layers)
-    )
+    capture_options: dict[str, object] = {}
+    if hidden_layers is not None:
+        capture_options["hidden_layers"] = hidden_layers
+    if fields is not None:
+        capture_options["fields"] = fields
+    if annotations is not None:
+        capture_options["annotations"] = annotations
+    program = page.get_page_program(**capture_options)
     return internal_capture_from_program(
         page,
         program,
@@ -1007,14 +1005,14 @@ def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
     stroke_count = 0
     compact_stroke_count = 0
     for drawing in capture.program.drawings:
-        kind = getattr(drawing, "kind", None)
+        kind = drawing.kind
         if kind not in VECTOR_PAINT_KINDS:
             continue
         paint_count += 1
         if kind != "stroke":
             continue
         stroke_count += 1
-        box = rect_tuple(getattr(drawing, "rect", None))
+        box = rect_tuple(drawing.rect)
         if box is not None and max(box[2] - box[0], box[3] - box[1]) <= 6.0:
             compact_stroke_count += 1
     return (

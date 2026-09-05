@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, suppress
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -43,6 +43,7 @@ from core_pdf.impl.types import PdfSource
 internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
+    from core_pdf.impl.spec.s_07_document.records import RawFormField
     from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
@@ -124,9 +125,9 @@ class PdfPage(SpecPdfPage):
                 ImageRecord(
                     kind="inline-image",
                     seqno=image.seqno,
-                    fill=None,
+                    fill=image.fill,
                     fill_pattern=None,
-                    fill_opacity=None,
+                    fill_opacity=image.fill_opacity,
                     stroke_color=None,
                     stroke_pattern=None,
                     stroke_opacity=None,
@@ -170,7 +171,21 @@ class PdfPage(SpecPdfPage):
 
     def render(self, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
-        return compose_page(self, options, page_program=self.get_page_program())
+        fields: tuple[RawFormField, ...] = ()
+        if options.include_layers:
+            # Malformed form metadata must not prevent painting page contents.
+            with suppress(ValueError):
+                fields = tuple(self.get_fields())
+        annotations = tuple(self.get_annotations()) if options.include_annotations else None
+        return compose_page(
+            self,
+            options,
+            # Empty recovered metadata need not mean there are no raw
+            # appearance dictionaries; capture retains its tolerant policy.
+            page_program=self.get_page_program(fields=fields, annotations=annotations or None),
+            fields=fields,
+            annotations=annotations,
+        )
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):

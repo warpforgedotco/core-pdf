@@ -22,6 +22,7 @@ from core_pdf.impl.model.glyphs import (
 )
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
+    PdfName,
     PdfReference,
     PdfString,
 )
@@ -44,7 +45,10 @@ from core_pdf.impl.spec.s_07_content.glyph_capture import (
     TextGeometry,
     capture_glyphs,
 )
-from core_pdf.impl.spec.s_07_content.image_capture import image_source_from_stream
+from core_pdf.impl.spec.s_07_content.image_capture import (
+    image_source_from_stream,
+    unit_square_placement,
+)
 from core_pdf.impl.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
@@ -64,7 +68,7 @@ from core_pdf.impl.spec.s_07_content.text_runs import (
     normalize_extracted_text,
 )
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_float_strict,
@@ -74,7 +78,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
@@ -674,21 +677,8 @@ class TextState:
                 bbox = None
                 quad = None
                 if width > 0 and height > 0:
-                    points = (
-                        self.transform_point(0.0, 0.0),
-                        self.transform_point(1.0, 0.0),
-                        self.transform_point(0.0, 1.0),
-                        self.transform_point(1.0, 1.0),
-                    )
-                    quad = points
-                    xs = [point[0] for point in points]
-                    ys = [point[1] for point in points]
-                    bbox = RectBox(
-                        min(xs),
-                        min(ys),
-                        max(xs),
-                        max(ys),
-                    )
+                    bounds, quad = unit_square_placement(self.ctm)
+                    bbox = RectBox(*bounds)
                 source, smask_alpha = image_source_from_stream(xobj, self.document.resolver)
                 # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
                 # set bits in the current fill colour. Every other image ignores
@@ -1542,7 +1532,14 @@ class TextState:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             data = getattr(image, "data", b"")
-            source = ImageSource(data, dictionary)
+            color_name = normalize_pdf_name(dictionary.get("ColorSpace"))
+            if color_name is not None:
+                color_resource = self.lookup_page_resource("ColorSpace", color_name)
+                if color_resource is not None:
+                    dictionary[PdfName.of("ColorSpace")] = cast(PdfObject, color_resource)
+            source, _ = image_source_from_stream(
+                PdfStream(raw_data=data, dictionary=dictionary), self.document.resolver
+            )
             self.inline_images.append(
                 CapturedInlineImage(
                     seqno=self.sequence,
@@ -1555,6 +1552,8 @@ class TextState:
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     stream_order=self.stream_order,
+                    fill=self.fill_color if dictionary.get("ImageMask") is True else None,
+                    fill_opacity=self.fill_opacity if dictionary.get("ImageMask") is True else None,
                 )
             )
 
@@ -1908,11 +1907,15 @@ class TextState:
         # The cell's drawings are owned by this pattern and painted nowhere
         # else, so an uncoloured (PaintType 2) pattern recolours them in place
         # rather than copying every field into a parallel record.
-        for drawing in nested_state.drawings:
-            if drawing.kind in {"fill", "fillstroke"}:
-                drawing.fill = base_color
-            if drawing.kind in {"stroke", "fillstroke"}:
-                drawing.stroke_color = base_color
+        if paint_type == 2:
+            for drawing in nested_state.drawings:
+                if drawing.kind in {"fill", "fillstroke"}:
+                    drawing.fill = base_color
+                if drawing.kind in {"stroke", "fillstroke"}:
+                    drawing.stroke_color = base_color
+            for glyph in nested_state.glyphs:
+                glyph.fill = base_color
+                glyph.stroke_color = base_color
         return TilingPattern(
             bbox=bbox,
             x_step=float(x_step),

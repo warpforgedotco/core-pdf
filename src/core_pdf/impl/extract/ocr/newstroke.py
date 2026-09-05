@@ -174,17 +174,16 @@ def internal_drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | Non
 
 
 def internal_segments(
-    drawings: tuple[Any, ...],
+    drawings: tuple[CapturedDrawing, ...],
 ) -> tuple[tuple[internal_Segment | None, ...], tuple[tuple[object, ...], ...], int]:
     segments: list[internal_Segment | None] = []
     style_ids: dict[tuple[object, ...], int] = {}
     styles: list[tuple[object, ...]] = []
     candidate_count = 0
     for drawing in drawings:
-        path = getattr(drawing, "path", None)
+        path = drawing.path
         if (
-            not isinstance(drawing, CapturedDrawing)
-            or drawing.kind != "stroke"
+            drawing.kind != "stroke"
             or type(path) is not CapturedPath
             or len(path.subpaths) != 1
             or path.subpaths[0].closed
@@ -600,7 +599,7 @@ def internal_sequence_run(
     )
 
 
-def decode_newstroke_drawings(drawings: tuple[Any, ...]) -> NewstrokeDecode:
+def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> NewstrokeDecode:
     """Decode a flattened Newstroke page without rasterization or OCR."""
     segments, styles, candidate_count = internal_segments(drawings)
     if candidate_count < MIN_CANDIDATE_SEGMENTS:

@@ -31,7 +31,6 @@ from core_pdf.impl.extract.ocr.strokes import (
     StrokedTextSeed,
     decode_stroked_text_profile,
     decode_stroked_text_profile_with_supplemental_seeds,
-    profile_stroked_text,
     stroked_text_isolated_runs,
 )
 from core_pdf.impl.extract.ocr.types import (
@@ -76,12 +75,6 @@ STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES = 16
 
 
 STROKED_VECTOR_PACK_MIN_DECODED_RUNS = 16
-
-
-def internal_stroked_text_profile(capture: PageAnalysis) -> StrokedTextProfile:
-    """Build the structural glyph profile used by stroked-text OCR."""
-    evidence = capture.evidence.stroked_vector_text
-    return profile_stroked_text(capture.program.drawings, evidence.drawing_indexes)
 
 
 def internal_pack_stroked_text_runs(
@@ -138,14 +131,14 @@ def internal_stroked_vector_text_raster(
     capture: PageAnalysis,
     requested_scale: float,
     *,
+    profile: StrokedTextProfile | None,
     max_pixels: int = MAX_OCR_PIXELS,
     variant: str = "seed",
 ) -> internal_PackedStrokedTextRaster | None:
     """Pack vector words into a compact seed raster with piecewise page mapping."""
     evidence = capture.evidence.stroked_vector_text
-    if not evidence.trusted or not evidence.drawing_indexes:
+    if not evidence.trusted or not evidence.drawing_indexes or profile is None:
         return None
-    profile = internal_stroked_text_profile(capture)
     runs = stroked_text_isolated_runs(profile) if variant == "isolated" else profile.seed_runs
     if variant == "isolated":
         # Glyph-sized cells sit closer together than the remap tolerance, so
@@ -535,15 +528,13 @@ def internal_stroked_vector_substitution(
 
 
 def internal_stroked_vector_symbol_seeds(
-    capture: PageAnalysis,
+    profile: StrokedTextProfile,
     symbols: ObservationBatch,
 ) -> tuple[StrokedTextSeed, ...]:
     """Join character boxes only when they exactly fill one known vector run."""
     if not len(symbols):
         return ()
-    runs_by_sequence = {
-        run.drawing_indexes[0]: run for run in internal_stroked_text_profile(capture).seed_runs
-    }
+    runs_by_sequence = {run.drawing_indexes[0]: run for run in profile.seed_runs}
     grouped: dict[
         int,
         list[tuple[float, str, float]],
@@ -579,14 +570,12 @@ def internal_stroked_vector_symbol_seeds(
 
 
 def internal_decode_stroked_vector_text(
-    capture: PageAnalysis,
+    profile: StrokedTextProfile | None,
     ocr: ObservationBatch,
     symbols: ObservationBatch | None = None,
 ) -> StrokedTextDecode:
-    evidence = capture.evidence.stroked_vector_text
-    if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
+    if profile is None or not len(ocr):
         return StrokedTextDecode()
-    profile = internal_stroked_text_profile(capture)
     word_seeds = tuple(
         StrokedTextSeed(
             text=text,
@@ -603,7 +592,7 @@ def internal_decode_stroked_vector_text(
         )
     )
     symbol_seeds = internal_stroked_vector_symbol_seeds(
-        capture,
+        profile,
         symbols if symbols is not None else ObservationBatch.empty(),
     )
     if not symbol_seeds:
@@ -640,14 +629,13 @@ def internal_packed_stroked_vector_decode_gate(
 
 
 def internal_recover_stroked_vector_text(
-    capture: PageAnalysis,
+    profile: StrokedTextProfile | None,
     ocr: ObservationBatch,
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""
-    evidence = capture.evidence.stroked_vector_text
-    if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
+    if profile is None or not len(ocr):
         return ocr, ()
-    decoded = internal_decode_stroked_vector_text(capture, ocr)
+    decoded = internal_decode_stroked_vector_text(profile, ocr)
     ocr_boxes = ocr.bbox
     ocr_areas = numpy.maximum(
         0.01,

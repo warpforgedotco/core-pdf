@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
@@ -35,6 +35,9 @@ from core_pdf.impl.output.model import (
 )
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
+
+if TYPE_CHECKING:
+    from core_pdf.impl.extract.ocr.strokes import StrokedTextProfile
 
 internal_T = TypeVar("internal_T")
 
@@ -79,23 +82,27 @@ class internal_PageExtraction:
         fields: Iterable[Any] | None = None,
         structure: Any = internal_STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
+        stroked_profile: StrokedTextProfile | None = None,
     ) -> None:
         self.page = page
         self.internal_structure = structure
         self.internal_hidden_layers = hidden_layers
         field_records = tuple(fields) if fields is not None else None
         if capture is not None:
-            annotation_records = capture.annotations
+            self.capture = (
+                replace(capture, fields=field_records) if field_records is not None else capture
+            )
         else:
+            annotation_records: tuple[Any, ...] | None
             try:
-                annotation_records = tuple(page.get_annotations())
+                # An empty strict projection can still hide recoverable raw
+                # annotations (for example a non-array /Annots in recovery mode).
+                annotation_records = tuple(page.get_annotations()) or None
             except (AttributeError, TypeError, ValueError):
-                annotation_records = ()
-        if capture is not None:
-            if field_records is not None:
-                capture = replace(capture, fields=field_records)
-            self.capture = replace(capture, annotations=annotation_records)
-        else:
+                # Failed strict metadata collection is not an explicit request
+                # to suppress appearances. Let capture enumerate tolerant raw
+                # annotation dictionaries; its output metadata remains empty.
+                annotation_records = None
             self.capture = capture_page(
                 page,
                 structure=structure,
@@ -105,6 +112,21 @@ class internal_PageExtraction:
             )
         self.plan = plan if plan is not None else plan_page(self.capture)
         self.recognition_result = recognition
+        self.internal_stroked_profile = stroked_profile
+
+    @property
+    def stroked_profile(self) -> StrokedTextProfile | None:
+        """Materialize the immutable stroke geometry only for a trusted vector-text layer."""
+        evidence = self.capture.evidence.stroked_vector_text
+        if not evidence.trusted or not evidence.drawing_indexes:
+            return None
+        if self.internal_stroked_profile is None:
+            from core_pdf.impl.extract.ocr.strokes import profile_stroked_text
+
+            self.internal_stroked_profile = profile_stroked_text(
+                self.capture.program.drawings, evidence.drawing_indexes
+            )
+        return self.internal_stroked_profile
 
     def recognize(self, context: ExtractionScope) -> RecognitionResult:
         if self.recognition_result is not None:
@@ -113,7 +135,7 @@ class internal_PageExtraction:
         if plan.ocr_passes or plan.verify_hidden_text:
             from core_pdf.impl.extract.ocr.pipeline import recognize_page
 
-            return recognize_page(self.capture, plan, context)
+            return recognize_page(self.capture, plan, context, stroked_profile=self.stroked_profile)
         return RecognitionResult(ObservationBatch.empty())
 
     def run(self, context: ExtractionScope) -> internal_PageProducts:
