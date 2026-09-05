@@ -33,17 +33,17 @@ if TYPE_CHECKING:
         PdfSourceError,
         PdfUnsupportedError,
     )
-    from core_pdf.impl.records import (
+    from core_pdf.impl.spec.s_09_fonts.fallback import (
+        PdfRasterFontFace,
+        PdfRasterFontProvider,
+        PdfRasterFontRequest,
+    )
+    from core_pdf.impl.types import (
         DrawingRecord,
         ImageMetadata,
         ImageRecord,
         PageScoped,
         TextWord,
-    )
-    from core_pdf.impl.spec.s_09_fonts.fallback import (
-        PdfRasterFontFace,
-        PdfRasterFontProvider,
-        PdfRasterFontRequest,
     )
 internal_EXPORTS = {
     "Document": ("core_pdf.impl._impl.output.model", "Document"),
@@ -67,17 +67,17 @@ internal_EXPORTS = {
     "DiagnosticTextRun": ("core_pdf.impl._impl.output.model", "DiagnosticTextRun"),
     "DocumentTableView": ("core_pdf.impl._impl.output.model", "DocumentTableView"),
     "DocumentTextView": ("core_pdf.impl._impl.output.model", "DocumentTextView"),
-    "DrawingRecord": ("core_pdf.impl.records", "DrawingRecord"),
-    "ImageMetadata": ("core_pdf.impl.records", "ImageMetadata"),
-    "ImageRecord": ("core_pdf.impl.records", "ImageRecord"),
-    "PageScoped": ("core_pdf.impl.records", "PageScoped"),
+    "DrawingRecord": ("core_pdf.impl.types", "DrawingRecord"),
+    "ImageMetadata": ("core_pdf.impl.types", "ImageMetadata"),
+    "ImageRecord": ("core_pdf.impl.types", "ImageRecord"),
+    "PageScoped": ("core_pdf.impl.types", "PageScoped"),
     "TableView": ("core_pdf.impl._impl.output.model", "TableView"),
     "TableReference": ("core_pdf.impl._impl.output.model", "TableReference"),
     "TableAssociatedText": ("core_pdf.impl._impl.output.model", "TableAssociatedText"),
     "TableColumnBand": ("core_pdf.impl._impl.output.model", "TableColumnBand"),
     "TableRowBand": ("core_pdf.impl._impl.output.model", "TableRowBand"),
     "TextView": ("core_pdf.impl._impl.output.model", "TextView"),
-    "TextWord": ("core_pdf.impl.records", "TextWord"),
+    "TextWord": ("core_pdf.impl.types", "TextWord"),
     "TextDiagnostics": ("core_pdf.impl._impl.output.model", "TextDiagnostics"),
     "TextLineReference": ("core_pdf.impl._impl.output.model", "TextLineReference"),
     "PdfPage": ("core_pdf.api.document", "PdfPage"),

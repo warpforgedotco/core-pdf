@@ -18,7 +18,6 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
@@ -61,6 +60,7 @@ from core_pdf.impl.spec.s_14_structure.tree import StructureTree
 from core_pdf.impl.types import (
     PathSource,
     PdfByteBuffer,
+    PdfReference,
     PdfSource,
     SeekableBinaryReader,
 )

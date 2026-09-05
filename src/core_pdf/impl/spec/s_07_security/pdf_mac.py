@@ -16,10 +16,9 @@ from cryptography.hazmat.primitives import hashes, hmac, keywrap
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfUnsupportedError
-from core_pdf.impl.primitives import MISSING, PdfName, PdfString
 from core_pdf.impl.spec.s_07_security.standard import internal_StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.types import PdfByteBuffer
+from core_pdf.impl.types import MISSING, PdfByteBuffer, PdfName, PdfString
 
 internal_AUTHENTICATED_DATA_OID = "1.2.840.113549.1.9.16.1.2"
 internal_CONTENT_TYPE_ATTRIBUTE_OID = "1.2.840.113549.1.9.3"

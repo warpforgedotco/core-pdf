@@ -6,8 +6,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TypeGuard, overload
 
-from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf.impl.types import PdfName, PdfString
 
 
 def is_pdf_null(value: object) -> bool:

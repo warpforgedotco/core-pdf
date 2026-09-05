@@ -8,7 +8,6 @@ if typing.TYPE_CHECKING:
     from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import ObjectCache
@@ -17,6 +16,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int,
     parse_int_strict,
 )
+from core_pdf.impl.types import PdfReference
 
 
 class PdfObjectStream:

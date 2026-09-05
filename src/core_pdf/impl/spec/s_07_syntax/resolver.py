@@ -9,7 +9,6 @@ import threading
 from typing import cast
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
-from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -33,6 +32,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_text_string,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf.impl.types import MISSING, PdfName, PdfReference, PdfString
 
 STREAM_DECODE_KEYS = frozenset(
     {

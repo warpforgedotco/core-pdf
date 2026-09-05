@@ -384,8 +384,6 @@ name = "Base modules stay beneath the spec and derived processing"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.exceptions",
-    "core_pdf.impl.primitives",
-    "core_pdf.impl.records",
     "core_pdf.impl.types",
 ]
 forbidden_modules = [

@@ -6,12 +6,11 @@ from __future__ import annotations
 import numpy
 
 from core_pdf.impl._impl.model.geometry import points_bbox
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfValueResolver
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import PdfName, Rectangle
 
 
 def unit_square_placement(matrix: Matrix) -> tuple[Rectangle, tuple[tuple[float, float], ...]]:

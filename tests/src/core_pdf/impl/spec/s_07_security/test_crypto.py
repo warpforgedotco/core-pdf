@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
@@ -24,6 +23,7 @@ from core_pdf.impl.spec.s_07_security.standard import (
     internal_stream_crypt_filter_name,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.types import PdfName
 from tests.helpers.paths import FIXTURES, require_fixture
 
 

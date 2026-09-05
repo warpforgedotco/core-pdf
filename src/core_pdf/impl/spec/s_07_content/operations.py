@@ -8,7 +8,6 @@ from collections.abc import Callable, Iterator
 from typing import TypeAlias, cast
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.inline_images import (
     InlineImage,
     parse_inline_image,
@@ -25,6 +24,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     skip_name,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
+from core_pdf.impl.types import PdfName, PdfString
 
 PdfName_of = PdfName.of
 

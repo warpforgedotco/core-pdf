@@ -4,7 +4,7 @@ from __future__ import annotations
 from operator import eq
 from typing import Any, cast
 
-from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.types import PdfName
 
 
 def test_pdf_name_bytes_equality_supports_mapping_lookup() -> None:

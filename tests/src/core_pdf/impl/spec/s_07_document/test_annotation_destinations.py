@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.types import PdfReference
 from tests.helpers.pdf_bytes import one_page_pdf, open_pdf
 
 URL = b"https://example.invalid/target#frag"

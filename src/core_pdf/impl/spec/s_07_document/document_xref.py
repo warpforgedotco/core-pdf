@@ -8,7 +8,6 @@ from collections.abc import Iterator
 from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     infer_page_tree_node_type,
@@ -29,7 +28,7 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
     iter_indirect_object_headers,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.types import PdfByteBuffer
+from core_pdf.impl.types import PdfByteBuffer, PdfReference
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
 

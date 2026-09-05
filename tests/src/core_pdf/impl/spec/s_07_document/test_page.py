@@ -4,10 +4,10 @@ from __future__ import annotations
 from typing import Any, cast
 
 from core_pdf.api.document import PdfDocument
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_07_document.records import RawFormField
 from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
+from core_pdf.impl.types import PdfName
 from tests.helpers.paths import SCORE_BENCH
 from tests.helpers.resolvers import IdentityResolver
 

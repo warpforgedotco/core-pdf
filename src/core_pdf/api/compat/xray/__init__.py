@@ -17,10 +17,10 @@ from core_pdf.impl._impl.model.geometry import (
 )
 from core_pdf.impl._impl.model.text import collapse_ws
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.types import PdfReference
 
 from .._shared import float32 as _float32
 

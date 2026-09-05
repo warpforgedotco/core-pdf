@@ -8,7 +8,7 @@ from core_pdf.api.compat.llamaindex._operator_text import (
     internal_TextState,
 )
 from core_pdf.impl._impl.extract import block_layout as native_layout
-from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.types import PdfName
 
 
 def test_unknown_adobe_glyph_names_remain_visible() -> None:

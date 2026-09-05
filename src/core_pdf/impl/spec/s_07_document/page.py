@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl._impl.model.geometry import rotate_page_runs
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
@@ -31,6 +30,7 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
 from core_pdf.impl.spec.s_14_structure.tree import PageStructure
+from core_pdf.impl.types import PdfReference
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",

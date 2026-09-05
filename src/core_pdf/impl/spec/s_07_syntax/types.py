@@ -6,8 +6,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, TypeAlias
 
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 PdfNull: TypeAlias = None
 PdfBoolean: TypeAlias = bool

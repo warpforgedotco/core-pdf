@@ -3,9 +3,9 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf.impl.types import PdfReference
 
 
 class internal_MetadataRecoveryDocument(DocumentXRefMixin):

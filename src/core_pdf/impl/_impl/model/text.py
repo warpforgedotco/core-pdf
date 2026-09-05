@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
+
+from core_pdf.impl.types import TextWord
 
 # Smallest horizontal gap that separates two words. Both the spec-level run merger
 # and the layout line builder consult this so a gap that reads as a word break in
@@ -46,6 +49,32 @@ def collapse_leader_runs(text: str) -> str:
 def collapse_ws(text: str) -> str:
     """Collapse all runs of whitespace to single spaces and trim the ends."""
     return " ".join(text.split())
+
+
+def internal_text_word_tokens(text: str) -> tuple[str, ...]:
+    """Return the non-whitespace word vocabulary used throughout extraction."""
+    return tuple(text.split())
+
+
+def internal_reconcile_text_words(
+    text: str,
+    words: tuple[TextWord, ...],
+) -> tuple[TextWord, ...]:
+    """Keep word text and geometry consistent after line-level normalization.
+
+    Unchanged and one-to-one substituted words retain their boxes. If normalization
+    changes word boundaries, geometry cannot be mapped safely and is left unknown.
+    """
+    tokens = internal_text_word_tokens(text)
+    if not tokens:
+        return ()
+    if not words:
+        return tuple(TextWord(token) for token in tokens)
+    if tuple(word.text for word in words) == tokens:
+        return words
+    if len(words) == len(tokens):
+        return tuple(replace(word, text=token) for word, token in zip(words, tokens, strict=True))
+    return tuple(TextWord(token) for token in tokens)
 
 
 def search_key(text: str) -> str:

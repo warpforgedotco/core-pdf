@@ -21,7 +21,7 @@ from core_pdf.impl._impl.output.model import (
     TextLine,
     TextLineReference,
 )
-from core_pdf.impl.records import TextWord
+from core_pdf.impl.types import TextWord
 
 
 def test_public_exports_resolve_from_canonical_owners() -> None:
@@ -32,11 +32,11 @@ def test_public_exports_resolve_from_canonical_owners() -> None:
         "PdfDocument": "core_pdf.api.document",
         "PdfPage": "core_pdf.api.document",
         "PageSelection": "core_pdf.impl._impl.model.page_selection",
-        "DrawingRecord": "core_pdf.impl.records",
-        "ImageMetadata": "core_pdf.impl.records",
-        "ImageRecord": "core_pdf.impl.records",
-        "PageScoped": "core_pdf.impl.records",
-        "TextWord": "core_pdf.impl.records",
+        "DrawingRecord": "core_pdf.impl.types",
+        "ImageMetadata": "core_pdf.impl.types",
+        "ImageRecord": "core_pdf.impl.types",
+        "PageScoped": "core_pdf.impl.types",
+        "TextWord": "core_pdf.impl.types",
         "Document": "core_pdf.impl._impl.output.model",
         "ContentNode": "core_pdf.impl._impl.output.model",
         "DiagnosticTextRun": "core_pdf.impl._impl.output.model",

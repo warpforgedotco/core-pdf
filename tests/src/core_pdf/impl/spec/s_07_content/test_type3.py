@@ -3,11 +3,11 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_content.capture import type3_glyph_names
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.types import PdfName
 from tests.helpers.resolvers import IdentityResolver
 
 

@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_filters.registry import (
     CCITT_FILTERS,
@@ -17,6 +16,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int,
 )
+from core_pdf.impl.types import PdfReference
 
 DecodeParam: TypeAlias = object
 

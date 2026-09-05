@@ -9,7 +9,6 @@ from itertools import product
 import numpy
 import pytest
 
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_filters import predictors
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
@@ -34,6 +33,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples,
 )
+from core_pdf.impl.types import PdfName
 
 
 def gzip_compress(data: bytes) -> bytes:

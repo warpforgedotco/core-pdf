@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_AES_GCM_IV_BYTES,
     internal_AES_GCM_KEY_BYTES,
@@ -45,6 +44,7 @@ from core_pdf.impl.spec.s_07_security.standard import (
     internal_supported_revisions,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.types import PdfName
 from tests.helpers.paths import FIXTURES
 
 internal_SPECS = FIXTURES / "specifications" / "PDF"

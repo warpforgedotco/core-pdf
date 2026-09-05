@@ -4,10 +4,10 @@ from __future__ import annotations
 import pytest
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError
-from core_pdf.impl.primitives import PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.types import PdfReference, PdfString
 
 
 @pytest.mark.parametrize(

@@ -9,8 +9,8 @@ import pytest
 
 from core_pdf import PdfDecryptionError, PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.types import PdfName, PdfString
 from tests.helpers.paths import FIXTURES as FIXTURES_ROOT
 
 FIXTURE_DIRECTORY = FIXTURES_ROOT / "security_interop"

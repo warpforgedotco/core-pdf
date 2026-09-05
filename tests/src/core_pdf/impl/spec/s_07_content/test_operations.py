@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperands,
     dispatch_operations,
@@ -11,6 +10,7 @@ from core_pdf.impl.spec.s_07_content.operations import (
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
+from core_pdf.impl.types import PdfName, PdfString
 
 
 def test_content_operations_do_not_treat_vertical_tab_as_whitespace() -> None:

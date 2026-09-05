@@ -13,7 +13,7 @@ from core_pdf.impl._impl.extract.contracts import (
     ParsedBlock,
     ReadingOrderEvidence,
 )
-from core_pdf.impl.records import TextWord
+from core_pdf.impl.types import TextWord
 from core_pdf_ocr.impl.extract.contracts import ObservationSource
 
 internal_SOURCE_LABELS = {

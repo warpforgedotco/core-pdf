@@ -10,7 +10,6 @@ from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
 
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
@@ -18,6 +17,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 MetadataScalar: TypeAlias = (
     str

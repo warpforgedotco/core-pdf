@@ -15,7 +15,6 @@ from typing import Iterable
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl._impl.model.glyphs import UnicodeSource
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_09_fonts.cid_unicode import resolve_cid_unicode_map
@@ -69,7 +68,7 @@ from core_pdf.impl.spec.s_09_fonts.widths import (
     get_descendant,
     parse_font_widths,
 )
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import PdfString, Rectangle
 
 if typing.TYPE_CHECKING:
     from typing import Any

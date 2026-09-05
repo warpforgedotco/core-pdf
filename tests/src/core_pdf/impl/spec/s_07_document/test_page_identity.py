@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.types import PdfReference
 from tests.helpers.pdf_bytes import HELVETICA, assemble_pdf, stream_obj
 
 

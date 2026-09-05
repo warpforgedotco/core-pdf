@@ -21,11 +21,6 @@ from core_pdf.impl._impl.model.glyphs import (
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import (
-    PdfName,
-    PdfReference,
-    PdfString,
-)
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -81,7 +76,12 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_sp
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import (
+    PdfName,
+    PdfReference,
+    PdfString,
+    Rectangle,
+)
 
 #: Reads every saved field off a ``TextState`` in one C-level call.
 internal_capture_graphics_state = operator.attrgetter(*GRAPHICS_STATE_FIELDS)

@@ -12,8 +12,8 @@ from typing import Any, Mapping, TypeAlias
 
 from core_pdf.impl._impl.model.geometry import bbox_union
 from core_pdf.impl._impl.model.page_selection import PageSelection
-from core_pdf.impl.records import TextWord, internal_reconcile_text_words
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl._impl.model.text import internal_reconcile_text_words
+from core_pdf.impl.types import Rectangle, TextWord
 
 SCHEMA_VERSION = "5.0"
 """Schema version stamped on every structured :class:`Document`."""

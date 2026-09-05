@@ -5,7 +5,6 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts import decoder as decoder_module
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
@@ -19,6 +18,7 @@ from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     internal_invert_unicode_cmap,
 )
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.types import PdfString
 
 
 def to_unicode_cmap(body: bytes) -> bytes:

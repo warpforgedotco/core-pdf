@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TypeAlias, cast
 
-from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
@@ -19,6 +18,7 @@ from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     IccTransform,
     parse_icc_transform,
 )
+from core_pdf.impl.types import MISSING
 
 ColorParams: TypeAlias = dict[str, object]
 

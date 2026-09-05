@@ -7,7 +7,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
@@ -18,6 +17,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WHITESPACE
+from core_pdf.impl.types import PdfName
 
 INLINE_IMAGE_KEY_MAP = {
     "BPC": "BitsPerComponent",

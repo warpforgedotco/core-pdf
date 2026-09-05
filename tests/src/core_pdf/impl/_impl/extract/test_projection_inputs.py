@@ -10,7 +10,7 @@ from core_pdf.impl._impl.extract.table_reconcile import (
     internal_remove_block_duplicate_tables,
 )
 from core_pdf.impl._impl.output.model import Block, BlockKind, Table, TableCell, TextLine
-from core_pdf.impl.records import TextWord
+from core_pdf.impl.types import TextWord
 
 
 def test_layout_uses_supplied_source_labels_and_group_order_without_mutating_observations() -> None:

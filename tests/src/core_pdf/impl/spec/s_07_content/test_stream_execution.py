@@ -4,13 +4,13 @@ from typing import Any, cast
 import pytest
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_content.operations import ContentOperands
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.types import PdfName
 from tests.helpers.resolvers import IdentityResolver
 
 

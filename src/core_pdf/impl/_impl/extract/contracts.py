@@ -10,12 +10,13 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl._impl.model.text import internal_reconcile_text_words
 from core_pdf.impl._impl.output.model import (
     TextSpan,
 )
 from core_pdf.impl._impl.runtime.array_views import readonly
-from core_pdf.impl.records import TextWord, internal_reconcile_text_words
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.types import TextWord
 
 FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]

@@ -24,16 +24,17 @@ from core_pdf.impl._impl.extract.contracts import (
 from core_pdf.impl._impl.layout.lines import LayoutLine
 from core_pdf.impl._impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl._impl.model.text import collapse_leader_runs, collapse_ws
+from core_pdf.impl._impl.model.text import (
+    collapse_leader_runs,
+    collapse_ws,
+    internal_reconcile_text_words,
+    internal_text_word_tokens,
+)
 from core_pdf.impl._impl.output.model import (
     TextSpan,
 )
 from core_pdf.impl._impl.runtime.array_views import finite_median
-from core_pdf.impl.records import (
-    TextWord,
-    internal_reconcile_text_words,
-    internal_text_word_tokens,
-)
+from core_pdf.impl.types import TextWord
 
 internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
 

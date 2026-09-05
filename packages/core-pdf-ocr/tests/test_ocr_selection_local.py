@@ -156,8 +156,8 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
 
 
 def test_font_decoder_has_no_mutable_document_learning_state() -> None:
-    from core_pdf.impl.primitives import PdfString
     from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
+    from core_pdf.impl.types import PdfString
 
     decoder = FontDecoder(
         {

@@ -9,10 +9,10 @@ from typing import cast
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document import internal_PageLookup, internal_PageNode
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_14_structure.tree import StructureElement
+from core_pdf.impl.types import PdfReference
 from tests.helpers.pdf_bytes import assemble_pdf
 
 

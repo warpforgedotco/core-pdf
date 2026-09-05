@@ -4,12 +4,12 @@ from typing import cast
 import pytest
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.primitives import PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.resolver import (
     ObjectResolver,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, iter_indirect_object_headers, key_for
+from core_pdf.impl.types import PdfReference, PdfString
 
 
 def test_finds_indirect_object_header_in_full_backing_bytes() -> None:

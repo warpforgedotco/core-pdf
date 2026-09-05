@@ -11,11 +11,6 @@ from collections.abc import Callable
 from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import (
-    PdfName,
-    PdfReference,
-    PdfString,
-)
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
@@ -35,6 +30,11 @@ from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,
+)
+from core_pdf.impl.types import (
+    PdfName,
+    PdfReference,
+    PdfString,
 )
 
 PdfName_of = PdfName.of

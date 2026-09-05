@@ -9,7 +9,6 @@ from cryptography.hazmat.primitives import hashes
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfUnsupportedError
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_document import document as document_module
 from core_pdf.impl.spec.s_07_security.pdf_mac import (
     internal_CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID,
@@ -36,7 +35,7 @@ from core_pdf.impl.spec.s_07_security.pdf_mac import (
 )
 from core_pdf.impl.spec.s_07_security.standard import internal_StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.types import PdfByteBuffer
+from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference, PdfString
 from tests.helpers.paths import FIXTURES
 
 internal_FIXTURE = FIXTURES / "security_interop" / "pdf_mac" / "aes-256-r6-cbc-mac.pdf"

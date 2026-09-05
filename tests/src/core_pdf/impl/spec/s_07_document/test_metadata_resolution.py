@@ -5,13 +5,13 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_document.metadata import (
     parse_xmp_metadata,
     resolve_info_metadata,
 )
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf.impl.types import PdfName
 from tests.helpers.resolvers import IdentityResolver
 
 

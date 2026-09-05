@@ -16,7 +16,7 @@ from core_pdf.impl._impl.output.model import (
     Page,
 )
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.types import PdfReference
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 

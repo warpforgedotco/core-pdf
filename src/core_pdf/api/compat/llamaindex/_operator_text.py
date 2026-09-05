@@ -15,7 +15,6 @@ from core_pdf.api.compat._text_state import (
     internal_positioned_text,
     internal_PREDEFINED_ENCODING_CODECS,
 )
-from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
@@ -33,6 +32,7 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.types import PdfName, PdfString
 
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))

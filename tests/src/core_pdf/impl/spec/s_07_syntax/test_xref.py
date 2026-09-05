@@ -4,7 +4,6 @@ from __future__ import annotations
 import pytest
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_syntax.xref import (
     XRefScanner,
     find_eof_marker,
@@ -12,6 +11,7 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
     key_for,
     parse_xref_entry_line,
 )
+from core_pdf.impl.types import PdfName
 
 
 def build_xref_prev_chain(section_count: int) -> tuple[bytes, int]:

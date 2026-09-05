@@ -51,9 +51,7 @@ src/core_pdf/
   _vendor/               vendored third-party source and data
   impl/
     exceptions.py        error hierarchy
-    records.py           public extraction records
-    primitives.py        PDF primitives
-    types.py             buffers, protocols, and geometry aliases
+    types.py             PDF primitives, capture records, buffers, protocols, geometry aliases
     spec/                PDF specification implementation (see below)
     _impl/
       extract/           native extraction, block layout, and tables

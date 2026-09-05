@@ -26,16 +26,16 @@ from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.records import (
+from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
+from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
+from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
     ImageRecord,
     PageScoped,
+    PdfSource,
 )
-from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
-from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.types import PdfSource
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_document.records import RawFormField

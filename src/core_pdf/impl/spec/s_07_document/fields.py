@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias, cast
 
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_document.records import RawFormField
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
 FieldTraversalRecord: TypeAlias = tuple[Literal["record"], RawFormField]

@@ -10,8 +10,8 @@ from core_pdf.impl._impl.extract.emit import (
     internal_normalized_blocks,
 )
 from core_pdf.impl._impl.model.geometry import RectBox
-from core_pdf.impl.records import TextWord
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from core_pdf.impl.types import TextWord
 from tests.helpers.extract_fakes import text_run
 
 

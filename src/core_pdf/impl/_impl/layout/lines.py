@@ -14,8 +14,7 @@ from typing import TYPE_CHECKING
 from core_pdf.impl._impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl._impl.model.glyphs import glyph_text_has_unsupported_codepoint
 from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl.records import TextWord
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import Rectangle, TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.model.runs import (
