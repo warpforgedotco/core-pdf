@@ -141,33 +141,38 @@ def test_pdf_mac_payload_bytes_do_not_depend_on_global_oid_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registered_name = "core_pdf_test_pdf_mac_integrity_info"
-    monkeypatch.setitem(
-        cms.ContentType._map,
-        internal_PDF_MAC_INTEGRITY_INFO_OID,
-        registered_name,
-    )
-    raw_reverse_map = cms.ContentType._reverse_map
-    if raw_reverse_map is None:
-        reverse_map = {name: oid for oid, name in cms.ContentType._map.items()}
-        monkeypatch.setattr(cms.ContentType, "_reverse_map", reverse_map)
-    else:
-        reverse_map = cast(dict[str, str], raw_reverse_map)
-    monkeypatch.setitem(
-        reverse_map,
-        registered_name,
-        internal_PDF_MAC_INTEGRITY_INFO_OID,
-    )
-    monkeypatch.setitem(
-        cms.EncapsulatedContentInfo._oid_specs,
-        registered_name,
-        internal_PdfMacIntegrityInfo,
-    )
+    # Let asn1crypto initialize its class state before patching either map.
+    # Restoring an initially absent reverse map after class setup leaves the
+    # library believing ContentType is initialized when that map is still None.
+    cms.ContentType("authenticated_data")
+    reverse_map = cast(dict[str, str], cms.ContentType._reverse_map)
+    with monkeypatch.context() as registry:
+        registry.setitem(
+            cms.ContentType._map,
+            internal_PDF_MAC_INTEGRITY_INFO_OID,
+            registered_name,
+        )
+        registry.setitem(
+            reverse_map,
+            registered_name,
+            internal_PDF_MAC_INTEGRITY_INFO_OID,
+        )
+        registry.setitem(
+            cms.EncapsulatedContentInfo._oid_specs,
+            registered_name,
+            internal_PdfMacIntegrityInfo,
+        )
 
+        byte_range, auth_data = internal_auth_data(pdf_mac_material)
+        assert isinstance(
+            auth_data["encap_content_info"]["content"].parsed,
+            internal_PdfMacIntegrityInfo,
+        )
+        internal_validate_auth_data(pdf_mac_material, byte_range, auth_data)
+
+    # The ordinary validator must also work after the registration is removed,
+    # including when this was the process's first ContentType use.
     byte_range, auth_data = internal_auth_data(pdf_mac_material)
-    assert isinstance(
-        auth_data["encap_content_info"]["content"].parsed,
-        internal_PdfMacIntegrityInfo,
-    )
     internal_validate_auth_data(pdf_mac_material, byte_range, auth_data)
 
 
