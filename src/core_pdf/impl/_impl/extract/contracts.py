@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy
 
@@ -17,6 +17,10 @@ from core_pdf.impl._impl.output.model import (
 from core_pdf.impl._impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.types import TextWord
+
+if TYPE_CHECKING:
+    from core_pdf.impl.spec.s_07_document.page import PdfPage
+    from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawFormField
 
 FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]
@@ -379,12 +383,12 @@ class PageEvidence:
 
 @dataclass(frozen=True, slots=True)
 class PageAnalysis:
-    page: Any
+    page: PdfPage
     width: float
     height: float
     rotation: int
-    fields: tuple[Any, ...]
-    annotations: tuple[Any, ...]
+    fields: tuple[RawFormField, ...]
+    annotations: tuple[RawAnnotation, ...]
     program: PageProgram
     observations: ObservationBatch
     evidence: PageEvidence

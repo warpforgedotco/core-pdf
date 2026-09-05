@@ -16,11 +16,13 @@ import pytest
 
 from core_pdf import PdfDocument as NativePdfDocument
 from core_pdf import PdfPage as NativePdfPage
+from core_pdf.api import document as native_api
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.output.model import Document, Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
 from core_pdf.impl.exceptions import PdfDocumentClosedError
 from core_pdf_ocr import PdfDocument, PdfPage
+from core_pdf_ocr.api import document as ocr_api
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis, RecognitionResult
 from core_pdf_ocr.impl.extract.ocr import pipeline as recognition_pipeline
 from tests.helpers.pdf_bytes import one_page_pdf, stream_obj, text_pages_pdf
@@ -113,13 +115,53 @@ def test_companion_selection_and_adapters_preserve_order_and_operation_lifetime(
                 adapted.append(result)
                 return replace(result, metadata={**result.metadata, "adapted": True})
 
-        result = document.extract(pages=[3, 1, 3], adapters=(Adapter(),))
+        class FinalAdapter:
+            def apply(self, result: Document) -> Document:
+                assert document.internal_active_operations == 0
+                assert result.metadata["adapted"] is True
+                adapted.append(result)
+                return replace(result, metadata={**result.metadata, "final": True})
+
+        result = document.extract(pages=[3, 1, 3], adapters=(Adapter(), FinalAdapter()))
         assert tuple(page.page_number for page in result.pages) == (3, 1)
         assert tuple(page.text for page in result.pages) == (texts[2], texts[0])
         assert all(page.base_route == "native" for page in result.pages)
         assert result.metadata["adapted"] is True
-        assert len(adapted) == 1
+        assert result.metadata["final"] is True
+        assert len(adapted) == 2
         assert "adapted" not in adapted[0].metadata
+        assert "final" not in adapted[1].metadata
+
+
+@pytest.mark.parametrize("page_only", [False, True])
+def test_companion_hooks_resolve_the_current_module_entry_points(
+    monkeypatch: pytest.MonkeyPatch, page_only: bool
+) -> None:
+    with PdfDocument(text_pages_pdf(("body",))) as document:
+        page = document.pages[0]
+        expected_page = Page(page_number=1)
+        expected = expected_page if page_only else Document(pages=(expected_page,))
+        calls: list[object] = []
+
+        def extract(source: object, context: ExtractionScope, *args: object) -> Page | Document:
+            assert document.internal_active_operations == 1
+            assert source is (page if page_only else document)
+            context.raise_if_cancelled()
+            calls.append(source)
+            return expected
+
+        def unexpected_native(*args: object) -> None:
+            raise AssertionError("companion called the native API extraction hook")
+
+        entrypoint = "extract_page" if page_only else "extract_document"
+        monkeypatch.setattr(ocr_api, entrypoint, extract)
+        monkeypatch.setattr(native_api, entrypoint, unexpected_native)
+
+        actual = page.extract() if page_only else document.extract()
+
+        assert actual is expected
+        assert len(calls) == 1
+        assert document.internal_active_operations == 0
 
 
 @pytest.mark.parametrize("page_only", [False, True])

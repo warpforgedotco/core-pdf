@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl._impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
@@ -25,20 +25,41 @@ from core_pdf.impl._impl.output.model import (
     Figure,
     FormField,
     Link,
+    Page,
     Table,
 )
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
 
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.extract.capture import internal_StructureUnset
+    from core_pdf.impl.spec.s_07_document.page import PdfPage
+    from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawFormField
+    from core_pdf.impl.spec.s_14_structure.tree import PageStructure
+
 internal_T = TypeVar("internal_T")
+internal_Record = TypeVar("internal_Record")
+
+
+class internal_Layout(Protocol):
+    def __call__(
+        self,
+        observations: ObservationBatch,
+        *,
+        obstacles: tuple[tuple[float, float, float, float], ...],
+        use_xy_cut: bool,
+        rotation: int,
+        page_width: float,
+        page_height: float,
+    ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]: ...
 
 
 def internal_collected_records(
-    fetch: Callable[[], Iterable[Any]],
-    build: Callable[[int, Any], internal_T],
+    fetch: Callable[[], Iterable[internal_Record]],
+    build: Callable[[int, internal_Record], internal_T],
 ) -> tuple[internal_T, ...]:
     """Fetch page records and build one product per record, skipping bad entries."""
-    records: Iterable[Any]
+    records: Iterable[internal_Record]
     try:
         records = fetch()
     except (TypeError, ValueError):
@@ -75,11 +96,11 @@ class internal_PageExtraction:
 
     def __init__(
         self,
-        page: Any,
+        page: PdfPage,
         *,
         capture: PageAnalysis | None = None,
-        fields: Iterable[Any] | None = None,
-        structure: Any = internal_STRUCTURE_UNSET,
+        fields: Iterable[RawFormField] | None = None,
+        structure: PageStructure | None | internal_StructureUnset = internal_STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
     ) -> None:
         self.page = page
@@ -91,7 +112,7 @@ class internal_PageExtraction:
                 replace(capture, fields=field_records) if field_records is not None else capture
             )
         else:
-            annotation_records: tuple[Any, ...] | None
+            annotation_records: tuple[RawAnnotation, ...] | None
             try:
                 # An empty strict projection can still hide recoverable raw
                 # annotations (for example a non-array /Annots in recovery mode).
@@ -123,9 +144,7 @@ class internal_PageExtraction:
         observations: ObservationBatch,
         tables: tuple[Table, ...],
         *,
-        layout: Callable[
-            ..., tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]
-        ] = layout_blocks_with_evidence,
+        layout: internal_Layout = layout_blocks_with_evidence,
     ) -> internal_PageProducts:
         """Use shared page geometry to lay out an already chosen observation set."""
         capture = self.capture
@@ -148,7 +167,7 @@ class internal_PageExtraction:
         )
         return internal_PageProducts(tables, blocks, order_evidence)
 
-    def assembled_page(self, context: ExtractionScope) -> Any:
+    def assembled_page(self, context: ExtractionScope) -> Page:
         capture = self.capture
         products = self.run(context)
         blocks = products.blocks
@@ -224,6 +243,6 @@ class internal_PageExtraction:
         return assembled
 
 
-def extract_page(page: Any, context: ExtractionScope) -> Any:
+def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
     """Extract and emit one page."""
     return internal_PageExtraction(page).assembled_page(context)

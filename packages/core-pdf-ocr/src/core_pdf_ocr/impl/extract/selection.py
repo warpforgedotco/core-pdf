@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, cast
+from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl._impl.extract.selection import (
     internal_assemble_document,
@@ -34,6 +34,10 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
     decode_stroked_text_profile_with_alphabet,
 )
 from core_pdf_ocr.impl.extract.pipeline import internal_PageExtraction
+
+if TYPE_CHECKING:
+    from core_pdf.impl.spec.s_07_document.document import PdfDocument
+    from core_pdf.impl.spec.s_07_document.page import PdfPage
 
 DOCUMENT_FONT_SEED_LIMIT = 4
 DOCUMENT_FONT_SEEDS_PER_DECODER = 2
@@ -432,9 +436,9 @@ def internal_prepare_selection_state(
 
 
 def extract_document(
-    document: Any,
+    document: PdfDocument,
     context: ExtractionScope,
-    pages: Sequence[Any],
+    pages: Sequence[PdfPage],
 ) -> Document:
     pages = tuple(pages)
     extractions = internal_prepare_document_pages(document, pages, internal_PageExtraction)

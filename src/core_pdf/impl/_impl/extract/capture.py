@@ -34,7 +34,12 @@ from core_pdf.impl._impl.model.glyphs import (
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 
-internal_STRUCTURE_UNSET = object()
+
+class internal_StructureUnset:
+    __slots__ = ()
+
+
+internal_STRUCTURE_UNSET = internal_StructureUnset()
 WORD_TOKEN_RE = re.compile(r"\w+")
 
 # Thresholds for discarding a text layer that merely repeats another one. A layer needs

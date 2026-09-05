@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.extract.pipeline import (
@@ -13,6 +13,7 @@ from core_pdf.impl._impl.extract.pipeline import (
 from core_pdf.impl._impl.extract.pipeline import (
     internal_PageProducts,
 )
+from core_pdf.impl._impl.output.model import Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf_ocr.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
@@ -22,6 +23,10 @@ from core_pdf_ocr.impl.extract.observations import fuse_observations, plan_page
 from core_pdf_ocr.impl.extract.table_detection import extract_tables
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.extract.capture import internal_StructureUnset
+    from core_pdf.impl.spec.s_07_document.page import PdfPage
+    from core_pdf.impl.spec.s_07_document.records import RawFormField
+    from core_pdf.impl.spec.s_14_structure.tree import PageStructure
     from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 
 
@@ -41,13 +46,13 @@ class internal_PageExtraction(NativePageExtraction):
 
     def __init__(
         self,
-        page: Any,
+        page: PdfPage,
         *,
         capture: PageAnalysis | None = None,
         plan: WorkPlan | None = None,
         recognition: RecognitionResult | None = None,
-        fields: Iterable[Any] | None = None,
-        structure: Any = internal_STRUCTURE_UNSET,
+        fields: Iterable[RawFormField] | None = None,
+        structure: PageStructure | None | internal_StructureUnset = internal_STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
         stroked_profile: StrokedTextProfile | None = None,
     ) -> None:
@@ -100,6 +105,6 @@ class internal_PageExtraction(NativePageExtraction):
         )
 
 
-def extract_page(page: Any, context: ExtractionScope) -> Any:
+def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
     """Extract one page, recognizing missing or untrusted native text when needed."""
     return internal_PageExtraction(page).assembled_page(context)

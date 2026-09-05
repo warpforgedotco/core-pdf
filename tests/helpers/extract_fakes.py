@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any
 
 from core_pdf.impl._impl.extract.contracts import (
@@ -17,18 +17,40 @@ from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
+from core_pdf.impl.spec.s_07_document.page import PdfPage
 
 Box = tuple[float, float, float, float]
 
 
-@dataclass(slots=True)
-class FakePage:
-    """The few page attributes the parse stages read; ``PageAnalysis.page`` is ``Any``."""
+class FakePage(PdfPage):
+    """Spec page double exposing the geometry read by isolated extraction stages."""
 
-    width: float = 600.0
-    height: float = 800.0
-    page_number: int = 1
-    media_box: tuple[float, float, float, float] | None = None
+    def __init__(
+        self,
+        width: float = 600.0,
+        height: float = 800.0,
+        page_number: int = 1,
+        media_box: Box | None = None,
+    ) -> None:
+        self.internal_width = width
+        self.internal_height = height
+        self.page_number = page_number
+        self.internal_media_box = media_box
+
+    @property
+    def width(self) -> float:
+        return self.internal_width
+
+    @property
+    def height(self) -> float:
+        return self.internal_height
+
+    @property
+    def media_box(self) -> Box | None:
+        return self.internal_media_box
+
+    def resolve_transparency_group_alpha(self) -> float | None:
+        return None
 
 
 def page_evidence(**overrides: Any) -> PageEvidence:

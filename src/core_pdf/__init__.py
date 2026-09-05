@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
-    from core_pdf.api.document import PdfDocument, PdfPage
+    from core_pdf.api.document import DocumentAdapter, PdfDocument, PdfPage
     from core_pdf.impl._impl.model.page_selection import PageSelection
     from core_pdf.impl._impl.output.model import (
         ContentNode,
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         TextWord,
     )
 internal_EXPORTS = {
+    "DocumentAdapter": ("core_pdf.api.document", "DocumentAdapter"),
     "Document": ("core_pdf.impl._impl.output.model", "Document"),
     "PageSelection": ("core_pdf.impl._impl.model.page_selection", "PageSelection"),
     "PdfDocument": ("core_pdf.api.document", "PdfDocument"),
@@ -94,6 +95,7 @@ install_lazy_module_exports(globals(), internal_EXPORTS)
 
 
 __all__ = (
+    "DocumentAdapter",
     "Document",
     "PageSelection",
     "PdfDocument",

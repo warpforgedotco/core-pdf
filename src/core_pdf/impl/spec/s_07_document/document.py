@@ -154,7 +154,7 @@ class PdfDocument(
     DocumentXRefMixin,
     Generic[internal_PageT],
 ):
-    # Class-level default; subclasses assign their page factory per instance.
+    # Subclasses override this default with their page factory.
     page_class: type | None = None
 
     __slots__ = (

@@ -11,6 +11,30 @@ with PdfDocument.open("document.pdf") as document:
     print(document.structured_document.text)
 ```
 
+`PdfPage.extract()` and `PdfPage.structured_view` return a structured `Page`;
+`PdfDocument.extract()` and `PdfDocument.structured_document` return a structured `Document`.
+
+## Extraction adapters
+
+`DocumentAdapter`, exported from `core_pdf`, describes an `apply(document: Document) -> Document`
+method. Adapters run in the supplied order after extraction releases its document operation.
+They transform the structured result, and do not need to inherit from the protocol:
+
+```python
+from dataclasses import replace
+
+from core_pdf import Document, PdfDocument
+
+
+class AddTag:
+    def apply(self, document: Document) -> Document:
+        return replace(document, metadata={**document.metadata, "tag": "review"})
+
+
+with PdfDocument.open("document.pdf") as document:
+    result = document.extract(adapters=(AddTag(),))
+```
+
 ## OCR extraction
 
 Starting with 0.0.6, `core_pdf.PdfDocument` and the compatibility facades extract only PDF-native
@@ -30,6 +54,9 @@ constructor, selection, adapters, rendering, and close/cancellation behavior. Th
 includes native, OCR, and hybrid routes and returns the same structured model types. Shared
 records and errors remain exported from `core_pdf`. The companion pins its exact matching core
 release; its internal stage imports are not a public extension API.
+
+Both packages inherit the same extraction lifecycle. The companion overrides the extraction
+hooks and page factory to select recognition without copying operation or adapter handling.
 
 Use `core-pdf-ocr document.pdf --print` or `python -m core_pdf_ocr document.pdf --print` to
 select recognition from the command line. The options match `core-pdf`.
