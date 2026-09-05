@@ -11,6 +11,7 @@ when extraction changes.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from operator import attrgetter
 from typing import Any
 
 import pytest
@@ -33,3 +34,10 @@ def test_normalized_json_graph_benchmark(benchmark, extracted_document) -> None:
     assert record["schema_version"]
     assert len(record["pages"]) == 1
     assert record["lines"]
+
+
+def test_document_nodes_benchmark(benchmark, extracted_document) -> None:
+    nodes = benchmark(attrgetter("nodes"), extracted_document)
+
+    assert nodes
+    assert [node.node_id for node in nodes] == list(range(len(nodes)))

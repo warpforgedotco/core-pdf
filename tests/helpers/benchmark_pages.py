@@ -26,6 +26,10 @@ from pathlib import Path
 from typing import Any
 
 from core_pdf import PdfDocument
+from core_pdf.impl._impl.extract.emit import internal_normalized_blocks
+from core_pdf.impl._impl.extract.pipeline import internal_PageExtraction
+from core_pdf.impl._impl.output.model import Block, Table
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from tests.helpers.paths import FIXTURES, SCORE_BENCH, require_fixture
 
 PYPDF_RESOURCES = FIXTURES / "pypdf" / "resources"
@@ -54,3 +58,14 @@ def opened_page(path: Path, index: int = 0) -> Iterator[Any]:
 def reinterpret(page: Any) -> Any:
     """Interpret ``page``'s content streams again."""
     return page.get_page_program()
+
+
+def projection_inputs(path: Path = MIXED_PDF) -> tuple[list[Block], tuple[Table, ...]]:
+    """Prepare real layout and table candidates before their overlap is reconciled."""
+    with opened_page(path) as page:
+        extraction = internal_PageExtraction(page)
+        products = extraction.run(ExtractionScope())
+        return (
+            internal_normalized_blocks(products.blocks, extraction.capture.program.drawings),
+            products.tables,
+        )

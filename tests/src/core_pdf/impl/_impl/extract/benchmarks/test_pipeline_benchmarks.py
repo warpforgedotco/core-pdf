@@ -26,10 +26,13 @@ from core_pdf import PdfDocument
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl._impl.extract.capture import capture_page
 from core_pdf.impl._impl.extract.table_detection import extract_tables
+from core_pdf.impl._impl.extract.table_reconcile import internal_project_text_and_tables
+from core_pdf.impl._impl.output.model import Block, Table
 from tests.helpers.benchmark_pages import (
     DENSE_PDF,
     MIXED_PDF,
     opened_page,
+    projection_inputs,
 )
 from tests.helpers.paths import require_fixture
 
@@ -83,6 +86,18 @@ def test_extract_tables_benchmark(benchmark, dense: Staged) -> None:
     tables = benchmark(extract_tables, dense.capture, dense.observations)
 
     assert isinstance(tables, tuple)
+
+
+@pytest.fixture(scope="module")
+def projection() -> tuple[list[Block], tuple[Table, ...]]:
+    return projection_inputs()
+
+
+def test_table_projection_benchmark(benchmark, projection) -> None:
+    blocks, tables = benchmark(internal_project_text_and_tables, *projection)
+
+    assert blocks
+    assert tables
 
 
 def test_layout_blocks_benchmark(benchmark, dense: Staged) -> None:
