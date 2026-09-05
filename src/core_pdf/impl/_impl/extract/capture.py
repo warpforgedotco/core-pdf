@@ -26,14 +26,20 @@ from core_pdf.impl._impl.model.geometry import (
     bbox_union,
     interval_overlap,
     rect_tuple,
+    union_bbox,
 )
 from core_pdf.impl._impl.model.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
 from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.spec.s_07_content.marked_content import (
+    extend_baseline,
+    min_optional_confidence,
+)
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_content.stream_state import LayoutFormId
+from core_pdf.impl.types import Rectangle
 
 
 class internal_StructureUnset:
@@ -216,31 +222,47 @@ def internal_apply_structure_actual_text(
             return runs
     if structure is None:
         return runs
-    replaced_mcids: set[int] = set()
+    replacements: dict[int, TextRun] = {}
     output: list[TextRun] = []
     for run in runs:
         mcid = internal_run_mcid(run)
         if mcid is None:
             output.append(run)
             continue
-        if mcid in replaced_mcids:
-            continue
         try:
             element = structure[mcid] if 0 <= mcid < len(structure) else None
             actual_text = getattr(element, "actual_text", None)
         except (IndexError, TypeError, ValueError):
             actual_text = None
-        if not isinstance(actual_text, str) or not actual_text:
+        if not isinstance(actual_text, str):
             output.append(run)
             continue
-        replaced_mcids.add(mcid)
-        output.append(
-            run.replace(
+        # Several MCIDs may belong to one structure element. Its ActualText
+        # replaces the entire element, and an empty string deliberately removes it.
+        marker = id(element)
+        replacement = replacements.get(marker)
+        if replacement is None:
+            replacement = run.replace(
                 text=actual_text,
                 provenance=(*run.provenance, ("unicode_source", "structure_actual_text")),
                 glyph_clusters=run.glyph_clusters,
             )
+            replacements[marker] = replacement
+            output.append(replacement)
+            continue
+        replacement.x0 = min(replacement.x0, run.x0)
+        replacement.y0 = min(replacement.y0, run.y0)
+        replacement.x1 = max(replacement.x1, run.x1)
+        replacement.y1 = max(replacement.y1, run.y1)
+        replacement.advance_bbox = cast(
+            Rectangle, union_bbox(replacement.advance_bbox, run.advance_bbox)
         )
+        replacement.union_ink_bbox(run.ink_bbox)
+        replacement.baseline = extend_baseline(replacement.baseline, run.baseline)
+        replacement.confidence = min_optional_confidence(replacement.confidence, run.confidence)
+        replacement.glyph_clusters += run.glyph_clusters
+        replacement.visible = replacement.visible or run.visible
+        replacement.inside_active_clip = replacement.inside_active_clip or run.inside_active_clip
     return tuple(output)
 
 
