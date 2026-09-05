@@ -5,29 +5,6 @@ dependency direction.
 
 ---
 
-## 1. Public surface
-
-`core_pdf/__init__.py` maps every public name to its defining module in `internal_EXPORTS` and
-resolves it on first access with `install_lazy_module_exports`. This keeps `import core_pdf` cheap
-and makes the export table the authoritative public surface. Everything under `core_pdf.impl.*` is
-internal and may change without notice.
-
-The two central objects share one public owner:
-
-- **`PdfDocument`** (`api/document.py`) — opens documents, provides page access and structured
-  extraction, and owns caches shared across pages. The CLI drives it through `process_pdf` in
-  `cli.py`.
-- **`PdfPage`** (`api/document.py`, extending the spec-level page in
-  `impl/spec/s_07_document/page.py`) — provides per-page extraction and rendering.
-
-Compatibility facades under `core_pdf.api.compat.*` project the engine's public objects into
-third-party interfaces without sharing facade state. See [api.md](api.md) for the supported API,
-structured JSON format, and compatibility behavior.
-
----
-
-## 2. The extraction pipeline
-
 The `extract/` package owns extraction. Its initializer exposes only `extract_page`,
 `extract_document`, and the lazy OCR prewarmer; stage internals are imported from their owning
 modules. The stages run in roughly this order:
@@ -52,7 +29,7 @@ bytes → │ capture_page│ → plan_page ────────────
                                     assemble_page → Page (extract_page)
 ```
 
-## 3. Source layout
+## Source layout
 
 ```text
 src/core_pdf/
@@ -75,31 +52,6 @@ src/core_pdf/
     render/              display lists, raster kernels, targets, and page composition
 ```
 
-### Dependency direction
-
-Dependency direction is enforced at stable boundaries by the import-linter contracts in
-`pyproject.toml`. The broad acyclic processing spine is:
-
-```text
-api/document → impl/extract → impl/render → impl/output → impl/model
-```
-
-`api/document.py` composes the internal engine into the public document/page API.
-The low-level catalog, page tree, and security-aware document stay in
-`impl/spec/s_07_document/`. Nothing under `impl/` may import the public API or its
-compatibility facades.
-
-`output/model.py` owns the format-neutral document records, views, and editor;
-`output/serialize.py` projects that model into markdown, HTML, JSON, CSV, and TEI.
-They share one output package because the model's convenience methods invoke its
-serializers. Import their defining modules directly; the package initializer is not
-a forwarding facade.
-
-`model/text.py` owns the text primitives shared by capture, layout, extraction, and
-compatibility adapters. `model/page_selection.py` owns the selection type and its
-normalization, used by both PDF and structured documents. These foundations must stay
-below `spec/` as well as processing: neither is an extraction stage or PDF syntax rule.
-
 ### The `spec/s_NN_*` scheme
 
 Subpackages under `spec/` mirror chapters of the PDF specification:
@@ -116,39 +68,9 @@ Subpackages under `spec/` mirror chapters of the PDF specification:
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
 
-Chapter numbers do not determine dependency order. `s_07_syntax_primitives` contains only kernels
-shared by filters and the upper COS layer; `s_07_syntax` owns the mutually dependent lexer,
-streams, object model, xref, and resolution machinery.
-
-Declarative metadata has one owner: the content-operator vocabulary belongs in
-`s_07_syntax_primitives/content_operators.py`, and stream-filter behavior belongs in
-`s_07_filters/registry.py`. Extend those registries instead of creating parallel tables.
-
-Within `s_07_content`, `state.py` owns PDF graphics/text state and operator handlers;
-`stream_execution.py` owns nested execution and unwinds suspended streams on failure.
-`stream_state.py` defines the graphics fields shared by q/Q and stream snapshots, with
-text/line matrices and resource scope saved only across streams. `glyph_capture.py`
-captures decoded glyphs from explicit geometry and paint inputs, while `text_runs.py`
-owns normalization and adjacent-run accumulation. `marked_content.py` retains an
-ActualText span's first run metadata while collecting its geometry. `capture.py`
-defines captured paths, drawings, and inline images; inline images have one canonical
-record, projected through `PageProgram` for both page and appearance rendering.
-Capture ordering still has legacy sequence-number ties between paints and scope markers.
-Any sequencing change must account for clip/group boundaries and paint commands together;
-advancing inline images alone can clip subsequent text before its state is restored.
-
-Shared literal-string decoding belongs in `s_07_syntax_primitives/scanning.py`; the lexer and
-CMap tokenizer retain their own error handling. The complete table stage is `extract_tables`
-in `extract/table_detection.py`. Raster painters access clipping through the target's `clip`
-state in `render/clipping.py`.
-
-`DocumentOperation` owns the lifetime of an active extraction and defers document resource
-release until it finishes. The `ExtractionScope` passed through the pipeline checks cancellation;
-it does not acquire or release resources.
-
 ---
 
-## 4. Rendering constraints
+## Rendering constraints
 
 ### Device colour
 
