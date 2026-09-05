@@ -52,6 +52,33 @@ def test_filtered_inline_image_without_terminator_keeps_boundary_fallback() -> N
     assert image.data == b"abc"
 
 
+@pytest.mark.parametrize("last_sample", [0, 9, 10, 13, 32])
+def test_named_color_space_preserves_trailing_whitespace_samples(last_sample: int) -> None:
+    samples = bytes((255, last_sample))
+    lexer = PdfLexer(b"/W 2 /H 1 /BPC 8 /CS /Named ID " + samples + b" EI Q")
+
+    assert parse_inline_image(lexer).data == samples
+
+
+@pytest.mark.parametrize(
+    ("separator", "first_sample"),
+    [
+        (separator, sample)
+        for separator in (b" ", b"\n", b"\r", b"\r\n")
+        for sample in (0, 9, 10, 13, 32)
+        # CR followed by LF is unambiguously one syntax EOL, not two values.
+        if (separator, sample) != (b"\r", 10)
+    ],
+)
+def test_id_separator_does_not_consume_the_first_binary_sample(
+    separator: bytes, first_sample: int
+) -> None:
+    samples = bytes((first_sample, 255))
+    lexer = PdfLexer(b"/W 2 /H 1 /BPC 8 /CS /G ID" + separator + samples + b" EI Q")
+
+    assert parse_inline_image(lexer).data == samples
+
+
 def test_filtered_inline_image_hint_supports_sliced_memoryview() -> None:
     content = b"/F /A85 ID abc EI def~>\nEI Q"
     source = memoryview(b"prefix" + content + b"suffix")[len(b"prefix") : -len(b"suffix")]
@@ -125,9 +152,19 @@ def test_inline_image_validation_rejects_unterminated_data() -> None:
         b"/BI /ID /missing q Q",
         b"[BI /W 1 ID missing] q Q",
         b"<< /Key BI /W 1 ID missing >> q Q",
+        b"[<< /Key [(BI /W 1 ID missing)] >>] q Q",
+        b"<4249> Tj /Not#20BI Do xBI BIx",
+        b"(escaped \\(BI missing\\)) ' 1 2 (text) \"",
     ],
 )
 def test_inline_image_validation_ignores_tokens_in_lexical_operands(prefix: bytes) -> None:
     valid_image = b" BI /W 1 /H 1 /BPC 8 /CS /G ID \x00\nEI Q"
 
     assert validate_inline_images(prefix + valid_image) is None
+
+
+def test_inline_image_validation_checks_images_after_a_valid_payload() -> None:
+    valid = b"BI /W 1 /H 1 /BPC 8 /CS /G ID x EI "
+    malformed = b"BI /W 1 /H 1 /BPC 8 /CS /G ID missing"
+    with pytest.raises(PdfParseError, match="unterminated inline image data"):
+        validate_inline_images(memoryview(valid + malformed))

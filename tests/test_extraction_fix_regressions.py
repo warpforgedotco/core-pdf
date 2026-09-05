@@ -33,7 +33,7 @@ from core_pdf.impl.extract.table_cleanup import (
     internal_merge_wrapped_cell_rows,
     internal_stream_table_reads_like_prose,
 )
-from core_pdf.impl.output import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from tests.helpers.paths import score_bench_pdf
 from tests.helpers.structured import cell, native_block, stream_table
 
@@ -314,8 +314,8 @@ def test_cell_background_does_not_paint_over_its_text() -> None:
     fixture = score_bench_pdf("fhhd0346-p009.pdf")
     scale = 2.0
     with PdfDocument.open(fixture) as document:
-        capture = internal_PageExtraction(document.pages[0]).capture()
-        header = next(run for run in capture.runs if (run.text or "").strip() == "Material")
+        capture = internal_PageExtraction(document.pages[0]).capture
+        header = next(run for run in capture.program.runs if (run.text or "").strip() == "Material")
         raster = document.pages[0].render().rasterize(scale=scale)
 
     pixels = raster.array()[:, :, :3].min(axis=2)

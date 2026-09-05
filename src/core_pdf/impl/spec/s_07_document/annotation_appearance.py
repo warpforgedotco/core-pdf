@@ -11,10 +11,12 @@ does.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import transform_bbox
+from core_pdf.impl.spec.s_07_content.page_program import AppearanceProgram, CapturedProgram
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -123,15 +125,46 @@ def internal_normalized_rect(
     )
 
 
-def consume_annotation_appearances(page: Any, state: "TextState") -> None:
-    """Interpret every visible annotation appearance on ``page``."""
+def capture_annotation_appearances(
+    page: Any,
+    state: "TextState",
+    *,
+    fields: Iterable[Any] | None = None,
+    annotations: Iterable[Any] | None = None,
+) -> tuple[AppearanceProgram, ...]:
+    """Interpret each visible appearance once, retaining its source scope.
+
+    Annotation order is canonical. Fields add only widgets absent from Annots,
+    including valid widgets associated with this page through their /P entry.
+    """
     document = page.document
     try:
-        annotations = page.annotation_dicts()
+        candidates = (
+            list(page.annotation_dicts())
+            if annotations is None
+            else [annotation.dict for annotation in annotations]
+        )
     except (PdfParseError, ValueError):
-        return
+        candidates = []
+    candidates = list({id(annot): annot for annot in candidates}.values())
+    if fields is None:
+        try:
+            fields = page.get_fields()
+        except (PdfParseError, ValueError):
+            fields = ()
+    seen = {id(annot) for annot in candidates}
+    for field in fields:
+        widget = field.widget or field.dict
+        if (
+            isinstance(widget, dict)
+            and document.resolver.resolve_name(widget.get("Subtype")) == "Widget"
+            and id(widget) not in seen
+        ):
+            seen.add(id(widget))
+            candidates.append(widget)
 
-    for annot in annotations:
+    appearances: list[AppearanceProgram] = []
+    for annot in candidates:
         try:
             if not internal_should_render(document, annot):
                 continue
@@ -162,6 +195,12 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
             resources = cast(PdfDict, resolved_resources if resolved_resources else page.resources)
 
             previous_source = state.capture_source
+            state.run_accumulator.flush()
+            run_start = len(state.runs)
+            glyph_start = len(state.glyphs)
+            drawing_start = len(state.drawings)
+            image_start = len(state.inline_images)
+            line_start = len(state.lines)
             state.capture_source = "annotation_appearance"
             try:
                 state.consume_stream(
@@ -172,9 +211,29 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
                     clip_bbox=clip,
                 )
             finally:
+                state.run_accumulator.flush()
                 state.capture_source = previous_source
+                appearances.append(
+                    AppearanceProgram(
+                        kind=(
+                            "widget"
+                            if document.resolver.resolve_name(annot.get("Subtype")) == "Widget"
+                            else "annotation"
+                        ),
+                        source=annot,
+                        clip_bbox=clip,
+                        program=CapturedProgram(
+                            runs=tuple(state.runs[run_start:]),
+                            glyphs=tuple(state.glyphs[glyph_start:]),
+                            drawings=tuple(state.drawings[drawing_start:]),
+                            inline_images=tuple(state.inline_images[image_start:]),
+                            lines=tuple(state.lines[line_start:]),
+                        ),
+                    )
+                )
         except (PdfParseError, ValueError):
             continue
+    return tuple(appearances)
 
 
-__all__ = ("consume_annotation_appearances", "select_appearance_stream")
+__all__ = ("capture_annotation_appearances", "select_appearance_stream")

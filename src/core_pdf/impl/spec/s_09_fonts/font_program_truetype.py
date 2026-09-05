@@ -47,6 +47,44 @@ def internal_fonttools_bbox(
     return float(x_min), float(y_min), float(x_max), float(y_max)
 
 
+class internal_FontToolsOutlineAccess:
+    """Common normalized outline access for every sfnt-wrapped font."""
+
+    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
+
+    def __init__(self, font: TTFont) -> None:
+        self.font = font
+        self.glyph_count = len(font.getGlyphOrder())
+        self.reverse_glyph_map = font.getReverseGlyphMap()
+        units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
+        self.scale = 1000.0 / units_per_em if units_per_em else 1.0
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.reverse_glyph_map.get(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < self.glyph_count
+
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        try:
+            contours = internal_fonttools_contours(self.font, glyph_id)
+            return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
+        except FONT_PROGRAM_ERRORS:
+            return ()
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        try:
+            return internal_fonttools_bbox(self.font, glyph_id, self.scale)
+        except FONT_PROGRAM_ERRORS:
+            return None
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        contours = self.normalized_glyph_contours(glyph_id)
+        return rasterize_contours(contours, width=width, height=height) if contours else ()
+
+
 class internal_RecoverableFontTableWarningFilter(logging.Filter):
     """Hide fontTools warnings for malformed fields it already repairs safely."""
 
@@ -81,6 +119,7 @@ class TrueTypeFontProgram:
         "cmap",
         "unicode_cmap",
         "glyph_to_unicode",
+        "outlines",
     )
 
     def __init__(
@@ -96,6 +135,7 @@ class TrueTypeFontProgram:
             raise ValueError("invalid TrueType glyph tables")
         internal_ensure_glyph_order(self.font)
         self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
+        self.outlines = internal_FontToolsOutlineAccess(self.font)
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = internal_best_unicode_gid_cmap(self.font)
         self.glyph_to_unicode = internal_invert_unicode_cmap(self.unicode_cmap)
@@ -121,7 +161,7 @@ class TrueTypeFontProgram:
         return 0
 
     def has_glyph_id(self, gid: int) -> bool:
-        return 0 <= gid < len(self.font.getGlyphOrder())
+        return self.outlines.has_glyph_id(gid)
 
     def unicode_for_gid(self, gid: int) -> str:
         return self.glyph_to_unicode.get(gid, "")
@@ -132,8 +172,7 @@ class TrueTypeFontProgram:
     def glyph_bitmap_for_gid(
         self, gid: int, *, width: int = 24, height: int = 32
     ) -> tuple[int, ...]:
-        contours = self.internal_glyph_contours_for_gid(gid)
-        return rasterize_contours(contours, width=width, height=height) if contours else ()
+        return self.outlines.glyph_bitmap_for_gid(gid, width=width, height=height)
 
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
@@ -157,11 +196,7 @@ class TrueTypeFontProgram:
 
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         """Return an immutable outline in PDF's 1000-unit glyph space."""
-        contours = self.internal_glyph_contours_for_gid(gid)
-        if not contours:
-            return ()
-        scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
-        return contours if scale == 1.0 else scale_contours(contours, scale)
+        return self.outlines.normalized_glyph_contours(gid)
 
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         try:

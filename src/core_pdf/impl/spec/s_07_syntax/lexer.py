@@ -21,14 +21,13 @@ from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
-    STRING_ESCAPE,
-    STRING_SPECIAL_TABLE,
     FindableSizedBuffer,
     full_source_buffer,
     is_integer_word,
     is_number_word_bytes,
     looks_like_indirect_object_header,
     matches_keyword_with_one_substitution,
+    read_literal_string,
     skip_pdf_ignored,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
@@ -63,7 +62,6 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 
 SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
-STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
 ARRAY_END_RE = re.compile(b"]")
 
 
@@ -216,81 +214,16 @@ class PdfLexer:
         return key.decode("latin-1")
 
     def read_string(self, *, drop_unknown_escapes: bool = False) -> bytes:
-        data = self.raw_data
-        pos = self.pos + 1
-        n = self.data_len
         source_buffer = self.source_buffer
-
-        if data.c_contiguous:
-            match = STRING_SPECIAL_RE.search(data, pos)
-            end_idx = n if match is None else match.start()
-        else:
-            end_idx = pos
-            string_special = STRING_SPECIAL_TABLE
-            while end_idx < n and not string_special[data[end_idx]]:
-                end_idx += 1
-
-        if end_idx < n and data[end_idx] == 41:
-            self.pos = end_idx + 1
-            if type(source_buffer) is bytes:
-                return source_buffer[pos:end_idx]
-            return data[pos:end_idx].tobytes()
-
-        self.pos = pos
-        out = bytearray()
-        if end_idx > pos:
-            prefix = data[pos:end_idx]
-            out.extend(prefix if prefix.c_contiguous else prefix.tobytes())
-            self.pos = end_idx
-
-        depth = 1
-        while self.pos < n:
-            byte = data[self.pos]
-            self.pos += 1
-            match byte:
-                case 40:
-                    depth += 1
-                    out.append(byte)
-                case 41:
-                    depth -= 1
-                    if depth == 0:
-                        return bytes(out)
-                    out.append(byte)
-                case 92:
-                    if self.pos < n:
-                        esc = data[self.pos]
-                        self.pos += 1
-                        match esc:
-                            case _ if 48 <= esc <= 55:
-                                oct_val = esc - 48
-                                count = 1
-                                while count < 3 and self.pos < n and 48 <= data[self.pos] <= 55:
-                                    oct_val = (oct_val << 3) | (data[self.pos] - 48)
-                                    self.pos += 1
-                                    count += 1
-                                out.append(oct_val & 0xFF)
-                            case 10:
-                                if self.pos < n and data[self.pos] == 13:
-                                    self.pos += 1
-                            case 13:
-                                if self.pos < n and data[self.pos] == 10:
-                                    self.pos += 1
-                            case _:
-                                mapped = STRING_ESCAPE.get(esc)
-                                if mapped is None:
-                                    if not drop_unknown_escapes:
-                                        out.append(esc)
-                                else:
-                                    out.extend(mapped)
-                case 13 | 10:
-                    out.append(10)
-                    if self.pos < n:
-                        next_byte = data[self.pos]
-                        if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
-                            self.pos += 1
-                case _:
-                    out.append(byte)
-        raise PdfParseError("unterminated string")
+        value, self.pos = read_literal_string(
+            source_buffer if type(source_buffer) is bytes else self.raw_data,
+            self.pos,
+            self.data_len,
+            drop_unknown_escapes=drop_unknown_escapes,
+        )
+        if value is None:
+            raise PdfParseError("unterminated string")
+        return value
 
     def read_hex_string(self) -> bytes:
         self.advance(1)
@@ -767,7 +700,6 @@ class PdfLexer:
                 values["Contents"] = PdfString(
                     self.apply_decipher(raw_contents.data),
                     is_literal=raw_contents.is_literal,
-                    compatibility_data=raw_contents.compatibility_data,
                 )
         return values
 

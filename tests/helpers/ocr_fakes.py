@@ -27,6 +27,7 @@ from core_pdf.impl.extract.ocr import session as ocr_pass_tasks
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
+from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.runtime.execution import ExtractionScope
 
 Box = tuple[float, float, float, float]
@@ -180,7 +181,7 @@ class FakeDocumentPage:
     page_number: int
 
 
-class RecordingExtraction:
+class RecordingExtraction(internal_PageExtraction):
     """A page extraction whose plan and recognition calls are recorded.
 
     ``recognition`` answers with one high-confidence ``seed`` observation and
@@ -196,22 +197,17 @@ class RecordingExtraction:
         plan_calls: list[int],
         ocr_calls: list[int],
     ) -> None:
-        self.page = page
-        self.internal_capture = capture
-        self.internal_recognition: RecognitionResult | None = None
+        super().__init__(
+            page,
+            capture=capture,
+            plan=WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT),
+        )
         self.internal_recognized_at: float | None = None
         self.alphabet = alphabet
         self.plan_calls = plan_calls
         self.ocr_calls = ocr_calls
 
-    def capture(self) -> PageAnalysis:
-        return self.internal_capture
-
-    def plan(self) -> WorkPlan:
-        self.plan_calls.append(self.page.page_number)
-        return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
-
-    def recognition(self, context: object) -> RecognitionResult:
+    def recognize(self, context: object) -> RecognitionResult:
         self.ocr_calls.append(self.page.page_number)
         observations = ObservationBatch.from_columns(
             ("seed",),
@@ -219,11 +215,11 @@ class RecordingExtraction:
             source=ObservationSource.OCR,
             confidence=(99.0,),
         )
-        self.internal_recognition = RecognitionResult(
+        self.recognition_result = RecognitionResult(
             observations,
             stroked_vector_alphabet=self.alphabet,
         )
-        return self.internal_recognition
+        return self.recognition_result
 
 
 __all__ = (

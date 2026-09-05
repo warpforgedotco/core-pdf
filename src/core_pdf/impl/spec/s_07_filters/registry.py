@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+
 FilterDecoder: TypeAlias = Literal[
     "ascii85",
     "ascii_hex",
@@ -19,6 +21,12 @@ FilterDecoder: TypeAlias = Literal[
     "lzw",
     "run_length",
 ]
+
+
+def declared_filter_names(value: object) -> list[str]:
+    """Return the PDF names declared by one ``Filter`` entry."""
+    values = value if isinstance(value, (list, tuple)) else (value,)
+    return [name for item in values if (name := normalize_pdf_name(item))]
 
 
 @dataclass(frozen=True, slots=True)

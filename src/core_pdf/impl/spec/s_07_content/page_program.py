@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import IntEnum
-from typing import Any, TypeAlias
+from dataclasses import dataclass, field
+from typing import Literal, TypeAlias
 
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
@@ -16,37 +15,16 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedLine,
 )
 
-
-class PageEventKind(IntEnum):
-    TEXT = 1
-    GLYPH = 2
-    DRAWING = 3
-    IMAGE = 4
-    INLINE_IMAGE = 5
-
-
-PageEventPayload: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
+PageCommand: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
 
 
 @dataclass(frozen=True, slots=True)
-class PageEvent:
-    """One directly typed entry in page-content order."""
+class CapturedProgram:
+    """One capture scope, shared by page bodies, appearances, and pattern cells.
 
-    kind: PageEventKind
-    payload: PageEventPayload
-
-    @property
-    def seqno(self) -> int:
-        return self.payload.seqno
-
-
-@dataclass(frozen=True, slots=True)
-class PageProgram:
-    """The canonical capture shared by extraction and rendering.
-
-    A page is interpreted exactly once. Consumers read the ordinary immutable
-    product tuples directly and request a merged event tuple only when ordering
-    across product types matters.
+    The typed projections are the source of truth. ``commands`` is derived from
+    them once, in content-stream order, so every construction path produces the
+    same program.
     """
 
     runs: tuple[TextRun, ...] = ()
@@ -54,62 +32,93 @@ class PageProgram:
     drawings: tuple[CapturedDrawing, ...] = ()
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: tuple[CapturedLine, ...] = ()
+    commands: tuple[PageCommand, ...] = field(init=False)
 
-    @classmethod
-    def from_state(cls, state: Any) -> PageProgram:
-        runs = tuple(state.runs)
-        glyphs = tuple(state.glyphs)
-        raw_drawings = tuple(state.drawings)
-        inline_images = tuple(state.inline_images)
-        lines = tuple(state.lines)
-        if not all(isinstance(run, TextRun) for run in runs):
-            raise PdfContractError("page state emitted an invalid text-run product")
-        if not all(isinstance(glyph, GlyphObservation) for glyph in glyphs):
-            raise PdfContractError("page state emitted an invalid glyph product")
-        if not all(isinstance(drawing, CapturedDrawing) for drawing in raw_drawings):
-            raise PdfContractError("page state emitted an invalid drawing product")
-        if not all(isinstance(image, CapturedInlineImage) for image in inline_images):
-            raise PdfContractError("page state emitted an invalid inline-image product")
-        if not all(isinstance(line, CapturedLine) for line in lines):
-            raise PdfContractError("page state emitted an invalid line product")
-        return cls(
-            runs,
-            glyphs,
-            tuple(drawing for drawing in raw_drawings if drawing.kind != "inline-image"),
-            inline_images,
-            lines,
+    def __post_init__(self) -> None:
+        runs = tuple(self.runs)
+        glyphs = tuple(self.glyphs)
+        drawings = tuple(self.drawings)
+        inline_images = tuple(self.inline_images)
+        lines = tuple(self.lines)
+        validations: tuple[tuple[str, tuple[object, ...], type[object]], ...] = (
+            ("text-run", runs, TextRun),
+            ("glyph", glyphs, GlyphObservation),
+            ("drawing", drawings, CapturedDrawing),
+            ("inline-image", inline_images, CapturedInlineImage),
+            ("line", lines, CapturedLine),
         )
+        for name, products, product_type in validations:
+            if not all(isinstance(product, product_type) for product in products):
+                raise PdfContractError(f"page program contains an invalid {name} product")
 
-    @property
-    def products(self) -> PageProgram:
-        """Return this program for compatibility with callers outside ``impl``."""
-        return self
+        commands: list[PageCommand] = [*runs]
+        commands.extend(glyph for glyph in glyphs if glyph.has_paint)
+        commands.extend(drawings)
+        commands.extend(inline_images)
+        commands.sort(key=lambda command: command.seqno)
 
-    @property
-    def events(self) -> tuple[PageEvent, ...]:
-        """Return captured products merged into content-stream order."""
-        events = [PageEvent(PageEventKind.TEXT, run) for run in self.runs]
-        events.extend(
-            PageEvent(PageEventKind.GLYPH, glyph) for glyph in self.glyphs if glyph.has_paint
-        )
-        events.extend(
-            PageEvent(
-                PageEventKind.IMAGE if drawing.kind == "image" else PageEventKind.DRAWING,
-                drawing,
+        object.__setattr__(self, "runs", runs)
+        object.__setattr__(self, "glyphs", glyphs)
+        object.__setattr__(self, "drawings", drawings)
+        object.__setattr__(self, "inline_images", inline_images)
+        object.__setattr__(self, "lines", lines)
+        object.__setattr__(self, "commands", tuple(commands))
+
+
+@dataclass(frozen=True, slots=True)
+class AppearanceProgram:
+    """An already-interpreted appearance and the source that owns its paint."""
+
+    kind: Literal["widget", "annotation"]
+    source: object
+    clip_bbox: tuple[float, float, float, float]
+    program: CapturedProgram
+
+
+@dataclass(frozen=True, slots=True)
+class PageProgram:
+    """A body and ordered appearance scopes, with flattened extraction views.
+
+    Renderers select whole appearance scopes rather than filtering sequence
+    numbers, which may tie across paints and graphics-state boundaries.
+    """
+
+    body: CapturedProgram = field(default_factory=CapturedProgram)
+    appearances: tuple[AppearanceProgram, ...] = ()
+
+    runs: tuple[TextRun, ...] = field(init=False)
+    glyphs: tuple[GlyphObservation, ...] = field(init=False)
+    drawings: tuple[CapturedDrawing, ...] = field(init=False)
+    inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
+    lines: tuple[CapturedLine, ...] = field(init=False)
+    commands: tuple[PageCommand, ...] = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.body, CapturedProgram):
+            raise PdfContractError("page program contains an invalid body")
+        appearances = tuple(self.appearances)
+        if not all(
+            isinstance(appearance, AppearanceProgram)
+            and appearance.kind in {"widget", "annotation"}
+            and isinstance(appearance.program, CapturedProgram)
+            for appearance in appearances
+        ):
+            raise PdfContractError("page program contains an invalid appearance")
+        object.__setattr__(self, "appearances", appearances)
+        programs = (self.body, *(appearance.program for appearance in appearances))
+        for name in ("runs", "glyphs", "drawings", "inline_images", "lines", "commands"):
+            object.__setattr__(
+                self,
+                name,
+                tuple(item for program in programs for item in getattr(program, name))
+                if appearances
+                else getattr(self.body, name),
             )
-            for drawing in self.drawings
-            if drawing.kind != "inline-image"
-        )
-        events.extend(PageEvent(PageEventKind.INLINE_IMAGE, image) for image in self.inline_images)
-        # Categories were appended in the tie-break order used by content
-        # interpretation. Python's stable sort preserves it for equal seqnos.
-        events.sort(key=lambda event: event.seqno)
-        return tuple(events)
 
 
 __all__ = (
-    "PageEvent",
-    "PageEventKind",
-    "PageEventPayload",
+    "AppearanceProgram",
+    "CapturedProgram",
+    "PageCommand",
     "PageProgram",
 )

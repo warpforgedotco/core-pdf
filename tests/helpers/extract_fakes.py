@@ -16,6 +16,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 
 Box = tuple[float, float, float, float]
 
@@ -27,6 +28,7 @@ class FakePage:
     width: float = 600.0
     height: float = 800.0
     page_number: int = 1
+    media_box: tuple[float, float, float, float] | None = None
 
 
 def page_evidence(**overrides: Any) -> PageEvidence:
@@ -83,19 +85,24 @@ def capture(
             source=ObservationSource.NATIVE,
             rotation=(rotation,),
         )
+    if program is None:
+        program = PageProgram(
+            body=CapturedProgram(
+                runs=runs,
+                drawings=drawings,
+                lines=grid_lines,
+                inline_images=inline_images,
+            ),
+        )
     return PageAnalysis(
         page=page if page is not None else FakePage(width=width, height=height),
         width=width,
         height=height,
         rotation=rotation,
-        fields=None,
-        annotations=None,
+        fields=(),
+        annotations=(),
         program=program,
         observations=batch,
-        runs=runs,
-        drawings=drawings,
-        grid_lines=grid_lines,
-        inline_images=inline_images,
         evidence=evidence if evidence is not None else page_evidence(),
     )
 

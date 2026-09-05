@@ -93,6 +93,23 @@ def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | N
     )
 
 
+def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
+    """Overlap of two boxes; a missing side yields the other, as ``union_bbox`` does.
+
+    The result may be empty (x0 > x1); callers that care test it themselves.
+    """
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (
+        max(left[0], right[0]),
+        max(left[1], right[1]),
+        min(left[2], right[2]),
+        min(left[3], right[3]),
+    )
+
+
 def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
     """Axis-aligned bounds of a point sequence, or None for no points."""
     x0 = y0 = math.inf

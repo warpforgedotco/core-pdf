@@ -28,7 +28,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page
 from core_pdf.impl.extract.observations import plan_page
-from core_pdf.impl.extract.tables import extract_tables
+from core_pdf.impl.extract.table_detection import extract_tables
 from tests.helpers.benchmark_pages import (
     DENSE_PDF,
     MIXED_PDF,

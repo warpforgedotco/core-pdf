@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
@@ -25,10 +25,8 @@ from core_pdf.impl.extract.observations import (
     fuse_observations,
     plan_page,
 )
-from core_pdf.impl.extract.table_pipeline import (
-    extract_tables,
-)
-from core_pdf.impl.output import (
+from core_pdf.impl.extract.table_detection import extract_tables
+from core_pdf.impl.output.model import (
     Annotation,
     Figure,
     FormField,
@@ -37,6 +35,9 @@ from core_pdf.impl.output import (
 )
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
+
+if TYPE_CHECKING:
+    from core_pdf.impl.extract.ocr.strokes import StrokedTextProfile
 
 internal_T = TypeVar("internal_T")
 
@@ -81,56 +82,69 @@ class internal_PageExtraction:
         fields: Iterable[Any] | None = None,
         structure: Any = internal_STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
+        stroked_profile: StrokedTextProfile | None = None,
     ) -> None:
         self.page = page
         self.internal_structure = structure
         self.internal_hidden_layers = hidden_layers
         field_records = tuple(fields) if fields is not None else None
-        if capture is not None and capture.annotations is not None:
-            annotation_records = capture.annotations
+        if capture is not None:
+            self.capture = (
+                replace(capture, fields=field_records) if field_records is not None else capture
+            )
         else:
+            annotation_records: tuple[Any, ...] | None
             try:
-                annotation_records = tuple(page.get_annotations())
-            except (TypeError, ValueError):
-                annotation_records = ()
-        self.internal_capture = (
-            replace(capture, fields=field_records, annotations=annotation_records)
-            if capture is not None and fields is not None
-            else replace(capture, annotations=annotation_records)
-            if capture is not None
-            else capture_page(
+                # An empty strict projection can still hide recoverable raw
+                # annotations (for example a non-array /Annots in recovery mode).
+                annotation_records = tuple(page.get_annotations()) or None
+            except (AttributeError, TypeError, ValueError):
+                # Failed strict metadata collection is not an explicit request
+                # to suppress appearances. Let capture enumerate tolerant raw
+                # annotation dictionaries; its output metadata remains empty.
+                annotation_records = None
+            self.capture = capture_page(
                 page,
                 structure=structure,
                 hidden_layers=hidden_layers,
                 fields=field_records,
                 annotations=annotation_records,
             )
-        )
-        self.internal_plan = plan if plan is not None else plan_page(self.internal_capture)
-        self.internal_recognition = recognition
+        self.plan = plan if plan is not None else plan_page(self.capture)
+        self.recognition_result = recognition
+        self.internal_stroked_profile = stroked_profile
 
-    def capture(self) -> PageAnalysis:
-        return self.internal_capture
+    @property
+    def stroked_profile(self) -> StrokedTextProfile | None:
+        """Materialize the immutable stroke geometry only for a trusted vector-text layer."""
+        evidence = self.capture.evidence.stroked_vector_text
+        if not evidence.trusted or not evidence.drawing_indexes:
+            return None
+        if self.internal_stroked_profile is None:
+            from core_pdf.impl.extract.ocr.strokes import profile_stroked_text
 
-    def plan(self) -> WorkPlan:
-        return self.internal_plan
+            self.internal_stroked_profile = profile_stroked_text(
+                self.capture.program.drawings, evidence.drawing_indexes
+            )
+        return self.internal_stroked_profile
 
-    def recognition(self, context: ExtractionScope) -> RecognitionResult:
-        if self.internal_recognition is not None:
-            return self.internal_recognition
-        plan = self.internal_plan
+    def recognize(self, context: ExtractionScope) -> RecognitionResult:
+        if self.recognition_result is not None:
+            return self.recognition_result
+        plan = self.plan
         if plan.ocr_passes or plan.verify_hidden_text:
             from core_pdf.impl.extract.ocr.pipeline import recognize_page
 
-            return recognize_page(self.internal_capture, plan, context)
+            return recognize_page(self.capture, plan, context, stroked_profile=self.stroked_profile)
         return RecognitionResult(ObservationBatch.empty())
 
-    def internal_products(self, context: ExtractionScope) -> internal_PageProducts:
-        capture = self.internal_capture
-        plan = self.internal_plan
+    def run(self, context: ExtractionScope) -> internal_PageProducts:
+        """Materialize the fused, table, and layout products exactly once per call."""
+        capture = self.capture
+        plan = self.plan
         observations = fuse_observations(
             capture.observations,
-            self.recognition(context).observations,
+            self.recognize(context).observations,
             plan,
         )
         tables = extract_tables(capture, observations)
@@ -153,24 +167,9 @@ class internal_PageExtraction:
         )
         return internal_PageProducts(observations, tables, blocks, order_evidence)
 
-    def observations(self, context: ExtractionScope) -> ObservationBatch:
-        return self.internal_products(context).observations
-
-    def tables(self, context: ExtractionScope) -> tuple[Table, ...]:
-        return self.internal_products(context).tables
-
-    def layout(self, context: ExtractionScope) -> tuple[ParsedBlock, ...]:
-        return self.internal_products(context).blocks
-
-    def internal_layout_result(
-        self, context: ExtractionScope
-    ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
-        products = self.internal_products(context)
-        return products.blocks, products.order_evidence
-
     def assembled_page(self, context: ExtractionScope) -> Any:
-        capture = self.internal_capture
-        products = self.internal_products(context)
+        capture = self.capture
+        products = self.run(context)
         blocks = products.blocks
         order_evidence = products.order_evidence
         figures = (
@@ -187,12 +186,12 @@ class internal_PageExtraction:
             width=capture.width,
             height=capture.height,
             rotation=capture.rotation,
-            route=self.internal_plan.route,
+            route=self.plan.route,
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
             full_page_image=capture.evidence.full_page_image,
-            drawings=capture.drawings,
+            drawings=capture.program.drawings,
         )
         resolver = self.page.document.resolver
         raw_annotations = capture.annotations or ()

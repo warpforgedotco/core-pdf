@@ -15,8 +15,8 @@ from core_pdf.api.compat.pypdf import (
     StructuredState,
 )
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.output import Document
-from core_pdf.impl.output import Page as StructuredPage
+from core_pdf.impl.output.model import Document
+from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.primitives import PdfName, PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import resolve_page_tree_node_type
 from core_pdf.impl.spec.s_07_document.metadata import resolve_info_metadata

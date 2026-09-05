@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, TypeAlias
 
 import numpy
@@ -47,16 +48,22 @@ def unit_sample_positions(output_count: int) -> numpy.ndarray[Any, Any]:
     return readonly(result)
 
 
-def resample_nearest(
+def internal_validate_resampling_shape(
     samples: numpy.ndarray[Any, Any], height: int, width: int
-) -> numpy.ndarray[Any, Any]:
-    """Resize a 2D or 3D sample array with bounded nearest-neighbour lookup."""
+) -> None:
     if height <= 0 or width <= 0:
         raise ValueError("resampling dimensions must be positive")
     if samples.ndim not in (2, 3):
         raise ValueError("samples must be a 2D or 3D array")
     if samples.shape[0] <= 0 or samples.shape[1] <= 0:
         raise ValueError("samples must have positive spatial dimensions")
+
+
+def resample_nearest(
+    samples: numpy.ndarray[Any, Any], height: int, width: int
+) -> numpy.ndarray[Any, Any]:
+    """Resize a 2D or 3D sample array with bounded nearest-neighbour lookup."""
+    internal_validate_resampling_shape(samples, height, width)
     if samples.shape[:2] == (height, width) and samples.flags.c_contiguous:
         return samples
     y_indexes = nearest_indices(height, samples.shape[0])
@@ -87,6 +94,25 @@ def internal_box_axis(
     return totals / counts.reshape(shape)
 
 
+def internal_resample_separable(
+    samples: numpy.ndarray[Any, Any],
+    height: int,
+    width: int,
+    resample_axis: Callable[[numpy.ndarray[Any, Any], int, int], numpy.ndarray[Any, Any]],
+) -> numpy.ndarray[Any, Any]:
+    """Apply two axis passes, keeping float intermediates until the final rounding."""
+    # Shrink the most (or enlarge the least) first to keep the intermediate small.
+    axes = (0, 1) if height - samples.shape[0] <= width - samples.shape[1] else (1, 0)
+    dimensions = (height, width)
+    resized = samples
+    for axis in axes:
+        if dimensions[axis] != samples.shape[axis]:
+            resized = resample_axis(resized, dimensions[axis], axis)
+    if resized is samples:
+        return samples
+    return numpy.ascontiguousarray(numpy.rint(resized)).astype(samples.dtype, copy=False)
+
+
 def resample_box(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
@@ -97,31 +123,10 @@ def resample_box(
     stroke energy that Tesseract's classifier needs. Only used for reductions;
     callers upscale with :func:`resample_bilinear`.
     """
-    if height <= 0 or width <= 0:
-        raise ValueError("resampling dimensions must be positive")
-    if samples.ndim not in (2, 3):
-        raise ValueError("samples must be a 2D or 3D array")
-    if samples.shape[0] <= 0 or samples.shape[1] <= 0:
-        raise ValueError("samples must have positive spatial dimensions")
+    internal_validate_resampling_shape(samples, height, width)
     if height > samples.shape[0] or width > samples.shape[1]:
         raise ValueError("resample_box only reduces; use resample_bilinear to enlarge")
-    if samples.shape[:2] == (height, width) and samples.flags.c_contiguous:
-        return samples
-    reduced = samples
-    # Reduce the longer axis first so the second pass runs over fewer elements.
-    if samples.shape[0] - height >= samples.shape[1] - width:
-        if height != samples.shape[0]:
-            reduced = internal_box_axis(reduced, height, 0)
-        if width != samples.shape[1]:
-            reduced = internal_box_axis(reduced, width, 1)
-    else:
-        if width != samples.shape[1]:
-            reduced = internal_box_axis(reduced, width, 1)
-        if height != samples.shape[0]:
-            reduced = internal_box_axis(reduced, height, 0)
-    if reduced is samples:
-        return samples
-    return numpy.ascontiguousarray(numpy.rint(reduced)).astype(samples.dtype, copy=False)
+    return internal_resample_separable(samples, height, width, internal_box_axis)
 
 
 def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, Any, Any]:
@@ -162,29 +167,8 @@ def resample_bilinear(
     Replicating pixels to enlarge a scan gives Tesseract staircased stems; blending
     neighbours preserves the smooth edges its line classifier was trained on.
     """
-    if height <= 0 or width <= 0:
-        raise ValueError("resampling dimensions must be positive")
-    if samples.ndim not in (2, 3):
-        raise ValueError("samples must be a 2D or 3D array")
-    if samples.shape[0] <= 0 or samples.shape[1] <= 0:
-        raise ValueError("samples must have positive spatial dimensions")
-    if samples.shape[:2] == (height, width) and samples.flags.c_contiguous:
-        return samples
-    resized = samples
-    # Interpolate the shrinking axis first to keep the intermediate small.
-    if height - samples.shape[0] <= width - samples.shape[1]:
-        if height != samples.shape[0]:
-            resized = internal_bilinear_axis(resized, height, 0)
-        if width != samples.shape[1]:
-            resized = internal_bilinear_axis(resized, width, 1)
-    else:
-        if width != samples.shape[1]:
-            resized = internal_bilinear_axis(resized, width, 1)
-        if height != samples.shape[0]:
-            resized = internal_bilinear_axis(resized, height, 0)
-    if resized is samples:
-        return samples
-    return numpy.ascontiguousarray(numpy.rint(resized)).astype(samples.dtype, copy=False)
+    internal_validate_resampling_shape(samples, height, width)
+    return internal_resample_separable(samples, height, width, internal_bilinear_axis)
 
 
 def resample_smooth(

@@ -17,7 +17,6 @@ import subprocess
 import sys
 import threading
 import time
-import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import replace
@@ -40,9 +39,9 @@ from core_pdf.impl.extract.ocr.types import (
     internal_raster_rectangle_page_box,
 )
 from core_pdf.impl.extract.quality import internal_Candidate, internal_candidate
+from core_pdf.impl.model.text import collapse_ws
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import contiguous_bytes, finite_median, resample_smooth
-from core_pdf.impl.text import collapse_ws
 
 # OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels
 # from creating another layer of workers on top of it.
@@ -78,36 +77,12 @@ OCR_TIMEOUT_MAX_MILLISECONDS = 30_000
 # enough to finish rather than letting the empty candidate win selection.
 OCR_TIMEOUT_RETRY_PIXELS = 4_000_000
 
-internal_OCR_TOKEN_TRANSLATION = str.maketrans(
-    {
-        "‐": "-",
-        "‑": "-",
-        "‒": "-",
-        "–": "-",
-        "—": "-",
-        "−": "-",
-        "‘": "'",
-        "’": "'",
-        "“": '"',
-        "”": '"',
-    }
-)
-
 
 def internal_import_tesserocr() -> Any:
     """Import tesserocr once cysignals' main-thread setup is in place."""
     if "tesserocr" not in sys.modules:
         internal_prepare_ocr_signals()
     return import_module("tesserocr")
-
-
-def internal_ensure_tesserocr() -> Any:
-    """Return the imported binding after its signal setup is ready."""
-    return internal_import_tesserocr()
-
-
-def internal_normalized_ocr_token_key(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).translate(internal_OCR_TOKEN_TRANSLATION).casefold()
 
 
 def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
@@ -137,7 +112,7 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
         return str(resolved), ""
 
     try:
-        default_path, languages = internal_ensure_tesserocr().get_languages()
+        default_path, languages = internal_import_tesserocr().get_languages()
     except RuntimeError:
         default_path, languages = "", ()
     if "eng" in languages:
@@ -173,7 +148,7 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
 
 
 def internal_api(mode: int) -> Any:
-    tesserocr = internal_ensure_tesserocr()
+    tesserocr = internal_import_tesserocr()
     api = tesserocr.PyTessBaseAPI(
         path=internal_tessdata_path(),
         psm=mode,
@@ -341,7 +316,7 @@ def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> Observation
     iterator = api.GetIterator()
     if iterator is None:
         return ObservationBatch.empty()
-    level = internal_ensure_tesserocr().RIL.SYMBOL
+    level = internal_import_tesserocr().RIL.SYMBOL
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     confidences: list[float] = []
@@ -400,6 +375,18 @@ def internal_recognition_timeout(task: internal_OcrTask) -> int:
     return min(OCR_TIMEOUT_MAX_MILLISECONDS, budget)
 
 
+@contextmanager
+def internal_owned_api(mode: int) -> Iterator[Any]:
+    """Acquire one Tesseract API and end it at the ownership boundary."""
+    api = internal_api(mode)
+    try:
+        yield api
+    finally:
+        end = getattr(api, "End", None)
+        if callable(end):
+            end()
+
+
 def internal_recognize(
     task: internal_OcrTask,
     *,
@@ -407,12 +394,9 @@ def internal_recognize(
     image_prepared: bool = False,
 ) -> internal_Candidate:
     if api_override is None:
-        api = internal_api(task.mode)
-        try:
+        with internal_owned_api(task.mode) as api:
             return internal_recognize(task, api_override=api, image_prepared=image_prepared)
-        finally:
-            api.End()
-    tesserocr = internal_ensure_tesserocr()
+    tesserocr = internal_import_tesserocr()
     api = api_override
     api.SetPageSegMode(task.mode)
     if not image_prepared:
@@ -579,14 +563,11 @@ def internal_recognize_group(tasks: tuple[internal_OcrTask, ...]) -> tuple[inter
     if not tasks:
         return ()
     first = tasks[0]
-    api = internal_api(first.mode)
-    try:
+    with internal_owned_api(first.mode) as api:
         candidates = [internal_recognize(first, api_override=api)]
         for task in tasks[1:]:
             candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
         return tuple(candidates)
-    finally:
-        api.End()
 
 
 def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask | None:

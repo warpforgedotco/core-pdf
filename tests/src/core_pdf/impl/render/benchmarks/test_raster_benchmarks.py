@@ -24,6 +24,10 @@ import pytest
 from core_pdf.impl.extract.contracts import PRIMARY_OCR_PIXELS
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.spec.s_09_fonts.fallback import (
+    fallback_glyph_outline,
+    internal_RasterFontRepository,
+)
 from tests.helpers.benchmark_pages import (
     TEXT_PDF,
     VECTOR_PAGE_INDEX,
@@ -32,6 +36,29 @@ from tests.helpers.benchmark_pages import (
 )
 
 MAX_PIXELS = 16_000_000
+
+
+def internal_resolve_fallback_line(repository: internal_RasterFontRepository) -> int:
+    resolved = 0
+    for text in "The quick brown fox jumps over the lazy dog":
+        contours = fallback_glyph_outline(
+            "Helvetica",
+            text,
+            is_cid_font=False,
+            is_vertical=False,
+            provider=repository,
+        )
+        resolved += bool(contours)
+    return resolved
+
+
+def test_fallback_font_repository_benchmark(benchmark) -> None:
+    """Repeated glyph fallback reuses the document-owned parsed font."""
+    repository = internal_RasterFontRepository()
+
+    resolved = benchmark(internal_resolve_fallback_line, repository)
+
+    assert resolved == 35
 
 
 def internal_ocr_scale(page: Any) -> float:

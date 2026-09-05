@@ -1,0 +1,101 @@
+name: Update raster goldens
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    name: Observe / ${{ matrix.platform-id }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform-id: linux-x86_64
+            runner: ubuntu-24.04
+          - platform-id: macos-arm64
+            runner: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Collect raster observation
+        run: >-
+          uv run --locked --package core-pdf --group test python
+          scripts/update_raster_golden.py collect
+          --platform-id ${{ matrix.platform-id }}
+          --revision ${{ github.sha }}
+          --output "${{ runner.temp }}/raster-observation"
+      - name: Upload raster observation
+        uses: actions/upload-artifact@v4
+        with:
+          name: raster-observation-${{ matrix.platform-id }}
+          path: ${{ runner.temp }}/raster-observation
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
+  merge:
+    name: Build reviewed patch
+    needs: observe
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Download raster observations
+        uses: actions/download-artifact@v4
+        with:
+          pattern: raster-observation-*
+          path: ${{ runner.temp }}/observations
+      - name: Merge platform observations
+        run: |
+          uv run --locked --package core-pdf --group test python \
+            scripts/update_raster_golden.py merge \
+            --observation "${{ runner.temp }}/observations/raster-observation-linux-x86_64" \
+            --observation "${{ runner.temp }}/observations/raster-observation-macos-arm64" \
+            | tee "${{ runner.temp }}/raster-golden-summary.txt"
+      - name: Build binary patch
+        run: |
+          git add --all tests/snapshots/raster
+          git diff --cached --binary --output="${{ runner.temp }}/raster-golden.patch"
+          {
+            cat "${{ runner.temp }}/raster-golden-summary.txt"
+            echo
+            echo "Apply from the repository root with:"
+            echo "git apply --binary raster-golden.patch"
+            echo
+            git diff --cached --stat
+          } > "${{ runner.temp }}/README.txt"
+      - name: Upload reviewed patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: raster-golden-patch
+          path: |
+            ${{ runner.temp }}/raster-golden.patch
+            ${{ runner.temp }}/README.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci

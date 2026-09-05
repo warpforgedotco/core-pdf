@@ -1,4 +1,6 @@
 from core_pdf.impl.layout.lines import (
+    LayoutLine,
+    page_layout_geometry_issues,
     text_run_geometry_issues,
 )
 from core_pdf.impl.model.glyphs import GlyphCluster
@@ -34,3 +36,17 @@ def test_glyph_clusters_are_validated_against_canonical_advance_geometry() -> No
     issues = text_run_geometry_issues(run)
 
     assert issues == ()
+
+
+def test_page_diagnostics_preserve_run_details_and_add_source_indexes() -> None:
+    run = text_run()
+    run.confidence = 0.2
+
+    issues = page_layout_geometry_issues([LayoutLine(), LayoutLine([text_run(), run])])
+
+    issue = next(issue for issue in issues if issue.code == "low_confidence_text_run")
+    assert issue.details == (("confidence", 0.2), ("run_index", 1), ("line_index", 1))
+    assert issue.bbox == (0.0, 0.0, 10.0, 10.0)
+    assert issue.subject == "text_run"
+    assert issue.severity == "warning"
+    assert issue.repairable

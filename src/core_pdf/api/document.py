@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Public PDF document and page APIs over the canonical extraction pipeline."""
+"""Public PDF document and page entry points over the internal processing engine."""
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Iterable
-from contextlib import AbstractContextManager
+from collections.abc import Iterable
+from contextlib import AbstractContextManager, suppress
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -21,9 +21,9 @@ from core_pdf.impl.layout.lines import (
     text_run_geometry_issues,
 )
 from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.output import DiagnosticTextRun, TextDiagnostics
-from core_pdf.impl.output import Document as StructuredDocument
-from core_pdf.impl.pages import PageSelection
+from core_pdf.impl.model.page_selection import PageSelection
+from core_pdf.impl.output.model import DiagnosticTextRun, TextDiagnostics
+from core_pdf.impl.output.model import Document as StructuredDocument
 from core_pdf.impl.records import (
     DrawingRecord,
     ImageMetadata,
@@ -43,6 +43,7 @@ from core_pdf.impl.types import PdfSource
 internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
+    from core_pdf.impl.spec.s_07_document.records import RawFormField
     from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
@@ -56,10 +57,8 @@ class PdfPage(SpecPdfPage):
 
     def extract(self) -> Any:
         with self.document.acquire_operation() as operation:
-            with ExtractionScope(
-                cancelled=lambda: operation.cancelled,
-            ) as context:
-                return extract_page(self, context)
+            context = ExtractionScope(cancelled=lambda: operation.cancelled)
+            return extract_page(self, context)
 
     def text_diagnostics(self, *, include_invisible: bool = True) -> TextDiagnostics:
         return TextDiagnostics(
@@ -126,9 +125,9 @@ class PdfPage(SpecPdfPage):
                 ImageRecord(
                     kind="inline-image",
                     seqno=image.seqno,
-                    fill=None,
+                    fill=image.fill,
                     fill_pattern=None,
-                    fill_opacity=None,
+                    fill_opacity=image.fill_opacity,
                     stroke_color=None,
                     stroke_pattern=None,
                     stroke_opacity=None,
@@ -137,8 +136,8 @@ class PdfPage(SpecPdfPage):
                     line_join=0,
                     dash_pattern=None,
                     fill_rule="nonzero",
-                    blend_mode=None,
-                    soft_mask_alpha=None,
+                    blend_mode=image.blend_mode,
+                    soft_mask_alpha=image.soft_mask_alpha,
                     raw_data=image.data,
                     dictionary=image.dictionary,
                     image_source=image.image_source,
@@ -172,7 +171,21 @@ class PdfPage(SpecPdfPage):
 
     def render(self, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
-        return compose_page(self, options, page_program=self.get_page_program())
+        fields: tuple[RawFormField, ...] = ()
+        if options.include_layers:
+            # Malformed form metadata must not prevent painting page contents.
+            with suppress(ValueError):
+                fields = tuple(self.get_fields())
+        annotations = tuple(self.get_annotations()) if options.include_annotations else None
+        return compose_page(
+            self,
+            options,
+            # Empty recovered metadata need not mean there are no raw
+            # appearance dictionaries; capture retains its tolerant policy.
+            page_program=self.get_page_program(fields=fields, annotations=annotations or None),
+            fields=fields,
+            annotations=annotations,
+        )
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
@@ -205,7 +218,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         password: str = "",
         *,
         recovery_scan_all_revisions: bool = True,
-        legacy_pdfminer_text_operators: bool = False,
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_operation_lock = threading.RLock()
@@ -216,7 +228,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             source,
             password=password,
             recovery_scan_all_revisions=recovery_scan_all_revisions,
-            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
             raster_font_provider=raster_font_provider,
         )
         self.page_class = PdfPage
@@ -236,32 +247,21 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         """Return resolved outline entries owned by the engine."""
         return tuple(self.iter_outlines())
 
-    def _scoped_records(
+    def internal_scoped_pending[RecordT](
         self,
-        pages: PageSelection | None,
-        per_page: Callable[["PdfPage"], Iterable[Any]],
-    ) -> tuple[PageScoped[Any], ...]:
-        """Fan a per-page extractor out over the selected pages as scoped records."""
-        pending = [
-            (page_index, record)
-            for page_index, page in self.iter_selected_pages(pages)
-            for record in per_page(page)
-        ]
-        return self.internal_scoped_pending(pending)
-
-    def internal_scoped_pending(
-        self,
-        pending: Iterable[tuple[int, Any]],
-    ) -> tuple[PageScoped[Any], ...]:
+        pending: Iterable[tuple[int, RecordT]],
+    ) -> tuple[PageScoped[RecordT], ...]:
+        """Attach page numbers and labels after collecting the selected records."""
         pending = tuple(pending)
         if not pending:
             return ()
         labels = self.page_labels
         return tuple(
-            self.internal_scope(
-                page_index,
-                labels[page_index] if labels is not None else None,
-                record,
+            PageScoped(
+                page_index=page_index,
+                page_number=page_index + 1,
+                page_label=labels[page_index] if labels is not None else None,
+                record=record,
             )
             for page_index, record in pending
         )
@@ -310,8 +310,8 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
     ) -> Any:
         with self.acquire_operation() as operation:
             selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
-            with ExtractionScope(cancelled=lambda: operation.cancelled) as context:
-                result = extract_document(self, context, selected_pages)
+            context = ExtractionScope(cancelled=lambda: operation.cancelled)
+            result = extract_document(self, context, selected_pages)
         for adapter in adapters:
             result = adapter.apply(result)
         return result
@@ -323,19 +323,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             return StructuredDocument(metadata=self.metadata)
         return cast(StructuredDocument, self.extract())
 
-    @staticmethod
-    def internal_scope(
-        page_index: int,
-        page_label: str | None,
-        record: Any,
-    ) -> PageScoped[Any]:
-        return PageScoped(
-            page_index=page_index,
-            page_number=page_index + 1,
-            page_label=page_label,
-            record=record,
-        )
-
     def extract_images(
         self,
         *,
@@ -343,12 +330,13 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[PageScoped[ImageRecord], ...]:
-        return self._scoped_records(
-            pages,
-            lambda page: page.extract_images(
+        return self.internal_scoped_pending(
+            (page_index, record)
+            for page_index, page in self.iter_selected_pages(pages)
+            for record in page.extract_images(
                 include_inline=include_inline,
                 include_xobjects=include_xobjects,
-            ),
+            )
         )
 
 

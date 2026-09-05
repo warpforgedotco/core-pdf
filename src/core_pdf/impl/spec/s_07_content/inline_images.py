@@ -12,7 +12,7 @@ from core_pdf.impl.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
@@ -31,6 +31,26 @@ INLINE_IMAGE_KEY_MAP = {
     "W": "Width",
 }
 
+INLINE_IMAGE_COLOR_SPACE_MAP = {
+    "G": "DeviceGray",
+    "RGB": "DeviceRGB",
+    "CMYK": "DeviceCMYK",
+    "I": "Indexed",
+}
+
+
+def internal_normalize_inline_color_space(value: PdfObject) -> PdfObject:
+    name = normalize_pdf_name(value)
+    if name in INLINE_IMAGE_COLOR_SPACE_MAP:
+        return PdfName.of(INLINE_IMAGE_COLOR_SPACE_MAP[name])
+    if isinstance(value, list) and value:
+        values = list(value)
+        values[0] = internal_normalize_inline_color_space(values[0])
+        if normalize_pdf_name(values[0]) == "Indexed" and len(values) > 1:
+            values[1] = internal_normalize_inline_color_space(values[1])
+        return values
+    return value
+
 
 @dataclass(frozen=True, slots=True)
 class InlineImage:
@@ -45,6 +65,8 @@ def normalize_inline_image_dictionary(dictionary: PdfDict) -> PdfDict:
         if key_name is None:
             raise PdfParseError("inline image keys must be names")
         mapped_key = INLINE_IMAGE_KEY_MAP.get(key_name, key_name)
+        if mapped_key == "ColorSpace":
+            value = internal_normalize_inline_color_space(value)
         normalized[PdfName.of(mapped_key)] = value
     return normalized
 
@@ -80,11 +102,13 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
 
 
 def skip_inline_image_separator(lexer: PdfLexer) -> bool:
-    start = lexer.pos
-    lexer.skip_eol()
-    if lexer.pos < lexer.data_len and lexer.raw_data[lexer.pos] in WHITESPACE:
+    if lexer.pos >= lexer.data_len or lexer.raw_data[lexer.pos] not in WHITESPACE:
+        return False
+    if lexer.raw_data[lexer.pos : lexer.pos + 2] == b"\r\n":
+        lexer.advance(2)
+    else:
         lexer.advance(1)
-    return lexer.pos > start
+    return True
 
 
 def filtered_inline_image_data_end(
@@ -178,7 +202,11 @@ def parse_inline_image(lexer: PdfLexer) -> InlineImage:
         prev_ok = marker == data_start or search_data[marker - 1] in WHITESPACE
         next_ok = after >= len(search_data) or SEPARATOR_TABLE[search_data[after]]
         if prev_ok and next_ok:
-            image_data = search_data[data_start:marker].rstrip(WHITESPACE)
+            # Only the delimiter belongs to EI. Binary samples can themselves
+            # end in NUL, tab, newline, or space, especially when a named colour
+            # resource prevents computing the exact payload length here.
+            data_end = marker - 1 if marker > data_start else marker
+            image_data = search_data[data_start:data_end]
             lexer.pos = position_offset + after
             return InlineImage(normalized, image_data)
         pos = marker + 1

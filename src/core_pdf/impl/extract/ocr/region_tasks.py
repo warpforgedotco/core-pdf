@@ -43,8 +43,6 @@ from core_pdf.impl.model.geometry import (
 from core_pdf.impl.model.geometry import (
     overlap_ratio_of as internal_ocr_region_coverage,
 )
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.runtime.array_views import finite_median
 
 OCR_BATCH_MAX_TASKS = 16
@@ -85,11 +83,6 @@ def internal_tile_tasks(
 ) -> tuple[internal_OcrTask, ...]:
     if ocr_pass.preprocess == "binary-clean":
         raster = internal_adaptive_ocr_raster(raster)
-    image = (
-        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
-        if compact_image
-        else raster.image
-    )
     requested_tiles = ocr_pass.tiles if ocr_pass.scope is OcrPassScope.TILES else 1
     tiles = max(1, min(requested_tiles, raster.height))
     if tiles == 1:
@@ -106,6 +99,25 @@ def internal_tile_tasks(
             )
             for tile_index in range(tiles)
         )
+    return internal_rectangle_tasks(
+        raster, page_box, ocr_pass, rectangles, compact_image=compact_image
+    )
+
+
+def internal_rectangle_tasks(
+    raster: internal_Raster,
+    page_box: tuple[float, float, float, float],
+    ocr_pass: OcrPass,
+    rectangles: tuple[tuple[int, int, int, int], ...],
+    *,
+    compact_image: bool | str,
+) -> tuple[internal_OcrTask, ...]:
+    """Apply one pass's recognition options to rectangles sharing the same raster."""
+    image = (
+        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
+        if compact_image
+        else raster.image
+    )
     return tuple(
         internal_OcrTask(
             mode=mode,
@@ -294,25 +306,12 @@ def internal_weak_region_tasks(
     compact_image: bool | str = False,
 ) -> tuple[internal_OcrTask, ...]:
     """Create OCR tasks for weak regions in an already materialized raster."""
-    image = (
-        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
-        if compact_image
-        else raster.image
-    )
-    return tuple(
-        internal_OcrTask(
-            mode=mode,
-            image=image,
-            rectangle=rectangle,
-            page_box=page_box,
-            resolution=raster.resolution,
-            minimum_confidence=ocr_pass.minimum_confidence,
-            character_confidence_threshold=ocr_pass.character_confidence_threshold,
-            recognize_words=ocr_pass.recognize_words,
-            collect_symbols=ocr_pass.collect_symbols,
-        )
-        for mode in ocr_pass.modes
-        for rectangle in internal_weak_region_rectangles(raster, page_box, ocr_pass, primary)
+    return internal_rectangle_tasks(
+        raster,
+        page_box,
+        ocr_pass,
+        internal_weak_region_rectangles(raster, page_box, ocr_pass, primary),
+        compact_image=compact_image,
     )
 
 
@@ -339,6 +338,7 @@ def internal_candidate_region_tasks(
     regions: tuple[internal_OcrRegion, ...],
     ocr_pass: OcrPass,
     *,
+    rendered: Any,
     compact_image: bool | str,
 ) -> tuple[internal_OcrTask, ...]:
     direct_regions = internal_page_image_regions(
@@ -354,7 +354,6 @@ def internal_candidate_region_tasks(
         if dominant is not None:
             direct_regions = (dominant,)
     tasks: list[internal_OcrTask] = []
-    rendered = None
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     for region in regions:
         raster: internal_Raster | None
@@ -384,21 +383,12 @@ def internal_candidate_region_tasks(
             raster = direct.raster
             raster_box = direct.page_box
         else:
-            if rendered is None:
-                rendered = compose_page(
-                    capture.page,
-                    RenderOptions(include_text=ocr_pass.include_native_text),
-                    page_program=capture.program,
-                    fields=capture.fields,
-                    annotations=capture.annotations,
-                )
             raster = internal_rendered_page_raster(
                 capture,
                 ocr_pass.scale,
                 crop=region.page_box,
                 rendered=rendered,
                 max_pixels=ocr_pass.pixel_budget,
-                include_native_text=ocr_pass.include_native_text,
             )
             raster_box = region.page_box
         if raster is None:
@@ -406,20 +396,13 @@ def internal_candidate_region_tasks(
         full_page_region = (
             ocr_pass.scope is OcrPassScope.PAGE
             and len(regions) == 1
-            and region.area
-            >= getattr(
-                getattr(capture, "evidence", None),
-                "page_area",
-                capture.width * capture.height,
-            )
-            * 0.75
+            and region.area >= capture.evidence.page_area * 0.75
             and internal_ocr_region_coverage(
                 region.page_box,
                 (0.0, 0.0, capture.width, capture.height),
             )
             >= 0.90
-            and getattr(getattr(capture, "evidence", None), "vector_complexity", 0)
-            >= OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY
+            and capture.evidence.vector_complexity >= OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY
             and 4_000_000 <= raster.width * raster.height <= PRIMARY_OCR_PIXELS
         )
         tile_count = ocr_pass.parallel_tiles if full_page_region else 1
@@ -449,6 +432,7 @@ def internal_high_resolution_weak_region_tasks(
     ocr_pass: OcrPass,
     primary: ObservationBatch,
     *,
+    rendered: Any,
     compact_image: bool | str,
 ) -> tuple[internal_OcrTask, ...]:
     """Rasterize only weak cells at rescue resolution instead of the whole page."""
@@ -476,13 +460,6 @@ def internal_high_resolution_weak_region_tasks(
     regions = internal_merge_ocr_regions(weak_regions)
     if not regions:
         return ()
-    rendered = compose_page(
-        capture.page,
-        RenderOptions(include_text=ocr_pass.include_native_text),
-        page_program=capture.program,
-        fields=capture.fields,
-        annotations=capture.annotations,
-    )
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     tasks: list[internal_OcrTask] = []
     for region in regions:
@@ -492,7 +469,6 @@ def internal_high_resolution_weak_region_tasks(
             crop=region.page_box,
             rendered=rendered,
             max_pixels=ocr_pass.pixel_budget,
-            include_native_text=ocr_pass.include_native_text,
         )
         if raster is None:
             continue

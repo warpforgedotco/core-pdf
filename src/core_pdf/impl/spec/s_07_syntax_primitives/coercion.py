@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import overload
+from typing import TypeGuard, overload
 
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
@@ -12,6 +12,11 @@ from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_tex
 
 def is_pdf_null(value: object) -> bool:
     return value is None or type(value).__name__ == "NullObject"
+
+
+def is_pdf_number(value: object) -> TypeGuard[int | float]:
+    """Whether ``value`` is a PDF numeric scalar, excluding booleans."""
+    return type(value) is int or type(value) is float
 
 
 def parse_name(value: object, default: str | None = None) -> str | None:
@@ -206,6 +211,7 @@ def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None
 __all__ = (
     "coerce_to_bytes",
     "coerce_value",
+    "is_pdf_number",
     "is_pdf_null",
     "normalize_pdf_name",
     "parse_box",

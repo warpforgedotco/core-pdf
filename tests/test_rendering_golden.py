@@ -10,7 +10,7 @@ Two layers:
 
 * The always-on exact layer renders :data:`COVERING_SUBSET` — 22 corpus
   documents chosen by greedy set cover after seeding coverage with the five
-  tolerant pages. Together those cases execute *every* line of the ``render/``
+  portable pages. Together those cases execute *every* line of the ``render/``
   package that the full 224-document corpus reaches. They run in a few seconds,
   which is what makes them the right layer to run while iterating.
 * A distributed layer over the whole corpus, behind ``CORE_PDF_RASTER_GOLDEN_FULL``.
@@ -24,12 +24,13 @@ Two layers:
 Regenerate the digests after an *intentional* rendering change, without
 running the corpus through pytest a second time::
 
-    uv run python scripts/update_raster_golden.py
+    uv run python scripts/update_raster_golden.py collect \
+      --platform-id macos-arm64 --output /tmp/raster-observation
 
-Reference regeneration is restricted to the pinned Ubuntu x86_64 codec
-environment unless the explicitly destructive override is used. Review the
-manifest and reference-image diff before committing it. A refactor that
-preserves behavior must produce no diff at all.
+Reference regeneration merges observations from the pinned Linux/x86_64 and
+macOS/ARM64 CI runners. A single host can collect evidence but cannot redefine
+the portable envelope. Review the generated binary patch before applying it.
+A refactor that preserves behavior must produce no diff at all.
 """
 
 from __future__ import annotations
@@ -41,8 +42,8 @@ from typing import Any, cast
 import pytest
 
 from scripts.raster_golden import (
-    CANONICAL_SOURCE,
     CORPUS,
+    EXPECTED_CODEC_STACK,
     REFERENCE_DIRECTORY,
     RasterSnapshot,
     RasterSnapshotError,
@@ -82,17 +83,6 @@ COVERING_SUBSET = (
     "ijerph-19-00825-p020.pdf",
 )
 
-# Every corpus page that paints an irreversible JPEG 2000 image. These run on
-# every platform because they exercise the portable bounded-comparison path;
-# the exact-digest covering subset deliberately excludes them.
-IRREVERSIBLE_JPX_SUBSET = (
-    "153rd-Omaha-Pow-Wow-p001.pdf",
-    "2023-OFC-Technical-Brochure-p004.pdf",
-    "33715_water_p34-35-p001.pdf",
-    "Roosevelt-Letter-Oppenheimer-p001.pdf",
-    "SPUR_Future_Of_Transportation-p001.pdf",
-)
-
 internal_FULL_CORPUS = bool(os.environ.get("CORE_PDF_RASTER_GOLDEN_FULL"))
 internal_FULL_CORPUS_NAMES = (
     tuple(pdf.name for pdf in corpus_pdfs()) if internal_FULL_CORPUS else ("",)
@@ -122,7 +112,7 @@ def test_first_page_raster_matches_snapshot(name: str) -> None:
     internal_FULL_CORPUS,
     reason="the full-corpus cases include every irreversible-JPX page",
 )
-@pytest.mark.parametrize("name", IRREVERSIBLE_JPX_SUBSET)
+@pytest.mark.parametrize("name", tuple(sorted(internal_snapshot().portable)))
 def test_irreversible_jpx_raster_is_portable(name: str) -> None:
     pdf = require_fixture(CORPUS / name, f"corpus document not present: {name}")
     failure = raster_snapshot_failure(pdf, internal_snapshot())
@@ -136,14 +126,9 @@ def test_covering_subset_is_present_in_the_snapshot() -> None:
     assert not missing, f"covering subset entries absent from the snapshot: {missing}"
 
 
-def test_covering_subset_is_disjoint_from_tolerant_snapshots() -> None:
-    overlap = set(COVERING_SUBSET).intersection(internal_snapshot().tolerant)
-    assert not overlap, f"covering subset duplicates tolerant snapshot pages: {sorted(overlap)}"
-
-
-def test_every_irreversible_jpx_page_has_a_tolerant_snapshot() -> None:
-    snapshot = internal_snapshot()
-    assert set(snapshot.tolerant) == set(IRREVERSIBLE_JPX_SUBSET)
+def test_covering_subset_is_disjoint_from_portable_snapshots() -> None:
+    overlap = set(COVERING_SUBSET).intersection(internal_snapshot().portable)
+    assert not overlap, f"covering subset duplicates portable snapshot pages: {sorted(overlap)}"
 
 
 def test_raster_snapshot_matches_the_corpus_inventory() -> None:
@@ -154,17 +139,17 @@ def test_raster_snapshot_matches_the_corpus_inventory() -> None:
     assert snapshot.names == {pdf.name for pdf in pdfs}
 
 
-def test_tolerant_raster_references_are_valid() -> None:
+def test_portable_raster_references_are_valid() -> None:
     snapshot = internal_snapshot()
-    for entry in snapshot.tolerant.values():
+    for entry in snapshot.portable.values():
         load_reference_raster(entry)
-    referenced = {entry.reference_path.resolve() for entry in snapshot.tolerant.values()}
+    referenced = {entry.reference_path.resolve() for entry in snapshot.portable.values()}
     present = {path.resolve() for path in REFERENCE_DIRECTORY.glob("*.png")}
     assert present == referenced
 
 
-def test_raster_snapshot_records_the_canonical_environment() -> None:
-    assert internal_snapshot().canonical_source == CANONICAL_SOURCE
+def test_raster_snapshot_records_the_codec_stack() -> None:
+    assert internal_snapshot().codec_stack == EXPECTED_CODEC_STACK
 
 
 @pytest.mark.skipif(

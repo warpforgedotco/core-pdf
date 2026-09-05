@@ -41,7 +41,7 @@ jobs:
         run: uvx prek run --all-files --stage pre-push
 
       - name: Prune uv cache
-        if: always()
+        if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
   test:
@@ -69,7 +69,11 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install English Tesseract data
-        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
+        run: |
+          if ! tesseract --list-langs 2>/dev/null | grep -qx eng; then
+            sudo apt-get update
+            sudo apt-get install --yes tesseract-ocr-eng
+          fi
 
       - name: Fetch public security specification evidence
         run: ./scripts/fetch_pdf_specs.sh security
@@ -93,7 +97,7 @@ jobs:
         run: uv run --locked --package core-pdf --group test pytest -n 2
 
       - name: Prune uv cache
-        if: always()
+        if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
   raster-portability:
@@ -123,8 +127,8 @@ jobs:
         run: >-
           uv run --locked --package core-pdf --group test pytest
           tests/test_rendering_golden.py
-          -k "irreversible_jpx or tolerant_raster_references"
+          -k "irreversible_jpx or portable_raster_references"
 
       - name: Prune uv cache
-        if: always()
+        if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci

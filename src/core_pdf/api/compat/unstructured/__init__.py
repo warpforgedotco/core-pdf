@@ -557,7 +557,6 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         cast(Any, filename),
         password=password,
         recovery_scan_all_revisions=False,
-        legacy_pdfminer_text_operators=True,
     )
     try:
         source_pages = iter(document.pages)

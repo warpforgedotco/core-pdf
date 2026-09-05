@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.render.blend import internal_color_rgba
+from core_pdf.impl.render.blend import internal_color_rgba, internal_scale_rgba_alpha
 from core_pdf.impl.render.kernels import (
     internal_box_downsample,
     internal_soft_mask_alpha_at,
@@ -20,8 +20,8 @@ from core_pdf.impl.runtime.array_views import (
     uint8_view,
     unit_sample_positions,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
 
 
 class internal_ImageAxisTargetMixin:
@@ -33,15 +33,15 @@ class internal_ImageAxisTargetMixin:
         self: Any,
         item: ImagePaintItem,
     ) -> None:
-        clipped_pixel_box = self.clipped_pixel_box
+        clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         blend_px = self.blend_px
         blit_affine_image = self.blit_affine_image
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
-        clip_path_stack = clip.clip_path_stack
-        clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
-        clip_row_visible_spans = self.clip_row_visible_spans
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = clip.clip_row_visible_spans
         width = self.width
         box = item.bbox
         if box is None:
@@ -138,7 +138,7 @@ class internal_ImageAxisTargetMixin:
                     width_px = reduced_width
                     height_px = reduced_height
         soft_mask_alpha = item.soft_mask_alpha
-        constant_alpha_value = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
+        constant_alpha_value = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         quad = item.quad
         comps = source_channels
         if quad is not None and source_alpha is None:
@@ -178,7 +178,7 @@ class internal_ImageAxisTargetMixin:
             if soft_mask is not None
             else numpy.empty(0, dtype=numpy.float64)
         )
-        if pdf_number(soft_mask_alpha):
+        if is_pdf_number(soft_mask_alpha):
             has_constant_alpha = True
             constant_alpha = float(soft_mask_alpha)
         else:
@@ -186,12 +186,12 @@ class internal_ImageAxisTargetMixin:
             constant_alpha = 1.0
         target_alpha = buffer_stack[-1][1] if buffer_stack else None
         can_write_opaque_rows = (
-            (not clip_path_stack or clip_paths_are_axis_aligned_rects())
+            (not clip_regions or clip_paths_are_axis_aligned_rects())
             and blend_mode is None
             and soft_mask is None
             and source_alpha is None
             and (not has_constant_alpha or constant_alpha >= 1.0)
-            and not pdf_number(target_alpha)
+            and not is_pdf_number(target_alpha)
         )
         normal_fast = can_blend_normal_fast(blend_mode)
         if can_write_opaque_rows:
@@ -280,12 +280,7 @@ class internal_ImageAxisTargetMixin:
                                 ),
                             )
                     if has_constant_alpha:
-                        rgba = (
-                            rgba[0],
-                            rgba[1],
-                            rgba[2],
-                            max(0, min(255, int(round(rgba[3] * constant_alpha)))),
-                        )
+                        rgba = internal_scale_rgba_alpha(rgba, constant_alpha)
                     blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def blit_image_mask(
@@ -304,15 +299,15 @@ class internal_ImageAxisTargetMixin:
         drawing for stencil masks only; when it is absent the PDF default of
         black applies, which is what every mask in the corpus resolves to."""
 
-        clipped_pixel_box = self.clipped_pixel_box
+        clipped_pixel_box = self.clip.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
-        clip_path_stack = self.clip_path_stack
-        clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
-        clip_row_visible_spans = self.clip_row_visible_spans
+        clip_regions = self.clip.regions
+        clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
         pixel_view = self.pixel_view
         pixels = self.pixels
         width = self.width
@@ -339,9 +334,9 @@ class internal_ImageAxisTargetMixin:
         src_y_map = nearest_indices(y_span, height_px)
         target_alpha = buffer_stack[-1][1] if buffer_stack else None
         if (
-            (not clip_path_stack or clip_paths_are_axis_aligned_rects())
+            (not clip_regions or clip_paths_are_axis_aligned_rects())
             and blend_mode is None
-            and not pdf_number(target_alpha)
+            and not is_pdf_number(target_alpha)
         ):
             source_mask = uint8_image_view(mask, (height_px, width_px), allow_trailing=True)
             source_x = src_x_map
@@ -406,7 +401,7 @@ class internal_ImageAxisTargetMixin:
         a soft mask, or is clipped — anything that rules out a straight copy but
         still allows vectorised normal blending."""
 
-        clip_row_visible_spans = self.clip_row_visible_spans
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
         pixel_view = self.pixel_view
         pixels = self.pixels
         visible = numpy.zeros((y_span, x_span), dtype=bool)

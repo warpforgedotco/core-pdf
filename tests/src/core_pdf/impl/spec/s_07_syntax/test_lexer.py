@@ -268,6 +268,17 @@ def test_read_string_can_project_pdfminer_unknown_escape_behavior() -> None:
     assert compatibility.read_string(drop_unknown_escapes=True) == b"27mm glandsizestorque"
 
 
+@pytest.mark.parametrize("content", [b"(plain", b"(nested(inner)", b"(trailing\\", b"("])
+def test_unterminated_literal_string_leaves_cursor_at_end(content: bytes) -> None:
+    lexer = PdfLexer(b"42 " + content)
+    assert lexer.parse_object() == 42
+
+    with pytest.raises(PdfParseError, match="^unterminated string$"):
+        lexer.parse_object()
+
+    assert lexer.pos == lexer.data_len
+
+
 @pytest.mark.parametrize(
     "signature_entries",
     [

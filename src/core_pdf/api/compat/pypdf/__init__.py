@@ -12,7 +12,7 @@ from core_pdf import PdfDocument
 from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.output import (
+from core_pdf.impl.output.model import (
     Document,
     Page,
 )

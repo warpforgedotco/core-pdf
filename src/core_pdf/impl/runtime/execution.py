@@ -9,7 +9,6 @@ process-wide executor, worker queues, or reusable resource pools.
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 
 
 class internal_ExtractionCancelled(RuntimeError):
@@ -17,39 +16,19 @@ class internal_ExtractionCancelled(RuntimeError):
         super().__init__("PDF extraction was cancelled")
 
 
-class ExtractionScope(AbstractContextManager["ExtractionScope"]):
-    """Cancellation callbacks shared by one synchronous extraction."""
+class ExtractionScope:
+    """Cancellation check shared by one synchronous extraction."""
 
-    __slots__ = ("internal_cancellations",)
+    __slots__ = ("internal_cancelled",)
 
     def __init__(
         self,
         cancelled: Callable[[], bool] | None = None,
-        *,
-        internal_cancellations: tuple[Callable[[], bool], ...] | None = None,
     ) -> None:
-        self.internal_cancellations = (
-            internal_cancellations
-            if internal_cancellations is not None
-            else ((cancelled,) if cancelled is not None else ())
-        )
-
-    def __enter__(self) -> ExtractionScope:
-        return self
-
-    def __exit__(self, *internal_args: object) -> None:
-        return None
-
-    def with_cancellation(self, cancelled: Callable[[], bool]) -> ExtractionScope:
-        return ExtractionScope(
-            internal_cancellations=(*self.internal_cancellations, cancelled),
-        )
-
-    def cancelled(self) -> bool:
-        return any(cancelled() for cancelled in self.internal_cancellations)
+        self.internal_cancelled = cancelled
 
     def raise_if_cancelled(self) -> None:
-        if self.cancelled():
+        if self.internal_cancelled is not None and self.internal_cancelled():
             raise internal_ExtractionCancelled()
 
 

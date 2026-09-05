@@ -26,7 +26,7 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefScanner,
-    parse_object_marker_prefix,
+    iter_indirect_object_headers,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import PdfByteBuffer
@@ -70,44 +70,42 @@ class DocumentXRefMixin:
             start = XRefScanner.find_startxref(data)
         except ValueError as exc:
             raise PdfParseError("invalid xref section") from exc
-        if start is None:
-            if b"startxref" in data:
-                raise PdfParseError("missing startxref")
-            self.xref = self.brute_force_xref()
-            self.xref_was_recovered = True
-            if not self.xref:
-                self.trailer_dict = {}
-                return
-            catalog_ref = self.infer_catalog_root()
-            self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
-            self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
-            return
-        if start < 0:
+        if start is None and b"startxref" in data:
+            raise PdfParseError("missing startxref")
+        if start is not None and start < 0:
             raise PdfParseError("invalid xref section")
 
-        try:
-            self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
-            self.repair_stale_xref_offsets()
-            self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
-            root_ref = self.trailer_dict.get("Root")
-            if root_ref is None or not self.is_valid_catalog_root(root_ref):
-                self.xref.update(self.brute_force_xref())
-                self.xref_was_recovered = True
-                catalog_ref = self.infer_catalog_root()
-                if catalog_ref is not None:
-                    self.trailer_dict = dict(self.trailer_dict)
-                    self.trailer_dict["Root"] = catalog_ref
+        recovery_reason = None
+        if start is not None:
+            try:
+                self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
+                self.repair_stale_xref_offsets()
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
-        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
-            self.xref = self.brute_force_xref()
-            self.xref_was_recovered = True
-            self.xref_recovery_reason = str(error)
-            if not self.xref:
-                self.trailer_dict = {}
+                root_ref = self.trailer_dict.get("Root")
+                if root_ref is None or not self.is_valid_catalog_root(root_ref):
+                    self.xref.update(self.brute_force_xref())
+                    self.xref_was_recovered = True
+                    catalog_ref = self.infer_catalog_root()
+                    if catalog_ref is not None:
+                        self.trailer_dict = dict(self.trailer_dict)
+                        self.trailer_dict["Root"] = catalog_ref
+                    self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+            except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+                recovery_reason = str(error)
+            else:
                 return
-            catalog_ref = self.infer_catalog_root()
-            self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
-            self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+
+        # Missing and unreadable xrefs share the same reconstruction path.
+        self.xref = self.brute_force_xref()
+        self.xref_was_recovered = True
+        if recovery_reason is not None:
+            self.xref_recovery_reason = recovery_reason
+        if not self.xref:
+            self.trailer_dict = {}
+            return
+        catalog_ref = self.infer_catalog_root()
+        self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
+        self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
 
     def repair_stale_xref_offsets(self) -> None:
         header_offset = self.pdf_header_offset()
@@ -171,17 +169,14 @@ class DocumentXRefMixin:
         expected_generation_number = key & 0xFFFF
         search_start = max(0, offset - 1024)
         search_end = min(len(data), offset + 1024)
-        marker = data.find(b"obj", search_start, search_end)
-        while marker >= 0:
-            parsed = parse_object_marker_prefix(data, marker)
-            if parsed is not None:
-                parsed_offset, object_number, generation_number = parsed
-                if (
-                    object_number == expected_object_number
-                    and generation_number == expected_generation_number
-                ):
-                    return parsed_offset
-            marker = data.find(b"obj", marker + 3, search_end)
+        for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
+            data, search_start, search_end, allow_prefix_before_start=True
+        ):
+            if (
+                object_number == expected_object_number
+                and generation_number == expected_generation_number
+            ):
+                return parsed_offset
         return None
 
     def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
@@ -224,17 +219,14 @@ class DocumentXRefMixin:
                             return True
 
         search_end = min(data_len, offset + 64)
-        marker = data.find(b"obj", offset, search_end)
-        while marker >= 0:
-            parsed = parse_object_marker_prefix(data, marker)
-            if parsed is not None:
-                parsed_offset, object_number, generation_number = parsed
-                return (
-                    parsed_offset == offset
-                    and object_number == expected_object_number
-                    and generation_number == expected_generation_number
-                )
-            marker = data.find(b"obj", marker + 3, search_end)
+        for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
+            data, offset, search_end, allow_prefix_before_start=True
+        ):
+            return (
+                parsed_offset == offset
+                and object_number == expected_object_number
+                and generation_number == expected_generation_number
+            )
         return False
 
     def is_valid_catalog_root(self, root_ref: object) -> bool:

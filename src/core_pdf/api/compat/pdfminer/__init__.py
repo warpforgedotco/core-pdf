@@ -1342,63 +1342,8 @@ def internal_pdfminer_ligature_overrides(
 def internal_pdfminer_literal_glyphs(
     glyphs: Iterable[Any],
 ) -> tuple[tuple[Any, ...], dict[int, tuple[float, float]]]:
-    """Project parser-level byte loss from malformed literal-string escapes."""
     source = tuple(glyphs)
-    projected: list[Any] = []
-    offsets: dict[int, tuple[float, float]] = {}
-    index = 0
-    while index < len(source):
-        glyph = source[index]
-        provenance = dict(glyph.provenance) if glyph.provenance else {}
-        compatibility_data = provenance.get("compatibility_data")
-        if not isinstance(compatibility_data, bytes):
-            projected.append(glyph)
-            offsets[id(glyph)] = (0.0, 0.0)
-            index += 1
-            continue
-        end = index + 1
-        while end < len(source) and source[end].seqno == glyph.seqno:
-            end += 1
-        group = source[index:end]
-        wanted = [item.code_bytes for item in glyph.font_decoder.decode_glyphs(compatibility_data)]
-        wanted_index = 0
-        offset_x = 0.0
-        offset_y = 0.0
-        matched_cluster_id: object | None = None
-        matched_code_bytes: bytes | None = None
-        for candidate in group:
-            if wanted_index < len(wanted) and candidate.code_bytes == wanted[wanted_index]:
-                projected.append(candidate)
-                offsets[id(candidate)] = (offset_x, offset_y)
-                matched_cluster_id = candidate.cluster_key
-                matched_code_bytes = candidate.code_bytes
-                wanted_index += 1
-            elif (
-                matched_cluster_id is not None
-                and candidate.code_bytes == matched_code_bytes
-                and candidate.cluster_key == matched_cluster_id
-            ):
-                # A single encoded character can expand into several engine
-                # observations (most commonly a decomposed ligature). They
-                # are one source token, not parser-level byte loss. Retain the
-                # complete cluster at the same correction offset so the
-                # legacy ligature projection below can collapse it again.
-                projected.append(candidate)
-                offsets[id(candidate)] = (offset_x, offset_y)
-            elif candidate.baseline is not None:
-                baseline = candidate.baseline
-                offset_x -= baseline[2] - baseline[0]
-                offset_y -= baseline[3] - baseline[1]
-        index = end
-    return tuple(projected), offsets
-
-
-class _PdfminerOffsetMap(dict[int, tuple[float, float]]):
-    """Device offsets plus exact projected origins for LTChar reconstruction."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.origins: dict[int, tuple[float, float]] = {}
+    return source, {id(glyph): (0.0, 0.0) for glyph in source}
 
 
 def internal_pdfminer_offsets(
@@ -1406,41 +1351,16 @@ def internal_pdfminer_offsets(
     literal_offsets: Mapping[int, tuple[float, float]],
     *,
     discard_unusable_cmap: bool = True,
-) -> _PdfminerOffsetMap:
+) -> dict[int, tuple[float, float]]:
     """Reproduce pdfminer's cursor after legacy decoding and width loss."""
-    offsets = _PdfminerOffsetMap()
+    offsets: dict[int, tuple[float, float]] = {}
     correction_text_x = 0.0
     correction_text_y = 0.0
     for glyph_index, glyph in enumerate(glyphs):
         baseline = glyph.baseline
         literal_x, literal_y = literal_offsets.get(id(glyph), (0.0, 0.0))
         provenance = dict(glyph.provenance) if glyph.provenance else {}
-        cursor = provenance.get("pdfminer_cursor")
-        matrix_origin = provenance.get("pdfminer_matrix_origin")
-        text_matrix = provenance.get("text_matrix")
-        origin = provenance.get("pdfminer_origin")
-        if (
-            isinstance(cursor, (tuple, list))
-            and len(cursor) == 2
-            and isinstance(matrix_origin, (tuple, list))
-            and len(matrix_origin) == 2
-            and isinstance(text_matrix, (tuple, list))
-            and len(text_matrix) == 4
-            and isinstance(origin, (tuple, list))
-            and len(origin) == 2
-        ):
-            cursor_x = float(cursor[0]) + correction_text_x
-            cursor_y = float(cursor[1]) + correction_text_y
-            a, b, c, d = (float(value) for value in text_matrix)
-            expected_x = cursor_x * a + cursor_y * c + float(matrix_origin[0])
-            expected_y = cursor_x * b + cursor_y * d + float(matrix_origin[1])
-            offsets.origins[id(glyph)] = (expected_x + literal_x, expected_y + literal_y)
-            offsets[id(glyph)] = (
-                expected_x - float(origin[0]) + literal_x,
-                expected_y - float(origin[1]) + literal_y,
-            )
-        else:
-            offsets[id(glyph)] = (correction_text_x + literal_x, correction_text_y + literal_y)
+        offsets[id(glyph)] = (correction_text_x + literal_x, correction_text_y + literal_y)
         if glyph_index + 1 >= len(glyphs):
             continue
         following = glyphs[glyph_index + 1]
@@ -1451,8 +1371,6 @@ def internal_pdfminer_offsets(
             and following_baseline is not None
             and provenance.get("line_matrix_origin")
             == following_provenance.get("line_matrix_origin")
-            and provenance.get("pdfminer_matrix_origin")
-            == following_provenance.get("pdfminer_matrix_origin")
             and provenance.get("text_matrix") == following_provenance.get("text_matrix")
         )
         if not continuous:
@@ -1479,18 +1397,6 @@ def internal_pdfminer_offsets(
                 * 0.01
             )
             correction_text_x -= scale
-        if (
-            discard_unusable_cmap
-            and internal_pdfminer_embedded_cmap_is_unusable(glyph)
-            and provenance.get("pdfminer_need_charspace") is True
-        ):
-            # Core decoded another glyph and therefore applied character
-            # spacing; pdfminer's unusable CMap decoded no CID at all.
-            correction_text_x -= (
-                float(provenance.get("char_space", 0.0))
-                * float(provenance.get("horizontal_scale", 100.0))
-                * 0.01
-            )
     return offsets
 
 
@@ -1747,7 +1653,6 @@ def extract_pages(  # noqa: C901
         pdf_file,
         password=password,
         recovery_scan_all_revisions=False,
-        legacy_pdfminer_text_operators=True,
     )
     try:
         yielded = 0
@@ -1774,18 +1679,8 @@ def extract_pages(  # noqa: C901
             chars: list[LTChar] = []
             if not _unstructured_mode:
                 internal_pdfminer_validate_page_resources(page)
-            products = page.get_page_program().products
-            compatibility_glyphs: list[Any] = []
-            for glyph in products.glyphs:
-                provenance = dict(glyph.provenance) if glyph.provenance else {}
-                underlying = provenance.get("compatibility_glyphs")
-                if glyph.unicode_source == "actual_text" and isinstance(underlying, tuple):
-                    compatibility_glyphs.extend(underlying)
-                else:
-                    compatibility_glyphs.append(glyph)
-            projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(
-                compatibility_glyphs
-            )
+            products = page.get_page_program()
+            projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(products.glyphs)
             ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(
                 projected_glyphs
             )
@@ -1911,14 +1806,6 @@ def extract_pages(  # noqa: C901
                     resolved_text_matrix = (*text_matrix, 0.0, 0.0)
                 else:
                     resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-                pdfminer_matrix_origin = glyph_provenance.get("pdfminer_matrix_origin")
-                pdfminer_cursor = glyph_provenance.get("pdfminer_cursor")
-                exact_cursor_projection = (
-                    isinstance(pdfminer_matrix_origin, (tuple, list))
-                    and len(pdfminer_matrix_origin) == 2
-                    and isinstance(pdfminer_cursor, (tuple, list))
-                    and len(pdfminer_cursor) == 2
-                )
                 horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
                 coordinates_in_layout_space = False
                 if (
@@ -1932,21 +1819,10 @@ def extract_pages(  # noqa: C901
                     # the resulting sub-picopoint accumulation noise before
                     # applying vertical displacement metrics; otherwise two
                     # mathematically touching boxes can miss by one ULP.
-                    pdfminer_origin = glyph_provenance.get("pdfminer_origin")
-                    if isinstance(pdfminer_origin, (tuple, list)) and len(pdfminer_origin) == 2:
-                        origin_x, origin_y = (float(value) for value in pdfminer_origin)
-                        origin_x += offset_x
-                        origin_y += offset_y
-                        if int(page.rotation) % 360:
-                            origin_x = round(origin_x, 12)
-                            origin_y = round(origin_y, 12)
-                    else:
-                        origin_x, origin_y = _pdfminer_layout_origin(
-                            baseline,
-                            # Core advances complete show arrays in bulk whereas
-                            # PDFMiner updates the vertical cursor token by token.
-                            normalize_noise=effective_font_size == glyph.font_size,
-                        )
+                    origin_x, origin_y = _pdfminer_layout_origin(
+                        baseline,
+                        normalize_noise=effective_font_size == glyph.font_size,
+                    )
                     # PDFMiner applies the vertical displacement and advance
                     # as a local LTChar rectangle before transforming it.  In
                     # particular, the character origin is not the lower edge:
@@ -1974,13 +1850,7 @@ def extract_pages(  # noqa: C901
                     y1 = max(point[1] for point in corners)
                     effective_font_height = x1 - x0
                     line_origin = glyph_provenance.get("line_matrix_origin")
-                    if (
-                        not (
-                            isinstance(pdfminer_origin, (tuple, list)) and len(pdfminer_origin) == 2
-                        )
-                        and isinstance(line_origin, (tuple, list))
-                        and len(line_origin) == 2
-                    ):
+                    if isinstance(line_origin, (tuple, list)) and len(line_origin) == 2:
                         matrix_a, matrix_b, matrix_c, matrix_d, _matrix_e, _matrix_f = (
                             float(value) for value in resolved_text_matrix
                         )
@@ -2028,19 +1898,13 @@ def extract_pages(  # noqa: C901
                     # resumes at the vertical cursor. Normalize only that
                     # hand-off; ordinary horizontal origins must retain
                     # PDFMiner's native floating-point arithmetic.
-                    pdfminer_origin = glyph_provenance.get("pdfminer_origin")
-                    if isinstance(pdfminer_origin, (tuple, list)) and len(pdfminer_origin) == 2:
-                        origin_x, origin_y = (float(value) for value in pdfminer_origin)
-                        origin_x += offset_x
-                        origin_y += offset_y
-                    else:
-                        origin_x, origin_y = _pdfminer_layout_origin(
-                            baseline,
-                            normalize_noise=(
-                                bool(glyph_index)
-                                and projected_glyphs[glyph_index - 1].font_decoder.is_vertical
-                            ),
-                        )
+                    origin_x, origin_y = _pdfminer_layout_origin(
+                        baseline,
+                        normalize_noise=(
+                            bool(glyph_index)
+                            and projected_glyphs[glyph_index - 1].font_decoder.is_vertical
+                        ),
+                    )
                     text_rise = float(glyph_provenance.get("text_rise", 0.0))
                     descent = internal_pdfminer_descent(glyph) * glyph.font_size + text_rise
                     # ``LTChar`` uses the font descent only to anchor horizontal
@@ -2050,56 +1914,23 @@ def extract_pages(  # noqa: C901
                     advance = normalized_width * horizontal_scale * glyph.font_size
                     media_left, media_bottom, _media_right, _media_top = page_media_box
                     page_rotation = int(page.rotation) % 360
-                    if exact_cursor_projection:
-                        matrix_origin_values = cast(tuple[object, object], pdfminer_matrix_origin)
-                        cursor_values = cast(tuple[object, object], pdfminer_cursor)
-                        matrix_origin_x, matrix_origin_y = (
-                            float(cast(Any, value)) for value in matrix_origin_values
-                        )
-                        cursor_x, cursor_y = (float(cast(Any, value)) for value in cursor_values)
-                        (
-                            matrix_origin_x,
-                            matrix_origin_y,
-                            matrix_a,
-                            matrix_b,
-                            matrix_c,
-                            matrix_d,
-                        ) = _pdfminer_rotated_text_matrix(
-                            matrix_origin_x + offset_x - media_left,
-                            matrix_origin_y + offset_y - media_bottom,
-                            (matrix_a, matrix_b, matrix_c, matrix_d),
-                            page_rotation,
-                            page_width,
-                            page_height,
-                        )
-                        # Preserve PDFMiner's translate_matrix operation order:
-                        # rotate the text matrix first, then translate it by the
-                        # local line cursor. Exact layout grouping can depend on
-                        # the resulting final ULP.
-                        layout_origin_x = (
-                            cursor_x * matrix_a + cursor_y * matrix_c + matrix_origin_x
-                        )
-                        layout_origin_y = (
-                            cursor_x * matrix_b + cursor_y * matrix_d + matrix_origin_y
-                        )
-                    else:
-                        layout_origin_x = origin_x - media_left
-                        layout_origin_y = origin_y - media_bottom
-                        (
-                            layout_origin_x,
-                            layout_origin_y,
-                            matrix_a,
-                            matrix_b,
-                            matrix_c,
-                            matrix_d,
-                        ) = _pdfminer_rotated_text_matrix(
-                            layout_origin_x,
-                            layout_origin_y,
-                            (matrix_a, matrix_b, matrix_c, matrix_d),
-                            page_rotation,
-                            page_width,
-                            page_height,
-                        )
+                    layout_origin_x = origin_x - media_left
+                    layout_origin_y = origin_y - media_bottom
+                    (
+                        layout_origin_x,
+                        layout_origin_y,
+                        matrix_a,
+                        matrix_b,
+                        matrix_c,
+                        matrix_d,
+                    ) = _pdfminer_rotated_text_matrix(
+                        layout_origin_x,
+                        layout_origin_y,
+                        (matrix_a, matrix_b, matrix_c, matrix_d),
+                        page_rotation,
+                        page_width,
+                        page_height,
+                    )
                     corners = tuple(
                         (
                             along * matrix_a + vertical * matrix_c + layout_origin_x,

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared text-normalization primitives used across parse, api, and compat layers."""
+"""Shared text normalization and word-boundary rules, independent of processing stages."""
 
 from __future__ import annotations
 

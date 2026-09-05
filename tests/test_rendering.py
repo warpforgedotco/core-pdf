@@ -10,6 +10,7 @@ import pytest
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.render.commands import internal_append_glyph_paint
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     ImagePaintItem,
@@ -19,7 +20,6 @@ from core_pdf.impl.render.model import (
 from core_pdf.impl.render.page import (
     RenderedPage,
     compose_page,
-    internal_append_glyph_paint,
 )
 from core_pdf.impl.render.paths import (
     rasterize_packed_stroked_paths,
@@ -30,7 +30,7 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedPath,
     CapturedSubpath,
 )
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 from core_pdf.impl.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import (
@@ -484,7 +484,7 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
         bitmap_code=65,
         font_decoder=decoder,
     )
-    page_program = PageProgram(glyphs=(glyph,))
+    page_program = PageProgram(body=CapturedProgram(glyphs=(glyph,)))
 
     text_free = compose_page(
         Page(),
@@ -633,9 +633,17 @@ def test_text_clip_is_committed_before_the_next_text_object() -> None:
         font_decoder=decoder,
         glyph_transform=(0.005, 0.0, 0.0, 0.005, 1.0, 1.0),
     )
-    rendered = compose_page(Page(), page_program=PageProgram(glyphs=(clipping, painted)))
+    rendered = compose_page(
+        Page(), page_program=PageProgram(body=CapturedProgram(glyphs=(clipping, painted)))
+    )
+    text_free = compose_page(
+        Page(),
+        RenderOptions(include_text=False),
+        page_program=PageProgram(body=CapturedProgram(glyphs=(clipping, painted))),
+    )
 
     assert [item.kind for item in rendered.display_list.items] == ["clip", "fill"]
+    assert [item.kind for item in text_free.display_list.items] == ["clip"]
 
 
 def test_axis_aligned_image_rasterizes_native_array_samples() -> None:
@@ -702,6 +710,7 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
     assert isinstance(item, ImagePaintItem)
     assert item.source is not None
     assert item.source_metadata["width"] == 2
+    assert item.source_metadata["has_soft_mask"] is True
     assert item.to_data()["source_metadata"] is item.source_metadata
     assert "image_metadata" not in item.to_data()
     page.rasterize(background=(255, 255, 255, 255))
@@ -709,6 +718,41 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
 
     assert dictionary == original
     assert "__core_pdf_render_converted_image_data__" not in dictionary
+
+
+def test_image_metadata_reads_soft_mask_from_existing_source() -> None:
+    dictionary = {
+        "Width": 1,
+        "Height": 1,
+        "ColorSpace": "DeviceRGB",
+        "BitsPerComponent": 8,
+    }
+    source = ImageSource(
+        bytes((10, 20, 30)),
+        dictionary,
+        soft_mask=SoftMask(
+            bytes((255,)),
+            {
+                "Width": 1,
+                "Height": 1,
+                "ColorSpace": "DeviceGray",
+                "BitsPerComponent": 8,
+            },
+        ),
+    )
+    display_list = DisplayList(1, 1)
+
+    display_list.append(
+        "image",
+        1,
+        dictionary=dictionary,
+        image_source=source,
+        bbox=(0, 0, 1, 1),
+    )
+
+    item = display_list.items[0]
+    assert isinstance(item, ImagePaintItem)
+    assert item.source_metadata["has_soft_mask"] is True
 
 
 def test_image_mask_decode_is_applied_once_at_preparation_boundary() -> None:

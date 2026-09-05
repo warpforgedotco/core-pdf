@@ -69,6 +69,8 @@ class IdentityResolver:
     def resolve_str(self, value: object) -> str | None:
         if isinstance(value, str):
             return value
+        if isinstance(value, PdfString):
+            return decode_pdf_text_string(value.data)
         if isinstance(value, PdfName):
             return value.value
         return None

@@ -14,7 +14,7 @@ import string
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, TypeAlias
+from typing import Iterable, Mapping, TypeAlias
 
 from core_pdf.impl.model.geometry import (
     bbox_area,
@@ -23,6 +23,7 @@ from core_pdf.impl.model.geometry import (
     points_bbox,
     rect_tuple,
 )
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.types import Rectangle
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
@@ -100,7 +101,7 @@ class StrokedTextRun:
 @dataclass(frozen=True, slots=True)
 class internal_PathRecord:
     index: int
-    drawing: Any
+    path: CapturedPath
     bbox: Rectangle
 
 
@@ -136,19 +137,19 @@ class internal_StrokedTextRunProfile:
 
 
 def internal_path_records(
-    drawings: tuple[Any, ...], drawing_indexes: Iterable[int]
+    drawings: tuple[CapturedDrawing, ...], drawing_indexes: Iterable[int]
 ) -> tuple[internal_PathRecord, ...]:
     records: list[internal_PathRecord] = []
     for index in drawing_indexes:
         if not 0 <= index < len(drawings):
             continue
         drawing = drawings[index]
-        if getattr(drawing, "path", None) is None:
+        if drawing.path is None:
             continue
-        bbox = rect_tuple(getattr(drawing, "rect", None))
+        bbox = rect_tuple(drawing.rect)
         if bbox is None:
             continue
-        records.append(internal_PathRecord(index, drawing, bbox))
+        records.append(internal_PathRecord(index, drawing.path, bbox))
     return tuple(records)
 
 
@@ -179,10 +180,7 @@ def internal_glyph_signature(
 ) -> GlyphSignature | None:
     """Return a translation- and scale-independent polyline signature."""
     points = tuple(
-        point
-        for record in glyph
-        for subpath in record.drawing.path.subpaths
-        for point in subpath.points
+        point for record in glyph for subpath in record.path.subpaths for point in subpath.points
     )
     if not points:
         return None
@@ -202,7 +200,7 @@ def internal_glyph_signature(
                     for point in subpath.points
                 ),
             )
-            for subpath in record.drawing.path.subpaths
+            for subpath in record.path.subpaths
         )
         for record in glyph
     )
@@ -571,7 +569,7 @@ def internal_stroked_text_seed_run(
 
 
 def profile_stroked_text(
-    drawings: tuple[Any, ...],
+    drawings: tuple[CapturedDrawing, ...],
     drawing_indexes: Iterable[int],
 ) -> StrokedTextProfile:
     """Segment and fingerprint one stroke-text layer once for all later stages."""

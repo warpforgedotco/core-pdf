@@ -2,6 +2,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from core_pdf.impl.spec.s_07_content.state import TextState
+from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecutor
+from core_pdf.impl.spec.s_07_content.stream_state import GRAPHICS_STATE_FIELDS
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from tests.helpers.resolvers import IdentityResolver
@@ -12,7 +14,7 @@ def test_distinct_stream_slices_with_equal_lengths_have_distinct_execution_keys(
     first = PdfStream(raw_data=source[:5])
     second = PdfStream(raw_data=source[6:11])
 
-    assert TextState.stream_execution_key(first) != TextState.stream_execution_key(second)
+    assert ContentStreamExecutor.execution_key(first) != ContentStreamExecutor.execution_key(second)
 
 
 def internal_consume(content: bytes) -> TextState:
@@ -20,10 +22,9 @@ def internal_consume(content: bytes) -> TextState:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            legacy_pdfminer_text_operators=False,
         ),
     )
-    state = TextState(document, {})
+    state = TextState(document)
     state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
     return state
 
@@ -69,44 +70,7 @@ def test_graphics_state_restore_recomputes_derived_text_scales() -> None:
 
 def test_graphics_state_save_restore_covers_every_snapshot_field() -> None:
     state = internal_consume(b"")
-    fields = (
-        "ca",
-        "cb",
-        "cc",
-        "cd",
-        "ce",
-        "cf",
-        "fill_color",
-        "fill_pattern",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "fill_color_space",
-        "stroke_color_space",
-        "compatibility_depth",
-        "blend_mode",
-        "group_alpha",
-        "flatness",
-        "render_intent",
-        "clip_bbox",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "miter_limit",
-        "dash_pattern",
-        "font_size",
-        "font_operand",
-        "font_size_operand",
-        "horizontal_scale",
-        "char_space",
-        "word_space",
-        "rise",
-        "leading",
-        "render_mode",
-        "current_font",
-        "current_decoder",
-    )
+    fields = GRAPHICS_STATE_FIELDS
     before = tuple(getattr(state, name) for name in fields)
 
     state.op_q((), 0)
@@ -118,31 +82,13 @@ def test_graphics_state_save_restore_covers_every_snapshot_field() -> None:
     assert tuple(getattr(state, name) for name in fields) == before
 
 
-def test_pdfminer_double_quote_policy_omits_next_line_move() -> None:
-    def state(legacy: bool) -> TextState:
-        result = internal_consume(b"")
-        cast(Any, result.document).legacy_pdfminer_text_operators = legacy
-        result.leading = 12.0
-        result.lm_e = result.tm_e = 10.0
-        result.lm_f = result.tm_f = 20.0
-        return result
-
-    native = state(False)
-    legacy = state(True)
-    native.op_double_quote((2, 3, b""), 0)
-    legacy.op_double_quote((2, 3, b""), 0)
-
-    assert (native.tm_e, native.tm_f) == (10.0, 8.0)
-    assert (legacy.tm_e, legacy.tm_f) == (10.0, 20.0)
-
-
 def test_text_showing_consumes_the_top_operand_from_a_malformed_stack() -> None:
     state = internal_consume(b"")
 
     state.op_Tj((b"stale", b"visible"), 0)
 
-    assert state.pending_run is not None
-    assert state.pending_run.text == "visible"
+    state.run_accumulator.flush()
+    assert state.runs[-1].text == "visible"
 
 
 def test_curve_y_doubles_the_endpoint_as_its_second_control_point() -> None:

@@ -121,25 +121,51 @@ def resolve_base_font_name(font: dict[str, Any], subtype: str | None) -> str | N
     return descriptor_font_name(font, subtype)
 
 
-def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
+@dataclass(frozen=True, slots=True)
+class internal_FontProgramInputs:
+    """Structural font selection only; stream bytes stay lazy until attempted."""
+
+    subtype: str | None
+    original_subtype: str | None
+    descendant: dict[str, Any] | None
+    font_file: PdfStream | None
+    font_file2: PdfStream | None
+    font_file3: PdfStream | None
+
+
+def internal_font_file(descriptor: object, key: str) -> PdfStream | None:
+    value = descriptor.get(key) if isinstance(descriptor, dict) else None
+    return value if isinstance(value, PdfStream) else None
+
+
+def internal_prepare_font_program_inputs(font: dict[str, Any]) -> internal_FontProgramInputs:
     descendant = get_descendant(font)
     font_dict = descendant if descendant is not None else font
-    subtype = normalize_pdf_name(font_dict.get("Subtype"))
-    if subtype not in {"CIDFontType2", "TrueType"}:
-        return None
     descriptor = font_dict.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
+    return internal_FontProgramInputs(
+        subtype=normalize_pdf_name(font_dict.get("Subtype")),
+        original_subtype=normalize_pdf_name(font.get("Subtype")),
+        descendant=descendant,
+        # Type 1 is selected from the original dictionary, not its descendant.
+        font_file=internal_font_file(font.get("FontDescriptor"), "FontFile"),
+        font_file2=internal_font_file(descriptor, "FontFile2"),
+        font_file3=internal_font_file(descriptor, "FontFile3"),
+    )
+
+
+def internal_tt_font(inputs: internal_FontProgramInputs) -> TrueTypeFontProgram | None:
+    if inputs.subtype not in {"CIDFontType2", "TrueType"}:
         return None
-    font_file = descriptor.get("FontFile2")
-    if not isinstance(font_file, PdfStream):
+    font_file = inputs.font_file2
+    if font_file is None:
         return None
     cid_to_gid = None
-    if isinstance(descendant, dict):
-        cid_to_gid_obj = descendant.get("CIDToGIDMap")
+    if inputs.descendant is not None:
+        cid_to_gid_obj = inputs.descendant.get("CIDToGIDMap")
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:
-        return TrueTypeFontProgram(font_file.data, cid_to_gid, use_cmap=descendant is None)
+        return TrueTypeFontProgram(font_file.data, cid_to_gid, use_cmap=inputs.descendant is None)
     except ValueError:
         return None
 
@@ -162,23 +188,17 @@ def single_code_mapping(
     return mapping
 
 
-def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
-    descendant = get_descendant(font)
-    font_dict = descendant if descendant is not None else font
-    font_subtype = normalize_pdf_name(font_dict.get("Subtype"))
-    if descendant is not None:
-        if font_subtype != "CIDFontType0":
+def internal_cff_font(inputs: internal_FontProgramInputs) -> CFFFont | None:
+    if inputs.descendant is not None:
+        if inputs.subtype != "CIDFontType0":
             return None
-    elif font_subtype not in {"Type1", "MMType1"}:
+    elif inputs.subtype not in {"Type1", "MMType1"}:
         return None
-    descriptor = font_dict.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return None
-    font_file = descriptor.get("FontFile3")
-    if not isinstance(font_file, PdfStream):
+    font_file = inputs.font_file3
+    if font_file is None:
         return None
     subtype = normalize_pdf_name(font_file.dictionary.get("Subtype"))
-    if descendant is None and subtype not in {"Type1C", "OpenType"}:
+    if inputs.descendant is None and subtype not in {"Type1C", "OpenType"}:
         return None
     font_data: bytes | None = font_file.data
     if subtype == "OpenType":
@@ -236,14 +256,11 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
                 font.close()
 
 
-def type1_font_for_pdf_font(font: dict[str, object]) -> Type1FontProgram | None:
-    if normalize_pdf_name(font.get("Subtype")) not in {"Type1", "MMType1"}:
+def internal_type1_font(inputs: internal_FontProgramInputs) -> Type1FontProgram | None:
+    if inputs.original_subtype not in {"Type1", "MMType1"}:
         return None
-    descriptor = font.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return None
-    font_file = descriptor.get("FontFile")
-    if not isinstance(font_file, PdfStream):
+    font_file = inputs.font_file
+    if font_file is None:
         return None
     length1_value = font_file.dictionary.get("Length1")
     length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
@@ -253,14 +270,9 @@ def type1_font_for_pdf_font(font: dict[str, object]) -> Type1FontProgram | None:
         return None
 
 
-def opentype_font_for_pdf_font(font: dict[str, object]) -> OpenTypeFontProgram | None:
-    descendant = get_descendant(font)
-    font_dict = descendant if descendant is not None else font
-    descriptor = font_dict.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return None
-    font_file = descriptor.get("FontFile3")
-    if not isinstance(font_file, PdfStream):
+def internal_opentype_font(inputs: internal_FontProgramInputs) -> OpenTypeFontProgram | None:
+    font_file = inputs.font_file3
+    if font_file is None:
         return None
     if normalize_pdf_name(font_file.dictionary.get("Subtype")) != "OpenType":
         return None
@@ -272,13 +284,14 @@ def opentype_font_for_pdf_font(font: dict[str, object]) -> OpenTypeFontProgram |
 
 def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     """Select one embedded outline implementation in format-preference order."""
+    inputs = internal_prepare_font_program_inputs(font)
     for resolver in (
-        cff_font_for_pdf_font,
-        tt_font_for_pdf_font,
-        type1_font_for_pdf_font,
-        opentype_font_for_pdf_font,
+        internal_cff_font,
+        internal_tt_font,
+        internal_type1_font,
+        internal_opentype_font,
     ):
-        program = resolver(font)
+        program = resolver(inputs)
         if program is not None:
             return program
     return None

@@ -4,6 +4,7 @@ import pytest
 
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
+from core_pdf.impl.spec.s_09_fonts.font_program_truetype import internal_FontToolsOutlineAccess
 from core_pdf.impl.spec.s_09_fonts.font_program_type1 import Type1FontProgram
 
 internal_CURVE_PROGRAM = [
@@ -44,6 +45,16 @@ class internal_CubicGlyph:
 
 
 class internal_FakeOpenTypeFont:
+    def getGlyphOrder(self) -> list[str]:
+        return ["curve"]
+
+    def getReverseGlyphMap(self) -> dict[str, int]:
+        return {"curve": 0}
+
+    def __getitem__(self, key: str) -> Any:
+        assert key == "head"
+        return type("Head", (), {"unitsPerEm": 2000})()
+
     def getGlyphName(self, glyph_id: int) -> str:
         if glyph_id != 0:
             raise IndexError(glyph_id)
@@ -56,9 +67,7 @@ class internal_FakeOpenTypeFont:
 def internal_opentype_curve_program() -> OpenTypeFontProgram:
     program = cast(Any, object.__new__(OpenTypeFontProgram))
     program.font = internal_FakeOpenTypeFont()
-    program.glyph_count = 1
-    program.reverse_glyph_map = {"curve": 0}
-    program.units_per_em = 2000.0
+    program.outlines = internal_FontToolsOutlineAccess(cast(Any, program.font))
     return cast(OpenTypeFontProgram, program)
 
 

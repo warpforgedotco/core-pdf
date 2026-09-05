@@ -13,7 +13,7 @@ from core_pdf.impl.model.runs import (
     LayoutLineTextSegment,
     TextRun,
 )
-from core_pdf.impl.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
+from core_pdf.impl.model.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
 
 # A digit is a superscript of the preceding text when it is clearly shorter and its
 # baseline sits clearly above; the run-level and atom-level passes share the rule.

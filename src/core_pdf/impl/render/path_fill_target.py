@@ -14,6 +14,7 @@ from core_pdf.impl.render.blend import (
     internal_blend_normal_alpha_array_numpy,
     internal_blend_normal_solid_array_numpy,
     internal_blend_solid_array_numpy,
+    internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.paths import (
     internal_fill_path_crossing_spans,
@@ -23,7 +24,7 @@ from core_pdf.impl.render.paths import (
     internal_signed_area_coverage,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 
 class internal_PathFillTargetMixin:
@@ -45,8 +46,8 @@ class internal_PathFillTargetMixin:
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
-        clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
-        clip_row_visible_spans = self.clip_row_visible_spans
+        clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         page_buffer = self.page_buffer
@@ -71,10 +72,8 @@ class internal_PathFillTargetMixin:
         blend_target = None
         if not normal_fast:
             group_alpha = buffer_stack[-1][1]
-            if pdf_number(group_alpha):
-                sr, sg, sb, sa = rgba
-                sa = max(0, min(255, int(round(sa * float(group_alpha)))))
-                blended_rgba = (sr, sg, sb, sa)
+            if is_pdf_number(group_alpha):
+                blended_rgba = internal_scale_rgba_alpha(rgba, group_alpha)
             if blended_rgba[3] > 0:
                 blend_target = pixel_view(pixels)
 
@@ -178,13 +177,13 @@ class internal_PathFillTargetMixin:
         edges: list[tuple[float, float, float, float]],
         bbox: tuple[float, float, float, float],
     ) -> bool:
+        """Fill opaque black polygons using one winding scan per raster row."""
         blend_normal_solid_span = self.blend_normal_solid_span
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        page_box_to_pixels = self.page_box_to_pixels
+        page_box_to_pixels = self.clip.page_box_to_pixels
         scale = self.scale
         width = self.width
-        """Fill opaque black polygons using one winding scan per raster row."""
         x0, y0, x1, y1 = bbox
         pixel_box = page_box_to_pixels(x0, y0, x1, y1)
         if pixel_box is None:
@@ -247,39 +246,37 @@ class internal_PathFillTargetMixin:
         blend_mode: str | None = None,
         fill_rule: str = "nonzero",
     ) -> None:
-        clipped_pixel_box = self.clipped_pixel_box
+        clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        axis_aligned_rect_box = clip.axis_aligned_rect_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
-        clip_path_stack = clip.clip_path_stack
-        clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        current_clip = self.current_clip
+        current_clip = clip.current_clip
         fast_fill_path = self.fast_fill_path
         fill_path_scanlines = self.fill_path_scanlines
         fill_rect = self.fill_rect
-        path_bbox = clip.path_bbox
-        pixel_in_clip = self.pixel_in_clip
+        pixel_in_clip = clip.pixel_in_clip
         pixel_view = self.pixel_view
         pixels = self.pixels
         scale = self.scale
         width = self.width
-        rect = axis_aligned_rect_box(path)
+        rect = path.axis_aligned_rect()
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
             return
         edges = path.fill_edges()
         if not edges:
             return
-        bbox = path_bbox(path)
+        bbox = clip.path_bbox(path)
         if bbox is None:
             return
         fast_bbox: tuple[float, float, float, float] | None = bbox
-        if clip_path_stack:
+        if clip_regions:
             if not clip_paths_are_axis_aligned_rects():
                 fast_bbox = None
             else:

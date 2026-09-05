@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.serialize import document_to_json_dict
+from core_pdf.impl.output.serialize import document_to_json_dict
 from tests.helpers.benchmark_pages import DENSE_PDF
 from tests.helpers.paths import require_fixture
 

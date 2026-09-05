@@ -12,6 +12,7 @@ import pytest
 
 from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
+from core_pdf.impl.runtime.execution import internal_ExtractionCancelled
 from core_pdf.impl.spec.s_07_document.document import PdfDocument
 from tests.helpers.paths import score_bench_pdf
 
@@ -64,6 +65,37 @@ def test_document_close_preserves_caller_owned_reader() -> None:
 
     assert not reader.closed
     assert document.closed
+
+
+@pytest.mark.parametrize("page_only", [False, True])
+def test_close_cancels_extraction_before_releasing_owned_resources(
+    monkeypatch: pytest.MonkeyPatch, page_only: bool
+) -> None:
+    with PublicPdfDocument(simple_pdf_fixture()) as document:
+        mapping = document.raw_data
+        file_handle = document.file_handle
+        assert isinstance(mapping, mmap.mmap)
+        assert file_handle is not None
+
+        def close_during_extraction(*args: Any) -> None:
+            context = args[1]
+            context.raise_if_cancelled()
+            document.close()
+            assert document.closed
+            assert not mapping.closed
+            assert not file_handle.closed
+            context.raise_if_cancelled()
+
+        entrypoint = "extract_page" if page_only else "extract_document"
+        monkeypatch.setattr(f"core_pdf.api.document.{entrypoint}", close_during_extraction)
+        with pytest.raises(internal_ExtractionCancelled, match="extraction was cancelled"):
+            if page_only:
+                document.pages[0].extract()
+            else:
+                document.extract()
+
+        assert mapping.closed
+        assert file_handle.closed
 
 
 def test_document_close_defers_unmap_for_external_view() -> None:

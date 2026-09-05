@@ -8,7 +8,6 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from itertools import combinations
-from typing import cast
 
 import numpy
 
@@ -16,6 +15,7 @@ from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
     PageAnalysis,
+    internal_bbox_tuple,
 )
 from core_pdf.impl.extract.grids import (
     internal_axis_segments,
@@ -26,29 +26,34 @@ from core_pdf.impl.extract.grids import (
     internal_table_from_component,
 )
 from core_pdf.impl.extract.table_cleanup import (
+    internal_annotate_table_associations,
     internal_cell_text,
-    internal_character_spaced_cell,
     internal_clean_table_cell_leader_runs,
     internal_collapse_character_spaced_cell,
     internal_merge_adjacent_tables,
     internal_merge_stream_text_columns,
     internal_merge_wrapped_cell_rows,
     internal_merge_wrapped_stream_rows,
-    internal_numeric_cell,
     internal_repair_table_cell_spaced_digits,
     internal_split_semantic_table,
     internal_stream_table_reads_like_prose,
     internal_table_character_spaced_prose,
     internal_table_is_single_column_prose,
     internal_table_quality,
+    internal_table_with_bands,
 )
+from core_pdf.impl.extract.table_facts import internal_numeric_cell, internal_TableFacts
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
-from core_pdf.impl.output import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.runtime.array_views import finite_median
 
 # Table-stage orchestration.
 
 internal_CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
+
+
+def internal_table_vertical_sort_key(table: Table) -> float:
+    return -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +113,29 @@ class internal_TableAnalysis:
         )
 
 
+def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
+    """Detect, reconcile, annotate, and band every table in one operation."""
+    analysis = internal_TableAnalysis.build(observations, capture.width)
+    evidence = capture.evidence
+    if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
+        return ()
+    tables = internal_detect_tables(capture, analysis)
+    chart_table = extract_chart_table(capture, observations)
+    if chart_table is not None:
+        tables = (*tables, chart_table)
+    tables = tuple(sorted(tables, key=internal_table_vertical_sort_key))
+    return tuple(
+        internal_table_with_bands(
+            internal_annotate_table_associations(
+                replace(table, order=order) if table.order != order else table,
+                observations,
+                analysis.text_rows,
+            )
+        )
+        for order, table in enumerate(tables)
+    )
+
+
 def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
     """Split dense OCR axis/value lines while keeping prose intact."""
     tokens = tuple(part for part in text.split() if part)
@@ -115,6 +143,11 @@ def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
     if len(tokens) >= 4 and numeric_count >= 3:
         return tokens
     return (text,)
+
+
+def internal_chart_cell_center_y(cell: TableCell) -> float:
+    box = cell.bbox or (0.0, 0.0, 0.0, 0.0)
+    return (box[1] + box[3]) / 2
 
 
 def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -> Table | None:
@@ -141,10 +174,7 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         if not text or text.casefold() in seen:
             continue
         seen.add(text.casefold())
-        box = cast(
-            tuple[float, float, float, float],
-            tuple(float(value) for value in observations.bbox[int(index)]),
-        )
+        box = internal_bbox_tuple(observations.bbox[int(index)])
         if box[2] <= box[0] or box[3] <= box[1]:
             continue
         parts = internal_chart_cell_texts(text)
@@ -163,24 +193,17 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         return None
     row_tolerance = max(6.0, capture.height * 0.008)
     row_groups: list[tuple[float, list[TableCell]]] = []
+    # Grouping only compares against the open group, so the cells have to arrive
+    # in the same order the comparison uses: descending row center, not bbox top.
     for cell in sorted(
         cells,
-        key=lambda item: (-(item.bbox or (0, 0, 0, 0))[1], item.column),
+        key=lambda item: (-internal_chart_cell_center_y(item), item.column),
     ):
-        cell_box = cell.bbox or (0.0, 0.0, 0.0, 0.0)
-        center_y = (cell_box[1] + cell_box[3]) / 2
-        group = next(
-            (
-                candidate
-                for candidate in row_groups
-                if abs(candidate[0] - center_y) <= row_tolerance
-            ),
-            None,
-        )
-        if group is None:
+        center_y = internal_chart_cell_center_y(cell)
+        if not row_groups or abs(row_groups[-1][0] - center_y) > row_tolerance:
             row_groups.append((center_y, [cell]))
         else:
-            group[1].append(cell)
+            row_groups[-1][1].append(cell)
     rows = tuple(
         tuple(
             sorted(
@@ -201,10 +224,9 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
 
 def internal_detect_tables(
     capture: PageAnalysis,
-    observations: ObservationBatch,
-    *,
-    analysis: internal_TableAnalysis | None = None,
+    analysis: internal_TableAnalysis,
 ) -> tuple[Table, ...]:
+    observations = analysis.observations
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
     vertical = internal_merge_collinear_segments(vertical, coordinate=0, start=1, end=2)
@@ -224,9 +246,8 @@ def internal_detect_tables(
     tables = list(ruled)
     for stream in internal_stream_tables(
         capture,
-        observations,
         len(tables),
-        analysis=analysis,
+        analysis,
     ):
         conflicts = [
             table
@@ -254,8 +275,9 @@ def internal_detect_tables(
         segment
         for table in internal_merge_adjacent_tables(tables)
         for segment in internal_split_semantic_table(table)
-        if not internal_table_character_spaced_prose(segment)
-        and not internal_table_is_single_column_prose(segment)
+        for facts in (internal_TableFacts.from_rows(segment.rows),)
+        if not internal_table_character_spaced_prose(segment, facts=facts)
+        and not internal_table_is_single_column_prose(segment, facts=facts)
     ]
     for order, table in enumerate(tables):
         if table.order != order:
@@ -280,7 +302,7 @@ def internal_detect_tables(
         )
         for table in tables
     ]
-    return tuple(sorted(tables, key=lambda table: -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]))
+    return tuple(sorted(tables, key=internal_table_vertical_sort_key))
 
 
 # Whitespace-aligned stream table inference.
@@ -534,12 +556,13 @@ def internal_stream_table(
     if density < minimum_density:
         return None
     numeric_total = sum(numeric_by_column)
-    filled_texts = [cell.text.strip() for row in table_rows for cell in row if cell.text.strip()]
+    facts = internal_TableFacts.from_rows(table_rows)
+    filled_texts = facts.filled_texts
     long_text_cells = sum(len(text) > 18 for text in filled_texts)
     sentence_like_cells = sum(
         any(mark in text for mark in (". ", ", ", "; ", ": ")) for text in filled_texts
     )
-    character_spaced_cells = sum(internal_character_spaced_cell(text) for text in filled_texts)
+    character_spaced_cells = facts.character_spaced_cells
     if (
         minimum_rows >= 3
         and len(table_rows) >= 5
@@ -669,12 +692,10 @@ def internal_compact_stream_table(
 
 def internal_stream_tables(
     capture: PageAnalysis,
-    observations: ObservationBatch,
     start_order: int,
-    *,
-    analysis: internal_TableAnalysis | None = None,
+    analysis: internal_TableAnalysis,
 ) -> tuple[Table, ...]:
-    analysis = analysis or internal_TableAnalysis.build(observations, capture.width)
+    observations = analysis.observations
     coordinates = analysis.coordinates
     rows = analysis.text_rows
     row_centers = analysis.row_centers

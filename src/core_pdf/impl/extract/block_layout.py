@@ -25,7 +25,8 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.output import (
+from core_pdf.impl.model.text import collapse_leader_runs, collapse_ws
+from core_pdf.impl.output.model import (
     TextSpan,
 )
 from core_pdf.impl.records import (
@@ -34,7 +35,6 @@ from core_pdf.impl.records import (
     internal_text_word_tokens,
 )
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.text import collapse_leader_runs, collapse_ws
 
 # ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized
 # comparison against a preconverted scalar rather than a per-observation Python loop.
@@ -143,8 +143,9 @@ def internal_group_text_and_words(
     if references and all(isinstance(reference, TextRun) for reference in references):
         runs = cast(list[TextRun], list(references))
         line = LayoutLine(runs)
-        text = line.reconstructed_text().text.strip()
-        layout_words = line.text_and_words()[1]
+        reconstructed = line.reconstructed_text()
+        text = reconstructed.text.strip()
+        layout_words = line.text_and_words(reconstructed)[1]
         return text, internal_reconcile_text_words(text, layout_words)
     parts: list[str] = []
     candidate_words: list[TextWord] = []
@@ -213,10 +214,6 @@ def internal_is_repeated_native_label(text: str, repeated_tokens: frozenset[str]
     return bool(parts) and all(len(part) == 1 and part in repeated_tokens for part in parts)
 
 
-def internal_clean_native_punctuation_runs(text: str) -> str:
-    return collapse_leader_runs(text)
-
-
 def internal_color_is_emphasis(color: object) -> bool:
     if not isinstance(color, (tuple, list)) or len(color) < 3:
         return False
@@ -276,10 +273,9 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
         ):
             continue
         if all_native:
-            text = internal_clean_native_punctuation_runs(text)
+            text = collapse_leader_runs(text)
             if not text:
                 continue
-        words = internal_reconcile_text_words(text, words)
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]
         finite_confidences = confidences[numpy.isfinite(confidences)]

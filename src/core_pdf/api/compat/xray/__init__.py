@@ -16,11 +16,11 @@ from core_pdf.impl.model.geometry import (
     flip_rect_vertical,
     overlap_ratio_of,
 )
+from core_pdf.impl.model.text import collapse_ws
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.text import collapse_ws
 
 from .._shared import float32 as _float32
 
@@ -242,7 +242,7 @@ def _page_redactions(
     if "overrides" not in override_cache:
         override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
     operand_overrides = override_cache["overrides"]
-    glyphs = tuple(page.get_page_program().products.glyphs)
+    glyphs = tuple(page.get_page_program().glyphs)
     sequence_codes: dict[int, bytes] = {}
     for glyph in glyphs:
         sequence_codes[glyph.seqno] = sequence_codes.get(glyph.seqno, b"") + glyph.code_bytes

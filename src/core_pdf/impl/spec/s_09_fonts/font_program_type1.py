@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
@@ -60,28 +61,22 @@ def internal_eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-def internal_extract_binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> dict[str, bytes]:
-    entries: dict[str, bytes] = {}
+def internal_binary_entries(
+    data: bytes, pattern: re.Pattern[bytes]
+) -> Iterator[tuple[bytes, bytes]]:
+    """Yield complete length-prefixed entries, leaving key semantics to callers."""
     for match in pattern.finditer(data):
-        name = match.group(1).decode("latin-1")
         length = int(match.group(2))
         start = match.end()
         end = start + length
         if length >= 0 and end <= len(data):
-            entries[name] = data[start:end]
-    return entries
+            yield match.group(1), data[start:end]
 
 
-def internal_extract_subrs(data: bytes) -> dict[int, bytes]:
-    entries: dict[int, bytes] = {}
-    for match in internal_SUBR_RE.finditer(data):
-        index = int(match.group(1))
-        length = int(match.group(2))
-        start = match.end()
-        end = start + length
-        if end <= len(data):
-            entries[index] = data[start:end]
-    return entries
+def internal_charstring(encrypted: bytes, len_iv: int, subrs: list[T1CharString]) -> T1CharString:
+    decoded = internal_decrypt(encrypted, 4330)
+    bytecode = decoded[len_iv:] if len_iv >= 0 else decoded
+    return T1CharString(bytecode, subrs=subrs)
 
 
 class Type1FontProgram:
@@ -102,26 +97,29 @@ class Type1FontProgram:
         if len_iv < -1 or len_iv > 32:
             raise ValueError("invalid Type 1 lenIV")
 
-        subr_data = internal_extract_subrs(private)
+        subr_data = {
+            int(index): payload
+            for index, payload in internal_binary_entries(private, internal_SUBR_RE)
+        }
         subr_count = max(subr_data, default=-1) + 1
         if subr_count > internal_MAX_SUBROUTINES:
             raise ValueError("Type 1 subroutine index exceeds decoder limit")
         empty = T1CharString(b"\x0b", subrs=[])
         subrs = [empty for _ in range(subr_count)]
         for index, encrypted in subr_data.items():
-            decoded = internal_decrypt(encrypted, 4330)
-            bytecode = decoded[len_iv:] if len_iv >= 0 else decoded
-            subrs[index] = T1CharString(bytecode, subrs=subrs)
+            subrs[index] = internal_charstring(encrypted, len_iv, subrs)
         for subr in subrs:
             subr.subrs = subrs
         self.subrs = subrs
 
-        charstrings = internal_extract_binary_entries(private, internal_CHARSTRING_RE)
-        self.charstrings: dict[str, T1CharString] = {}
-        for name, encrypted in charstrings.items():
-            decoded = internal_decrypt(encrypted, 4330)
-            bytecode = decoded[len_iv:] if len_iv >= 0 else decoded
-            self.charstrings[name] = T1CharString(bytecode, subrs=subrs)
+        charstrings = {
+            name.decode("latin-1"): payload
+            for name, payload in internal_binary_entries(private, internal_CHARSTRING_RE)
+        }
+        self.charstrings = {
+            name: internal_charstring(encrypted, len_iv, subrs)
+            for name, encrypted in charstrings.items()
+        }
         if not self.charstrings:
             raise ValueError("Type 1 CharStrings are missing")
         self.glyph_names = tuple(self.charstrings)

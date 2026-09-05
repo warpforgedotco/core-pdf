@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from typing import Protocol, TypeAlias, cast
+from typing import TypeAlias, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -14,7 +14,6 @@ from core_pdf.impl.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import TEXT_ONLY_SKIP_OPERATORS
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
@@ -34,24 +33,17 @@ ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
 
-TEXT_CLIP_PREFIX_RE = re.compile(
-    b"[\x00\t\n\f\r ]*"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
-    b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
-)
-TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
+internal_INLINE_IMAGE_MARKER_RE = re.compile(rb"[%(/<>\[\]]|BI")
 
 
-def _advance_past_lexical_markers(
+def internal_next_inline_image(
     raw_bytes: bytes,
     pos: int,
     data_len: int,
-    container_depth: int,
-) -> tuple[int, int, bytes, int, bool] | None:
-    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
+) -> int | None:
+    """Find a top-level BI token, ignoring names, strings and containers."""
+    container_depth = 0
+    while match := internal_INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -90,25 +82,10 @@ def _advance_past_lexical_markers(
             (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]])
             and (after == data_len or SEPARATOR_TABLE[raw_bytes[after]])
         )
-        return marker, after, token, container_depth, delimited
+        if not container_depth and delimited:
+            return after
+        pos = after
     return None
-
-
-def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
-    match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
-    if match is None:
-        return None
-    return match.end()
-
-
-class NestedStreamRequest(Exception):
-    """Internal control flow used to pause a content stream for a nested one."""
-
-
-class OperationTarget(Protocol):
-    capture_graphics: bool
-    capture_glyphs: bool
-    capture_clipping: bool
 
 
 OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
@@ -117,9 +94,17 @@ OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
 def dispatch_operations(
     lexer: PdfLexer,
     get_handler: Callable[[str], OperationHandler | None],
-    target: OperationTarget | None,
     depth: int,
+    *,
+    handlers_reject_unknown: bool = True,
 ) -> None:
+    """Tokenize `lexer` and drive each operator through `get_handler`.
+
+    `handlers_reject_unknown` states whether `get_handler` returns None for a
+    word that is not a real operator. Inline-image recovery uses it to tell an
+    operator boundary from arbitrary image bytes; callers that record every
+    word indiscriminately must pass False.
+    """
     operands: list[ContentOperand] = []
 
     def append_operand(value: ContentOperand) -> None:
@@ -132,24 +117,7 @@ def dispatch_operations(
     source_bytes = full_source_bytes(raw_data)
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
-    text_only = (
-        target is not None
-        and not target.capture_graphics
-        and not target.capture_glyphs
-        and not target.capture_clipping
-    )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
-    # Fixed when the document is opened, but it was previously resolved by a
-    # double getattr chain on every ``<<`` token of every content stream.
-    legacy_pdfminer_mode = bool(
-        target is not None
-        and getattr(
-            getattr(target, "document", None),
-            "legacy_pdfminer_text_operators",
-            False,
-        )
-    )
-    skipped_clip_q_count = 0
 
     pos = lexer.pos
     while pos < data_len:
@@ -185,7 +153,7 @@ def dispatch_operations(
                                 lexer,
                                 pos,
                                 (lambda token: get_handler(token.decode("latin-1")) is not None)
-                                if target is not None
+                                if handlers_reject_unknown
                                 else None,
                             )
                             if recovered_pos is None:
@@ -205,23 +173,6 @@ def dispatch_operations(
                         handler(tuple(operands), depth)
                     operands.clear()
                     continue
-
-                # Skip irrelevant graphics operators before the normal handler lookup.
-                if text_only:
-                    if raw_key == b"q" and not operands:
-                        skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
-                        if skipped_pos is not None:
-                            skipped_clip_q_count += 1
-                            pos = skipped_pos
-                            operands.clear()
-                            continue
-                    if raw_key == b"Q" and skipped_clip_q_count:
-                        skipped_clip_q_count -= 1
-                        operands.clear()
-                        continue
-                    if raw_key in TEXT_ONLY_SKIP_OPERATORS:
-                        operands.clear()
-                        continue
 
                 if raw_key in (
                     b"R",
@@ -260,29 +211,11 @@ def dispatch_operations(
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
                 try:
-                    parse_dictionary = (
-                        lexer.parse_dictionary
-                        if legacy_pdfminer_mode
-                        else lexer.parse_dictionary_or_stream
-                    )
-                    previous_recovery = lexer.recover_malformed_objects
-                    if legacy_pdfminer_mode:
-                        lexer.recover_malformed_objects = False
-                    try:
-                        append_operand(cast(ContentOperand, parse_dictionary()))
-                    finally:
-                        lexer.recover_malformed_objects = previous_recovery
+                    append_operand(cast(ContentOperand, lexer.parse_dictionary_or_stream()))
                 except PdfParseError as exc:
                     if lexer.pos >= data_len or str(exc) == "unexpected end of PDF input":
-                        trailing = raw_bytes[operand_start:]
-                        if legacy_pdfminer_mode and (
-                            b"endobj" in trailing or re.search(rb"(?m)^xref\b", trailing)
-                        ):
-                            raise ValueError("invalid pdfminer content dictionary") from exc
                         pos = data_len
                         break
-                    if legacy_pdfminer_mode:
-                        raise ValueError("invalid pdfminer content dictionary") from exc
                     if lexer.pos > operand_start:
                         pos = lexer.pos
                         continue
@@ -296,25 +229,10 @@ def dispatch_operations(
             pos = lexer.pos
             continue
         if byte == 40:
-            literal_start = lexer.pos
             raw_string = lexer.read_string()
-            literal_end = lexer.pos
-            lexer.pos = literal_start
-            compatibility_string = lexer.read_string(drop_unknown_escapes=True)
-            lexer.pos = literal_end
             if should_decipher:
                 raw_string = lexer.apply_decipher(raw_string)
-                compatibility_string = lexer.apply_decipher(compatibility_string)
-            string_value = (
-                raw_string
-                if text_only
-                else PdfString(
-                    raw_string,
-                    is_literal=True,
-                    compatibility_data=compatibility_string,
-                )
-            )
-            append_operand(string_value)
+            append_operand(PdfString(raw_string, is_literal=True))
             pos = lexer.pos
             continue
         if byte == 47:
@@ -342,12 +260,7 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
 
         return collect
 
-    dispatch_operations(
-        lexer,
-        get_handler,
-        None,
-        0,
-    )
+    dispatch_operations(lexer, get_handler, 0, handlers_reject_unknown=False)
     yield from results
 
 
@@ -358,13 +271,8 @@ def validate_inline_images(data: bytes | memoryview) -> None:
         raw_bytes = bytes(data)
     data_len = len(raw_bytes)
     pos = 0
-    container_depth = 0
     lexer = PdfLexer(raw_bytes)
-    while scan := _advance_past_lexical_markers(raw_bytes, pos, data_len, container_depth):
-        _marker, after, token, container_depth, delimited = scan
-        if token != b"BI" or container_depth or not delimited:
-            pos = after
-            continue
+    while (after := internal_next_inline_image(raw_bytes, pos, data_len)) is not None:
         lexer.pos = after
         parse_inline_image(lexer)
         pos = lexer.pos

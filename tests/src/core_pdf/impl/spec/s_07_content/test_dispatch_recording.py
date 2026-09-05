@@ -16,7 +16,7 @@ def dispatch_m_operands(source: bytes) -> list[object]:
     def move_to(operands: ContentOperands, internal_depth: int) -> None:
         received.extend(operands)
 
-    dispatch_operations(PdfLexer(source), {"m": move_to}.get, None, 0)
+    dispatch_operations(PdfLexer(source), {"m": move_to}.get, 0)
     return received
 
 

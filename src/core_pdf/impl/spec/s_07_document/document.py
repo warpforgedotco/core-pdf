@@ -16,7 +16,7 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.pages import PageSelection, resolve_page_selection
+from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
@@ -24,11 +24,7 @@ from core_pdf.impl.spec.s_07_document.document_labels import (
     resolve_page_tree_node_type,
 )
 from core_pdf.impl.spec.s_07_document.document_xref import DocumentXRefMixin
-from core_pdf.impl.spec.s_07_document.fields import (
-    FieldTraversalEntry,
-    field_value_text,
-    field_widget_rect,
-)
+from core_pdf.impl.spec.s_07_document.fields import collect_field_records
 from core_pdf.impl.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.spec.s_07_document.page import PAGE_INHERITED_KEYS
 from core_pdf.impl.spec.s_07_document.records import (
@@ -59,6 +55,7 @@ from core_pdf.impl.spec.s_07_syntax.types import (
 )
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_09_fonts.fallback import internal_RasterFontRepository
 from core_pdf.impl.spec.s_14_structure.tree import StructureTree
 from core_pdf.impl.types import (
     PathSource,
@@ -68,7 +65,10 @@ from core_pdf.impl.types import (
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
+    from core_pdf.impl.spec.s_09_fonts.fallback import (
+        RasterFontProviderLike,
+        internal_RasterFontRepository,
+    )
 
 
 internal_PageT = TypeVar("internal_PageT")
@@ -97,7 +97,6 @@ class PdfDocument(
         "xref_was_recovered",
         "xref_recovery_reason",
         "recovery_scan_all_revisions",
-        "legacy_pdfminer_text_operators",
         "raster_font_provider",
         "page_tree_was_recovered",
         "internal_closed",
@@ -114,8 +113,7 @@ class PdfDocument(
     xref_was_recovered: bool
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
-    legacy_pdfminer_text_operators: bool
-    raster_font_provider: RasterFontProviderLike | None
+    raster_font_provider: RasterFontProviderLike | internal_RasterFontRepository | None
     page_tree_was_recovered: bool
     internal_closed: bool
 
@@ -125,7 +123,6 @@ class PdfDocument(
         password: str = "",
         *,
         recovery_scan_all_revisions: bool = True,
-        legacy_pdfminer_text_operators: bool = False,
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_closed = False
@@ -139,8 +136,7 @@ class PdfDocument(
         self.xref_was_recovered = False
         self.xref_recovery_reason = None
         self.recovery_scan_all_revisions = recovery_scan_all_revisions
-        self.legacy_pdfminer_text_operators = legacy_pdfminer_text_operators
-        self.raster_font_provider = raster_font_provider
+        self.raster_font_provider = internal_RasterFontRepository(raster_font_provider)
         self.page_tree_was_recovered = False
         try:
             self.raw_data = self.load_data(source)
@@ -160,14 +156,12 @@ class PdfDocument(
         password: str = "",
         *,
         recovery_scan_all_revisions: bool = True,
-        legacy_pdfminer_text_operators: bool = False,
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> Self:
         return cls(
             source,
             password=password,
             recovery_scan_all_revisions=recovery_scan_all_revisions,
-            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
             raster_font_provider=raster_font_provider,
         )
 
@@ -196,6 +190,10 @@ class PdfDocument(
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
             resolver.close()
+
+        raster_fonts = self.raster_font_provider
+        if isinstance(raster_fonts, internal_RasterFontRepository):
+            raster_fonts.close()
 
         raw_data = self.raw_data
         self.raw_data = b""
@@ -959,142 +957,6 @@ class PdfDocument(
         # list, not the page content every caller came for.
         return self.internal_catalog_dict("AcroForm", recoverable=True)
 
-    def collect_field_records(
-        self,
-        node: object,
-        inherited_name: str = "",
-        inherited_type: str = "",
-        inherited_value: object = None,
-        depth: int = 0,
-        seen: set[int] | None = None,
-    ) -> list[RawFormField]:
-        recover = self.recovery_enabled
-        if seen is None:
-            seen = set()
-        records: list[RawFormField] = []
-        stack: list[FieldTraversalEntry] = [
-            ("node", node, inherited_name, inherited_type, inherited_value, depth)
-        ]
-
-        while stack:
-            entry = stack.pop()
-            if entry[0] == "record":
-                records.append(entry[1])
-                continue
-
-            (
-                ignored,
-                current_node,
-                parent_name,
-                parent_type,
-                parent_value,
-                current_depth,
-            ) = entry
-            if current_depth > 50:
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm depth")
-            current_node = self.resolver.resolve(current_node)
-            if not isinstance(current_node, dict):
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm field entry")
-            marker = id(current_node)
-            if marker in seen:
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm field entry")
-            seen.add(marker)
-
-            title = self.resolver.resolve_str(current_node.get("T"))
-            current_name = (
-                f"{parent_name}.{title}" if parent_name and title else title or parent_name
-            )
-
-            field_type = (
-                self.resolver.resolve_name_or_text(current_node.get("FT"), name_like=True)
-                or parent_type
-            )
-
-            value = current_node.get("V")
-            if value is None:
-                value = parent_value
-            value_text = field_value_text(self, value)
-
-            kids = current_node.get("Kids")
-            if kids is None:
-                kids = []
-            elif not isinstance(kids, list):
-                if recover:
-                    kids = []
-                else:
-                    raise ValueError("invalid AcroForm Kids array")
-            kids = cast(list[PdfObject], kids)
-            subtype = self.resolver.resolve_name_or_text(current_node.get("Subtype")) or ""
-            current_node = cast(PdfDict, current_node)
-            records.append(
-                RawFormField(
-                    current_name,
-                    field_type,
-                    cast(PdfObject, value),
-                    value_text,
-                    field_widget_rect(self, current_node if subtype == "Widget" else None),
-                    current_node,
-                    kids=kids,
-                    widget=current_node if subtype == "Widget" else None,
-                )
-            )
-
-            for kid in reversed(kids):
-                resolved_kid = self.resolver.resolve(kid)
-                if not isinstance(resolved_kid, dict):
-                    if recover:
-                        continue
-                    raise ValueError("invalid AcroForm kid entry")
-                resolved_kid = cast(PdfDict, resolved_kid)
-                subtype = self.resolver.resolve_name_or_text(resolved_kid.get("Subtype")) or ""
-                if subtype == "Widget":
-                    widget_type = (
-                        self.resolver.resolve_name_or_text(resolved_kid.get("FT"), name_like=True)
-                        or field_type
-                    )
-                    widget_title = self.resolver.resolve_str(resolved_kid.get("T"))
-                    widget_name = (
-                        f"{current_name}.{widget_title}"
-                        if current_name and widget_title
-                        else widget_title or current_name
-                    )
-                    widget_value: object = resolved_kid.get("V")
-                    if widget_value is None:
-                        widget_value = value
-                    stack.append(
-                        (
-                            "record",
-                            RawFormField(
-                                widget_name,
-                                widget_type,
-                                cast(PdfObject, widget_value),
-                                field_value_text(self, widget_value),
-                                field_widget_rect(self, resolved_kid),
-                                resolved_kid,
-                                kids=[],
-                                widget=resolved_kid,
-                            ),
-                        )
-                    )
-                else:
-                    stack.append(
-                        (
-                            "node",
-                            resolved_kid,
-                            current_name,
-                            field_type,
-                            value,
-                            current_depth + 1,
-                        )
-                    )
-        return records
-
     def fields(self) -> list[RawFormField]:
         af = self.acroform
         records: list[RawFormField] = []
@@ -1109,7 +971,9 @@ class PdfDocument(
                     raise ValueError("invalid AcroForm Fields array")
             for field in field_list:
                 field_obj = self.resolver.resolve(field)
-                records.extend(self.collect_field_records(field_obj))
+                records.extend(
+                    collect_field_records(self.resolver, field_obj, recover=self.recovery_enabled)
+                )
         # 12.5.6.19 lets a field with a single widget merge both dictionaries
         # into one, so a widget carrying /FT is itself a field and a missing or
         # empty catalog field tree does not mean the document has none.
@@ -1198,7 +1062,9 @@ class PdfDocument(
                     continue
                 seen_widgets.add(id(root))
                 seen_widgets.add(id(annot))
-                records.extend(self.collect_field_records(root))
+                records.extend(
+                    collect_field_records(self.resolver, root, recover=self.recovery_enabled)
+                )
         return records
 
     def internal_widget_field_root(self, annot: PdfDict) -> PdfDict:

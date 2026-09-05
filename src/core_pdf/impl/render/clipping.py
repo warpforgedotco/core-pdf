@@ -1,32 +1,70 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Raster clip-stack state and derived row visibility."""
+"""Raster clip regions materialized at graphics-state transitions."""
 
 from __future__ import annotations
 
 from bisect import bisect_left
+from dataclasses import dataclass
 from typing import Any
 
 from core_pdf.impl.render.kernels import internal_make_page_geometry
-from core_pdf.impl.render.paths import (
-    internal_fill_path_crossing_spans,
-    internal_intersect_box,
-)
+from core_pdf.impl.render.paths import internal_fill_path_crossing_spans, internal_intersect_box
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+
+internal_PixelSpan = tuple[int, int]
+internal_RowSpans = tuple[internal_PixelSpan, ...]
+internal_EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
+
+
+@dataclass(frozen=True, slots=True)
+class internal_ClipRegion:
+    """The effective raster clip after one PDF clipping operation."""
+
+    box: tuple[float, float, float, float] | None
+    pixel_box: tuple[int, int, int, int] | None
+    rectangular: bool
+    rows: tuple[internal_RowSpans, ...] | None
+    # ``rows`` only spans the pixel rows the clip box touches; every row outside
+    # that range is empty by construction, so materializing them would cost one
+    # edge sweep per page row for clips nothing ever paints through.
+    rows_origin: int = 0
+
+    @property
+    def empty(self) -> bool:
+        return self.pixel_box is None
+
+
+def internal_intersect_spans(
+    left: internal_RowSpans,
+    right: internal_RowSpans,
+) -> internal_RowSpans:
+    left_index = 0
+    right_index = 0
+    intersections: list[internal_PixelSpan] = []
+    while left_index < len(left) and right_index < len(right):
+        left_start, left_end = left[left_index]
+        right_start, right_end = right[right_index]
+        start = max(left_start, right_start)
+        end = min(left_end, right_end)
+        if end > start:
+            intersections.append((start, end))
+        if left_end < right_end:
+            left_index += 1
+        else:
+            right_index += 1
+    return tuple(intersections)
 
 
 class internal_ClipState:
-    """Clip stack and derived row visibility.
+    """The effective clip stack for one raster target.
 
-    Lifted out of ``RenderedPage.rasterize``. ``clip_path_stack`` is shared by
-    reference with the rasterizer, which pushes and pops it as the content
-    stream nests.
-
-    All clip queries remain owned by this state object and are exposed through
-    the raster target.
+    A clip path is converted to pixel-row spans when it enters the graphics
+    state. Painting then reads the effective region directly instead of
+    rebuilding path edges and intersections for every queried pixel.
     """
 
     __slots__ = (
-        "clip_path_stack",
+        "regions",
         "crop_x0",
         "crop_y1",
         "scale",
@@ -38,7 +76,6 @@ class internal_ClipState:
 
     def __init__(
         self,
-        clip_path_stack: list[tuple[CapturedPath, str]],
         *,
         crop_x0: float,
         crop_y1: float,
@@ -46,7 +83,7 @@ class internal_ClipState:
         width: int,
         height: int,
     ) -> None:
-        self.clip_path_stack = clip_path_stack
+        self.regions: list[internal_ClipRegion] = []
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
         self.scale = scale
@@ -56,70 +93,48 @@ class internal_ClipState:
             crop_x0, crop_y1, scale, width, height
         )
 
-    def clip_metadata(self) -> tuple[tuple[float, float, float, float] | None, bool]:
-        clip: tuple[float, float, float, float] | None = None
-        rectangular = True
-        axis_aligned_rect_box = self.axis_aligned_rect_box
-        path_bbox = self.path_bbox
-        for path, internal_rule in self.clip_path_stack:
-            rect = axis_aligned_rect_box(path)
-            if rect is None:
-                rectangular = False
-                box = path_bbox(path)
-            else:
-                box = rect
-            if box is None:
-                continue
-            clip = box if clip is None else internal_intersect_box(clip, box)
-            if clip is None:
-                break
-        return clip, rectangular
+    @property
+    def depth(self) -> int:
+        return len(self.regions)
 
-    def current_clip(self) -> tuple[float, float, float, float] | None:
-        return self.clip_metadata()[0]
+    def restore(self, depth: int) -> None:
+        del self.regions[max(0, depth) :]
 
-    def clip_paths_are_axis_aligned_rects(self) -> bool:
-        return self.clip_metadata()[1]
+    def pop(self) -> None:
+        if self.regions:
+            self.regions.pop()
 
-    def clipped_pixel_box(
-        self, box: tuple[float, float, float, float]
-    ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
-        """Narrow a page box to the clip, then convert it to pixel bounds.
+    def current_region(self) -> internal_ClipRegion | None:
+        return self.regions[-1] if self.regions else None
 
-        Returns the clipped page box together with its pixel bounds, or None
-        when the box is clipped away entirely or lands outside the raster.
-        Every painter opens this way; only the sentinel each hands back to its
-        own caller differs, so that part stays at the call site.
-
-        An empty clip stack has no clip box, so it goes directly to pixel
-        conversion.
-        """
-        if self.clip_path_stack:
-            clip_box = self.current_clip()
-            if clip_box is not None:
-                clipped = internal_intersect_box(box, clip_box)
-                if clipped is None:
-                    return None
-                box = clipped
-        pixel_box = self.page_box_to_pixels(*box)
+    def internal_rect_row_spans(
+        self,
+        pixel_box: tuple[int, int, int, int] | None,
+        py: int,
+    ) -> internal_RowSpans:
         if pixel_box is None:
-            return None
-        return box, pixel_box
-
-    def path_bbox(self, path: Any) -> tuple[float, float, float, float] | None:
-        if type(path) is not CapturedPath:
-            return None
-        return path.bbox()
-
-    def axis_aligned_rect_box(self, path: CapturedPath) -> tuple[float, float, float, float] | None:
-        return path.axis_aligned_rect()
-
-    def clip_path_row_spans(
-        self, path: CapturedPath, py: int, fill_rule: str
-    ) -> tuple[tuple[int, int], ...]:
-        edges = path.fill_edges()
-        if not edges:
             return ()
+        ix0, iy0, ix1, iy1 = pixel_box
+        return ((ix0, ix1),) if iy0 <= py < iy1 else ()
+
+    def internal_region_row_spans(
+        self,
+        region: internal_ClipRegion | None,
+        py: int,
+    ) -> internal_RowSpans:
+        if region is None:
+            return ((0, self.width),)
+        if region.rows is None:
+            return self.internal_rect_row_spans(region.pixel_box, py)
+        row = py - region.rows_origin
+        return region.rows[row] if 0 <= row < len(region.rows) else ()
+
+    def internal_path_row_spans(
+        self,
+        edges: tuple[tuple[float, float, float, float], ...],
+        py: int,
+        fill_rule: str,
+    ) -> internal_RowSpans:
         page_y = self.crop_y1 - (py + 0.5) / self.scale
         crossings: list[tuple[float, int]] = []
         for x0, y0, x1, y1 in edges:
@@ -127,61 +142,88 @@ class internal_ClipState:
                 continue
             low = y0 if y0 < y1 else y1
             high = y1 if y1 > y0 else y0
-            if not (low <= page_y < high):
-                continue
-            t = (page_y - y0) / (y1 - y0)
-            crossings.append((x0 + t * (x1 - x0), 1 if y1 > y0 else -1))
-        if not crossings:
-            return ()
-        spans: list[tuple[int, int]] = []
-        page_x_to_pixel_span = self.page_x_to_pixel_span
-        # Same winding sweep as the kernel helper; the helper drops the
-        # degenerate evenodd pairs that `page_x_to_pixel_span` would reject
-        # anyway. Only the mapping to pixel spans is local.
+            if low <= page_y < high:
+                offset = (page_y - y0) / (y1 - y0)
+                crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
+        spans: list[internal_PixelSpan] = []
         for start_x, end_x in internal_fill_path_crossing_spans(crossings, fill_rule):
-            span = page_x_to_pixel_span(start_x, end_x)
+            span = self.page_x_to_pixel_span(start_x, end_x)
             if span is not None:
                 spans.append(span)
         return tuple(spans)
 
+    def push(self, path: CapturedPath, fill_rule: str) -> None:
+        """Intersect ``path`` with the current region and push the result."""
+        parent = self.current_region()
+        rect = path.axis_aligned_rect()
+        path_box = rect if rect is not None else path.bbox()
+        parent_box = parent.box if parent is not None else None
+        if parent is not None and parent.empty:
+            box = None
+        elif parent_box is None:
+            box = path_box
+        elif path_box is None:
+            box = parent_box
+        else:
+            box = internal_intersect_box(parent_box, path_box)
+        if box is None:
+            box = internal_EMPTY_CLIP_BOX
+            pixel_box = None
+        else:
+            pixel_box = self.page_box_to_pixels(*box)
+
+        if rect is not None and (parent is None or parent.rectangular):
+            self.regions.append(internal_ClipRegion(box, pixel_box, True, None))
+            return
+
+        rect_pixel_box = self.page_box_to_pixels(*rect) if rect is not None else None
+        edges = tuple(path.fill_edges()) if rect is None else ()
+        row_start, row_stop = (0, 0) if pixel_box is None else (pixel_box[1], pixel_box[3])
+        rows: list[internal_RowSpans] = []
+        for py in range(row_start, row_stop):
+            path_spans = (
+                self.internal_rect_row_spans(rect_pixel_box, py)
+                if rect is not None
+                else self.internal_path_row_spans(edges, py, fill_rule)
+            )
+            rows.append(
+                internal_intersect_spans(self.internal_region_row_spans(parent, py), path_spans)
+            )
+        self.regions.append(internal_ClipRegion(box, pixel_box, False, tuple(rows), row_start))
+
+    def current_clip(self) -> tuple[float, float, float, float] | None:
+        region = self.current_region()
+        return region.box if region is not None else None
+
+    def clip_paths_are_axis_aligned_rects(self) -> bool:
+        region = self.current_region()
+        return region is None or region.rectangular
+
+    def clipped_pixel_box(
+        self, box: tuple[float, float, float, float]
+    ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
+        region = self.current_region()
+        if region is not None:
+            if region.empty:
+                return None
+            if region.box is not None:
+                clipped = internal_intersect_box(box, region.box)
+                if clipped is None:
+                    return None
+                box = clipped
+        pixel_box = self.page_box_to_pixels(*box)
+        return None if pixel_box is None else (box, pixel_box)
+
+    @staticmethod
+    def path_bbox(path: Any) -> tuple[float, float, float, float] | None:
+        return path.bbox() if type(path) is CapturedPath else None
+
     def pixel_in_clip(self, px: int, py: int) -> bool:
         spans = self.clip_row_visible_spans(py)
-        if not spans:
-            return False
         index = bisect_left(spans, (px + 1, -1))
-        if index <= 0:
-            return False
-        start, end = spans[index - 1]
-        return start <= px < end
+        return index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]
 
-    def clip_row_visible_spans(self, py: int) -> tuple[tuple[int, int], ...]:
-        clip_path_stack = self.clip_path_stack
-        if not clip_path_stack:
-            return ((0, self.width),)
-        spans: tuple[tuple[int, int], ...] | None = None
-        clip_path_row_spans = self.clip_path_row_spans
-        for path, fill_rule in clip_path_stack:
-            path_spans = clip_path_row_spans(path, py, fill_rule)
-            if not path_spans:
-                return ()
-            if spans is None:
-                spans = path_spans
-                continue
-            left_index = 0
-            right_index = 0
-            merged: list[tuple[int, int]] = []
-            while left_index < len(spans) and right_index < len(path_spans):
-                left_start, left_end = spans[left_index]
-                right_start, right_end = path_spans[right_index]
-                start = max(left_start, right_start)
-                end = min(left_end, right_end)
-                if end > start:
-                    merged.append((start, end))
-                if left_end < right_end:
-                    left_index += 1
-                else:
-                    right_index += 1
-            spans = tuple(merged)
-            if not spans:
-                return ()
-        return spans or ()
+    def clip_row_visible_spans(self, py: int) -> internal_RowSpans:
+        if py < 0 or py >= self.height:
+            return ()
+        return self.internal_region_row_spans(self.current_region(), py)

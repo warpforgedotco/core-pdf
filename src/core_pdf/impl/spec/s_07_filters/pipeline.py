@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import typing
+from dataclasses import dataclass
 
 import numpy
 
@@ -43,6 +44,7 @@ from core_pdf.impl.spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS,
     NATIVE_IMAGE_SPECS,
     PREDICTOR_FILTERS,
+    FilterDecoder,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import full_source_bytes
@@ -152,6 +154,54 @@ internal_NATIVE_ARRAY_DECODERS = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class internal_NativeImagePlan:
+    decoder: FilterDecoder
+    params: object
+    output_shape: tuple[int, ...] | None
+
+
+def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePlan | None:
+    """Select a safe native decoder and its optional preallocation shape.
+
+    Missing dimensions are not rejection: JPEG/JPX can read them from their
+    headers and CCITT uses DecodeParms. Raw flate/lzw still require a shape.
+    """
+    stream_spec = normalize_stream_decode_spec(dictionary)
+    if len(stream_spec.filters) != 1 or (stream_spec.params and len(stream_spec.params) != 1):
+        return None
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(stream_spec.filters[0])
+    decoder = descriptor.decoder if descriptor is not None else None
+    if decoder is None or not image_decode_is_identity(dictionary):
+        return None
+    spec = NATIVE_IMAGE_SPECS.get(decoder)
+    if spec is None:
+        return None
+    image_dictionary = dictionary if isinstance(dictionary, dict) else {}
+    color_space = image_dictionary.get("ColorSpace")
+    if isinstance(color_space, (list, tuple, dict)):
+        return None
+    color_name = normalize_pdf_name(color_space) if color_space is not None else None
+    bits = image_dictionary.get("BitsPerComponent")
+    if color_name not in spec.color_names or (spec.bits is not None and bits not in spec.bits):
+        return None
+    width = image_dictionary.get("Width")
+    height = image_dictionary.get("Height")
+    components = spec.channels.get(color_name)
+    shape = None
+    if (
+        type(width) is int
+        and type(height) is int
+        and width > 0
+        and height > 0
+        and components is not None
+    ):
+        shape = (height, width) if components == 1 else (height, width, components)
+    return internal_NativeImagePlan(
+        decoder, stream_spec.params[0] if stream_spec.params else None, shape
+    )
+
+
 def decode_stream_image_data(
     data: bytes | memoryview,
     dictionary: object,
@@ -162,24 +212,16 @@ def decode_stream_image_data(
     image consumers that can preserve array-backed samples through rendering.
     """
 
-    spec = normalize_stream_decode_spec(dictionary)
-    if len(spec.filters) != 1 or (spec.params and len(spec.params) != 1):
+    plan = internal_prepare_native_image(dictionary)
+    if plan is None:
         return None
-    filter_name = spec.filters[0]
-    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
-    decoder = descriptor.decoder if descriptor is not None else None
-    if decoder is None:
-        return None
-    if not image_decode_is_identity(dictionary) or not image_native_parameters_are_safe(
-        dictionary, filter_name
-    ):
-        return None
-    params = spec.params[0] if spec.params else None
+    decoder = plan.decoder
+    params = plan.params
+    output_shape = plan.output_shape
     source = data
     try:
         array_decoder = internal_NATIVE_ARRAY_DECODERS.get(decoder)
         if array_decoder is not None:
-            output_shape = native_image_output_shape(dictionary, filter_name)
             output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
             return DecodedImage(array_decoder(source, out=output), decoder)
         if decoder == "ccitt":
@@ -196,7 +238,6 @@ def decode_stream_image_data(
                 "ccitt",
             )
         if decoder in {"flate", "lzw"}:
-            output_shape = native_image_output_shape(dictionary, filter_name)
             if output_shape is None:
                 return None
             decoded = decode_stream_data(data, dictionary)
@@ -208,34 +249,6 @@ def decode_stream_image_data(
     except Exception:
         return None
     return None
-
-
-def native_image_output_shape(
-    dictionary: object,
-    filter_name: str,
-) -> tuple[int, ...] | None:
-    """Return a safe preallocated shape for a native image decoder."""
-    if not isinstance(dictionary, dict):
-        return None
-    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
-    decoder = descriptor.decoder if descriptor is not None else None
-    width = dictionary.get("Width")
-    height = dictionary.get("Height")
-    if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
-        return None
-    color_space = dictionary.get("ColorSpace")
-    color_name = (
-        None
-        if color_space is None or isinstance(color_space, (list, tuple, dict))
-        else normalize_pdf_name(color_space)
-    )
-    spec = NATIVE_IMAGE_SPECS.get(decoder) if decoder is not None else None
-    if spec is None:
-        return None
-    components = spec.channels.get(color_name)
-    if components is None:
-        return None
-    return (height, width) if components == 1 else (height, width, components)
 
 
 def image_decode_is_identity(dictionary: object) -> bool:
@@ -254,24 +267,3 @@ def image_decode_is_identity(dictionary: object) -> bool:
         if float(lower) != 0.0 or float(upper) != 1.0:
             return False
     return True
-
-
-def image_native_parameters_are_safe(dictionary: object, filter_name: str) -> bool:
-    """Check the image metadata supported by the array fast path."""
-
-    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
-    decoder = descriptor.decoder if descriptor is not None else None
-    image_dictionary = dictionary if isinstance(dictionary, dict) else {}
-
-    color_space = image_dictionary.get("ColorSpace")
-    if color_space is None:
-        color_name = None
-    elif isinstance(color_space, (list, tuple, dict)):
-        return False
-    else:
-        color_name = normalize_pdf_name(color_space)
-    bits = image_dictionary.get("BitsPerComponent")
-    spec = NATIVE_IMAGE_SPECS.get(decoder) if decoder is not None else None
-    if spec is None:
-        return False
-    return color_name in spec.color_names and (spec.bits is None or bits in spec.bits)

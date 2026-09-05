@@ -6,7 +6,6 @@ import zlib
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
-from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.font_program import CFFFont
@@ -63,7 +62,9 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
         page = document.pages[0]
         program = page.get_page_program()
         glyphs = program.glyphs
-        raster = page.render(RenderOptions(include_annotations=False)).rasterize()
+        # The committed Poppler reference includes this page's three Highlight
+        # appearances. Annotation exclusion now genuinely excludes their paint.
+        raster = page.render().rasterize()
 
     assert len(glyphs) == 119
     assert "".join(glyph.text for glyph in glyphs) == (

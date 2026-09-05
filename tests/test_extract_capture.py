@@ -24,6 +24,7 @@ from core_pdf.impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
+    CapturedLine,
     CapturedPath,
     CapturedSubpath,
 )
@@ -215,21 +216,20 @@ def test_vector_complexity_ignores_graphics_state_control_records() -> None:
         for kind in ("state-push", "clip", "stroke", "state-pop", "image")
     )
 
-    assert internal_vector_complexity(drawings, (object(), object())) == 5
+    lines = (CapturedLine(0, 0, 1, 0), CapturedLine(1, 0, 1, 1))
+    assert internal_vector_complexity(drawings, lines) == 5
 
 
-def test_page_extraction_reuses_capture_within_one_operation() -> None:
+def test_page_extraction_owns_one_capture_without_page_cache() -> None:
     fixture = SCORE_BENCH / "Employee_Health_Benefits_Assess-p006.pdf"
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         program = page.get_page_program()
         extraction = internal_PageExtraction(page)
-        first = extraction.capture()
-        second = extraction.capture()
+        captured = extraction.capture
 
-    assert first is second
-    assert first.program is program
-    assert first.evidence.image_count == 0
+    assert captured.program is not program
+    assert captured.evidence.image_count == 0
 
 
 def test_image_only_program_still_routes_ocr() -> None:
@@ -265,7 +265,7 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
     assert capture.evidence.vector_text_trusted is True
     assert capture.evidence.vector_text_characters >= 2_000
     assert capture.evidence.vector_text_segment_coverage >= 0.80
-    decoded = "\n".join(run.text for run in capture.runs)
+    decoded = "\n".join(run.text for run in capture.program.runs)
     assert "MCU ESP32 S3" in decoded
     assert "ICSP UART Header" in decoded
     assert plan.route is PageRoute.NATIVE

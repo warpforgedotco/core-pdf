@@ -482,6 +482,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asn1crypto" },
     { name = "cryptography" },
+    { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
     { name = "tesserocr" },
@@ -543,6 +544,7 @@ vendor-test = [
 requires-dist = [
     { name = "asn1crypto", specifier = ">=1.5.1" },
     { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
     { name = "tesserocr", specifier = ">=2.10.0" },

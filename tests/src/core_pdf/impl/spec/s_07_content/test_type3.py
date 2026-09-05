@@ -16,10 +16,9 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            legacy_pdfminer_text_operators=False,
         ),
     )
-    state = TextState(document, {})
+    state = TextState(document)
     state.font_widths = (500.0,) * 256
     font = {
         "Subtype": "Type3",
@@ -39,7 +38,7 @@ def test_type3_names_include_base_encoding_and_differences() -> None:
             "Differences": [65, PdfName(b"custom")],
         },
     }
-    names = type3_glyph_names(font, FontDecoder(font))
+    names = type3_glyph_names(FontDecoder(font))
 
     assert names[32] == "space"
     assert names[65] == "custom"
@@ -52,10 +51,9 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
         Any,
         SimpleNamespace(
             resolver=IdentityResolver(),
-            legacy_pdfminer_text_operators=False,
         ),
     )
-    state = TextState(document, {})
+    state = TextState(document)
     state.font_widths = (500.0,) * 256
     font = {
         "Subtype": "Type3",
@@ -65,7 +63,7 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
     }
     decoder = FontDecoder(font)
 
-    state._render_type3_glyphs_impl(b"\x80", decoder)
+    state.internal_render_type3_glyphs(b"\x80", decoder)
 
     assert decoder.type3_glyph_names is not None
     assert 0 not in decoder.type3_glyph_names
@@ -82,10 +80,10 @@ def test_repeated_type3_char_proc_does_not_leak_stream_state() -> None:
     stream = PdfStream(raw_data=b"500 0 0 0 1 1 d1 q 0 0 m 1 0 l 1 1 l 0 1 l h f Q")
     state, decoder = internal_type3_state(stream)
 
-    state._render_type3_glyphs_impl(b"AAA", decoder)
+    state.internal_render_type3_glyphs(b"AAA", decoder)
 
     assert len(state.drawings) == 3
-    assert not state.active_streams
+    assert not state.stream_executor.active_streams
     assert not state.stack
     assert not state.clip_scope_stack
 
@@ -94,17 +92,17 @@ def test_type3_char_proc_with_unresolved_xobject_does_not_leak_stream_state() ->
     stream = PdfStream(raw_data=b"/Nested Do")
     state, decoder = internal_type3_state(stream)
 
-    state._render_type3_glyphs_impl(b"AA", decoder)
+    state.internal_render_type3_glyphs(b"AA", decoder)
 
     assert not state.drawings
-    assert not state.active_streams
+    assert not state.stream_executor.active_streams
 
 
 def test_type3_dash_operator_preserves_dash() -> None:
     stream = PdfStream(raw_data=b"500 0 d0 [3 2] 1 d 0 0 m 10 0 l S")
     state, decoder = internal_type3_state(stream)
 
-    state._render_type3_glyphs_impl(b"A", decoder)
+    state.internal_render_type3_glyphs(b"A", decoder)
 
     assert len(state.drawings) == 1
     dash_pattern = state.drawings[0].dash_pattern
@@ -130,7 +128,7 @@ def test_type3_colorized_and_uncolored_glyph_semantics(
     state, decoder = internal_type3_state(stream)
     state.fill_color = (0.0, 1.0, 0.0)
 
-    state._render_type3_glyphs_impl(b"A", decoder)
+    state.internal_render_type3_glyphs(b"A", decoder)
 
     assert len(state.drawings) == 1
     assert state.drawings[0].fill == expected_fill
@@ -199,7 +197,7 @@ def test_colored_type3_glyph_still_takes_its_own_color() -> None:
     state, decoder = internal_type3_state(stream)
     state.fill_color = (0.0, 1.0, 0.0)
 
-    state._render_type3_glyphs_impl(b"A", decoder)
+    state.internal_render_type3_glyphs(b"A", decoder)
 
     assert len(state.drawings) == 1
     assert state.drawings[0].fill == (0.0, 0.0, 0.0, 1.0)
@@ -221,7 +219,7 @@ def test_type3_glyph_ctm_scales_with_the_font_size(font_size: float, expected: f
     state, decoder = internal_type3_state(stream)
     state.font_size = font_size
 
-    state._render_type3_glyphs_impl(b"A", decoder)
+    state.internal_render_type3_glyphs(b"A", decoder)
 
     assert len(state.drawings) == 1
     path = state.drawings[0].path
@@ -240,10 +238,10 @@ def test_type3_glyph_is_not_painted_in_render_mode_3() -> None:
 
     state, decoder = internal_type3_state(stream)
     state.render_mode = 3
-    state._render_type3_glyphs_impl(b"A", decoder)
+    state.internal_render_type3_glyphs(b"A", decoder)
     assert state.drawings == []
 
     state, decoder = internal_type3_state(stream)
     state.render_mode = 7
-    state._render_type3_glyphs_impl(b"A", decoder)
+    state.internal_render_type3_glyphs(b"A", decoder)
     assert len(state.drawings) == 1

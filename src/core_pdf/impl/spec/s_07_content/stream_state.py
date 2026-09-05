@@ -5,16 +5,14 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
-from core_pdf.impl.spec.s_07_content.capture import PatternPaint
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-    from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 
 StreamKey = tuple[str, int, int]
 # An entry records one Form XObject invocation. Either half can be absent --
@@ -26,53 +24,65 @@ LayoutFormId: TypeAlias = (
 )
 
 
+# Both q/Q and nested streams restore this graphics state. Text parameters
+# belong to it, but the text and line matrices are saved only across streams.
+GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
+    "ca",
+    "cb",
+    "cc",
+    "cd",
+    "ce",
+    "cf",
+    "fill_color",
+    "fill_pattern",
+    "fill_opacity",
+    "stroke_color",
+    "stroke_pattern",
+    "stroke_opacity",
+    "fill_color_space",
+    "stroke_color_space",
+    "fill_color_spec",
+    "stroke_color_spec",
+    "compatibility_depth",
+    "blend_mode",
+    "group_alpha",
+    "flatness",
+    "render_intent",
+    "clip_bbox",
+    "line_width",
+    "line_cap",
+    "line_join",
+    "miter_limit",
+    "dash_pattern",
+    "font_size",
+    "font_operand",
+    "font_size_operand",
+    "horizontal_scale",
+    "char_space",
+    "word_space",
+    "rise",
+    "leading",
+    "render_mode",
+    "current_font",
+    "current_decoder",
+    "current_decoder_resources_id",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class StreamState:
-    """One saved content-stream execution frame."""
+    """Graphics snapshot and the additional state isolated by a nested stream."""
 
+    graphics_state: tuple[Any, ...]
     resources: PdfDict
     resources_id: int
-    ctm: Matrix
     text_matrix: Matrix
     line_matrix: Matrix
-    font_size: float
-    font_operand: object
-    font_size_operand: object
-    horizontal_scale: float
-    char_space: float
-    word_space: float
-    rise: float
-    leading: float
-    render_mode: int
-    current_font: str | None
-    current_decoder: FontDecoder | None
-    current_decoder_resources_id: int | None
     graphics_stack_len: int
     marked_content_stack_len: int
-    fill_color: tuple[float, ...] | None
-    fill_pattern: PatternPaint | None
-    fill_opacity: float
-    stroke_color: tuple[float, ...] | None
-    stroke_pattern: PatternPaint | None
-    stroke_opacity: float
-    line_width: float
-    line_cap: int
-    line_join: int
-    miter_limit: float
-    dash_pattern: tuple[list[float], float]
-    fill_color_space: str
-    stroke_color_space: str
-    compatibility_depth: int
-    blend_mode: str | None
-    group_alpha: float | None
-    flatness: int
-    render_intent: str | None
-    clip_bbox: tuple[float, float, float, float] | None
     layout_form_bbox: tuple[float, float, float, float] | None
     layout_form_id: LayoutFormId
     pending_line_break: bool
-    compat_tj_cursor_x: float
-    compat_tj_cursor_y: float
     xobject_depth: int
 
 
@@ -91,16 +101,14 @@ class ContentStreamFrame:
     stream_key: StreamKey | None = field(default=None, kw_only=True)
     swallow_parse_errors: bool = field(default=False, kw_only=True)
     lexer: PdfLexer | None = field(default=None, init=False)
+    # Present only while this frame is entered, including suspension for a child.
     old_state: StreamState | None = field(default=None, init=False)
-    outer_group_alpha: float | None = field(default=None, init=False)
-    entered: bool = field(default=False, init=False)
 
 
-# Every field except the two stack depths mirrors a TextState attribute of the
-# same name, so capture/restore drive off this list instead of two hand-written
-# copies that a new field can silently fall out of.
+# Stream-only fields mirror TextState attributes; the common graphics fields
+# above and the two stack depths are saved separately.
 STREAM_STATE_MIRRORED: tuple[str, ...] = tuple(
     f.name
     for f in dataclasses.fields(StreamState)
-    if f.name not in ("graphics_stack_len", "marked_content_stack_len")
+    if f.name not in ("graphics_state", "graphics_stack_len", "marked_content_stack_len")
 )

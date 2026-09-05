@@ -7,36 +7,38 @@ from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.resolver import (
     ObjectResolver,
-    internal_find_indirect_object_header,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, iter_indirect_object_headers, key_for
 
 
 def test_finds_indirect_object_header_in_full_backing_bytes() -> None:
     data = memoryview(b"prefix\n12 3 obj\nvalue")
 
-    assert internal_find_indirect_object_header(data, 0, len(data)) == len(b"prefix\n")
+    assert list(iter_indirect_object_headers(data, 0, len(data))) == [(len(b"prefix\n"), 12, 3)]
 
 
 def test_rejects_object_keyword_cut_off_at_search_end() -> None:
     data = memoryview(b"prefix\n12 3 object\nvalue")
     search_end = data.tobytes().index(b"obj") + len(b"obj")
 
-    assert internal_find_indirect_object_header(data, 0, search_end) is None
+    assert list(iter_indirect_object_headers(data, 0, search_end)) == []
 
 
 def test_rejects_header_whose_token_starts_before_search_window() -> None:
     data = memoryview(b"\n12 3 obj\nvalue")
 
-    assert internal_find_indirect_object_header(data, 2, len(data)) is None
+    assert list(iter_indirect_object_headers(data, 2, len(data))) == []
+    assert list(
+        iter_indirect_object_headers(data, 2, len(data), allow_prefix_before_start=True)
+    ) == [(1, 12, 3)]
 
 
 def test_finds_header_from_sliced_memoryview_without_full_source_buffer() -> None:
     wrapped = memoryview(b"outsideprefix\n12 3 obj\nvalueoutside")
     data = wrapped[len(b"outside") : -len(b"outside")]
 
-    assert internal_find_indirect_object_header(data, 0, len(data)) == len(b"prefix\n")
+    assert list(iter_indirect_object_headers(data, 0, len(data))) == [(len(b"prefix\n"), 12, 3)]
 
 
 def test_deep_resolve_terminates_on_a_cyclic_reference_chain(
@@ -62,6 +64,24 @@ def test_deep_resolve_terminates_on_a_cyclic_reference_chain(
         assert resolver.deep_resolve(PdfReference(1, 0)) == PdfReference(1, 0)
 
 
+def test_deep_resolve_preserves_shared_subgraphs_within_one_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared = {"Value": PdfReference(1, 0)}
+    root = [shared, shared]
+    with closing(ObjectResolver(b"", {}, {})) as resolver:
+        monkeypatch.setattr(
+            type(resolver),
+            "resolve",
+            lambda self, ref: "resolved" if type(ref) is PdfReference else ref,
+        )
+        resolved = resolver.deep_resolve(root)
+
+    assert isinstance(resolved, list)
+    assert resolved[0] is resolved[1]
+    assert resolved[0] == {"Value": "resolved"}
+
+
 def test_resolve_str_does_not_expand_composite_object_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -84,6 +104,13 @@ def test_resolves_demanded_object_missing_from_damaged_xref() -> None:
 
     assert isinstance(resolved, dict)
     assert str(cast(PdfDict, resolved)["Type"]) == "Font"
+
+
+def test_missing_object_recovery_keeps_generation_and_latest_revision_order() -> None:
+    data = b"1 0 obj\n(old)\nendobj\n1 1 obj\n(other generation)\nendobj\n1 0 obj\n(new)\nendobj\n"
+    with closing(ObjectResolver(data, {}, {}, recover_missing=True)) as resolver:
+        assert resolver.resolve(PdfReference(1, 0)) == PdfString(b"new")
+        assert resolver.resolve(PdfReference(1, 1)) == PdfString(b"other generation")
 
 
 def test_object_missing_from_damaged_object_stream_resolves_to_none() -> None:

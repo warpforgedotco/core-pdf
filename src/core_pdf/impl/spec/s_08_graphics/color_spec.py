@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native image color-space specification parsing."""
+"""Native PDF color-space specification parsing."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TypeAlias, cast
 
 from core_pdf.impl.primitives import MISSING
@@ -15,17 +16,16 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     IccProfileError,
+    IccTransform,
     parse_icc_transform,
 )
 
 ColorParams: TypeAlias = dict[str, object]
-ColorNameList: TypeAlias = list[object] | tuple[object, ...]
 
 
 def cs_param(params: object, key: str, default: object = None) -> object:
     if isinstance(params, dict):
-        value = params.get(key, MISSING)
-        return default if value is MISSING else value
+        return params.get(key, default)
     return default
 
 
@@ -42,78 +42,74 @@ def cs_param_floats(params: object, key: str, count: int, default: list[float]) 
     return default
 
 
+@dataclass(frozen=True, slots=True, eq=False)
 class ImageColorSpec:
-    __slots__ = (
-        "kind",
-        "params",
-        "bits_per_component",
-        "base",
-        "hival",
-        "lookup",
-        "alt",
-        "tint_fn",
-        "names",
-        "channels",
-        "icc_profile",
-    )
-
     kind: str | None
     params: ColorParams
-    bits_per_component: int
-    base: str | None
-    hival: int
-    lookup: bytes | None
-    alt: str | None
-    tint_fn: object
-    names: ColorNameList | None
-    channels: int
-    icc_profile: bytes | None
-
-    def __init__(
-        self,
-        kind: str | None,
-        params: ColorParams,
-        bits_per_component: int = 8,
-        base: str | None = None,
-        hival: int = 0,
-        lookup: bytes | None = None,
-        alt: str | None = None,
-        tint_fn: object = None,
-        names: ColorNameList | None = None,
-        channels: int = 1,
-        icc_profile: bytes | None = None,
-    ) -> None:
-        self.kind = kind
-        self.params = params
-        self.bits_per_component = bits_per_component
-        self.base = base
-        self.hival = hival
-        self.lookup = lookup
-        self.alt = alt
-        self.tint_fn = tint_fn
-        self.names = names
-        self.channels = channels
-        self.icc_profile = icc_profile
+    bits_per_component: int = 8
+    base: str | None = None
+    hival: int = 0
+    lookup: bytes | None = None
+    alt: str | None = None
+    tint_fn: object = None
+    channels: int = 1
+    icc_transform: IccTransform | None = field(default=None, repr=False)
 
 
-def normalize_color_space_name(value: object) -> str | None:
-    result = normalize_pdf_name(value)
-    if result is not None:
-        return result
-    return None
+def describe_color_space(value: object) -> str | None:
+    """Return a compact name for an image or shading color-space value."""
+    prefixes: list[str] = []
+    seen: set[int] = set()
+    current = value
+    while True:
+        name = normalize_pdf_name(current)
+        if name is not None:
+            return ":".join((*prefixes, name))
+        if not isinstance(current, (list, tuple)) or not current:
+            return ":".join(prefixes) if prefixes else None
+        marker = id(current)
+        if marker in seen:
+            return ":".join(prefixes) if prefixes else None
+        seen.add(marker)
+        kind = normalize_pdf_name(current[0])
+        if kind == "Indexed":
+            prefixes.append("Indexed")
+            if len(current) <= 1:
+                return ":".join(prefixes)
+            current = current[1]
+            continue
+        if kind == "ICCBased":
+            prefixes.append("ICCBased")
+            if len(current) <= 1:
+                return ":".join(prefixes)
+            profile = current[1]
+            if isinstance(profile, PdfStream):
+                profile_dictionary = profile.dictionary
+            elif isinstance(profile, dict):
+                profile_dictionary = profile
+            else:
+                return ":".join(prefixes)
+            alternate = profile_dictionary.get("Alternate")
+            if alternate is None:
+                return ":".join(prefixes)
+            current = alternate
+            continue
+        if kind is None:
+            return ":".join(prefixes) if prefixes else None
+        return ":".join((*prefixes, kind))
 
 
 def normalize_indexed_base_color_space_name(value: object) -> str | None:
-    direct = normalize_color_space_name(value)
+    direct = normalize_pdf_name(value)
     if direct is not None:
         return direct
     if not isinstance(value, (list, tuple)) or not value:
         return None
-    kind = normalize_color_space_name(value[0])
+    kind = normalize_pdf_name(value[0])
     if kind == "ICCBased" and len(value) >= 2 and isinstance(value[1], (dict, PdfStream)):
         icc_stream = value[1]
         icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-        alt = normalize_color_space_name(icc_dict.get("Alternate"))
+        alt = normalize_pdf_name(icc_dict.get("Alternate"))
         if alt is not None:
             return alt
         n = cs_param(icc_dict, "N", 3)
@@ -178,7 +174,7 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
         return parsed
 
     if isinstance(color_space, (list, tuple)) and color_space:
-        kind = normalize_color_space_name(color_space[0])
+        kind = normalize_pdf_name(color_space[0])
         if kind == "Indexed" and len(color_space) >= 4:
             lookup = color_space[3]
             lookup_bytes: bytes | None
@@ -206,22 +202,30 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
         ):
             icc_stream = color_space[1]
             icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-            alt = normalize_color_space_name(icc_dict.get("Alternate"))
+            alt = normalize_pdf_name(icc_dict.get("Alternate"))
             n = cs_param(icc_dict, "N", 3)
             channels = parse_channel_count(n)
+            # PdfStream.data re-runs the filter pipeline on every access, so a
+            # compressed profile is decoded once while parsing this spec.
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
-            if alt is None and isinstance(icc_stream, PdfStream):
+            transform: IccTransform | None = None
+            if icc_profile is not None:
                 try:
-                    alt = parse_icc_transform(bytes(icc_stream.data)).alternate_color_space
+                    parsed_transform = parse_icc_transform(icc_profile)
                 except IccProfileError:
-                    alt = None
+                    pass
+                else:
+                    if parsed_transform.input_channels == channels:
+                        transform = parsed_transform
+                    if alt is None:
+                        alt = parsed_transform.alternate_color_space
             return ImageColorSpec(
                 kind="ICCBased",
                 params=cast(ColorParams, icc_dict),
                 bits_per_component=bits_per_component,
                 alt=alt,
                 channels=channels,
-                icc_profile=icc_profile,
+                icc_transform=transform,
             )
         if kind == "ICCBased":
             raise ValueError("invalid ICCBased color space")
@@ -230,12 +234,10 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             and len(color_space) >= 2
             and isinstance(color_space[1], dict)
         ):
-            base = "DeviceGray" if kind == "CalGray" else "DeviceRGB" if kind == "CalRGB" else None
             return ImageColorSpec(
                 kind=kind,
                 params=cast(ColorParams, color_space[1]),
                 bits_per_component=bits_per_component,
-                base=base,
             )
         if kind in {"Lab", "CalGray", "CalRGB"}:
             raise ValueError(f"invalid {kind} color space")
@@ -245,23 +247,20 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             names = color_space[1] if isinstance(color_space[1], (list, tuple)) else None
             if kind == "DeviceN" and names is None:
                 raise ValueError("invalid DeviceN color space")
-            alt = normalize_color_space_name(color_space[2])
+            alt = normalize_pdf_name(color_space[2])
             return ImageColorSpec(
                 kind=kind,
                 params={},
                 bits_per_component=bits_per_component,
                 alt=alt,
-                tint_fn=color_space[3] if len(color_space) >= 4 else None,
-                names=list(names)
-                if kind == "DeviceN" and isinstance(names, (list, tuple))
-                else None,
+                tint_fn=color_space[3],
                 channels=len(names)
                 if kind == "DeviceN" and isinstance(names, (list, tuple))
                 else 1,
             )
         return ImageColorSpec(kind=kind, params={}, bits_per_component=bits_per_component)
     return ImageColorSpec(
-        kind=normalize_color_space_name(color_space),
+        kind=normalize_pdf_name(color_space),
         params={},
         bits_per_component=bits_per_component,
     )

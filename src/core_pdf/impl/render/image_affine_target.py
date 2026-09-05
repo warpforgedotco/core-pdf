@@ -85,7 +85,7 @@ class internal_ImageAffineTargetMixin:
         constant_alpha: float | None,
         blend_mode: str | None,
     ) -> bool:
-        clipped_pixel_box = self.clipped_pixel_box
+        clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
@@ -93,12 +93,12 @@ class internal_ImageAffineTargetMixin:
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
-        clip_path_stack = clip.clip_path_stack
-        clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
-        clip_row_visible_spans = self.clip_row_visible_spans
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        current_clip = self.current_clip
+        current_clip = clip.current_clip
         page_pixels = self.page_pixels
         pixel_view = self.pixel_view
         pixels = self.pixels
@@ -139,7 +139,7 @@ class internal_ImageAffineTargetMixin:
             and alpha == 255
             and blend_mode is None
             and can_write_opaque
-            and (not clip_path_stack or rectangular_clip)
+            and (not clip_regions or rectangular_clip)
         ):
             inv_ux = 1.0 / ux
             inv_vy = 1.0 / vy
@@ -183,7 +183,7 @@ class internal_ImageAffineTargetMixin:
             alpha == 255
             and blend_mode is None
             and can_write_opaque
-            and (not clip_path_stack or rectangular_clip)
+            and (not clip_regions or rectangular_clip)
             and ((u_from_x and v_from_y) or (u_from_y and v_from_x))
         ):
             target_pixels = pixel_view(pixels)
@@ -244,7 +244,7 @@ class internal_ImageAffineTargetMixin:
             alpha == 255
             and blend_mode is None
             and can_write_opaque
-            and (not clip_path_stack or rectangular_clip)
+            and (not clip_regions or rectangular_clip)
         ):
             target_pixels = pixel_view(pixels)
             source_samples = uint8_view(converted)[: width_px * height_px * comps].reshape(

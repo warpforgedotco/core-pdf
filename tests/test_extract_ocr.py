@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 
 import pytest
 
@@ -28,6 +27,7 @@ from core_pdf.impl.extract.ocr import raster as ocr_raster
 from core_pdf.impl.extract.ocr import region_tasks as ocr_region_tasks
 from core_pdf.impl.extract.ocr import regions as ocr_regions
 from core_pdf.impl.extract.ocr import rescue as ocr_rescue
+from core_pdf.impl.extract.ocr import strokes as ocr_strokes
 from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from core_pdf.impl.extract.ocr import types as ocr_types
 from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
@@ -44,6 +44,7 @@ from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import drawing, page_evidence, text_run
 from tests.helpers.ocr_fakes import (
@@ -90,12 +91,25 @@ def token_observations(
     )
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [("ＡＢ１２", "ab12"), ("Straße", "strasse"), ("x−y", "x-y"), ("‘Quoted’", "'quoted'")],
+)
+def test_candidate_token_keys_normalize_unicode_without_engine_policy(
+    text: str, expected: str
+) -> None:
+    assert ocr_candidates.internal_normalized_ocr_token_key(text) == expected
+
+
 def internal_recognize(
     capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
 ) -> ObservationBatch:
-    return ocr.internal_recognize_page_with_reserved_raster(capture, plan, context)
+    extraction = internal_PageExtraction(capture.page, capture=capture, plan=plan)
+    return ocr.internal_recognize_page_with_reserved_raster(
+        capture, plan, context, stroked_profile=extraction.stroked_profile
+    )
 
 
 def test_tessdata_prefix_takes_precedence(
@@ -129,7 +143,7 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
     (tessdata / "eng.traineddata").write_bytes(b"test")
     monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
     monkeypatch.setattr(
-        ocr_tesseract.internal_ensure_tesserocr(), "get_languages", lambda: ("./", ())
+        ocr_tesseract.internal_import_tesserocr(), "get_languages", lambda: ("./", ())
     )
     monkeypatch.setattr(ocr_tesseract.shutil, "which", lambda internal_name: "/usr/bin/tesseract")
     monkeypatch.setattr(
@@ -184,7 +198,9 @@ def test_dominant_image_prefers_source_resolution_for_equal_display_area(
 
 
 def test_decoded_image_falls_back_when_shared_source_cannot_decode(monkeypatch) -> None:
-    image = SimpleNamespace(
+    image = drawing(
+        "image",
+        (0.0, 0.0, 2.0, 1.0),
         image_source=SimpleNamespace(decode=lambda: None),
         raw_data=b"encoded",
         dictionary={"Width": 2, "Height": 1},
@@ -237,11 +253,15 @@ def test_safe_image_crop_only_crops_image_dominated_pages() -> None:
 
 
 def test_direct_image_mapping_accepts_orthogonal_orientation() -> None:
-    normal = SimpleNamespace(
-        items=(("quad", ((0.0, 0.0), (100.0, 0.0), (0.0, 200.0), (100.0, 200.0))),)
+    normal = drawing(
+        "image",
+        (0.0, 0.0, 100.0, 200.0),
+        items=(("quad", ((0.0, 0.0), (100.0, 0.0), (0.0, 200.0), (100.0, 200.0))),),
     )
-    rotated = SimpleNamespace(
-        items=(("quad", ((0.0, 200.0), (0.0, 0.0), (100.0, 200.0), (100.0, 0.0))),)
+    rotated = drawing(
+        "image",
+        (0.0, 0.0, 100.0, 200.0),
+        items=(("quad", ((0.0, 200.0), (0.0, 0.0), (100.0, 200.0), (100.0, 0.0))),),
     )
 
     assert ocr_regions.internal_direct_image_orientation(normal) == "identity"
@@ -249,11 +269,15 @@ def test_direct_image_mapping_accepts_orthogonal_orientation() -> None:
 
 
 def test_direct_image_mapping_accepts_bounded_near_axis_orientation() -> None:
-    near_axis = SimpleNamespace(
-        items=(("quad", ((0.0, 1.0), (100.0, 0.0), (1.0, 201.0), (101.0, 200.0))),)
+    near_axis = drawing(
+        "image",
+        (0.0, 0.0, 101.0, 201.0),
+        items=(("quad", ((0.0, 1.0), (100.0, 0.0), (1.0, 201.0), (101.0, 200.0))),),
     )
-    skewed = SimpleNamespace(
-        items=(("quad", ((0.0, 4.0), (100.0, 0.0), (1.0, 201.0), (101.0, 197.0))),)
+    skewed = drawing(
+        "image",
+        (0.0, 0.0, 101.0, 201.0),
+        items=(("quad", ((0.0, 4.0), (100.0, 0.0), (1.0, 201.0), (101.0, 197.0))),),
     )
 
     assert ocr_regions.internal_direct_image_orientation(near_axis) is None
@@ -274,7 +298,11 @@ def test_direct_image_mapping_accepts_bounded_near_axis_orientation() -> None:
 
 
 def test_direct_image_raster_normalizes_orthogonal_orientation() -> None:
-    image = SimpleNamespace(items=(("quad", ((0.0, 3.0), (0.0, 0.0), (2.0, 3.0), (2.0, 0.0))),))
+    image = drawing(
+        "image",
+        (0.0, 0.0, 2.0, 3.0),
+        items=(("quad", ((0.0, 3.0), (0.0, 0.0), (2.0, 3.0), (2.0, 0.0))),),
+    )
     source = raster(bytes((1, 2, 3, 4, 5, 6)), 3, 2, 1, 72)
 
     oriented = ocr_regions.internal_orient_direct_image_raster(image, source)
@@ -287,12 +315,26 @@ def test_tile_tasks_share_one_raster_and_select_rectangles() -> None:
     data = bytes(100 * 120 * 3)
     image = RasterImage(data, 100, 120, 3)
     raster = ocr_types.internal_Raster(image, 100)
-    ocr_pass = OcrPass("primary", OcrPassScope.TILES, 2.0, (3,), tiles=3)
+    ocr_pass = OcrPass(
+        "primary",
+        OcrPassScope.TILES,
+        2.0,
+        (3, 11),
+        tiles=3,
+        minimum_confidence=70.0,
+        character_confidence_threshold=85.0,
+        recognize_words=True,
+        collect_symbols=True,
+    )
 
     tasks = ocr_region_tasks.internal_tile_tasks(raster, (0.0, 0.0, 100.0, 120.0), ocr_pass)
 
-    assert len(tasks) == 3
+    assert [task.mode for task in tasks] == [3, 3, 3, 11, 11, 11]
     assert all(task.image is image for task in tasks)
+    assert all(task.minimum_confidence == 70.0 for task in tasks)
+    assert all(task.character_confidence_threshold == 85.0 for task in tasks)
+    assert all(task.recognize_words and task.collect_symbols for task in tasks)
+    assert [task.rectangle for task in tasks[:3]] == [task.rectangle for task in tasks[3:]]
     assert tasks[0].rectangle[1] == 0
     assert tasks[-1].rectangle[1] > 0
     assert tasks[-1].rectangle[1] + tasks[-1].rectangle[3] == raster.height
@@ -544,7 +586,7 @@ def test_recognize_words_uses_word_level_confidence_and_geometry(
 
     candidate = ocr_tesseract.internal_recognize(task)
 
-    word_level = ocr_tesseract.internal_ensure_tesserocr().RIL.WORD
+    word_level = ocr_tesseract.internal_import_tesserocr().RIL.WORD
     assert iterator.levels == [word_level] * 4
     assert candidate.observations.text == ("GPIO12",)
     assert tuple(candidate.observations.bbox[0]) == (20.0, 120.0, 100.0, 160.0)
@@ -706,7 +748,10 @@ def test_verified_hidden_text_bypasses_full_ocr(
     patch_dominant_region(monkeypatch, raster, (0.0, 0.0, 300.0, 100.0))
     recognized_word_passes = 0
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         nonlocal recognized_word_passes
         assert task.recognize_words is True
         recognized_word_passes += 1
@@ -784,6 +829,10 @@ def test_weak_region_tasks_target_ink_without_primary_text() -> None:
         tiles=2,
         region_columns=2,
         max_regions=1,
+        minimum_confidence=70.0,
+        character_confidence_threshold=85.0,
+        recognize_words=True,
+        collect_symbols=True,
     )
 
     tasks = ocr_region_tasks.internal_weak_region_tasks(
@@ -791,6 +840,10 @@ def test_weak_region_tasks_target_ink_without_primary_text() -> None:
     )
 
     assert len(tasks) == 1
+    assert tasks[0].minimum_confidence == 70.0
+    assert tasks[0].character_confidence_threshold == 85.0
+    assert tasks[0].recognize_words
+    assert tasks[0].collect_symbols
     x, y, width, height = tasks[0].rectangle
     assert x + width / 2 > 20
     assert y + height / 2 > 20
@@ -930,7 +983,10 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
     patch_dominant_region(monkeypatch, raster)
     executed_modes: list[int] = []
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         executed_modes.append(task.mode)
         text = "x" if task.mode == 3 else "strong fallback"
         return ocr_quality.internal_candidate(
@@ -970,7 +1026,10 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
     patch_dominant_region(monkeypatch, raster)
     executed_modes: list[int] = []
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         executed_modes.append(task.mode)
         if task.mode != 3:
             raise AssertionError("full-page fallback should not run")
@@ -1014,7 +1073,10 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
     raster = ocr_types.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
     patch_dominant_region(monkeypatch, raster)
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         if task.mode == 3:
             return ocr_quality.internal_candidate(3, candidate_observations("x", 90.0))
         return ocr_quality.internal_candidate(
@@ -1048,7 +1110,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
 
     patch_ocr_helper(monkeypatch, "internal_high_resolution_weak_region_tasks", weak_region_crops)
 
-    capture = make_capture(program=object(), width=10.0, height=10.0)
+    capture = make_capture(program=PageProgram(), width=10.0, height=10.0)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -1116,7 +1178,7 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
     monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
     patch_engine(monkeypatch)
 
-    capture = make_capture(program=object(), width=10.0, height=10.0)
+    capture = make_capture(program=PageProgram(), width=10.0, height=10.0)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -1168,7 +1230,7 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
     )
     patch_engine(monkeypatch)
 
-    capture = make_capture(program=object(), width=10.0, height=10.0)
+    capture = make_capture(program=PageProgram(), width=10.0, height=10.0)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -1205,7 +1267,10 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", unexpected_render)
     executed_modes: list[int] = []
 
-    def recognize(task: ocr_types.internal_OcrTask) -> ocr_quality.internal_Candidate:
+    def recognize(
+        task: ocr_types.internal_OcrTask, **internal_kwargs: object
+    ) -> ocr_quality.internal_Candidate:
+        del internal_kwargs
         executed_modes.append(task.mode)
         text = "orientation preview" if task.mode == 12 else "complete fallback text"
         return ocr_quality.internal_candidate(
@@ -1289,7 +1354,10 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
     patch_engine(monkeypatch)
 
     capture = make_capture(
-        page_evidence(vector_complexity=100_000), program=object(), width=10.0, height=10.0
+        page_evidence(vector_complexity=100_000),
+        program=PageProgram(),
+        width=10.0,
+        height=10.0,
     )
     plan = WorkPlan(
         PageRoute.OCR,
@@ -1386,7 +1454,7 @@ def test_stroked_vector_text_evidence_requires_distributed_compact_paths() -> No
         page_height=800.0,
     )
     clustered = parse_capture.internal_stroked_vector_text_evidence(
-        tuple(drawing.replace(bbox=RectBox(20.0, 20.0, 22.0, 23.0)) for drawing in drawings),
+        tuple(replace(drawing, bbox=RectBox(20.0, 20.0, 22.0, 23.0)) for drawing in drawings),
         page_width=1_000.0,
         page_height=800.0,
     )
@@ -1432,7 +1500,7 @@ def test_stroked_vector_decoder_corrects_one_character_ocr_error(
     )
 
     recovered, alphabet = ocr_stroked_vector.internal_recover_stroked_vector_text(
-        capture, observations
+        internal_PageExtraction(capture.page, capture=capture).stroked_profile, observations
     )
 
     assert recovered.text == ("D7",)
@@ -1531,24 +1599,13 @@ def test_packed_stroked_vector_candidate_maps_each_cell_back_to_page() -> None:
     assert remapped.symbols.sequence.tolist() == [7, 7]
 
 
-def test_stroked_vector_symbol_seeds_require_exact_cell_glyph_count(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_stroked_vector_symbol_seeds_require_exact_cell_glyph_count() -> None:
     run = StrokedTextRun(
         bbox=(100.0, 200.0, 110.0, 205.0),
         drawing_indexes=(7, 8),
         glyph_count=2,
     )
-    monkeypatch.setattr(
-        ocr_stroked_vector,
-        "internal_stroked_text_profile",
-        lambda capture: StrokedTextProfile(seed_runs=(run,)),
-    )
-    capture = make_capture(
-        page_evidence(
-            stroked_vector_text=StrokedVectorTextEvidence(trusted=True, drawing_indexes=(7, 8))
-        )
-    )
+    profile = StrokedTextProfile(seed_runs=(run,))
     exact = ObservationBatch.from_columns(
         ("R", "7"),
         ((100.0, 200.0, 104.0, 205.0), (105.0, 200.0, 110.0, 205.0)),
@@ -1558,10 +1615,110 @@ def test_stroked_vector_symbol_seeds_require_exact_cell_glyph_count(
     )
     incomplete = exact.take((0,))
 
-    seeds = ocr_stroked_vector.internal_stroked_vector_symbol_seeds(capture, exact)
+    seeds = ocr_stroked_vector.internal_stroked_vector_symbol_seeds(profile, exact)
 
     assert seeds == (StrokedTextSeed("R7", run.bbox, 91.0, 7),)
-    assert ocr_stroked_vector.internal_stroked_vector_symbol_seeds(capture, incomplete) == ()
+    assert ocr_stroked_vector.internal_stroked_vector_symbol_seeds(profile, incomplete) == ()
+
+
+def test_stroked_profile_is_lazy_and_shared_by_raster_decode_recovery_and_enrichment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = StrokedTextProfile(seed_runs=(StrokedTextRun((0.0, 0.0, 4.0, 2.0), (0, 1), 2),))
+    profile_calls = 0
+
+    def build_profile(*args: object) -> StrokedTextProfile:
+        nonlocal profile_calls
+        profile_calls += 1
+        return profile
+
+    monkeypatch.setattr(ocr_strokes, "profile_stroked_text", build_profile)
+    plain = make_capture()
+    assert internal_PageExtraction(plain.page, capture=plain).stroked_profile is None
+    assert profile_calls == 0
+
+    capture = make_capture(
+        page_evidence(
+            stroked_vector_text=StrokedVectorTextEvidence(trusted=True, drawing_indexes=(0, 1))
+        )
+    )
+    plan = WorkPlan(
+        PageRoute.OCR,
+        ocr_passes=(OcrPass("stroked", OcrPassScope.STROKED_VECTOR_TEXT, 6.0, (11,)),),
+    )
+    extraction = internal_PageExtraction(capture.page, capture=capture, plan=plan)
+    assert profile_calls == 0
+
+    raster = ocr_types.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 432)
+    packed = ocr_types.internal_PackedStrokedTextRaster(
+        raster,
+        (0.0, 0.0, 10.0, 10.0),
+        (
+            ocr_stroked_vector.internal_StrokedTextCell(
+                (0.0, 0.0, 4.0, 2.0), (1.0, 1.0, 5.0, 3.0), (0, 1)
+            ),
+        ),
+    )
+    variants: list[str] = []
+
+    def vector_raster(
+        *args: object, **kwargs: object
+    ) -> ocr_types.internal_PackedStrokedTextRaster:
+        assert kwargs["profile"] is profile
+        variants.append(str(kwargs.get("variant", "seed")))
+        return packed
+
+    patch_ocr_helper(monkeypatch, "internal_stroked_vector_text_raster", vector_raster)
+    patch_ocr_helper(monkeypatch, "compose_page", lambda *args, **kwargs: object())
+    patch_ocr_helper(monkeypatch, "internal_detect_ruling_grid", lambda image: None)
+    patch_ocr_helper(monkeypatch, "internal_packed_stroked_vector_decode_gate", lambda *args: True)
+    patch_ocr_helper(
+        monkeypatch,
+        "internal_remap_stroked_vector_candidate",
+        lambda candidate, packed, **kwargs: (candidate, 0),
+    )
+    observations = ObservationBatch.from_columns(
+        ("R7",), ((0.0, 0.0, 4.0, 2.0),), source=ObservationSource.OCR, confidence=(95.0,)
+    )
+    symbols = ObservationBatch.from_columns(
+        ("R", "7"),
+        ((0.0, 0.0, 2.0, 2.0), (2.0, 0.0, 4.0, 2.0)),
+        source=ObservationSource.OCR,
+        confidence=(95.0, 95.0),
+        sequence=(0, 0),
+    )
+    patch_engine(monkeypatch)
+    monkeypatch.setattr(
+        ocr_tesseract,
+        "internal_recognize",
+        lambda task, **kwargs: ocr_quality.internal_candidate(
+            task.mode, observations, symbols=symbols
+        ),
+    )
+    decode_calls = 0
+
+    def decode(received: StrokedTextProfile, *args: object) -> StrokedTextDecode:
+        nonlocal decode_calls
+        assert received is profile
+        decode_calls += 1
+        return StrokedTextDecode()
+
+    monkeypatch.setattr(ocr_stroked_vector, "decode_stroked_text_profile", decode)
+    monkeypatch.setattr(
+        ocr_stroked_vector, "decode_stroked_text_profile_with_supplemental_seeds", decode
+    )
+
+    recognition = extraction.recognize(inline_scope())
+    assert recognition.observations.text == ("R7",)
+    assert variants == ["seed", "isolated"]
+    assert decode_calls == 2  # Packed candidate (including symbol seeds), then final recovery.
+    assert profile_calls == 1
+
+    enriched = parse_selection.internal_apply_stroked_enrichment(
+        (extraction,), parse_selection.internal_StrokedEnrichment({0: recognition})
+    )[0]
+    assert enriched.stroked_profile is profile
+    assert profile_calls == 1
 
 
 def test_packed_stroked_vector_decode_gate_requires_reusable_alphabet() -> None:
@@ -1714,13 +1871,13 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     )
 
     enrichment = parse_selection.internal_prepare_document_stroked_mappings(
-        cast(tuple[internal_PageExtraction, ...], extractions),
+        extractions,
         captures,
         inline_scope(),
     )
 
     assert ocr_calls == [2]
-    assert plan_calls == [1]
+    assert plan_calls == []
     seed_recognition = enrichment.recognition_by_index[1]
     reused_recognition = enrichment.recognition_by_index[0]
     assert seed_recognition is not None
@@ -1752,13 +1909,13 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     )
 
     enrichment = parse_selection.internal_prepare_document_stroked_mappings(
-        cast(tuple[internal_PageExtraction, ...], extractions),
+        extractions,
         captures,
         inline_scope(),
     )
 
     assert ocr_calls == [2, 1]
-    assert plan_calls == [1]
+    assert plan_calls == []
     assert tuple(
         enrichment.recognition_by_index[index].observations.text for index in range(2)
     ) == (("seed",), ("seed",))
@@ -1776,6 +1933,25 @@ def test_document_stroked_alphabet_blacklists_conflicting_signatures() -> None:
 
     assert alphabet == {second: "B"}
     assert ambiguous == {first}
+
+
+def test_document_stroked_alphabet_falls_back_when_a_page_has_no_profile() -> None:
+    extractions, captures, _alphabet, ocr_calls, _plan_calls = stroked_document()
+    no_paths = replace(
+        captures[0],
+        evidence=replace(
+            captures[0].evidence,
+            stroked_vector_text=StrokedVectorTextEvidence(trusted=True),
+        ),
+    )
+    extractions[0].capture = no_paths
+
+    enrichment = parse_selection.internal_prepare_document_stroked_mappings(
+        extractions, (no_paths, captures[1]), inline_scope()
+    )
+
+    assert ocr_calls == [2, 1]
+    assert enrichment.recognition_by_index[0].observations.text == ("seed",)
 
 
 def test_uncovered_vector_area_ignores_page_sized_background() -> None:
@@ -1826,7 +2002,6 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
-    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion((0.0, 0.0, 100.0, 100.0), 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (3,))
@@ -1835,6 +2010,7 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         capture,
         (target,),
         ocr_pass,
+        rendered=object(),
         compact_image=False,
     )
 
@@ -1869,7 +2045,6 @@ def test_candidate_region_defers_layered_images_to_compositor(
         return rendered_raster
 
     patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
-    monkeypatch.setattr(ocr_region_tasks, "compose_page", lambda *args, **kwargs: object())
     capture = make_capture(width=100.0, height=100.0)
     target = ocr_types.internal_OcrRegion(page_box, 1.0, ("test",))
     ocr_pass = OcrPass("regions", OcrPassScope.PAGE, 1.0, (11,))
@@ -1878,6 +2053,7 @@ def test_candidate_region_defers_layered_images_to_compositor(
         capture,
         (target,),
         ocr_pass,
+        rendered=object(),
         compact_image=False,
     )
 
@@ -2126,7 +2302,9 @@ def test_direct_scan_allowed_for_a_full_page_image_without_native_text() -> None
 
 
 def test_decoded_image_enlarges_low_resolution_scans_toward_the_ocr_target(monkeypatch) -> None:
-    image = SimpleNamespace(
+    image = drawing(
+        "image",
+        (0.0, 0.0, 200.0, 100.0),
         image_source=SimpleNamespace(decode=lambda: None),
         raw_data=b"encoded",
         dictionary={"Width": 200, "Height": 100},

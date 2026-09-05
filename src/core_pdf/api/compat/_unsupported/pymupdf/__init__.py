@@ -17,7 +17,7 @@ from core_pdf.api.compat.pypdf import (
     StructuredState,
 )
 from core_pdf.impl.model.geometry import bbox_intersects
-from core_pdf.impl.output import (
+from core_pdf.impl.output.model import (
     Annotation,
     Block,
     BlockKind,
@@ -26,7 +26,7 @@ from core_pdf.impl.output import (
     Link,
     TextLine,
 )
-from core_pdf.impl.output import (
+from core_pdf.impl.output.model import (
     Page as StructuredPage,
 )
 
@@ -146,9 +146,7 @@ class Page(PdfPageObject):
         return type(view)(tuple(blocks), page_number=self._page.page_number)
 
     def _mupdf_plain_text(self) -> str:
-        runs = (
-            self._document.capability_page(self._page.page_number).get_page_program().products.runs
-        )
+        runs = self._document.capability_page(self._page.page_number).get_page_program().runs
         output = ""
         previous: Any | None = None
         for run in runs:
@@ -195,7 +193,7 @@ class Page(PdfPageObject):
 
     def _mupdf_words(self) -> list[tuple[float, float, float, float, str, int, int, int]]:
         page = self._document.capability_page(self._page.page_number)
-        products = page.get_page_program().products
+        products = page.get_page_program()
         crop_box = page.crop_box or page.media_box
         crop_x0, _crop_y0, _crop_x1, crop_y1 = crop_box
         glyphs_by_sequence: dict[int, list[Any]] = {}

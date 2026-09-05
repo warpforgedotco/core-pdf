@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
+from typing import Any
 
 from core_pdf.impl.extract.contracts import (
     MAX_OCR_PIXELS,
@@ -38,6 +39,7 @@ from core_pdf.impl.extract.ocr.regions import (
     internal_ocr_region_batch,
     internal_page_image_regions,
 )
+from core_pdf.impl.extract.ocr.strokes import StrokedTextProfile
 from core_pdf.impl.extract.ocr.tesseract import (
     internal_recognize_group,
     internal_recover_timed_out_tasks,
@@ -54,6 +56,8 @@ from core_pdf.impl.extract.ocr.vector import (
     internal_stroked_vector_text_raster,
 )
 from core_pdf.impl.extract.quality import internal_Candidate
+from core_pdf.impl.render.model import RenderOptions
+from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.runtime.execution import ExtractionScope
 
 internal_PageBox = tuple[float, float, float, float]
@@ -101,14 +105,67 @@ class internal_OcrPassTasks:
     packed_stroked: internal_PackedStrokedTextRaster | None = None
 
 
-@dataclass(frozen=True, slots=True)
 class internal_OcrSession:
     """Own task construction and synchronous recognition for one page."""
 
-    capture: PageAnalysis
-    plan: WorkPlan
-    compact_image: bool | str
-    context: ExtractionScope
+    __slots__ = (
+        "capture",
+        "plan",
+        "compact_image",
+        "context",
+        "stroked_profile",
+        "rendered_without_text",
+        "rendered_with_text",
+    )
+
+    def __init__(
+        self,
+        capture: PageAnalysis,
+        plan: WorkPlan,
+        compact_image: bool | str,
+        context: ExtractionScope,
+        stroked_profile: StrokedTextProfile | None,
+    ) -> None:
+        self.capture = capture
+        self.plan = plan
+        self.compact_image = compact_image
+        self.context = context
+        self.stroked_profile = stroked_profile
+        render_modes = {ocr_pass.include_native_text for ocr_pass in plan.ocr_passes}
+        self.rendered_without_text = self.internal_compose(False) if False in render_modes else None
+        self.rendered_with_text = self.internal_compose(True) if True in render_modes else None
+
+    def internal_compose(self, include_native_text: bool) -> Any:
+        capture = self.capture
+        return compose_page(
+            capture.page,
+            RenderOptions(include_text=include_native_text),
+            page_program=capture.program,
+            fields=capture.fields,
+            annotations=capture.annotations,
+        )
+
+    def rendered_page(self, include_native_text: bool) -> Any:
+        rendered = self.rendered_with_text if include_native_text else self.rendered_without_text
+        if rendered is None:
+            raise ValueError("OCR pass requested an undeclared raster projection")
+        return rendered
+
+    def render_raster(
+        self,
+        requested_scale: float,
+        *,
+        crop: internal_PageBox | None = None,
+        max_pixels: int = MAX_OCR_PIXELS,
+        include_native_text: bool = False,
+    ) -> internal_Raster | None:
+        return internal_rendered_page_raster(
+            self.capture,
+            requested_scale,
+            rendered=self.rendered_page(include_native_text),
+            crop=crop,
+            max_pixels=max_pixels,
+        )
 
     def recognize_batch(
         self, tasks: tuple[internal_OcrTask, ...]
@@ -160,8 +217,7 @@ class internal_OcrSession:
             )
             preview_raster = preview_region.raster if preview_region is not None else None
         else:
-            preview_raster = internal_rendered_page_raster(
-                self.capture,
+            preview_raster = self.render_raster(
                 ocr_pass.scale,
                 max_pixels=OCR_PREFLIGHT_PIXELS,
                 include_native_text=ocr_pass.include_native_text,
@@ -250,6 +306,7 @@ class internal_OcrSession:
             self.capture,
             region_batch,
             ocr_pass,
+            rendered=self.rendered_page(ocr_pass.include_native_text),
             compact_image=self.compact_image,
         )
         return internal_OcrPassTasks(
@@ -281,8 +338,7 @@ class internal_OcrSession:
         raster = direct_region.raster if direct_region is not None else None
         raster_page_box = direct_region.page_box if direct_region is not None else self.page_box
         if raster is None:
-            raster = internal_rendered_page_raster(
-                self.capture,
+            raster = self.render_raster(
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,
@@ -312,6 +368,7 @@ class internal_OcrSession:
             source_tasks,
             ocr_pass,
             primary,
+            rendered=self.rendered_page(ocr_pass.include_native_text),
             compact_image=self.compact_image,
         )
 
@@ -319,6 +376,7 @@ class internal_OcrSession:
         packed_stroked = internal_stroked_vector_text_raster(
             self.capture,
             ocr_pass.scale,
+            profile=self.stroked_profile,
             max_pixels=ocr_pass.pixel_budget,
         )
         if packed_stroked is not None:
@@ -359,8 +417,7 @@ class internal_OcrSession:
         if not regions:
             fallback_scale = max(2.0, ocr_pass.scale)
             image_crop = internal_safe_image_crop(self.capture)
-            raster = internal_rendered_page_raster(
-                self.capture,
+            raster = self.render_raster(
                 fallback_scale,
                 crop=image_crop,
                 max_pixels=ocr_pass.pixel_budget,
@@ -416,8 +473,7 @@ class internal_OcrSession:
         raster = direct_region.raster if direct_region is not None else None
         raster_page_box = direct_region.page_box if direct_region is not None else self.page_box
         if raster is None:
-            raster = internal_rendered_page_raster(
-                self.capture,
+            raster = self.render_raster(
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,

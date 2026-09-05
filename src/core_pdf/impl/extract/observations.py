@@ -26,8 +26,8 @@ from core_pdf.impl.extract.contracts import (
     WorkPlan,
 )
 from core_pdf.impl.extract.quality import internal_candidate
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.text import compact_text, text_tokens
+from core_pdf.impl.model.text import compact_text, text_tokens
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 
 # Precision-first extraction thresholds.  Raster text below these confidence
 # levels is more likely to be a layout artifact than a useful observation on
@@ -130,9 +130,7 @@ def internal_schematic_page(
 
 
 def internal_rotated_native_characters(capture: PageAnalysis) -> int:
-    observations = getattr(capture, "observations", None)
-    if observations is None or not hasattr(observations, "text"):
-        return 0
+    observations = capture.observations
     return sum(
         len(text.strip())
         for text, rotation in zip(observations.text, observations.rotation, strict=True)
@@ -179,16 +177,16 @@ def internal_native_mapping_is_usable(evidence: PageEvidence) -> bool:
     )
 
 
-def internal_drawing_is_simple_rectangle(drawing: object) -> bool:
-    path = getattr(drawing, "path", None)
-    return isinstance(path, CapturedPath) and path.axis_aligned_rect() is not None
+def internal_drawing_is_simple_rectangle(drawing: CapturedDrawing) -> bool:
+    path = drawing.path
+    return path is not None and path.axis_aligned_rect() is not None
 
 
 def internal_has_only_simple_vector_rectangles(capture: PageAnalysis) -> bool:
     drawings = tuple(
         drawing
-        for drawing in getattr(capture, "drawings", ())
-        if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+        for drawing in capture.program.drawings
+        if drawing.kind in {"fill", "fillstroke", "stroke"}
     )
     return len(drawings) >= 32 and all(
         internal_drawing_is_simple_rectangle(drawing) for drawing in drawings
@@ -251,10 +249,8 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
     vector_complexity = evidence.vector_complexity
     text_density = evidence.visible_text_density
     text_coverage = evidence.text_coverage
-    observations = getattr(capture, "observations", None)
-    rotated_native = bool(
-        observations is not None and any(int(value) % 360 for value in observations.rotation)
-    )
+    observations = capture.observations
+    rotated_native = any(int(value) % 360 for value in observations.rotation)
     quality = evidence.text_quality
     corrupt_mapping = (
         characters >= 24
