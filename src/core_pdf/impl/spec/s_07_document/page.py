@@ -7,8 +7,8 @@ from collections import deque
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, cast
 
+from core_pdf.impl._impl.model.geometry import rotate_page_runs
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import rotate_page_runs
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
@@ -45,7 +45,7 @@ PAGE_INHERITED_KEYS = (
 
 
 if TYPE_CHECKING:
-    from core_pdf.impl.model.runs import TextRun
+    from core_pdf.impl._impl.model.runs import TextRun
     from core_pdf.impl.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.spec.s_07_document.records import RawFormField
 
@@ -62,12 +62,16 @@ class PdfPage:
         document: PdfDocument,
         page_dict: PdfDict,
         page_number: int,
+        *,
+        inherited_values: InheritedValueMap | None = None,
     ) -> None:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
         self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
-        self.inherited_values = self.collect_inherited_values()
+        self.inherited_values = (
+            self.collect_inherited_values() if inherited_values is None else dict(inherited_values)
+        )
 
     @property
     def media_box(self) -> tuple[float, float, float, float] | None:

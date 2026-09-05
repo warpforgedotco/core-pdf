@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core_pdf.impl.extract.block_layout import (
+from core_pdf.impl._impl.extract.block_layout import (
     internal_column_major_prose,
     internal_reading_order_evidence,
 )

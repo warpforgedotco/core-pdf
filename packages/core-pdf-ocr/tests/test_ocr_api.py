@@ -16,10 +16,10 @@ import pytest
 
 from core_pdf import PdfDocument as NativePdfDocument
 from core_pdf import PdfPage as NativePdfPage
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
+from core_pdf.impl._impl.output.model import Document, Page
+from core_pdf.impl._impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
 from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.output.model import Document, Page
-from core_pdf.impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
 from core_pdf_ocr import PdfDocument, PdfPage
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis, RecognitionResult
 from core_pdf_ocr.impl.extract.ocr import pipeline as recognition_pipeline

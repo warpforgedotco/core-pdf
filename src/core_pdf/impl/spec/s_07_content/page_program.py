@@ -6,9 +6,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
+from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.exceptions import PdfContractError
-from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,

@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import compose_page
+from core_pdf.impl._impl.render.model import RenderOptions
+from core_pdf.impl._impl.render.page import compose_page
 from core_pdf_ocr.impl.extract.contracts import PRIMARY_OCR_PIXELS
 from tests.helpers.benchmark_pages import (
     TEXT_PDF,

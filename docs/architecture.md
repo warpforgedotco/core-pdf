@@ -10,8 +10,8 @@ output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recogn
 distributions share a uv workspace and release version; the companion pins that exact core
 version because it reuses internal extraction stages.
 
-Core's `extract/` initializer exposes only `extract_page` and `extract_document`; stage internals
-are imported from their owning modules. Native extraction runs in this order:
+Core's `impl/_impl/extract/` initializer exposes only `extract_page` and `extract_document`;
+stage internals are imported from their owning modules. Native extraction runs in this order:
 
 ```text
 bytes → capture_page → native observations → extract_tables → layout → assemble_page
@@ -50,17 +50,18 @@ src/core_pdf/
   api/compat/            independent third-party compatibility facades
   _vendor/               vendored third-party source and data
   impl/
-    runtime/             engine-independent caching, arrays, and execution support
     exceptions.py        error hierarchy
     records.py           public extraction records
-    output/              structured document/page models, views, and serialization
     primitives.py        PDF primitives
     types.py             buffers, protocols, and geometry aliases
-    model/               shared geometry/text models, text rules, and page selections
-    layout/              text-line records, reconstruction, diagnostics, and word rules
     spec/                PDF specification implementation (see below)
-    extract/             native extraction, block layout, and tables
-    render/              display lists, raster kernels, targets, and page composition
+    _impl/
+      extract/           native extraction, block layout, and tables
+      layout/            text-line records, reconstruction, diagnostics, and word rules
+      model/             shared geometry/text models, text rules, and page selections
+      output/            structured document/page models, views, and serialization
+      render/            display lists, raster kernels, targets, and page composition
+      runtime/           engine-independent caching, arrays, and execution support
 ```
 
 ```text
@@ -108,6 +109,11 @@ for text already embedded in PDFs, including hidden text layers, stays in core.
 
 Import-linter contracts in the root `pyproject.toml` enforce package direction and the existing
 core layer boundaries. Type-only imports are excluded from runtime cycle checks.
+
+`impl/_impl/` groups the six supporting packages without adding a facade or changing their
+dependency order. `spec/` and the base modules stay directly under `impl/`. Unit tests mirror
+the new paths under `tests/src/core_pdf/impl/_impl/`; both distributions import the owning
+modules at their new locations.
 
 ## Workspace validation
 

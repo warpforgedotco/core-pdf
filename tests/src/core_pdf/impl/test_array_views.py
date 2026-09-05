@@ -1,7 +1,7 @@
 import numpy
 import pytest
 
-from core_pdf.impl.runtime.array_views import (
+from core_pdf.impl._impl.runtime.array_views import (
     contiguous_bytes,
     finite_median,
     nearest_indices,

@@ -14,8 +14,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
+from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import transform_bbox
 from core_pdf.impl.spec.s_07_content.page_program import AppearanceProgram, CapturedProgram
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict

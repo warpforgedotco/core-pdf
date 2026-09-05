@@ -9,7 +9,7 @@ from typing import Any, TypeAlias
 
 import numpy
 
-from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
+from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     apply_decode_array as apply_decode_array_kernel,

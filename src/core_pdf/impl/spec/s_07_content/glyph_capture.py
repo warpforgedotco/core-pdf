@@ -6,8 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from math import ceil
 
-from core_pdf.impl.model.geometry import transform_bbox
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl._impl.model.geometry import transform_bbox
+from core_pdf.impl._impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
     glyph_cluster_from_observations,

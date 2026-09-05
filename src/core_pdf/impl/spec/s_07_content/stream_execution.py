@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from core_pdf.impl._impl.model.geometry import Rectangle, intersect_bbox
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import Rectangle, intersect_bbox
 from core_pdf.impl.spec.s_07_content.capture import marker_drawing
 from core_pdf.impl.spec.s_07_content.operations import dispatch_operations
 from core_pdf.impl.spec.s_07_content.stream_state import (
@@ -102,6 +102,7 @@ class ContentStreamExecutor:
                     blend_mode=state.blend_mode,
                 )
             )
+            state.sequence += 1
             state.group_alpha = None
         state.resources = frame.resources
         state.resources_id = id(frame.resources)
@@ -135,6 +136,7 @@ class ContentStreamExecutor:
                     blend_mode=state.blend_mode,
                 )
             )
+            state.sequence += 1
 
     def consume(
         self,

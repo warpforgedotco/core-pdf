@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from collections import Counter
 
-from core_pdf.impl.extract import table_reconcile as native_reconcile
-from core_pdf.impl.output.model import Block, Table
+from core_pdf.impl._impl.extract import table_reconcile as native_reconcile
+from core_pdf.impl._impl.output.model import Block, Table
 
 
 def internal_covers_synthetic_chart_table(

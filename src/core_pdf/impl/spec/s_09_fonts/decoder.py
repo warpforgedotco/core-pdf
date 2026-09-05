@@ -13,8 +13,8 @@ from io import BytesIO
 from typing import Iterable
 
 from core_pdf._vendor.fontTools.ttLib import TTFont
+from core_pdf.impl._impl.model.glyphs import UnicodeSource
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name

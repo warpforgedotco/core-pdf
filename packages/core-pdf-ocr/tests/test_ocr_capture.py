@@ -3,7 +3,7 @@ from __future__ import annotations
 from ocr_test_helpers.extract_fakes import capture as make_capture
 from ocr_test_helpers.extract_fakes import drawing, text_run
 
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedLine,

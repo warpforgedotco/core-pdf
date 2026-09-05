@@ -1,6 +1,6 @@
 import numpy
 
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.grids import internal_detect_ruling_grid
 
 

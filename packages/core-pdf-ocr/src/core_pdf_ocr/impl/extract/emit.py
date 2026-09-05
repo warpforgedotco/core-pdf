@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import re
 
-from core_pdf.impl.extract import emit as native_emit
-from core_pdf.impl.extract.contracts import ParsedBlock
-from core_pdf.impl.extract.emit import internal_wordlike_pipe_token
-from core_pdf.impl.output.model import Block, Figure, Page, Table
+from core_pdf.impl._impl.extract import emit as native_emit
+from core_pdf.impl._impl.extract.contracts import ParsedBlock
+from core_pdf.impl._impl.extract.emit import internal_wordlike_pipe_token
+from core_pdf.impl._impl.output.model import Block, Figure, Page, Table
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf_ocr.impl.extract.table_reconcile import internal_project_text_and_tables
 

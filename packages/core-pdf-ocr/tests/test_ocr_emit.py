@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.output.model import Figure, Page, Table, TableCell
+from core_pdf.impl._impl.output.model import Figure, Page, Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf_ocr.impl.extract.contracts import (
     PageRoute,

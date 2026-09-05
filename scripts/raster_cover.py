@@ -24,7 +24,7 @@ from types import FrameType
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render import (
+from core_pdf.impl._impl.render import (
     blend,
     clipping,
     image_affine_target,

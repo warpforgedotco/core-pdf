@@ -9,29 +9,29 @@ from contextlib import AbstractContextManager, suppress
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.extract.pipeline import extract_page
-from core_pdf.impl.extract.selection import extract_document
-from core_pdf.impl.layout.lines import (
+from core_pdf.impl._impl.extract.pipeline import extract_page
+from core_pdf.impl._impl.extract.selection import extract_document
+from core_pdf.impl._impl.layout.lines import (
     LayoutGeometrySummary,
     LayoutLine,
     page_layout_geometry_issues,
     page_layout_geometry_summary,
     text_run_geometry_issues,
 )
-from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.model.page_selection import PageSelection
-from core_pdf.impl.output.model import DiagnosticTextRun, TextDiagnostics
-from core_pdf.impl.output.model import Document as StructuredDocument
+from core_pdf.impl._impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.model.page_selection import PageSelection
+from core_pdf.impl._impl.output.model import DiagnosticTextRun, TextDiagnostics
+from core_pdf.impl._impl.output.model import Document as StructuredDocument
+from core_pdf.impl._impl.render.model import RenderOptions
+from core_pdf.impl._impl.render.page import compose_page
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.exceptions import PdfDocumentClosedError
 from core_pdf.impl.records import (
     DrawingRecord,
     ImageMetadata,
     ImageRecord,
     PageScoped,
 )
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource

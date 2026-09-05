@@ -7,8 +7,8 @@ import unicodedata
 
 import numpy
 
-from core_pdf.impl.extract import block_layout as native_layout
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract import block_layout as native_layout
+from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch,
     ParsedBlock,
     ReadingOrderEvidence,

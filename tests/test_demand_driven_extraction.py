@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.extract import pipeline as parse_pipeline
+from core_pdf.impl._impl.extract import pipeline as parse_pipeline
 from tests.helpers.paths import SCORE_BENCH
 
 FIXTURE = SCORE_BENCH / "Employee_Health_Benefits_Assess-p006.pdf"

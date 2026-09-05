@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.model.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl._impl.model.glyphs import GlyphCluster, GlyphObservation
+from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.text_runs import RunAccumulator
 from core_pdf.impl.types import Rectangle
 

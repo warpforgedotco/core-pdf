@@ -6,17 +6,18 @@ from __future__ import annotations
 import contextlib
 import mmap
 from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 from os import PathLike
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Self, TypeVar, cast
+from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
 
+from core_pdf.impl._impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
     PdfParseError,
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
@@ -72,6 +73,14 @@ if TYPE_CHECKING:
 
 
 internal_PageT = TypeVar("internal_PageT")
+
+
+@dataclass(frozen=True, slots=True)
+class internal_PageNode:
+    """A source page dictionary and the effective values inherited by that page."""
+
+    dictionary: PdfDict
+    inherited_values: InheritedValueMap
 
 
 def internal_unresolved_destination(name: str) -> RawNamedDestination:
@@ -371,7 +380,7 @@ class PdfDocument(
 
     # Page tree and page labels
 
-    def discover_page_dicts(self) -> Iterator[PdfDict]:
+    def internal_discover_page_nodes(self) -> Iterator[internal_PageNode]:
         """Recover likely page dictionaries when the declared page tree is unusable."""
         candidates: list[tuple[int, int, int, PdfDict]] = []
         pages_nodes: list[tuple[int, int, int, PdfDict]] = []
@@ -408,14 +417,14 @@ class PdfDocument(
         inherited_sources = [node for _, _, _, node in pages_nodes]
         seen_signatures: set[tuple[object, ...]] = set()
         for _, _, _, page_dict in candidates:
-            repaired_page = self.repair_recovered_page_inherited_values(
-                page_dict, inherited_sources
-            )
-            signature = self.recovered_page_signature(repaired_page)
+            signature = self.recovered_page_signature(page_dict)
             if signature in seen_signatures:
                 continue
             seen_signatures.add(signature)
-            yield repaired_page
+            yield internal_PageNode(
+                page_dict,
+                self.internal_recovered_page_values(page_dict, inherited_sources),
+            )
 
     def page_candidate_score(self, obj: PdfDict) -> int:
         node_type = resolve_page_tree_node_type(self.resolver, obj)
@@ -466,12 +475,17 @@ class PdfDocument(
             score += 5
         return score
 
-    def repair_recovered_page_inherited_values(
+    def internal_recovered_page_values(
         self, page_dict: PdfDict, pages_nodes: list[PdfDict]
-    ) -> PdfDict:
-        missing = [key for key in PAGE_INHERITED_KEYS if page_dict.get(key) is None]
+    ) -> InheritedValueMap:
+        values = {
+            key: cast(CachedPdfObject, value)
+            for key in PAGE_INHERITED_KEYS
+            if (value := page_dict.get(key)) is not None
+        }
+        missing = [key for key in PAGE_INHERITED_KEYS if key not in values]
         if not missing:
-            return page_dict
+            return values
 
         sources: list[PdfDict] = []
         parent = page_dict.get("Parent")
@@ -484,22 +498,15 @@ class PdfDocument(
                 sources.append(cast(PdfDict, parent_obj))
         sources.extend(pages_nodes)
         if not sources:
-            return page_dict
+            return values
 
-        repaired: PdfDict | None = None
         for source in sources:
             source_values = self.collect_inherited_values_from_node(source, missing)
-            if not source_values:
-                continue
-            if repaired is None:
-                repaired = dict(page_dict)
-            for key, value in source_values.items():
-                if repaired.get(key) is None:
-                    repaired[key] = cast(PdfObject, value)
-            missing = [key for key in missing if repaired.get(key) is None]
+            values.update(source_values)
+            missing = [key for key in missing if key not in values]
             if not missing:
                 break
-        return repaired if repaired is not None else page_dict
+        return values
 
     def collect_inherited_values_from_node(
         self, node: PdfDict, keys: list[str]
@@ -536,15 +543,16 @@ class PdfDocument(
         return value
 
     def iter_page_dicts(self) -> Iterator[PdfDict]:
-        yield from self.iter_page_dicts_stream()
+        for page_node in self.internal_iter_page_nodes():
+            yield page_node.dictionary
 
-    def internal_recovered_page_dicts(self) -> list[PdfDict]:
-        discovered = list(self.discover_page_dicts())
+    def internal_recovered_page_nodes(self) -> list[internal_PageNode]:
+        discovered = list(self.internal_discover_page_nodes())
         if discovered:
             self.page_tree_was_recovered = True
         return discovered
 
-    def iter_page_dicts_stream(self) -> Iterator[PdfDict]:
+    def internal_iter_page_nodes(self) -> Iterator[internal_PageNode]:
         def inherited_from_pages_node(
             node: PdfDict, inherited: InheritedValueMap | None
         ) -> InheritedValueMap:
@@ -555,25 +563,11 @@ class PdfDocument(
                     values[key] = cast(CachedPdfObject, value)
             return values
 
-        def apply_inherited_to_page(
-            page_dict: PdfDict, inherited: InheritedValueMap | None
-        ) -> PdfDict:
-            if not inherited:
-                return page_dict
-            repaired: PdfDict | None = None
-            for key, value in inherited.items():
-                if page_dict.get(key) is not None:
-                    continue
-                if repaired is None:
-                    repaired = dict(page_dict)
-                repaired[key] = cast(PdfObject, value)
-            return repaired if repaired is not None else page_dict
-
         def traverse(
             node: object,
             depth: int = 0,
             inherited: InheritedValueMap | None = None,
-        ) -> Iterator[PdfDict]:
+        ) -> Iterator[internal_PageNode]:
             if depth > MAX_PAGE_TREE_DEPTH:
                 raise ValueError("invalid page tree depth")
             node = self.resolver.resolve(node)
@@ -593,7 +587,11 @@ class PdfDocument(
                 for kid in kids:
                     yield from traverse(kid, depth + 1, node_inherited)
             elif node_type == "Page":
-                yield apply_inherited_to_page(node, inherited)
+                # Keep the resolver's source identity: widgets, destinations,
+                # and structure references point to this exact dictionary.
+                # The Kids traversal also supplies inheritance when a damaged
+                # leaf has a missing or unusable Parent link.
+                yield internal_PageNode(node, inherited_from_pages_node(node, inherited))
             else:
                 raise ValueError("invalid page tree node")
 
@@ -609,12 +607,12 @@ class PdfDocument(
             if page_dicts:
                 yield from page_dicts
                 return
-            discovered = self.internal_recovered_page_dicts()
+            discovered = self.internal_recovered_page_nodes()
             if discovered:
                 yield from discovered
                 return
         except (PdfParseError, ValueError):
-            discovered = self.internal_recovered_page_dicts()
+            discovered = self.internal_recovered_page_nodes()
             if discovered:
                 yield from discovered
                 return
@@ -639,7 +637,7 @@ class PdfDocument(
         return len(self.build_page_dicts())
 
     def build_page_dicts(self) -> list[PdfDict]:
-        return list(self.iter_page_dicts_stream())
+        return list(self.iter_page_dicts())
 
     @property
     def pages(self) -> tuple[internal_PageT, ...]:
@@ -648,10 +646,15 @@ class PdfDocument(
             from core_pdf.impl.spec.s_07_document.page import PdfPage
 
             page_class = PdfPage
-        factory = cast(Callable[[Any, PdfDict, int], internal_PageT], page_class)
+        factory = cast(Callable[..., internal_PageT], page_class)
         return tuple(
-            factory(self, page_dict, page_number)
-            for page_number, page_dict in enumerate(self.iter_page_dicts(), 1)
+            factory(
+                self,
+                page_node.dictionary,
+                page_number,
+                inherited_values=page_node.inherited_values,
+            )
+            for page_number, page_node in enumerate(self.internal_iter_page_nodes(), 1)
         )
 
     @property
@@ -1039,8 +1042,8 @@ class PdfDocument(
     def discover_widget_field_records(self, existing: list[RawFormField]) -> list[RawFormField]:
         seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
         records: list[RawFormField] = []
-        for page_dict in self.iter_page_dicts():
-            raw_annots = self.resolver.resolve(page_dict.get("Annots"))
+        for page_node in self.internal_iter_page_nodes():
+            raw_annots = self.resolver.resolve(page_node.inherited_values.get("Annots"))
             if raw_annots is None:
                 continue
             annots = raw_annots if isinstance(raw_annots, list) else [raw_annots]

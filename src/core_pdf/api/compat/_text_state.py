@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from core_pdf.impl.model.text import is_neutral_character, is_rtl_character
+from core_pdf.impl._impl.model.text import is_neutral_character, is_rtl_character
 from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.spec.s_09_fonts.helpers import build_decode_table
 

@@ -10,8 +10,8 @@ it; users opt in through `core_pdf_ocr.PdfDocument` or the `core-pdf-ocr` comman
 This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. `src/core_pdf/api/document.py` owns the public `PdfDocument` and `PdfPage` APIs; third-party compatibility facades live in `src/core_pdf/api/compat`. Nothing under `impl/` may import from `api/`. Internal implementation is organized under `src/core_pdf/impl`:
 
 - `impl/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
-- `impl/extract/` is the native extraction pipeline. Recognition routing, learning, OCR tasks, and recognition-specific output policies belong to the companion. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
-- `impl/render/` rasterizes; `impl/output/model.py` defines structured output and `impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/records.py` holds capture records, `impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
+- `impl/_impl/extract/` is the native extraction pipeline. Recognition routing, learning, OCR tasks, and recognition-specific output policies belong to the companion. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
+- `impl/_impl/render/` rasterizes; `impl/_impl/output/model.py` defines structured output and `impl/_impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/records.py` holds capture records, `impl/_impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/_impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/_impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_extract_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
@@ -33,7 +33,7 @@ uv run --all-packages --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
-After making broad changes, run the full suite with `uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
+After making broad changes, run the full suite with `uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/_impl/model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
 
 ### Coverage
 
@@ -47,7 +47,7 @@ below the measured figure — raise it as gaps close rather than lowering it.
 
 Rendering changes are additionally pinned by golden rasters; see the "Golden
 rasters" section of `docs/architecture.md` before changing anything under
-`impl/render/`.
+`impl/_impl/render/`.
 
 ### Compiled modules must not shadow sources
 
@@ -74,7 +74,7 @@ Write Python with four-space indentation, clear type annotations, and lines no l
 
 Module-level symbols that are not part of a module's interface are prefixed `internal_` rather than with a leading underscore — about 490 of them. Treat anything so prefixed as private. The convention is applied unevenly across subpackages, so its *absence* does not imply a symbol is public; nothing under `impl/` is. Where a module declares `__all__`, that is the more reliable signal. Two wrinkles worth knowing: `internal_EXPORTS` in `__init__.py` is the public export table (the prefix marks the variable as private, not its contents), and a handful of constants are spelled `internal_UPPER_CASE`.
 
-Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the derived-processing layering, the spec layering, and the three packages that must not depend upward (`impl/runtime/`, `impl/model/`, `spec/s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the "Dependency direction" section of `docs/architecture.md` before editing the contract.
+Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the derived-processing layering, the spec layering, and the three packages that must not depend upward (`impl/_impl/runtime/`, `impl/_impl/model/`, `spec/s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the "Dependency direction" section of `docs/architecture.md` before editing the contract.
 
 Third-party code belongs in `src/core_pdf/_vendor/`; do not add new third-party implementations elsewhere in `core-pdf`.
 

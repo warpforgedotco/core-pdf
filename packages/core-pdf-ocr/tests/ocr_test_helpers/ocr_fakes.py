@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,

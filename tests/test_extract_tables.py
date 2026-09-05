@@ -5,26 +5,29 @@ from collections.abc import Callable
 import numpy
 import pytest
 
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
     PageAnalysis,
 )
-from core_pdf.impl.extract.grids import internal_merge_grid_cells, internal_split_grid_component
-from core_pdf.impl.extract.table_cleanup import (
+from core_pdf.impl._impl.extract.grids import (
+    internal_merge_grid_cells,
+    internal_split_grid_component,
+)
+from core_pdf.impl._impl.extract.table_cleanup import (
     internal_merge_adjacent_tables,
     internal_split_semantic_table,
     internal_table_character_spaced_prose,
 )
-from core_pdf.impl.extract.table_detection import (
+from core_pdf.impl._impl.extract.table_detection import (
     extract_tables,
     internal_compact_stream_table,
     internal_stream_table,
     internal_stream_tables,
     internal_TableAnalysis,
 )
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.output.model import Table, TableCell
+from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl._impl.output.model import Table, TableCell
 from core_pdf.impl.spec.s_07_content.capture import CapturedLine
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import page_evidence, text_run

@@ -16,9 +16,9 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.model.geometry import bbox_union, points_bbox
-from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.array_views import (
+from core_pdf.impl._impl.model.geometry import bbox_union, points_bbox
+from core_pdf.impl._impl.render.model import RasterImage
+from core_pdf.impl._impl.runtime.array_views import (
     contiguous_bytes,
     uint8_image_view,
 )

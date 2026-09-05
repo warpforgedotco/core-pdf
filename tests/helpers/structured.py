@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.model.geometry import bbox_union
-from core_pdf.impl.output.model import Block, BlockKind, Table, TableCell, TextLine
+from core_pdf.impl._impl.model.geometry import bbox_union
+from core_pdf.impl._impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 from core_pdf.impl.types import Rectangle
 
 

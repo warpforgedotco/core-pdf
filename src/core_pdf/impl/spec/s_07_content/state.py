@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
 
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import RectBox, intersect_bbox, transform_bbox
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
+from core_pdf.impl._impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
 )
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import (
     PdfName,
     PdfReference,
@@ -704,6 +704,7 @@ class TextState:
                         xobject_depth=self.xobject_depth,
                     )
                 )
+                self.sequence += 1
             return
         if subtype != "Form":
             return
@@ -1556,6 +1557,7 @@ class TextState:
                     fill_opacity=self.fill_opacity if dictionary.get("ImageMask") is True else None,
                 )
             )
+            self.sequence += 1
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
         tag = self.document.resolver.resolve_name(operands[0]) if operands else None
@@ -1730,6 +1732,7 @@ class TextState:
             return
         self.clip_scope_stack[-1] = True
         self.drawings.append(marker_drawing("state-push", self.sequence))
+        self.sequence += 1
 
     def op_W(self, operands: ContentOperands, depth: int) -> None:
         self.internal_record_clip("nonzero")
@@ -1759,6 +1762,7 @@ class TextState:
                     path=path,
                 )
             )
+            self.sequence += 1
 
     def op_W_star(self, operands: ContentOperands, depth: int) -> None:
         self.internal_record_clip("evenodd")
@@ -2076,6 +2080,7 @@ class TextState:
                 xobject_depth=self.xobject_depth,
             )
         )
+        self.sequence += 1
 
     @staticmethod
     def as_float(value: Any) -> float:
@@ -2131,6 +2136,7 @@ class TextState:
         clip_scope_emitted = self.clip_scope_stack.pop() if self.clip_scope_stack else False
         if clip_scope_emitted:
             self.drawings.append(marker_drawing("state-pop", self.sequence))
+            self.sequence += 1
         if not self.stack:
             return
         self.restore_graphics_state(self.stack.pop())

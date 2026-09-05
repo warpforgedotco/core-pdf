@@ -7,23 +7,23 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.render.commands import internal_append_glyph_paint
-from core_pdf.impl.render.display import DisplayList
-from core_pdf.impl.render.model import (
+from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl._impl.render.commands import internal_append_glyph_paint
+from core_pdf.impl._impl.render.display import DisplayList
+from core_pdf.impl._impl.render.model import (
     ImagePaintItem,
     PathPaintItem,
     RenderOptions,
 )
-from core_pdf.impl.render.page import (
+from core_pdf.impl._impl.render.page import (
     RenderedPage,
     compose_page,
 )
-from core_pdf.impl.render.paths import (
+from core_pdf.impl._impl.render.paths import (
     rasterize_unclipped_line_normal,
 )
+from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedPath,

@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.runtime.array_views import readonly
+from core_pdf.impl._impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.pipeline import (

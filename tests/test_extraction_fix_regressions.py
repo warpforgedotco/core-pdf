@@ -18,22 +18,22 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.extract.block_layout import internal_column_major_prose
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.block_layout import internal_column_major_prose
+from core_pdf.impl._impl.extract.contracts import (
     ParsedBlock,
     ParsedLine,
 )
-from core_pdf.impl.extract.emit import (
+from core_pdf.impl._impl.extract.emit import (
     internal_corrupt_native_block,
     internal_symbol_characters,
 )
-from core_pdf.impl.extract.pipeline import internal_PageExtraction
-from core_pdf.impl.extract.regions import internal_peel_spanning_band
-from core_pdf.impl.extract.table_cleanup import (
+from core_pdf.impl._impl.extract.pipeline import internal_PageExtraction
+from core_pdf.impl._impl.extract.regions import internal_peel_spanning_band
+from core_pdf.impl._impl.extract.table_cleanup import (
     internal_merge_wrapped_cell_rows,
     internal_stream_table_reads_like_prose,
 )
-from core_pdf.impl.output.model import Table, TableCell
+from core_pdf.impl._impl.output.model import Table, TableCell
 from tests.helpers.paths import score_bench_pdf
 from tests.helpers.structured import cell, native_block, stream_table
 

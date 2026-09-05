@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.runtime.array_views import nearest_indices, readonly
+from core_pdf.impl._impl.runtime.array_views import nearest_indices, readonly
 
 
 def internal_validate_resampling_shape(

@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from core_pdf.impl.model.geometry import union_bbox
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl._impl.model.geometry import union_bbox
+from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.types import Rectangle
 
 

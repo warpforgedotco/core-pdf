@@ -27,9 +27,9 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.model.text import collapse_ws
-from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.array_views import contiguous_bytes, finite_median
+from core_pdf.impl._impl.model.text import collapse_ws
+from core_pdf.impl._impl.render.model import RasterImage
+from core_pdf.impl._impl.runtime.array_views import contiguous_bytes, finite_median
 from core_pdf_ocr.impl.extract.contracts import (
     PRIMARY_OCR_PIXELS,
     ObservationBatch,

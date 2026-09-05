@@ -26,7 +26,7 @@ import imagecodecs
 import numpy
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf.impl.spec.s_07_filters.decoders import decode_jpx_image
 from core_pdf.impl.spec.s_07_filters.jpeg2000 import internal_jpx_uses_irreversible_wavelet

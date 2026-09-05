@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.model.text import compact_text, text_tokens
+from core_pdf.impl._impl.model.text import compact_text, text_tokens
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf_ocr.impl.extract.capture import (
     internal_hidden_text_needs_verification,

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl._impl.render.model import RasterImage
 
 
 @dataclass(frozen=True, slots=True)

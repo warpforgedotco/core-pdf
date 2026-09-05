@@ -8,14 +8,14 @@ from dataclasses import replace
 
 import numpy
 
-from core_pdf.impl.extract.contracts import ObservationBatch, internal_bbox_tuple
-from core_pdf.impl.extract.table_detection import (
+from core_pdf.impl._impl.extract.contracts import ObservationBatch, internal_bbox_tuple
+from core_pdf.impl._impl.extract.table_detection import (
     internal_detect_tables,
     internal_finalize_tables,
     internal_TableAnalysis,
 )
-from core_pdf.impl.model.geometry import bbox_union
-from core_pdf.impl.output.model import Table, TableCell
+from core_pdf.impl._impl.model.geometry import bbox_union
+from core_pdf.impl._impl.output.model import Table, TableCell
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis
 
 internal_CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")

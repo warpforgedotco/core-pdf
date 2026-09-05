@@ -7,14 +7,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
     PageAnalysis,
     PageEvidence,
 )
-from core_pdf.impl.model.geometry import RectBox
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl._impl.model.geometry import RectBox
+from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 

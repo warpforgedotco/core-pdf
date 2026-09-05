@@ -1,4 +1,4 @@
-from core_pdf.impl.output.model import Block, BlockKind, Page, TextLine
+from core_pdf.impl._impl.output.model import Block, BlockKind, Page, TextLine
 
 
 def test_text_view_exposes_lines_and_words() -> None:

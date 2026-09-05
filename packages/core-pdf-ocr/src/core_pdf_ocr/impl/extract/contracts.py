@@ -7,46 +7,46 @@ from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any
 
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE as FULL_PAGE_IMAGE_COVERAGE,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     BoolArray as BoolArray,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ByteArray as ByteArray,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     FloatArray as FloatArray,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     GlyphEvidence as GlyphEvidence,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     IntArray as IntArray,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch as ObservationBatch,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     PageEvidence as NativePageEvidence,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ParsedBlock as ParsedBlock,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ParsedLine as ParsedLine,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ReadingOrderEvidence as ReadingOrderEvidence,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     TextQualityStats as TextQualityStats,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     internal_bbox_tuple as internal_bbox_tuple,
 )
 

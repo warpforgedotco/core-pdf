@@ -7,8 +7,8 @@ import math
 
 import numpy
 
-from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind, RasterImage
-from core_pdf.impl.runtime.array_views import uint8_view
+from core_pdf.impl._impl.render.model import DisplayItem, PathPaintItem, PathPaintKind, RasterImage
+from core_pdf.impl._impl.runtime.array_views import uint8_view
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
 

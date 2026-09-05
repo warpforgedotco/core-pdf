@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.model.geometry import points_bbox
+from core_pdf.impl._impl.model.geometry import points_bbox
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfValueResolver

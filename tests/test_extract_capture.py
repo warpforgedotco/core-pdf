@@ -4,13 +4,13 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl._impl.extract.capture import (
     internal_apply_structure_actual_text,
     internal_extractable_runs,
     internal_layout_bbox_for_run,
 )
-from core_pdf.impl.extract.pipeline import internal_PageExtraction
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl._impl.extract.pipeline import internal_PageExtraction
+from core_pdf.impl._impl.model.runs import TextRun
 from tests.helpers.extract_fakes import text_run
 from tests.helpers.paths import SCORE_BENCH
 

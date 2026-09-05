@@ -3,16 +3,16 @@ from __future__ import annotations
 import numpy
 import pytest
 
-from core_pdf.impl.extract.block_layout import (
+from core_pdf.impl._impl.extract.block_layout import (
     internal_group_text_and_words,
     layout_blocks,
     layout_blocks_with_evidence,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
 )
-from core_pdf.impl.extract.regions import (
+from core_pdf.impl._impl.extract.regions import (
     internal_best_projection_gap,
     internal_best_region_projection_gap,
     internal_interval_crossing_counts,
@@ -20,8 +20,8 @@ from core_pdf.impl.extract.regions import (
     internal_row_order_indexes,
     internal_row_order_region,
 )
-from core_pdf.impl.layout import reconstruction
-from core_pdf.impl.model.runs import LayoutLineText, LayoutLineTextSegment
+from core_pdf.impl._impl.layout import reconstruction
+from core_pdf.impl._impl.model.runs import LayoutLineText, LayoutLineTextSegment
 from tests.helpers import extract_fakes
 
 

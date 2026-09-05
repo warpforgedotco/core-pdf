@@ -18,10 +18,10 @@ from ocr_test_helpers.ocr_fakes import (
     patch_ocr_helper,
 )
 
-from core_pdf.impl.model import geometry as model_geometry
-from core_pdf.impl.model.geometry import RectBox
-from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl._impl.model import geometry as model_geometry
+from core_pdf.impl._impl.model.geometry import RectBox
+from core_pdf.impl._impl.render.model import RasterImage
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf_ocr.impl.extract import capture as parse_capture

@@ -4,7 +4,7 @@ from importlib import import_module
 from typing import Any, cast
 
 import core_pdf
-from core_pdf.impl.output.model import (
+from core_pdf.impl._impl.output.model import (
     Block,
     BlockKind,
     ContentNode,
@@ -31,30 +31,30 @@ def test_public_exports_resolve_from_canonical_owners() -> None:
     moved_owners = {
         "PdfDocument": "core_pdf.api.document",
         "PdfPage": "core_pdf.api.document",
-        "PageSelection": "core_pdf.impl.model.page_selection",
+        "PageSelection": "core_pdf.impl._impl.model.page_selection",
         "DrawingRecord": "core_pdf.impl.records",
         "ImageMetadata": "core_pdf.impl.records",
         "ImageRecord": "core_pdf.impl.records",
         "PageScoped": "core_pdf.impl.records",
         "TextWord": "core_pdf.impl.records",
-        "Document": "core_pdf.impl.output.model",
-        "ContentNode": "core_pdf.impl.output.model",
-        "DiagnosticTextRun": "core_pdf.impl.output.model",
-        "DocumentTableView": "core_pdf.impl.output.model",
-        "DocumentTextView": "core_pdf.impl.output.model",
-        "TableView": "core_pdf.impl.output.model",
-        "TableReference": "core_pdf.impl.output.model",
-        "TableAssociatedText": "core_pdf.impl.output.model",
-        "TableColumnBand": "core_pdf.impl.output.model",
-        "TableRowBand": "core_pdf.impl.output.model",
-        "TextView": "core_pdf.impl.output.model",
-        "TextDiagnostics": "core_pdf.impl.output.model",
-        "TextLineReference": "core_pdf.impl.output.model",
+        "Document": "core_pdf.impl._impl.output.model",
+        "ContentNode": "core_pdf.impl._impl.output.model",
+        "DiagnosticTextRun": "core_pdf.impl._impl.output.model",
+        "DocumentTableView": "core_pdf.impl._impl.output.model",
+        "DocumentTextView": "core_pdf.impl._impl.output.model",
+        "TableView": "core_pdf.impl._impl.output.model",
+        "TableReference": "core_pdf.impl._impl.output.model",
+        "TableAssociatedText": "core_pdf.impl._impl.output.model",
+        "TableColumnBand": "core_pdf.impl._impl.output.model",
+        "TableRowBand": "core_pdf.impl._impl.output.model",
+        "TextView": "core_pdf.impl._impl.output.model",
+        "TextDiagnostics": "core_pdf.impl._impl.output.model",
+        "TextLineReference": "core_pdf.impl._impl.output.model",
     }
     assert {name: core_pdf.internal_EXPORTS[name][0] for name in moved_owners} == moved_owners
     assert core_pdf.PdfDocument.__module__ == "core_pdf.api.document"
     assert core_pdf.PdfPage.__module__ == "core_pdf.api.document"
-    assert core_pdf.Document.__module__ == "core_pdf.impl.output.model"
+    assert core_pdf.Document.__module__ == "core_pdf.impl._impl.output.model"
 
     for public_name, (module_name, owner_name) in core_pdf.internal_EXPORTS.items():
         assert getattr(core_pdf, public_name) is getattr(import_module(module_name), owner_name)

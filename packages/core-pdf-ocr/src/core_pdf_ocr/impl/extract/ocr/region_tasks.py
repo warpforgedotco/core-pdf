@@ -9,13 +9,13 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl._impl.model.geometry import (
     overlap_ratio_min_exact as internal_ocr_region_overlap,
 )
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl._impl.model.geometry import (
     overlap_ratio_of as internal_ocr_region_coverage,
 )
-from core_pdf.impl.runtime.array_views import finite_median
+from core_pdf.impl._impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
     PRIMARY_OCR_PIXELS,

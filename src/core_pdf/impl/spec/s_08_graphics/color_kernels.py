@@ -6,7 +6,7 @@ from __future__ import annotations
 import imagecodecs
 import numpy
 
-from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
+from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
 

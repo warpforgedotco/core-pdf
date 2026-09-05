@@ -1,10 +1,14 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from core_pdf.impl.render.commands import append_captured_program
-from core_pdf.impl.render.display import DisplayList
-from core_pdf.impl.render.model import ImagePaintItem, PathPaintItem
-from core_pdf.impl.render.page import compose_page
+import pytest
+
+from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl._impl.render.commands import append_captured_program
+from core_pdf.impl._impl.render.display import DisplayList
+from core_pdf.impl._impl.render.model import ImagePaintItem, PathPaintItem
+from core_pdf.impl._impl.render.page import compose_page
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram
 from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -114,8 +118,54 @@ def test_inline_image_scope_does_not_clip_following_text() -> None:
     with open_pdf(one_page_pdf(image + text, media_box=(0, 0, 150, 80))) as document:
         actual = document.pages[0].render().rasterize().array()
 
-    # Advancing BI alone moves preceding clip markers ahead of text, but Q
-    # still ties with that text and sorts after it. Scope boundaries and paint
-    # commands must be sequenced together before changing this legacy ordering.
+    # The image's clip scope must end before the following text is replayed.
+    # Its Q marker therefore needs its own sequence number, just like BI.
     assert (expected[:, 20:] < 255).any()
     assert (actual[:, 20:] == expected[:, 20:]).all()
+
+
+@pytest.mark.parametrize("inline", [False, True])
+def test_images_shading_and_scope_markers_preserve_stream_order(inline: bool) -> None:
+    image = b"BI /W 1 /H 1 /BPC 8 /CS /RGB ID \xff\x00\x00 EI" if inline else b"/Im Do"
+    data = one_page_pdf(
+        b"q 0 0 10 10 re W n " + image + b" Q /Sh sh BT /F1 12 Tf 30 40 Td (X) Tj ET",
+        media_box=(0, 0, 150, 80),
+        resources=b"<< /Font << /F1 5 0 R >> /XObject << /Im 6 0 R >> "
+        b"/Shading << /Sh << /ShadingType 2 /ColorSpace /DeviceRGB "
+        b"/Coords [0 0 10 0] /Function << /FunctionType 2 /Domain [0 1] "
+        b"/C0 [0 0 0] /C1 [1 1 1] /N 1 >> >> >> >>",
+        extra_objects=[
+            stream_obj(
+                bytes((255, 0, 0)),
+                b"/Type /XObject /Subtype /Image /Width 1 /Height 1 "
+                b"/ColorSpace /DeviceRGB /BitsPerComponent 8",
+            ),
+        ],
+    )
+    with open_pdf(data) as document:
+        commands = document.pages[0].get_page_program().commands
+    # Glyph paint and its diagnostic run deliberately share sequence numbers;
+    # every other captured event must retain its original position around them.
+    events = [
+        command
+        for command in commands
+        if isinstance(command, (TextRun, CapturedDrawing, CapturedInlineImage))
+    ]
+    kinds = [
+        "text"
+        if isinstance(command, TextRun)
+        else "inline-image"
+        if isinstance(command, CapturedInlineImage)
+        else command.kind
+        for command in events
+    ]
+    assert kinds == [
+        "state-push",
+        "clip",
+        "inline-image" if inline else "image",
+        "state-pop",
+        "shading",
+        "text",
+    ]
+    sequence = [command.seqno for command in events]
+    assert sequence == sorted(set(sequence))

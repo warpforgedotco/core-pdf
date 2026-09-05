@@ -219,7 +219,7 @@ core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
 "core_pdf._vendor.icc" = ["*.icc", "README.md"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
-"core_pdf.impl.layout.data.wordlists" = [
+"core_pdf.impl._impl.layout.data.wordlists" = [
     "*.txt.gz",
     "*.bin",
     "*.md",
@@ -253,7 +253,7 @@ forbidden_modules = ["core_pdf.api", "core_pdf_ocr.api"]
 [[tool.importlinter.contracts]]
 name = "Derived-processing spine"
 type = "layers"
-containers = ["core_pdf.impl"]
+containers = ["core_pdf.impl._impl"]
 layers = [
     "extract",
     "render",
@@ -264,12 +264,12 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
-source_modules = ["core_pdf.impl.output.serialize"]
+source_modules = ["core_pdf.impl._impl.output.serialize"]
 forbidden_modules = [
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.render",
-    "core_pdf.impl.runtime",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.render",
+    "core_pdf.impl._impl.runtime",
     "core_pdf.impl.spec",
     "core_pdf.api",
 ]
@@ -296,22 +296,22 @@ name = "Spec stays below derived consumers"
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec"]
 forbidden_modules = [
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.render",
 ]
 
 [[tool.importlinter.contracts]]
-name = "impl/runtime is the floor"
+name = "impl/_impl/runtime is the floor"
 type = "forbidden"
-source_modules = ["core_pdf.impl.runtime"]
+source_modules = ["core_pdf.impl._impl.runtime"]
 forbidden_modules = [
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.model",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.model",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.render",
     "core_pdf.impl.spec",
     "core_pdf.api",
 ]
@@ -319,12 +319,12 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "The shared model depends on nothing above it"
 type = "forbidden"
-source_modules = ["core_pdf.impl.model"]
+source_modules = ["core_pdf.impl._impl.model"]
 forbidden_modules = [
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.render",
     "core_pdf.impl.spec",
     "core_pdf.api",
 ]
@@ -340,11 +340,11 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.model",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.model",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.render",
 ]
 
 [[tool.importlinter.contracts]]
@@ -360,11 +360,11 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.model",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.model",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.render",
 ]
 
 [[tool.importlinter.contracts]]
@@ -389,10 +389,10 @@ source_modules = [
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.model",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.layout",
+    "core_pdf.impl._impl.model",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.render",
     "core_pdf.impl.spec",
 ]

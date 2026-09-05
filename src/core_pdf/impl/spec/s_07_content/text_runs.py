@@ -6,9 +6,9 @@ from __future__ import annotations
 from collections import deque
 from itertools import chain
 
-from core_pdf.impl.model.glyphs import GlyphCluster
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import word_gap_threshold
+from core_pdf.impl._impl.model.glyphs import GlyphCluster
+from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl._impl.model.text import word_gap_threshold
 
 internal_NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
 internal_NO_SPACE_AFTER = frozenset("([{")

@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 from core_pdf.api.document import PdfDocument as CorePdfDocument
 from core_pdf.api.document import PdfPage as CorePdfPage
-from core_pdf.impl.model.page_selection import PageSelection
-from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl._impl.model.page_selection import PageSelection
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.types import PdfSource
 from core_pdf_ocr.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf_ocr.impl.extract.pipeline import extract_page

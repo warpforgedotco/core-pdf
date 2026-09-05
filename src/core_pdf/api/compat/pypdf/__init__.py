@@ -11,11 +11,11 @@ from typing import Any, cast
 from core_pdf import PdfDocument
 from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
-from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.output.model import (
+from core_pdf.impl._impl.output.model import (
     Document,
     Page,
 )
+from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO

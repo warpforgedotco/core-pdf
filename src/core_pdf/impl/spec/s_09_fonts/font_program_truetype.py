@@ -13,7 +13,7 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
-from core_pdf.impl.model.geometry import transform_bbox
+from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours, scale_contours
 
 # fontTools validates malformed tables with bare `assert` as well as by raising,

@@ -11,13 +11,13 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, cast
 
-from core_pdf.impl.extract.selection import (
+from core_pdf.impl._impl.extract.selection import (
     internal_assemble_document,
     internal_prepare_document_pages,
 )
-from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
-from core_pdf.impl.output.model import Document
-from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl._impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl._impl.output.model import Document
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     internal_capture_from_program,

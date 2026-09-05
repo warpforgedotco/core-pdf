@@ -2,7 +2,7 @@
 
 import pytest
 
-from core_pdf.impl.render.model import RenderOptions
+from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawFormField
 from tests.helpers.pdf_bytes import one_page_pdf, open_pdf, stream_obj
 
