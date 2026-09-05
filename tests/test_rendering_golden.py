@@ -8,7 +8,7 @@ use lossless canonical references with measured RGB bounds and exact alpha.
 
 Two layers:
 
-* The always-on exact layer renders :data:`COVERING_SUBSET` — 22 corpus
+* The always-on exact layer renders :data:`COVERING_SUBSET` — 20 corpus
   documents chosen by greedy set cover after seeding coverage with the five
   portable pages. Together those cases execute *every* line of the ``render/``
   package that the full 224-document corpus reaches. They run in a few seconds,
@@ -54,7 +54,7 @@ from scripts.raster_golden import (
 )
 from tests.helpers.paths import require_fixture
 
-# Greedy line-cover of render/ over the corpus: these 22 exact-digest documents,
+# Greedy line-cover of render/ over the corpus: these 20 exact-digest documents,
 # together with the five always-on tolerant documents below, reach 100% of the
 # lines that all 224 reach. Recompute with scripts/raster_cover.py if the corpus
 # or the rasterizer's structure changes substantially.
@@ -62,25 +62,23 @@ COVERING_SUBSET = (
     "PDFTriage-p7-p002.pdf",
     "national_ai_rd_strategic_plan-p28.pdf",
     "BurningCharacteristicsFir-p016.pdf",
+    "circuit schematic.pdf",
+    "OptimalEstimationMethodologies-for-PanelDataRegressionModels-pg9-12-p002.pdf",
     "FOOD_ELEMENTS_FALL_2017p20-20.pdf",
     "i-9-p001.pdf",
-    "Index_to_Positions_table_vertical_text-p063.pdf",
-    "circuit schematic.pdf",
     "NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-Volume3-MassProperties-Pg54.pdf",
+    "This_Is_Caltech_2018_p20-20.pdf",
     "csia_federal_plan-p47-p52-p006.pdf",
     "Employee_Health_Benefits_Assess-p006.pdf",
-    "French-p076.pdf",
-    "AlienPlantThreatAssess-p24-p27-p004.pdf",
+    "Index_to_Positions_table_vertical_text-p063.pdf",
     "wipo-2022-financial-report-p24-p30-p001.pdf",
-    "O27Hara_DeepSeaFloorBio-p001.pdf",
-    "UNH-Q4-2023-Form-10-K-p028.pdf",
-    "cb9722en_p35-36-p001.pdf",
     "sydd0278.pdf",
     "BarrowArchAnalysis_Alaska1984-p076.pdf",
+    "O27Hara_DeepSeaFloorBio-p001.pdf",
     "s12940-025-01154-x-p001.pdf",
     "Dellafera_Warrant-Redacted-p028.pdf",
-    "UN_ProductComparison-p001.pdf",
-    "ijerph-19-00825-p020.pdf",
+    "GOOGLE-10Q-2023-03-31-7pages-p001.pdf",
+    "GlobalTrends_2040p10-17-p007.pdf",
 )
 
 internal_FULL_CORPUS = bool(os.environ.get("CORE_PDF_RASTER_GOLDEN_FULL"))
