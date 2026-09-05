@@ -678,7 +678,7 @@ def test_emit_normalizes_single_block_text(route: str, text: str, expected: str)
     assert emit_page(single_block_page(text, route)).text == expected
 
 
-def test_emit_removes_soft_line_end_hyphens_before_lowercase_continuations() -> None:
+def test_emit_keeps_literal_line_end_hyphens_before_lowercase_continuations() -> None:
     parsed = page_of(
         route="native",
         blocks=(
@@ -702,7 +702,7 @@ def test_emit_removes_soft_line_end_hyphens_before_lowercase_continuations() -> 
 
     page = emit_page(parsed)
 
-    assert page.text == "gover\nnance responds"
+    assert page.text == "gover-\nnance responds"
 
 
 def test_emit_keeps_non_continuation_line_end_hyphens() -> None:

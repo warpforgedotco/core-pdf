@@ -1,6 +1,10 @@
-from core_pdf.impl._impl.layout.reconstruction import GlyphLineBuilder
+import pytest
+
+from core_pdf.impl._impl.layout.reconstruction import (
+    GlyphLineBuilder,
+    reconstruct_layout_line_text,
+)
 from core_pdf.impl._impl.layout.text_rules import (
-    repair_table_split_word_boundaries,
     should_join_plausible_split_word,
 )
 from core_pdf.impl._impl.model.glyphs import (
@@ -64,18 +68,27 @@ def test_short_word_fragments_still_require_explicit_opt_in() -> None:
     )
 
 
-def test_table_split_word_repair_joins_fragmented_form_labels() -> None:
-    assert (
-        repair_table_split_word_boundaries("SERVICE MODUL E Tempera ture Ox idizer We ight")
-        == "SERVICE MODULE Temperature Oxidizer Weight"
-    )
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SERVICE MODUL E Tempera ture Ox idizer We ight",
+        "Primary Fuel Secondary Oxidizer",
+        "Coef . Var . 105 .1",
+        "now here",
+        "a part",
+    ],
+)
+def test_reconstruction_keeps_explicit_word_and_punctuation_boundaries(text: str) -> None:
+    # Poppler 26.07.0 -raw preserves each exact string authored in one Tj.
+    # Dictionary rank is not evidence that its explicit spaces were accidental.
+    assert GlyphLineBuilder([text_run(text)]).build().text == text
 
 
-def test_table_split_word_repair_preserves_normal_word_boundaries() -> None:
-    assert repair_table_split_word_boundaries("Primary Fuel Secondary Oxidizer") == (
-        "Primary Fuel Secondary Oxidizer"
-    )
+@pytest.mark.parametrize("text", ["---", "...", "●"])
+def test_prepared_punctuation_is_not_discarded_as_decoration(text: str) -> None:
+    # These are already decoded observations: layout must preserve their glyph
+    # text regardless of how a particular PDF font maps its character codes.
+    run = text_run(text)
 
-
-def test_table_split_word_repair_removes_space_before_punctuation() -> None:
-    assert repair_table_split_word_boundaries("Coef . Var . 105 .1") == "Coef. Var. 105.1"
+    assert reconstruct_layout_line_text([run]).text == text
+    assert GlyphLineBuilder([run]).build().text == text

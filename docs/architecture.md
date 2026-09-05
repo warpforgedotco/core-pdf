@@ -21,7 +21,9 @@ Native observations validate column shapes, dtypes, and selection bounds before 
 allocation-saving fast paths. Table detection owns candidate acceptance. Final projection
 removes duplicate text using complete content and local geometry; it does not reject accepted
 tables based on cell vocabulary or column count. Layout reconstructs text from positioned runs,
-and emission preserves its character spacing and word boundaries.
+and emission preserves its character spacing, word boundaries, and literal line-end hyphens.
+Table cells retain decoded letters, digits, and punctuation; cleanup does not join text based
+on spelling or remove punctuation that resembles a decorative leader.
 
 Output lines own their canonical text. Words are reconciled with that text, and inline spans
 are retained only when they reproduce it, keeping plain text, Markdown, HTML, and JSON
@@ -152,6 +154,11 @@ so equivalent direct and indirect resource dictionaries preserve Form identity.
 Raster paint state separates object opacity from isolated-group compositing opacity. A group's
 opacity is applied once when it is composited into its parent. Stroke dash phase advances across
 the segments of one subpath, and a zero-width stroke retains its device-pixel hairline semantics.
+
+Images, soft masks, and stencils sample through the original image placement. Page crops and
+captured Form clips restrict the destination without stretching the source; masks retain their
+own resolution while sharing the color image's coordinates. Decoder inputs resolve indirect
+dimensions and decode arrays without changing the source stream dictionary.
 
 ### Device colour
 

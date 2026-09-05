@@ -217,7 +217,6 @@ def word_rank(word: str) -> int | None:
 
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
-LEADER_START_CHARS = "._~-–—"
 SCRIPT_DIGITS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉")
 INLINE_MARKERS = frozenset({"™", "℠", "®", "©"})
 FORMULA_MARKERS = frozenset("∂∑√∞∈θΦω")
@@ -431,41 +430,6 @@ def should_use_estimated_word_spacing(previous: str, current: str) -> bool:
     if previous == "T" and current in {"he", "hes", "hese", "his"}:
         return True
     return not (not previous[-1].isalpha() or not current[0].isalpha())
-
-
-def repair_table_split_word_boundaries(text: str) -> str:
-    """Join dictionary-backed fragments split by table glyph spacing."""
-    tokens = text.split(" ")
-    if len(tokens) < 2:
-        return text
-    index = 0
-    while index + 1 < len(tokens):
-        left = tokens[index]
-        right = tokens[index + 1]
-        if table_split_word_join_is_plausible(left, right):
-            tokens[index : index + 2] = [left + right]
-            if index > 0:
-                index -= 1
-            continue
-        index += 1
-    repaired = " ".join(tokens)
-    return re.sub(r"\s+([.,;:)\]])", r"\1", repaired)
-
-
-def table_split_word_join_is_plausible(left: str, right: str) -> bool:
-    if not left.isalpha() or not right.isalpha():
-        return False
-    joined = left + right
-    joined_rank = word_rank(joined)
-    if joined_rank is None or len(joined) < 3:
-        return False
-    left_rank = word_rank(left)
-    right_rank = word_rank(right)
-    if left_rank is None or right_rank is None:
-        return True
-    if joined_rank < min(left_rank, right_rank):
-        return True
-    return joined_rank <= 10_000 and max(left_rank, right_rank) >= 20_000
 
 
 def trailing_alpha_token(text: str) -> str:
@@ -798,17 +762,6 @@ def is_private_use_or_control(ch: str) -> bool:
         return True
     category = unicodedata.category(ch)
     return category in {"Cc", "Cf", "Cs", "Co", "Cn"}
-
-
-def is_structural_list_marker_run(run: TextRun) -> bool:
-    return run.stripped_text == "\u25cf"
-
-
-def is_decorative_leader(text: str) -> bool:
-    stripped = text.strip()
-    if len(stripped) < 3 or stripped[0] not in LEADER_START_CHARS:
-        return False
-    return all(ch in LEADER_START_CHARS or ch.isspace() for ch in stripped)
 
 
 def is_tiny_page_footer(text: str) -> bool:

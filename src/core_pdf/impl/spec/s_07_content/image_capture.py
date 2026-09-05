@@ -46,11 +46,13 @@ def image_source_from_stream(
             mask_alpha = int(mask_sum) / (255.0 * total)
 
     source_dictionary = dict(stream.dictionary)
-    # Indexed palettes and base spaces may be indirect; the colour manager
-    # reads this dictionary without going back through the PDF resolver.
-    color_space = source_dictionary.get("ColorSpace")
-    if color_space is not None:
-        source_dictionary[PdfName.of("ColorSpace")] = resolver.deep_resolve(color_space)
+    # Image decoding has no resolver. Resolve its dimensions, sample layout,
+    # Decode entries and colour space here without walking unrelated metadata
+    # or changing the source stream dictionary.
+    for key in ("Width", "Height", "BitsPerComponent", "Decode", "ColorSpace"):
+        value = source_dictionary.get(key)
+        if value is not None:
+            source_dictionary[PdfName.of(key)] = resolver.deep_resolve(value)
     return ImageSource(stream.raw_data, source_dictionary, soft_mask=soft_mask), mask_alpha
 
 

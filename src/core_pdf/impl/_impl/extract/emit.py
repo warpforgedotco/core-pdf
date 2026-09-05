@@ -160,23 +160,6 @@ def internal_line_decoration_bbox(
     return rect_tuple(bbox)
 
 
-def internal_remove_soft_line_end_hyphens(lines: list[str]) -> list[str]:
-    if len(lines) < 2:
-        return lines
-    cleaned = list(lines)
-    for index, text in enumerate(lines[:-1]):
-        current = text.rstrip()
-        next_text = lines[index + 1].lstrip()
-        if (
-            current.endswith("-")
-            and len(current) >= 3
-            and current[-2].islower()
-            and next_text[:1].islower()
-        ):
-            cleaned[index] = f"{current[:-1]}{text[len(current) :]}"
-    return cleaned
-
-
 def internal_normalized_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
@@ -196,11 +179,8 @@ def internal_normalized_blocks(
             if line.confidence is not None and math.isfinite(line.confidence)
         )
         sources = tuple(dict.fromkeys(line.source for line in parsed_block.lines))
-        normalized_line_texts = internal_remove_soft_line_end_hyphens(
-            [line.text for line in parsed_block.lines]
-        )
         lines: list[TextLine] = []
-        for line, text in zip(parsed_block.lines, normalized_line_texts, strict=True):
+        for line in parsed_block.lines:
             flags = internal_line_decoration_flags(
                 line,
                 drawings,
@@ -208,7 +188,7 @@ def internal_normalized_blocks(
             )
             lines.append(
                 TextLine(
-                    text,
+                    line.text,
                     bbox=line.bbox,
                     source=line.source,
                     confidence=line.confidence,

@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.runtime.array_views import UInt8Array
+
 AFFINE_BLIT_SCRATCH_BYTES = 1 << 20
 
 
@@ -54,19 +56,14 @@ def internal_box_downsample(
     return reduced.reshape(-1), target_width, target_height
 
 
-def internal_soft_mask_alpha_at(
-    mask: numpy.ndarray[Any, Any] | None,
-    u: float,
-    v: float,
-) -> int:
-    if mask is None:
-        return 255
-    if mask.ndim != 2 or mask.size == 0:
-        return 255
-    mask_height, mask_width = mask.shape
-    src_x = min(mask_width - 1, max(0, int(u * mask_width)))
-    src_y = min(mask_height - 1, max(0, int((1.0 - v) * mask_height)))
-    return int(mask[src_y, src_x])
+def internal_sample_image_plane(
+    plane: UInt8Array, u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
+) -> UInt8Array:
+    """Sample a native-resolution plane at the image's original unit coordinates."""
+    height, width = plane.shape
+    source_x = numpy.clip((u * width).astype(numpy.intp), 0, width - 1)
+    source_y = numpy.clip(((1.0 - v) * height).astype(numpy.intp), 0, height - 1)
+    return plane[source_y, source_x]
 
 
 def internal_make_page_geometry(

@@ -25,13 +25,10 @@ from core_pdf.impl._impl.extract.grids import (
 from core_pdf.impl._impl.extract.table_cleanup import (
     internal_annotate_table_associations,
     internal_cell_text,
-    internal_clean_table_cell_leader_runs,
-    internal_collapse_character_spaced_cell,
     internal_merge_adjacent_tables,
     internal_merge_stream_text_columns,
     internal_merge_wrapped_cell_rows,
     internal_merge_wrapped_stream_rows,
-    internal_repair_table_cell_spaced_digits,
     internal_split_semantic_table,
     internal_stream_table_reads_like_prose,
     internal_table_character_spaced_prose,
@@ -190,30 +187,7 @@ def internal_detect_tables(
         if not internal_table_character_spaced_prose(segment, facts=facts)
         and not internal_table_is_single_column_prose(segment, facts=facts)
     ]
-    return tuple(internal_clean_table_cells(table) for table in tables)
-
-
-def internal_clean_table_cells(table: Table) -> Table:
-    """Normalize candidate cell text, retaining every unchanged immutable record."""
-    changed_rows: list[tuple[TableCell, ...]] | None = None
-    for row_index, row in enumerate(table.rows):
-        changed_cells: list[TableCell] | None = None
-        for column_index, cell in enumerate(row):
-            text = internal_repair_table_cell_spaced_digits(
-                internal_collapse_character_spaced_cell(
-                    internal_clean_table_cell_leader_runs(cell.text)
-                )
-            )
-            if text == cell.text:
-                continue
-            if changed_cells is None:
-                changed_cells = list(row)
-            changed_cells[column_index] = replace(cell, text=text)
-        if changed_cells is not None:
-            if changed_rows is None:
-                changed_rows = list(table.rows)
-            changed_rows[row_index] = tuple(changed_cells)
-    return replace(table, rows=tuple(changed_rows)) if changed_rows is not None else table
+    return tuple(tables)
 
 
 # Whitespace-aligned stream table inference.

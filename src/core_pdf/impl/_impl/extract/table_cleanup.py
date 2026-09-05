@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 from statistics import fmean
 
@@ -17,12 +16,7 @@ from core_pdf.impl._impl.model.geometry import (
     interval_overlap,
     union_bbox,
 )
-from core_pdf.impl._impl.model.text import (
-    collapse_character_spaced,
-    collapse_ws,
-    is_leader_run,
-    strip_edge_leaders,
-)
+from core_pdf.impl._impl.model.text import collapse_ws
 from core_pdf.impl._impl.output.model import (
     Table,
     TableAssociatedText,
@@ -50,67 +44,9 @@ def internal_cell_text(
     parts = []
     for position in ordered:
         part = collapse_ws(observations.text[indexes[position]])
-        if part and not is_leader_run(part):
+        if part:
             parts.append(part)
     return " ".join(parts)
-
-
-def internal_clean_table_cell_leader_runs(text: str) -> str:
-    """Drop leader/fill punctuation runs from a table cell.
-
-    Dot and dash leaders are page furniture (ToC fillers, reference-list
-    separators, dashed cell rules) that reference text omits.  A cell made up
-    entirely of such characters, or a cell ending in a long run of them, is
-    stripped so the cell matches the reference reading order.
-    """
-    if not text:
-        return text
-    if is_leader_run(text):
-        return ""
-    if all(ch in "\u25cf\u25e6" for ch in text if not ch.isspace()):
-        return ""
-    return collapse_ws(strip_edge_leaders(text))
-
-
-internal_TABLE_SPACED_DIGIT_SEQUENCE_RE = re.compile(r"[\d/.,]+(?: +[\d/.,]+)+")
-internal_TABLE_SPACED_DIGIT_ADJACENCY_RE = re.compile(r"\d +\d")
-
-
-def internal_repair_table_cell_spaced_digits(text: str) -> str:
-    """Rejoin letter-spaced numeric/date runs inside a table cell.
-
-    Tracked (letter-spaced) digits split a value such as ``10/19/21`` into
-    ``10 /1 9`` and the split ``1 9`` no longer matches the reference
-    ``19``.  Rejoin any space-separated run of digit/slash tokens when a
-    space separates two digits, which is the tracking signature.  Plain
-    ratios such as ``40 / 20`` rejoin into ``40/20`` without changing the
-    token multiset because the slash keeps the digit groups apart.
-    """
-    if not text:
-        return text
-    if ":" in text or "," in text:
-        return text
-
-    def rejoin(match: re.Match[str]) -> str:
-        sequence = match.group(0)
-        if "/" not in sequence:
-            return sequence
-        if sum(ch.isdigit() for ch in sequence) < 3:
-            return sequence
-        if not internal_TABLE_SPACED_DIGIT_ADJACENCY_RE.search(sequence):
-            return sequence
-        joined = re.sub(r" +", "", sequence)
-        groups = [group for group in re.split(r"[/.]", joined) if group]
-        if len(groups) < 2 or any(len(group) > 4 for group in groups):
-            return sequence
-        return joined
-
-    return internal_TABLE_SPACED_DIGIT_SEQUENCE_RE.sub(rejoin, text)
-
-
-def internal_collapse_character_spaced_cell(text: str) -> str:
-    """Collapse glyph-separated prose captured as a table cell."""
-    return collapse_character_spaced(text, min_tokens=8, single_char_ratio=0.80)
 
 
 def internal_table_quality(table: Table) -> tuple[int, int, float, int, int]:

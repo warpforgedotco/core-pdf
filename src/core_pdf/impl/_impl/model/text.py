@@ -15,12 +15,6 @@ WORD_GAP_SPACE_FACTOR = 0.15
 WORD_GAP_SIZE_FACTOR = 0.08
 WORD_GAP_MIN = 0.75
 
-# Leader and filler punctuation (ToC dot leaders, dashed rules, ellipsis fillers)
-# that reference text omits. One character class for every stage that strips it.
-LEADER_CHARS = frozenset(".-\u2013\u2014~\u2026")
-internal_LEADER_CLASS = "[.\\-\u2013\u2014~\u2026]"
-internal_TRAILING_LEADER_RE = re.compile(rf"(?<=\S)(?:[ \t]*{internal_LEADER_CLASS}){{3,}}[ \t]*$")
-internal_LEADING_LEADER_RE = re.compile(rf"^(?:{internal_LEADER_CLASS}[ \t]+){{2,}}")
 internal_CONTENT_TOKEN_RE = re.compile(r"\w+|[^\w\s]")
 
 
@@ -49,18 +43,6 @@ def complete_text_covered(candidate: tuple[str, ...], reference: tuple[str, ...]
 def word_gap_threshold(space_width: float, size: float) -> float:
     """Gap width above which two neighbouring runs are separate words."""
     return max(space_width * WORD_GAP_SPACE_FACTOR, size * WORD_GAP_SIZE_FACTOR, WORD_GAP_MIN)
-
-
-def is_leader_run(text: str) -> bool:
-    """True when the non-space content is nothing but leader punctuation."""
-    nonspace = [ch for ch in text if not ch.isspace()]
-    return len(nonspace) >= 2 and all(ch in LEADER_CHARS for ch in nonspace)
-
-
-def strip_edge_leaders(text: str) -> str:
-    """Drop a leader run at the end (3+) or the start (2+ spaced) of a fragment."""
-    text = internal_TRAILING_LEADER_RE.sub("", text)
-    return internal_LEADING_LEADER_RE.sub("", text)
 
 
 def collapse_ws(text: str) -> str:
@@ -97,22 +79,6 @@ def internal_reconcile_text_words(
 def search_key(text: str) -> str:
     """Casefolded, whitespace-collapsed key for text matching and search."""
     return " ".join(text.casefold().split())
-
-
-def collapse_character_spaced(text: str, *, min_tokens: int, single_char_ratio: float) -> str:
-    """Collapse glyph-per-token spacing back into words when it dominates a line.
-
-    Some PDFs use unusually narrow character advances, so layout emits every
-    glyph as a separate token while retaining larger word gaps as tabs. The
-    thresholds restrict the repair to strongly character-spaced runs so genuine
-    short labels and tables are left untouched.
-    """
-    tokens = text.split()
-    if len(tokens) < min_tokens:
-        return text
-    if sum(len(token) == 1 for token in tokens) / len(tokens) < single_char_ratio:
-        return text
-    return text.replace(" ", "").replace("\t", " ")
 
 
 def is_rtl_character(character: str) -> bool:
@@ -155,7 +121,6 @@ def text_tokens(text: str) -> tuple[str, ...]:
 
 
 __all__ = (
-    "collapse_character_spaced",
     "collapse_ws",
     "complete_text_covered",
     "compact_text",

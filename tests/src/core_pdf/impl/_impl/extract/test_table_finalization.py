@@ -1,15 +1,14 @@
-"""Candidate cleanup preserves records until final table order is known."""
+"""Final table order and metadata do not rewrite captured cell text."""
 
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.extract.table_detection import (
-    internal_clean_table_cells,
     internal_finalize_tables,
     internal_TableAnalysis,
 )
 from core_pdf.impl._impl.output.model import Table, TableCell
 
 
-def test_cell_cleanup_changes_only_repaired_text_and_preserves_the_input() -> None:
+def test_finalization_preserves_cell_text_and_source_records() -> None:
     table = Table(
         order=9,
         rows=(
@@ -20,17 +19,19 @@ def test_cell_cleanup_changes_only_repaired_text_and_preserves_the_input() -> No
         metadata={"source": "stream"},
     )
 
-    cleaned = internal_clean_table_cells(table)
+    analysis = internal_TableAnalysis.build(ObservationBatch.empty(), 100)
+    finalized = internal_finalize_tables((table,), analysis)[0]
 
-    assert cleaned.rows[1][1].text == "10/19/21"
-    assert cleaned.rows[1][1].column_span == 2
-    assert cleaned.order == 9
-    assert cleaned.bbox == table.bbox
-    assert cleaned.metadata == table.metadata
-    assert cleaned.rows[0] is table.rows[0]
-    assert cleaned.rows[1][0] is table.rows[1][0]
+    # Poppler 26.07.0 verified this literal text in the ruled PDF regression.
+    # A numeric/date interpretation is not evidence for deleting spaces or dots.
+    assert finalized.rows[1][1].text == "10 /1 9/21 ..."
+    assert finalized.rows[1][1].column_span == 2
+    assert finalized.order == 0
+    assert finalized.bbox == table.bbox
+    assert finalized.metadata == table.metadata
+    assert finalized.rows is table.rows
     assert table.rows[1][1].text == "10 /1 9/21 ..."
-    assert internal_clean_table_cells(cleaned) is cleaned
+    assert table.order == 9
 
 
 def test_finalization_sorts_and_numbers_unsorted_candidates_without_mutating_them() -> None:

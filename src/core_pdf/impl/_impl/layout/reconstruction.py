@@ -160,8 +160,6 @@ def render_single_run_text(run: TextRun) -> str:
     text = run.text
     if not text:
         return ""
-    if rules.is_structural_list_marker_run(run):
-        return ""
     if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
         text = rules.strip_private_use_chars(text)
         if not text:
@@ -187,8 +185,6 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
             previous_run = run
             continue
         if not run.has_text:
-            continue
-        if rules.is_structural_list_marker_run(run):
             continue
         if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
             text = rules.strip_private_use_chars(text)
@@ -365,7 +361,6 @@ class GlyphLineBuilder:
         if self.suppress_tiny_page_footer and rules.is_tiny_page_footer(combined):
             return EMPTY_LAYOUT_LINE_TEXT
         text = rules.collapse_repeated_spaces(combined)
-        text = rules.repair_table_split_word_boundaries(text)
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
         return LayoutLineText(text, tuple(segments))
@@ -440,18 +435,11 @@ class GlyphLineBuilder:
             if run.stripped_text.casefold() == "page":
                 return ""
             text = run.stripped_text
-        if rules.is_structural_list_marker_run(run):
-            return ""
         if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
             text = rules.strip_private_use_chars(text)
             if not text:
                 return ""
         if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
-            return ""
-        first_char = text[:1]
-        if (
-            first_char in rules.LEADER_START_CHARS or first_char.isspace()
-        ) and rules.is_decorative_leader(text):
             return ""
         if self.is_trademark_marker_run(run, index):
             return "™"

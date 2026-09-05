@@ -13,7 +13,7 @@ import pytest
 from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.render.blend import internal_color_component
 from core_pdf.impl._impl.render.display import internal_image_quad
-from core_pdf.impl._impl.render.kernels import internal_soft_mask_alpha_at
+from core_pdf.impl._impl.render.kernels import internal_sample_image_plane
 from core_pdf.impl._impl.render.paths import (
     internal_fill_path_crossing_spans,
     internal_fill_path_sample_crossings,
@@ -87,24 +87,11 @@ def test_shading_cmyk_clamps_components_before_conversion() -> None:
     assert out_of_range[3] == 64
 
 
-class TestSoftMaskAlphaAt:
-    def test_absent_mask_is_fully_opaque(self) -> None:
-        assert internal_soft_mask_alpha_at(None, 0.5, 0.5) == 255
-
-    def test_samples_are_read_with_a_flipped_v_axis(self) -> None:
-        # 2x2 mask laid out row-major from the top.
-        mask = numpy.array([[10, 20], [30, 40]], dtype=numpy.uint8)
-        assert internal_soft_mask_alpha_at(mask, 0.0, 1.0) == 10
-        assert internal_soft_mask_alpha_at(mask, 0.9, 1.0) == 20
-        assert internal_soft_mask_alpha_at(mask, 0.0, 0.0) == 30
-
-    def test_coordinates_outside_the_mask_clamp_to_its_edge(self) -> None:
-        mask = numpy.array([[10, 20], [30, 40]], dtype=numpy.uint8)
-        assert internal_soft_mask_alpha_at(mask, 5.0, 0.0) == 40
-        assert internal_soft_mask_alpha_at(mask, -5.0, 5.0) == 10
-
-    def test_truncated_sample_buffer_reads_as_opaque(self) -> None:
-        assert internal_soft_mask_alpha_at(numpy.empty((0, 0), dtype=numpy.uint8), 0.5, 0.5) == 255
+def test_image_plane_samples_share_unit_coordinates_and_flip_the_v_axis() -> None:
+    plane = numpy.array([[10, 20], [30, 40]], dtype=numpy.uint8)
+    u = numpy.array([[0.0, 0.9], [0.0, 5.0]])
+    v = numpy.array([[1.0, 1.0], [0.0, 0.0]])
+    numpy.testing.assert_array_equal(internal_sample_image_plane(plane, u, v), plane)
 
 
 class TestImageQuad:

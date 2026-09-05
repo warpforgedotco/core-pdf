@@ -43,7 +43,7 @@ def test_replacing_line_text_cannot_leave_old_text_in_styled_output(kind: BlockK
     assert line.spans == (TextSpan("old", bold=True),)
 
 
-def test_text_normalization_reconciles_spans_before_serialization() -> None:
+def test_emission_preserves_line_end_hyphens_and_matching_styles() -> None:
     box = (0.0, 0.0, 20.0, 10.0)
     parsed = ParsedBlock(
         lines=(
@@ -56,11 +56,9 @@ def test_text_normalization_reconciles_spans_before_serialization() -> None:
     blocks = internal_normalized_blocks((parsed,), ())
     page = Page(1, blocks=tuple(blocks))
 
-    # The existing line-end-hyphen policy changes text before constructing TextLine.
-    # Styles may survive only when their text still agrees with that canonical text.
-    assert page.text == "multi\nline"
-    assert "multi-" not in page.to_html()
-    assert "multi-" not in page.to_markdown()
+    assert page.text == "multi-\nline"
+    assert "<strong>multi-</strong>" in page.to_html()
+    assert "multi-" in page.to_markdown()
     assert "<em>line</em>" in page.to_html()
 
 

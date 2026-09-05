@@ -3,15 +3,20 @@
 
 from __future__ import annotations
 
-from bisect import bisect_left
 from typing import TYPE_CHECKING, Any
 
 import numpy
 
 from core_pdf.impl._impl.model.geometry import points_bbox
-from core_pdf.impl._impl.render.kernels import AFFINE_BLIT_SCRATCH_BYTES
+from core_pdf.impl._impl.render.blend import internal_blend_channels_f64
+from core_pdf.impl._impl.render.kernels import (
+    AFFINE_BLIT_SCRATCH_BYTES,
+    internal_sample_image_plane,
+)
+from core_pdf.impl._impl.render.paths import internal_intersect_box
 from core_pdf.impl._impl.runtime.array_views import (
     ByteBuffer,
+    UInt8Array,
     uint8_view,
 )
 
@@ -97,14 +102,15 @@ class internal_ImageAffineTargetMixin:
         comps: int,
         constant_alpha: float | None,
         blend_mode: str | None,
+        *,
+        source_alpha: UInt8Array | None = None,
+        soft_mask: UInt8Array | None = None,
+        image_clip: tuple[float, float, float, float] | None = None,
     ) -> bool:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        blend_normal_pixel = self.blend_normal_pixel
-        blend_px = self.blend_px
         blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = clip.clip_row_visible_spans
@@ -114,7 +120,6 @@ class internal_ImageAffineTargetMixin:
         pixel_view = self.pixel_view
         pixels = self.pixels
         scale = self.scale
-        width = self.width
         if len(quad) < 3:
             return False
         p00 = quad[0]
@@ -123,6 +128,10 @@ class internal_ImageAffineTargetMixin:
         quad_box = points_bbox(quad)
         if quad_box is None:
             return False
+        if image_clip is not None:
+            quad_box = internal_intersect_box(quad_box, image_clip)
+            if quad_box is None:
+                return True
         rectangular_clip = current_clip() is not None and clip_paths_are_axis_aligned_rects()
         clipped_box = clipped_pixel_box(quad_box)
         if clipped_box is None:
@@ -139,8 +148,21 @@ class internal_ImageAffineTargetMixin:
         alpha = 255
         if constant_alpha is not None:
             alpha = max(0, min(255, int(round(alpha * constant_alpha))))
-        can_write_opaque = alpha == 255 and blend_mode is None
-        normal_fast = can_blend_normal_fast(blend_mode)
+        if alpha <= 0:
+            return True
+        if source_alpha is not None:
+            if not numpy.any(source_alpha):
+                return True
+            if numpy.all(source_alpha == 255):
+                source_alpha = None
+        if soft_mask is not None:
+            if not numpy.any(soft_mask):
+                return True
+            if numpy.all(soft_mask == 255):
+                soft_mask = None
+        can_write_opaque = (
+            alpha == 255 and blend_mode is None and source_alpha is None and soft_mask is None
+        )
         rect_tolerance = max(abs(ux), abs(vy), 1.0) * 1e-6
         if (
             abs(uy) <= rect_tolerance
@@ -251,119 +273,78 @@ class internal_ImageAffineTargetMixin:
                 transposed=not u_from_x,
             )
             return True
-        if (
-            alpha == 255
-            and blend_mode is None
-            and can_write_opaque
-            and (not clip_regions or rectangular_clip)
-        ):
-            target_pixels = pixel_view(pixels)
-            source_samples = uint8_view(converted)[: width_px * height_px * comps].reshape(
-                height_px, width_px, comps
-            )
-            general_page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
-            general_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
-            general_rel_x = general_page_x[None, :] - p00[0]
-            general_rel_y = general_page_y[:, None] - p00[1]
-            general_u = (general_rel_x * vy - general_rel_y * vx) * inv_det
-            general_v = (ux * general_rel_y - uy * general_rel_x) * inv_det
-            general_valid = (
-                (general_u >= 0.0) & (general_u <= 1.0) & (general_v >= 0.0) & (general_v <= 1.0)
-            )
-            general_source_x = numpy.clip(
-                (general_u * width_px).astype(numpy.intp),
-                0,
-                width_px - 1,
-            )
-            general_source_y = numpy.clip(
-                ((1.0 - general_v) * height_px).astype(numpy.intp),
-                0,
-                height_px - 1,
-            )
-            general_sampled = source_samples[general_source_y, general_source_x]
-            general_target = target_pixels[iy0:iy1, ix0:ix1]
-            if comps == 1:
-                if general_valid.all():
-                    general_target[:, :, 0:3] = general_sampled[:, :, 0, None]
-                    general_target[:, :, 3] = 255
-                else:
-                    general_target[general_valid, 0:3] = general_sampled[general_valid, 0, None]
-                    general_target[general_valid, 3] = 255
-            else:
-                if general_valid.all():
-                    general_target[:, :, 0:3] = general_sampled[:, :, :3]
-                    general_target[:, :, 3] = 255
-                else:
-                    general_target[general_valid, 0:3] = general_sampled[general_valid, :3]
-                    general_target[general_valid, 3] = 255
-            return True
-        for py in range(iy0, iy1):
-            page_y_value = crop_y1 - (py + 0.5) / scale
-            row = py * width * 4
-            visible_spans = clip_row_visible_spans(py)
-            if not visible_spans:
-                continue
-            for px in range(ix0, ix1):
-                if not rectangular_clip:
-                    index = bisect_left(visible_spans, (px + 1, -1))
-                    if index <= 0:
-                        continue
-                    start, end = visible_spans[index - 1]
-                    if not (start <= px < end):
-                        continue
-                page_x_value = crop_x0 + (px + 0.5) / scale
-                rel_x = page_x_value - p00[0]
-                rel_y = page_y_value - p00[1]
-                scalar_u = (rel_x * vy - rel_y * vx) * inv_det
-                scalar_v = (ux * rel_y - uy * rel_x) * inv_det
-                if scalar_u < 0.0 or scalar_u > 1.0 or scalar_v < 0.0 or scalar_v > 1.0:
+        source_pixels = uint8_view(converted)[: width_px * height_px * comps].reshape(
+            height_px, width_px, comps
+        )
+        target_pixels = pixel_view(pixels)
+        # All general, translucent and nonrectangular-clipped images share this
+        # inverse map. Tiling bounds temporary coordinate and sample arrays.
+        tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
+        tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
+        for row_start in range(iy0, iy1, tile_rows):
+            row_end = min(iy1, row_start + tile_rows)
+            page_y = crop_y1 - (numpy.arange(row_start, row_end) + 0.5) / scale
+            rel_y = page_y[:, None] - p00[1]
+            for column_start in range(ix0, ix1, tile_columns):
+                column_end = min(ix1, column_start + tile_columns)
+                page_x = crop_x0 + (numpy.arange(column_start, column_end) + 0.5) / scale
+                rel_x = page_x[None, :] - p00[0]
+                source_u = (rel_x * vy - rel_y * vx) * inv_det
+                source_v = (ux * rel_y - uy * rel_x) * inv_det
+                visible = (
+                    (source_u >= 0.0) & (source_u <= 1.0) & (source_v >= 0.0) & (source_v <= 1.0)
+                )
+                if clip_regions and not rectangular_clip:
+                    allowed = numpy.zeros(visible.shape, dtype=numpy.bool_)
+                    for local_y, py in enumerate(range(row_start, row_end)):
+                        for start, end in clip_row_visible_spans(py):
+                            start, end = max(start, column_start), min(end, column_end)
+                            if end > start:
+                                allowed[local_y, start - column_start : end - column_start] = True
+                    visible &= allowed
+                if not numpy.any(visible):
                     continue
-                src_x_index = int(scalar_u * width_px)
-                if src_x_index < 0:
-                    src_x_index = 0
-                elif src_x_index >= width_px:
-                    src_x_index = width_px - 1
-                src_y_index = int((1.0 - scalar_v) * height_px)
-                if src_y_index < 0:
-                    src_y_index = 0
-                elif src_y_index >= height_px:
-                    src_y_index = height_px - 1
-                src_idx = (src_y_index * width_px + src_x_index) * comps
-                if comps == 1:
-                    gray = converted[src_idx]
-                    if can_write_opaque:
-                        pixels[row + px * 4 : row + px * 4 + 4] = (
-                            gray,
-                            gray,
-                            gray,
-                            255,
-                        )
-                        continue
-                    rgba = (gray, gray, gray, 255)
-                else:
-                    if can_write_opaque:
-                        pixels[row + px * 4 : row + px * 4 + 4] = (
-                            converted[src_idx],
-                            converted[src_idx + 1],
-                            converted[src_idx + 2],
-                            255,
-                        )
-                        continue
-                    rgba = (
-                        converted[src_idx],
-                        converted[src_idx + 1],
-                        converted[src_idx + 2],
-                        255,
-                    )
-                if alpha != 255:
-                    rgba = (
-                        rgba[0],
-                        rgba[1],
-                        rgba[2],
-                        alpha,
-                    )
-                if normal_fast:
-                    blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3])
-                else:
-                    blend_px(row + px * 4, rgba, blend_resolved_mode)
+                sample_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
+                sample_y = numpy.clip(
+                    ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
+                )
+                sampled = source_pixels[sample_y, sample_x, : 1 if comps == 1 else 3]
+                target = target_pixels[row_start:row_end, column_start:column_end]
+                if can_write_opaque:
+                    numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
+                    numpy.copyto(target[:, :, 3], 255, where=visible)
+                    continue
+                alpha_grid = (
+                    internal_sample_image_plane(source_alpha, source_u, source_v)
+                    if source_alpha is not None
+                    else numpy.full(visible.shape, 255, dtype=numpy.uint8)
+                )
+                if soft_mask is not None:
+                    mask_alpha = internal_sample_image_plane(soft_mask, source_u, source_v)
+                    alpha_grid = numpy.rint(
+                        alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
+                    ).astype(numpy.uint8)
+                if constant_alpha is not None:
+                    alpha_grid = numpy.clip(
+                        numpy.rint(alpha_grid.astype(numpy.float64) * constant_alpha), 0, 255
+                    ).astype(numpy.uint8)
+                visible &= alpha_grid > 0
+                if not numpy.any(visible):
+                    continue
+                source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
+                destination = target[visible].astype(numpy.float64)
+                channels = internal_blend_channels_f64(
+                    source_colors[:, 0] / 255.0,
+                    source_colors[:, 1] / 255.0,
+                    source_colors[:, 2] / 255.0,
+                    alpha_grid[visible] / 255.0,
+                    destination[:, 0],
+                    destination[:, 1],
+                    destination[:, 2],
+                    destination[:, 3],
+                    blend_resolved_mode,
+                )
+                target[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(
+                    numpy.uint8
+                )
         return True

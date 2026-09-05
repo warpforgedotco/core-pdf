@@ -54,45 +54,14 @@ class internal_RasterState(Protocol):
         comps: int,
         constant_alpha: float | None,
         blend_mode: str | None,
+        *,
+        source_alpha: UInt8Array | None = None,
+        soft_mask: UInt8Array | None = None,
+        image_clip: tuple[float, float, float, float] | None = None,
     ) -> bool: ...
 
     def blit_image_mask(
         self, item: ImagePaintItem, prepared: PreparedImage, blend_mode: str | None
-    ) -> None: ...
-
-    def blit_image_rows_blended(
-        self,
-        converted: ByteBuffer,
-        comps: int,
-        source_alpha: UInt8Array | None,
-        constant_alpha: float,
-        has_constant_alpha: bool,
-        soft_mask: UInt8Array | None,
-        x_unit_map: numpy.ndarray[Any, Any],
-        y_unit_map: numpy.ndarray[Any, Any],
-        src_x_map: numpy.ndarray[Any, Any],
-        src_y_map: numpy.ndarray[Any, Any],
-        ix0: int,
-        iy0: int,
-        ix1: int,
-        iy1: int,
-        x_span: int,
-        y_span: int,
-        width_px: int,
-    ) -> None: ...
-
-    def blit_image_rows_opaque(
-        self,
-        converted: ByteBuffer,
-        comps: int,
-        src_x_map: numpy.ndarray[Any, Any],
-        src_y_map: numpy.ndarray[Any, Any],
-        ix0: int,
-        iy0: int,
-        ix1: int,
-        iy1: int,
-        width_px: int,
-        height_px: int,
     ) -> None: ...
 
     def blit_opaque_sampled_tiles(
