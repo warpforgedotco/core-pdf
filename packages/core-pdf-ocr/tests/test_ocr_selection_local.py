@@ -11,7 +11,9 @@ from ocr_test_helpers.ocr_fakes import FakeDocumentPage
 
 from core_pdf_ocr.impl.extract import pipeline as parse_pipeline
 from core_pdf_ocr.impl.extract import selection as parse_selection
-from core_pdf_ocr.impl.extract.contracts import ObservationBatch, PageAnalysis
+from core_pdf_ocr.impl.extract.capture import capture_page
+from core_pdf_ocr.impl.extract.contracts import ObservationBatch, ObservationSource, PageAnalysis
+from tests.helpers.pdf_bytes import one_page_pdf, open_pdf, stream_obj
 
 
 def internal_observations(text: str) -> ObservationBatch:
@@ -82,6 +84,86 @@ def test_document_font_votes_only_resolve_consistent_high_confidence_alignment()
     assert parse_selection.internal_resolve_document_font_mappings(votes) == {
         decoder: {b"\x02": "A", b"\x03": "T"}
     }
+
+
+def internal_font_learning_pdf(
+    paint_order: tuple[int, ...] = (0, 1, 2), *, known_character: str | None = None
+) -> bytes:
+    font = (
+        b"<< /Type /Font /Subtype /Type0 /BaseFont /Unknown /Encoding /Identity-H "
+        b"/DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Unknown "
+        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Unknown) /Supplement 0 >> "
+        b"/DW 1000 >>] "
+    )
+    extra_objects: tuple[bytes, ...] = ()
+    if known_character is not None:
+        font += b"/ToUnicode 6 0 R "
+        cmap = (
+            b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            b"/CMapName /Test def /CMapType 2 def "
+            b"1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + f"1 beginbfchar <0043> <{ord(known_character):04X}> endbfchar ".encode()
+            + b"endcmap CMapName currentdict /CMap defineresource pop end end"
+        )
+        extra_objects = (stream_obj(cmap),)
+    font += b">>"
+    content = b"BT /F1 10 Tf " + b" ".join(
+        f"{(1, 0, 2)[index]} Ts 1 0 0 1 {20 + index * 10} 40 Tm <{index + 65:04X}> Tj".encode()
+        for index in paint_order
+    )
+    return one_page_pdf(content + b" ET", font=font, extra_objects=extra_objects)
+
+
+@pytest.mark.parametrize("paint_order", [(0, 1, 2), (2, 0, 1)])
+def test_document_font_votes_follow_word_positions_despite_uneven_ink_and_paint_order(
+    paint_order: tuple[int, ...],
+) -> None:
+    with open_pdf(internal_font_learning_pdf(paint_order)) as document:
+        capture = capture_page(document.pages[0])
+        glyphs = capture.program.glyphs
+        assert tuple(glyph.code_bytes for glyph in glyphs) == tuple(
+            (index + 65).to_bytes(2, "big") for index in paint_order
+        )
+        assert len({glyph.ink_bbox[1] for glyph in glyphs}) == 3
+        original_text = tuple(glyph.text for glyph in glyphs)
+        ocr = observations(
+            [("CAT", (20.0, 38.0, 50.0, 50.0))], source=ObservationSource.OCR, confidence=95.0
+        )
+        votes: dict[object, dict[bytes, Counter[str]]] = {}
+        for _ in range(2):
+            parse_selection.internal_merge_font_mapping_votes(
+                votes, parse_selection.internal_font_mapping_votes(capture, ocr)
+            )
+
+        assert parse_selection.internal_resolve_document_font_mappings(votes) == {
+            glyphs[0].font_decoder: {b"\x00A": "C", b"\x00B": "A", b"\x00C": "T"}
+        }
+        assert tuple(glyph.text for glyph in glyphs) == original_text
+
+
+@pytest.mark.parametrize(
+    ("known_character", "confidence", "accepted"),
+    [("T", 95.0, True), ("X", 95.0, False), ("T", 89.0, False), ("T", float("nan"), False)],
+)
+def test_document_font_votes_preserve_confidence_and_known_glyph_checks(
+    known_character: str, confidence: float, accepted: bool
+) -> None:
+    with open_pdf(internal_font_learning_pdf(known_character=known_character)) as document:
+        capture = capture_page(document.pages[0])
+        ocr = observations(
+            [("CAT", (20.0, 38.0, 50.0, 50.0))], source=ObservationSource.OCR, confidence=confidence
+        )
+        votes = parse_selection.internal_font_mapping_votes(capture, ocr)
+
+    if accepted:
+        assert votes == {
+            capture.program.glyphs[0].font_decoder: {
+                b"\x00A": Counter({"C": 1}),
+                b"\x00B": Counter({"A": 1}),
+            }
+        }
+    else:
+        assert not votes
 
 
 def test_selection_local_enrichment_is_history_independent_and_does_not_replace_base(

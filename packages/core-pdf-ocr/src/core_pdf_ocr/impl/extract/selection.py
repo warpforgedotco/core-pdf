@@ -149,6 +149,8 @@ def internal_font_mapping_votes(
         tolerance = max(1.0, (y1 - y0) * 0.10)
         y_start = bisect_left(y_centers, y0 - tolerance)
         y_stop = bisect_right(y_centers, y1 + tolerance)
+        # Vertical geometry selects word members. Their horizontal position,
+        # rather than differing ink bottoms or PDF paint order, aligns letters.
         aligned = tuple(
             sorted(
                 (
@@ -158,7 +160,7 @@ def internal_font_mapping_votes(
                     <= (glyph.ink_bbox[0] + glyph.ink_bbox[2]) * 0.5
                     <= x1 + tolerance
                 ),
-                key=lambda glyph: (glyph.ink_bbox[1], glyph.ink_bbox[0], glyph.seqno),
+                key=lambda glyph: (glyph.ink_bbox[0], glyph.seqno),
             )
         )
         if len(aligned) != len(characters):
