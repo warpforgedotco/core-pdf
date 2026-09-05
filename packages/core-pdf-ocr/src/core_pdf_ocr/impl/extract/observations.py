@@ -746,7 +746,9 @@ def fuse_observations(
         )
     else:
         alphanumeric_mask = numpy.ones(len(ocr), dtype=numpy.bool_)
-    if len(native):
+    # Image supplements share page coordinates with native text, so overlap
+    # identifies duplicates without discarding repeated labels elsewhere.
+    if not plan.image_regions_only:
         native_compact = "".join(compact_text(text) for text in native.text)
         native_tokens = frozenset(token for text in native.text for token in text_tokens(text))
         duplicate_mask = numpy.fromiter(

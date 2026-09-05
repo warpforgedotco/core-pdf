@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from ocr_test_helpers import extract_fakes
 
 from core_pdf_ocr.impl.extract.contracts import (
@@ -43,6 +44,70 @@ def test_image_supplement_requires_high_confidence_informative_text() -> None:
     fused = fuse_observations(native, ocr, plan)
 
     assert list(fused.text) == ["native", "useful text"]
+
+
+@pytest.mark.parametrize(
+    ("native_text", "ocr_text"),
+    [
+        ("Total", "Total"),
+        ("The annual report revenue increased", "The annual report revenue increased"),
+        ("The annual report revenue increased", "annual revenue report"),
+    ],
+)
+def test_image_supplement_deduplicates_repeated_text_only_at_native_location(
+    native_text: str, ocr_text: str
+) -> None:
+    native = ObservationBatch.from_columns(
+        (native_text,),
+        ((0.0, 0.0, 30.0, 10.0),),
+        source=ObservationSource.NATIVE,
+    )
+    ocr = ObservationBatch.from_columns(
+        (ocr_text, ocr_text, ocr_text),
+        (
+            (2.0, 0.0, 32.0, 10.0),
+            (300.0, 300.0, 330.0, 310.0),
+            (300.0, 340.0, 330.0, 350.0),
+        ),
+        source=ObservationSource.OCR,
+        confidence=(95.0, 95.0, 95.0),
+    )
+    plan = WorkPlan(
+        PageRoute.HYBRID,
+        reason=PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT,
+        ocr_passes=(OcrPass("images", OcrPassScope.IMAGE_REGIONS, 1.0, (11,)),),
+    )
+
+    fused = fuse_observations(native, ocr, plan)
+
+    assert list(fused.text) == [native_text, ocr_text, ocr_text]
+    assert fused.bbox.tolist() == [
+        [0.0, 0.0, 30.0, 10.0],
+        [300.0, 300.0, 330.0, 310.0],
+        [300.0, 340.0, 330.0, 350.0],
+    ]
+    assert list(fused.source) == [
+        ObservationSource.NATIVE,
+        ObservationSource.OCR,
+        ObservationSource.OCR,
+    ]
+
+
+def test_mixed_image_and_page_passes_keep_native_text_duplicate_fallback() -> None:
+    native = observations(("Total", 100.0, 0.0), source=ObservationSource.NATIVE)
+    ocr = observations(("Total", 95.0, 300.0), source=ObservationSource.OCR)
+    plan = WorkPlan(
+        PageRoute.HYBRID,
+        ocr_passes=(
+            OcrPass("images", OcrPassScope.IMAGE_REGIONS, 1.0, (11,)),
+            OcrPass("page", OcrPassScope.PAGE, 1.0, (11,)),
+        ),
+    )
+
+    fused = fuse_observations(native, ocr, plan)
+
+    assert list(fused.text) == ["Total"]
+    assert list(fused.source) == [ObservationSource.NATIVE]
 
 
 def test_primary_ocr_augmentation_keeps_moderate_confidence_text() -> None:

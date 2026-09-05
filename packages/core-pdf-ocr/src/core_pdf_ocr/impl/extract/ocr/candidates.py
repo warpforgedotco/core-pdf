@@ -177,6 +177,7 @@ def internal_merge_candidate_batches(
         )
         fuzzy_tile_deduplication = len(mode_candidates) > 1
         order = numpy.lexsort((combined.bbox[:, 0], -combined.bbox[:, 1]))
+        descending_y = -combined.bbox[order, 1]
         normalized_text = tuple(search_key(text) for text in combined.text)
         normalized_tokens = tuple(
             tuple(
@@ -199,14 +200,26 @@ def internal_merge_candidate_batches(
             count=len(combined),
         )
         deduplicated: list[int] = []
-        for raw_index in order:
+        accepted_positions: dict[int, int] = {}
+        for order_position, raw_index in enumerate(order):
             index = int(raw_index)
+            box = combined.bbox[index]
+            # Earlier boxes start at or above this one. Only starts below its
+            # top edge can overlap, regardless of intervening text density.
+            start = int(numpy.searchsorted(descending_y, -box[3], side="right"))
+            nearby_positions: list[int] = []
+            for raw_other in order[start:order_position]:
+                other = int(raw_other)
+                accepted_position = accepted_positions.get(other)
+                if accepted_position is None:
+                    continue
+                other_box = combined.bbox[other]
+                if box[0] < other_box[2] and other_box[0] < box[2] and box[1] < other_box[3]:
+                    nearby_positions.append(accepted_position)
             duplicate_index = next(
                 (
                     accepted_position
-                    for accepted_position in range(
-                        max(0, len(deduplicated) - 24), len(deduplicated)
-                    )
+                    for accepted_position in sorted(nearby_positions)
                     if (
                         overlap_ratio_min(
                             combined.bbox[index],
@@ -230,6 +243,7 @@ def internal_merge_candidate_batches(
                 None,
             )
             if duplicate_index is None:
+                accepted_positions[index] = len(deduplicated)
                 deduplicated.append(index)
                 continue
             accepted_index = deduplicated[duplicate_index]
@@ -242,6 +256,9 @@ def internal_merge_candidate_batches(
                     deduplicated[duplicate_index] = index
             elif observation_utility[index] > observation_utility[accepted_index]:
                 deduplicated[duplicate_index] = index
+            if deduplicated[duplicate_index] == index:
+                del accepted_positions[accepted_index]
+                accepted_positions[index] = duplicate_index
         heights = tuple(
             candidate.metrics.median_text_height
             for candidate in mode_candidates
