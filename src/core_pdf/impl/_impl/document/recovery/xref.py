@@ -53,8 +53,10 @@ def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
         generation = int(parts[1])
     except ValueError as exc:
         raise PdfParseError("invalid xref table entry") from exc
-    if offset < 0 or generation < 0:
+    if offset < 0:
         raise PdfParseError("invalid xref table entry")
+    if not 0 <= generation <= 65535:
+        raise PdfParseError("invalid xref generation number")
     if len(parts) == 2:
         # No f/n marker: a zero offset is the free-list head, anything else
         # is an in-use object.
@@ -77,6 +79,8 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
             except ValueError:
                 pass
             else:
+                if not 0 <= generation <= 65535:
+                    raise PdfParseError("invalid xref generation number")
                 next_pos = pos + 18
                 if next_pos < n:
                     while next_pos < n and data[next_pos] in (9, 32):

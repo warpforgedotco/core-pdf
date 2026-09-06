@@ -107,7 +107,7 @@ class PdfReference:
     generation_number: int
 
     def __init__(self, object_number: int, generation_number: int = 0) -> None:
-        if object_number < 0 or generation_number < 0:
+        if object_number < 0 or not 0 <= generation_number <= 65535:
             raise ValueError("invalid PDF reference")
         self.object_number = object_number
         self.generation_number = generation_number

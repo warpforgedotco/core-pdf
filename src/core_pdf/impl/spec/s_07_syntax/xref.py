@@ -46,6 +46,8 @@ XRefTable = dict[int, PdfXRefEntry]
 
 
 def key_for(obj_num: int, gen_num: int = 0) -> int:
+    if obj_num < 0 or not 0 <= gen_num <= 65535:
+        raise ValueError("invalid PDF reference")
     return (obj_num << 16) | gen_num
 
 
@@ -363,6 +365,7 @@ def decode_xref_rows(
     *,
     on_invalid_generation: Callable[[int], None] | None = None,
 ) -> XRefTable:
+    """Decode rows, omitting invalid generations when a recovery handler is supplied."""
     entries: XRefTable = {}
     pos = 0
     row_size = sum(w)
@@ -405,6 +408,7 @@ def decode_xref_rows(
                     if on_invalid_generation is None:
                         raise PdfParseError("invalid xref generation number")
                     on_invalid_generation(val2)
+                    continue
                 entries[(obj_num << 16) | val2] = PdfXRefEntry(val1, val2, entry_type == 1)
             elif entry_type == 2:
                 entries[obj_num << 16] = PdfXRefEntry(
@@ -460,6 +464,10 @@ def parse_object_marker_prefix(
     if pos >= 0 and not WS_TABLE[data[pos]]:
         return None
     try:
-        return obj_start, int(data[obj_start:obj_end]), int(data[gen_start:gen_end])
+        object_number = int(data[obj_start:obj_end])
+        generation_number = int(data[gen_start:gen_end])
     except ValueError:
         return None
+    if generation_number > 65535:
+        return None
+    return obj_start, object_number, generation_number

@@ -368,7 +368,7 @@ class PdfLexer:
             gen_num = int(gen_num_raw[0])
         except ValueError as exc:
             raise PdfParseError("invalid indirect object generation number") from exc
-        if gen_num < 0:
+        if not 0 <= gen_num <= 65535:
             raise PdfParseError("invalid indirect object generation number")
         keyword = self.scan_word(skip_ignored=True)
         if keyword is None or keyword[0] != b"obj":
@@ -514,7 +514,7 @@ class PdfLexer:
             gen_num = int(next_raw)
         except ValueError as exc:
             raise PdfParseError("invalid reference") from exc
-        if obj_num < 0 or gen_num < 0:
+        if obj_num < 0 or not 0 <= gen_num <= 65535:
             raise PdfParseError("invalid reference")
         return PdfReference(obj_num, gen_num)
 

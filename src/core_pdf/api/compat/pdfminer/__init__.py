@@ -92,7 +92,9 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         recovered: dict[int, tuple[int, int]] = {}
         for match in re.finditer(rb"(?m)^(\d+)\s+(\d+)\s+obj\b", data[: trailer_match.start()]):
             object_number = int(match.group(1))
-            recovered[object_number] = (int(match.group(2)), match.start())
+            generation_number = int(match.group(2))
+            if generation_number <= 65535:
+                recovered[object_number] = (generation_number, match.start())
         root_match = re.search(rb"/Root\s+(\d+)\s+(\d+)\s+R\b", trailer_data)
         fallback_catalog: dict[Any, Any] | None = None
         if root_match is not None:

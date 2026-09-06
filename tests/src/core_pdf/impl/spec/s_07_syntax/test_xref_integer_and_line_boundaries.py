@@ -7,9 +7,13 @@ from core_pdf.impl._impl.document.recovery.xref import XRefScanner as RecoverySc
 from core_pdf.impl._impl.document.recovery.xref import (
     parse_xref_entry_at as recover_entry,
 )
+from core_pdf.impl._impl.document.recovery.xref import (
+    parse_xref_entry_line as recover_entry_line,
+)
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner, parse_xref_entry_at
+from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner, key_for, parse_xref_entry_at
+from core_pdf.impl.types import PdfReference
 
 
 @pytest.mark.parametrize("header", [b"1_0 1", b"1 0_1"])
@@ -55,15 +59,16 @@ def test_lfcr_subsection_ending_is_only_collapsed_by_recovery() -> None:
 
 @pytest.mark.parametrize("marker", [b"f", b"n"])
 @pytest.mark.parametrize("generation", [65536, 99999])
-def test_fixed_width_generation_limit_is_strict_only(marker: bytes, generation: int) -> None:
+def test_fixed_width_generation_limit_protects_both_parsers(marker: bytes, generation: int) -> None:
     row = b"0000000017 " + f"{generation:05d}".encode() + b" " + marker + b" \n"
     with pytest.raises(PdfParseError, match="generation"):
         parse_xref_entry_at(row, 0)
-    assert recover_entry(row, 0) == (17, generation, marker == b"n", 20)
+    with pytest.raises(PdfParseError, match="generation"):
+        recover_entry(row, 0)
 
 
 @pytest.mark.parametrize("entry_type", [0, 1])
-def test_xref_stream_generation_limit_is_strict_only(entry_type: int) -> None:
+def test_xref_stream_recovery_drops_invalid_generations(entry_type: int) -> None:
     row = bytes((entry_type, 17)) + (65536).to_bytes(3, "big")
     stream = PdfStream(
         {"Type": "XRef", "Size": 2, "Index": [1, 1], "W": [1, 1, 3]},
@@ -72,11 +77,21 @@ def test_xref_stream_generation_limit_is_strict_only(entry_type: int) -> None:
     with pytest.raises(PdfParseError, match="generation"):
         XRefScanner.parse_stream(stream)
     entries, _ = RecoveryScanner.parse_stream(stream)
-    assert next(iter(entries.values())).generation == 65536
+    assert entries == {}
+
+
+@pytest.mark.parametrize("row", [b"17 65536 n", b"17 99999", b"17 -1 f"])
+def test_loose_xref_rows_cannot_bypass_generation_validation(row: bytes) -> None:
+    with pytest.raises(PdfParseError, match="generation"):
+        recover_entry_line(row)
+    with pytest.raises(PdfParseError, match="generation"):
+        recover_entry(row, 0)
 
 
 @pytest.mark.parametrize("generation", [0, 65535])
 def test_generation_range_boundaries_are_valid(generation: int) -> None:
+    reference = PdfReference(2, generation)
+    assert key_for(reference.object_number, reference.generation_number) == (2 << 16) | generation
     row = b"0000000017 " + f"{generation:05d}".encode() + b" n \n"
     assert parse_xref_entry_at(row, 0) == (17, generation, True, 20)
     binary_row = bytes((1, 17)) + generation.to_bytes(3, "big")
@@ -88,12 +103,20 @@ def test_generation_range_boundaries_are_valid(generation: int) -> None:
     assert next(iter(entries.values())).generation == generation
 
 
+def test_key_validation_also_protects_mutated_references() -> None:
+    reference = PdfReference(2)
+    reference.generation_number = 65536
+    with pytest.raises(ValueError, match="reference"):
+        key_for(reference.object_number, reference.generation_number)
+
+
 def test_compressed_object_index_is_not_a_generation_number() -> None:
     stream = PdfStream(
         {"Type": "XRef", "Size": 2, "Index": [1, 1], "W": [1, 1, 3]},
         decoded_data=bytes((2, 17)) + (65536).to_bytes(3, "big"),
     )
-    entries, _ = XRefScanner.parse_stream(stream)
-    entry = next(iter(entries.values()))
-    assert entry.generation == 0
-    assert entry.index_in_stream == 65536
+    for scanner in (XRefScanner, RecoveryScanner):
+        entries, _ = scanner.parse_stream(stream)
+        entry = next(iter(entries.values()))
+        assert entry.generation == 0
+        assert entry.index_in_stream == 65536
