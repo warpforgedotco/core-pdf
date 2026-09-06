@@ -17,7 +17,7 @@ from core_pdf.impl._impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
     internal_intersect_box,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
+from core_pdf.impl._impl.runtime.scalars import parse_int
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState

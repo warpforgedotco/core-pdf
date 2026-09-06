@@ -8,9 +8,9 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.runtime.array_views import uint8_view
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
 # NumPy's coordinate mask remains cheaper than Python pixel loops for modest

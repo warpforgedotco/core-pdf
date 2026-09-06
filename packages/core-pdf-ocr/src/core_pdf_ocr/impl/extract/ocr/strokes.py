@@ -16,6 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Iterable, Mapping, TypeAlias
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.model.geometry import (
     bbox_area,
     bbox_intersection_area,
@@ -23,7 +24,6 @@ from core_pdf.impl._impl.model.geometry import (
     points_bbox,
     rect_tuple,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.types import Rectangle
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]

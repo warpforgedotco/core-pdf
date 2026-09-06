@@ -5,16 +5,15 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from typing import TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.inline_images import (
     InlineImage,
     parse_inline_image,
-    recover_inline_image_position,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
+from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject, PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
     is_number_word_bytes,
@@ -24,6 +23,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     skip_name,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import PdfName, PdfString
 
 PdfName_of = PdfName.of
@@ -91,12 +91,34 @@ def internal_next_inline_image(
 OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
 
 
+class ContentRecovery(Protocol):
+    max_stream_depth: int | None
+    skip_form_errors: bool
+    max_operands: int | None
+
+    def invalid_resources(self, value: object) -> PdfDict | None: ...
+
+    def handle_error(self, error: Exception, context: str) -> None: ...
+
+    def matrix_operand(self, value: object, context: str) -> Matrix: ...
+
+    def resume(
+        self,
+        lexer: PdfLexer,
+        error: PdfParseError,
+        kind: str,
+        start: int,
+        is_operator: Callable[[bytes], bool] | None = None,
+    ) -> int | None: ...
+
+
 def dispatch_operations(
     lexer: PdfLexer,
     get_handler: Callable[[str], OperationHandler | None],
     depth: int,
     *,
     handlers_reject_unknown: bool = True,
+    recovery: ContentRecovery | None = None,
 ) -> None:
     """Tokenize `lexer` and drive each operator through `get_handler`.
 
@@ -108,7 +130,11 @@ def dispatch_operations(
     operands: list[ContentOperand] = []
 
     def append_operand(value: ContentOperand) -> None:
-        if len(operands) < 16:
+        if (
+            recovery is None
+            or recovery.max_operands is None
+            or len(operands) < recovery.max_operands
+        ):
             operands.append(value)
 
     raw_data = lexer.raw_data
@@ -142,29 +168,24 @@ def dispatch_operations(
                     try:
                         image = parse_inline_image(lexer)
                     except PdfParseError as exc:
-                        message = str(exc)
-                        if message in (
-                            "unterminated inline image",
-                            "unterminated inline image data",
-                            "inline image keys must be names",
-                            "expected inline image data separator",
-                        ):
-                            recovered_pos = recover_inline_image_position(
+                        resumed = (
+                            None
+                            if recovery is None
+                            else recovery.resume(
                                 lexer,
+                                exc,
+                                "inline-image",
                                 pos,
                                 (lambda token: get_handler(token.decode("latin-1")) is not None)
                                 if handlers_reject_unknown
                                 else None,
                             )
-                            if recovered_pos is None:
-                                if message == "unterminated inline image data":
-                                    pos = data_len
-                                    break
-                                raise
-                            pos = recovered_pos
-                            operands.clear()
-                            continue
-                        raise
+                        )
+                        if resumed is None:
+                            raise
+                        pos = resumed
+                        operands.clear()
+                        continue
                     pos = lexer.pos
                     append_operand(image)
                     handler = get_handler("BI")
@@ -198,13 +219,15 @@ def dispatch_operations(
             try:
                 append_operand(cast(ContentOperand, lexer.parse_array()))
             except PdfParseError as exc:
-                if str(exc) == "unterminated array" and lexer.pos >= data_len:
-                    pos = data_len
-                    break
-                if lexer.pos > operand_start:
-                    pos = lexer.pos
-                    continue
-                raise
+                resumed = (
+                    None
+                    if recovery is None
+                    else recovery.resume(lexer, exc, "array", operand_start)
+                )
+                if resumed is None:
+                    raise
+                pos = resumed
+                continue
             pos = lexer.pos
             continue
         if byte == 60:
@@ -213,13 +236,15 @@ def dispatch_operations(
                 try:
                     append_operand(cast(ContentOperand, lexer.parse_dictionary_or_stream()))
                 except PdfParseError as exc:
-                    if lexer.pos >= data_len or str(exc) == "unexpected end of PDF input":
-                        pos = data_len
-                        break
-                    if lexer.pos > operand_start:
-                        pos = lexer.pos
-                        continue
-                    raise
+                    resumed = (
+                        None
+                        if recovery is None
+                        else recovery.resume(lexer, exc, "dictionary", operand_start)
+                    )
+                    if resumed is None:
+                        raise
+                    pos = resumed
+                    continue
             else:
                 raw_string = lexer.read_hex_string()
                 if should_decipher:
@@ -251,7 +276,9 @@ def dispatch_operations(
     lexer.pos = pos
 
 
-def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
+def iter_content_operations(
+    lexer: PdfLexer, *, recovery: ContentRecovery | None = None
+) -> Iterator[ContentOperation]:
     results: list[ContentOperation] = []
 
     def get_handler(op_name: str) -> OperationHandler:
@@ -260,7 +287,7 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
 
         return collect
 
-    dispatch_operations(lexer, get_handler, 0, handlers_reject_unknown=False)
+    dispatch_operations(lexer, get_handler, 0, handlers_reject_unknown=False, recovery=recovery)
     yield from results
 
 

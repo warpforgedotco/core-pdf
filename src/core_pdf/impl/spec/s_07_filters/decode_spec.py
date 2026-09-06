@@ -4,19 +4,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_filters.registry import (
-    CCITT_FILTERS,
-    FILTER_NAME_ALIASES,
-)
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
     parse_int,
 )
-from core_pdf.impl.types import PdfReference
 
 DecodeParam: TypeAlias = object
 
@@ -45,7 +40,7 @@ class FilterParams:
     @classmethod
     def from_parms(cls, parms: object) -> "FilterParams":
         if not isinstance(parms, dict):
-            if is_pdf_null(parms) or isinstance(parms, PdfReference):
+            if is_pdf_null(parms):
                 return cls()
             raise ValueError("invalid DecodeParms dictionary")
 
@@ -58,7 +53,7 @@ class FilterParams:
                 raise ValueError(f"invalid DecodeParms {name}")
             if value is not None and type(value) is bool:
                 raise ValueError(f"invalid DecodeParms {name}")
-            if value is not None and not isinstance(value, (int, bytes, str)):
+            if value is not None and type(value) is not int:
                 raise ValueError(f"invalid DecodeParms {name}")
             return parsed
 
@@ -86,8 +81,6 @@ class FilterParams:
                 value = default
             if type(value) is bool:
                 return value
-            if value in (0, 1):
-                return bool(value)
             if value is default and isinstance(default, bool):
                 return default
             raise ValueError(f"invalid DecodeParms {name}")
@@ -97,14 +90,6 @@ class FilterParams:
             if parsed < 0:
                 raise ValueError(f"invalid DecodeParms {name}")
             return parsed
-
-        def require_damaged_rows() -> int:
-            # Accept the boolean form too: it predates this parser and some
-            # writers emit it, and `true` means the same as a nonzero count.
-            value = parms.get("DamagedRowsBeforeError")
-            if type(value) is bool:
-                return int(value)
-            return require_nonneg_int("DamagedRowsBeforeError", 0)
 
         def require_early_change() -> int:
             value = require_int("EarlyChange", 1)
@@ -121,7 +106,7 @@ class FilterParams:
             colors=require_pos_int("Colors", 1),
             bits_per_component=require_bits_per_component("BitsPerComponent"),
             k=require_int("K", 0) or 0,
-            damaged_rows_before_error=require_damaged_rows(),
+            damaged_rows_before_error=require_nonneg_int("DamagedRowsBeforeError", 0),
             black_is_1=require_bool("BlackIs1", False),
             rows=require_nonneg_int("Rows", 0),
             encoded_byte_align=require_bool("EncodedByteAlign", False),
@@ -138,37 +123,12 @@ class StreamDecodeSpec:
     params: tuple[DecodeParam, ...]
 
 
-def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
-    if type(parms) is FilterParams:
-        return parms
-    height = dictionary.get("Height") if isinstance(dictionary, dict) else None
-    if is_pdf_null(height):
-        return parms
-    if is_pdf_null(parms):
-        return {"Rows": height}
-    if not isinstance(parms, dict):
-        return parms
-    if not is_pdf_null(parms.get("Rows")):
-        return parms
-    updated = dict(parms)
-    updated["Rows"] = height
-    return updated
-
-
 def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if not isinstance(dictionary, dict):
         raise FilterParseError("invalid stream dictionary")
     raw_filters = dictionary.get("Filter")
-    # ISO 32000-1 Table 5: on a regular stream /F is a *file specification* and
-    # the filters for that external data are named by /FFilter, so /FFilter is
-    # consulted first. /F means "Filter" only for inline images (Table 93), and
-    # those are already normalized to Filter/DecodeParms before reaching here --
-    # the abbreviation fallback below is kept only as leniency for writers that
-    # use it on a regular stream.
     if is_pdf_null(raw_filters):
         raw_filters = dictionary.get("FFilter")
-    if is_pdf_null(raw_filters):
-        raw_filters = dictionary.get("F")
     if is_pdf_null(raw_filters):
         filters: list[object] = []
     else:
@@ -176,33 +136,19 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     parms_raw = dictionary.get("DecodeParms")
     if is_pdf_null(parms_raw):
         parms_raw = dictionary.get("FDecodeParms")
-    if is_pdf_null(parms_raw):
-        parms_raw = dictionary.get("DP")
     raw_param_items = list(parms_raw) if isinstance(parms_raw, (list, tuple)) else None
 
     names: list[str] = []
-    kept_filter_indexes: list[int] = []
-    for filter_index, item in enumerate(filters):
-        if is_pdf_null(item) or normalize_pdf_name(item) == "null":
-            continue
+    for item in filters:
         name = normalize_pdf_name(item)
         if name is None:
             raise FilterParseError("invalid stream decode filter")
-        name = FILTER_NAME_ALIASES.get(name.lower(), name)
         names.append(name)
-        kept_filter_indexes.append(filter_index)
 
-    if is_pdf_null(parms_raw) or normalize_pdf_name(parms_raw) == "null":
+    if is_pdf_null(parms_raw):
         decode_parms: list[object] = []
     elif raw_param_items is not None:
-        decode_parms = [
-            None if is_pdf_null(item) or normalize_pdf_name(item) == "null" else item
-            for item in raw_param_items
-        ]
-        if len(decode_parms) >= len(filters):
-            decode_parms = [
-                decode_parms[index] for index in kept_filter_indexes if index < len(decode_parms)
-            ]
+        decode_parms = raw_param_items
     else:
         if len(names) > 1:
             raise FilterParseError("invalid stream decode parameters")
@@ -211,11 +157,8 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if not names:
         decode_parms = []
 
-    if isinstance(parms_raw, (list, tuple)) and len(decode_parms) < len(names):
-        decode_parms.extend([None] * (len(names) - len(decode_parms)))
-
-    if isinstance(parms_raw, (list, tuple)) and len(decode_parms) > len(names):
-        decode_parms = decode_parms[: len(names)]
+    if isinstance(parms_raw, (list, tuple)) and len(decode_parms) != len(names):
+        raise FilterParseError("invalid stream decode parameters")
 
     if len(decode_parms) not in {0, 1, len(names)}:
         raise FilterParseError("invalid stream decode parameters")
@@ -231,7 +174,17 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
             parms = decode_parms[index]
         else:
             parms = None
-        if filter_name in CCITT_FILTERS:
-            parms = with_ccitt_image_rows(parms, dictionary)
         params.append(parms)
     return StreamDecodeSpec(filters=tuple(names), params=tuple(params))
+
+
+class StreamDecoder(Protocol):
+    """Document-supplied stream decoding service, independent of its policy."""
+
+    def __call__(
+        self,
+        data: bytes | memoryview,
+        dictionary: object | StreamDecodeSpec | None,
+        *,
+        parent_dictionary: object | None = None,
+    ) -> bytes: ...

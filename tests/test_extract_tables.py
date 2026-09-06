@@ -7,6 +7,7 @@ from collections.abc import Callable
 import numpy
 import pytest
 
+from core_pdf.impl._impl.capture.records import CapturedLine
 from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
@@ -30,7 +31,6 @@ from core_pdf.impl._impl.extract.table_detection import (
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.output.model import Table, TableCell
-from core_pdf.impl.spec.s_07_content.capture import CapturedLine
 from tests.helpers.extract_fakes import capture as make_capture
 from tests.helpers.extract_fakes import page_evidence, text_run
 from tests.helpers.pdf_bytes import one_page_pdf, open_pdf

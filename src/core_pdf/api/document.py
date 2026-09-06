@@ -9,8 +9,11 @@ from contextlib import AbstractContextManager, suppress
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from core_pdf.impl._impl.document.document import PdfDocument as EnginePdfDocument
+from core_pdf.impl._impl.document.page import PdfPage as EnginePdfPage
 from core_pdf.impl._impl.extract.pipeline import extract_page
 from core_pdf.impl._impl.extract.selection import extract_document
+from core_pdf.impl._impl.graphics.images import decode_image
 from core_pdf.impl._impl.layout.lines import (
     LayoutGeometrySummary,
     LayoutLine,
@@ -27,9 +30,7 @@ from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
-from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
@@ -39,8 +40,8 @@ from core_pdf.impl.types import (
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_07_document.records import RawFormField
-    from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
+    from core_pdf.impl._impl.document.records import RawFormField
+    from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
 
 
 class DocumentAdapter(Protocol):
@@ -49,7 +50,7 @@ class DocumentAdapter(Protocol):
     def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
 
 
-class PdfPage(SpecPdfPage):
+class PdfPage(EnginePdfPage):
     document: PdfDocument
 
     @property
@@ -155,7 +156,7 @@ class PdfPage(SpecPdfPage):
             )
         for index, image in enumerate(images):
             source = cast(ImageSource | None, image.image_source)
-            raster = source.decode() if source is not None else None
+            raster = decode_image(source) if source is not None else None
             if raster is not None:
                 images[index] = replace(
                     image,
@@ -214,7 +215,7 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
         self.release()
 
 
-class PdfDocument(SpecPdfDocument["PdfPage"]):
+class PdfDocument(EnginePdfDocument["PdfPage"]):
     """A thread-native PDF document backed by the v2 parse pipeline."""
 
     page_class = PdfPage
@@ -323,7 +324,7 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         return result
 
     def internal_extract_document(
-        self, context: ExtractionScope, pages: Sequence[SpecPdfPage]
+        self, context: ExtractionScope, pages: Sequence[EnginePdfPage]
     ) -> StructuredDocument:
         return extract_document(self, context, pages)
 

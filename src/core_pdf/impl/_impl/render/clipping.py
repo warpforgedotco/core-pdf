@@ -7,12 +7,12 @@ from bisect import bisect_left
 from dataclasses import dataclass
 from typing import Any
 
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.kernels import internal_make_page_geometry
 from core_pdf.impl._impl.render.paths import (
     internal_fill_path_crossing_spans,
     internal_intersect_box,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
 internal_PixelSpan = tuple[int, int]
 internal_RowSpans = tuple[internal_PixelSpan, ...]

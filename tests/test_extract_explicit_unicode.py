@@ -5,8 +5,8 @@ import zlib
 
 import pytest
 
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.fonts.font_program_truetype import TrueTypeFontProgram
 from tests.helpers.pdf_bytes import one_page_pdf, open_pdf, stream_obj
 
 # Original two-glyph TrueType font generated with fontTools FontBuilder: an

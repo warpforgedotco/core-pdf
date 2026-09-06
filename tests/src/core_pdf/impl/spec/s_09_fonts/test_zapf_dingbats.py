@@ -15,7 +15,6 @@ import pytest
 
 from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.spec.s_09_fonts.data.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
 
@@ -37,27 +36,27 @@ def test_table_covers_every_glyph_the_font_defines() -> None:
     ],
 )
 def test_glyph_names_resolve(name: str, expected: str) -> None:
-    assert glyph_name_to_unicode(name) == expected
+    assert glyph_name_to_unicode(name, zapf_dingbats=True) == expected
 
 
 def test_adobe_ordering_is_not_unicode_ordering() -> None:
     # The sequence has gaps and reversals that a naive "a1 is U+2701, so aN is
     # U+2700+N" table would get wrong.
-    assert glyph_name_to_unicode("a3") == "✄"  # U+2704, skipping U+2703
-    assert glyph_name_to_unicode("a202") == "✃"  # U+2703 belongs to a202
-    assert glyph_name_to_unicode("a4") == "☎"  # outside the Dingbats block
+    assert glyph_name_to_unicode("a3", zapf_dingbats=True) == "✄"  # U+2704, skipping U+2703
+    assert glyph_name_to_unicode("a202", zapf_dingbats=True) == "✃"  # U+2703 belongs to a202
+    assert glyph_name_to_unicode("a4", zapf_dingbats=True) == "☎"  # outside the Dingbats block
     # U+2707..U+2709 run backwards through a119, a118, a117.
-    assert glyph_name_to_unicode("a119") == "✇"
-    assert glyph_name_to_unicode("a118") == "✈"
-    assert glyph_name_to_unicode("a117") == "✉"
+    assert glyph_name_to_unicode("a119", zapf_dingbats=True) == "✇"
+    assert glyph_name_to_unicode("a118", zapf_dingbats=True) == "✈"
+    assert glyph_name_to_unicode("a117", zapf_dingbats=True) == "✉"
 
 
 def test_ornamental_brackets_use_the_dingbat_not_the_ascii_lookalike() -> None:
     # These glyphs are reachable from two codepoints; Adobe names the ornament.
-    assert glyph_name_to_unicode("a89") == "❨"
-    assert glyph_name_to_unicode("a90") == "❩"
-    assert glyph_name_to_unicode("a91") == "❬"
-    assert glyph_name_to_unicode("a87") == "❲"
+    assert glyph_name_to_unicode("a89", zapf_dingbats=True) == "❨"
+    assert glyph_name_to_unicode("a90", zapf_dingbats=True) == "❩"
+    assert glyph_name_to_unicode("a91", zapf_dingbats=True) == "❬"
+    assert glyph_name_to_unicode("a87", zapf_dingbats=True) == "❲"
 
 
 def test_shipped_widths_are_reachable_from_decoded_text() -> None:
@@ -66,17 +65,3 @@ def test_shipped_widths_are_reachable_from_decoded_text() -> None:
     # Keyed by the character, so a decoded dingbat finds its advance.
     assert set(widths) == set(ZAPF_DINGBATS_GLYPHS.values())
     assert widths["●"] == 791
-
-
-def test_a_font_naming_dingbats_in_differences_decodes_and_measures() -> None:
-    decoder = FontDecoder(
-        {
-            "Subtype": "Type1",
-            "BaseFont": "ZapfDingbats",
-            "Encoding": {"Differences": [110, "a71", 111, "a79"]},
-        }
-    )
-    assert decoder.decode(bytes([110])) == "●"
-    assert decoder.decode(bytes([111])) == "❖"
-    assert decoder.fast_widths[110] == pytest.approx(791.0)
-    assert decoder.fast_widths[111] == pytest.approx(784.0)

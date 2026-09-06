@@ -20,10 +20,10 @@ def internal_iter_tree_items(
     key_field: str,
     tree_name: str,
     key_error: str,
-    recover: bool = False,
-    recover_entries: bool = False,
+    on_error: Callable[[str], bool] | None = None,
+    on_entry_error: Callable[[str], bool] | None = None,
     resolve_values: bool = True,
-    max_depth: int = 100,
+    max_depth: int | None = None,
     depth: int = 0,
     seen: set[int] | None = None,
 ) -> Iterator[tuple[TreeKeyT, object]]:
@@ -34,20 +34,20 @@ def internal_iter_tree_items(
     stack: list[tuple[object, int]] = [(node, depth)]
     while stack:
         current, current_depth = stack.pop()
-        if current_depth > max_depth:
-            if recover:
+        if max_depth is not None and current_depth > max_depth:
+            if on_error is not None and on_error(f"invalid {tree_name} tree depth"):
                 continue
             raise ValueError(f"invalid {tree_name} tree depth")
         current = resolve(current)
         if current is None:
             continue
         if not isinstance(current, dict):
-            if recover:
+            if on_error is not None and on_error(f"invalid {tree_name} tree node"):
                 continue
             raise ValueError(f"invalid {tree_name} tree node")
         marker = id(current)
         if marker in seen:
-            if recover:
+            if on_error is not None and on_error(f"{tree_name} tree cycle detected"):
                 continue
             raise ValueError(f"{tree_name} tree cycle detected")
         seen.add(marker)
@@ -55,16 +55,19 @@ def internal_iter_tree_items(
         entries = resolve(current.get(key_field))
         if entries is not None:
             if not isinstance(entries, list):
-                if recover:
+                if on_error is not None and on_error(f"invalid {tree_name} tree {key_field} array"):
                     continue
                 raise ValueError(f"invalid {tree_name} tree {key_field} array")
-            if len(entries) % 2 != 0 and not (recover or recover_entries):
+            if len(entries) % 2 != 0 and not (
+                on_entry_error is not None
+                and on_entry_error(f"invalid {tree_name} tree {key_field} array")
+            ):
                 raise ValueError(f"invalid {tree_name} tree {key_field} array")
             entries_len = len(entries) - (len(entries) % 2)
             for index in range(0, entries_len, 2):
                 key = decode_key(entries[index])
                 if key is None:
-                    if recover or recover_entries:
+                    if on_entry_error is not None and on_entry_error(key_error):
                         continue
                     raise ValueError(key_error)
                 value = entries[index + 1]
@@ -74,7 +77,7 @@ def internal_iter_tree_items(
         if kids is None:
             continue
         if not isinstance(kids, list):
-            if recover:
+            if on_error is not None and on_error(f"invalid {tree_name} tree Kids array"):
                 continue
             raise ValueError(f"invalid {tree_name} tree Kids array")
         for kid in reversed(kids):
@@ -86,11 +89,11 @@ def iter_number_tree_items(
     resolve: ResolveFn,
     *,
     decode_number: NumberDecodeFn | None = None,
-    recover: bool = False,
-    recover_entries: bool = False,
+    on_error: Callable[[str], bool] | None = None,
+    on_entry_error: Callable[[str], bool] | None = None,
     resolve_values: bool = True,
     tree_name: str = "number",
-    max_depth: int = 100,
+    max_depth: int | None = None,
     depth: int = 0,
     seen: set[int] | None = None,
 ) -> Iterator[tuple[int, object]]:
@@ -108,8 +111,8 @@ def iter_number_tree_items(
         key_field="Nums",
         tree_name=tree_name,
         key_error=f"invalid {tree_name} tree key",
-        recover=recover,
-        recover_entries=recover_entries,
+        on_error=on_error,
+        on_entry_error=on_entry_error,
         resolve_values=resolve_values,
         max_depth=max_depth,
         depth=depth,
@@ -122,10 +125,10 @@ def iter_name_tree_items(
     resolve: ResolveFn,
     decode_name: NameDecodeFn,
     *,
-    recover: bool = False,
-    recover_entries: bool = False,
+    on_error: Callable[[str], bool] | None = None,
+    on_entry_error: Callable[[str], bool] | None = None,
     resolve_values: bool = True,
-    max_depth: int = 100,
+    max_depth: int | None = None,
     depth: int = 0,
     seen: set[int] | None = None,
 ) -> Iterator[tuple[str, object]]:
@@ -136,8 +139,8 @@ def iter_name_tree_items(
         key_field="Names",
         tree_name="name",
         key_error="invalid name tree key",
-        recover=recover,
-        recover_entries=recover_entries,
+        on_error=on_error,
+        on_entry_error=on_entry_error,
         resolve_values=resolve_values,
         max_depth=max_depth,
         depth=depth,

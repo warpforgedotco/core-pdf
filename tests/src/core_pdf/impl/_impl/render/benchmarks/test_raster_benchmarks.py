@@ -8,12 +8,12 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl._impl.render.model import RenderOptions
-from core_pdf.impl._impl.render.page import compose_page
-from core_pdf.impl.spec.s_09_fonts.fallback import (
+from core_pdf.impl._impl.fonts.fallback import (
     fallback_glyph_outline,
     internal_RasterFontRepository,
 )
+from core_pdf.impl._impl.render.model import RenderOptions
+from core_pdf.impl._impl.render.page import compose_page
 from tests.helpers.benchmark_pages import (
     TEXT_PDF,
     VECTOR_PAGE_INDEX,

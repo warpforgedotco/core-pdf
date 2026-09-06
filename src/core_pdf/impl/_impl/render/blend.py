@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.spec.s_08_graphics.device_profiles import cmyk_floats_to_srgb
+from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
 
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
 

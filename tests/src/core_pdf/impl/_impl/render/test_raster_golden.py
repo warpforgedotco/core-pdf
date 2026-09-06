@@ -11,7 +11,7 @@ import numpy
 import pytest
 
 from core_pdf.impl._impl.render.model import ImagePaintItem, RasterImage
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource, SoftMask
 from scripts.raster_cover import greedy_cover
 from scripts.raster_golden import (
     EXPECTED_CODEC_STACK,

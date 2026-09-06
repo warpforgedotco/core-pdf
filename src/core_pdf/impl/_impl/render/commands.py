@@ -6,6 +6,13 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from core_pdf.impl._impl.capture.program import CapturedProgram
+from core_pdf.impl._impl.capture.records import (
+    CapturedDrawing,
+    CapturedInlineImage,
+    CapturedPath,
+    CapturedSubpath,
+)
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.render.display import DisplayList
@@ -16,14 +23,7 @@ from core_pdf.impl._impl.render.model import (
     PathPaintItem,
 )
 from core_pdf.impl._impl.render.paths import internal_translate_rect
-from core_pdf.impl.spec.s_07_content.capture import (
-    CapturedDrawing,
-    CapturedInlineImage,
-    CapturedPath,
-    CapturedSubpath,
-)
 from core_pdf.impl.spec.s_07_content.image_capture import unit_square_placement
-from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram
 from core_pdf.impl.spec.s_07_content.state import internal_NON_PAINTING_RENDER_MODES
 
 

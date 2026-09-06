@@ -8,7 +8,15 @@ from dataclasses import replace
 
 from core_pdf.impl.types import TextWord
 
-# Smallest horizontal gap that separates two words. Both the spec-level run merger
+internal_NORMALIZE_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
+
+
+def normalize_extracted_text(text: str) -> str:
+    """Drop lone surrogates, which cannot survive UTF-8 serialization."""
+    return text if text.isascii() else text.translate(internal_NORMALIZE_TEXT_TABLE)
+
+
+# Smallest horizontal gap that separates two words. Both the capture run merger
 # and the layout line builder consult this so a gap that reads as a word break in
 # one place reads the same in the other.
 WORD_GAP_SPACE_FACTOR = 0.15

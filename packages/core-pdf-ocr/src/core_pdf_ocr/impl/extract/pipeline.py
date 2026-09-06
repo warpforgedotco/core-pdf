@@ -23,10 +23,10 @@ from core_pdf_ocr.impl.extract.observations import fuse_observations, plan_page
 from core_pdf_ocr.impl.extract.table_detection import extract_tables
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.document.page import PdfPage
+    from core_pdf.impl._impl.document.records import RawFormField
+    from core_pdf.impl._impl.document.structure import PageStructure
     from core_pdf.impl._impl.extract.capture import internal_StructureUnset
-    from core_pdf.impl.spec.s_07_document.page import PdfPage
-    from core_pdf.impl.spec.s_07_document.records import RawFormField
-    from core_pdf.impl.spec.s_14_structure.tree import PageStructure
     from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 
 

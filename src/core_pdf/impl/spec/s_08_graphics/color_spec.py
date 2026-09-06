@@ -10,13 +10,7 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
     normalize_pdf_name,
-    parse_float,
     parse_int,
-)
-from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
-    IccProfileError,
-    IccTransform,
-    parse_icc_transform,
 )
 from core_pdf.impl.types import MISSING
 
@@ -26,19 +20,6 @@ ColorParams: TypeAlias = dict[str, object]
 def cs_param(params: object, key: str, default: object = None) -> object:
     if isinstance(params, dict):
         return params.get(key, default)
-    return default
-
-
-def cs_param_floats(params: object, key: str, count: int, default: list[float]) -> list[float]:
-    raw = cs_param(params, key, default)
-    if isinstance(raw, (list, tuple)) and len(raw) >= count:
-        result: list[float] = []
-        for value in raw[:count]:
-            parsed = parse_float(value, None)
-            if parsed is None:
-                raise ValueError("invalid color space parameters")
-            result.append(parsed)
-        return result
     return default
 
 
@@ -53,50 +34,7 @@ class ImageColorSpec:
     alt: str | None = None
     tint_fn: object = None
     channels: int = 1
-    icc_transform: IccTransform | None = field(default=None, repr=False)
-
-
-def describe_color_space(value: object) -> str | None:
-    """Return a compact name for an image or shading color-space value."""
-    prefixes: list[str] = []
-    seen: set[int] = set()
-    current = value
-    while True:
-        name = normalize_pdf_name(current)
-        if name is not None:
-            return ":".join((*prefixes, name))
-        if not isinstance(current, (list, tuple)) or not current:
-            return ":".join(prefixes) if prefixes else None
-        marker = id(current)
-        if marker in seen:
-            return ":".join(prefixes) if prefixes else None
-        seen.add(marker)
-        kind = normalize_pdf_name(current[0])
-        if kind == "Indexed":
-            prefixes.append("Indexed")
-            if len(current) <= 1:
-                return ":".join(prefixes)
-            current = current[1]
-            continue
-        if kind == "ICCBased":
-            prefixes.append("ICCBased")
-            if len(current) <= 1:
-                return ":".join(prefixes)
-            profile = current[1]
-            if isinstance(profile, PdfStream):
-                profile_dictionary = profile.dictionary
-            elif isinstance(profile, dict):
-                profile_dictionary = profile
-            else:
-                return ":".join(prefixes)
-            alternate = profile_dictionary.get("Alternate")
-            if alternate is None:
-                return ":".join(prefixes)
-            current = alternate
-            continue
-        if kind is None:
-            return ":".join(prefixes) if prefixes else None
-        return ":".join((*prefixes, kind))
+    icc_profile: bytes | None = field(default=None, repr=False)
 
 
 def normalize_indexed_base_color_space_name(value: object) -> str | None:
@@ -112,16 +50,13 @@ def normalize_indexed_base_color_space_name(value: object) -> str | None:
         alt = normalize_pdf_name(icc_dict.get("Alternate"))
         if alt is not None:
             return alt
-        n = cs_param(icc_dict, "N", 3)
-        channels = parse_int(n, 3)
-        if isinstance(icc_stream, PdfStream):
-            try:
-                alt = parse_icc_transform(icc_stream.data).alternate_color_space
-            except IccProfileError:
-                alt = None
-            if alt is not None:
-                return alt
-        return {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels or 3)
+        n = cs_param(icc_dict, "N")
+        channels = parse_int(n, None)
+        return (
+            {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels)
+            if channels is not None
+            else None
+        )
     return None
 
 
@@ -136,7 +71,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             raise ValueError("invalid image bits-per-component")
         bits_per_component = parsed_bpc
     else:
-        bits_per_component = 8
+        raise ValueError("missing image bits-per-component")
     if bits_per_component <= 0:
         raise ValueError("invalid image bits-per-component")
     return color_spec_from_value(
@@ -159,7 +94,7 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
         parsed = parse_int(value, None)
         if parsed is None:
             raise ValueError("invalid hival")
-        if parsed < 0:
+        if not 0 <= parsed <= 255:
             raise ValueError("invalid hival")
         return parsed
 
@@ -169,7 +104,7 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
         parsed = parse_int(value, None)
         if parsed is None:
             raise ValueError("invalid ICCBased color space")
-        if parsed <= 0:
+        if parsed not in {1, 3, 4}:
             raise ValueError("invalid ICCBased color space")
         return parsed
 
@@ -181,10 +116,7 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             if isinstance(lookup, PdfStream):
                 lookup_bytes = lookup.data
             else:
-                try:
-                    lookup_bytes = coerce_to_bytes(lookup)
-                except TypeError:
-                    lookup_bytes = lookup if isinstance(lookup, bytes) else None
+                lookup_bytes = coerce_to_bytes(lookup)
             return ImageColorSpec(
                 kind="Indexed",
                 params={},
@@ -203,29 +135,18 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
             icc_stream = color_space[1]
             icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
             alt = normalize_pdf_name(icc_dict.get("Alternate"))
-            n = cs_param(icc_dict, "N", 3)
+            n = cs_param(icc_dict, "N")
             channels = parse_channel_count(n)
             # PdfStream.data re-runs the filter pipeline on every access, so a
             # compressed profile is decoded once while parsing this spec.
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
-            transform: IccTransform | None = None
-            if icc_profile is not None:
-                try:
-                    parsed_transform = parse_icc_transform(icc_profile)
-                except IccProfileError:
-                    pass
-                else:
-                    if parsed_transform.input_channels == channels:
-                        transform = parsed_transform
-                    if alt is None:
-                        alt = parsed_transform.alternate_color_space
             return ImageColorSpec(
                 kind="ICCBased",
                 params=cast(ColorParams, icc_dict),
                 bits_per_component=bits_per_component,
                 alt=alt,
                 channels=channels,
-                icc_transform=transform,
+                icc_profile=icc_profile,
             )
         if kind == "ICCBased":
             raise ValueError("invalid ICCBased color space")

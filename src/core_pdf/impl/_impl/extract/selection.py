@@ -12,10 +12,10 @@ from core_pdf.impl._impl.output.model import SCHEMA_VERSION, Document, Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_07_document.document import PdfDocument
-    from core_pdf.impl.spec.s_07_document.page import PdfPage
-    from core_pdf.impl.spec.s_07_document.records import RawFormField
-    from core_pdf.impl.spec.s_14_structure.tree import PageStructure
+    from core_pdf.impl._impl.document.document import PdfDocument
+    from core_pdf.impl._impl.document.page import PdfPage
+    from core_pdf.impl._impl.document.records import RawFormField
+    from core_pdf.impl._impl.document.structure import PageStructure
 
 internal_Extraction = TypeVar("internal_Extraction", bound=internal_PageExtraction, covariant=True)
 

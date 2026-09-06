@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.extract.block_layout import layout_blocks
 from core_pdf.impl._impl.extract.contracts import (
     ObservationBatch,
@@ -14,7 +15,6 @@ from core_pdf.impl._impl.extract.contracts import (
 )
 from core_pdf.impl._impl.extract.emit import assemble_page, internal_line_decoration_flags
 from core_pdf.impl._impl.output.model import BlockKind, Figure, Page, Table, TableCell
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.types import TextWord
 from tests.helpers.extract_fakes import drawing as captured_drawing
 from tests.helpers.extract_fakes import text_run

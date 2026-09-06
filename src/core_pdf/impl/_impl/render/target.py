@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     internal_blend_normal_solid_array_numpy,
@@ -29,7 +30,6 @@ from core_pdf.impl._impl.render.path_shape_target import internal_PathShapeTarge
 from core_pdf.impl._impl.render.path_stroke_target import internal_PathStrokeTargetMixin
 from core_pdf.impl._impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_image_view
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 

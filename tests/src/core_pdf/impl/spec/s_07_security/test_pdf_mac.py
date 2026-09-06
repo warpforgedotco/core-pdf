@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfUnsupportedError
-from core_pdf.impl.spec.s_07_document import document as document_module
+from core_pdf.impl.spec.s_07_security import document as document_module
 from core_pdf.impl.spec.s_07_security.pdf_mac import (
     internal_CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID,
     internal_CONTENT_TYPE_ATTRIBUTE_OID,

@@ -3,6 +3,7 @@
 
 import pytest
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.extract.capture import internal_normalized_tokens
 from core_pdf.impl._impl.extract.contracts import ParsedBlock, ParsedLine
 from core_pdf.impl._impl.extract.emit import (
@@ -10,7 +11,6 @@ from core_pdf.impl._impl.extract.emit import (
     internal_normalized_blocks,
 )
 from core_pdf.impl._impl.model.geometry import RectBox
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.types import TextWord
 from tests.helpers.extract_fakes import text_run
 

@@ -7,11 +7,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from typing import Any
 
+from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
+from core_pdf.impl._impl.document.page import PdfPage
 from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
-from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
-from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf_ocr.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,

@@ -9,8 +9,8 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
 
 FIT_ERROR = 0.08

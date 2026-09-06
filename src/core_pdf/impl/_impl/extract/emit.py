@@ -7,6 +7,7 @@ import math
 from dataclasses import replace
 from statistics import fmean
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing
 from core_pdf.impl._impl.extract.block_layout import (
     internal_has_repeated_block_columns,
     layout_element_order,
@@ -32,7 +33,6 @@ from core_pdf.impl._impl.output.model import (
     Table,
     TextLine,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 
 
 def internal_caption_for(

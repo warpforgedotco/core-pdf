@@ -36,8 +36,8 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
 from core_pdf_ocr.impl.extract.pipeline import internal_PageExtraction
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_07_document.document import PdfDocument
-    from core_pdf.impl.spec.s_07_document.page import PdfPage
+    from core_pdf.impl._impl.document.document import PdfDocument
+    from core_pdf.impl._impl.document.page import PdfPage
 
 DOCUMENT_FONT_SEED_LIMIT = 4
 DOCUMENT_FONT_SEEDS_PER_DECODER = 2

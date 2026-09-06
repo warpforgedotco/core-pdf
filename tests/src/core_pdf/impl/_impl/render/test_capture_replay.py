@@ -4,11 +4,11 @@ from typing import Any, cast
 import numpy
 import pytest
 
+from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
 from core_pdf.impl._impl.render.clipping import internal_ClipState
 from core_pdf.impl._impl.render.model import DisplayListItem, RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl._impl.render.target import internal_RasterTarget
-from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
 from tests.helpers.pdf_bytes import one_page_pdf, open_pdf, stream_obj
 
 

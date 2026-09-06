@@ -19,11 +19,13 @@ class PdfStream:
         "dictionary",
         "raw_data",
         "spec",
+        "decoder",
     )
 
     dictionary: PdfStreamDictionary
     raw_data: bytes | memoryview
     spec: PdfStreamDecodeSpec
+    decoder: stream_decode_spec.StreamDecoder
 
     def __init__(
         self,
@@ -31,6 +33,8 @@ class PdfStream:
         raw_data: bytes | memoryview = b"",
         spec: object | None = None,
         decoded_data: bytes | None = None,
+        *,
+        decoder: stream_decode_spec.StreamDecoder | None = None,
     ) -> None:
         if dictionary is not None and not isinstance(dictionary, dict):
             raise ValueError("invalid stream dictionary")
@@ -43,6 +47,11 @@ class PdfStream:
         self.dictionary = cast(PdfStreamDictionary, dictionary) if dictionary is not None else {}
         self.raw_data = decoded_data if decoded_data is not None else raw_data
         self.spec = None if decoded_data is not None else cast(PdfStreamDecodeSpec, spec)
+        if decoder is None:
+            from core_pdf.impl.spec.s_07_filters.pipeline import decode_stream_data
+
+            decoder = decode_stream_data
+        self.decoder = decoder
 
     def replace(self, **kwargs: object) -> "PdfStream":
         dictionary = kwargs.get("dictionary", self.dictionary)
@@ -54,17 +63,13 @@ class PdfStream:
             raw_data=cast(bytes | memoryview, kwargs.get("raw_data", self.raw_data)),
             spec=cast(PdfStreamDecodeSpec, spec),
             decoded_data=cast(bytes | None, kwargs.get("decoded_data")),
+            decoder=cast(stream_decode_spec.StreamDecoder, kwargs.get("decoder", self.decoder)),
         )
 
     @property
     def data(self) -> bytes:
-        from core_pdf.impl.spec.s_07_filters import pipeline as stream_pipeline
-
-        spec = self.spec
-        if isinstance(spec, dict):
-            spec = stream_decode_spec.normalize_stream_decode_spec(spec)
-        return stream_pipeline.decode_stream_data(
+        return self.decoder(
             self.raw_data,
-            spec,
+            self.spec,
             parent_dictionary=self.dictionary,
         )

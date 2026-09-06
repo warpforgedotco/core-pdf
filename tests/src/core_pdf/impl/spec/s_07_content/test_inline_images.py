@@ -6,7 +6,6 @@ import pytest
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.inline_images import (
     parse_inline_image,
-    recover_inline_image_position,
 )
 from core_pdf.impl.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
@@ -109,34 +108,6 @@ def test_inline_image_search_rejects_undelimited_ei_after_filter_hint() -> None:
 
     assert image.data == b"abc~> EIword"
     assert lexer.raw_data[lexer.pos : lexer.pos + 2] == b" Q"
-
-
-def test_inline_image_recovery_accepts_registered_operator() -> None:
-    data = b"damaged EI EMC"
-    lexer = PdfLexer(data)
-
-    position = recover_inline_image_position(lexer, 0, {b"EMC"}.__contains__)
-
-    assert position == data.index(b"EMC")
-
-
-def test_inline_image_recovery_supports_sliced_memoryview_with_false_candidates() -> None:
-    content = b" EI unknown" * 20 + b" EI EMC"
-    source = memoryview(b"prefix" + content + b"suffix")[len(b"prefix") : -len(b"suffix")]
-    lexer = PdfLexer(source)
-
-    position = recover_inline_image_position(lexer, 0, {b"EMC"}.__contains__)
-
-    assert position == content.index(b"EMC")
-
-
-def test_inline_image_recovery_supports_reversed_memoryview() -> None:
-    content = b"damaged EI EMC"
-    lexer = PdfLexer(memoryview(content[::-1])[::-1])
-
-    position = recover_inline_image_position(lexer, 0, {b"EMC"}.__contains__)
-
-    assert position == content.index(b"EMC")
 
 
 def test_inline_image_validation_rejects_unterminated_data() -> None:

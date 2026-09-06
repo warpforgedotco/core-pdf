@@ -11,9 +11,9 @@ import pytest
 
 from core_pdf import DocumentAdapter, PdfDocument
 from core_pdf.api import document as api
+from core_pdf.impl._impl.document.page import PdfPage as SpecPdfPage
 from core_pdf.impl._impl.output.model import Document, Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from tests.helpers.pdf_bytes import text_pages_pdf
 
 

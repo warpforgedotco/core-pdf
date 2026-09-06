@@ -1,21 +1,18 @@
-"""ToUnicode CMap parsing and decoding."""
+"""Literal UTF-16BE ToUnicode mappings and CMap inheritance."""
 
 from __future__ import annotations
 
-import typing
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
     CodeSpaceRanges,
-    expand_range,
+    code_in_ranges,
     ranges_overlap,
-    unicode_scalar_or_replacement,
     validate_codespace_range,
 )
 from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
-    CMapBlock,
     CMapProgram,
     cmap_metadata,
     cmap_tokens,
@@ -24,30 +21,101 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
 )
 
 
-def internal_decode_utf16be(data: bytes) -> str:
-    if not data:
-        return ""
-    if data.startswith(b"\xfe\xff"):
-        data = data[2:]
-    if len(data) == 1:
-        return chr(data[0])
-    buffer = data if len(data) % 2 == 0 else b"\x00" + data
-    try:
-        return buffer.decode("utf-16-be", "replace")
-    except (UnicodeDecodeError, ValueError):
-        return data.decode("latin-1", "replace")
+def decode_utf16be(data: bytes) -> str:
+    """ToUnicode destinations are UTF-16BE strings, including literal U+0000."""
+    return data.decode("utf-16-be")
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedToUnicodeCMap:
+    code_space_ranges: tuple[tuple[bytes, bytes], ...]
+    mappings: dict[bytes, str]
+    usecmap_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CMapMappingRecord:
+    """Literal operands of one character or range mapping, before decoding."""
+
+    source: bytes
+    destination: bytes
+    source_end: bytes | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CMapMappingBlock:
+    operator: bytes
+    operands: tuple[bytes, ...]
+    stride: int
+
+    @property
+    def trailing_operand_count(self) -> int:
+        return len(self.operands) % self.stride
+
+    def records(self) -> Iterator[CMapMappingRecord]:
+        for index in range(0, len(self.operands) - self.trailing_operand_count, self.stride):
+            if self.stride == 2:
+                yield CMapMappingRecord(self.operands[index], self.operands[index + 1])
+            else:
+                yield CMapMappingRecord(
+                    self.operands[index], self.operands[index + 2], self.operands[index + 1]
+                )
+
+
+def cmap_mapping_blocks(
+    program: CMapProgram, *, include_cid_ranges: bool = False
+) -> Iterator[CMapMappingBlock]:
+    """Traverse raw mapping records in source order without choosing error recovery.
+
+    Numeric CID ranges are valid encoding-CMap syntax. A ToUnicode compiler
+    selects whether to inspect those records in addition to its bf mappings.
+    Trailing operands remain visible so callers can reject or recover them.
+    """
+    delimiters = {b"beginbfchar": b"endbfchar", b"beginbfrange": b"endbfrange"}
+    if include_cid_ranges:
+        delimiters[b"begincidrange"] = b"endcidrange"
+    for operator, block in program.blocks_in_order(delimiters):
+        yield CMapMappingBlock(
+            operator,
+            tuple(
+                block.token_values(
+                    include_arrays=operator == b"beginbfrange",
+                    include_words=operator == b"begincidrange",
+                )
+            ),
+            2 if operator == b"beginbfchar" else 3,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CMapSourceRange:
+    first: int
+    last: int
+    width: int
+
+    @property
+    def count(self) -> int:
+        return self.last - self.first + 1
+
+    def source_at(self, offset: int) -> bytes:
+        return (self.first + offset).to_bytes(self.width, "big")
+
+
+def cmap_source_range(start: bytes, end: bytes) -> CMapSourceRange:
+    """Validate decoded range endpoints without selecting an expansion limit."""
+    if not start:
+        raise ValueError("empty ToUnicode character code")
+    first, last = int.from_bytes(start, "big"), int.from_bytes(end, "big")
+    if len(start) != len(end) or first > last:
+        raise ValueError("invalid ToUnicode bfrange")
+    return CMapSourceRange(first, last, len(start))
 
 
 class ToUnicodeCMap:
     code_space_ranges: CodeSpaceRanges
     mappings: dict[bytes, str]
     decode_lengths: tuple[int, ...]
-
-    __slots__ = (
-        "code_space_ranges",
-        "mappings",
-        "decode_lengths",
-    )
+    __slots__ = ("code_space_ranges", "mappings", "decode_lengths")
 
     def __init__(
         self,
@@ -65,20 +133,13 @@ class ToUnicodeCMap:
         if internal_depth > 16:
             raise ValueError("ToUnicode CMap UseCMap recursion limit exceeded")
         source = data if type(data) is bytes else bytes(data)
-        parsed = parse_to_unicode_cmap(source)
+        parsed = self.parse_program(source)
         parent: ToUnicodeCMap | None = None
         parent_name = parsed.usecmap_name
         if parent_name is not None and usecmap_resolver is not None:
             parent_data = usecmap_resolver(parent_name)
             if parent_data is not None:
-                try:
-                    parent = ToUnicodeCMap(
-                        parent_data,
-                        usecmap_resolver=usecmap_resolver,
-                        internal_depth=internal_depth + 1,
-                    )
-                except ValueError:
-                    parent = None
+                parent = self.load_parent(parent_data, usecmap_resolver, internal_depth + 1)
         self.code_space_ranges = (
             tuple(parent.code_space_ranges if parent else ()) + parsed.code_space_ranges
         )
@@ -96,284 +157,64 @@ class ToUnicodeCMap:
             or {1}
         )
 
-    def parse_codespace_ranges(self, program: CMapProgram) -> None:
-        code_space_ranges = typing.cast("list[tuple[bytes, bytes]]", self.code_space_ranges)
-        saw_codespace_block = False
-        valid_range_count = 0
-        for block in program.blocks(b"begincodespacerange", b"endcodespacerange"):
-            saw_codespace_block = True
-            tokens = block.token_values()
-            if len(tokens) % 2 != 0:
-                tokens = tokens[:-1]
-            for i in range(0, len(tokens), 2):
-                try:
-                    start = decode_cmap_hex_token(tokens[i])
-                    end = decode_cmap_hex_token(tokens[i + 1])
-                    validate_codespace_range(start, end)
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                if any(ranges_overlap((start, end), existing) for existing in code_space_ranges):
-                    raise ValueError("invalid ToUnicode CMap codespacerange")
-                code_space_ranges.append((start, end))
-                valid_range_count += 1
-        if saw_codespace_block and valid_range_count == 0:
-            raise ValueError("invalid ToUnicode CMap codespacerange")
+    @staticmethod
+    def parse_program(data: bytes) -> ParsedToUnicodeCMap:
+        return parse_to_unicode_cmap(data)
 
-    def parse_mapping_blocks(self, program: CMapProgram) -> None:
-        """Compile character mappings in order so succeeding definitions win."""
-        delimiters = {
-            b"beginbfchar": b"endbfchar",
-            b"beginbfrange": b"endbfrange",
-            b"begincidrange": b"endcidrange",
-        }
-        invalid_range_count = 0
-        valid_range_count = 0
-        for begin_keyword, block in program.blocks_in_order(delimiters):
-            match begin_keyword:
-                case b"beginbfchar":
-                    self.parse_bfchar_block(block)
-                case b"beginbfrange":
-                    block_invalid, block_valid = self.parse_bfrange_block(block)
-                    invalid_range_count += block_invalid
-                    valid_range_count += block_valid
-                case b"begincidrange":
-                    self.parse_cidrange_block(block)
-        if invalid_range_count and not valid_range_count:
-            raise ValueError("invalid ToUnicode CMap bfrange")
+    def load_parent(
+        self, data: bytes, resolver: Callable[[str], bytes | None], depth: int
+    ) -> ToUnicodeCMap | None:
+        return type(self)(data, usecmap_resolver=resolver, internal_depth=depth)
 
-    def parse_bfchar_block(self, block: CMapBlock) -> None:
-        items = block.token_values()
-        if len(items) < 2:
-            return
-        if len(items) % 2 != 0:
-            items = items[:-1]
-        for i in range(0, len(items), 2):
-            src_tok = items[i]
-            dst_tok = items[i + 1]
-            try:
-                src = decode_cmap_token(src_tok)
-                if not src:
-                    continue
-                dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
-            except (ValueError, UnicodeDecodeError):
-                # PostScript hex strings pad an odd final nibble with zero.
-                # If corruption starts another ``<`` before the closing
-                # delimiter, pdfminer's parser retains the valid prefix as
-                # the destination and abandons the now-misaligned operands
-                # that follow in this bfchar block.
-                if dst_tok.startswith(b"<") and b"<" in dst_tok[1:]:
-                    prefix = dst_tok[1 : dst_tok.find(b"<", 1)]
-                    try:
-                        src = decode_cmap_token(src_tok)
-                        if not src:
-                            continue
-                        if len(prefix) % 2:
-                            prefix += b"0"
-                        dst = internal_decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
-                    except (ValueError, UnicodeDecodeError):
-                        break
-                    self.mappings[src] = dst
-                    break
-                continue
-
-            self.mappings[src] = dst
-
-    def parse_bfrange_block(self, block: CMapBlock) -> tuple[int, int]:
-        invalid_range_count = 0
-        valid_range_count = 0
-        items = block.token_values(include_arrays=True)
-        if not items:
-            return invalid_range_count, valid_range_count
-        if len(items) % 3 != 0:
-            invalid_range_count += 1
-            items = items[: len(items) - (len(items) % 3)]
-        idx = 0
-        while idx <= len(items) - 3:
-            t1, t2, t3 = items[idx], items[idx + 1], items[idx + 2]
-            if not (t1.startswith(b"<") and t2.startswith(b"<")):
-                invalid_range_count += 1
-                idx += 3
-                continue
-            try:
-                start_bytes = decode_cmap_hex_token(t1)
-                end_bytes = decode_cmap_hex_token(t2)
-                start_code = int.from_bytes(start_bytes, "big")
-                end_code = int.from_bytes(end_bytes, "big")
-                src_len = len(start_bytes)
-            except (ValueError, UnicodeDecodeError, IndexError):
-                invalid_range_count += 1
-                idx += 3
-                continue
-            if not start_bytes or len(start_bytes) != len(end_bytes):
-                invalid_range_count += 1
-                idx += 3
-                continue
-            if start_code > end_code:
-                invalid_range_count += 1
-                idx += 3
-                continue
-
-            if t3.startswith(b"["):
-                dsts = cmap_tokens(t3)
-                if not dsts:
-                    invalid_range_count += 1
-                    idx += 3
-                    continue
-                added = False
-                for i, dst_tok in enumerate(dsts):
-                    if start_code + i > end_code:
-                        break
-                    try:
-                        dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
-                    except (ValueError, UnicodeDecodeError):
-                        continue
-                    src = (start_code + i).to_bytes(src_len, "big")
-                    self.mappings[src] = dst
-                    added = True
-                if added:
-                    valid_range_count += 1
-                else:
-                    invalid_range_count += 1
-                idx += 3
-            elif t3.startswith(b"<") or t3.startswith(b"("):
-                try:
-                    base_dst = internal_decode_utf16be(decode_cmap_token(t3))
-                    mappings = expand_range(start_code, end_code, src_len, base_dst)
-                except (ValueError, UnicodeDecodeError):
-                    invalid_range_count += 1
-                    idx += 3
-                    continue
-                self.mappings.update(mappings)
-                valid_range_count += 1
-                idx += 3
-            else:
-                invalid_range_count += 1
-                idx += 3
-        return invalid_range_count, valid_range_count
-
-    def parse_cidrange_block(self, block: CMapBlock) -> None:
-        """Parse numeric CID ranges accepted by PDFMiner in ToUnicode maps.
-
-        Although a conforming ToUnicode CMap normally uses ``bfrange``, some
-        producers emit ``cidrange`` records whose numeric destination is a
-        Unicode scalar. PostScript CMap parsing accepts those records, and
-        PDFMiner consequently exposes their text. Retain that recovery without
-        changing ordinary encoding-CMap semantics.
-        """
-        items = block.token_values(include_words=True)
-        if len(items) % 3 != 0:
-            items = items[: len(items) - (len(items) % 3)]
-        for index in range(0, len(items), 3):
-            try:
-                start_bytes = decode_cmap_hex_token(items[index])
-                end_bytes = decode_cmap_hex_token(items[index + 1])
-                destination = int(items[index + 2])
-            except (ValueError, UnicodeDecodeError):
-                continue
-            if not start_bytes or len(start_bytes) != len(end_bytes):
-                continue
-            start = int.from_bytes(start_bytes, "big")
-            end = int.from_bytes(end_bytes, "big")
-            if start > end or end - start + 1 > MAX_CMAP_RANGE_SPAN:
-                continue
-            source_length = len(start_bytes)
-            for offset, source in enumerate(range(start, end + 1)):
-                self.mappings[source.to_bytes(source_length, "big")] = (
-                    unicode_scalar_or_replacement(destination + offset)
-                )
-
-    def decode(self, data: bytes, *, preserve_nulls: bool = False) -> str:
-        if not data:
-            return ""
-
-        mappings = self.mappings
-        lengths = self.decode_lengths or (1,)
-        n = len(data)
-        out: list[str] = []
-        out_append = out.append
-        pos = 0
-        mappings_get = mappings.get
-        while pos < n:
-            match_found = False
-            for length in lengths:
-                if length <= 0 or pos + length > n:
-                    continue
-
-                if length == 1:
-                    chunk = bytes((data[pos],))
-                else:
-                    chunk = data[pos : pos + length]
-
-                mapped = mappings_get(chunk)
-                if mapped is not None:
-                    out_append(mapped)
-                    pos += length
-                    match_found = True
-                    break
-
-            if match_found:
-                continue
-
-            chunk1 = bytes((data[pos],))
-            mapped1 = mappings_get(chunk1)
-            if mapped1 is not None:
-                out_append(mapped1)
-                pos += 1
-                continue
-
-            if 1 not in lengths and n - pos >= 2:
-                cid = (data[pos] << 8) | data[pos + 1]
-                pos += 2
-                out_append(unicode_scalar_or_replacement(cid) if cid != 0 else "\ufffd")
-            else:
-                out_append(chr(data[pos]))
-                pos += 1
-
-        result = "".join(out)
-        if not preserve_nulls and "\x00" in result:
-            return result.replace("\x00", "")
-        return result
-
-
-@dataclass(frozen=True, slots=True)
-class ParsedToUnicodeCMap:
-    code_space_ranges: tuple[tuple[bytes, bytes], ...]
-    mappings: dict[bytes, str]
-    usecmap_name: str | None
+    def lookup(self, code: bytes) -> str | None:
+        return self.mappings.get(code)
 
 
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
-    cmap = ToUnicodeCMap(b"", internal_empty=True)
     program = CMapProgram.parse(data)
-
-    cmap.parse_mapping_blocks(program)
-    try:
-        cmap.parse_codespace_ranges(program)
-    except ValueError:
-        # A number of producers write a numerically ordered codespace whose
-        # individual bytes are not ordered (for example ``<0083> <020c>``).
-        # That is not a valid rectangular CMap codespace, but the explicit
-        # bfchar/bfrange entries remain unambiguous.  PostScript CMap parsers
-        # such as PDFMiner retain those entries, so recover them instead of
-        # rejecting the complete ToUnicode map.  A map with no usable entries
-        # still raises, preserving validation for genuinely empty corruption.
-        if not cmap.mappings:
-            raise
-        cmap.code_space_ranges = []
-
-    cmap.decode_lengths = tuple(
-        sorted(
-            length
-            for length in (
-                {len(end) for ignored, end in cmap.code_space_ranges}
-                | {len(k) for k in cmap.mappings}
+    ranges: list[tuple[bytes, bytes]] = []
+    mappings: dict[bytes, str] = {}
+    for block in program.blocks(b"begincodespacerange", b"endcodespacerange"):
+        values = block.token_values()
+        if len(values) % 2:
+            raise ValueError("invalid ToUnicode codespacerange")
+        for index in range(0, len(values), 2):
+            start, end = (decode_cmap_hex_token(value) for value in values[index : index + 2])
+            validate_codespace_range(start, end)
+            if any(ranges_overlap((start, end), previous) for previous in ranges):
+                raise ValueError("overlapping ToUnicode codespacerange")
+            ranges.append((start, end))
+    for mapping_block in cmap_mapping_blocks(program):
+        if mapping_block.trailing_operand_count:
+            raise ValueError("invalid ToUnicode mapping operands")
+        for record in mapping_block.records():
+            start = decode_cmap_hex_token(record.source)
+            if not start:
+                raise ValueError("empty ToUnicode character code")
+            if record.source_end is None:
+                mappings[start] = decode_utf16be(decode_cmap_token(record.destination))
+                continue
+            source_range = cmap_source_range(start, decode_cmap_hex_token(record.source_end))
+            if source_range.count > MAX_CMAP_RANGE_SPAN:
+                raise ValueError("invalid ToUnicode bfrange")
+            destination = record.destination
+            if destination.startswith(b"["):
+                destinations = cmap_tokens(destination)
+                if len(destinations) != source_range.count:
+                    raise ValueError("invalid ToUnicode bfrange destination array")
+                texts = [decode_utf16be(decode_cmap_token(item)) for item in destinations]
+            else:
+                base = decode_cmap_token(destination)
+                texts = []
+                for offset in range(source_range.count):
+                    incremented = (int.from_bytes(base, "big") + offset).to_bytes(len(base), "big")
+                    texts.append(decode_utf16be(incremented))
+            mappings.update(
+                (source_range.source_at(offset), text) for offset, text in enumerate(texts)
             )
-            if length > 0
-        )
-        or (1,)
-    )
-    return ParsedToUnicodeCMap(
-        code_space_ranges=tuple(cmap.code_space_ranges),
-        mappings=cmap.mappings,
-        usecmap_name=cmap_metadata(program)[0],
-    )
+    parent = cmap_metadata(program)[0]
+    if not ranges and parent is None:
+        raise ValueError("missing ToUnicode codespacerange")
+    if ranges and any(not code_in_ranges(code, ranges) for code in mappings):
+        raise ValueError("ToUnicode mapping outside codespace")
+    return ParsedToUnicodeCMap(tuple(ranges), mappings, parent)

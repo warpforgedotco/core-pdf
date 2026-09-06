@@ -4,10 +4,10 @@ import pytest
 from ocr_test_helpers.extract_fakes import capture as make_capture
 from ocr_test_helpers.extract_fakes import page_evidence, text_run
 
+from core_pdf.impl._impl.capture.records import CapturedLine
 from core_pdf.impl._impl.extract import table_detection
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_content.capture import CapturedLine
 from core_pdf_ocr import PdfDocument
 from core_pdf_ocr.impl.extract.contracts import (
     ObservationBatch,

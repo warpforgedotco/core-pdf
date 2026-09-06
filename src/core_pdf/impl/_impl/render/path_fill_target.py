@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     internal_blend_normal_alpha_array_numpy,
@@ -22,7 +23,6 @@ from core_pdf.impl._impl.render.paths import (
     internal_intersect_box,
     internal_signed_area_coverage,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState

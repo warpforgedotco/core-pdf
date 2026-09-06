@@ -1,22 +1,12 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-"""Native PDF font metric helpers."""
+"""Prescribed PDF font metrics and text-space displacement arithmetic."""
 
 from __future__ import annotations
 
-import contextlib
 from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
-from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
-    FontWidthMap,
-    SparseFontWidthMap,
-    scale_font_widths,
-)
+from core_pdf.impl.spec.s_09_fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
 from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
-from core_pdf.impl.spec.s_09_fonts.helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.spec.s_09_fonts.widths import get_descendant
-
-LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 
 
 def standard_14_widths(
@@ -31,8 +21,7 @@ def standard_14_widths(
     such a font falls back to MissingWidth and text advances at a full em,
     which stretches a line of Times to roughly twice its true width.
 
-    The shipped tables are keyed by the character a code denotes, so the
-    font's own encoding is what turns them into a per-code map.
+    The supplied mapping contains literal encoded glyph characters.
     """
     if base_font_name is None or decode_table is None:
         return None
@@ -46,13 +35,6 @@ def standard_14_widths(
     for code in range(min(len(decode_table), 256)):
         text = decode_table[code]
         width = char_widths.get(text)
-        if width is None:
-            # The tables are keyed by the character the glyph draws, and
-            # decoding has already expanded ligatures, so "fi" has to be
-            # folded back to find the single glyph's advance.
-            ligature = LIGATURE_TEXT_TO_CHAR.get(text)
-            if ligature is not None:
-                width = char_widths.get(ligature)
         if width is not None:
             sparse[code] = float(width)
     if not sparse:
@@ -60,74 +42,31 @@ def standard_14_widths(
     return SparseFontWidthMap(sparse)
 
 
-def parse_font_metrics(
-    font_dict: dict[str, Any],
-    subtype: str | None,
-    base_font_name: str | None,
-    widths: FontWidthMap,
+def font_descriptor_metrics(descriptor: dict[str, Any]) -> tuple[float | None, float | None]:
+    ascent = descriptor.get("Ascent")
+    descent = descriptor.get("Descent")
+    return (
+        parse_float_strict(ascent, "invalid font Ascent") if ascent is not None else None,
+        parse_float_strict(descent, "invalid font Descent") if descent is not None else None,
+    )
+
+
+def type3_width_scale(font_matrix: object) -> float:
+    if not isinstance(font_matrix, (list, tuple)) or len(font_matrix) != 6:
+        raise ValueError("invalid Type3 FontMatrix")
+    return parse_float_strict(font_matrix[0], "invalid FontMatrix") * 1000.0
+
+
+def glyph_advance_vector(
+    width: float,
+    *,
+    vertical: bool,
+    font_size: float,
+    char_space: float,
+    word_space: float,
+    horizontal_scale: float,
+    encoded_space: bool,
 ) -> tuple[float, float]:
-    ascent, descent = 800.0, -200.0
-    descriptor = font_dict.get("FontDescriptor")
-    if subtype == "Type3" and not isinstance(descriptor, dict):
-        # Type 3 fonts need not have a FontDescriptor. Their FontBBox is in
-        # glyph space and supplies the vertical metrics directly; using the
-        # generic Latin fallback shifts every layout box below its baseline.
-        font_bbox = font_dict.get("FontBBox")
-        if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
-            with contextlib.suppress(ValueError):
-                bbox_descent = parse_float_strict(font_bbox[1], "invalid Type3 FontBBox")
-                bbox_ascent = parse_float_strict(font_bbox[3], "invalid Type3 FontBBox")
-                descent, ascent = bbox_descent, bbox_ascent
-    if subtype == "Type0":
-        descendant = get_descendant(font_dict)
-        if isinstance(descendant, dict):
-            desc_descriptor = descendant.get("FontDescriptor")
-            descriptor = desc_descriptor or descriptor
-
-    if base_font_name in FONT_DATA and not widths:
-        entry = FONT_DATA[base_font_name]
-        props = entry["props"]
-        ascent_value = props.get("Ascent")
-        if ascent_value is not None:
-            if type(ascent_value) is not int and type(ascent_value) is not float:
-                raise ValueError("invalid font Ascent")
-            ascent = float(ascent_value)
-        descent_value = props.get("Descent")
-        if descent_value is not None:
-            if type(descent_value) is not int and type(descent_value) is not float:
-                raise ValueError("invalid font Descent")
-            descent = float(descent_value)
-
-    descriptor_descent_applied = False
-    if isinstance(descriptor, dict):
-        descriptor_ascent = descriptor.get("Ascent")
-        if descriptor_ascent is not None:
-            with contextlib.suppress(ValueError):
-                ascent = parse_float_strict(descriptor_ascent, "invalid font Ascent")
-        descriptor_descent = descriptor.get("Descent")
-        if descriptor_descent is not None:
-            with contextlib.suppress(ValueError):
-                descent = parse_float_strict(descriptor_descent, "invalid font Descent")
-                descriptor_descent_applied = True
-    # ISO 32000 defines Descent below the baseline and therefore as non-positive.
-    # Some PDF producers (notably PScript5.dll) serialize its magnitude instead.
-    # Normalize that widespread malformed form once at the font boundary so every
-    # geometry consumer sees a consistent text coordinate system.
-    if descriptor_descent_applied and descent > 0:
-        descent = -descent
-    return ascent, descent
-
-
-def adjust_type3_widths(font_dict: dict[str, Any], widths: FontWidthMap) -> FontWidthMap:
-    font_matrix = font_dict.get("FontMatrix")
-    if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:
-        try:
-            fm_a = parse_float_strict(font_matrix[0], "invalid FontMatrix")
-        except ValueError:
-            fm_a = 0.001
-    else:
-        fm_a = 0.001
-    width_scale = fm_a * 1000.0
-    if abs(width_scale - 1.0) > 1e-6:
-        return scale_font_widths(widths, width_scale)
-    return widths
+    spacing = char_space + (word_space if encoded_space else 0.0)
+    displacement = width * font_size / 1000.0 + spacing
+    return (0.0, displacement) if vertical else (displacement * horizontal_scale / 100.0, 0.0)

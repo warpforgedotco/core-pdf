@@ -12,6 +12,9 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl._impl.capture.marked_content import extend_baseline, min_optional_confidence
+from core_pdf.impl._impl.capture.program import PageProgram
+from core_pdf.impl._impl.capture.records import LayoutFormId
 from core_pdf.impl._impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     GlyphEvidence,
@@ -33,12 +36,6 @@ from core_pdf.impl._impl.model.glyphs import (
     glyph_unicode_semantics,
 )
 from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.marked_content import (
-    extend_baseline,
-    min_optional_confidence,
-)
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.spec.s_07_content.stream_state import LayoutFormId
 from core_pdf.impl.types import Rectangle
 
 

@@ -7,9 +7,9 @@ from collections.abc import Sequence
 
 from core_pdf.api.document import PdfDocument as CorePdfDocument
 from core_pdf.api.document import PdfPage as CorePdfPage
+from core_pdf.impl._impl.document.page import PdfPage as EnginePdfPage
 from core_pdf.impl._impl.output.model import Document, Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf_ocr.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf_ocr.impl.extract.pipeline import extract_page
 from core_pdf_ocr.impl.extract.selection import extract_document
@@ -31,6 +31,6 @@ class PdfDocument(CorePdfDocument):
     page_class = PdfPage
 
     def internal_extract_document(
-        self, context: ExtractionScope, pages: Sequence[SpecPdfPage]
+        self, context: ExtractionScope, pages: Sequence[EnginePdfPage]
     ) -> Document:
         return extract_document(self, context, pages)

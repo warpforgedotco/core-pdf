@@ -18,12 +18,12 @@ from ocr_test_helpers.ocr_fakes import (
     patch_ocr_helper,
 )
 
+from core_pdf.impl._impl.capture.program import PageProgram
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.model import geometry as model_geometry
 from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf_ocr.impl.extract import capture as parse_capture
 from core_pdf_ocr.impl.extract import contracts as ocr_contracts
 from core_pdf_ocr.impl.extract import quality as ocr_quality
@@ -198,10 +198,11 @@ def test_dominant_image_prefers_source_resolution_for_equal_display_area(
 
 
 def test_decoded_image_falls_back_when_shared_source_cannot_decode(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_raster, "decode_image", lambda source: None)
     image = drawing(
         "image",
         (0.0, 0.0, 2.0, 1.0),
-        image_source=SimpleNamespace(decode=lambda: None),
+        image_source=SimpleNamespace(raw=b"encoded", dictionary={}),
         raw_data=b"encoded",
         dictionary={"Width": 2, "Height": 1},
     )
@@ -2302,10 +2303,11 @@ def test_direct_scan_allowed_for_a_full_page_image_without_native_text() -> None
 
 
 def test_decoded_image_enlarges_low_resolution_scans_toward_the_ocr_target(monkeypatch) -> None:
+    monkeypatch.setattr(ocr_raster, "decode_image", lambda source: None)
     image = drawing(
         "image",
         (0.0, 0.0, 200.0, 100.0),
-        image_source=SimpleNamespace(decode=lambda: None),
+        image_source=SimpleNamespace(raw=b"encoded", dictionary={}),
         raw_data=b"encoded",
         dictionary={"Width": 200, "Height": 100},
     )

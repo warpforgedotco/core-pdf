@@ -67,6 +67,10 @@ src/core_pdf/
     types.py             PDF primitives, capture records, buffers, protocols, geometry aliases
     spec/                PDF specification implementation (see below)
     _impl/
+      document/          source/lifecycle, recovery, page operations, document projections
+      capture/           interpreter event recording, runs, glyphs, and page programs
+      fonts/             Unicode recovery, substitute fonts, raster/backend adapters
+      graphics/          output color, prepared images/shading, tolerant codec adapters
       extract/           native extraction, block layout, and tables
       layout/            text-line records, reconstruction, diagnostics, and word rules
       model/             shared geometry/text models, text rules, and page selections
@@ -89,6 +93,24 @@ packages/core-pdf-ocr/
 
 ### The `spec/s_NN_*` scheme
 
+`spec/` contains PDF-defined semantics and algorithms from referenced standards. A choice
+permitted to a PDF reader still belongs under `_impl/`: selected substitute fonts and ICC
+profiles, Unicode recovery, output raster formats, clipping approximations, and malformed-input
+recovery are reader policy. Public behavior is assembled in `_impl/document/`.
+
+The content interpreter accepts a spec-owned `ContentSink` and font service. It emits exact
+PDF state, paths, decoded character evidence, and scope events. `_impl/capture/` turns these
+into extraction observations and rendering records, including path flattening and compatibility
+geometry. Text advancement remains in the interpreter regardless of whether capture accepts a
+character. `ImageSource` holds passive PDF image inputs; `_impl/graphics/images.py` prepares and
+decodes them for a selected raster output.
+
+`PdfStream` accepts a spec-owned `StreamDecoder`. Its default uses strict filter semantics;
+the document reader supplies the codec/recovery adapter. Replacement and indirect resolution
+preserve an explicitly supplied decoder. The strict syntax layer shares object parsing,
+cross-reference row decoding, revision precedence, and tree traversal with recovery adapters;
+resynchronization, guessed offsets, and skipped malformed entries live in `_impl/document/recovery/`.
+
 Subpackages under `spec/` mirror chapters of the PDF specification:
 
 | Package | PDF chapter |
@@ -99,8 +121,8 @@ Subpackages under `spec/` mirror chapters of the PDF specification:
 | `s_07_content` | 7 — content streams, operators, text state |
 | `s_07_document` | 7 — catalog, page tree, metadata |
 | `s_07_security` | 7 — encryption handlers |
-| `s_08_graphics` | 8 — color spaces, ICC, images, matrices |
-| `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
+| `s_08_graphics` | 8 — color-space/image semantics, functions, shading geometry, matrices |
+| `s_09_fonts` | 9 — font formats, CMaps, encodings, widths, and semantic font services |
 | `s_14_structure` | 14 — logical structure tree |
 
 ---
@@ -118,13 +140,16 @@ boundaries. Source/provenance labels in structured records remain ordinary data,
 can preserve `ocr` and `hybrid` output without recognition branches in core. Word reconstruction
 for text already embedded in PDFs, including hidden text layers, stays in core.
 
-Import-linter contracts in the root `pyproject.toml` enforce package direction and the existing
-core layer boundaries. Type-only imports are excluded from runtime cycle checks.
+Import-linter contracts in the root `pyproject.toml` enforce package direction. Spec modules
+cannot import document recovery, capture, font policy, graphics output, or derived-processing
+packages. A source-level boundary test includes type-only imports in this restriction; neutral
+geometry and runtime array utilities are allowed. Runtime stays independent of PDF semantics.
 
-`impl/_impl/` groups the six supporting packages without adding a facade or changing their
-dependency order. `spec/` and the base modules stay directly under `impl/`. Unit tests mirror
-the new paths under `tests/src/core_pdf/impl/_impl/`; both distributions import the owning
-modules at their new locations.
+Font and graphics adapters stay below capture and document composition. Capture can use source
+recovery and passive document records, while page/document orchestration remains above it.
+The extraction/render/layout/output layering remains enforced separately. Tests follow the
+owning algorithms: strict semantics under `tests/src/core_pdf/impl/spec/`, reader recovery and
+projection under `_impl/`, with paired regressions where both behaviors matter.
 
 ## Workspace validation
 
@@ -162,7 +187,7 @@ dimensions and decode arrays without changing the source stream dictionary.
 
 ### Device colour
 
-PDF leaves DeviceCMYK conversion undefined. `s_08_graphics/device_profiles.py` converts it through
+PDF leaves DeviceCMYK conversion undefined. `_impl/graphics/device_profiles.py` converts it through
 the press profile in `_vendor/icc/` and uses the uncalibrated ink formula only when the profile is
 unavailable. The ICC implementation documents its rendering intent, black-point compensation, and
 optimized byte path alongside the code.

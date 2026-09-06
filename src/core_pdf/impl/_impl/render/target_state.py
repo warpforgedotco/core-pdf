@@ -12,12 +12,12 @@ from typing import Any, Protocol
 
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedPath, TilingPattern
+from core_pdf.impl._impl.graphics.images import PreparedImage
+from core_pdf.impl._impl.graphics.shading import PreparedShading
 from core_pdf.impl._impl.render.clipping import internal_ClipState
 from core_pdf.impl._impl.render.model import DisplayItem, ImagePaintItem, PathPaintItem
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, UInt8Array
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath, TilingPattern
-from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
-from core_pdf.impl.spec.s_08_graphics.shading import PreparedShading
 
 
 class internal_RasterState(Protocol):

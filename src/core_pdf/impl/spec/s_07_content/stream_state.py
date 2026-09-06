@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -15,15 +15,6 @@ if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 
 StreamKey = tuple[str, int, int]
-# An entry records one Form XObject invocation. Either half can be absent --
-# a direct (non-reference) XObject has no stream key, and a form without a
-# usable /BBox has no layout box -- but the entry still has to be kept so
-# the tuple identifies the invocation tree. Consumers skip unusable halves.
-LayoutFormId: TypeAlias = (
-    tuple[tuple[StreamKey | None, tuple[float, float, float, float] | None], ...] | None
-)
-
-
 # Both q/Q and nested streams restore this graphics state. Text parameters
 # belong to it, but the text and line matrices are saved only across streams.
 GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
@@ -45,10 +36,8 @@ GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
     "stroke_color_spec",
     "compatibility_depth",
     "blend_mode",
-    "group_alpha",
     "flatness",
     "render_intent",
-    "clip_bbox",
     "line_width",
     "line_cap",
     "line_join",
@@ -71,10 +60,9 @@ GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
 
 @dataclass(slots=True)
 class GraphicsSave:
-    """One saved graphics state and the raster clipping scope it owns."""
+    """One saved PDF graphics state."""
 
     graphics_state: tuple[Any, ...]
-    clip_scope_emitted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,9 +77,6 @@ class StreamState:
     graphics_stack_floor: int
     graphics_stack_len: int
     marked_content_stack_len: int
-    layout_form_bbox: tuple[float, float, float, float] | None
-    layout_form_id: LayoutFormId
-    pending_line_break: bool
     xobject_depth: int
 
 
@@ -105,8 +90,9 @@ class ContentStreamFrame:
     depth: int
     clip_bbox: tuple[float, float, float, float] | None
     group_alpha: float | None = None
-    layout_form_bbox: tuple[float, float, float, float] | None = field(default=None, kw_only=True)
-    layout_form_id: LayoutFormId = field(default=None, kw_only=True)
+    form_bbox_operand: object = field(default=None, kw_only=True)
+    is_form: bool = field(default=False, kw_only=True)
+    source_key: StreamKey | None = field(default=None, kw_only=True)
     stream_key: StreamKey | None = field(default=None, kw_only=True)
     swallow_parse_errors: bool = field(default=False, kw_only=True)
     lexer: PdfLexer | None = field(default=None, init=False)

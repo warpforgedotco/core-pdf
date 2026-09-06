@@ -29,7 +29,7 @@ def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     """Return the one-input domain used by Type 2 and Type 3 functions."""
     domain_obj = dictionary.get("Domain")
     if domain_obj is None:
-        return (0.0, 1.0)
+        raise ValueError("missing PDF function domain")
     domain = internal_number_array(domain_obj)
     if len(domain) < 2 or domain[1] < domain[0]:
         raise ValueError("invalid PDF function domain")
@@ -88,16 +88,16 @@ def internal_compile_sampled_function(function: PdfStream) -> internal_PdfFuncti
         )
 
     encode_obj = dictionary.get("Encode")
+    encode_values = internal_number_array(encode_obj) if encode_obj is not None else ()
+    if encode_obj is not None and len(encode_values) != len(sizes) * 2:
+        raise ValueError("invalid sampled function encode")
     encodes: list[tuple[float, float]] = []
     for input_index, size in enumerate(sizes):
         lower = 0.0
         upper = float(size - 1)
-        if isinstance(encode_obj, (list, tuple)) and len(encode_obj) >= len(sizes) * 2:
-            parsed_lower = parse_float(encode_obj[input_index * 2], None)
-            parsed_upper = parse_float(encode_obj[input_index * 2 + 1], None)
-            if parsed_lower is not None and parsed_upper is not None:
-                lower = parsed_lower
-                upper = parsed_upper
+        if encode_values:
+            lower = encode_values[input_index * 2]
+            upper = encode_values[input_index * 2 + 1]
         encodes.append((lower, upper))
 
     sample_count = 1
@@ -159,13 +159,14 @@ def internal_compile_sampled_function(function: PdfStream) -> internal_PdfFuncti
     return evaluate
 
 
-def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluator:
+def internal_compile_pdf_function(
+    function: Any, *, compile_nested: Callable[[Any], internal_PdfFunctionEvaluator] | None = None
+) -> internal_PdfFunctionEvaluator:
     """Normalize a supported PDF Function into a reusable evaluator."""
+    compile_child = compile_nested or internal_compile_pdf_function
     if isinstance(function, (list, tuple)):
-        if function and all(
-            isinstance(part, (dict, PdfStream)) or callable(part) for part in function
-        ):
-            parts = tuple(internal_compile_pdf_function(part) for part in function)
+        if function and all(isinstance(part, (dict, PdfStream)) for part in function):
+            parts = tuple(compile_child(part) for part in function)
 
             def evaluate_array(*inputs: float) -> tuple[float, ...]:
                 outputs: list[float] = []
@@ -174,23 +175,7 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
                 return tuple(outputs) if outputs else tuple(inputs)
 
             return evaluate_array
-        try:
-            constants = tuple(float(value) for value in function)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("invalid PDF function") from exc
-        if not constants:
-            raise ValueError("invalid PDF function")
-        return lambda *inputs: constants
-
-    if callable(function):
-
-        def evaluate_callable(*inputs: float) -> tuple[float, ...]:
-            result = function(*inputs)
-            if isinstance(result, (list, tuple)):
-                return tuple(float(value) for value in result)
-            return (float(result),)
-
-        return evaluate_callable
+        raise ValueError("invalid PDF function array")
 
     if isinstance(function, PdfStream):
         function_type = parse_int(function.dictionary.get("FunctionType"), -1)
@@ -207,17 +192,17 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
         raise ValueError("invalid PDF function")
 
     if function_type == 2:
-        exponent = parse_float(dictionary.get("N"), 1.0)
+        exponent = parse_float(dictionary.get("N"), None)
         if exponent is None:
             raise ValueError("invalid exponential PDF function")
         domain_min, domain_max = internal_scalar_domain(dictionary)
-        c0 = list(internal_number_array(dictionary.get("C0")) or (0.0,))
-        c1 = list(internal_number_array(dictionary.get("C1")) or (1.0,))
-        count = max(len(c0), len(c1))
-        if len(c0) < count:
-            c0.extend([c0[-1] if c0 else 0.0] * (count - len(c0)))
-        if len(c1) < count:
-            c1.extend([c1[-1] if c1 else 1.0] * (count - len(c1)))
+        c0 = list(internal_number_array(dictionary.get("C0", (0.0,))))
+        c1 = list(internal_number_array(dictionary.get("C1", (1.0,))))
+        if not c0 or not c1:
+            raise ValueError("invalid exponential function components")
+        if len(c0) != len(c1):
+            raise ValueError("mismatched exponential function components")
+        count = len(c0)
         start_values = tuple(c0)
         deltas = tuple(c1[index] - c0[index] for index in range(count))
 
@@ -240,7 +225,9 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
         domain_min, domain_max = internal_scalar_domain(dictionary)
         bounds = internal_number_array(dictionary.get("Bounds"))
         encode = internal_number_array(dictionary.get("Encode"))
-        parts = tuple(internal_compile_pdf_function(entry) for entry in functions)
+        parts = tuple(compile_child(entry) for entry in functions)
+        if len(bounds) != len(parts) - 1 or len(encode) != len(parts) * 2:
+            raise ValueError("invalid stitching function parameters")
 
         def evaluate_stitching(*inputs: float) -> tuple[float, ...]:
             if len(inputs) != 1:
@@ -251,10 +238,10 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
                 index += 1
             low = bounds[index - 1] if index > 0 else domain_min
             high = bounds[index] if index < len(bounds) else domain_max
-            enc0 = encode[index * 2] if index * 2 < len(encode) else 0.0
-            enc1 = encode[index * 2 + 1] if index * 2 + 1 < len(encode) else 1.0
+            enc0 = encode[index * 2]
+            enc1 = encode[index * 2 + 1]
             encoded = enc0 if high == low else enc0 + (value - low) * (enc1 - enc0) / (high - low)
-            return parts[min(index, len(parts) - 1)](encoded)
+            return parts[index](encoded)
 
         return evaluate_stitching
 

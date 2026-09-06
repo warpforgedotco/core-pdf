@@ -5,12 +5,12 @@ import zlib
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontFace, PdfRasterFontRequest
-from core_pdf.impl._impl.render.model import RasterImage, RenderOptions
-from core_pdf.impl.spec.s_09_fonts import fallback as font_fallback
-from core_pdf.impl.spec.s_09_fonts.fallback import (
+from core_pdf.impl._impl.fonts import fallback as font_fallback
+from core_pdf.impl._impl.fonts.fallback import (
     fallback_glyph_outline,
     internal_RasterFontRepository,
 )
+from core_pdf.impl._impl.render.model import RasterImage, RenderOptions
 from tests.helpers.paths import FIXTURES, FONT_PROGRAMS
 
 SIMPLE1 = FIXTURES / "pdfminer.six" / "samples" / "simple1.pdf"

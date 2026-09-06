@@ -3,10 +3,9 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.spec.s_07_content.capture import type3_glyph_names
-from core_pdf.impl.spec.s_07_content.state import TextState
+from core_pdf.impl._impl.capture.interpreter import TextState
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.types import PdfName
 from tests.helpers.resolvers import IdentityResolver
 
@@ -26,7 +25,6 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
         "FontMatrix": [0.001, 0, 0, 0.001, 0, 0],
     }
     decoder = FontDecoder(font)
-    decoder.type3_glyph_names = {65: "A"}
     return state, decoder
 
 
@@ -38,11 +36,11 @@ def test_type3_names_include_base_encoding_and_differences() -> None:
             "Differences": [65, PdfName(b"custom")],
         },
     }
-    names = type3_glyph_names(FontDecoder(font))
+    decoder = FontDecoder(font)
 
-    assert names[32] == "space"
-    assert names[65] == "custom"
-    assert 1 not in names
+    assert decoder.glyph_name(32) == "space"
+    assert decoder.glyph_name(65) == "custom"
+    assert decoder.glyph_name(1) in {"", ".notdef"}
 
 
 def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
@@ -65,9 +63,8 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
 
     state.internal_render_type3_glyphs(b"\x80", decoder)
 
-    assert decoder.type3_glyph_names is not None
-    assert 0 not in decoder.type3_glyph_names
-    assert decoder.type3_glyph_names[128] == "Euro"
+    assert decoder.glyph_name(0) in {"", ".notdef"}
+    assert decoder.glyph_name(128) == "Euro"
     assert len(state.drawings) == 1
     assert state.drawings[0].path is not None
     # ISO 32000-1 9.6.5 concatenates the font matrix with the text space in

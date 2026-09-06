@@ -1,7 +1,7 @@
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.display import DisplayList
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
 
 

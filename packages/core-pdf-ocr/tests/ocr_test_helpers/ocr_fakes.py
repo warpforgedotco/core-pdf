@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
+from core_pdf.impl._impl.document.page import PdfPage
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf_ocr.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,

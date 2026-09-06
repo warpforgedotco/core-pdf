@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy
 
+from core_pdf.impl._impl.graphics.images import PreparedImage, prepare_image
 from core_pdf.impl._impl.model.geometry import points_bbox, rect_tuple
 from core_pdf.impl._impl.render.blend import internal_color_rgba
 from core_pdf.impl._impl.render.kernels import internal_box_downsample
 from core_pdf.impl._impl.render.model import ImagePaintItem
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
@@ -46,7 +46,7 @@ class internal_ImageAxisTargetMixin:
         if blend_mode == "Normal":
             blend_mode = None
         try:
-            prepared = item.source.prepare()
+            prepared = prepare_image(item.source)
         except Exception:
             prepared = None
         if prepared is None:

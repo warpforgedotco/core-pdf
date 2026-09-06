@@ -17,13 +17,23 @@ def collect_inherited_values(
     node: PdfDict,
     keys: tuple[str, ...],
     resolve_ref: Callable[[object], object],
+    *,
+    on_invalid: Callable[[str], None] | None = None,
 ) -> InheritedValueMap:
     values: InheritedValueMap = {}
     current: object = node
     seen: set[int] = set()
-    while isinstance(current, dict):
+    while current is not None:
+        if not isinstance(current, dict):
+            if on_invalid is None:
+                raise ValueError("invalid inherited dictionary parent")
+            on_invalid("invalid inherited dictionary parent")
+            break
         marker = id(current)
         if marker in seen:
+            if on_invalid is None:
+                raise ValueError("inherited dictionary cycle detected")
+            on_invalid("inherited dictionary cycle detected")
             break
         seen.add(marker)
 

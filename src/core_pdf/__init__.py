@@ -7,6 +7,11 @@ from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
     from core_pdf.api.document import DocumentAdapter, PdfDocument, PdfPage
+    from core_pdf.impl._impl.fonts.fallback import (
+        PdfRasterFontFace,
+        PdfRasterFontProvider,
+        PdfRasterFontRequest,
+    )
     from core_pdf.impl._impl.model.page_selection import PageSelection
     from core_pdf.impl._impl.output.model import (
         ContentNode,
@@ -33,11 +38,6 @@ if TYPE_CHECKING:
         PdfSourceError,
         PdfUnsupportedError,
     )
-    from core_pdf.impl.spec.s_09_fonts.fallback import (
-        PdfRasterFontFace,
-        PdfRasterFontProvider,
-        PdfRasterFontRequest,
-    )
     from core_pdf.impl.types import (
         DrawingRecord,
         ImageMetadata,
@@ -51,15 +51,15 @@ internal_EXPORTS = {
     "PageSelection": ("core_pdf.impl._impl.model.page_selection", "PageSelection"),
     "PdfDocument": ("core_pdf.api.document", "PdfDocument"),
     "PdfRasterFontFace": (
-        "core_pdf.impl.spec.s_09_fonts.fallback",
+        "core_pdf.impl._impl.fonts.fallback",
         "PdfRasterFontFace",
     ),
     "PdfRasterFontProvider": (
-        "core_pdf.impl.spec.s_09_fonts.fallback",
+        "core_pdf.impl._impl.fonts.fallback",
         "PdfRasterFontProvider",
     ),
     "PdfRasterFontRequest": (
-        "core_pdf.impl.spec.s_09_fonts.fallback",
+        "core_pdf.impl._impl.fonts.fallback",
         "PdfRasterFontRequest",
     ),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),

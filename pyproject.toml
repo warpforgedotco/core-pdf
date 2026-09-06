@@ -225,17 +225,15 @@ core_pdf = ["py.typed"]
     "*.md",
     "LICENSE*",
 ]
-"core_pdf.impl.spec.s_09_fonts" = [
-    "data/cmaps/**",
-    "data/raster_fonts/**",
-]
+"core_pdf.impl.spec.s_09_fonts" = ["data/cmaps/**"]
+"core_pdf.impl._impl.fonts" = ["data/raster_fonts/**"]
 
 [tool.importlinter]
 root_packages = ["core_pdf", "core_pdf_ocr"]
 # The documented invariant is that there are no *runtime* import cycles between
 # packages; annotation-only imports are excluded so the tool checks that, and not a
-# stricter rule this codebase has never held. See "Dependency direction" in
-# docs/architecture.md for the deliberate annotation-only knots.
+# stricter rule for all model annotations. The spec boundary is also checked by
+# an AST test, including imports guarded by TYPE_CHECKING.
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
@@ -266,6 +264,10 @@ name = "Serialization stays below processing and the specification"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.output.serialize"]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.render",
@@ -292,10 +294,14 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Spec stays below derived consumers"
+name = "Spec is independent of reader policy and derived output"
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec"]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.output",
@@ -307,6 +313,10 @@ name = "impl/_impl/runtime is the floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.runtime"]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.model",
@@ -321,6 +331,10 @@ name = "The shared model depends on nothing above it"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.model"]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.output",
@@ -334,6 +348,10 @@ name = "The COS layer depends only on filters, syntax primitives, and base modul
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec.s_07_syntax"]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl.spec.s_07_content",
     "core_pdf.impl.spec.s_07_document",
     "core_pdf.impl.spec.s_07_security",
@@ -352,6 +370,10 @@ name = "Syntax primitives are the spec floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec.s_07_syntax_primitives"]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl.spec.s_07_content",
     "core_pdf.impl.spec.s_07_document",
     "core_pdf.impl.spec.s_07_filters",
@@ -387,10 +409,59 @@ source_modules = [
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.graphics",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.model",
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.render",
     "core_pdf.impl.spec",
+]
+
+
+[[tool.importlinter.contracts]]
+name = "Font and graphics adapters stay below capture and document composition"
+type = "forbidden"
+source_modules = ["core_pdf.impl._impl.fonts", "core_pdf.impl._impl.graphics"]
+forbidden_modules = [
+    "core_pdf.impl._impl.document",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.render",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.layout",
+]
+
+[[tool.importlinter.contracts]]
+name = "Capture stays below document composition and output processing"
+type = "forbidden"
+source_modules = ["core_pdf.impl._impl.capture"]
+forbidden_modules = [
+    "core_pdf.impl._impl.document.document",
+    "core_pdf.impl._impl.document.page",
+    "core_pdf.impl._impl.document.fields",
+    "core_pdf.impl._impl.document.metadata",
+    "core_pdf.impl._impl.document.structure",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.render",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.layout",
+]
+
+[[tool.importlinter.contracts]]
+name = "Object recovery stays below content capture and document composition"
+type = "forbidden"
+source_modules = ["core_pdf.impl._impl.document.recovery"]
+forbidden_modules = [
+    "core_pdf.impl._impl.document.document",
+    "core_pdf.impl._impl.document.page",
+    "core_pdf.impl._impl.capture",
+    "core_pdf.impl._impl.fonts",
+    "core_pdf.impl._impl.extract",
+    "core_pdf.impl._impl.render",
+    "core_pdf.impl._impl.output",
+    "core_pdf.impl._impl.layout",
 ]

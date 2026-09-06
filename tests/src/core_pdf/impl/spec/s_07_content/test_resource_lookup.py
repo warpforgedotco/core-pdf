@@ -12,8 +12,8 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LTFigure, extract_pages
+from core_pdf.impl._impl.fonts.ligatures import find_companion_font
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
-from core_pdf.impl.spec.s_09_fonts.ligatures import find_companion_font
 from core_pdf.impl.types import PdfReference
 from tests.helpers.pdf_bytes import one_page_pdf, stream_obj
 

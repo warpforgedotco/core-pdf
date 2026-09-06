@@ -12,8 +12,8 @@ import pytest
 
 from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
+from core_pdf.impl._impl.document.document import PdfDocument
 from core_pdf.impl._impl.runtime.execution import internal_ExtractionCancelled
-from core_pdf.impl.spec.s_07_document.document import PdfDocument
 from tests.helpers.paths import score_bench_pdf
 
 

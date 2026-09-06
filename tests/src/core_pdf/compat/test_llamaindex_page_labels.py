@@ -8,7 +8,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.llamaindex import load_data
-from core_pdf.impl.spec.s_07_document.document import internal_PageNode
+from core_pdf.impl._impl.document.document import internal_PageNode
 from tests.helpers.pdf_bytes import HELVETICA, assemble_pdf, stream_obj
 
 

@@ -7,6 +7,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
+from core_pdf.impl._impl.capture.program import PageProgram
+from core_pdf.impl._impl.capture.records import (
+    CapturedPath,
+)
 from core_pdf.impl._impl.model.geometry import rect_tuple
 from core_pdf.impl._impl.render.clipping import internal_ClipState
 from core_pdf.impl._impl.render.commands import append_captured_program
@@ -28,10 +32,6 @@ from core_pdf.impl._impl.runtime.array_views import (
     uint8_image_view,
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.spec.s_07_content.capture import (
-    CapturedPath,
-)
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 

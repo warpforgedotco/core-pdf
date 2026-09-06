@@ -9,6 +9,7 @@ for stencils, with the right half white in both cases, for every representation.
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl._impl.graphics.images import prepare_image
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfReference
 from tests.helpers.pdf_bytes import one_page_pdf, stream_obj
@@ -65,7 +66,7 @@ def test_image_decoder_resolves_selected_inputs_without_changing_source_dictiona
         drawing = page.get_page_program().drawings[0]
         source = drawing.image_source
         assert source is not None
-        prepared = source.prepare()
+        prepared = prepare_image(source)
         assert prepared is not None
         assert (prepared.raster.width, prepared.raster.height) == (2, 1)
         assert prepared.raster.array[0, :, -1].tolist() == [255, 0]

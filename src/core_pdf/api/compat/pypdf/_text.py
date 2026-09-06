@@ -17,19 +17,19 @@ from core_pdf.api.compat._text_state import (
     internal_positioned_text,
     internal_PREDEFINED_ENCODING_CODECS,
 )
-from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
-from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.spec.s_09_fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.spec.s_09_fonts.glyphs import (
+from core_pdf.impl._impl.capture.recovery import iter_content_operations
+from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl._impl.fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.fonts.glyphs import (
     TEX_GLYPH_ALIASES,
     ensure_glyph_map,
 )
-from core_pdf.impl.spec.s_09_fonts.widths import parse_font_widths
+from core_pdf.impl._impl.fonts.widths import parse_font_widths
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.types import PdfName, PdfString
 
 Matrix = list[float]

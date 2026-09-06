@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from core_pdf.impl.spec.s_07_content.state import TextState
+from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecutor
 from core_pdf.impl.spec.s_07_content.stream_state import GRAPHICS_STATE_FIELDS
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream

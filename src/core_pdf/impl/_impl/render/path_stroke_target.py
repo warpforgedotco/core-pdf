@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl._impl.render.model import LineCap, LineJoin
 from core_pdf.impl._impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
@@ -16,7 +17,6 @@ from core_pdf.impl._impl.render.paths import (
     internal_intersect_box,
     rasterize_unclipped_line_normal,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState

@@ -7,6 +7,14 @@ import imagecodecs
 import numpy
 import pytest
 
+from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
+from core_pdf.impl._impl.capture.records import (
+    CapturedDrawing,
+    CapturedPath,
+    CapturedSubpath,
+)
+from core_pdf.impl._impl.document.document import PdfDocument
+from core_pdf.impl._impl.document.page import PdfPage
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.render.commands import internal_append_glyph_paint
@@ -24,18 +32,7 @@ from core_pdf.impl._impl.render.paths import (
     rasterize_unclipped_line_normal,
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.spec.s_07_content.capture import (
-    CapturedDrawing,
-    CapturedPath,
-    CapturedSubpath,
-)
-from core_pdf.impl.spec.s_07_content.page_program import CapturedProgram, PageProgram
-from core_pdf.impl.spec.s_07_document.document import PdfDocument
-from core_pdf.impl.spec.s_07_document.page import PdfPage
-from core_pdf.impl.spec.s_08_graphics.image_decode import (
-    ImageSource,
-    SoftMask,
-)
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 
 class StaticDisplayPage(PdfPage):

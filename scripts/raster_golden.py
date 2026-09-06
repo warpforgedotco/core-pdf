@@ -26,11 +26,11 @@ import imagecodecs
 import numpy
 
 from core_pdf import PdfDocument
+from core_pdf.impl._impl.graphics.codec_dispatch import decode_jpx_image
+from core_pdf.impl._impl.graphics.decode_compat import normalize_stream_decode_spec
+from core_pdf.impl._impl.graphics.filter_registry import FILTER_DESCRIPTOR_BY_NAME
+from core_pdf.impl._impl.graphics.stream_decoding import decode_one_filter
 from core_pdf.impl._impl.render.model import RasterImage
-from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
-from core_pdf.impl.spec.s_07_filters.decoders import decode_jpx_image
-from core_pdf.impl.spec.s_07_filters.pipeline import decode_one_filter
-from core_pdf.impl.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from scripts.jpeg2000 import internal_jpx_uses_irreversible_wavelet
 

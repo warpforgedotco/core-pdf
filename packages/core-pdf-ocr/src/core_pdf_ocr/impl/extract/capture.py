@@ -11,6 +11,8 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl._impl.capture.program import PageProgram
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedLine
 from core_pdf.impl._impl.extract.capture import (
     capture_page as native_capture_page,
 )
@@ -44,9 +46,7 @@ from core_pdf.impl._impl.model.glyphs import (
     glyph_unicode_semantics,
 )
 from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedLine
-from core_pdf.impl.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.spec.s_07_content.text_runs import normalize_extracted_text
+from core_pdf.impl._impl.model.text import normalize_extracted_text
 from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,

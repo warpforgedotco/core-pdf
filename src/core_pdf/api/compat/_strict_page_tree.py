@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from core_pdf import PdfDocument
+from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.types import PdfReference
 
 

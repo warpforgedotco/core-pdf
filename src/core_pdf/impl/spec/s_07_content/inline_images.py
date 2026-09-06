@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from core_pdf.impl.exceptions import PdfParseError
@@ -212,44 +211,7 @@ def parse_inline_image(lexer: PdfLexer) -> InlineImage:
         pos = marker + 1
 
 
-def recover_inline_image_position(
-    lexer: PdfLexer,
-    position: int,
-    is_valid_operator: Callable[[bytes], bool] | None = None,
-) -> int | None:
-    data = lexer.raw_data
-    data_len = lexer.data_len
-    source_buffer = lexer.source_buffer
-    source_bytes: bytes | None = source_buffer if type(source_buffer) is bytes else None
-    search_data = source_bytes if source_bytes is not None else data.tobytes()
-    pos = position
-    while pos < data_len:
-        marker = search_data.find(b"EI", pos)
-        if marker < 0:
-            return None
-        after = marker + 2
-        if (
-            (marker == 0 or data[marker - 1] in WHITESPACE)
-            and after < data_len
-            and data[after] in WHITESPACE
-        ):
-            next_pos = lexer.skip_ignored_at(after)
-            word = lexer.scan_word_at(next_pos, skip_ignored=False)
-            if word is None:
-                return after
-            token, ignored = word
-            if (
-                is_valid_operator(bytes(token))
-                if is_valid_operator is not None
-                else token in (b"BT", b"ET", b"q", b"Q", b"cm", b"Do", b"BI")
-            ):
-                return next_pos
-        pos = marker + 1
-    return None
-
-
 __all__ = (
     "InlineImage",
     "parse_inline_image",
-    "recover_inline_image_position",
 )

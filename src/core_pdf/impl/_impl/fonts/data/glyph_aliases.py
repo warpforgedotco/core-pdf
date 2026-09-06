@@ -1,0 +1,17 @@
+"""Names selected for application glyph-name accent recovery."""
+
+MODIFIER_NAMES: dict[str, str] = {
+    "acute": "ACUTE ACCENT",
+    "grave": "GRAVE ACCENT",
+    "circumflex": "CIRCUMFLEX ACCENT",
+    "dieresis": "DIAERESIS",
+    "tilde": "TILDE",
+    "macron": "MACRON",
+    "breve": "BREVE",
+    "dotaccent": "DOT ABOVE",
+    "ring": "RING ABOVE",
+    "cedilla": "CEDILLA",
+    "hungarumlaut": "DOUBLE ACUTE ACCENT",
+    "ogonek": "OGONEK",
+    "caron": "CARON",
+}

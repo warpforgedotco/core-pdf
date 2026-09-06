@@ -12,19 +12,19 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
+from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl._impl.document.recovery.xref import XRefScanner
+from core_pdf.impl._impl.fonts.cmap_resources import resolve_cmap_decoder
+from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA
 from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.types import PdfReference
 
 from .._shared import LIGATURES

@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
+from core_pdf.impl._impl.document.page_links import resolve_destination_value
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl._impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
 from core_pdf.impl._impl.extract.contracts import (
@@ -29,13 +30,12 @@ from core_pdf.impl._impl.output.model import (
     Table,
 )
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.document.page import PdfPage
+    from core_pdf.impl._impl.document.records import RawAnnotation, RawFormField
+    from core_pdf.impl._impl.document.structure import PageStructure
     from core_pdf.impl._impl.extract.capture import internal_StructureUnset
-    from core_pdf.impl.spec.s_07_document.page import PdfPage
-    from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawFormField
-    from core_pdf.impl.spec.s_14_structure.tree import PageStructure
 
 internal_T = TypeVar("internal_T")
 internal_Record = TypeVar("internal_Record")

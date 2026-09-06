@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
+from core_pdf.impl._impl.graphics.color_spec import describe_color_space
 from core_pdf.impl._impl.model.geometry import rect_tuple
 from core_pdf.impl._impl.render.model import (
     DisplayItem,
@@ -14,14 +16,10 @@ from core_pdf.impl._impl.render.model import (
     PathPaintItem,
     PathPaintKind,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from core_pdf.impl._impl.runtime.scalars import parse_int
 from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    is_pdf_number,
-    parse_int,
-)
-from core_pdf.impl.spec.s_08_graphics.color_spec import describe_color_space
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource, SoftMask
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))

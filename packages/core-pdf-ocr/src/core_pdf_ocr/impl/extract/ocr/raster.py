@@ -16,14 +16,14 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.capture.records import CapturedDrawing
+from core_pdf.impl._impl.graphics.images import decode_image, decode_pdf_image
 from core_pdf.impl._impl.model.geometry import bbox_union, points_bbox
 from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf.impl._impl.runtime.array_views import (
     contiguous_bytes,
     uint8_image_view,
 )
-from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
-from core_pdf.impl.spec.s_08_graphics.image_decode import decode_pdf_image
 from core_pdf_ocr.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
     MAX_OCR_PIXELS,
@@ -296,7 +296,7 @@ def internal_decoded_image_raster(
     upscale: bool = True,
 ) -> internal_Raster | None:
     source = image.image_source
-    shared = source.decode() if source is not None else None
+    shared = decode_image(source) if source is not None else None
     samples: numpy.ndarray[Any, Any] | None
     data: bytes | memoryview | None
     if shared is not None:

@@ -4,7 +4,7 @@
 Each table maps a character code to the text it denotes, with an empty string
 for the codes the encoding leaves undefined. Entries are the raw Annex D.2
 characters: ligature expansion and the treatment of undefined codes belong to
-:mod:`core_pdf.impl.spec.s_09_fonts.helpers`, not to the data.
+:mod:`core_pdf.impl._impl.fonts.helpers`, not to the data.
 
 These tables are close to, but not the same as, the cp1252 and Mac OS Roman
 code pages, and decoding a PDF with the code pages instead is wrong in ways

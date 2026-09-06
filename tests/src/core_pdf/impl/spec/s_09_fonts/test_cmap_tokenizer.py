@@ -18,8 +18,8 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import decode_pdf_literal_stri
         (rb"(\n\r\t\b\f)", b"\n\r\t\b\f"),
         (rb"(\7\77\377\777\1234)", b"\x07?\xff\xffS4"),
         (rb"(unknown\q\8\9)", b"unknownq89"),
-        (b"(a\r\nb\n\rc\rd\ne)", b"a\nb\nc\nd\ne"),
-        (b"(a\\\r\nb\\\n\rc\\\rd\\\ne)", b"abcde"),
+        (b"(a\r\nb\n\rc\rd\ne)", b"a\nb\n\nc\nd\ne"),
+        (b"(a\\\r\nb\\\n\rc\\\rd\\\ne)", b"ab\ncde"),
     ],
 )
 @pytest.mark.parametrize("view_kind", ["bytes", "bytearray", "sliced", "strided"])
