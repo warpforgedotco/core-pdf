@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import read_literal_string
 from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
+    decode_cmap_hex_token as decode_spec_cmap_hex_token,
+)
+from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
     decode_cmap_token as decode_spec_cmap_token,
 )
 
@@ -12,7 +15,16 @@ def internal_legacy_eol_pair(first: int, second: int) -> bool:
     return (first == 13 and second == 10) or (first == 10 and second == 13)
 
 
+def decode_cmap_hex_token(token: bytes) -> bytes:
+    """Retain the reader's legacy delimiter stripping for malformed operands."""
+    if not token.startswith(b"<") or not token.endswith(b">"):
+        token = b"<" + token[1:-1] + b">"
+    return decode_spec_cmap_hex_token(token)
+
+
 def decode_cmap_token(token: bytes) -> bytes:
+    if token.startswith(b"<"):
+        return decode_cmap_hex_token(token)
     if not token.startswith(b"("):
         return decode_spec_cmap_token(token)
     raw = memoryview(token)

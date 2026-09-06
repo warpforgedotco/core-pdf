@@ -225,18 +225,3 @@ def test_tounicode_without_begincmap_stops_at_endcmap() -> None:
     )
 
     assert cmap.mappings == {b"A": "A"}
-
-
-def test_tounicode_end_operator_inside_literal_string_does_not_end_block() -> None:
-    cmap = ToUnicodeCMap(
-        b"""
-        1 begincodespacerange <00> <ff> endcodespacerange
-        2 beginbfchar
-        <41> (endbfchars)
-        <42> <0042>
-        endbfchar
-        """
-    )
-
-    assert b"A" in cmap.mappings
-    assert cmap.mappings[b"B"] == "B"

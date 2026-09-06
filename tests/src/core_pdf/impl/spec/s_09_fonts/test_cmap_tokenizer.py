@@ -5,7 +5,23 @@ from array import array
 
 import pytest
 
-from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import decode_pdf_literal_string
+from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
+    decode_cmap_hex_token,
+    decode_cmap_token,
+    decode_pdf_literal_string,
+)
+
+
+@pytest.mark.parametrize("token", [b"(A)", b"(41)", b"41", b"<41", b"41>", b"", b"()"])
+def test_cmap_hex_token_requires_hexadecimal_delimiters(token: bytes) -> None:
+    with pytest.raises(ValueError, match="^invalid CMap hex string$"):
+        decode_cmap_hex_token(token)
+
+
+def test_cmap_hex_and_literal_tokens_keep_their_distinct_byte_values() -> None:
+    assert decode_cmap_hex_token(b"<A>") == b"\xa0"
+    assert decode_cmap_hex_token(b"<41>") == b"A"
+    assert decode_cmap_token(b"(A)") == b"A"
 
 
 @pytest.mark.parametrize(

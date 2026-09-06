@@ -6,7 +6,7 @@ import typing
 from collections.abc import Callable
 
 from core_pdf.impl._impl.fonts.cmap_ranges import expand_range, unicode_scalar_or_replacement
-from core_pdf.impl._impl.fonts.cmap_tokenizer import decode_cmap_token
+from core_pdf.impl._impl.fonts.cmap_tokenizer import decode_cmap_hex_token, decode_cmap_token
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
     ranges_overlap,
@@ -16,7 +16,6 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
     CMapProgram,
     cmap_metadata,
     cmap_tokens,
-    decode_cmap_hex_token,
 )
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import (
     CMapMappingBlock,

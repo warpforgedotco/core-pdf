@@ -108,3 +108,18 @@ def test_non_japanese_cjk_maps_cover_full_collections() -> None:
         assert vertical.get(minimum_size - 1) is not None
         for cid, text in expected:
             assert horizontal.get(cid) == text
+
+
+def test_tounicode_end_operator_inside_literal_string_does_not_end_block() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        1 begincodespacerange <00> <ff> endcodespacerange
+        2 beginbfchar
+        <41> (endbfchars)
+        <42> <0042>
+        endbfchar
+        """
+    )
+
+    assert b"A" in cmap.mappings
+    assert cmap.mappings[b"B"] == "B"

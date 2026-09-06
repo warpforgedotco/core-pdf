@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core_pdf.impl._impl.fonts.cmap_tokenizer import decode_cmap_hex_token
 from core_pdf.impl.spec.s_09_fonts.cmap_decoder import (
     CMapDecoder as PdfCMapDecoder,
 )
@@ -12,6 +13,10 @@ from core_pdf.impl.spec.s_09_fonts.cmap_decoder import (
 
 class CMapDecoder(PdfCMapDecoder):
     __slots__ = ()
+
+    @staticmethod
+    def decode_codespace_token(token: bytes) -> bytes:
+        return decode_cmap_hex_token(token)
 
     @staticmethod
     def resolve_usecmap(

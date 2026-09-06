@@ -102,8 +102,8 @@ class CMapDecoder:
                 raise ValueError("invalid CMap codespacerange")
             for i in range(0, len(tokens), 2):
                 try:
-                    start = decode_cmap_hex_token(tokens[i])
-                    end = decode_cmap_hex_token(tokens[i + 1])
+                    start = self.decode_codespace_token(tokens[i])
+                    end = self.decode_codespace_token(tokens[i + 1])
                     validate_codespace_range(start, end)
                 except (ValueError, UnicodeDecodeError) as exc:
                     raise ValueError("invalid CMap codespacerange") from exc
@@ -131,6 +131,10 @@ class CMapDecoder:
             or (1,)
         )
         self.freeze()
+
+    @staticmethod
+    def decode_codespace_token(token: bytes) -> bytes:
+        return decode_cmap_hex_token(token)
 
     @classmethod
     def identity(cls, *, byte_width: int = 2, wmode: int = 0) -> Self:

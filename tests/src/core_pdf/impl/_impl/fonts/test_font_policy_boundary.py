@@ -94,7 +94,10 @@ def test_cmap_literal_eol_recovery_is_application_owned(
     ("body", "recovered"),
     [
         (b"2 beginbfchar <41> <0041> <42> endbfchar", {b"A": "A"}),
-        (b"1 beginbfchar (Z) <0041> endbfchar", {b"Z": "A"}),
+        (b"1 beginbfchar (A) <0041> endbfchar", {b"A": "A"}),
+        (b"1 beginbfchar <41> (\x00A) endbfchar", {b"A": "A"}),
+        (b"1 beginbfrange <41> <42> (\x00A) endbfrange", {b"A": "A", b"B": "B"}),
+        (b"1 beginbfrange <41> <41> [(\x00A)] endbfrange", {b"A": "A"}),
         (b"1 beginbfrange <41> <43> [<0041>] endbfrange", {b"A": "A"}),
         (b"1 beginbfrange <41> <41> [<0041> <0042>] endbfrange", {b"A": "A"}),
         (
@@ -132,3 +135,20 @@ def test_partial_reader_arrays_do_not_expand_the_declared_source_range() -> None
     with pytest.raises(ValueError):
         ToUnicodeCMap(program)
     assert RecoveringToUnicode(program).mappings == {b"\x00\x00\x00\x00": "A"}
+
+
+def test_reader_codespaces_keep_legacy_delimiter_recovery() -> None:
+    program = b"1 begincodespacerange (00) (ff) endcodespacerange"
+    with pytest.raises(ValueError):
+        CMapDecoder(program)
+    with pytest.raises(ValueError):
+        ToUnicodeCMap(program)
+    assert ApplicationCMap(program).code_space_ranges == [(b"\x00", b"\xff")]
+    assert RecoveringToUnicode(program).code_space_ranges == ((b"\x00", b"\xff"),)
+
+
+def test_reader_numeric_cid_ranges_keep_legacy_delimiter_recovery() -> None:
+    program = cmap(b"1 begincidrange (A) (B) 65 endcidrange")
+    assert RecoveringToUnicode(program).mappings == {
+        bytes([code]): chr(65 + code - 0xA0) for code in range(0xA0, 0xB1)
+    }

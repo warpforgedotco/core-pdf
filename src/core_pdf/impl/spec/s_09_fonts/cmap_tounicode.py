@@ -17,7 +17,6 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
     cmap_metadata,
     cmap_tokens,
     decode_cmap_hex_token,
-    decode_cmap_token,
 )
 
 
@@ -192,7 +191,7 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
             if not start:
                 raise ValueError("empty ToUnicode character code")
             if record.source_end is None:
-                mappings[start] = decode_utf16be(decode_cmap_token(record.destination))
+                mappings[start] = decode_utf16be(decode_cmap_hex_token(record.destination))
                 continue
             source_range = cmap_source_range(start, decode_cmap_hex_token(record.source_end))
             if source_range.count > MAX_CMAP_RANGE_SPAN:
@@ -202,9 +201,9 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
                 destinations = cmap_tokens(destination)
                 if len(destinations) != source_range.count:
                     raise ValueError("invalid ToUnicode bfrange destination array")
-                texts = [decode_utf16be(decode_cmap_token(item)) for item in destinations]
+                texts = [decode_utf16be(decode_cmap_hex_token(item)) for item in destinations]
             else:
-                base = decode_cmap_token(destination)
+                base = decode_cmap_hex_token(destination)
                 texts = []
                 for offset in range(source_range.count):
                     incremented = (int.from_bytes(base, "big") + offset).to_bytes(len(base), "big")
