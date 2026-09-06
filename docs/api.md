@@ -95,35 +95,22 @@ upstream libraries.
 An experimental PyMuPDF facade exists under `core_pdf.api.compat._unsupported.pymupdf`; it is
 not part of the supported compatibility surface.
 
-The pdfminer facade can be checked against pdfminer.six's own high-level extraction tests. The
-runner executes the unchanged upstream test module in isolated interpreters: once with the
-vendored pdfminer.six checkout and once with its imports redirected to the core-pdf facade.
-
-```sh
-git submodule update --init --recursive
-uv run python scripts/run_pdfminer_compat_tests.py -- -q
-```
-
-A nonzero core-pdf result identifies a compatibility gap; the upstream result distinguishes those
-gaps from fixture or test-environment failures. Use `--implementation upstream` or
-`--implementation core-pdf` to run only one side.
-
-The remaining supported facades have direct differential tests against their installed reference
-libraries. By default, each facade runs against its own upstream fixture corpus, plus focused
+Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`,
+`pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray facades against their reference
+libraries. By default, each facade uses its own upstream fixture corpus, plus selected
 cross-corpus redaction cases for x-ray:
 
 ```sh
-uv run --group vendor-test pytest tests/src/core_pdf/compat/differential \
-  -m compat_differential -n auto
+git submodule update --init --recursive
+uv run --locked --group test --group vendor-test pytest -n auto
 ```
 
-Run the exhaustive every-facade/every-fixture matrix explicitly when compatibility work calls for
-it:
+Run the exhaustive every-facade/every-fixture matrix explicitly when compatibility work
+calls for it:
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --group vendor-test pytest tests/src/core_pdf/compat/differential \
-  -m compat_differential -n auto
+  uv run --locked --group test --group vendor-test pytest -n auto
 ```
 
 The x-ray facade performs its redaction inspection directly from engine drawing, glyph, and
@@ -133,12 +120,4 @@ raster evidence:
 from core_pdf.api.compat import inspect_xray
 
 findings = inspect_xray("document.pdf")
-```
-
-The vendored x-ray behavior suite can be run with:
-
-```sh
-PYTHONPATH=src uv run --with requests --with PyMuPDF \
-  --with numpy --with imagecodecs \
-  python scripts/run_xray_compat_tests.py -q
 ```

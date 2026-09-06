@@ -21,7 +21,7 @@ as `core-pdf`; both packages support `python -m` invocation.
 
 ```sh
 uv sync --all-packages --all-groups
-uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto
+uv run --locked --group test --group vendor-test pytest -n auto
 ```
 
 ## License

@@ -88,7 +88,6 @@ packages/core-pdf-ocr/
     _vendor/            Newstroke templates with their original license notices
     impl/extract/       routing, fusion, learned text, recognition-specific output policies
       ocr/              Tesseract, raster tasks, rescue passes, and vector recognition
-  tests/                OCR unit, integration, and benchmark tests
 ```
 
 ### The `spec/s_NN_*` scheme
@@ -140,34 +139,46 @@ boundaries. Source/provenance labels in structured records remain ordinary data,
 can preserve `ocr` and `hybrid` output without recognition branches in core. Word reconstruction
 for text already embedded in PDFs, including hidden text layers, stays in core.
 
-Import-linter contracts in the root `pyproject.toml` enforce package direction. Spec modules
-cannot import document recovery, capture, font policy, graphics output, or derived-processing
-packages. A source-level boundary test includes type-only imports in this restriction; neutral
+Import-linter contracts in the root `pyproject.toml` enforce runtime package direction. Spec
+modules cannot import document recovery, capture, font policy, graphics output, or
+derived-processing packages. Type-only imports follow the same organization rule; neutral
 geometry and runtime array utilities are allowed. Runtime stays independent of PDF semantics.
 
 Font and graphics adapters stay below capture and document composition. Capture can use source
 recovery and passive document records, while page/document orchestration remains above it.
-The extraction/render/layout/output layering remains enforced separately. Tests follow the
-owning algorithms: strict semantics under `tests/src/core_pdf/impl/spec/`, reader recovery and
-projection under `_impl/`, with paired regressions where both behaviors matter.
+The extraction/render/layout/output layering remains enforced separately.
 
 ## Workspace validation
 
-Run `uv sync --all-packages --all-groups` to install both distributions and the development tools.
-The default pytest test paths include `tests/` and `packages/core-pdf-ocr/tests/`:
+The authored test suite contains differential comparisons in
+`tests/src/core_pdf/api/compat/differential`. Each case runs a compatibility facade and
+its reference implementation against the same PDF. Reference corpora remain under
+`tests/fixtures`.
+
+Initialize the corpora and install the workspace's development dependencies:
 
 ```sh
-uv run --all-packages pytest tests/ packages/core-pdf-ocr/tests/ -n auto
+git submodule update --init --recursive
+uv sync --all-packages --all-groups
+```
+
+Run the differential suite and source checks with:
+
+```sh
+uv run --locked --group test --group vendor-test pytest -n auto
 uv run --all-packages --group lint ruff check .
 uv run --all-packages --group lint mypy
-uv run --all-packages --group lint --group test --group benchmark ty check
+uv run --all-packages --group lint --group test --group vendor-test ty check
 uv run --all-packages --group lint lint-imports
 ```
 
-CI runs the native suite in a core-only environment without Tesseract and the companion suite
-with English tessdata. Shared root test guards reject compiled extensions shadowing sources in
-either package; tessdata discovery is confined to the companion test configuration. Coverage
-measures both source roots together and retains the existing ratchet.
+The default differential matrix uses each facade's own upstream corpus, plus selected
+cross-corpus redaction cases for x-ray. To run every facade against every PDF fixture:
+
+```sh
+CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
+  uv run --locked --group test --group vendor-test pytest -n auto
+```
 
 ## Rendering constraints
 
@@ -191,26 +202,3 @@ PDF leaves DeviceCMYK conversion undefined. `_impl/graphics/device_profiles.py` 
 the press profile in `_vendor/icc/` and uses the uncalibrated ink formula only when the profile is
 unavailable. The ICC implementation documents its rendering intent, black-point compensation, and
 optimized byte path alongside the code.
-
-### Golden rasters
-
-`tests/test_rendering_golden.py` pins corpus output. Ordinary pages use exact RGBA digests; pages
-containing irreversible JPEG 2000 images use lossless PNG references with sparse, per-sample RGB
-envelopes because OpenJPEG output can vary across CPU implementations. Only values observed on
-every supported CI platform are admitted; shape, alpha, and every unlisted RGB sample remain exact.
-CI runs the complete corpus, while the default local test uses a covering subset.
-
-A behavior-preserving refactor must leave the manifest and reference images unchanged. After an
-intentional output change, regenerate them with:
-
-```sh
-uv run python scripts/update_raster_golden.py collect \
-  --platform-id macos-arm64 --output /tmp/raster-observation
-```
-
-Collection never changes tracked files. To update the checked-in baseline, run the manual
-**Update raster goldens** workflow on the target branch. It collects the same revision on pinned
-Linux/x86_64 and macOS/ARM64 runners and publishes a binary patch for review; apply it from the
-repository root with `git apply --binary raster-golden.patch`. A single host cannot redefine the
-portable envelope. Recompute the local covering subset with `scripts/raster_cover.py` after
-substantial renderer restructuring.

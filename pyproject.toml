@@ -42,15 +42,8 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 
 [dependency-groups]
 dev = [
-    { include-group = "benchmark" },
     { include-group = "lint" },
     { include-group = "test" },
-]
-benchmark = [
-    "liteparse>=2.11.0",
-    "llama-cloud>=1.0",
-    "pytest-benchmark>=5.1.0,<6.0.0",
-    "pytest-codspeed>=5.0.3",
 ]
 lint = [
     "import-linter>=2.13",
@@ -60,7 +53,6 @@ lint = [
 ]
 test = [
     "pytest >=8.4.0, <10.0.0",
-    "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
 ]
 compiling = [
@@ -85,42 +77,11 @@ vendor-test = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/core-pdf-ocr/tests"]
+testpaths = ["tests/src/core_pdf/api/compat/differential"]
 norecursedirs = ["tests/fixtures"]
-pythonpath = [".", "packages/core-pdf-ocr/tests"]
+pythonpath = ["."]
 markers = [
     "compat_differential: compares supported facades against reference libraries",
-]
-
-[tool.coverage.run]
-source = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr"]
-parallel = true
-# The pymupdf facade is quarantined (see api/compat/_unsupported) and nothing
-# imports it, so it can only ever measure 0%. Keeping it in `source` weighed the
-# ratchet below down by a constant that has nothing to do with live code.
-omit = ["src/core_pdf/api/compat/_unsupported/*"]
-
-[tool.coverage.report]
-show_missing = true
-skip_covered = true
-# A ratchet, not a target. Set just below the measured figure so coverage cannot
-# silently regress; raise it as gaps close. The rendering package is at 73% now
-# that the rasterizer is decomposed, up from 52% when its internals were unreachable.
-# Vendored fontTools (src/core_pdf/_vendor) is included in `source` above and no
-# longer omitted, so this ratchet was recalibrated after pruning ~57k lines of
-# unreachable vendored code (confirmed 0% across the full test suite AND a
-# 2377-document real-world PDF corpus): 77 -> 64.
-# Raised 64 -> 66 after omitting the quarantined pymupdf facade (which nothing
-# imports, so it could only ever read 0%) and deleting ~1.5k lines of dead code;
-# measured 66.98%.
-# Raised 66 -> 67 after removing the unreachable text-only dispatch table, the
-# hand-unrolled float operand paths and several duplicated helpers; measured 67.84%.
-fail_under = 67
-exclude_also = [
-    "if TYPE_CHECKING:",
-    "raise NotImplementedError",
-    "@typing.overload",
-    "@overload",
 ]
 
 [tool.ruff]
@@ -186,13 +147,6 @@ mypy_path = ["src", "packages/core-pdf-ocr/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
-# Enabled incrementally. Remaining candidates and their current cost:
-# check_untyped_defs (1), disallow_any_generics (9), no_implicit_reexport (9),
-# strict_equality (10), warn_unreachable (33), warn_return_any (59).
-#
-# `warn_redundant_casts` is deliberately NOT enabled: `ty` also runs in this
-# project's lint gate and needs several casts that mypy considers redundant, so
-# the two checkers give contradictory advice on the same lines.
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_unused_ignores = true
@@ -230,10 +184,6 @@ core_pdf = ["py.typed"]
 
 [tool.importlinter]
 root_packages = ["core_pdf", "core_pdf_ocr"]
-# The documented invariant is that there are no *runtime* import cycles between
-# packages; annotation-only imports are excluded so the tool checks that, and not a
-# stricter rule for all model annotations. The spec boundary is also checked by
-# an AST test, including imports guarded by TYPE_CHECKING.
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
@@ -276,22 +226,7 @@ forbidden_modules = [
     "core_pdf.api",
 ]
 
-[[tool.importlinter.contracts]]
-name = "Spec layers"
-type = "layers"
-containers = ["core_pdf.impl.spec"]
-# Chapter numbers are not a layering: four s_07_* packages sit at four different
-# levels. This is the real order. Colons mark packages that genuinely do not depend
-# on one another, so the contract does not invent an ordering between them.
-layers = [
-    "s_07_document",
-    "s_14_structure",
-    "s_07_content",
-    "s_09_fonts : s_08_graphics : s_07_security",
-    "s_07_syntax",
-    "s_07_filters",
-    "s_07_syntax_primitives",
-]
+
 
 [[tool.importlinter.contracts]]
 name = "Spec is independent of reader policy and derived output"

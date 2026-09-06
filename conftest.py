@@ -1,4 +1,4 @@
-"""Workspace-wide test guards and benchmark defaults."""
+"""Prevent compiled modules from shadowing sources during differential tests."""
 
 from __future__ import annotations
 
@@ -27,17 +27,7 @@ def internal_shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
     return shadowed
 
 
-def internal_disable_benchmarks_by_default(config: pytest.Config) -> None:
-    """Run benchmarks once as ordinary tests unless measurement was requested."""
-    if not config.pluginmanager.hasplugin("benchmark"):
-        return
-    if config.getoption("benchmark_enable") or config.getoption("benchmark_only"):
-        return
-    config.option.benchmark_disable = True
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    internal_disable_benchmarks_by_default(config)
+def pytest_configure() -> None:
     shadowed = internal_shadowed_modules()
     if not shadowed:
         return

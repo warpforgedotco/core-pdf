@@ -29,8 +29,9 @@ For development from the repository root:
 
 ```sh
 uv sync --all-packages --all-groups
-uv run --all-packages pytest packages/core-pdf-ocr/tests -n auto
 ```
+
+See the repository's [differential testing guide](../../docs/api.md) for validation commands.
 
 Licensed under AGPL-3.0-only; see [LICENSE.txt](LICENSE.txt). The vendored Newstroke
 templates retain their original copyright and license notices.
