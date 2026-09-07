@@ -37,8 +37,13 @@ Page geometry comparisons cover `mediabox`, `cropbox`, `bleedbox`, `trimbox`, `a
 `derotation_matrix`. In-memory variants of an upstream PDF exercise offset media/crop boxes,
 all four orthogonal rotations, and zero, positive, and negative `UserUnit` values. Both engines
 read the same variant; the reference fixture files are unchanged. Tests also compare detached
-box values and errors after a page's document closes. Editing, rendering, and serialization
-must still adopt these coordinate policies consistently.
+box values and errors after a page's document closes. The native `Page` now owns its initialization and geometry without inheriting pypdf page
+methods. Native setters persist rotation and all five page boxes. Comparisons cover rotation
+normalization, offset MediaBoxes, all four orthogonal rotations, additional-box reset after
+changing MediaBox, inherited page settings, retained page handles, frozen text snapshots,
+selected errors, and save/reopen geometry. Rotation comparisons also check native raw-text
+output after edits. Rendering and the remaining editing operations still need consistent
+integration with these coordinate policies.
 
 Document tests compare filename and keyword-stream constructors (bytes, bytearrays, and
 `BytesIO`), metadata, page counts, iteration, ranges, reverse slices, negative indexes,
@@ -164,7 +169,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text_transform.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_objects.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_write.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_metadata.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_metadata.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_page_edit.py
 ```
 
 These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus

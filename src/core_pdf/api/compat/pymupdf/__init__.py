@@ -25,10 +25,7 @@ from core_pdf.api.compat._shared import (
 from core_pdf.api.compat.pymupdf.geometry import IRect, Matrix, Point, Quad, Rect
 from core_pdf.api.compat.pymupdf.objects import ObjectAccess, format_object, internal_metadata_value
 from core_pdf.api.compat.pymupdf.text import TextProjection, capture_text
-from core_pdf.api.compat.pypdf import (
-    PdfPageObject,
-    StructuredState,
-)
+from core_pdf.api.compat.pypdf import StructuredState
 from core_pdf.api.document import PdfDocument
 from core_pdf.api.document import PdfPage as NativePdfPage
 from core_pdf.impl._impl.model.geometry import bbox_intersects
@@ -144,13 +141,25 @@ class Widget:
         return True
 
 
-class Page(PdfPageObject):
+class Page:
     _lazy_source: NativePdfPage | None
 
     def __init__(
         self, document: StructuredState, page: Any, owner: "Document | None" = None
     ) -> None:
-        super().__init__(document, page)
+        self._document = document
+        self._page = page
+        self._mediabox = Rect(0, 0, page.width, page.height)
+        self._cropbox = Rect(page.cropbox or self._mediabox)
+        self._rotation = page.rotation
+        if document.pdf is not None:
+            source = document.pdf.pages[page.page_number - 1]
+            self._mediabox = Rect(source.media_box or self._mediabox)
+            self._cropbox = Rect(source.crop_box or self._mediabox)
+            rotation = source.inherited_values.get("Rotate")
+            self._rotation = (
+                int(rotation) if isinstance(rotation, (int, float)) else source.rotation
+            )
         self._page_number = page.page_number
         self._owner = owner
         self._generation = owner._page_generation if owner is not None else 0
@@ -236,6 +245,73 @@ class Page(PdfPageObject):
     @property
     def number(self) -> int | tuple[int, int] | list[int] | None:
         return self._number if self.parent is not None else None
+
+    @property
+    def rotation(self) -> int:
+        if hasattr(self, "_owner") and self.parent is None:
+            raise AssertionError("page is None")
+        return self._rotation
+
+    @rotation.setter
+    def rotation(self, value: int) -> None:
+        self._rotation = value
+
+    def set_rotation(self, rotation: int) -> None:
+        parent = self.parent
+        if parent is None:
+            raise AssertionError("page is None")
+        rotation = rotation % 360 if rotation % 90 == 0 else 0
+        if not isinstance(rotation, int):
+            raise TypeError("in method 'pdf_dict_put_int', argument 3 of type 'int64_t'")
+        parent.xref_set_key(self.xref, "Rotate", str(rotation))
+        self._refresh_native()
+
+    def set_mediabox(self, rect: object) -> None:
+        parent = self.parent
+        if parent is None:
+            raise AssertionError("page is None")
+        box = Rect(rect)
+        if box.is_empty or box.is_infinite:
+            raise ValueError("rect is infinite or empty")
+        xref = self.xref
+        access = parent._objects
+        obj = access.get(xref)
+        if not isinstance(obj, dict):
+            raise ValueError("invalid page dictionary")
+        updated = {
+            key: value
+            for key, value in obj.items()
+            if key not in {"CropBox", "BleedBox", "TrimBox", "ArtBox"}
+        }
+        updated["MediaBox"] = list(map(float32, box))
+        access.overrides[xref] = updated
+        parent._object_revision += 1
+        self._refresh_native()
+
+    def _set_box(self, name: str, rect: object) -> None:
+        parent = self.parent
+        if parent is None:
+            raise ValueError("orphaned object: parent is None")
+        box = Rect(rect)
+        media = self.mediabox
+        bounds = Rect(media.x0, 0, media.x1, media.height)
+        if box.is_empty or box.is_infinite or box not in bounds:
+            raise ValueError(f"{name} not in MediaBox")
+        values = [box.x0, media.y1 - box.y1, box.x1, media.y1 - box.y0]
+        parent.xref_set_key(self.xref, name, format_object(list(map(float32, values))))
+        self._refresh_native()
+
+    def set_cropbox(self, rect: object) -> None:
+        self._set_box("CropBox", rect)
+
+    def set_bleedbox(self, rect: object) -> None:
+        self._set_box("BleedBox", rect)
+
+    def set_trimbox(self, rect: object) -> None:
+        self._set_box("TrimBox", rect)
+
+    def set_artbox(self, rect: object) -> None:
+        self._set_box("ArtBox", rect)
 
     @property
     def rect(self) -> Rect:
