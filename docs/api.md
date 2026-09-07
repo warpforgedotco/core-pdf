@@ -92,8 +92,11 @@ Additional local facades are available for `pikepdf`, `unstructured`, `llamainde
 They reproduce useful high-level behavior, not every implementation detail or private API of the
 upstream libraries.
 
-An experimental PyMuPDF facade exists under `core_pdf.api.compat._unsupported.pymupdf`; it is
-not part of the supported compatibility surface.
+The native PyMuPDF facade is available as `core_pdf.api.compat.pymupdf`. Its target is full
+public-API compatibility with PyMuPDF, without importing PyMuPDF at runtime. Implementation
+is in progress: the public import path does **not** yet imply full behavioral compatibility.
+The first differential coverage checks affine matrices using page geometry from upstream PDFs.
+See [PyMuPDF compatibility](pymupdf-compatibility.md) for current coverage and outstanding work.
 
 Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`,
 `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray facades against their reference

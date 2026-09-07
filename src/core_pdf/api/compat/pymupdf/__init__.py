@@ -10,6 +10,7 @@ from html import escape
 from typing import Any, cast
 
 from core_pdf.api.compat._shared import BBox, coerce_bbox, encode_png, float32, write_bytes
+from core_pdf.api.compat.pymupdf.geometry import Matrix
 from core_pdf.api.compat.pypdf import (
     PdfInput,
     PdfPageObject,
@@ -38,14 +39,6 @@ def synthesize_characters(text: str, box: BBox) -> list[tuple[str, BBox]]:
         (character, (x0 + index * width, y0, x0 + (index + 1) * width, y1))
         for index, character in enumerate(text)
     ]
-
-
-class Matrix:
-    """Small PyMuPDF-compatible scale matrix for raster requests."""
-
-    def __init__(self, sx: float = 1.0, sy: float | None = None, *_: float) -> None:
-        self.a = float(sx)
-        self.d = float(sx if sy is None else sy)
 
 
 class Pixmap:

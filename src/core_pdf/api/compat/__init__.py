@@ -10,7 +10,7 @@ from importlib import import_module
 from typing import Any
 
 internal_MODULES = frozenset(
-    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "pypdf", "unstructured", "xray"}
+    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "pymupdf", "pypdf", "unstructured", "xray"}
 )
 internal_EXPORTS = {
     **{

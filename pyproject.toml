@@ -156,7 +156,6 @@ root = [".", "src", "packages/core-pdf-ocr/src"]
 
 [tool.ty.src]
 exclude = [
-    "src/core_pdf/api/compat/_unsupported",
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
 ]
