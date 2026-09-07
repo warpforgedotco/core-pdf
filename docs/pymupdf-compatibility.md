@@ -115,6 +115,14 @@ relative positioning with repeated matrix resets. Searches over the unchanged
 `test-E+A.pdf` add an embedded-font regression for spacing and crop translation. Other
 queries and layouts in that fixture still require broader comparison.
 
+Horizontal text scaling now contributes to glyph advances and the determinant-based span
+font size. Tests combine compressed, expanded, mirrored, and zero horizontal scale with
+character spacing and all four rotations. Additional affine cases cover skew, arbitrary
+rotation, nonuniform scaling, reflection, and singular transforms, including composition
+with a `TextPage` matrix. Zero-width glyphs retain the reference's distinct text, word,
+block, and dictionary output behavior. These cases extend transform coverage without
+establishing parity for every font, clipping boundary, or ill-conditioned matrix.
+
 Run the focused tests with:
 
 ```sh
@@ -126,7 +134,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_textpage.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_structured_text.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_selection.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_spacing.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_spacing.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_text_transform.py
 ```
 
 These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus

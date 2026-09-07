@@ -366,16 +366,26 @@ class TextProjection:
                 selected.append(value)
         return "\n".join(selected)
 
-    def internal_characters(self, line: internal_Line) -> list[internal_Character]:
+    def internal_characters(
+        self, line: internal_Line, *, include_degenerate: bool = False
+    ) -> list[internal_Character]:
+        characters = [
+            char
+            for char in line.characters
+            if char.size > 0
+            or (
+                include_degenerate
+                and (char.bbox[0] != char.bbox[2] or char.bbox[1] != char.bbox[3])
+            )
+        ]
         if self.clip_box is None:
-            return [char for char in line.characters if char.size > 0]
+            return characters
         box = self.clip_box
         return [
             char
-            for char in line.characters
+            for char in characters
             if (
-                char.size > 0
-                and char.bbox[2] >= box.x0
+                char.bbox[2] >= box.x0
                 and char.bbox[0] <= box.x1
                 and char.bbox[3] >= box.y0
                 and char.bbox[1] <= box.y1
@@ -390,7 +400,7 @@ class TextProjection:
             "".join(char.text for char in chars) + "\n"
             for block in blocks
             for line in block
-            if (chars := self.internal_characters(line))
+            if (chars := self.internal_characters(line, include_degenerate=True))
         )
 
     def words(self, *, sort: bool = False, delimiters: str = "") -> list[tuple[Any, ...]]:
@@ -426,14 +436,19 @@ class TextProjection:
     def block_records(self, *, sort: bool = False) -> list[tuple[Any, ...]]:
         records: list[tuple[Any, ...]] = []
         for index, block in enumerate(self.blocks):
-            lines = [self.internal_characters(line) for line in block]
+            lines = [self.internal_characters(line, include_degenerate=True) for line in block]
             characters = [char for line in lines for char in line]
             bbox = (
                 internal_union([char.bbox for char in characters])
                 if characters
                 else (2147483520.0, 2147483520.0, -2147483648.0, -2147483648.0)
             )
-            value = "".join("".join(char.text for char in line) + "\n" for line in lines if line)
+            value = "".join(
+                "".join(char.text for char in line)
+                + ("\n" if any(c.size > 0 for c in line) else "")
+                for line in lines
+                if line
+            )
             records.append((*bbox, value, index, 0))
         if self.images:
             events = [(self.blocks[record[5]][0].characters[0].seqno, record) for record in records]
@@ -505,13 +520,17 @@ class TextProjection:
                         "bbox": internal_union([c.bbox for c in characters]),
                     }
                 )
-            if lines:
+            if lines or any(
+                self.internal_characters(line, include_degenerate=True) for line in block
+            ):
                 blocks.append(
                     {
                         "type": 0,
                         "number": number,
                         "flags": 0,
-                        "bbox": internal_union([line["bbox"] for line in lines]),
+                        "bbox": internal_union([line["bbox"] for line in lines])
+                        if lines
+                        else (2147483520.0, 2147483520.0, -2147483648.0, -2147483648.0),
                         "lines": lines,
                     }
                 )
@@ -676,6 +695,7 @@ def capture_text(
             and not decoder.is_vertical
         ):
             axis_length = math.hypot(glyph_matrix[0], glyph_matrix[1])
+            scale = axis_length * 1000
             if axis_length:
                 dx, dy = glyph_matrix[0] / axis_length, glyph_matrix[1] / axis_length
                 cursor_width = ((ex - x) * dx + (ey - y) * dy) / scale * 1000 if scale else 0
@@ -742,10 +762,28 @@ def capture_text(
             max(p[0] for p in corners),
             max(p[1] for p in corners),
         )
-        if flags & 64 and not clip_box.intersects(bbox):
+        if flags & 64 and not (
+            bbox[2] > clip_box.x0
+            and bbox[0] < clip_box.x1
+            and bbox[3] > clip_box.y0
+            and bbox[1] < clip_box.y1
+        ):
             continue
         size = abs(float32(glyph.effective_font_height * unit))
-        if matrix is not None:
+        if glyph_matrix is not None:
+            a, b, c, d = (float32(value * 1000 * unit) for value in glyph_matrix[:4])
+            if matrix is not None:
+                ma, mb, mc, md = (float32(value) for value in tuple(matrix)[:4])
+                a, b, c, d = (
+                    float32(ma * a + mc * b),
+                    float32(mb * a + md * b),
+                    float32(ma * c + mc * d),
+                    float32(mb * c + md * d),
+                )
+            # Retain the reference's fused multiply/subtract rounding. A
+            # nearly singular transform can have a small nonzero determinant.
+            size = float32(math.sqrt(abs(float32(a * d - float32(b * c)))))
+        elif matrix is not None:
             size = float32(size * math.sqrt(abs(matrix.a * matrix.d - matrix.b * matrix.c)))
         value = glyph.text
         if not flags & 1:
