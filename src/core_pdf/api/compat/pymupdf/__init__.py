@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import weakref
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import replace
 from html import escape
 from io import BytesIO
@@ -20,7 +22,7 @@ from core_pdf.api.compat._shared import (
     write_bytes,
 )
 from core_pdf.api.compat.pymupdf.geometry import IRect, Matrix, Point, Quad, Rect
-from core_pdf.api.compat.pymupdf.text import capture_text
+from core_pdf.api.compat.pymupdf.text import TextProjection, capture_text
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
     StructuredState,
@@ -295,11 +297,34 @@ class Page(PdfPageObject):
         clip = kwargs.pop("clip", None)
         sort = bool(kwargs.pop("sort", False))
         flags = kwargs.pop("flags", None)
-        kwargs.pop("textpage", None)
+        textpage = kwargs.pop("textpage", None)
         delimiters_value = kwargs.pop("delimiters", None)
         delimiters = "" if delimiters_value is None else str(delimiters_value)
         if kwargs:
             raise TypeError(f"unsupported text options: {', '.join(kwargs)}")
+        if textpage is not None:
+            snapshot = cast(TextPage, textpage)
+            if snapshot.parent != self:
+                raise ValueError("not a textpage of this page")
+            if kind in {"text", "plain"}:
+                return snapshot.extractText(sort=sort)
+            if kind == "words":
+                words = snapshot.extractWORDS(delimiters=delimiters)
+                if clip is not None:
+                    clip_rect = Rect(clip)
+                    words = [
+                        word
+                        for word in words
+                        if (Rect(word[:4]) & clip_rect).get_area() * 2 >= Rect(word[:4]).get_area()
+                    ]
+                return sorted(words, key=lambda word: (word[3], word[0])) if sort else words
+            if kind == "blocks":
+                snapshot_blocks = snapshot.extractBLOCKS()
+                return (
+                    sorted(snapshot_blocks, key=lambda block: (block[3], block[0]))
+                    if sort
+                    else snapshot_blocks
+                )
         if self._document.pdf is not None and kind in {"text", "plain", "words", "blocks"}:
             projection = capture_text(
                 self._document.capability_page(self._page_number),
@@ -497,9 +522,12 @@ class Page(PdfPageObject):
         self._page = self._owner._document.pages[self._page_number - 1]
         return self
 
-    def get_textpage(self, *args: object, **kwargs: object) -> "TextPage":
-        del args, kwargs
-        return TextPage(self)
+    def get_textpage(
+        self, clip: object = None, flags: int = 0, matrix: Matrix | None = None
+    ) -> "TextPage":
+        if self.parent is None:
+            raise AssertionError("page is None")
+        return TextPage(self, clip=clip, flags=flags, matrix=matrix)
 
     def get_pixmap(
         self,
@@ -1059,22 +1087,62 @@ class Document(ClosingMixin):
 
 
 class TextPage:
-    """Reusable PyMuPDF text view backed by a local page facade."""
+    """Text snapshot captured from native page operations."""
 
-    def __init__(self, page: Page) -> None:
-        self._page = page
+    def __init__(
+        self, page: Page, *, clip: object = None, flags: int = 0, matrix: Matrix | None = None
+    ) -> None:
+        self.parent = weakref.proxy(page)
+        self._page_ref = weakref.ref(page)
+        self._rect = (
+            Rect(clip)
+            if clip is not None
+            else Rect(
+                0, 0, page.cropbox.width * page._user_unit, page.cropbox.height * page._user_unit
+            ).normalize()
+        )
+        self._projection: TextProjection | None = None
+        self._legacy: dict[str, Any] = {}
+        if page._document.pdf is not None:
+            self._projection = capture_text(
+                page._document.capability_page(page._page_number),
+                flags=flags,
+                clip=clip,
+                matrix=matrix,
+            )
+        else:
+            self._legacy = {
+                kind: page.get_text(kind, flags=flags, clip=clip)
+                for kind in ("text", "words", "blocks")
+            }
 
-    def extractText(self, *args: object, **kwargs: object) -> str:
-        del args
-        return cast(str, self._page.get_text("text", textpage=self, **kwargs))
+    @property
+    def _page(self) -> Page:
+        page = self._page_ref()
+        if page is None:
+            raise ReferenceError("weakly-referenced object no longer exists")
+        return page
 
-    def extractWORDS(self, *args: object, **kwargs: object) -> object:
-        del args
-        return self._page.get_text("words", textpage=self, **kwargs)
+    @property
+    def rect(self) -> Rect:
+        return Rect(self._rect)
 
-    def extractBLOCKS(self, *args: object, **kwargs: object) -> object:
-        del args
-        return self._page.get_text("blocks", textpage=self, **kwargs)
+    def extractText(self, sort: bool = False) -> str:
+        if self._projection is not None:
+            return self._projection.text(sort=sort)
+        return cast(str, self._legacy["text"])
+
+    extractTEXT = extractText
+
+    def extractWORDS(self, delimiters: str | None = None) -> list[tuple[Any, ...]]:
+        if self._projection is not None:
+            return self._projection.words(delimiters=delimiters or "")
+        return cast(list[tuple[Any, ...]], deepcopy(self._legacy["words"]))
+
+    def extractBLOCKS(self) -> list[tuple[Any, ...]]:
+        if self._projection is not None:
+            return self._projection.block_records()
+        return cast(list[tuple[Any, ...]], deepcopy(self._legacy["blocks"]))
 
     def extractDICT(self, *args: object, **kwargs: object) -> object:
         del args

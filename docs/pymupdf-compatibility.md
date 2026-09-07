@@ -66,6 +66,17 @@ invalid control mappings in favor of the font encoding. Unresolved character IDs
 intact when no font mapping is available; `test_2791_content.pdf` and `test_3376.pdf`
 provide regression coverage for that distinction.
 
+`Page.get_textpage()` now captures reusable native text/word/block snapshots. Tests cover
+its default flags, frozen clipping and ligature policy, independent return values, page-handle
+ownership, extraction after source release or closure, and stability after page edits.
+Affine matrices transform glyph geometry before grouping and clipping. Comparisons include
+scale, translation, rotation, shear, nonuniform and singular matrices, crop bounds, and empty blocks when
+device clipping is disabled. Reused word extraction applies the reference's half-word-area
+clip threshold; text and block extraction retain the snapshot's clip.
+
+Other text-page formats still use the earlier page-backed implementation and do not yet
+provide this snapshot lifecycle or complete reference output shapes.
+
 Run the focused tests with:
 
 ```sh
@@ -73,17 +84,17 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_document.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_geometry.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_textpage.py
 ```
 
 These tests use eight explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
 or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
 
 A diagnostic first-page audit of all 179 PDFs in the pinned PyMuPDF corpus completed
-174 comparisons: 127 had exactly equal plain text and 53 had exactly equal word records
-(including coordinates). Five reached the audit's ten-second per-file time budget:
-`dotted-gridlines.pdf`, `test_3186.pdf`, `test_3362.pdf`, `test_3806.pdf`, and
-`test_3887.pdf`. Timeout outcomes vary with concurrent validation workloads. Empty-text pages count in these results;
+177 comparisons: 129 had exactly equal plain text and 54 had exactly equal word records
+(including coordinates). Each comparison ran in a separate process with a ten-second budget;
+`test_4182.pdf` and `test_4699.pdf` timed out. Empty-text pages count in these results;
 this is not an all-page compatibility measure or part of the regression suite. Differences
 include spacing around mathematical symbols (`2201.00069.pdf`), bidirectional text
 (`test-E+A.pdf`), clipping (`test_2957_1.pdf`), and CJK spacing (`chinese-tables.pdf`). These provide
@@ -115,8 +126,8 @@ Work must cover these areas before claiming complete compatibility:
    and supported input formats, with explicit behavior and dependency contracts.
 
 Known remaining examples: extraction formats other than text/words/blocks still use the old
-structured layout; image blocks, sorted-text reconstruction, several text flags, and text-page
-reuse need implementation. `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
+structured layout; image blocks, sorted-text reconstruction, several text flags, and snapshot support for the remaining text formats
+need implementation. `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
 without providing the full persistent editing behavior of PyMuPDF.
 
 Each implementation increment needs differential tests over the same PDFs and explicit

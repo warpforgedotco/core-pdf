@@ -9,7 +9,7 @@ from itertools import groupby
 from typing import Any
 
 from core_pdf.api.compat._shared import BBox, float32
-from core_pdf.api.compat.pymupdf.geometry import Rect
+from core_pdf.api.compat.pymupdf.geometry import Matrix, Point, Rect
 from core_pdf.api.document import PdfPage
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
@@ -150,12 +150,34 @@ class internal_Line:
 @dataclass
 class TextProjection:
     blocks: list[list[internal_Line]] = field(default_factory=list)
+    clip_box: Rect | None = None
+
+    def internal_characters(self, line: internal_Line) -> list[internal_Character]:
+        if self.clip_box is None:
+            return [char for char in line.characters if char.size > 0]
+        box = self.clip_box
+        return [
+            char
+            for char in line.characters
+            if (
+                char.size > 0
+                and char.bbox[2] >= box.x0
+                and char.bbox[0] <= box.x1
+                and char.bbox[3] >= box.y0
+                and char.bbox[1] <= box.y1
+            )
+        ]
 
     def text(self, *, sort: bool = False) -> str:
         blocks = (
             sorted(self.blocks, key=lambda b: (b[0].bbox[3], b[0].bbox[0])) if sort else self.blocks
         )
-        return "".join(line.text + "\n" for block in blocks for line in block)
+        return "".join(
+            "".join(char.text for char in chars) + "\n"
+            for block in blocks
+            for line in block
+            if (chars := self.internal_characters(line))
+        )
 
     def words(self, *, sort: bool = False, delimiters: str = "") -> list[tuple[Any, ...]]:
         output: list[tuple[Any, ...]] = []
@@ -163,7 +185,7 @@ class TextProjection:
             for line_index, line in enumerate(block):
                 pending: list[internal_Character] = []
                 index = 0
-                for char in [*line.characters, None]:
+                for char in [*self.internal_characters(line), None]:
                     if (
                         char is not None
                         and not internal_word_separator(char.text)
@@ -188,15 +210,17 @@ class TextProjection:
         return output
 
     def block_records(self, *, sort: bool = False) -> list[tuple[Any, ...]]:
-        records = [
-            (
-                *internal_union([line.bbox for line in block]),
-                "".join(line.text + "\n" for line in block),
-                index,
-                0,
+        records: list[tuple[Any, ...]] = []
+        for index, block in enumerate(self.blocks):
+            lines = [self.internal_characters(line) for line in block]
+            characters = [char for line in lines for char in line]
+            bbox = (
+                internal_union([char.bbox for char in characters])
+                if characters
+                else (2147483520.0, 2147483520.0, -2147483648.0, -2147483648.0)
             )
-            for index, block in enumerate(self.blocks)
-        ]
+            value = "".join("".join(char.text for char in line) + "\n" for line in lines if line)
+            records.append((*bbox, value, index, 0))
         return sorted(records, key=lambda block: (block[3], block[0])) if sort else records
 
 
@@ -269,19 +293,15 @@ def internal_capture_glyphs(glyphs: Iterable[GlyphObservation]) -> Iterator[Glyp
         yield replace(first, text=value, baseline=baseline)
 
 
-def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> TextProjection:
+def capture_text(
+    page: PdfPage, *, flags: int = 195, clip: object = None, matrix: Matrix | None = None
+) -> TextProjection:
     crop = Rect(page.crop_box or page.media_box)
     unit_value = page.document.resolver.resolve(page.page_dict.get("UserUnit"))
     unit = float32(unit_value) if isinstance(unit_value, (int, float)) else 1.0
-    media = Rect(page.media_box or crop)
-    bounds = Rect(
-        (media.x0 - crop.x0) * unit,
-        (crop.y1 - media.y1) * unit,
-        (media.x1 - crop.x0) * unit,
-        (crop.y1 - media.y0) * unit,
-    ).normalize()
+    bounds = Rect(0, 0, crop.width * unit, crop.height * unit).normalize()
     clip_box = Rect(clip) if clip is not None else bounds
-    projection = TextProjection()
+    projection = TextProjection(clip_box=clip_box)
     previous_raw_end: tuple[float, float] | None = None
     previous_end: tuple[float, float] | None = None
     previous_group: object = None
@@ -324,12 +344,23 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
         )
         previous_raw_end, previous_end, previous_group = (ex, ey), end, group
         ascender, descender = internal_metrics(glyph)
-        matrix = glyph.glyph_transform
-        if matrix is None:
+        glyph_matrix = glyph.glyph_transform
+        if glyph_matrix is None:
             vx = float32(-dy * glyph.effective_font_height * unit)
             vy = float32(-dx * glyph.effective_font_height * unit)
         else:
-            vx, vy = float32(matrix[2] * 1000 * unit), float32(-matrix[3] * 1000 * unit)
+            vx, vy = float32(glyph_matrix[2] * 1000 * unit), float32(-glyph_matrix[3] * 1000 * unit)
+        if matrix is not None:
+            px, py = Point(px, py) * matrix
+            transformed_end = Point(end) * matrix
+            end = (float32(transformed_end.x), float32(transformed_end.y))
+            px, py = float32(px), float32(py)
+            vx, vy = float32(matrix.a * vx + matrix.c * vy), float32(matrix.b * vx + matrix.d * vy)
+            tx, ty = matrix.a * dx - matrix.c * dy, matrix.b * dx - matrix.d * dy
+            direction_length = math.hypot(tx, ty)
+            dx, dy = (
+                (tx / direction_length, -ty / direction_length) if direction_length else (1.0, 0.0)
+            )
         corners = [
             (float32(ox + float32(vx * metric)), float32(oy + float32(vy * metric)))
             for ox, oy in ((px, py), end)
@@ -341,9 +372,11 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
             max(p[0] for p in corners),
             max(p[1] for p in corners),
         )
-        if (clip is not None or flags & 64) and not clip_box.intersects(bbox):
+        if flags & 64 and not clip_box.intersects(bbox):
             continue
         size = abs(float32(glyph.effective_font_height * unit))
+        if matrix is not None:
+            size = float32(size * math.sqrt(abs(matrix.a * matrix.d - matrix.b * matrix.c)))
         value = glyph.text
         if not flags & 1:
             value = internal_LIGATURES.get(value, value)
@@ -364,6 +397,8 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
             em = max(size, 1e-9)
             new_line = not same_direction or abs(perpendicular) > em * 0.8 or abs(gap) > em * 0.8
             new_block = not same_direction or abs(perpendicular) > em * 1.5
+        if size == 0:
+            new_line = new_block = True
         if new_block:
             projection.blocks.append([])
         if new_line:
@@ -401,7 +436,7 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
                 max(float32(end[0] + float32(vx * m)) for m in (ascender, descender)),
                 max(float32(end[1] + float32(vy * m)) for m in (ascender, descender)),
             )
-            if (clip is not None or flags & 64) and (
+            if flags & 64 and (
                 trailing_bbox[2] < clip_box.x0
                 or trailing_bbox[0] > clip_box.x1
                 or trailing_bbox[3] < clip_box.y0

@@ -95,11 +95,11 @@ upstream libraries.
 The native PyMuPDF facade is available as `core_pdf.api.compat.pymupdf`. Its target is full
 public-API compatibility with PyMuPDF, without importing PyMuPDF at runtime. Implementation
 is in progress: the public import path does **not** yet imply full behavioral compatibility.
-Initial differential coverage checks affine matrices, document creation, opening, page access,
-and lifecycle behavior using upstream PDFs.
+Differential coverage checks geometry, document lifecycle, native text extraction, and reusable
+text/word/block snapshots using upstream PDFs.
 See [PyMuPDF compatibility](pymupdf-compatibility.md) for current coverage and outstanding work.
 
-Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`,
+Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`, `pymupdf`,
 `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray facades against their reference
 libraries. By default, each facade uses its own upstream fixture corpus, plus selected
 cross-corpus redaction cases for x-ray:
