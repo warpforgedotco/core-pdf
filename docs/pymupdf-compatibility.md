@@ -66,6 +66,14 @@ until their changes have a native object representation. Non-default save polici
 incremental output, encryption, indirect dictionary writes, complex page-label trees,
 free-object semantics, generations, and damaged-file recovery need further work.
 
+Metadata editing now updates the native Info dictionary: omitted fields survive, empty
+updates clear the trailer reference, null-like values clear individual fields, and string
+encoding follows the reference. Updates replace the metadata cache while low-level object
+edits leave it unchanged. XML metadata supports reading, replacement, deletion, and xref
+access through native catalog streams. Comparisons cover Unicode and control characters,
+existing and empty documents, stream bytes, retained pages, cache ownership, selected errors,
+and reopening saved output in both engines.
+
 Text, words, and text-block extraction now project native glyph captures directly, with
 reader-specific font metrics, character clipping, spacing, and line/block grouping. Loading
 a page no longer builds the whole document's structured layout. Differential coverage adds
@@ -155,7 +163,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_spacing.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text_transform.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_objects.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_write.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_write.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_metadata.py
 ```
 
 These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus

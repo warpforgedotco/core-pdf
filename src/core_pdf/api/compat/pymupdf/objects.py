@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import zlib
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from core_pdf.api.compat._shared import float32
@@ -14,6 +14,20 @@ from core_pdf.impl._impl.document.write import write_pdf
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
+
+
+def internal_metadata_value(value: object) -> str:
+    if not value or value in ("none", "null"):
+        return "null"
+    characters = list(cast(Any, value))
+    if any(ord(character) > 255 for character in characters):
+        data = b"\xfe\xff" + "".join(characters).encode("utf-16-be")
+    else:
+        data = bytes(
+            ord(character) if ord(character) >= 32 or character in "\b\t\n\f\r" else 183
+            for character in characters
+        )
+    return "<" + data.hex() + ">"
 
 
 def internal_number(value: float) -> str:
@@ -376,6 +390,16 @@ class ObjectAccess:
             trailer["ID"] = [first, PdfString(uuid4().bytes)]
             self.trailer_override = trailer
         return write_pdf(objects, trailer, size=self.length, version=version)
+
+    def metadata_text(self, key: str) -> str:
+        info = self.resolve(self.trailer.get("Info"))
+        value = self.resolve(info.get(key)) if isinstance(info, dict) else None
+        if not isinstance(value, PdfString):
+            return ""
+        text = decode_pdf_text_string(value.data).split("\0", 1)[0]
+        if not value.data.startswith((b"\xfe\xff", b"\xff\xfe", b"\xef\xbb\xbf")):
+            text = text.replace("\x9f", "\0").replace("\xad", "\0")
+        return text
 
     def keys(self, xref: int) -> list[str]:
         obj = self.get(xref)

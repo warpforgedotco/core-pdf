@@ -23,7 +23,7 @@ from core_pdf.api.compat._shared import (
     write_bytes,
 )
 from core_pdf.api.compat.pymupdf.geometry import IRect, Matrix, Point, Quad, Rect
-from core_pdf.api.compat.pymupdf.objects import ObjectAccess, format_object
+from core_pdf.api.compat.pymupdf.objects import ObjectAccess, format_object, internal_metadata_value
 from core_pdf.api.compat.pymupdf.text import TextProjection, capture_text
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
@@ -850,12 +850,10 @@ class Document(ClosingMixin):
         pdf = PdfDocument.open(source)
         try:
             self._document = StructuredState(pdf)
-            info = pdf.get_metadata().get("info", {})
-            if isinstance(info, Mapping):
-                for key in self.metadata:
-                    if key not in {"format", "encryption"}:
-                        pdf_key = key[0].upper() + key[1:]
-                        self.metadata[key] = str(info.get(pdf_key, ""))
+            access = ObjectAccess(pdf)
+            for key in self.metadata:
+                if key not in {"format", "encryption"}:
+                    self.metadata[key] = access.metadata_text(key[0].upper() + key[1:])
             header = bytes(pdf.raw_data[:32]).splitlines()[0]
             if header.startswith(b"%PDF-"):
                 self.metadata["format"] = "PDF " + header[5:].decode("ascii", errors="replace")
@@ -1232,9 +1230,72 @@ class Document(ClosingMixin):
             normalized.append([level, title, page, *row[3:]])
         self._toc_override = normalized
 
-    def set_metadata(self, metadata: dict[str, object]) -> None:
-        self._set_document(self._document.update_metadata(metadata))
-        self.metadata.update(metadata)
+    def xref_xml_metadata(self) -> int:
+        kind, reference = self.xref_get_key(self.pdf_catalog(), "Metadata")
+        return int(reference.split()[0]) if kind == "xref" else 0
+
+    def get_xml_metadata(self) -> str:
+        xref = self.xref_xml_metadata()
+        data = self.xref_stream(xref) if xref else None
+        return data.split(b"\0", 1)[0].decode("utf-8", errors="replace") if data is not None else ""
+
+    def set_xml_metadata(self, metadata: str) -> None:
+        self._check_open(check_encrypted=True)
+        data = metadata.encode("utf-8")
+        xref = self.xref_xml_metadata()
+        if not xref:
+            xref = self.get_new_xref()
+            self.update_object(xref, "<<>>")
+            self.xref_set_key(self.pdf_catalog(), "Metadata", f"{xref} 0 R")
+        self.update_stream(xref, data, compress=False)
+        self.xref_set_key(xref, "Type", "/Metadata")
+        self.xref_set_key(xref, "Subtype", "/XML")
+
+    def del_xml_metadata(self) -> None:
+        self._check_open(check_encrypted=True)
+        access = self._objects
+        xref = self.pdf_catalog()
+        catalog = access.get(xref)
+        if isinstance(catalog, dict) and "Metadata" in catalog:
+            access.overrides[xref] = {
+                key: value for key, value in catalog.items() if key != "Metadata"
+            }
+            self._object_revision += 1
+
+    def set_metadata(self, metadata: dict[str, object] | None = None) -> None:
+        if self.is_closed:
+            raise AttributeError("'NoneType' object has no attribute 'm_internal'")
+        self._check_open(check_encrypted=True)
+        if metadata is None:
+            metadata = {}
+        if type(metadata) is not dict:
+            raise ValueError("bad metadata")
+        fields = {
+            key: key[0].upper() + key[1:]
+            for key in self.metadata
+            if key not in {"format", "encryption"}
+        }
+        unknown = set(metadata) - fields.keys() - {"format", "encryption"}
+        if unknown:
+            raise ValueError(f"bad dict key(s): {unknown}")
+        kind, reference = self.xref_get_key(-1, "Info")
+        if kind != "xref":
+            if not metadata:
+                return
+            xref = self.get_new_xref()
+            self.update_object(xref, "<<>>")
+            self.xref_set_key(-1, "Info", f"{xref} 0 R")
+        else:
+            xref = int(reference.split()[0])
+            if not metadata:
+                self.xref_set_key(-1, "Info", "null")
+        for key, value in metadata.items():
+            if key in fields:
+                self.xref_set_key(xref, fields[key], internal_metadata_value(value))
+        self.metadata = {
+            **self.metadata,
+            **{key: self._objects.metadata_text(pdf_key) for key, pdf_key in fields.items()},
+        }
 
     def _set_document(self, document: StructuredState) -> tuple[Page, ...]:
         """Adopt ``document`` and rebuild the facade page objects from it."""
