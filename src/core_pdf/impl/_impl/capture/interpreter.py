@@ -35,6 +35,7 @@ class TextState(RecordingMethods):
         self.stream_order = -1
         self.sequence = 0
         self.text_object_id = 0
+        self.text_matrix_id = 0
         self.pending_line_break = False
         self.group_alpha = None
         self.run_accumulator = RunAccumulator(self.runs)

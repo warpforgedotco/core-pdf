@@ -281,7 +281,16 @@ class TextProjection:
             end = found + len(query)
             for index in range(found, end):
                 for line_index, char in characters[index]:
-                    if hits and hits[-1][0] == line_index and hits[-1][1] in (index, index + 1):
+                    adjacent = False
+                    if hits:
+                        previous = hits[-1][2][-1]
+                        adjacent = math.dist(previous.end, char.origin) < char.size * 0.2
+                    if (
+                        hits
+                        and adjacent
+                        and hits[-1][0] == line_index
+                        and hits[-1][1] in (index, index + 1)
+                    ):
                         hits[-1][2].append(char)
                         hits[-1] = (line_index, index + 1, hits[-1][2])
                     else:
@@ -292,7 +301,21 @@ class TextProjection:
             first = Quad(chars[0].quad) if chars[0].quad is not None else Rect(chars[0].bbox).quad
             last = Quad(chars[-1].quad) if chars[-1].quad is not None else Rect(chars[-1].bbox).quad
             result.append(Quad(first.ul, last.ur, first.ll, last.lr))
-        return result if quads else [quad.rect for quad in result]
+        if quads:
+            return result
+        rectangles: list[Rect] = []
+        for quad in result:
+            rect = quad.rect
+            if (
+                rectangles
+                and abs(rect.y0 - rectangles[-1].y0) < 1e-5
+                and abs(rect.y1 - rectangles[-1].y1) < 1e-5
+                and rect.intersects(rectangles[-1])
+            ):
+                rectangles[-1] |= rect
+            else:
+                rectangles.append(rect)
+        return rectangles
 
     def textbox(self, rect: Rect) -> str:
         if rect.is_empty:
@@ -588,27 +611,83 @@ def capture_text(
     previous_raw_end: tuple[float, float] | None = None
     previous_end: tuple[float, float] | None = None
     previous_group: object = None
+    previous_matrix_id: object = None
+    previous_line_origin: tuple[float, float] | None = None
+    reader_line_origin: tuple[float, float] | None = None
     previous: internal_Character | None = None
     for glyph in internal_capture_glyphs(page.get_page_program().glyphs):
         if not glyph.text or glyph.baseline is None or not glyph.font_size:
             continue
         x, y, ex, ey = glyph.baseline
         provenance = dict(glyph.provenance)
+        raw_origin = provenance.get("line_matrix_origin")
+        if (
+            isinstance(raw_origin, tuple)
+            and len(raw_origin) == 2
+            and isinstance(raw_origin[0], (int, float))
+            and isinstance(raw_origin[1], (int, float))
+        ):
+            line_origin = (float(raw_origin[0]), float(raw_origin[1]))
+            if (
+                previous_matrix_id == provenance.get("text_matrix_id")
+                and previous_line_origin is not None
+                and reader_line_origin is not None
+            ):
+                reader_line_origin = (
+                    float32(
+                        reader_line_origin[0] + float32(line_origin[0] - previous_line_origin[0])
+                    ),
+                    float32(
+                        reader_line_origin[1] + float32(line_origin[1] - previous_line_origin[1])
+                    ),
+                )
+            else:
+                reader_line_origin = (float32(line_origin[0]), float32(line_origin[1]))
+            previous_line_origin = line_origin
+            previous_matrix_id = provenance.get("text_matrix_id")
         group = (
             glyph.text_object_id,
+            provenance.get("text_matrix_id"),
             provenance.get("line_matrix_origin"),
             provenance.get("text_matrix"),
         )
         if group == previous_group and previous_raw_end is not None and previous_end is not None:
-            px = float32(previous_end[0] + float32((x - previous_raw_end[0]) * unit))
-            py = float32(previous_end[1] - float32((y - previous_raw_end[1]) * unit))
+            cursor_x = float32(previous_end[0] + float32(x - previous_raw_end[0]))
+            cursor_y = float32(previous_end[1] + float32(y - previous_raw_end[1]))
         else:
-            px = float32(float32(float32(x) - float32(crop.x0)) * unit)
-            py = float32(float32(float32(crop.y1) - float32(y)) * unit)
+            if reader_line_origin is not None and previous_line_origin is not None:
+                cursor_x = float32(reader_line_origin[0] + float32(x - previous_line_origin[0]))
+                cursor_y = float32(reader_line_origin[1] + float32(y - previous_line_origin[1]))
+            else:
+                cursor_x, cursor_y = float32(x), float32(y)
+        px = float32(float32(cursor_x - float32(crop.x0)) * unit)
+        py = float32(float32(float32(crop.y1) - cursor_y) * unit)
         # PDF widths use thousandths of an em. Quantize before advancing the reader cursor.
         scale = glyph.effective_font_size
         distance = math.hypot(ex - x, ey - y)
         width = distance / scale * 1000 if scale else 0
+        cursor_width = width
+        decoder = glyph.font_decoder
+        dx, dy = ((ex - x) / distance, (ey - y) / distance) if distance else (1.0, 0.0)
+        glyph_matrix = glyph.glyph_transform
+        if (
+            glyph_matrix is not None
+            and isinstance(decoder, FontDecoder)
+            and not decoder.is_vertical
+        ):
+            axis_length = math.hypot(glyph_matrix[0], glyph_matrix[1])
+            if axis_length:
+                dx, dy = glyph_matrix[0] / axis_length, glyph_matrix[1] / axis_length
+                cursor_width = ((ex - x) * dx + (ey - y) * dy) / scale * 1000 if scale else 0
+        if isinstance(decoder, FontDecoder) and glyph.char_code is not None:
+            width_code = (
+                glyph.cid if decoder.is_cid_font and glyph.cid is not None else glyph.char_code
+            )
+            width = (
+                abs(decoder.vertical_glyph_metric(width_code)[0])
+                if decoder.is_vertical
+                else decoder.glyph_width(width_code)
+            )
         builtin_widths = internal_SYMBOL_WIDTHS.get(glyph.font_name or "")
         if (
             builtin_widths is not None
@@ -618,23 +697,24 @@ def capture_text(
             and 0 <= glyph.char_code < 256
             and "Widths" not in glyph.font_decoder.font
         ):
+            cursor_width += builtin_widths[glyph.char_code] - width
             width = builtin_widths[glyph.char_code]
         advance = float32(float32(scale) * float32(width * float32(0.001)))
-        dx, dy = ((ex - x) / distance, (ey - y) / distance) if distance else (1.0, 0.0)
         end = (
             float32(px + float32(advance * dx * unit)),
             float32(py - float32(advance * dy * unit)),
         )
-        if dy:
-            # The PDF text cursor advances in bottom-up coordinates before
-            # the page transform. Rounding after flipping Y loses that cursor's
-            # single-precision increments on vertical text.
-            top = float32(crop.y1 * unit)
-            pdf_y = float32(top - py)
-            end = (end[0], float32(top - float32(pdf_y + float32(advance * dy * unit))))
-        previous_raw_end, previous_end, previous_group = (ex, ey), end, group
+        # Spacing changes the PDF cursor, not the glyph's advance box. Keep
+        # cursor rounding in PDF space before crop translation and the Y flip.
+        spacing = float32(scale * (cursor_width - width) * 0.001)
+        cursor_advance = float32(float32(float32(scale) * float32(width / 1000)) + spacing)
+        previous_raw_end = (ex, ey)
+        previous_end = (
+            float32(cursor_x + float32(cursor_advance * dx)),
+            float32(cursor_y + float32(cursor_advance * dy)),
+        )
+        previous_group = group
         ascender, descender = internal_metrics(glyph)
-        glyph_matrix = glyph.glyph_transform
         if glyph_matrix is None:
             vx = float32(-dy * glyph.effective_font_height * unit)
             vy = float32(-dx * glyph.effective_font_height * unit)
@@ -715,22 +795,29 @@ def capture_text(
             and not previous.text.isspace()
             and not char.text.isspace()
         ):
+            previous_quad = (
+                Quad(previous.quad) if previous.quad is not None else Rect(previous.bbox).quad
+            )
+            next_quad = Quad(char.quad) if char.quad is not None else Rect(char.bbox).quad
+            space_quad = Quad(previous_quad.ur, next_quad.ul, previous_quad.lr, next_quad.ll)
+            space_box = space_quad.rect
             line.characters.append(
                 internal_Character(
                     " ",
-                    (
-                        previous.bbox[2],
-                        min(previous.bbox[1], bbox[1]),
-                        bbox[0],
-                        max(previous.bbox[3], bbox[3]),
-                    ),
+                    (space_box.x0, space_box.y0, space_box.x1, space_box.y1),
                     previous.end,
                     char.origin,
                     size,
                     char.direction,
-                    previous.style,
+                    replace(
+                        previous.style,
+                        char_flags=previous.style.char_flags | (512 if gap > size * 0.3 else 0),
+                    )
+                    if previous.style is not None
+                    else None,
                     True,
                     previous.seqno,
+                    tuple((point.x, point.y) for point in space_quad),
                 )
             )
         line.characters.append(char)

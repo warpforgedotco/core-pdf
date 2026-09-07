@@ -140,6 +140,7 @@ class RecordingMethods(SemanticTextState):
     stream_order: int
     sequence: int
     text_object_id: int
+    text_matrix_id: int
     pending_line_break: bool
     group_alpha: float | None
     run_accumulator: RunAccumulator
@@ -276,6 +277,7 @@ class RecordingMethods(SemanticTextState):
             ("layout_form_id", self.layout_form_id),
             ("text_matrix", text_basis[2:]),
             ("line_matrix_origin", (self.lm_e, self.lm_f)),
+            ("text_matrix_id", self.text_matrix_id),
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
             ("text_rise", self.rise),
@@ -661,6 +663,8 @@ class RecordingMethods(SemanticTextState):
         self.sequence += 1
 
     def text_boundary(self, state: object, kind: str) -> None:
+        if kind in ("begin", "matrix"):
+            self.text_matrix_id += 1
         if kind == "begin":
             self.text_object_id += 1
             self.run_accumulator.flush()

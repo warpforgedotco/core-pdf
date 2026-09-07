@@ -106,6 +106,15 @@ bidirectional text, dehyphenation, nonorthogonal selection geometry, and search 
 need corpus-wide verification. Selection/search over structured edits inherit the existing
 editing snapshot's approximate glyph geometry.
 
+Character and word spacing now advance the reader cursor independently of glyph boxes.
+The cursor rounds in PDF coordinates before crop translation, and native capture identifies
+explicit text-matrix resets so relative line moves retain their accumulated rounding.
+Differential variants cover negative, fractional, and large spacing in all four orthogonal
+rotations, ordinary and large synthetic-space metadata, overlapping search quads, and
+relative positioning with repeated matrix resets. Searches over the unchanged
+`test-E+A.pdf` add an embedded-font regression for spacing and crop translation. Other
+queries and layouts in that fixture still require broader comparison.
+
 Run the focused tests with:
 
 ```sh
@@ -116,10 +125,11 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_textpage.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_structured_text.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_selection.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_selection.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_spacing.py
 ```
 
-These tests use eight explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
+These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
 or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
 
 A diagnostic first-page audit of all 179 PDFs in the pinned PyMuPDF corpus completed
