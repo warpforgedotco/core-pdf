@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import weakref
+from base64 import b64encode
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import replace
@@ -54,6 +55,15 @@ def synthesize_characters(text: str, box: BBox) -> list[tuple[str, BBox]]:
         (character, (x0 + index * width, y0, x0 + (index + 1) * width, y1))
         for index, character in enumerate(text)
     ]
+
+
+def internal_text_json(payload: dict[str, Any]) -> str:
+    def encode(value: object) -> str | None:
+        if isinstance(value, (bytes, bytearray)):
+            return b64encode(value).decode("ascii")
+        return None
+
+    return json.dumps(payload, separators=(",", ":"), indent=1, default=encode)
 
 
 class Pixmap:
@@ -325,6 +335,23 @@ class Page(PdfPageObject):
                     if sort
                     else snapshot_blocks
                 )
+        if kind in {"dict", "rawdict", "json", "rawjson"} and (
+            textpage is not None or self._document.pdf is not None
+        ):
+            native_snapshot = (
+                cast(TextPage, textpage)
+                if textpage is not None
+                else self.get_textpage(
+                    clip=clip, flags=199 if flags is None else int(cast(Any, flags))
+                )
+            )
+            cb = self.cropbox if clip is None else None
+            payload = (
+                native_snapshot.extractRAWDICT(cb=cb, sort=sort)
+                if kind in {"rawdict", "rawjson"}
+                else native_snapshot.extractDICT(cb=cb, sort=sort)
+            )
+            return internal_text_json(payload) if kind in {"json", "rawjson"} else payload
         if self._document.pdf is not None and kind in {"text", "plain", "words", "blocks"}:
             projection = capture_text(
                 self._document.capability_page(self._page_number),
@@ -1113,7 +1140,7 @@ class TextPage:
         else:
             self._legacy = {
                 kind: page.get_text(kind, flags=flags, clip=clip)
-                for kind in ("text", "words", "blocks")
+                for kind in ("text", "words", "blocks", "dict", "rawdict")
             }
 
     @property
@@ -1144,13 +1171,27 @@ class TextPage:
             return self._projection.block_records()
         return cast(list[tuple[Any, ...]], deepcopy(self._legacy["blocks"]))
 
-    def extractDICT(self, *args: object, **kwargs: object) -> object:
-        del args
-        return self._page.get_text("dict", textpage=self, **kwargs)
+    def extractDICT(self, cb: Rect | None = None, sort: bool = False) -> dict[str, Any]:
+        return self._dictionary(cb, sort=sort, raw=False)
 
-    def extractRAWDICT(self, *args: object, **kwargs: object) -> object:
-        del args
-        return self._page.get_text("rawdict", textpage=self, **kwargs)
+    def extractRAWDICT(self, cb: Rect | None = None, sort: bool = False) -> dict[str, Any]:
+        return self._dictionary(cb, sort=sort, raw=True)
+
+    def _dictionary(self, cb: Rect | None, *, sort: bool, raw: bool) -> dict[str, Any]:
+        bounds = self._rect if cb is None else cb
+        if self._projection is not None:
+            return self._projection.dictionary(bounds.width, bounds.height, raw=raw, sort=sort)
+        result = cast(dict[str, Any], deepcopy(self._legacy["rawdict" if raw else "dict"]))
+        result.update(width=bounds.width, height=bounds.height)
+        if sort:
+            result["blocks"].sort(key=lambda block: (block["bbox"][3], block["bbox"][0]))
+        return result
+
+    def extractJSON(self, cb: Rect | None = None, sort: bool = False) -> str:
+        return internal_text_json(self.extractDICT(cb=cb, sort=sort))
+
+    def extractRAWJSON(self, cb: Rect | None = None, sort: bool = False) -> str:
+        return internal_text_json(self.extractRAWDICT(cb=cb, sort=sort))
 
     def extractHTML(self, *args: object, **kwargs: object) -> str:
         del args

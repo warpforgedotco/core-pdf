@@ -10,8 +10,10 @@ from typing import Any
 
 from core_pdf.api.compat._shared import BBox, float32
 from core_pdf.api.compat.pymupdf.geometry import Matrix, Point, Rect
+from core_pdf.api.compat.pymupdf.images import capture_images
 from core_pdf.api.document import PdfPage
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
@@ -124,6 +126,67 @@ def internal_union(boxes: list[BBox]) -> BBox:
     )
 
 
+@dataclass(frozen=True)
+class internal_Style:
+    font: str
+    flags: int
+    char_flags: int
+    color: int
+    alpha: int
+    ascender: float
+    descender: float
+    wmode: int = 0
+    bidi: int = 0
+
+
+def internal_style(glyph: GlyphObservation) -> internal_Style:
+    font = (glyph.font_name or "").split("+", 1)[-1]
+    decoder = glyph.font_decoder
+    descriptor = decoder.font.get("FontDescriptor", {}) if isinstance(decoder, FontDecoder) else {}
+    descriptor_flags = int(descriptor.get("Flags", 0)) if isinstance(descriptor, dict) else 0
+    lower = font.lower()
+    bold = "bold" in lower or bool(descriptor_flags & 262144)
+    italic = "italic" in lower or "oblique" in lower or bool(descriptor_flags & 64)
+    mono = "courier" in lower or bool(descriptor_flags & 1)
+    serif = "times" in lower or bool(descriptor_flags & 2)
+    if isinstance(decoder, FontDecoder) and decoder.font_program is not None:
+        serif = True
+    font_flags = (
+        (16 if bold else 0) | (2 if italic else 0) | (8 if mono else 0) | (4 if serif else 0)
+    )
+    mode = glyph.text_render_mode % 4
+    char_flags = (8 if bold else 0) | (16 if mode in (0, 2) else 0) | (32 if mode == 1 else 0)
+    components = (glyph.stroke_color if mode == 1 else glyph.fill) or (0.0,)
+    rgb: tuple[float, ...]
+    if len(components) == 1:
+        rgb = components * 3
+    elif len(components) == 4:
+        cyan, magenta, yellow, black = components
+        # Keep native color management; the default press profile currently
+        # differs from MuPDF's, so DeviceCMYK span colors are not yet identical.
+        rgb = tuple(value / 255 for value in cmyk_floats_to_srgb(cyan, magenta, yellow, black))
+    else:
+        rgb = components[:3]
+    color = 0
+    for component in rgb:
+        color = (color << 8) | round(max(0, min(1, component)) * 255)
+    opacity = glyph.stroke_opacity if mode == 1 else glyph.fill_opacity
+    alpha = round(max(0, min(1, 1.0 if opacity is None else opacity)) * 255)
+    if mode == 3:
+        alpha = 0
+    ascender, descender = internal_metrics(glyph, normalize=False)
+    return internal_Style(
+        font,
+        font_flags,
+        char_flags,
+        color,
+        alpha,
+        ascender,
+        descender,
+        int(isinstance(decoder, FontDecoder) and decoder.is_vertical),
+    )
+
+
 @dataclass
 class internal_Character:
     text: str
@@ -132,6 +195,9 @@ class internal_Character:
     end: tuple[float, float]
     size: float
     direction: tuple[float, float]
+    style: internal_Style | None = None
+    synthetic: bool = False
+    seqno: int = 0
 
 
 @dataclass
@@ -151,6 +217,7 @@ class internal_Line:
 class TextProjection:
     blocks: list[list[internal_Line]] = field(default_factory=list)
     clip_box: Rect | None = None
+    images: list[tuple[int, dict[str, Any]]] = field(default_factory=list)
 
     def internal_characters(self, line: internal_Line) -> list[internal_Character]:
         if self.clip_box is None:
@@ -221,10 +288,100 @@ class TextProjection:
             )
             value = "".join("".join(char.text for char in line) + "\n" for line in lines if line)
             records.append((*bbox, value, index, 0))
+        if self.images:
+            events = [(self.blocks[record[5]][0].characters[0].seqno, record) for record in records]
+            for seqno, image in self.images:
+                space = {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(
+                    image["colorspace"], "DeviceRGB"
+                )
+                description = (
+                    f"<image: {space}, width: {image['width']}, height: {image['height']}, "
+                    f"bpc: {image['bpc']}>\n"
+                )
+                events.append((seqno, (*image["bbox"], description, 0, 1)))
+            records = [
+                (*record[:5], number, record[6])
+                for number, (_, record) in enumerate(sorted(events, key=lambda event: event[0]))
+            ]
         return sorted(records, key=lambda block: (block[3], block[0])) if sort else records
 
+    def dictionary(
+        self, width: float, height: float, *, raw: bool = False, sort: bool = False
+    ) -> dict[str, Any]:
+        blocks: list[dict[str, Any]] = []
+        for number, block in enumerate(self.blocks):
+            lines: list[dict[str, Any]] = []
+            for line in block:
+                characters = self.internal_characters(line)
+                if not characters:
+                    continue
+                spans: list[dict[str, Any]] = []
+                for _, members in groupby(characters, key=lambda char: (char.style, char.size)):
+                    chars = list(members)
+                    first = chars[0]
+                    style = first.style
+                    if style is None:
+                        continue
+                    span: dict[str, Any] = {
+                        "size": first.size,
+                        "flags": style.flags,
+                        "bidi": style.bidi,
+                        "char_flags": style.char_flags,
+                        "font": style.font,
+                        "color": style.color,
+                        "alpha": style.alpha,
+                        "ascender": style.ascender,
+                        "descender": style.descender,
+                    }
+                    if raw:
+                        span["chars"] = [
+                            {
+                                "origin": c.origin,
+                                "bbox": c.bbox,
+                                "c": c.text,
+                                "synthetic": c.synthetic,
+                            }
+                            for c in chars
+                        ]
+                    else:
+                        span["text"] = "".join(c.text for c in chars)
+                    span["origin"] = first.origin
+                    span["bbox"] = internal_union([c.bbox for c in chars])
+                    spans.append(span)
+                if not spans:
+                    continue
+                lines.append(
+                    {
+                        "spans": spans,
+                        "wmode": characters[0].style.wmode if characters[0].style else 0,
+                        "dir": tuple(value if value else 0.0 for value in characters[0].direction),
+                        "bbox": internal_union([c.bbox for c in characters]),
+                    }
+                )
+            if lines:
+                blocks.append(
+                    {
+                        "type": 0,
+                        "number": number,
+                        "flags": 0,
+                        "bbox": internal_union([line["bbox"] for line in lines]),
+                        "lines": lines,
+                    }
+                )
+        if self.images:
+            events = [
+                (self.blocks[block["number"]][0].characters[0].seqno, block) for block in blocks
+            ]
+            events.extend((seqno, dict(image)) for seqno, image in self.images)
+            blocks = [block for _, block in sorted(events, key=lambda event: event[0])]
+            for number, payload_block in enumerate(blocks):
+                payload_block["number"] = number
+        if sort:
+            blocks.sort(key=lambda block: (block["bbox"][3], block["bbox"][0]))
+        return {"width": width, "height": height, "blocks": blocks}
 
-def internal_metrics(glyph: GlyphObservation) -> tuple[float, float]:
+
+def internal_metrics(glyph: GlyphObservation, *, normalize: bool = True) -> tuple[float, float]:
     decoder = glyph.font_decoder
     if not isinstance(decoder, FontDecoder):
         return float32(0.8), float32(-0.2)
@@ -234,7 +391,7 @@ def internal_metrics(glyph: GlyphObservation) -> tuple[float, float]:
     else:
         ascender, descender = decoder.ascent / 1000, decoder.descent / 1000
     height = ascender - descender
-    if 0 < height < 1:
+    if normalize and 0 < height < 1:
         ascender, descender = ascender / height, descender / height
     return float32(ascender), float32(descender)
 
@@ -302,6 +459,8 @@ def capture_text(
     bounds = Rect(0, 0, crop.width * unit, crop.height * unit).normalize()
     clip_box = Rect(clip) if clip is not None else bounds
     projection = TextProjection(clip_box=clip_box)
+    if flags & 4:
+        projection.images = capture_images(page, clip=clip_box, flags=flags, matrix=matrix)
     previous_raw_end: tuple[float, float] | None = None
     previous_end: tuple[float, float] | None = None
     previous_group: object = None
@@ -384,7 +543,9 @@ def capture_text(
             " " if c in "\b\t\n\v\f\r" or (not flags & 2 and c in internal_WHITESPACE) else c
             for c in value
         )
-        char = internal_Character(value[0], bbox, (px, py), end, size, (dx, -dy))
+        char = internal_Character(
+            value[0], bbox, (px, py), end, size, (dx, -dy), internal_style(glyph), seqno=glyph.seqno
+        )
         new_line = previous is None
         new_block = previous is None
         gap = 0.0
@@ -397,7 +558,10 @@ def capture_text(
             em = max(size, 1e-9)
             new_line = not same_direction or abs(perpendicular) > em * 0.8 or abs(gap) > em * 0.8
             new_block = not same_direction or abs(perpendicular) > em * 1.5
-        if size == 0:
+        if size == 0 or (
+            previous is not None
+            and any(previous.seqno < seqno < glyph.seqno for seqno, _ in projection.images)
+        ):
             new_line = new_block = True
         if new_block:
             projection.blocks.append([])
@@ -425,6 +589,9 @@ def capture_text(
                     char.origin,
                     size,
                     char.direction,
+                    previous.style,
+                    True,
+                    previous.seqno,
                 )
             )
         line.characters.append(char)
@@ -443,7 +610,16 @@ def capture_text(
                 or trailing_bbox[1] > clip_box.y1
             ):
                 continue
-            previous = internal_Character(continuation, trailing_bbox, end, end, size, (dx, -dy))
+            previous = internal_Character(
+                continuation,
+                trailing_bbox,
+                end,
+                end,
+                size,
+                (dx, -dy),
+                char.style,
+                seqno=glyph.seqno,
+            )
             line.characters.append(previous)
     return projection
 

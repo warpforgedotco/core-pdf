@@ -74,8 +74,22 @@ scale, translation, rotation, shear, nonuniform and singular matrices, crop boun
 device clipping is disabled. Reused word extraction applies the reference's half-word-area
 clip threshold; text and block extraction retain the snapshot's clip.
 
-Other text-page formats still use the earlier page-backed implementation and do not yet
-provide this snapshot lifecycle or complete reference output shapes.
+Dictionary, raw-character dictionary, JSON, and raw JSON output now use these native
+snapshots too. Differential cases cover span font metrics and flags, RGB paint and opacity,
+character origins and synthetic-space markers, sorting, affine transforms, independent
+returned dictionaries, and extraction after document closure. JSON includes base64 image
+payloads and follows the reference serialization format.
+
+Image blocks retain their position among text blocks, image geometry, PNG/JPEG bytes, and
+separate soft masks. Tests compare exact payloads on the title fixture and shared grayscale
+and RGB image variants, plus partial image clipping. This is limited image coverage: other
+codecs, image resolutions, color profiles, and image-block colorspace descriptions need
+broader comparisons. DeviceCMYK span colors use core-pdf's native press profile, which
+differs from MuPDF's and does not yet produce identical colors. Embedded-font flags,
+superscripts, and bidirectional span metadata also need further work.
+
+HTML, XHTML, and XML still use the earlier page-backed implementation and do not yet provide
+this snapshot lifecycle or complete reference output shapes.
 
 Run the focused tests with:
 
@@ -85,7 +99,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_document.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_geometry.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_textpage.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_textpage.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_structured_text.py
 ```
 
 These tests use eight explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
@@ -125,9 +140,9 @@ Work must cover these areas before claiming complete compatibility:
 6. Remaining public facilities, including tables, structured content, optional integrations,
    and supported input formats, with explicit behavior and dependency contracts.
 
-Known remaining examples: extraction formats other than text/words/blocks still use the old
-structured layout; image blocks, sorted-text reconstruction, several text flags, and snapshot support for the remaining text formats
-need implementation. `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
+Known remaining examples: HTML/XHTML/XML still use the old structured layout; sorted-text
+reconstruction, several text flags, complete image/color behavior, and snapshot support for
+the remaining text formats need implementation. `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
 without providing the full persistent editing behavior of PyMuPDF.
 
 Each implementation increment needs differential tests over the same PDFs and explicit
