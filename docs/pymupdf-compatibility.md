@@ -48,6 +48,17 @@ and closed-document errors. `Document` owns its lifecycle directly rather than i
 pypdf's constructor and page-access policies. The original native source remains owned and
 is closed even after a structured editing snapshot replaces the current document state.
 
+Native object inspection now provides `xref_length()`, `pdf_catalog()`, `pdf_trailer()`,
+`xref_object()`, `xref_get_keys()`, `xref_get_key()`, raw and decoded stream access, and
+stream/font/image/form type checks. Tests compare every object and stream in three existing
+fixtures, plus shared variants covering object syntax, float formatting, escaped names,
+Unicode/binary strings, ASCII formatting policy, nested indirect dictionary paths, empty
+catalogs, invalid references, and closed-document errors. Text capture preserves the objects
+seen by these accessors. Object inspection currently supports original native PDFs and
+pristine empty documents; structured editing snapshots raise `NotImplementedError` until
+their changes have a native object representation. Object mutation and saving remain open
+work, as do broader damaged-file, free-object, generation, and encryption comparisons.
+
 Text, words, and text-block extraction now project native glyph captures directly, with
 reader-specific font metrics, character clipping, spacing, and line/block grouping. Loading
 a page no longer builds the whole document's structured layout. Differential coverage adds
@@ -135,7 +146,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_structured_text.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_selection.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_spacing.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_text_transform.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_text_transform.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_objects.py
 ```
 
 These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus

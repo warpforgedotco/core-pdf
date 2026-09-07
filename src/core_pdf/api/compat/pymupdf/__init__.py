@@ -23,6 +23,7 @@ from core_pdf.api.compat._shared import (
     write_bytes,
 )
 from core_pdf.api.compat.pymupdf.geometry import IRect, Matrix, Point, Quad, Rect
+from core_pdf.api.compat.pymupdf.objects import ObjectAccess, format_object
 from core_pdf.api.compat.pymupdf.text import TextProjection, capture_text
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
@@ -46,6 +47,8 @@ from core_pdf.impl._impl.output.model import (
 from core_pdf.impl._impl.output.model import (
     Page as StructuredPage,
 )
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.types import PdfReference
 
 
 def synthesize_characters(text: str, box: BBox) -> list[tuple[str, BBox]]:
@@ -778,6 +781,7 @@ class Document(ClosingMixin):
         self.is_closed = False
         self.is_encrypted = False
         self._page_generation = 0
+        self._objects_invalidated = False
         self._source_document: PdfDocument | None = None
         self._pending_redactions: dict[int, list[tuple[float, float, float, float]]] = {}
         self._toc_override: list[list[object]] | None = None
@@ -853,6 +857,69 @@ class Document(ClosingMixin):
     def is_pdf(self) -> bool:
         self._check_open()
         return True
+
+    @property
+    def _objects(self) -> ObjectAccess:
+        self._check_open()
+        if self._objects_invalidated or (
+            self._document.pdf is None and (self._source_document is not None or self.page_count)
+        ):
+            raise NotImplementedError("object access for structured edits is not implemented")
+        return ObjectAccess(self._source_document)
+
+    def xref_length(self) -> int:
+        return self._objects.length
+
+    def pdf_catalog(self) -> int:
+        root = self._objects.trailer.get("Root")
+        return root.object_number if isinstance(root, PdfReference) else 0
+
+    def pdf_trailer(self, compressed: bool = False, ascii: bool = False) -> str:
+        return self.xref_object(-1, compressed=compressed, ascii=ascii)
+
+    def xref_object(self, xref: int, compressed: bool = False, ascii: bool = False) -> str:
+        access = self._objects
+        try:
+            obj = access.get(xref)
+        except ValueError as error:
+            raise RuntimeError("bad xref") from error
+        if obj is None:
+            raise RuntimeError(f"code=7: cannot find object in xref ({xref} 0 R)")
+        return format_object(obj, compressed=compressed, ascii_only=ascii)
+
+    def xref_get_keys(self, xref: int) -> list[str]:
+        return self._objects.keys(xref)
+
+    def xref_get_key(self, xref: int, key: str) -> tuple[str, str]:
+        return self._objects.key(xref, key)
+
+    def xref_stream(self, xref: int) -> bytes | None:
+        self._check_open(check_encrypted=True)
+        obj = self._objects.get(xref)
+        return obj.data if isinstance(obj, PdfStream) else None
+
+    def xref_stream_raw(self, xref: int) -> bytes | None:
+        self._check_open(check_encrypted=True)
+        obj = self._objects.get(xref)
+        return bytes(obj.raw_data) if isinstance(obj, PdfStream) else None
+
+    def xref_is_stream(self, xref: int = 0) -> bool:
+        access = self._objects
+        if not 0 < xref < access.length:
+            return False
+        return isinstance(access.get(xref), PdfStream)
+
+    def xref_is_font(self, xref: int) -> bool:
+        self._check_open(check_encrypted=True)
+        return self.xref_get_key(xref, "Type") == ("name", "/Font")
+
+    def xref_is_image(self, xref: int) -> bool:
+        self._check_open(check_encrypted=True)
+        return self.xref_get_key(xref, "Subtype") == ("name", "/Image")
+
+    def xref_is_xobject(self, xref: int) -> bool:
+        self._check_open(check_encrypted=True)
+        return self.xref_get_key(xref, "Subtype") == ("name", "/Form")
 
     @property
     def chapter_count(self) -> int:
@@ -1038,6 +1105,7 @@ class Document(ClosingMixin):
 
     def _set_document(self, document: StructuredState) -> tuple[Page, ...]:
         """Adopt ``document`` and rebuild the facade page objects from it."""
+        self._objects_invalidated = True
         self._document = document
         typed_pages = tuple(Page(document, page, self) for page in document.pages)
         return typed_pages
