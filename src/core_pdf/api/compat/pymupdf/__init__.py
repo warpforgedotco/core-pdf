@@ -136,6 +136,43 @@ class Page(PdfPageObject):
         self._owner = owner
         self._generation = owner._page_generation if owner is not None else 0
         self._number: int | tuple[int, int] | list[int] = page.page_number - 1
+        self.mediabox = Rect(self.mediabox)
+        raw_crop = Rect(self.cropbox)
+        self.cropbox = Rect(
+            raw_crop.x0,
+            self.mediabox.y1 - raw_crop.y1,
+            raw_crop.x1,
+            self.mediabox.y1 - raw_crop.y0,
+        )
+        self.rotation %= 360
+        if self.rotation % 90:
+            self.rotation = 0
+        self._user_unit = 1.0
+        if document.pdf is not None:
+            source = document.pdf.pages[page.page_number - 1]
+            unit = document.pdf.resolver.resolve(source.page_dict.get("UserUnit"))
+            if isinstance(unit, (int, float)):
+                self._user_unit = float32(unit)
+
+    @property
+    def mediabox(self) -> Any:
+        if hasattr(self, "_owner") and self.parent is None:
+            raise AssertionError("page is None")
+        return Rect(self._mediabox)
+
+    @mediabox.setter
+    def mediabox(self, value: Any) -> None:
+        self._mediabox = Rect(value)
+
+    @property
+    def cropbox(self) -> Any:
+        if hasattr(self, "_owner") and self.parent is None:
+            raise AssertionError("page is None")
+        return Rect(self._cropbox)
+
+    @cropbox.setter
+    def cropbox(self, value: Any) -> None:
+        self._cropbox = Rect(value)
 
     @property
     def parent(self) -> Document | None:
@@ -154,10 +191,82 @@ class Page(PdfPageObject):
         if self.parent is None:
             raise AssertionError("page is None")
         x0, y0, x1, y1 = self.cropbox
-        width, height = float32(x1 - x0), float32(y1 - y0)
+        width = float32(float32(x1 - x0) * abs(self._user_unit))
+        height = float32(float32(y1 - y0) * abs(self._user_unit))
         if self.rotation % 180:
             width, height = height, width
         return Rect(0.0, 0.0, width, height)
+
+    def bound(self) -> Rect:
+        return self.rect
+
+    @property
+    def cropbox_position(self) -> Point:
+        return self.cropbox.tl
+
+    def _additional_box(self, name: str) -> Rect:
+        if self.parent is None:
+            raise AssertionError("page is None")
+        if self._document.pdf is not None:
+            source = self._document.pdf.pages[self._page.page_number - 1]
+            box = source.resolve_box(name)
+            if box is not None:
+                x0, y0, x1, y1 = map(float32, box)
+                return Rect(x0, self.mediabox.y1 - y1, x1, self.mediabox.y1 - y0)
+        return Rect(self.cropbox)
+
+    @property
+    def bleedbox(self) -> Rect:
+        return self._additional_box("BleedBox")
+
+    @property
+    def trimbox(self) -> Rect:
+        return self._additional_box("TrimBox")
+
+    @property
+    def artbox(self) -> Rect:
+        return self._additional_box("ArtBox")
+
+    @property
+    def transformation_matrix(self) -> Matrix:
+        if self.parent is None:
+            raise AssertionError("page is None")
+        crop = self.cropbox
+        if self.rotation:
+            return Matrix(1, 0, 0, -1, 0, crop.height)
+        unit = self._user_unit
+        bottom, top = self.mediabox.y1 - crop.y1, self.mediabox.y1 - crop.y0
+        if unit < 0:
+            tx, ty = -crop.x1 * unit, bottom * unit
+        else:
+            tx, ty = -crop.x0 * unit, top * unit
+        return Matrix(unit, 0, 0, -unit, float32(tx), float32(ty))
+
+    @property
+    def rotation_matrix(self) -> Matrix:
+        if self.parent is None:
+            raise AssertionError("page is None")
+        width, height = self.cropbox.width, self.cropbox.height
+        return Matrix(
+            {
+                0: (1, 0, 0, 1, 0, 0),
+                90: (0, 1, -1, 0, height, 0),
+                180: (-1, 0, 0, -1, width, height),
+                270: (0, -1, 1, 0, 0, width),
+            }[self.rotation]
+        )
+
+    @property
+    def derotation_matrix(self) -> Matrix:
+        if self.parent is None:
+            raise TypeError(
+                "Wrong number or type of arguments for overloaded function "
+                "'Page_derotate_matrix'.\n"
+                "  Possible C/C++ prototypes are:\n"
+                "    Page_derotate_matrix(mupdf::PdfPage &)\n"
+                "    Page_derotate_matrix(mupdf::FzPage &)\n"
+            )
+        return ~self.rotation_matrix
 
     def _native_text_view(self) -> Any:
         """Return only text represented by PDF text operators, as MuPDF does by default."""

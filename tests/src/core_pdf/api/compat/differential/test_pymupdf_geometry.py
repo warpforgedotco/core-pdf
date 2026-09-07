@@ -212,3 +212,120 @@ def test_quadrilaterals_and_fixed_point_transforms(pdf_path: Path) -> None:
             return output
 
     assert snapshot(compat_pymupdf) == internal_geometry_expected(snapshot(real_pymupdf))
+
+
+@pytest.mark.parametrize("pdf_path", internal_PDFS, ids=lambda path: path.name)
+def test_integer_rectangle_mutation_and_errors(pdf_path: Path) -> None:
+    def snapshot(module: Any) -> list[Any]:
+        with module.open(pdf_path) as document:
+            width, height = module.Rect(document[0].rect).br
+            output = []
+            for coordinates in ((1, 2, width, height), (4, 3, 2, 1), (0, 0, 0, 0)):
+                for operation in (
+                    lambda r: r.include_rect((0.0009, 0.0009, width + 0.0009, height + 0.0009)),
+                    lambda r: r.include_point((width + 0.0009, height + 0.0009)),
+                    lambda r: r.intersect((1.5, 2.5, 3.5, 4.5)),
+                    lambda r: r.transform(module.Matrix(30)),
+                    lambda r: r & (1.5, 2.5, 3.5, 4.5),
+                    lambda r: r | (0.0009, 0.0009, width + 0.0009, height + 0.0009),
+                    lambda r: r.normalize(),
+                    lambda r: abs(r),
+                ):
+                    rectangle = module.IRect(coordinates)
+                    try:
+                        result = operation(rectangle)
+                        outcome = ("returned", repr(result), result is rectangle)
+                    except Exception as error:
+                        outcome = ("raised", type(error).__name__, str(error))
+                    output.append(
+                        (outcome, repr(rectangle), tuple(type(v).__name__ for v in rectangle))
+                    )
+            rectangle = module.IRect(1, 2, 3, 4)
+            output.append(
+                (
+                    isinstance(rectangle, module.Rect),
+                    hasattr(rectangle, "round"),
+                    hasattr(rectangle, "irect"),
+                )
+            )
+            return output
+
+    assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)
+
+
+def internal_page_geometry_snapshot(module: Any, source: bytes) -> dict[str, Any]:
+    with module.open(stream=source, filetype="pdf") as document:
+        page = document[0]
+        names = ("mediabox", "cropbox", "bleedbox", "trimbox", "artbox", "rect")
+        for name in names:
+            assert isinstance(getattr(page, name), module.Rect)
+        return {
+            "boxes": {name: tuple(getattr(page, name)) for name in names},
+            "bound": tuple(page.bound()),
+            "position": tuple(page.cropbox_position),
+            "rotation": page.rotation,
+            "transformation": tuple(page.transformation_matrix),
+            "rotation_matrix": tuple(page.rotation_matrix),
+            "derotation_matrix": tuple(page.derotation_matrix),
+        }
+
+
+@pytest.mark.parametrize("pdf_path", internal_PDFS, ids=lambda path: path.name)
+def test_page_box_types_and_coordinate_matrices(pdf_path: Path) -> None:
+    source = pdf_path.read_bytes()
+    expected = internal_page_geometry_snapshot(real_pymupdf, source)
+    actual = internal_page_geometry_snapshot(compat_pymupdf, source)
+    assert actual == internal_geometry_expected(expected)
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+@pytest.mark.parametrize("unit", [0, 1, 2, -2])
+def test_offset_page_boxes_and_user_units(rotation: int, unit: int) -> None:
+    pdf_path = internal_PDFS[0]
+    # Both readers receive the same in-memory variant; the upstream fixture is untouched.
+    with real_pymupdf.open(pdf_path) as fixture:
+        page = fixture[0]
+        page.set_mediabox(real_pymupdf.Rect(10, 20, 610, 820))
+        page.set_cropbox(real_pymupdf.Rect(30, 40, 530, 740))
+        page.set_bleedbox(real_pymupdf.Rect(35, 45, 525, 735))
+        page.set_trimbox(real_pymupdf.Rect(40, 50, 520, 730))
+        page.set_artbox(real_pymupdf.Rect(45, 55, 515, 725))
+        page.set_rotation(rotation)
+        fixture.xref_set_key(page.xref, "UserUnit", str(unit))
+        source = fixture.tobytes()
+    expected = internal_page_geometry_snapshot(real_pymupdf, source)
+    actual = internal_page_geometry_snapshot(compat_pymupdf, source)
+    assert actual == internal_geometry_expected(expected)
+
+
+@pytest.mark.parametrize("pdf_path", internal_PDFS, ids=lambda path: path.name)
+def test_page_geometry_copy_and_closed_handle_behavior(pdf_path: Path) -> None:
+    def snapshot(module: Any) -> list[Any]:
+        output = []
+        with module.open(pdf_path) as document:
+            page = document[0]
+            for name in ("mediabox", "cropbox", "bleedbox", "trimbox", "artbox", "rect"):
+                box = getattr(page, name)
+                box.x0 += 100
+                output.append((name, tuple(getattr(page, name))))
+        for name in (
+            "mediabox",
+            "cropbox",
+            "bleedbox",
+            "trimbox",
+            "artbox",
+            "rect",
+            "cropbox_position",
+            "transformation_matrix",
+            "rotation_matrix",
+            "derotation_matrix",
+        ):
+            try:
+                getattr(page, name)
+            except Exception as error:
+                output.append((name, type(error).__name__, str(error)))
+            else:
+                pytest.fail(f"closed page accepted {name}")
+        return output
+
+    assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)

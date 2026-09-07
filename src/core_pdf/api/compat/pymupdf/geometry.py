@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import Any, cast, overload
+from typing import Any, Self, cast, overload
 
 from core_pdf.api.compat._shared import float32
 
@@ -290,7 +290,7 @@ class Point(internal_Coordinates):
         return distance * internal_UNIT_SCALE[unit]
 
 
-class Rect(internal_Coordinates):
+class internal_RectCoordinates(internal_Coordinates):
     internal_fields = ("x0", "y0", "x1", "y1")
 
     def __init__(
@@ -360,9 +360,6 @@ class Rect(internal_Coordinates):
     bottom_left = bl
     bottom_right = br
 
-    def __abs__(self) -> float:
-        return self.get_area()
-
     def get_area(self, unit: str = "px") -> float:
         return self.width * self.height * internal_UNIT_SCALE[unit] ** 2
 
@@ -382,15 +379,20 @@ class Rect(internal_Coordinates):
         rect = Rect(other)
         return not self.is_empty and not rect.is_empty and not (self & rect).is_empty
 
-    def intersect(self, other: Any) -> Rect:
+    def intersect(self, other: Any) -> Self:
         rect = Rect(other)
+        if rect.is_empty or self.is_infinite:
+            self.x0, self.y0, self.x1, self.y1 = rect
+            return self
+        if self.is_empty or rect.is_infinite:
+            return self
         self.x0 = float32(max(float32(self.x0), float32(rect.x0)))
         self.y0 = float32(max(float32(self.y0), float32(rect.y0)))
         self.x1 = float32(min(float32(self.x1), float32(rect.x1)))
         self.y1 = float32(min(float32(self.y1), float32(rect.y1)))
         return self
 
-    def include_rect(self, other: Any) -> Rect:
+    def include_rect(self, other: Any) -> Self:
         rect = Rect(other)
         if rect.is_empty:
             return self
@@ -403,7 +405,7 @@ class Rect(internal_Coordinates):
         self.y1 = float32(max(self.y1, rect.y1))
         return self
 
-    def include_point(self, other: Any) -> Rect:
+    def include_point(self, other: Any) -> Self:
         point = Point(other)
         self.x0 = float32(min(self.x0, point.x))
         self.y0 = float32(min(self.y0, point.y))
@@ -411,18 +413,18 @@ class Rect(internal_Coordinates):
         self.y1 = float32(max(self.y1, point.y))
         return self
 
-    def __and__(self, other: Any) -> Rect:
+    def __and__(self, other: Any) -> Self:
         return type(self)(self).intersect(other)
 
-    def __or__(self, other: Any) -> Rect:
+    def __or__(self, other: Any) -> Self:
         return type(self)(self).include_rect(other)
 
-    def normalize(self) -> Rect:
+    def normalize(self) -> Self:
         self.x0, self.x1 = sorted((self.x0, self.x1))
         self.y0, self.y1 = sorted((self.y0, self.y1))
         return self
 
-    def transform(self, matrix: Any) -> Rect:
+    def transform(self, matrix: Any) -> Self:
         if self.is_infinite:
             return self
         a, b, c, d, e, f = map(float32, Matrix(matrix))
@@ -449,6 +451,18 @@ class Rect(internal_Coordinates):
             * Matrix(1, 0, 0, 1, rect.x0, rect.y0)
         )
 
+    @property
+    def quad(self) -> Quad:
+        return Quad(self.tl, self.tr, self.bl, self.br)
+
+    def morph(self, fixpoint: Point, matrix: Any) -> Quad:
+        return self.quad.morph(fixpoint, matrix)
+
+
+class Rect(internal_RectCoordinates):
+    def __abs__(self) -> float:
+        return self.get_area()
+
     def round(self) -> IRect:
         values = [max(-16777216, min(16777216, float32(value))) for value in self]
         return IRect(
@@ -462,15 +476,8 @@ class Rect(internal_Coordinates):
     def irect(self) -> IRect:
         return self.round()
 
-    @property
-    def quad(self) -> Quad:
-        return Quad(self.tl, self.tr, self.bl, self.br)
 
-    def morph(self, fixpoint: Point, matrix: Any) -> Quad:
-        return self.quad.morph(fixpoint, matrix)
-
-
-class IRect(Rect):
+class IRect(internal_RectCoordinates):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.x0, self.y0 = math.floor(self.x0), math.floor(self.y0)
@@ -492,6 +499,27 @@ class IRect(Rect):
         if not 0 <= index < 4:
             raise IndexError("index out of range")
         setattr(self, self.internal_fields[index], int(value))
+
+    def include_rect(self, other: Any) -> IRect:
+        return self.rect.include_rect(other).round()
+
+    def include_point(self, other: Any) -> IRect:
+        return self.rect.include_point(other).round()
+
+    def __and__(self, other: Any) -> IRect:
+        return self.rect.intersect(other).round()
+
+    def __or__(self, other: Any) -> IRect:
+        return self.include_rect(other)
+
+    def intersect(self, other: Any) -> IRect:
+        super().intersect(other)
+        # PyMuPDF 1.28.2 mutates first, then fails because IRect has no round method.
+        return getattr(self, "round")()
+
+    def transform(self, matrix: Any) -> IRect:
+        super().transform(matrix)
+        return getattr(self, "round")()
 
 
 class Quad:

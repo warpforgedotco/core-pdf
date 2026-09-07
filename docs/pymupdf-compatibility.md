@@ -23,13 +23,22 @@ double precision. Inversion comparisons allow a small floating-point tolerance.
 
 Native `Point`, `Rect`, `IRect`, and `Quad` types now provide coordinate access, arithmetic,
 affine transformations, rectangle regions, integer pixel bounds, and fixed-point morphs.
-`Page.rect` returns a `Rect`. Geometry tests compare these operations on normal and rotated
+Page boxes return independent `Rect` values. Geometry tests compare these operations on normal and rotated
 pages, including empty and invalid regions, half-open containment, singular shapes, and
 integer rounding near pixel boundaries. This coverage does not yet prove complete parity
 for every constructor/error case, integer-rectangle method, or geometry integration.
-The initial integer-rectangle audit specifically found differences in `abs(IRect)`, the
-coordinate types retained after region mutation, and direct `IRect.transform` errors. These
-remain compatibility gaps even though the covered scalar and matrix operators compare equal.
+Integer-rectangle tests now also compare returning a new rectangle versus mutating the receiver,
+coordinate types, unsupported `abs(IRect)`, and the mutate-then-raise behavior of direct
+`intersect` and `transform` in the pinned reference release. `Rect` and `IRect` share private
+coordinate operations instead of inheriting one public type from the other.
+
+Page geometry comparisons cover `mediabox`, `cropbox`, `bleedbox`, `trimbox`, `artbox`, `rect`,
+`bound()`, `cropbox_position`, `transformation_matrix`, `rotation_matrix`, and
+`derotation_matrix`. In-memory variants of an upstream PDF exercise offset media/crop boxes,
+all four orthogonal rotations, and zero, positive, and negative `UserUnit` values. Both engines
+read the same variant; the reference fixture files are unchanged. Tests also compare detached
+box values and errors after a page's document closes. Editing, rendering, and serialization
+must still adopt these coordinate policies consistently.
 
 Document tests compare filename and keyword-stream constructors (bytes, bytearrays, and
 `BytesIO`), metadata, page counts, iteration, ranges, reverse slices, negative indexes,
@@ -60,8 +69,8 @@ separate verification.
 
 Work must cover these areas before claiming complete compatibility:
 
-1. Geometry and public value types: finish constructor, integer-rectangle, and error parity;
-   provide geometry types consistently across page boxes, annotations, and searches; implement
+1. Geometry and public value types: finish constructor and remaining edge-case parity;
+   provide geometry types consistently across annotations and searches; implement
    colorspaces and constants; and integrate full affine transforms into rendering.
 2. Document lifecycle: complete constructor and metadata semantics, authentication, all
    ownership/invalidation paths, closed-document errors across all methods, navigation,
