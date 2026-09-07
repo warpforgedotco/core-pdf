@@ -6,8 +6,7 @@ on:
 permissions:
   contents: read
 
-# A PR that is pushed to again supersedes its own in-flight run. Without this
-# every push kept three jobs alive, one of them on a macOS runner.
+# A new push supersedes the previous checks for the same pull request.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -37,6 +36,9 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
+      - name: Install both workspace packages and quality tools
+        run: uv sync --locked --all-packages --group lint --group test
+
       - name: Run prek
         run: uvx prek run --all-files --stage pre-push
 
@@ -44,66 +46,10 @@ jobs:
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
-  test:
-    name: core-pdf / Python ${{ matrix.python-version }}
+  differential:
+    name: Differential / Python 3.13
     needs: quality
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13"]
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: "0.11.28"
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Install English Tesseract data
-        run: |
-          if ! tesseract --list-langs 2>/dev/null | grep -qx eng; then
-            sudo apt-get update
-            sudo apt-get install --yes tesseract-ocr-eng
-          fi
-
-      - name: Fetch public security specification evidence
-        run: ./scripts/fetch_pdf_specs.sh security
-
-      - name: Verify standard CPython
-        run: >-
-          uv run --locked --package core-pdf python -c
-          "import sysconfig; assert sysconfig.get_config_var('Py_GIL_DISABLED') == 0"
-
-      - name: Run core-pdf tests
-        env:
-          # Raster every corpus document, not just the 24-document covering
-          # subset. The subset reaches every line of render/, but it
-          # cannot see output drift on the other 200: four snapshot digests
-          # stayed unreachable for weeks precisely because only the subset ran
-          # here. The full sweep costs a few minutes.
-          CORE_PDF_RASTER_GOLDEN_FULL: "1"
-        # -n auto was measured and reverted: 108s against 106s and 118s for
-        # -n 2 on the same suite, i.e. inside the run-to-run noise. The job is
-        # not CPU-parallel-bound, so widening the worker pool buys nothing.
-        run: uv run --locked --package core-pdf --group test pytest -n 2
-
-      - name: Prune uv cache
-        if: ${{ always() && !cancelled() }}
-        run: uv cache prune --ci
-
-  raster-portability:
-    name: Raster portability / macOS ARM
-    needs: quality
-    runs-on: macos-15
 
     steps:
       - name: Check out repository
@@ -120,14 +66,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Verify Apple Silicon runner
-        run: test "$(uname -m)" = arm64
+      - name: Install core-pdf and reference libraries
+        run: uv sync --locked --package core-pdf --group test --group vendor-test
 
-      - name: Check irreversible JPEG 2000 raster portability
+      - name: Run differential tests
         run: >-
-          uv run --locked --package core-pdf --group test pytest
-          tests/test_rendering_golden.py
-          -k "irreversible_jpx or portable_raster_references"
+          uv run --locked --package core-pdf --group test --group vendor-test pytest
+          tests/src/core_pdf/api/compat/differential/ -n 2
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}

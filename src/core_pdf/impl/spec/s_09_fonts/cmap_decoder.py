@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
     CIDRange,
@@ -102,8 +102,8 @@ class CMapDecoder:
                 raise ValueError("invalid CMap codespacerange")
             for i in range(0, len(tokens), 2):
                 try:
-                    start = decode_cmap_hex_token(tokens[i])
-                    end = decode_cmap_hex_token(tokens[i + 1])
+                    start = self.decode_codespace_token(tokens[i])
+                    end = self.decode_codespace_token(tokens[i + 1])
                     validate_codespace_range(start, end)
                 except (ValueError, UnicodeDecodeError) as exc:
                     raise ValueError("invalid CMap codespacerange") from exc
@@ -112,13 +112,9 @@ class CMapDecoder:
                 ):
                     raise ValueError("overlapping CMap codespacerange")
                 self.code_space_ranges.append((start, end))
-        if not self.code_space_ranges:
-            if usecmap_name in {"Identity-H", "Identity-V"}:
-                self.code_space_ranges.append((b"\x00\x00", b"\xff\xff"))
-                self.default_to_identity = True
-            elif usecmap_name in {"OneByteIdentityH", "OneByteIdentityV"}:
-                self.code_space_ranges.append((b"\x00", b"\xff"))
-                self.default_to_identity = True
+        if not self.code_space_ranges and usecmap_name in {"Identity-H", "Identity-V"}:
+            self.code_space_ranges.append((b"\x00\x00", b"\xff\xff"))
+            self.default_to_identity = True
         self.parse_mapping_blocks(program)
         self.decode_lengths = tuple(
             sorted(
@@ -136,8 +132,12 @@ class CMapDecoder:
         )
         self.freeze()
 
+    @staticmethod
+    def decode_codespace_token(token: bytes) -> bytes:
+        return decode_cmap_hex_token(token)
+
     @classmethod
-    def identity(cls, *, byte_width: int = 2, wmode: int = 0) -> "CMapDecoder":
+    def identity(cls, *, byte_width: int = 2, wmode: int = 0) -> Self:
         cmap = cls(b"", internal_empty=True)
         if byte_width == 1:
             cmap.code_space_ranges = [(b"\x00", b"\xff")]
@@ -164,8 +164,6 @@ class CMapDecoder:
     ) -> "CMapDecoder | None":
         if name in {"Identity-H", "Identity-V"}:
             return CMapDecoder.identity(byte_width=2, wmode=int(name.endswith("-V")))
-        if name in {"OneByteIdentityH", "OneByteIdentityV"}:
-            return CMapDecoder.identity(byte_width=1, wmode=int(name.endswith("V")))
         if usecmap_resolver is None:
             return None
         resolved = usecmap_resolver(name)

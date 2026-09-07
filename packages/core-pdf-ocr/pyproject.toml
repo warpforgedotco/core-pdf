@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "core-pdf-ocr"
+version = "0.0.6"
+description = "OCR and vector text recognition for core-pdf"
+authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+requires-python = ">=3.13"
+classifiers = ["Development Status :: 3 - Alpha"]
+dependencies = [
+    "core-pdf==0.0.6",
+    "numpy>=2.5.1",
+    "tesserocr>=2.10.0",
+]
+
+[project.scripts]
+core-pdf-ocr = "core_pdf_ocr.cli:main"
+
+[project.urls]
+Repository = "https://github.com/core-experiments/core-pdf"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core_pdf_ocr = ["py.typed"]
+"core_pdf_ocr._vendor" = ["LICENSE*", "*.md"]
+
+[tool.uv.sources]
+core-pdf = { workspace = true }

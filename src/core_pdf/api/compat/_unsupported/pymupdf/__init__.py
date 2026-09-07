@@ -16,8 +16,8 @@ from core_pdf.api.compat.pypdf import (
     PdfReader,
     StructuredState,
 )
-from core_pdf.impl.model.geometry import bbox_intersects
-from core_pdf.impl.output.model import (
+from core_pdf.impl._impl.model.geometry import bbox_intersects
+from core_pdf.impl._impl.output.model import (
     Annotation,
     Block,
     BlockKind,
@@ -26,7 +26,7 @@ from core_pdf.impl.output.model import (
     Link,
     TextLine,
 )
-from core_pdf.impl.output.model import (
+from core_pdf.impl._impl.output.model import (
     Page as StructuredPage,
 )
 
@@ -137,13 +137,7 @@ class Page(PdfPageObject):
 
     def _native_text_view(self) -> Any:
         """Return only text represented by PDF text operators, as MuPDF does by default."""
-        view = self._page.text_view
-        blocks: list[Block] = []
-        for block in view.blocks:
-            lines = tuple(line for line in block.lines if line.source != "ocr")
-            if lines:
-                blocks.append(replace(block, lines=lines))
-        return type(view)(tuple(blocks), page_number=self._page.page_number)
+        return self._page.text_view
 
     def _mupdf_plain_text(self) -> str:
         runs = self._document.capability_page(self._page.page_number).get_page_program().runs

@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Filter dispatch from normalized stream filter names to decoders."""
+
+from __future__ import annotations
+
+import typing
+
+if typing.TYPE_CHECKING:
+    from typing import Callable
+
+    FilterFn = Callable[[bytes, object], bytes]
+
+from core_pdf.impl._impl.graphics.codec_dispatch import (
+    decode_ccitt_fax,
+    decode_crypt,
+    decode_jbig2,
+    decode_jpeg,
+    decode_jpx,
+)
+from core_pdf.impl._impl.graphics.decode_compat import (
+    StreamDecodeSpec,
+    normalize_stream_decode_spec,
+)
+from core_pdf.impl._impl.graphics.filter_recovery import (
+    apply_ascii85,
+    apply_ascii_hex,
+    apply_flate,
+    apply_lzw,
+    apply_run_length,
+    looks_like_pdf_content_stream,
+)
+from core_pdf.impl._impl.graphics.filter_registry import (
+    FILTER_DESCRIPTOR_BY_NAME,
+    FILTER_DESCRIPTORS,
+    PREDICTOR_FILTERS,
+)
+from core_pdf.impl._impl.graphics.predictor_backends import apply_predictor
+from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import full_source_bytes
+
+internal_FILTER_DECODERS: dict[str, FilterFn] = {
+    "flate": apply_flate,
+    "ascii_hex": apply_ascii_hex,
+    "ascii85": apply_ascii85,
+    "run_length": apply_run_length,
+    "lzw": apply_lzw,
+    "jpeg": decode_jpeg,
+    "ccitt": decode_ccitt_fax,
+    "crypt": decode_crypt,
+    "jpx": decode_jpx,
+    "jbig2": decode_jbig2,
+}
+FILTER_MAP: dict[str, FilterFn] = {
+    descriptor.name: internal_FILTER_DECODERS[descriptor.decoder]
+    for descriptor in FILTER_DESCRIPTORS
+    if descriptor.decoder is not None
+}
+
+
+def internal_coerce_decoder_bytes(result: object) -> bytes:
+    if type(result) is bytearray:
+        return bytes(result)
+    if type(result) is not bytes:
+        raise ValueError("invalid stream decoder result type")
+    return result
+
+
+def decode_one_filter(
+    data: bytes,
+    filter_name: str,
+    parms: object,
+    *,
+    dictionary: object,
+    parent_dictionary: object | None,
+    allow_content_stream_passthrough: bool = False,
+) -> bytes:
+    if filter_name in {"None", "Identity"}:
+        return data
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
+    fn = FILTER_MAP.get(filter_name)
+    if fn is None:
+        raise FilterUnsupportedError(f"stream filter {filter_name} is not implemented yet")
+    try:
+        decoder_context = (
+            (parent_dictionary if parent_dictionary is not None else dictionary)
+            if descriptor is not None and descriptor.wants_image_dictionary
+            else parms
+        )
+        result = internal_coerce_decoder_bytes(fn(data, decoder_context))
+        if filter_name in PREDICTOR_FILTERS:
+            if (
+                allow_content_stream_passthrough
+                and filter_name in {"FlateDecode", "Fl"}
+                and result == data
+                and looks_like_pdf_content_stream(result)
+            ):
+                return result
+            result = internal_coerce_decoder_bytes(apply_predictor(result, parms))
+        return result
+    except ValueError as exc:
+        raise FilterParseError("invalid stream data") from exc
+
+
+def decode_stream_data(
+    data: bytes | memoryview,
+    dictionary: object | StreamDecodeSpec | None,
+    *,
+    parent_dictionary: object | None = None,
+) -> bytes:
+    if type(data) is memoryview:
+        source_bytes = full_source_bytes(data)
+        data = source_bytes if source_bytes is not None else data.tobytes()
+    if dictionary is None:
+        return data
+    if isinstance(dictionary, StreamDecodeSpec):
+        filters = dictionary.filters
+        normalized_parms = dictionary.params
+    else:
+        spec = normalize_stream_decode_spec(dictionary)
+        filters = spec.filters
+        normalized_parms = spec.params
+    if normalized_parms and len(normalized_parms) != len(filters):
+        raise FilterParseError("invalid stream decode parameters")
+    result = data
+    for index, flt in enumerate(filters):
+        parms = normalized_parms[index] if index < len(normalized_parms) else None
+        result = decode_one_filter(
+            result,
+            flt,
+            parms,
+            dictionary=dictionary,
+            parent_dictionary=parent_dictionary,
+            allow_content_stream_passthrough=len(filters) == 1,
+        )
+    return result

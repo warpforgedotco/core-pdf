@@ -12,8 +12,8 @@ writing, and inspecting PDF documents.
   unreachable sensitive objects with explicit byte-level postconditions.
 - Add flattening for annotations, forms, optional content, and transparency where the
   result is provably equivalent in the selected rendering profile.
-- Add adversarial redaction and sanitization corpus coverage, including compressed and
-  incrementally updated PDFs.
+- Compare redaction and sanitization behavior with reference implementations on compressed
+  and incrementally updated PDFs.
 
 ### 2. Classical document understanding
 
@@ -29,8 +29,7 @@ writing, and inspecting PDF documents.
 
 - Complete TEI-like XML, evidence-manifest, and lossless structured export formats.
 - Add query/result provenance graphs that explain every normalized or fuzzy match.
-- Add incremental query invalidation and cache tests across page, object, and revision
-  dependencies.
+- Add incremental query invalidation across page, object, and revision dependencies.
 
 ### 4. Compliance and accessibility depth
 
@@ -54,17 +53,19 @@ writing, and inspecting PDF documents.
 
 ### 6. Compatibility and corpus maturity
 
-- Continue high-level API coverage for `core_pdf.api.compat.pdfminer`, `pdfplumber`,
+- Continue high-level API compatibility for `core_pdf.api.compat.pdfminer`, `pdfplumber`,
   `pymupdf`, `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
   maps cleanly to the shared capability model.
-- Run compatibility behavior matrices against each vendored/reference test corpus.
-- Expand corpus, golden rendering, malformed-input, security, and performance coverage
-  for every completed capability.
+- Maintain differential comparisons in `tests/src/core_pdf/api/compat/differential` against
+  each reference corpus using `uv run --locked --group test --group vendor-test pytest -n auto`.
+- Expand differential comparisons over malformed, security-sensitive, and real-world PDFs.
+  Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run the exhaustive facade/fixture matrix.
 
 ## Dependency policy
 
 The core remains Python 3.13+, local, deterministic, and based on the existing parser,
-OCR, NumPy, and image-codec stack. No LLM, VLLM, hosted API, vector database, or server
+NumPy, and image-codec stack. OCR lives in the separate `core-pdf-ocr` package, which depends
+on core-pdf; the core never imports or discovers it. No LLM, VLLM, hosted API, vector database, or server
 is required. Future non-generative local model adapters may be optional extensions, but
 they must not become dependencies of the core contracts.
 

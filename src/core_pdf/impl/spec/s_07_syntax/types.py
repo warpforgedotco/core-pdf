@@ -6,8 +6,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, TypeAlias
 
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 PdfNull: TypeAlias = None
 PdfBoolean: TypeAlias = bool
@@ -56,10 +56,6 @@ class PdfValueResolver(Protocol):
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None: ...
 
     def resolve_name(self, value: object) -> str | None: ...
-
-    def resolve_name_like_value(self, resolved: object) -> str | None: ...
-
-    def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None: ...
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None: ...
 

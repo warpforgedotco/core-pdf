@@ -4,61 +4,67 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import AbstractContextManager, suppress
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
-from core_pdf.impl.extract.pipeline import extract_page
-from core_pdf.impl.extract.selection import extract_document
-from core_pdf.impl.layout.lines import (
+from core_pdf.impl._impl.document.document import PdfDocument as EnginePdfDocument
+from core_pdf.impl._impl.document.page import PdfPage as EnginePdfPage
+from core_pdf.impl._impl.extract.pipeline import extract_page
+from core_pdf.impl._impl.extract.selection import extract_document
+from core_pdf.impl._impl.graphics.images import decode_image
+from core_pdf.impl._impl.layout.lines import (
     LayoutGeometrySummary,
     LayoutLine,
     page_layout_geometry_issues,
     page_layout_geometry_summary,
     text_run_geometry_issues,
 )
-from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.model.page_selection import PageSelection
-from core_pdf.impl.output.model import DiagnosticTextRun, TextDiagnostics
-from core_pdf.impl.output.model import Document as StructuredDocument
-from core_pdf.impl.records import (
+from core_pdf.impl._impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.model.page_selection import PageSelection
+from core_pdf.impl._impl.output.model import DiagnosticTextRun, TextDiagnostics
+from core_pdf.impl._impl.output.model import Document as StructuredDocument
+from core_pdf.impl._impl.output.model import Page as StructuredPage
+from core_pdf.impl._impl.render.model import RenderOptions
+from core_pdf.impl._impl.render.page import compose_page
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.exceptions import PdfDocumentClosedError
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
     ImageRecord,
     PageScoped,
+    PdfSource,
 )
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.execution import ExtractionScope
-from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
-from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
-from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.types import PdfSource
-
-# Claim process signal ownership when the public document class is imported on
-# the application's main thread. Extraction submodules remain side-effect free.
-internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_07_document.records import RawFormField
-    from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
+    from core_pdf.impl._impl.document.records import RawFormField
+    from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
 
 
-class PdfPage(SpecPdfPage):
-    document: Any
+class DocumentAdapter(Protocol):
+    """Transform a structured document after extraction releases its operation."""
+
+    def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
+
+
+class PdfPage(EnginePdfPage):
+    document: PdfDocument
 
     @property
-    def structured_view(self) -> Any:
+    def structured_view(self) -> StructuredPage:
         """Return this page's canonical high-level structured representation."""
         return self.extract()
 
-    def extract(self) -> Any:
+    def extract(self) -> StructuredPage:
         with self.document.acquire_operation() as operation:
             context = ExtractionScope(cancelled=lambda: operation.cancelled)
-            return extract_page(self, context)
+            return self.internal_extract_page(context)
+
+    def internal_extract_page(self, context: ExtractionScope) -> StructuredPage:
+        return extract_page(self, context)
 
     def text_diagnostics(self, *, include_invisible: bool = True) -> TextDiagnostics:
         return TextDiagnostics(
@@ -150,7 +156,7 @@ class PdfPage(SpecPdfPage):
             )
         for index, image in enumerate(images):
             source = cast(ImageSource | None, image.image_source)
-            raster = source.decode() if source is not None else None
+            raster = decode_image(source) if source is not None else None
             if raster is not None:
                 images[index] = replace(
                     image,
@@ -209,8 +215,10 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
         self.release()
 
 
-class PdfDocument(SpecPdfDocument["PdfPage"]):
+class PdfDocument(EnginePdfDocument["PdfPage"]):
     """A thread-native PDF document backed by the v2 parse pipeline."""
+
+    page_class = PdfPage
 
     def __init__(
         self,
@@ -230,7 +238,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             recovery_scan_all_revisions=recovery_scan_all_revisions,
             raster_font_provider=raster_font_provider,
         )
-        self.page_class = PdfPage
 
     @property
     def closed(self) -> bool:
@@ -306,22 +313,27 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         self,
         *,
         pages: PageSelection | None = None,
-        adapters: Iterable[Any] = (),
-    ) -> Any:
+        adapters: Iterable[DocumentAdapter] = (),
+    ) -> StructuredDocument:
         with self.acquire_operation() as operation:
             selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
             context = ExtractionScope(cancelled=lambda: operation.cancelled)
-            result = extract_document(self, context, selected_pages)
+            result = self.internal_extract_document(context, selected_pages)
         for adapter in adapters:
             result = adapter.apply(result)
         return result
+
+    def internal_extract_document(
+        self, context: ExtractionScope, pages: Sequence[EnginePdfPage]
+    ) -> StructuredDocument:
+        return extract_document(self, context, pages)
 
     @property
     def structured_document(self) -> StructuredDocument:
         """Return the high-level structured view of this document."""
         if self.page_count() == 0:
             return StructuredDocument(metadata=self.metadata)
-        return cast(StructuredDocument, self.extract())
+        return self.extract()
 
     def extract_images(
         self,
@@ -341,6 +353,7 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
 
 
 __all__ = (
+    "DocumentAdapter",
     "DocumentOperation",
     "PdfDocument",
     "PdfPage",

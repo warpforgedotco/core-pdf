@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any, Protocol, cast
 
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
-from core_pdf.impl.types import PdfByteBuffer
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
 PDF_IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
@@ -198,22 +198,6 @@ def is_integer_word(value: memoryview | bytes) -> bool:
     return is_digit_bytes_from(value, 1)
 
 
-def matches_keyword_with_one_substitution(
-    data: PdfByteBuffer | memoryview, pos: int, keyword: bytes
-) -> bool:
-    """Whether ``keyword`` sits at ``pos`` with exactly one byte substituted."""
-    end = pos + len(keyword)
-    if end > len(data):
-        return False
-    mismatches = 0
-    for index, expected in enumerate(keyword):
-        if data[pos + index] != expected:
-            mismatches += 1
-            if mismatches > 1:
-                return False
-    return mismatches == 1
-
-
 def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
     if type(data) is bytes:
         lf = data.find(b"\n", pos + 1, data_len)
@@ -273,7 +257,8 @@ def read_literal_string(
     pos: int,
     data_len: int,
     *,
-    drop_unknown_escapes: bool = False,
+    unknown_escape: Callable[[int], bytes] | None = None,
+    eol_pair: Callable[[int, int], bool] | None = None,
 ) -> tuple[bytes | None, int]:
     """Decode a literal string at ``pos``, returning its value and end position.
 
@@ -328,21 +313,28 @@ def read_literal_string(
                     pos += 1
                     count += 1
                 out.append(oct_val & 0xFF)
-            elif esc == 10:
-                if pos < data_len and data[pos] == 13:
-                    pos += 1
-            elif esc == 13:
-                if pos < data_len and data[pos] == 10:
+            elif esc in (10, 13):
+                if pos < data_len and (
+                    eol_pair(esc, data[pos])
+                    if eol_pair is not None
+                    else esc == 13 and data[pos] == 10
+                ):
                     pos += 1
             elif (mapped := STRING_ESCAPE.get(esc)) is not None:
                 out.extend(mapped)
-            elif not drop_unknown_escapes:
+            elif unknown_escape is not None:
+                out.extend(unknown_escape(esc))
+            else:
                 out.append(esc)
         elif byte == 13 or byte == 10:
             out.append(10)
             if pos < data_len:
                 next_byte = data[pos]
-                if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
+                if (
+                    eol_pair(byte, next_byte)
+                    if eol_pair is not None
+                    else byte == 13 and next_byte == 10
+                ):
                     pos += 1
         else:
             out.append(byte)
@@ -379,7 +371,6 @@ __all__ = (
     "is_integer_word",
     "is_number_word_bytes",
     "looks_like_indirect_object_header",
-    "matches_keyword_with_one_substitution",
     "read_literal_string",
     "skip_comment",
     "skip_hex_string",

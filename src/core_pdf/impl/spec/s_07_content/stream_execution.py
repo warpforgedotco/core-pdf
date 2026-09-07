@@ -6,18 +6,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import Rectangle, intersect_bbox
-from core_pdf.impl.spec.s_07_content.capture import marker_drawing
 from core_pdf.impl.spec.s_07_content.operations import dispatch_operations
 from core_pdf.impl.spec.s_07_content.stream_state import (
     ContentStreamFrame,
-    LayoutFormId,
     StreamKey,
 )
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.types import Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.state import TextState
@@ -54,13 +51,13 @@ class ContentStreamExecutor:
         depth: int,
         *,
         clip_bbox: Rectangle | None = None,
-        layout_form_bbox: Rectangle | None = None,
-        layout_form_id: LayoutFormId = None,
+        form_bbox_operand: object = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
     ) -> None:
-        if depth > 10:
+        limit = self.state.recovery.max_stream_depth if self.state.recovery is not None else None
+        if limit is not None and depth > limit:
             return
         execution_key = stream_key or self.execution_key(stream)
         if execution_key in self.active_streams:
@@ -73,8 +70,9 @@ class ContentStreamExecutor:
                 depth,
                 clip_bbox,
                 group_alpha,
-                layout_form_bbox=layout_form_bbox,
-                layout_form_id=layout_form_id,
+                form_bbox_operand=form_bbox_operand,
+                is_form=True,
+                source_key=stream_key,
                 stream_key=execution_key,
                 swallow_parse_errors=swallow_parse_errors,
             )
@@ -82,37 +80,34 @@ class ContentStreamExecutor:
 
     def enter(self, frame: ContentStreamFrame) -> bool:
         state = self.state
-        if frame.depth > 10:
+        limit = state.recovery.max_stream_depth if state.recovery is not None else None
+        if limit is not None and frame.depth > limit:
             return False
         stream_key = frame.stream_key or self.execution_key(frame.stream)
         if stream_key in self.active_streams:
             return False
         # Decode before changing interpreter state or emitting group markers.
         # A failed stream entry must leave its parent exactly as it was.
-        frame.lexer = PdfLexer(frame.stream.data)
+        frame.lexer = state.lexer_factory(frame.stream.data)
         frame.old_state = state.capture_stream_state()
+        # The implicit Form save also owns clips made without an explicit q.
+        # Its floor prevents malformed child Q operators from consuming any
+        # caller saves, while exit can discard unfinished child scopes safely.
+        state.op_q((), frame.depth)
+        state.graphics_stack_floor = len(state.stack)
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key
+        state.sink.enter_stream(state, frame)
         if frame.group_alpha is not None:
-            state.drawings.append(
-                marker_drawing(
-                    "group-begin",
-                    state.sequence,
-                    fill_opacity=frame.group_alpha,
-                    blend_mode=state.blend_mode,
-                )
-            )
-            state.group_alpha = None
+            # The parent's alpha/blend composite the completed group once.
+            # Children start with default transparency until their own gs.
+            state.fill_opacity = 1.0
+            state.stroke_opacity = 1.0
+            state.blend_mode = None
         state.resources = frame.resources
         state.resources_id = id(frame.resources)
         state.ctm = frame.ctm
         state.xobject_depth = frame.depth
-        state.layout_form_bbox = frame.layout_form_bbox
-        state.layout_form_id = frame.layout_form_id
-        if frame.clip_bbox is not None:
-            state.clip_bbox = intersect_bbox(state.clip_bbox, frame.clip_bbox)
-        state.pending_line_break = False
-        state.stream_order += 1
         return True
 
     def exit(self, frame: ContentStreamFrame) -> None:
@@ -126,15 +121,7 @@ class ContentStreamExecutor:
             if frame.stream_key is not None:
                 self.active_streams.discard(frame.stream_key)
             frame.old_state = None
-        if frame.group_alpha is not None:
-            state.drawings.append(
-                marker_drawing(
-                    "group-end",
-                    state.sequence,
-                    fill_opacity=frame.group_alpha,
-                    blend_mode=state.blend_mode,
-                )
-            )
+        state.sink.exit_stream(state, frame)
 
     def consume(
         self,
@@ -155,8 +142,10 @@ class ContentStreamExecutor:
                         stream_stack.pop()
                         continue
                     assert frame.lexer is not None
-                    dispatch_operations(frame.lexer, state.op_handlers.get, frame.depth)
-                    state.run_accumulator.flush()
+                    dispatch_operations(
+                        frame.lexer, state.op_handlers.get, frame.depth, recovery=state.recovery
+                    )
+                    state.sink.text_boundary(state, "stream-end")
                 except NestedStreamRequest as request:
                     stream_stack.append(request.frame)
                     continue

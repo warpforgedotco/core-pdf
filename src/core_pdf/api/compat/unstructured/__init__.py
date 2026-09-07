@@ -15,8 +15,8 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
+from core_pdf.impl._impl.model.geometry import flip_rect_vertical
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
-from core_pdf.impl.model.geometry import flip_rect_vertical
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 PdfInput: TypeAlias = Any

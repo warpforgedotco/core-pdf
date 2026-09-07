@@ -11,12 +11,12 @@ from typing import Any, cast
 from core_pdf import PdfDocument
 from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
-from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.output.model import (
+from core_pdf.impl._impl.output.model import (
     Document,
     Page,
 )
-from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.types import PdfReference
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 
@@ -245,16 +245,12 @@ class PdfPageObject:
         del args, kwargs
         if self.internal_text_override is not None:
             return self.internal_text_override
-        # pypdf only interprets PDF text-showing operators. Core-pdf's structured
-        # view may additionally contain OCR; exposing that here would make the
-        # compatibility facade more capable, but observably unlike pypdf.
+        # Preserve the legacy text-operator projection for untouched pages.
         source_page = self._document.pages[self._page.page_number - 1]
         if self._document.pdf is not None and self._page is source_page:
             page = self._document.capability_page(self._page.page_number)
             return extract_legacy_text(page)
-        return "\n".join(
-            line.text for block in self._page.blocks for line in block.lines if line.source != "ocr"
-        )
+        return "\n".join(line.text for block in self._page.blocks for line in block.lines)
 
     def rotate(self, angle: int) -> PdfPageObject:
         self._page = replace(self._page, rotation=(self.rotation + angle) % 360)

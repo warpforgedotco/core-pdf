@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Reconcile recognized chart tables through shared spatial text projection."""
+
+from __future__ import annotations
+
+from core_pdf.impl._impl.extract import table_reconcile as native_reconcile
+from core_pdf.impl._impl.model.geometry import overlap_ratio_of
+from core_pdf.impl._impl.model.text import complete_text_covered, content_tokens
+from core_pdf.impl._impl.output.model import Block, Table
+
+
+def internal_is_synthetic_chart(table: Table) -> bool:
+    return table.metadata.get("source") == "chart-ocr" and bool(table.metadata.get("synthetic"))
+
+
+def internal_remove_duplicate_tables(
+    tables: tuple[Table, ...],
+) -> tuple[Table, ...]:
+    """Keep complete table references when removing recognized chart copies."""
+    text_tokens = tuple(
+        content_tokens(" ".join(cell.text for row in table.rows for cell in row))
+        for table in tables
+    )
+    synthetic = tuple(internal_is_synthetic_chart(table) for table in tables)
+    # Consider complete references first, with real tables preferred on ties.
+    # Only retained tables may cover another candidate, so equal charts cannot
+    # reject each other and every discarded copy has a surviving replacement.
+    ranked = sorted(
+        range(len(tables)),
+        key=lambda index: (
+            -len(text_tokens[index]),
+            synthetic[index],
+            tables[index].order,
+            index,
+        ),
+    )
+    retained: list[int] = []
+    for index in ranked:
+        table = tables[index]
+        reference = next(
+            (
+                other_index
+                for other_index in retained
+                if table.bbox is not None
+                and (
+                    synthetic[index]
+                    or (table.metadata.get("source") == "stream" and synthetic[other_index])
+                )
+                and (other_box := tables[other_index].bbox) is not None
+                and overlap_ratio_of(table.bbox, other_box) >= 0.90
+                and complete_text_covered(text_tokens[index], text_tokens[other_index])
+            ),
+            None,
+        )
+        if reference is None:
+            retained.append(index)
+    retained.sort()
+    return tuple(tables[index] for index in retained)
+
+
+def internal_project_text_and_tables(
+    blocks: list[Block],
+    parsed_tables: tuple[Table, ...],
+) -> tuple[list[Block], tuple[Table, ...]]:
+    """Select recognition products before applying shared spatial projection."""
+    return native_reconcile.internal_project_text_and_tables(
+        blocks, internal_remove_duplicate_tables(parsed_tables)
+    )

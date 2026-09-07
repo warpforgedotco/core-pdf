@@ -19,7 +19,6 @@ from types import MappingProxyType
 from typing import Literal, cast
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
-from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
@@ -36,6 +35,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int,
     parse_int_strict,
 )
+from core_pdf.impl.types import MISSING
 
 internal_CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 

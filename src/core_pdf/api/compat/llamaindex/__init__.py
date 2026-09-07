@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl._impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
@@ -136,20 +136,22 @@ def load_data(
         raise ValueError("PDF does not contain a startxref marker")
     with PdfDocument.open(source_data) as pdf:
         internal_validate_pypdf_page_tree(pdf)
-        for page in pdf.pages:
+        pages = pdf.pages
+        for page in pages:
             for stream in page.content_streams:
                 with contextlib.suppress(FilterParseError):
                     validate_inline_images(stream.data)
+        labels = pdf.build_page_labels(page_count=len(pages)) if pages else None
         return [
             Document(
                 OperatorTextProjection(page).extract_text(),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
-                    "page_label": page.label or str(page_number),
+                    "page_label": (labels[page_number - 1] if labels else None) or str(page_number),
                     "file_name": source_path.name,
                 },
             )
-            for page_number, page in enumerate(pdf.pages, 1)
+            for page_number, page in enumerate(pages, 1)
         ]
 
 

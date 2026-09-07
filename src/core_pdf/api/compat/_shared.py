@@ -8,7 +8,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 
-from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.model.geometry import rect_tuple
 
 BBox = tuple[float, float, float, float]
 

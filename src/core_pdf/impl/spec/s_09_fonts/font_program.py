@@ -1,10 +1,9 @@
-"""CFF font-program parsing and glyph geometry."""
+"""CFF tables, dictionaries, charsets, and Type 2 program semantics."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from math import inf, isfinite, sqrt
+from collections.abc import Callable
+from math import isfinite, sqrt
 
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -13,44 +12,28 @@ from core_pdf._vendor.fontTools.cffLib import (
     cffStandardStrings,
 )
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
-from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import (
-    feature_distance as compiled_feature_distance,
-)
-from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import (
-    feature_distance_matrix as compiled_feature_distance_matrix,
-)
-from core_pdf.impl.spec.s_09_fonts.feature_distance_kernel import internal_feature_arrays
-from core_pdf.impl.spec.s_09_fonts.raster_kernel import rasterize_contours, transform_contours
 
-
-@dataclass(frozen=True)
-class CFFGlyphFeature:
-    cells: tuple[tuple[int, int], ...]
-    aspect: float
-    contours: int
-    bitmap: tuple[int, ...] = ()
-
-
-EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 CFFMatrix = tuple[float, float, float, float, float, float]
+
+
 STANDARD_GLYPH_SIDS = {name: sid for sid, name in enumerate(cffStandardStrings)}
+
+
 CFF_STANDARD_STRING_COUNT = len(cffStandardStrings)
-# Type 2 charstrings may call subroutines, which may call further subroutines. The spec
-# allows 10 levels; deeper than that means a malformed or maliciously recursive font.
+
+
 TYPE2_MAX_SUBR_DEPTH = 10
-assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
+
 
 internal_TYPE2_MAX_STACK = 48
+
+
 internal_TYPE2_TRANSIENT_SIZE = 32
-internal_TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
-internal_CUBIC_FLATNESS = 0.25
-internal_CUBIC_MAX_DEPTH = 12
+
+
 internal_DEFAULT_CFF_FONT_MATRIX: CFFMatrix = (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
 
-# Appendix B of the CFF specification assigns the non-.notdef entries of the
-# predefined ExpertEncoding to the Expert charset names in this order. Keeping
-# only the occupied codes lets the authoritative names continue to come from
-# vendored fontTools instead of duplicating another 165-name table here.
+
 internal_CFF_EXPERT_ENCODING_CODES = tuple(
     code
     for code in (*range(32, 127), *range(161, 256))
@@ -83,21 +66,24 @@ internal_CFF_EXPERT_ENCODING_CODES = tuple(
         199,
     }
 )
-assert len(internal_CFF_EXPERT_ENCODING_CODES) == len(cffIExpertStrings) - 1
 
 
 def internal_cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
 ) -> CFFMatrix | None:
     values = font_dict.get((12, 7))
-    if not isinstance(values, list) or len(values) != 6:
+    if values is None:
         return None
+    if not isinstance(values, list) or len(values) != 6:
+        raise ValueError("invalid CFF FontMatrix")
     try:
         a, b, c, d, e, f = (float(value) for value in values)
-    except (TypeError, ValueError):
-        return None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid CFF FontMatrix") from exc
     matrix = (a, b, c, d, e, f)
-    return matrix if all(isfinite(value) for value in matrix) else None
+    if not all(isfinite(value) for value in matrix):
+        raise ValueError("invalid CFF FontMatrix")
+    return matrix
 
 
 def internal_compose_cff_matrices(outer: CFFMatrix, inner: CFFMatrix) -> CFFMatrix:
@@ -130,17 +116,7 @@ class CFFFont:
 
     def __init__(self, data: bytes | memoryview | None) -> None:
         if data is None:
-            self.data = b""
-            self.top_dict = {}
-            self.charstrings: list[bytes] = []
-            self.cid_to_gid = {}
-            self.custom_string_sids = {}
-            self.is_cid_keyed = False
-            self.global_subrs: tuple[bytes, ...] = ()
-            self.local_subrs: tuple[tuple[bytes, ...], ...] = ()
-            self.fd_select: tuple[int, ...] = ()
-            self.font_dicts: tuple[dict[int | tuple[int, int], list[float]], ...] = ()
-            return
+            raise ValueError("missing CFF font program")
         # Keep a caller-owned read-only view when one is provided.  INDEX
         # entries are still materialized as bytes below because they escape
         # the parser and remain stable identifiers within the font program.
@@ -295,199 +271,6 @@ class CFFFont:
                 stack.append(value)
         return result
 
-    def internal_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
-        if glyph_count <= 0:
-            return {}
-        if self.is_cid_keyed and pos in {0, 1, 2}:
-            # Section 18 explicitly forbids predefined charsets for CIDFonts:
-            # their charset values are CIDs, not the SIDs in these tables.
-            raise ValueError("CID-keyed CFF font uses a predefined charset")
-        if glyph_count == 1:
-            return {0: 0}
-        glyph_names: list[str] | None
-        match pos:
-            case 0:
-                glyph_names = cffISOAdobeStrings
-            case 1:
-                glyph_names = cffIExpertStrings
-            case 2:
-                glyph_names = cffExpertSubsetStrings
-            case _:
-                glyph_names = None
-        if glyph_names is not None:
-            # Predefined charsets are name/SID sequences in GID order, not
-            # identity SID-to-GID maps. Malformed fonts that declare more
-            # glyphs than the selected charset simply leave the excess GIDs
-            # unreachable by name.
-            return {
-                STANDARD_GLYPH_SIDS[name]: gid for gid, name in enumerate(glyph_names[:glyph_count])
-            }
-        data = self.data
-        if pos >= len(data):
-            return {gid: gid for gid in range(glyph_count)}
-        fmt = data[pos]
-        pos += 1
-        cid_to_gid = {0: 0}
-        gid = 1
-        try:
-            if fmt == 0:
-                while gid < glyph_count:
-                    if pos + 2 > len(data):
-                        break
-                    cid = int.from_bytes(data[pos : pos + 2], "big")
-                    pos += 2
-                    cid_to_gid.setdefault(cid, gid)
-                    gid += 1
-            elif fmt in {1, 2}:
-                while gid < glyph_count:
-                    if pos + 2 > len(data):
-                        break
-                    first = int.from_bytes(data[pos : pos + 2], "big")
-                    pos += 2
-                    if fmt == 1:
-                        if pos >= len(data):
-                            break
-                        left = data[pos]
-                        pos += 1
-                    else:
-                        if pos + 2 > len(data):
-                            break
-                        left = int.from_bytes(data[pos : pos + 2], "big")
-                        pos += 2
-                    for offset in range(left + 1):
-                        if gid >= glyph_count:
-                            break
-                        cid_to_gid.setdefault(first + offset, gid)
-                        gid += 1
-            else:
-                return {gid: gid for gid in range(glyph_count)}
-        except IndexError:
-            pass
-        return cid_to_gid
-
-    def internal_read_encoding_codes(self, pos: int) -> dict[int, int]:
-        """Read a custom CFF Encoding into a code -> glyph id map.
-
-        Section 12 of the CFF specification defines two layouts, both assigning
-        codes to glyph ids in order from glyph 1 (glyph 0 is .notdef and is
-        always unencoded). Setting the high bit of the format byte appends
-        supplements, which give a second code to an already encoded glyph.
-        """
-        data = self.data
-        if pos <= 0 or pos >= len(data):
-            return {}
-        raw_format = data[pos]
-        fmt = raw_format & 0x7F
-        pos += 1
-        glyph_count = len(self.charstrings)
-        codes: dict[int, int] = {}
-        if fmt == 0:
-            if pos >= len(data):
-                return {}
-            n_codes = data[pos]
-            pos += 1
-            for index in range(n_codes):
-                if pos >= len(data):
-                    return codes
-                gid = index + 1
-                if gid < glyph_count:
-                    codes.setdefault(data[pos], gid)
-                pos += 1
-        elif fmt == 1:
-            if pos >= len(data):
-                return {}
-            n_ranges = data[pos]
-            pos += 1
-            gid = 1
-            for _ in range(n_ranges):
-                if pos + 2 > len(data):
-                    return codes
-                first = data[pos]
-                n_left = data[pos + 1]
-                pos += 2
-                for offset in range(n_left + 1):
-                    code = first + offset
-                    if code > 255:
-                        break
-                    if gid < glyph_count:
-                        codes.setdefault(code, gid)
-                    gid += 1
-        else:
-            return {}
-
-        if raw_format & 0x80:
-            if pos >= len(data):
-                return codes
-            n_sups = data[pos]
-            pos += 1
-            for _ in range(n_sups):
-                if pos + 3 > len(data):
-                    break
-                code = data[pos]
-                sid = int.from_bytes(data[pos + 1 : pos + 3], "big")
-                pos += 3
-                # Supplements are code to SID, so route them through the
-                # charset rather than treating the value as a glyph id.
-                supplement_gid = self.cid_to_gid.get(sid)
-                if supplement_gid is not None and supplement_gid < glyph_count:
-                    codes[code] = supplement_gid
-        return codes
-
-    def builtin_encoding(self) -> dict[int, str]:
-        """Return the font program's own code -> glyph name encoding.
-
-        9.6.6.1 makes this the encoding in force when the PDF font dictionary
-        supplies none. StandardEncoding may be left to the caller's standard
-        fallback, while predefined ExpertEncoding is exposed explicitly.
-        """
-        if self.is_cid_keyed:
-            # A CIDFont specifies no encoding (CFF specification, section 12).
-            return {}
-        operand = self.top_dict.get(16, [0])[0]
-        if not isinstance(operand, (int, float)):
-            return {}
-        offset = int(operand)
-        if offset == 0:
-            # The caller already applies StandardEncoding as its implicit base.
-            return {}
-        if offset == 1:
-            sid_to_gid = self.cid_to_gid
-            return {
-                code: name
-                for code, name in zip(
-                    internal_CFF_EXPERT_ENCODING_CODES,
-                    cffIExpertStrings[1:],
-                    strict=True,
-                )
-                if STANDARD_GLYPH_SIDS[name] in sid_to_gid
-            }
-        sid_to_name = {sid: name for name, sid in STANDARD_GLYPH_SIDS.items()}
-        sid_to_name.update({sid: name for name, sid in self.custom_string_sids.items()})
-        gid_to_name = {
-            gid: sid_to_name[sid] for sid, gid in self.cid_to_gid.items() if sid in sid_to_name
-        }
-        encoding: dict[int, str] = {}
-        for code, gid in self.internal_read_encoding_codes(offset).items():
-            name = gid_to_name.get(gid)
-            if name is not None and name != ".notdef":
-                encoding[code] = name
-        return encoding
-
-    def builtin_encoding_is_authoritative(self) -> bool:
-        """Return whether the CFF encoding completely governs its code space.
-
-        StandardEncoding is already represented by the decoder's named base.
-        ExpertEncoding and custom encodings are authoritative even when a
-        subset happens to expose no encoded glyphs: all unspecified codes are
-        unencoded rather than inherited from StandardEncoding.
-        """
-        if self.is_cid_keyed:
-            return False
-        operand = self.top_dict.get(16, [0])[0]
-        if not isinstance(operand, (int, float)):
-            return False
-        return int(operand) != 0
-
     def glyph_id_for_cid(self, cid: int) -> int:
         if self.is_cid_keyed:
             return self.cid_to_gid.get(cid, 0)
@@ -504,75 +287,6 @@ class CFFFont:
     def has_glyph_id(self, gid: int) -> bool:
         return 0 <= gid < len(self.charstrings)
 
-    def internal_read_fd_select(self) -> tuple[int, ...]:
-        glyph_count = len(self.charstrings)
-        fdselect_off = self.top_dict.get((12, 37), [None])[0]
-        if not isinstance(fdselect_off, (int, float)):
-            return (0,) * glyph_count
-        pos = int(fdselect_off)
-        data = self.data
-        if pos >= len(data):
-            return (0,) * glyph_count
-        fmt = data[pos]
-        pos += 1
-        fd_select = [0] * glyph_count
-        try:
-            if fmt == 0:
-                if pos + glyph_count <= len(data):
-                    return tuple(data[pos : pos + glyph_count])
-            elif fmt == 3:
-                if pos + 2 > len(data):
-                    return tuple(fd_select)
-                range_count = int.from_bytes(data[pos : pos + 2], "big")
-                pos += 2
-                ranges: list[tuple[int, int]] = []
-                for ignored in range(range_count):
-                    if pos + 3 > len(data):
-                        return tuple(fd_select)
-                    first = int.from_bytes(data[pos : pos + 2], "big")
-                    fd = data[pos + 2]
-                    pos += 3
-                    ranges.append((first, fd))
-                if pos + 2 > len(data):
-                    return tuple(fd_select)
-                sentinel = int.from_bytes(data[pos : pos + 2], "big")
-                for idx, (first, fd) in enumerate(ranges):
-                    end = ranges[idx + 1][0] if idx + 1 < len(ranges) else sentinel
-                    for gid in range(max(0, first), min(glyph_count, end)):
-                        fd_select[gid] = fd
-        except IndexError:
-            pass
-        return tuple(fd_select)
-
-    def internal_read_font_dicts(
-        self,
-    ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
-        """Read the CID font dictionaries while preserving their FD indices."""
-        if not self.is_cid_keyed:
-            return ()
-        fdarray_off = self.top_dict.get((12, 36), [None])[0]
-        if (
-            not isinstance(fdarray_off, (int, float))
-            or not isfinite(fdarray_off)
-            or fdarray_off < 0
-            or fdarray_off != int(fdarray_off)
-        ):
-            return ()
-        try:
-            raw_font_dicts, ignored_pos = self.internal_read_index(int(fdarray_off))
-        except ValueError:
-            return ()
-
-        font_dicts: list[dict[int | tuple[int, int], list[float]]] = []
-        for raw_font_dict in raw_font_dicts:
-            try:
-                font_dicts.append(self.internal_parse_dict(raw_font_dict))
-            except (IndexError, ValueError):
-                # An invalid entry must retain its position because FDSelect
-                # addresses this INDEX by ordinal.
-                font_dicts.append({})
-        return tuple(font_dicts)
-
     def internal_read_local_subrs(self) -> tuple[tuple[bytes, ...], ...]:
         if self.is_cid_keyed:
             return tuple(
@@ -580,180 +294,188 @@ class CFFFont:
             )
         return (tuple(self.internal_read_private_subrs(self.top_dict)),)
 
+    def internal_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
+        if glyph_count < 1:
+            raise ValueError("CFF charset has no .notdef glyph")
+        if pos in {0, 1, 2}:
+            if self.is_cid_keyed:
+                raise ValueError("CID-keyed CFF font uses a predefined charset")
+            names = (cffISOAdobeStrings, cffIExpertStrings, cffExpertSubsetStrings)[pos]
+            if glyph_count > len(names):
+                raise ValueError("CFF predefined charset is too short")
+            return {STANDARD_GLYPH_SIDS[name]: gid for gid, name in enumerate(names[:glyph_count])}
+        if glyph_count == 1:
+            return {0: 0}
+        if not 0 <= pos < len(self.data):
+            raise ValueError("invalid CFF charset offset")
+        fmt = self.data[pos]
+        pos += 1
+        if fmt not in {0, 1, 2}:
+            raise ValueError("invalid CFF charset format")
+        mapping = {0: 0}
+        gid = 1
+        while gid < glyph_count:
+            size = 2 if fmt == 0 else 3 if fmt == 1 else 4
+            if pos + size > len(self.data):
+                raise ValueError("truncated CFF charset")
+            first = int.from_bytes(self.data[pos : pos + 2], "big")
+            count = 1 if fmt == 0 else 1 + int.from_bytes(self.data[pos + 2 : pos + size], "big")
+            if gid + count > glyph_count:
+                raise ValueError("CFF charset range exceeds glyph count")
+            for offset in range(count):
+                if first + offset in mapping:
+                    raise ValueError("duplicate CFF charset entry")
+                mapping[first + offset] = gid + offset
+            gid += count
+            pos += size
+        return mapping
+
+    def internal_read_encoding_codes(self, pos: int) -> dict[int, int]:
+        if not 0 < pos < len(self.data):
+            raise ValueError("invalid CFF encoding offset")
+        raw_format = self.data[pos]
+        fmt = raw_format & 127
+        if fmt not in {0, 1} or pos + 1 >= len(self.data):
+            raise ValueError("invalid CFF encoding")
+        count = self.data[pos + 1]
+        pos += 2
+        codes: dict[int, int] = {}
+        gid = 1
+        for _ in range(count):
+            size = 1 if fmt == 0 else 2
+            if pos + size > len(self.data):
+                raise ValueError("truncated CFF encoding")
+            first = self.data[pos]
+            length = 1 if fmt == 0 else self.data[pos + 1] + 1
+            if first + length > 256 or gid + length > len(self.charstrings):
+                raise ValueError("CFF encoding range exceeds font")
+            for offset in range(length):
+                if first + offset in codes:
+                    raise ValueError("duplicate CFF encoding code")
+                codes[first + offset] = gid + offset
+            pos += size
+            gid += length
+        if raw_format & 128:
+            if pos >= len(self.data):
+                raise ValueError("truncated CFF encoding supplements")
+            count = self.data[pos]
+            pos += 1
+            for _ in range(count):
+                if pos + 3 > len(self.data):
+                    raise ValueError("truncated CFF encoding supplement")
+                code = self.data[pos]
+                sid = int.from_bytes(self.data[pos + 1 : pos + 3], "big")
+                if sid not in self.cid_to_gid:
+                    raise ValueError("CFF encoding supplement references missing glyph")
+                codes[code] = self.cid_to_gid[sid]
+                pos += 3
+        return codes
+
+    def builtin_encoding(self) -> dict[int, str]:
+        if self.is_cid_keyed:
+            return {}
+        offset = int(self.top_dict.get(16, [0])[0])
+        if offset == 0:
+            return {code: name for code, name in enumerate(StandardEncoding) if name != ".notdef"}
+        if offset == 1:
+            return {
+                code: name
+                for code, name in zip(
+                    internal_CFF_EXPERT_ENCODING_CODES, cffIExpertStrings[1:], strict=True
+                )
+                if STANDARD_GLYPH_SIDS[name] in self.cid_to_gid
+            }
+        reverse = {gid: sid for sid, gid in self.cid_to_gid.items()}
+        names = dict(enumerate(cffStandardStrings)) | {
+            sid: name for name, sid in self.custom_string_sids.items()
+        }
+        return {
+            code: names[reverse[gid]]
+            for code, gid in self.internal_read_encoding_codes(offset).items()
+        }
+
+    def internal_read_fd_select(self) -> tuple[int, ...]:
+        count = len(self.charstrings)
+        if not self.is_cid_keyed:
+            return (0,) * count
+        values = self.top_dict.get((12, 37))
+        if not values or int(values[0]) != values[0]:
+            raise ValueError("missing CFF FDSelect")
+        pos = int(values[0])
+        if not 0 <= pos < len(self.data):
+            raise ValueError("invalid CFF FDSelect offset")
+        fmt = self.data[pos]
+        pos += 1
+        if fmt == 0 and pos + count <= len(self.data):
+            return tuple(self.data[pos : pos + count])
+        if fmt != 3 or pos + 2 > len(self.data):
+            raise ValueError("invalid CFF FDSelect")
+        ranges = int.from_bytes(self.data[pos : pos + 2], "big")
+        pos += 2
+        if not ranges or pos + ranges * 3 + 2 > len(self.data):
+            raise ValueError("truncated CFF FDSelect")
+        entries = [
+            (
+                int.from_bytes(self.data[pos + i * 3 : pos + i * 3 + 2], "big"),
+                self.data[pos + i * 3 + 2],
+            )
+            for i in range(ranges)
+        ]
+        sentinel = int.from_bytes(self.data[pos + ranges * 3 : pos + ranges * 3 + 2], "big")
+        if entries[0][0] != 0 or sentinel != count:
+            raise ValueError("invalid CFF FDSelect bounds")
+        selection: list[int] = []
+        for index, (first, fd) in enumerate(entries):
+            last = entries[index + 1][0] if index + 1 < len(entries) else sentinel
+            if last <= first:
+                raise ValueError("invalid CFF FDSelect range")
+            selection.extend([fd] * (last - first))
+        return tuple(selection)
+
+    def internal_read_font_dicts(self) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
+        if not self.is_cid_keyed:
+            return ()
+        values = self.top_dict.get((12, 36))
+        if not values or int(values[0]) != values[0]:
+            raise ValueError("missing CFF FDArray")
+        items, _ = self.internal_read_index(int(values[0]))
+        return tuple(self.internal_parse_dict(item) for item in items)
+
     def internal_read_private_subrs(
         self, font_dict: dict[int | tuple[int, int], list[float]]
     ) -> list[bytes]:
         private = font_dict.get(18)
-        if not isinstance(private, list) or len(private) < 2:
+        if private is None:
             return []
-        size, offset = private[:2]
-        if not isinstance(size, (int, float)) or not isinstance(offset, (int, float)):
+        if len(private) != 2 or any(int(value) != value for value in private):
+            raise ValueError("invalid CFF Private dictionary")
+        size, offset = map(int, private)
+        if offset < 0 or size < 0 or offset + size > len(self.data):
+            raise ValueError("invalid CFF Private bounds")
+        private_dict = self.internal_parse_dict(bytes(self.data[offset : offset + size]))
+        subrs = private_dict.get(19)
+        if subrs is None:
             return []
-        private_off = int(offset)
-        private_size = int(size)
-        if private_off < 0 or private_size <= 0 or private_off + private_size > len(self.data):
-            return []
-        private_dict = self.internal_parse_dict(
-            bytes(self.data[private_off : private_off + private_size])
-        )
-        subrs_off = private_dict.get(19, [None])[0]
-        if not isinstance(subrs_off, (int, float)):
-            return []
-        try:
-            subrs, ignored_pos = self.internal_read_index(private_off + int(subrs_off))
-        except ValueError:
-            return []
-        return subrs
+        if int(subrs[0]) != subrs[0]:
+            raise ValueError("invalid CFF Subrs offset")
+        items, _ = self.internal_read_index(offset + int(subrs[0]))
+        return items
 
     def local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
-        fd_index = self.fd_select[glyph_id] if glyph_id < len(self.fd_select) else 0
-        if 0 <= fd_index < len(self.local_subrs):
-            return self.local_subrs[fd_index]
-        return ()
+        if not 0 <= glyph_id < len(self.charstrings):
+            raise ValueError("invalid CFF glyph id")
+        fd = self.fd_select[glyph_id]
+        if not 0 <= fd < len(self.local_subrs):
+            raise ValueError("invalid CFF font dictionary index")
+        return self.local_subrs[fd]
 
     def internal_font_matrix(self, glyph_id: int) -> CFFMatrix:
-        """Return the effective font matrix for a glyph."""
-        fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
-        top_matrix = internal_cff_font_matrix(self.top_dict)
-        font_dict = self.font_dicts[fd_index] if 0 <= fd_index < len(self.font_dicts) else None
-        font_dict_matrix = internal_cff_font_matrix(font_dict) if font_dict is not None else None
-        if top_matrix is None:
-            return font_dict_matrix or internal_DEFAULT_CFF_FONT_MATRIX
-        if font_dict_matrix is None:
-            return top_matrix
-        return internal_compose_cff_matrices(top_matrix, font_dict_matrix)
-
-    def internal_seac_contours(
-        self,
-        base_code: int,
-        accent_code: int,
-        accent_dx: float,
-        accent_dy: float,
-    ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Resolve deprecated endchar components in raw charstring coordinates."""
-        if self.is_cid_keyed:
-            return ()
-        contours: list[tuple[tuple[float, float], ...]] = []
-        for code, offset_x, offset_y in (
-            (base_code, 0.0, 0.0),
-            (accent_code, accent_dx, accent_dy),
-        ):
-            if not 0 <= code < len(StandardEncoding):
-                continue
-            sid = STANDARD_GLYPH_SIDS.get(StandardEncoding[code])
-            glyph_id = self.cid_to_gid.get(sid) if sid is not None else None
-            if glyph_id is None or not 0 <= glyph_id < len(self.charstrings):
-                continue
-            component_contours, ignored_bbox = internal_type2_glyph_geometry_impl(
-                self.charstrings[glyph_id],
-                local_subrs=self.local_subrs_for_glyph(glyph_id),
-                global_subrs=self.global_subrs,
-            )
-            contours.extend(
-                tuple((x + offset_x, y + offset_y) for x, y in contour)
-                for contour in component_contours
-            )
-        return tuple(contours)
-
-    def internal_glyph_geometry_for_gid(
-        self, glyph_id: int
-    ) -> tuple[
-        tuple[tuple[tuple[float, float], ...], ...],
-        tuple[float, float, float, float] | None,
-    ]:
-        try:
-            charstring = self.charstrings[glyph_id]
-        except IndexError:
-            return ((), None)
-        contours, raw_bbox = internal_type2_glyph_geometry_impl(
-            charstring,
-            local_subrs=self.local_subrs_for_glyph(glyph_id),
-            global_subrs=self.global_subrs,
-            seac_resolver=self.internal_seac_contours,
-        )
-        matrix = self.internal_font_matrix(glyph_id)
-        if matrix == internal_DEFAULT_CFF_FONT_MATRIX:
-            # The interpreter tracked the bounds of exactly these points.
-            return (tuple(tuple(contour) for contour in contours), raw_bbox)
-        normalized = transform_contours(contours, matrix)
-        return (normalized, internal_contours_bbox(normalized))
-
-    def glyph_feature(self, glyph_id: int) -> CFFGlyphFeature:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
-        contours = geometry[0]
-        if not contours:
-            return EMPTY_FEATURE
-        return internal_feature_from_contours(contours)
-
-    def glyph_bitmap_for_gid(
-        self, glyph_id: int, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
-        contours = geometry[0]
-        if not contours:
-            return ()
-        return rasterize_contours(contours, width=width, height=height)
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
-        return geometry[1]
-
-    def glyph_contours_for_gid(self, glyph_id: int) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Return the Type 2 outline normalized into PDF's 1000-unit glyph space."""
-        return self.internal_glyph_geometry_for_gid(glyph_id)[0]
-
-    def normalized_glyph_contours(
-        self, glyph_id: int
-    ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Return contours through the shared embedded-program geometry contract."""
-        return self.glyph_contours_for_gid(glyph_id)
-
-
-def internal_contours_bbox(
-    contours: tuple[tuple[tuple[float, float], ...], ...],
-) -> tuple[float, float, float, float] | None:
-    points = tuple(point for contour in contours for point in contour)
-    if not points:
-        return None
-    return (
-        min(point[0] for point in points),
-        min(point[1] for point in points),
-        max(point[0] for point in points),
-        max(point[1] for point in points),
-    )
-
-
-def internal_feature_from_contours(
-    contours: tuple[tuple[tuple[float, float], ...], ...] | list[list[tuple[float, float]]],
-) -> CFFGlyphFeature:
-    if not contours:
-        return EMPTY_FEATURE
-
-    points = [point for contour in contours for point in contour]
-    if not points:
-        return EMPTY_FEATURE
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    width = max(max_x - min_x, 1.0)
-    height = max(max_y - min_y, 1.0)
-    cells: set[tuple[int, int]] = set()
-    add_cell = cells.add
-    for px, py in points:
-        cell_x = round((px - min_x) / width * 17)
-        cell_y = round((py - min_y) / height * 23)
-        if cell_x < 0:
-            cell_x = 0
-        elif cell_x > 17:
-            cell_x = 17
-        if cell_y < 0:
-            cell_y = 0
-        elif cell_y > 23:
-            cell_y = 23
-        add_cell((cell_x, cell_y))
-    bitmap = rasterize_contours(contours, width=18, height=24)
-    return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
+        top = internal_cff_font_matrix(self.top_dict)
+        fd = self.fd_select[glyph_id]
+        child = internal_cff_font_matrix(self.font_dicts[fd]) if self.font_dicts else None
+        if top is None:
+            return child or internal_DEFAULT_CFF_FONT_MATRIX
+        return top if child is None else internal_compose_cff_matrices(top, child)
 
 
 def internal_cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> tuple[float, ...]:
@@ -794,76 +516,6 @@ def internal_cubic_point(
         mt3 * p0[0] + mt2t * p1[0] + mtt2 * p2[0] + t3 * p3[0],
         mt3 * p0[1] + mt2t * p1[1] + mtt2 * p2[1] + t3 * p3[1],
     )
-
-
-def internal_cubic_is_flat(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-) -> bool:
-    dx = p3[0] - p0[0]
-    dy = p3[1] - p0[1]
-    chord_squared = dx * dx + dy * dy
-    tolerance_squared = internal_CUBIC_FLATNESS * internal_CUBIC_FLATNESS
-    if chord_squared <= 1e-18:
-        return (
-            max(
-                (p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2,
-                (p2[0] - p0[0]) ** 2 + (p2[1] - p0[1]) ** 2,
-            )
-            <= tolerance_squared
-        )
-    cross1 = dx * (p1[1] - p0[1]) - dy * (p1[0] - p0[0])
-    cross2 = dx * (p2[1] - p0[1]) - dy * (p2[0] - p0[0])
-    return max(cross1 * cross1, cross2 * cross2) <= tolerance_squared * chord_squared
-
-
-def internal_cubic_sample_times(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-) -> tuple[float, ...]:
-    """Adaptively flatten a cubic while retaining its exact coordinate extrema."""
-    times = {
-        1.0,
-        *internal_cubic_extrema_times(p0[0], p1[0], p2[0], p3[0]),
-        *internal_cubic_extrema_times(p0[1], p1[1], p2[1], p3[1]),
-    }
-
-    def subdivide(
-        start: tuple[float, float],
-        control1: tuple[float, float],
-        control2: tuple[float, float],
-        end: tuple[float, float],
-        start_t: float,
-        end_t: float,
-        depth: int,
-    ) -> None:
-        if depth >= internal_CUBIC_MAX_DEPTH or internal_cubic_is_flat(
-            start, control1, control2, end
-        ):
-            times.add(end_t)
-            return
-        point01 = ((start[0] + control1[0]) / 2.0, (start[1] + control1[1]) / 2.0)
-        point12 = (
-            (control1[0] + control2[0]) / 2.0,
-            (control1[1] + control2[1]) / 2.0,
-        )
-        point23 = ((control2[0] + end[0]) / 2.0, (control2[1] + end[1]) / 2.0)
-        point012 = ((point01[0] + point12[0]) / 2.0, (point01[1] + point12[1]) / 2.0)
-        point123 = ((point12[0] + point23[0]) / 2.0, (point12[1] + point23[1]) / 2.0)
-        midpoint = (
-            (point012[0] + point123[0]) / 2.0,
-            (point012[1] + point123[1]) / 2.0,
-        )
-        middle_t = (start_t + end_t) / 2.0
-        subdivide(start, point01, point012, midpoint, start_t, middle_t, depth + 1)
-        subdivide(midpoint, point123, point23, end, middle_t, end_t, depth + 1)
-
-    subdivide(p0, p1, p2, p3, 0.0, 1.0, 0)
-    return tuple(sorted(times))
 
 
 def internal_execute_type2_flex(
@@ -914,104 +566,38 @@ def internal_execute_type2_flex(
             raise ValueError("invalid Type 2 flex operator")
 
 
-def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors Type 2's spec table
+def internal_type2_subr_bias(count: int) -> int:
+    if count < 1240:
+        return 107
+    if count < 33900:
+        return 1131
+    return 32768
+
+
+def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 operators
     charstring: bytes,
     *,
     local_subrs: tuple[bytes, ...],
     global_subrs: tuple[bytes, ...],
-    seac_resolver: (
-        Callable[
-            [int, int, float, float],
-            tuple[tuple[tuple[float, float], ...], ...],
-        ]
-        | None
-    ) = None,
-) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
+    move: Callable[[float, float], None],
+    line: Callable[[float, float], None],
+    curve: Callable[[float, float, float, float, float, float], None],
+    flush_contour: Callable[[], None],
+    has_current_point: Callable[[], bool],
+    seac: Callable[[int, int, float, float], None],
+    random_value: Callable[[], float],
+) -> bool:
+    """Execute Type 2 operators against a caller-owned geometric path sink.
+
+    Return true when the program exhausts without endchar; malformed programs
+    raise. Sampling, partial-path retention and random sources are caller choices.
+    """
     stack: list[float] = []
     transient = [0.0] * internal_TYPE2_TRANSIENT_SIZE
-    contours: list[list[tuple[float, float]]] = []
-    current: list[tuple[float, float]] = []
-    current_min_x = inf
-    current_min_y = inf
-    current_max_x = -inf
-    current_max_y = -inf
-    bbox_min_x = inf
-    bbox_min_y = inf
-    bbox_max_x = -inf
-    bbox_max_y = -inf
-    current_has_points = False
-    bbox_has_points = False
-    x = 0.0
-    y = 0.0
     stem_count = 0
     width_resolved = False
-    random_state = internal_TYPE2_RANDOM_INITIAL_STATE
     subr_bias = internal_type2_subr_bias(len(local_subrs))
     gsubr_bias = internal_type2_subr_bias(len(global_subrs))
-
-    def flush_contour() -> None:
-        nonlocal current
-        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
-        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y
-        nonlocal current_has_points, bbox_has_points
-        if current:
-            contours.append(current)
-            current = []
-        if current_has_points:
-            bbox_min_x = min(bbox_min_x, current_min_x)
-            bbox_min_y = min(bbox_min_y, current_min_y)
-            bbox_max_x = max(bbox_max_x, current_max_x)
-            bbox_max_y = max(bbox_max_y, current_max_y)
-            bbox_has_points = True
-            current_min_x = inf
-            current_min_y = inf
-            current_max_x = -inf
-            current_max_y = -inf
-            current_has_points = False
-
-    def append_completed_contour(points: tuple[tuple[float, float], ...]) -> None:
-        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y, bbox_has_points
-        if not points:
-            return
-        contours.append(list(points))
-        bbox_min_x = min(bbox_min_x, *(point[0] for point in points))
-        bbox_min_y = min(bbox_min_y, *(point[1] for point in points))
-        bbox_max_x = max(bbox_max_x, *(point[0] for point in points))
-        bbox_max_y = max(bbox_max_y, *(point[1] for point in points))
-        bbox_has_points = True
-
-    def record_point(px: float, py: float) -> None:
-        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
-        nonlocal current_has_points
-        current.append((px, py))
-        current_min_x = min(current_min_x, px)
-        current_min_y = min(current_min_y, py)
-        current_max_x = max(current_max_x, px)
-        current_max_y = max(current_max_y, py)
-        current_has_points = True
-
-    def move(dx: float, dy: float) -> None:
-        nonlocal x, y
-        flush_contour()
-        x += dx
-        y += dy
-        record_point(x, y)
-
-    def line(dx: float, dy: float) -> None:
-        nonlocal x, y
-        x += dx
-        y += dy
-        record_point(x, y)
-
-    def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
-        nonlocal x, y
-        point0 = (x, y)
-        point1 = (x + dx1, y + dy1)
-        point2 = (point1[0] + dx2, point1[1] + dy2)
-        point3 = (point2[0] + dx3, point2[1] + dy3)
-        for t in internal_cubic_sample_times(point0, point1, point2, point3):
-            record_point(*internal_cubic_point(point0, point1, point2, point3, t))
-        x, y = point3
 
     def clear_stack() -> None:
         del stack[:]
@@ -1031,7 +617,6 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         return require_integer(stack.pop())
 
     def execute_escaped_operator(operator: int) -> None:
-        nonlocal random_state
         match operator:
             case 0:  # dotsection -- deprecated no-op with a clearing stack contract
                 clear_stack()
@@ -1081,8 +666,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                 choice1 = stack.pop()
                 push(choice1 if value1 <= value2 else choice2)
             case 23:  # random
-                random_state = (1103515245 * random_state + 12345) & 0x7FFFFFFF
-                push((random_state + 1) / 0x80000000)
+                push(random_value())
             case 24:  # mul
                 second = stack.pop()
                 push(stack.pop() * second)
@@ -1108,7 +692,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                         values = stack[-count:]
                         stack[-count:] = values[-shift:] + values[:-shift]
             case 34 | 35 | 36 | 37:  # hflex / flex / hflex1 / flex1
-                if not current_has_points:
+                if not has_current_point():
                     raise ValueError("Type 2 flex operator has no current point")
                 internal_execute_type2_flex(operator, stack, curve)
                 clear_stack()
@@ -1131,7 +715,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         """
         nonlocal stem_count, width_resolved
         if depth > TYPE2_MAX_SUBR_DEPTH:
-            return False
+            raise ValueError("invalid Type 2 charstring")
         pos = 0
         try:
             while pos < len(program):
@@ -1147,10 +731,10 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                         if not width_resolved and operand_count % 2:
                             operand_count -= 1
                         if operand_count < 2 or operand_count % 2:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         stem_count += operand_count // 2
                         if stem_count > 96:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         clear_stack()
                     case 4:  # vmoveto
@@ -1159,51 +743,51 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                         elif not width_resolved and len(stack) == 2:
                             dy = stack[1]
                         else:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         move(0.0, dy)
                         clear_stack()
                     case 5:  # rlineto
-                        if not current_has_points or len(stack) < 2 or len(stack) % 2:
-                            return False
+                        if not has_current_point() or len(stack) < 2 or len(stack) % 2:
+                            raise ValueError("invalid Type 2 charstring")
                         for i in range(0, len(stack) - 1, 2):
                             line(stack[i], stack[i + 1])
                         clear_stack()
                     case 6:  # hlineto -- alternates horizontal/vertical
-                        if not current_has_points or not stack:
-                            return False
+                        if not has_current_point() or not stack:
+                            raise ValueError("invalid Type 2 charstring")
                         horizontal = True
                         for value in stack:
                             line(value, 0.0) if horizontal else line(0.0, value)
                             horizontal = not horizontal
                         clear_stack()
                     case 7:  # vlineto -- alternates vertical/horizontal
-                        if not current_has_points or not stack:
-                            return False
+                        if not has_current_point() or not stack:
+                            raise ValueError("invalid Type 2 charstring")
                         vertical = True
                         for value in stack:
                             line(0.0, value) if vertical else line(value, 0.0)
                             vertical = not vertical
                         clear_stack()
                     case 8:  # rrcurveto
-                        if not current_has_points or len(stack) < 6 or len(stack) % 6:
-                            return False
+                        if not has_current_point() or len(stack) < 6 or len(stack) % 6:
+                            raise ValueError("invalid Type 2 charstring")
                         for i in range(0, len(stack) - 5, 6):
                             curve(*stack[i : i + 6])
                         clear_stack()
                     case 10:  # callsubr (local)
                         if not stack:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         subr_index = pop_integer() + subr_bias
                         if not 0 <= subr_index < len(local_subrs) or not execute(
                             local_subrs[subr_index], depth + 1
                         ):
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                     case 11:  # return -- leave this subroutine, caller keeps going
                         return True
                     case 12:  # two-byte escaped operator
                         if pos >= len(program):
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         escaped_operator = program[pos]
                         pos += 1
                         execute_escaped_operator(escaped_operator)
@@ -1213,35 +797,32 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                             if len(arguments) in {1, 5}:
                                 arguments = arguments[1:]
                             elif len(arguments) not in {0, 4}:
-                                return False
+                                raise ValueError("invalid Type 2 charstring")
                             width_resolved = True
                         elif len(arguments) not in {0, 4}:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         clear_stack()
                         flush_contour()
-                        if arguments and seac_resolver is not None:
-                            base_code = require_integer(arguments[2])
-                            accent_code = require_integer(arguments[3])
-                            for component in seac_resolver(
-                                base_code,
-                                accent_code,
+                        if arguments:
+                            seac(
+                                require_integer(arguments[2]),
+                                require_integer(arguments[3]),
                                 arguments[0],
                                 arguments[1],
-                            ):
-                                append_completed_contour(component)
-                        return False
+                            )
+                        return False  # endchar completes the glyph
                     case 19 | 20:  # hintmask, cntrmask -- skip trailing mask bytes
                         operand_count = len(stack)
                         if not width_resolved and operand_count % 2:
                             operand_count -= 1
                         if operand_count % 2:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         stem_count += operand_count // 2
                         if stem_count <= 0 or stem_count > 96:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         mask_bytes = (stem_count + 7) // 8
                         if pos + mask_bytes > len(program):
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         clear_stack()
                         pos += mask_bytes
@@ -1251,7 +832,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                         elif not width_resolved and len(stack) == 3:
                             dx, dy = stack[1:]
                         else:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         move(dx, dy)
                         clear_stack()
@@ -1261,29 +842,33 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                         elif not width_resolved and len(stack) == 2:
                             dx = stack[1]
                         else:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         move(dx, 0.0)
                         clear_stack()
                     case 24:  # rcurveline -- curves followed by exactly one line
-                        if not current_has_points or len(stack) < 8 or (len(stack) - 2) % 6:
-                            return False
+                        if not has_current_point() or len(stack) < 8 or (len(stack) - 2) % 6:
+                            raise ValueError("invalid Type 2 charstring")
                         curve_args = stack[:-2]
                         for i in range(0, len(curve_args) - 5, 6):
                             curve(*curve_args[i : i + 6])
                         line(stack[-2], stack[-1])
                         clear_stack()
                     case 25:  # rlinecurve -- lines followed by exactly one curve
-                        if not current_has_points or len(stack) < 8 or (len(stack) - 6) % 2:
-                            return False
+                        if not has_current_point() or len(stack) < 8 or (len(stack) - 6) % 2:
+                            raise ValueError("invalid Type 2 charstring")
                         line_args = stack[:-6]
                         for i in range(0, len(line_args) - 1, 2):
                             line(line_args[i], line_args[i + 1])
                         curve(*stack[-6:])
                         clear_stack()
                     case 26:  # vvcurveto
-                        if not current_has_points or len(stack) < 4 or len(stack) % 4 not in {0, 1}:
-                            return False
+                        if (
+                            not has_current_point()
+                            or len(stack) < 4
+                            or len(stack) % 4 not in {0, 1}
+                        ):
+                            raise ValueError("invalid Type 2 charstring")
                         dx1 = stack.pop(0) if len(stack) % 2 else 0.0
                         for i in range(0, len(stack) - 3, 4):
                             curve(
@@ -1297,8 +882,12 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                             dx1 = 0.0
                         clear_stack()
                     case 27:  # hhcurveto
-                        if not current_has_points or len(stack) < 4 or len(stack) % 4 not in {0, 1}:
-                            return False
+                        if (
+                            not has_current_point()
+                            or len(stack) < 4
+                            or len(stack) % 4 not in {0, 1}
+                        ):
+                            raise ValueError("invalid Type 2 charstring")
                         dy1 = stack.pop(0) if len(stack) % 2 else 0.0
                         for i in range(0, len(stack) - 3, 4):
                             curve(
@@ -1313,15 +902,19 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                         clear_stack()
                     case 29:  # callgsubr (global)
                         if not stack:
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                         subr_index = pop_integer() + gsubr_bias
                         if not 0 <= subr_index < len(global_subrs) or not execute(
                             global_subrs[subr_index], depth + 1
                         ):
-                            return False
+                            raise ValueError("invalid Type 2 charstring")
                     case 30 | 31:  # vhcurveto / hvcurveto -- alternating tangents
-                        if not current_has_points or len(stack) < 4 or len(stack) % 4 not in {0, 1}:
-                            return False
+                        if (
+                            not has_current_point()
+                            or len(stack) < 4
+                            or len(stack) % 4 not in {0, 1}
+                        ):
+                            raise ValueError("invalid Type 2 charstring")
                         horizontal = byte == 31
                         args = list(stack)
                         clear_stack()
@@ -1343,220 +936,9 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                             curve(dx1, dy1, dx2, dy2, dx3, dy3)
                             horizontal = not horizontal
                     case _:
-                        return False
+                        raise ValueError("invalid Type 2 charstring")
             return True
-        except (ArithmeticError, IndexError, ValueError):
-            return False
+        except (ArithmeticError, IndexError, ValueError) as exc:
+            raise ValueError("invalid Type 2 charstring") from exc
 
-    if not execute(charstring):
-        bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
-        return contours, bbox
-    flush_contour()
-    bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
-    return contours, bbox
-
-
-def internal_type2_subr_bias(count: int) -> int:
-    if count < 1240:
-        return 107
-    if count < 33900:
-        return 1131
-    return 32768
-
-
-def glyph_feature_distance(left: CFFGlyphFeature, right: CFFGlyphFeature) -> float:
-    return compiled_feature_distance(
-        left.cells,
-        left.bitmap,
-        left.aspect,
-        left.contours,
-        right.cells,
-        right.bitmap,
-        right.aspect,
-        right.contours,
-    )
-
-
-SUSPICIOUS_TO_UNICODE = {"\ufffd", "£", "•"}
-REPAIRABLE_TO_UNICODE = SUSPICIOUS_TO_UNICODE | {"5", "H"}
-LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
-
-
-def is_repairable_to_unicode_label(label: str) -> bool:
-    if len(label) == 1:
-        return label in REPAIRABLE_TO_UNICODE
-    if label in LEGITIMATE_MULTI_CHAR_GLYPHS:
-        return False
-    if any(ch in SUSPICIOUS_TO_UNICODE for ch in label):
-        return True
-    if len(label) > 3:
-        return True
-    return any(not (ch.isalnum() or ch.isspace()) for ch in label)
-
-
-def internal_repair_candidate(
-    glyph_id: int,
-    label: str,
-    features: dict[int, CFFGlyphFeature],
-    labels: dict[int, str],
-    distance_lookup: dict[int, float] | None = None,
-) -> str | None:
-    feature = features.get(glyph_id, EMPTY_FEATURE)
-    if not feature.cells:
-        return None
-    candidates: list[tuple[float, str]] = []
-    same_label = inf
-    for other_id, other_label in labels.items():
-        if other_id == glyph_id or len(other_label) != 1:
-            continue
-        if not (other_label.isalnum() or other_label in ".-+"):
-            continue
-        other_feature = features.get(other_id, EMPTY_FEATURE)
-        if not other_feature.cells:
-            continue
-        distance = (
-            distance_lookup[other_id]
-            if distance_lookup is not None
-            else glyph_feature_distance(feature, other_feature)
-        )
-        if other_label == label:
-            same_label = min(same_label, distance)
-        else:
-            candidates.append((distance, other_label))
-    if not candidates:
-        return None
-    best_distance, best_label = min(candidates, key=lambda item: item[0])
-    if (label in SUSPICIOUS_TO_UNICODE or len(label) > 1) and best_distance < 2.3:
-        return best_label
-    if label == "5" and best_label == "S" and best_distance < 1.9:
-        return best_label
-    if label == "H" and best_label == "M" and best_distance < 1.8:
-        return best_label
-    if same_label < inf and best_distance + 0.35 < same_label and best_distance < 2.0:
-        return best_label
-    return None
-
-
-class CFFUnicodeRepairIndex:
-    """Match suspicious ToUnicode entries against one CFF program."""
-
-    __slots__ = (
-        "internal_candidate_gids",
-        "internal_code_to_gid",
-        "internal_font",
-        "internal_labels",
-        "internal_repairable_gids",
-    )
-
-    def __init__(
-        self,
-        font: CFFFont,
-        mapping_items: tuple[tuple[bytes, int, str], ...],
-    ) -> None:
-        glyph_count = len(font.charstrings)
-        labels: dict[int, str] = {}
-        code_to_gid: dict[bytes, int] = {}
-        if glyph_count >= 2:
-            for code_bytes, cid, value in mapping_items:
-                gid = font.glyph_id_for_cid(cid)
-                if gid >= glyph_count:
-                    continue
-                labels[gid] = value
-                code_to_gid[code_bytes] = gid
-
-        self.internal_font = font
-        self.internal_labels = labels
-        self.internal_code_to_gid = code_to_gid
-        self.internal_repairable_gids = frozenset(
-            gid for gid, label in labels.items() if is_repairable_to_unicode_label(label)
-        )
-        self.internal_candidate_gids = tuple(
-            gid
-            for gid, label in labels.items()
-            if len(label) == 1 and (label.isalnum() or label in ".-+")
-        )
-
-    def repairs_for_codes(self, codes: Iterable[bytes]) -> dict[bytes, str]:
-        """Return repairs for the requested content-stream codes."""
-        requested_codes = tuple(dict.fromkeys(codes))
-        if not requested_codes or not self.internal_repairable_gids:
-            return {}
-        target_gids = tuple(
-            dict.fromkeys(
-                gid
-                for code in requested_codes
-                if (gid := self.internal_code_to_gid.get(code)) in self.internal_repairable_gids
-            )
-        )
-        if not target_gids:
-            return {}
-        repairs = self.internal_repairs_for_gids(target_gids)
-        return {
-            code: replacement
-            for code in requested_codes
-            if (gid := self.internal_code_to_gid.get(code)) is not None
-            and (replacement := repairs.get(gid)) is not None
-        }
-
-    def internal_repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
-        feature_gids = dict.fromkeys((*self.internal_candidate_gids, *requested_gids))
-        features = {gid: self.internal_font.glyph_feature(gid) for gid in feature_gids}
-
-        candidate_gids = tuple(gid for gid in self.internal_candidate_gids if features[gid].cells)
-        target_gids = tuple(gid for gid in requested_gids if features[gid].cells)
-        distance_lookups: dict[int, dict[int, float]] = {}
-        if (
-            target_gids
-            and candidate_gids
-            and (len(self.internal_repairable_gids) * len(candidate_gids) >= 512)
-        ):
-            target_features = [features[gid] for gid in target_gids]
-            candidate_features = [features[gid] for gid in candidate_gids]
-            candidate_arrays = internal_feature_arrays(
-                [feature.cells for feature in candidate_features],
-                [feature.bitmap for feature in candidate_features],
-                [feature.aspect for feature in candidate_features],
-                [feature.contours for feature in candidate_features],
-            )
-            distance_matrix = compiled_feature_distance_matrix(
-                [feature.cells for feature in target_features],
-                [feature.bitmap for feature in target_features],
-                [feature.aspect for feature in target_features],
-                [feature.contours for feature in target_features],
-                [feature.cells for feature in candidate_features],
-                [feature.bitmap for feature in candidate_features],
-                [feature.aspect for feature in candidate_features],
-                [feature.contours for feature in candidate_features],
-                internal_right_arrays=candidate_arrays,
-            )
-            distance_lookups = {
-                target_gid: {
-                    candidate_gid: float(distance_matrix[target_index, candidate_index])
-                    for candidate_index, candidate_gid in enumerate(candidate_gids)
-                }
-                for target_index, target_gid in enumerate(target_gids)
-            }
-
-        repairs: dict[int, str] = {}
-        for glyph_id in target_gids:
-            label = self.internal_labels[glyph_id]
-            replacement = internal_repair_candidate(
-                glyph_id,
-                label,
-                features,
-                self.internal_labels,
-                distance_lookups.get(glyph_id),
-            )
-            if replacement is not None and replacement != label:
-                repairs[glyph_id] = replacement
-        return repairs
-
-
-__all__ = (
-    "STANDARD_GLYPH_SIDS",
-    "CFFFont",
-    "CFFGlyphFeature",
-    "CFFUnicodeRepairIndex",
-    "glyph_feature_distance",
-    "is_repairable_to_unicode_label",
-)
+    return execute(charstring)

@@ -308,6 +308,8 @@ def cmap_metadata(data: bytes | CMapProgram) -> tuple[str | None, int | None]:
 
 
 def decode_cmap_hex_token(token: bytes) -> bytes:
+    if len(token) < 2 or not token.startswith(b"<") or not token.endswith(b">"):
+        raise ValueError("invalid CMap hex string")
     raw = token[1:-1].translate(None, WHITESPACE)
     if len(raw) & 1:
         raw += b"0"

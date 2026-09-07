@@ -1,66 +1,17 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-"""Native font encoding and differences helpers."""
+"""PDF font encoding names and dictionary semantics."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Callable
 
 from core_pdf._vendor.fontTools.agl import UV2AGL
 from core_pdf._vendor.fontTools.encodings.MacRoman import MacRoman
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
 from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
-    MAC_ROMAN_ENCODING,
-    STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-
-
-def strip_subset_tag(font_name: str) -> str:
-    """Drop the ``ABCDEF+`` subset prefix (9.6.4) from a base font name."""
-    return font_name.split("+", 1)[-1]
-
-
-LIGATURE_TEXT_OVERRIDES = {
-    "\ufb00": "ff",
-    "\ufb01": "fi",
-    "\ufb02": "fl",
-    "\ufb03": "ffi",
-    "\ufb04": "ffl",
-}
-
-
-def normalize_ligature_text(text: str) -> str:
-    return LIGATURE_TEXT_OVERRIDES.get(text, text)
-
-
-def unicode_for_glyph_name(glyph_name: str) -> str | None:
-    """Resolve a glyph name, distinguishing an unknown name from valid text."""
-    mapped = glyph_name_to_unicode(glyph_name)
-    if not mapped or (mapped == glyph_name and len(glyph_name) != 1):
-        return None
-    return normalize_ligature_text(mapped)
-
-
-def internal_resolve_base_encoding(table: tuple[str, ...]) -> tuple[str, ...]:
-    """Turn an Annex D.2 table into a decode table.
-
-    Undefined codes below 040 keep their raw value, matching how the control
-    range is treated everywhere else; above that they decode to nothing, since
-    the encoding genuinely assigns them no glyph.
-    """
-    return tuple(
-        normalize_ligature_text(text) if text else (chr(code) if code < 32 else "")
-        for code, text in enumerate(table)
-    )
-
-
-STANDARD_ENCODING_TABLE = internal_resolve_base_encoding(STANDARD_ENCODING)
-WIN_ANSI_ENCODING_TABLE = internal_resolve_base_encoding(WIN_ANSI_ENCODING)
-MAC_ROMAN_ENCODING_TABLE = internal_resolve_base_encoding(MAC_ROMAN_ENCODING)
 
 
 def internal_glyph_name_for_unicode(text: str) -> str:
@@ -105,84 +56,65 @@ WIN_ANSI_ENCODING_GLYPH_NAMES = tuple(
 
 BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
     "StandardEncoding": STANDARD_ENCODING_GLYPH_NAMES,
-    "Type3": STANDARD_ENCODING_GLYPH_NAMES,
     "WinAnsiEncoding": WIN_ANSI_ENCODING_GLYPH_NAMES,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_GLYPH_NAMES,
 }
 
 
-def base_encoding_glyph_names(key: str | None) -> tuple[str, ...]:
-    """Return a complete code-to-name table without inventing undefined names."""
-    return BASE_ENCODING_GLYPH_NAMES.get(key or "StandardEncoding", STANDARD_ENCODING_GLYPH_NAMES)
+def base_encoding_glyph_names(key: str) -> tuple[str, ...]:
+    return BASE_ENCODING_GLYPH_NAMES[key]
 
 
-def build_decode_table(
-    key: str,
-    differences: dict[int, str] | tuple[tuple[int, str], ...] | None = None,
-) -> tuple[str, ...]:
-    base = ENCODING_FALLBACKS.get(key, internal_PDFDOC_FALLBACK_TABLE)
-    if not differences:
-        return base
-    table = list(base)
-    items = differences.items() if isinstance(differences, dict) else differences
-    for code, glyph_name in items:
-        mapped = unicode_for_glyph_name(glyph_name)
-        if mapped is None:
-            if glyph_name.isdecimal():
-                # Producer-made Type 3 encodings commonly use the character
-                # code (or a producer's neighboring internal identifier) as
-                # the CharProc name. It has no AGL meaning; PDF readers ignore
-                # that failed difference and retain the inherited encoding.
-                continue
-            table[code] = ""
-            continue
-        # Expand ligatures here too, so a glyph reached through /Differences
-        # or a built-in encoding reads the same as one reached through a base
-        # encoding table.
-        table[code] = mapped
-    return tuple(table)
+def strip_subset_tag(font_name: str) -> str:
+    """Strip the six uppercase letters and plus sign specified by PDF 9.6.4."""
+    if len(font_name) > 7 and font_name[6] == "+" and all("A" <= c <= "Z" for c in font_name[:6]):
+        return font_name[7:]
+    return font_name
 
 
 def parse_differences(
     value: Any, resolve_name: Callable[[Any], str | None] | None = None
 ) -> dict[int, str]:
-    differences: dict[int, str] = {}
     if value is None:
-        return differences
+        return {}
     if not isinstance(value, (list, tuple)):
         raise ValueError("invalid encoding differences array")
-    code = 0
+    result: dict[int, str] = {}
+    code: int | None = None
     for item in value:
         if type(item) is int:
-            if item < 0 or item > 255:
-                continue
+            if not 0 <= item <= 255:
+                raise ValueError("encoding difference code outside simple-font range")
             code = item
             continue
-        if resolve_name is not None:
-            glyph_name = resolve_name(item)
-        else:
-            glyph_name = normalize_pdf_name(item)
-        if glyph_name is None:
-            continue
-        if code < 0 or code > 255:
-            continue
-        differences[code] = glyph_name
+        name = (resolve_name or normalize_pdf_name)(item)
+        if name is None or code is None or code > 255:
+            raise ValueError("invalid encoding difference")
+        result[code] = name
         code += 1
-    return differences
+    return result
 
 
-# PDFDocEncoding is the only base whose entries need ligature expansion, so it
-# is normalized once here rather than per lookup.
-internal_PDFDOC_FALLBACK_TABLE: tuple[str, ...] = tuple(
-    normalize_ligature_text(text) for text in PDFDOC_ENCODING_TABLE
-)
+def build_simple_encoding_glyph_names(
+    base_encoding: str | None,
+    builtin_encoding: Mapping[int, str],
+    differences: Mapping[int, str],
+    *,
+    authoritative_builtin: bool,
+) -> tuple[str, ...]:
+    """Layer one complete simple-font code-to-glyph-name encoding.
 
-ENCODING_FALLBACKS: dict[str, tuple[str, ...]] = {
-    "StandardEncoding": STANDARD_ENCODING_TABLE,
-    # Type3 fonts use StandardEncoding when /Encoding is omitted.  Keep this
-    # fallback separate from the parser's default so explicitly supplied
-    # Differences can still override individual character codes.
-    "Type3": STANDARD_ENCODING_TABLE,
-    "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE,
-    "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE,
-}
+    Custom and Expert CFF encodings are sparse and authoritative: an
+    absent code denotes ``.notdef`` rather than falling through to
+    StandardEncoding. Explicit PDF /Differences are always the final layer.
+    """
+    names = (
+        [".notdef"] * 256
+        if authoritative_builtin
+        else list(base_encoding_glyph_names(base_encoding or "StandardEncoding"))
+    )
+    for mapping in (builtin_encoding, differences):
+        for code, name in mapping.items():
+            if 0 <= code < 256:
+                names[code] = name or ".notdef"
+    return tuple(names)

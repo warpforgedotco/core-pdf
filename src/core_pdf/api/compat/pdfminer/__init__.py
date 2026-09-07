@@ -4,7 +4,7 @@ import heapq
 import re
 from bisect import bisect_left, bisect_right
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from html import escape
 from io import BytesIO
@@ -12,24 +12,175 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
-from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.model.geometry import bbox_union, overlap_ratio_of
-from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl._impl.capture.interpreter import TextState
+from core_pdf.impl._impl.capture.program import CapturedProgram
+from core_pdf.impl._impl.capture.recovery import CaptureRecovery
+from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl._impl.document.recovery.xref import XRefScanner
+from core_pdf.impl._impl.fonts.cmap_resources import resolve_cmap_decoder
+from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_of
+from core_pdf.impl.exceptions import PdfError, PdfParseError
+from core_pdf.impl.spec.s_07_content.stream_state import ContentStreamFrame
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
+from core_pdf.impl.types import PdfReference, PdfString, Rectangle
 
 from .._shared import LIGATURES
 
 PdfInput: TypeAlias = Any
+
+
+class internal_PdfminerContentLexer(PdfLexer):
+    """Keep PDFMiner's string and content-container parsing at the facade boundary."""
+
+    def read_string(
+        self,
+        *,
+        drop_unknown_escapes: bool = True,
+        unknown_escape: Callable[[int], bytes] | None = None,
+        eol_pair: Callable[[int, int], bool] | None = None,
+    ) -> bytes:
+        return super().read_string(
+            drop_unknown_escapes=drop_unknown_escapes,
+            unknown_escape=unknown_escape,
+            eol_pair=eol_pair,
+        )
+
+    def parse_dictionary_or_stream(self) -> PdfDict:
+        # A content parser never switches into indirect-object stream parsing.
+        return self.parse_dictionary()
+
+    def handle_dictionary_key_error(self) -> bool:
+        raise PdfParseError("invalid content dictionary")
+
+    def handle_dictionary_entry_error(self) -> bool:
+        raise PdfParseError("invalid content dictionary")
+
+
+class internal_PdfminerRecovery(CaptureRecovery):
+    def resume(
+        self,
+        lexer: SyntaxLexer,
+        error: PdfParseError,
+        kind: str,
+        start: int,
+        is_operator: Callable[[bytes], bool] | None = None,
+    ) -> int | None:
+        if str(error) == "invalid content dictionary":
+            raise PdfError(str(error)) from error
+        return super().resume(lexer, error, kind, start, is_operator)
+
+
+class internal_PdfminerTextState(TextState):
+    """Capture literal text with PDFMiner's per-character cursor arithmetic."""
+
+    def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
+        super().__init__(document, page_clip=page_clip)
+        self.internal_cursor = 0.0
+        self.internal_frame_cursors: dict[int, float] = {}
+
+    def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        self.internal_frame_cursors[id(frame)] = self.internal_cursor
+        if frame.is_form:
+            self.internal_cursor = 0.0
+        super().enter_stream(state, frame)
+
+    def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        self.internal_cursor = self.internal_frame_cursors.pop(id(frame))
+        super().exit_stream(state, frame)
+
+    def current_capture_actual_text_span(self) -> None:
+        # PDFMiner exposes encoded glyphs, ignoring marked-content replacement text.
+        return None
+
+    def text_boundary(self, state: object, kind: str) -> None:
+        if kind in {"begin", "move", "matrix"}:
+            self.internal_cursor = 0.0
+        super().text_boundary(state, kind)
+
+    def internal_show_text(self, operand: Any) -> None:
+        self.append_tj_array([operand])
+
+    def append_tj_array(self, array: Any) -> None:
+        decoder = cast(FontDecoder, self.get_decoder())
+        if decoder.is_vertical:
+            super().append_tj_array(array)
+            return
+        if not isinstance(array, (list, tuple)):
+            return
+        scale = self.horizontal_scale * 0.01
+        adjustment_scale = 0.001 * self.font_size * scale
+        char_space = self.char_space * scale
+        word_space = 0.0 if decoder.is_cid_font else self.word_space * scale
+        # Spacing precedes each subsequent glyph in one show operation. Keep
+        # advances in text space until projection, including across TJ strings.
+        # Adding them to the page origin first changes exact line-margin ties.
+        needs_spacing = False
+        for value in array:
+            if isinstance(value, (int, float)):
+                self.internal_cursor -= value * adjustment_scale
+                needs_spacing = True
+                continue
+            if not isinstance(value, PdfString):
+                continue
+            for decoded in decoder.decode_glyphs(value.data):
+                if needs_spacing:
+                    self.internal_cursor += char_space
+                self.tm_e = self.internal_cursor * self.lm_a + self.lm_e
+                self.tm_f = self.internal_cursor * self.lm_b + self.lm_f
+                start = len(self.glyphs)
+                advance_x, advance_y = decoder.glyph_advance_vector(
+                    decoded.width_code,
+                    font_size=self.font_size,
+                    char_space=self.char_space,
+                    word_space=self.word_space,
+                    horizontal_scale=self.horizontal_scale,
+                    encoded_space=decoded.code_bytes == b" ",
+                )
+                self.show_text(
+                    self,
+                    decoded.unicode,
+                    decoded.code_bytes,
+                    (decoded,),
+                    decoder,
+                    advance_x,
+                    advance_y,
+                )
+                if len(self.glyphs) > start:
+                    glyph = self.glyphs[start]
+                    width = internal_pdfminer_normalized_width(glyph)
+                    if internal_pdfminer_embedded_cmap_is_unusable(glyph):
+                        width = 0.0
+                    self.internal_cursor += width * self.font_size * scale
+                if decoded.width_code == 32:
+                    self.internal_cursor += word_space
+                needs_spacing = True
+        self.tm_e = self.internal_cursor * self.lm_a + self.lm_e
+        self.tm_f = self.internal_cursor * self.lm_b + self.lm_f
+        self.text_boundary(self, "shown")
+
+
+def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
+    state = internal_PdfminerTextState(page.document, page_clip=page.effective_page_clip())
+    state.lexer_factory = internal_PdfminerContentLexer
+    state.recovery = internal_PdfminerRecovery()
+    page.consume_contents(state)
+    state.run_accumulator.flush()
+    return CapturedProgram(
+        runs=tuple(state.runs),
+        glyphs=tuple(state.glyphs),
+        drawings=tuple(state.drawings),
+        inline_images=tuple(state.inline_images),
+        lines=tuple(state.lines),
+    )
 
 
 def internal_pdfminer_resolvable_pages(  # noqa: C901
@@ -92,7 +243,9 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         recovered: dict[int, tuple[int, int]] = {}
         for match in re.finditer(rb"(?m)^(\d+)\s+(\d+)\s+obj\b", data[: trailer_match.start()]):
             object_number = int(match.group(1))
-            recovered[object_number] = (int(match.group(2)), match.start())
+            generation_number = int(match.group(2))
+            if generation_number <= 65535:
+                recovered[object_number] = (generation_number, match.start())
         root_match = re.search(rb"/Root\s+(\d+)\s+(\d+)\s+R\b", trailer_data)
         fallback_catalog: dict[Any, Any] | None = None
         if root_match is not None:
@@ -1339,67 +1492,6 @@ def internal_pdfminer_ligature_overrides(
     return overrides, skipped
 
 
-def internal_pdfminer_literal_glyphs(
-    glyphs: Iterable[Any],
-) -> tuple[tuple[Any, ...], dict[int, tuple[float, float]]]:
-    source = tuple(glyphs)
-    return source, {id(glyph): (0.0, 0.0) for glyph in source}
-
-
-def internal_pdfminer_offsets(
-    glyphs: tuple[Any, ...],
-    literal_offsets: Mapping[int, tuple[float, float]],
-    *,
-    discard_unusable_cmap: bool = True,
-) -> dict[int, tuple[float, float]]:
-    """Reproduce pdfminer's cursor after legacy decoding and width loss."""
-    offsets: dict[int, tuple[float, float]] = {}
-    correction_text_x = 0.0
-    correction_text_y = 0.0
-    for glyph_index, glyph in enumerate(glyphs):
-        baseline = glyph.baseline
-        literal_x, literal_y = literal_offsets.get(id(glyph), (0.0, 0.0))
-        provenance = dict(glyph.provenance) if glyph.provenance else {}
-        offsets[id(glyph)] = (correction_text_x + literal_x, correction_text_y + literal_y)
-        if glyph_index + 1 >= len(glyphs):
-            continue
-        following = glyphs[glyph_index + 1]
-        following_baseline = following.baseline
-        following_provenance = dict(following.provenance) if following.provenance else {}
-        continuous = (
-            baseline is not None
-            and following_baseline is not None
-            and provenance.get("line_matrix_origin")
-            == following_provenance.get("line_matrix_origin")
-            and provenance.get("text_matrix") == following_provenance.get("text_matrix")
-        )
-        if not continuous:
-            correction_text_x = 0.0
-            correction_text_y = 0.0
-            continue
-        width_code = (
-            glyph.cid if getattr(glyph.font_decoder, "is_cid_font", False) else glyph.char_code
-        )
-        if width_code is not None:
-            source_width = float(glyph.font_decoder.glyph_width(width_code)) * 0.001
-            target_width = (
-                0.0
-                if discard_unusable_cmap and internal_pdfminer_embedded_cmap_is_unusable(glyph)
-                else internal_pdfminer_normalized_width(glyph)
-            )
-        else:
-            source_width = target_width = 0.0
-        if source_width != target_width:
-            scale = (
-                (source_width - target_width)
-                * float(glyph.font_size)
-                * float(provenance.get("horizontal_scale", 100.0))
-                * 0.01
-            )
-            correction_text_x -= scale
-    return offsets
-
-
 def _pdfminer_builtin_width(glyph: Any) -> float | None:
     """Return pdfminer's built-in width for a widthless Standard-14 font."""
     decoder = glyph.font_decoder
@@ -1679,15 +1771,10 @@ def extract_pages(  # noqa: C901
             chars: list[LTChar] = []
             if not _unstructured_mode:
                 internal_pdfminer_validate_page_resources(page)
-            products = page.get_page_program()
-            projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(products.glyphs)
+            products = internal_pdfminer_page_program(page)
+            projected_glyphs: tuple[Any, ...] = products.glyphs
             ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(
                 projected_glyphs
-            )
-            pdfminer_offsets = internal_pdfminer_offsets(
-                projected_glyphs,
-                literal_offsets,
-                discard_unusable_cmap=not _unstructured_mode,
             )
             runs = sorted(products.runs, key=lambda run: run.seqno)
             run_sequences = [run.seqno for run in runs]
@@ -1719,18 +1806,6 @@ def extract_pages(  # noqa: C901
                 ligature = ligatures.get(id(glyph))
                 x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
                 baseline = ligature[2] if ligature is not None else glyph.baseline
-                offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
-                x0 += offset_x
-                x1 += offset_x
-                y0 += offset_y
-                y1 += offset_y
-                if baseline is not None and (offset_x or offset_y):
-                    baseline = (
-                        baseline[0] + offset_x,
-                        baseline[1] + offset_y,
-                        baseline[2] + offset_x,
-                        baseline[3] + offset_y,
-                    )
                 text = ligature[0] if ligature is not None else internal_pdfminer_glyph_text(glyph)
                 if not text:
                     continue

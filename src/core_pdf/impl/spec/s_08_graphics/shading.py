@@ -1,71 +1,71 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize PDF shading dictionaries and functions for raster consumers."""
+"""PDF axial/radial shading descriptors and parameter semantics."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import cast
 
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
-from core_pdf.impl.spec.s_08_graphics.color_spec import describe_color_space
 from core_pdf.impl.spec.s_08_graphics.pdf_function import (
     internal_compile_pdf_function,
     internal_number_array,
+    internal_PdfFunctionEvaluator,
 )
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedShading:
-    """PDF-independent numeric shading parameters consumed by the renderer."""
-
+class ShadingSpec:
     shading_type: int
     coords: tuple[float, ...]
     domain: tuple[float, float]
     extend_start: bool
     extend_end: bool
-    color_model: str
+    color_space: object
     bbox: tuple[float, float, float, float] | None
-    internal_evaluator: Callable[[float], tuple[float, ...]] = field(repr=False, compare=False)
-
-    def evaluate(self, value: float) -> tuple[float, ...]:
-        return self.internal_evaluator(value)
+    evaluator: internal_PdfFunctionEvaluator = field(repr=False, compare=False)
 
 
-def prepare_shading(dictionary: object) -> PreparedShading | None:
-    """Normalize one axial or radial PDF shading dictionary."""
+def parse_shading(
+    dictionary: object,
+    *,
+    compile_function: Callable[
+        [object], internal_PdfFunctionEvaluator
+    ] = internal_compile_pdf_function,
+) -> ShadingSpec:
     if not isinstance(dictionary, dict):
-        return None
+        raise ValueError("invalid shading dictionary")
     shading_type = parse_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:
-        return None
+        raise ValueError("unsupported shading type")
     coords = internal_number_array(dictionary.get("Coords"))
-    if (shading_type == 2 and len(coords) < 4) or (shading_type == 3 and len(coords) < 6):
-        return None
-    domain_values = internal_number_array(dictionary.get("Domain"))
-    domain = (domain_values[0], domain_values[1]) if len(domain_values) >= 2 else (0.0, 1.0)
-    extend = dictionary.get("Extend")
-    extend_start = isinstance(extend, (list, tuple)) and len(extend) > 0 and extend[0] is True
-    extend_end = isinstance(extend, (list, tuple)) and len(extend) > 1 and extend[1] is True
+    if len(coords) != (4 if shading_type == 2 else 6):
+        raise ValueError("invalid shading coordinates")
+    domain = internal_number_array(dictionary.get("Domain", (0.0, 1.0)))
+    if len(domain) != 2:
+        raise ValueError("invalid shading domain")
+    extend = dictionary.get("Extend", (False, False))
+    if (
+        not isinstance(extend, (list, tuple))
+        or len(extend) != 2
+        or any(type(value) is not bool for value in extend)
+    ):
+        raise ValueError("invalid shading extension")
+    color_space = dictionary.get("ColorSpace")
+    if color_space is None:
+        raise ValueError("missing shading color space")
     bbox_values = internal_number_array(dictionary.get("BBox"))
-    bbox = (
-        (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3])
-        if len(bbox_values) >= 4
-        else None
+    if dictionary.get("BBox") is not None and len(bbox_values) != 4:
+        raise ValueError("invalid shading bbox")
+    bbox = (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3]) if bbox_values else None
+    return ShadingSpec(
+        shading_type,
+        coords,
+        (domain[0], domain[1]),
+        cast(bool, extend[0]),
+        cast(bool, extend[1]),
+        color_space,
+        bbox,
+        compile_function(dictionary.get("Function")),
     )
-    try:
-        evaluator = internal_compile_pdf_function(dictionary.get("Function"))
-    except ValueError:
-        return None
-    return PreparedShading(
-        shading_type=shading_type,
-        coords=coords,
-        domain=domain,
-        extend_start=extend_start,
-        extend_end=extend_end,
-        color_model=describe_color_space(dictionary.get("ColorSpace")) or "DeviceRGB",
-        bbox=bbox,
-        internal_evaluator=evaluator,
-    )
-
-
-__all__ = ("PreparedShading", "prepare_shading")

@@ -11,6 +11,56 @@ with PdfDocument.open("document.pdf") as document:
     print(document.structured_document.text)
 ```
 
+`PdfPage.extract()` and `PdfPage.structured_view` return a structured `Page`;
+`PdfDocument.extract()` and `PdfDocument.structured_document` return a structured `Document`.
+
+## Extraction adapters
+
+`DocumentAdapter`, exported from `core_pdf`, describes an `apply(document: Document) -> Document`
+method. Adapters run in the supplied order after extraction releases its document operation.
+They transform the structured result, and do not need to inherit from the protocol:
+
+```python
+from dataclasses import replace
+
+from core_pdf import Document, PdfDocument
+
+
+class AddTag:
+    def apply(self, document: Document) -> Document:
+        return replace(document, metadata={**document.metadata, "tag": "review"})
+
+
+with PdfDocument.open("document.pdf") as document:
+    result = document.extract(adapters=(AddTag(),))
+```
+
+## OCR extraction
+
+Starting with 0.0.6, `core_pdf.PdfDocument` and the compatibility facades extract only PDF-native
+text. Existing hidden text layers remain PDF-native text; image-only or flattened vector text
+requires the separate `core-pdf-ocr` package. Installing it never changes core's behavior.
+
+```python
+from core_pdf_ocr import PdfDocument
+
+with PdfDocument("scanned.pdf") as document:
+    result = document.extract(pages=[1, 2])
+    print(result.to_markdown())
+```
+
+`core_pdf_ocr.PdfDocument` and `PdfPage` subclass the core public classes and preserve their
+constructor, selection, adapters, rendering, and close/cancellation behavior. Their extraction
+includes native, OCR, and hybrid routes and returns the same structured model types. Shared
+records and errors remain exported from `core_pdf`. The companion pins its exact matching core
+release; its internal stage imports are not a public extension API.
+
+Both packages inherit the same extraction lifecycle. The companion overrides the extraction
+hooks and page factory to select recognition without copying operation or adapter handling.
+
+Use `core-pdf-ocr document.pdf --print` or `python -m core_pdf_ocr document.pdf --print` to
+select recognition from the command line. The options match `core-pdf`.
+
 ## Structured JSON
 
 `Document.to_json_dict()` and `Document.to_json()` emit schema 5.0. The document is a normalized
@@ -45,35 +95,22 @@ upstream libraries.
 An experimental PyMuPDF facade exists under `core_pdf.api.compat._unsupported.pymupdf`; it is
 not part of the supported compatibility surface.
 
-The pdfminer facade can be checked against pdfminer.six's own high-level extraction tests. The
-runner executes the unchanged upstream test module in isolated interpreters: once with the
-vendored pdfminer.six checkout and once with its imports redirected to the core-pdf facade.
-
-```sh
-git submodule update --init --recursive
-uv run python scripts/run_pdfminer_compat_tests.py -- -q
-```
-
-A nonzero core-pdf result identifies a compatibility gap; the upstream result distinguishes those
-gaps from fixture or test-environment failures. Use `--implementation upstream` or
-`--implementation core-pdf` to run only one side.
-
-The remaining supported facades have direct differential tests against their installed reference
-libraries. By default, each facade runs against its own upstream fixture corpus, plus focused
+Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`,
+`pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray facades against their reference
+libraries. By default, each facade uses its own upstream fixture corpus, plus selected
 cross-corpus redaction cases for x-ray:
 
 ```sh
-uv run --group vendor-test pytest tests/src/core_pdf/compat/differential \
-  -m compat_differential -n auto
+git submodule update --init --recursive
+uv run --locked --group test --group vendor-test pytest -n auto
 ```
 
-Run the exhaustive every-facade/every-fixture matrix explicitly when compatibility work calls for
-it:
+Run the exhaustive every-facade/every-fixture matrix explicitly when compatibility work
+calls for it:
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --group vendor-test pytest tests/src/core_pdf/compat/differential \
-  -m compat_differential -n auto
+  uv run --locked --group test --group vendor-test pytest -n auto
 ```
 
 The x-ray facade performs its redaction inspection directly from engine drawing, glyph, and
@@ -83,12 +120,4 @@ raster evidence:
 from core_pdf.api.compat import inspect_xray
 
 findings = inspect_xray("document.pdf")
-```
-
-The vendored x-ray behavior suite can be run with:
-
-```sh
-PYTHONPATH=src uv run --with requests --with PyMuPDF \
-  --with numpy --with tesserocr --with imagecodecs \
-  python scripts/run_xray_compat_tests.py -q
 ```

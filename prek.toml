@@ -35,11 +35,11 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "mypy", name = "mypy", entry = "uv run --group lint mypy --exclude ^src/core_pdf/api/compat/_unsupported/", language = "system", pass_filenames = false, files = "^src/core_pdf/.*\\.py$", stages = [
+  { id = "mypy", name = "mypy", entry = "uv run --all-packages --group lint mypy --exclude ^src/core_pdf/api/compat/_unsupported/", language = "system", pass_filenames = false, files = "^(src/core_pdf/|packages/core-pdf-ocr/src/core_pdf_ocr/).*\\.py$", stages = [
     "pre-push",
     "manual",
   ], require_serial = true },
-  { id = "import-linter", name = "import-linter", entry = "uv run --group lint lint-imports", language = "system", pass_filenames = false, files = "^(src/core_pdf/.*\\.py|pyproject\\.toml)$", stages = [
+  { id = "import-linter", name = "import-linter", entry = "uv run --all-packages --group lint lint-imports", language = "system", pass_filenames = false, files = "^((src/core_pdf/|packages/core-pdf-ocr/src/core_pdf_ocr/).*\\.py|pyproject\\.toml|packages/core-pdf-ocr/pyproject\\.toml)$", stages = [
     "pre-push",
     "manual",
   ], require_serial = true },

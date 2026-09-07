@@ -38,10 +38,6 @@ GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
 # renormalization, the next index after a less-probable one, and whether that
 # LPS path swaps the sense of the MPS.
 #
-# Written as rows rather than four parallel columns because the four values are
-# only meaningful together: as separate literals they had to be kept aligned by
-# hand across ~190 lines, where a single inserted or dropped entry would shift
-# one column against the others and silently corrupt every decode.
 internal_MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
     (0x5601, 1, 1, 1),
     (0x3401, 2, 6, 0),

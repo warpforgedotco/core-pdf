@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 import math
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from io import BytesIO
 from itertools import groupby
@@ -13,14 +13,16 @@ from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl._impl.model.geometry import (
     bbox_contains,
     bbox_intersects,
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl._impl.output.model import Table as StructuredTable
+from core_pdf.impl._impl.output.model import TableCell
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.types import PdfReference
 
 from .._shared import ClosingMixin, encode_png, png_chunk
 from .exceptions import PdfminerException
@@ -258,20 +260,18 @@ class EnginePageAdapter:
 
     def text_characters(self) -> Iterator[Any]:
         from ..pdfminer import (
+            internal_pdfminer_descent,
             internal_pdfminer_embedded_cmap_is_unusable,
             internal_pdfminer_font_name,
             internal_pdfminer_glyph_text,
             internal_pdfminer_ligature_overrides,
-            internal_pdfminer_literal_glyphs,
-            internal_pdfminer_offsets,
+            internal_pdfminer_normalized_width,
+            internal_pdfminer_page_program,
             internal_pdfminer_validate_page_resources,
         )
 
         internal_pdfminer_validate_page_resources(self.page)
-        projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(
-            self.page.get_page_program().glyphs
-        )
-        pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
+        projected_glyphs: tuple[Any, ...] = internal_pdfminer_page_program(self.page).glyphs
         ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
         for glyph in projected_glyphs:
             if internal_pdfminer_embedded_cmap_is_unusable(glyph):
@@ -283,11 +283,6 @@ class EnginePageAdapter:
             if not text or ("source", "annotation_appearance") in glyph.provenance:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
-            offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
-            x0 += offset_x
-            x1 += offset_x
-            y0 += offset_y
-            y1 += offset_y
             font_height = glyph.effective_font_height or glyph.font_size
             provenance = dict(glyph.provenance) if glyph.provenance else {}
             matrix = provenance.get("text_matrix")
@@ -296,6 +291,44 @@ class EnginePageAdapter:
             if isinstance(matrix, (tuple, list)) and len(matrix) == 4:
                 a, b, c, d = (float(value) for value in matrix)
                 scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
+                baseline = ligature[2] if ligature is not None else glyph.baseline
+                if baseline is not None:
+                    if glyph.font_decoder.is_vertical:
+                        # Capture's baseline already includes the vertical
+                        # origin displacement. LTChar extends one em across
+                        # the writing line and uses W2 for its vertical extent.
+                        metric = glyph.font_decoder.vertical_glyph_metric(glyph.cid)
+                        left = -float(metric[1]) * glyph.font_size * 0.001
+                        advance = float(metric[0]) * glyph.font_size * 0.001 * scaling
+                        horizontal = (left, left + glyph.font_size)
+                        vertical = (glyph.font_size + advance, glyph.font_size)
+                    else:
+                        # LTChar uses a one-em layout box anchored at the font's
+                        # descent, independently of the native ink/ascent bounds.
+                        descent = internal_pdfminer_descent(glyph) * glyph.font_size
+                        descent += float(provenance.get("text_rise", 0.0))
+                        advance = (
+                            internal_pdfminer_normalized_width(glyph) * glyph.font_size * scaling
+                        )
+                        horizontal = (0.0, advance)
+                        vertical = (descent, descent + glyph.font_size)
+                    corners = [
+                        (
+                            along * a + across * c + baseline[0],
+                            along * b + across * d + baseline[1],
+                        )
+                        for along in horizontal
+                        for across in vertical
+                    ]
+                    x0 = min(point[0] for point in corners)
+                    y0 = min(point[1] for point in corners)
+                    x1 = max(point[0] for point in corners)
+                    y1 = max(point[1] for point in corners)
+                    font_height = (
+                        x1 - x0
+                        if glyph.font_decoder.is_vertical or glyph.rotation_angle % 180
+                        else y1 - y0
+                    )
                 # The engine records the text matrix in unrotated page space,
                 # while pdfminer folds the page's rotation into LTChar.matrix.
                 # Apply that final coordinate transform before evaluating the
@@ -941,10 +974,10 @@ class Page:
         settings = TableSettings.resolve(table_settings)
         result = self.pdf._document.extract(pages=(self.page_number,))
         page = result.pages[0]
-        tables = page.tables
+        tables: tuple[StructuredTable | _CompatNativeTable, ...] = page.tables
         if tables:
             if len(tables) == 1:
-                table_box = getattr(tables[0], "bbox", None)
+                table_box = tables[0].bbox
                 if table_box is not None and table_box[3] - table_box[1] < self.height * 0.05:
                     body = [char for char in self.chars if char["bottom"] < self.height - 45]
                     if len(body) > 500:
@@ -957,29 +990,32 @@ class Page:
                         tables = (_CompatNativeTable(body_box, list(tables[0].rows)),)
             if len(tables) > 1:
                 first = tables[0]
-                first_box = getattr(first, "bbox", None)
-                same_columns = first_box is not None and all(
-                    (box := getattr(table, "bbox", None)) is not None
-                    and abs(box[0] - first_box[0]) < 2
-                    and abs(box[2] - first_box[2]) < 2
-                    for table in tables[1:]
-                )
-                if same_columns:
-                    first_bbox = cast(BBox, first_box)
-                    merged_rows = [row for table in tables for row in table.rows]
-                    merged_rows.sort(
-                        key=lambda merged_row: min(
-                            cell.bbox[1] for cell in merged_row if cell.bbox
-                        ),
-                        reverse=True,
+                first_box = first.bbox
+                boxes = [box for table in tables if (box := table.bbox) is not None]
+                same_columns = (
+                    first_box is not None
+                    and len(boxes) == len(tables)
+                    and all(
+                        abs(box[0] - first_box[0]) < 2 and abs(box[2] - first_box[2]) < 2
+                        for box in boxes[1:]
                     )
-                    boxes = [table.bbox for table in tables]
+                )
+                if same_columns and first_box is not None:
+                    merged_rows = [row for table in tables for row in table.rows]
+                    # Geometry-free rows retain the structured model's row order.
+                    if all(any(cell.bbox is not None for cell in row) for row in merged_rows):
+                        merged_rows.sort(
+                            key=lambda merged_row: min(
+                                cell.bbox[1] for cell in merged_row if cell.bbox is not None
+                            ),
+                            reverse=True,
+                        )
                     tables = (
                         _CompatNativeTable(
                             (
-                                first_bbox[0],
+                                first_box[0],
                                 min(box[1] for box in boxes),
-                                first_bbox[2],
+                                first_box[2],
                                 max(box[3] for box in boxes),
                             ),
                             merged_rows,
@@ -1343,7 +1379,7 @@ class _CompatCell:
 
 
 class _CompatNativeTable:
-    def __init__(self, bbox: BBox, rows: list[list[_CompatCell]]) -> None:
+    def __init__(self, bbox: BBox, rows: Sequence[Sequence[TableCell | _CompatCell]]) -> None:
         self.bbox = bbox
         self.rows = rows
 
@@ -1371,7 +1407,7 @@ class Column(CellGroup):
 
 
 class Table:
-    def __init__(self, native: Any) -> None:
+    def __init__(self, native: StructuredTable | _CompatNativeTable) -> None:
         self._native = native
         self.page: Page | None = None
 
@@ -1382,7 +1418,7 @@ class Table:
     @property
     def bbox(self) -> BBox:
         box = self._native.bbox
-        return tuple(box) if box is not None else (0.0, 0.0, 0.0, 0.0)
+        return box if box is not None else (0.0, 0.0, 0.0, 0.0)
 
     @property
     def rows(self) -> list[Row]:
@@ -1397,18 +1433,19 @@ class Table:
 
     def extract(self, **_: Any) -> list[list[str | None]]:
         width = max((len(row) for row in self._native.rows), default=0)
-        return [
-            [
+        rows: list[list[str | None]] = []
+        for row in self._native.rows:
+            values: list[str | None] = [
                 self.page.crop(cell.bbox, strict=False).extract_text(layout=True)
-                if _.get("text_layout") and self.page is not None
+                if _.get("text_layout") and self.page is not None and cell.bbox is not None
                 else cell.text
                 if cell.text is not None
                 else ""
                 for cell in row
             ]
-            + [""] * (width - len(row))
-            for row in self._native.rows
-        ]
+            values.extend([""] * (width - len(row)))
+            rows.append(values)
+        return rows
 
 
 class TableFinder:
