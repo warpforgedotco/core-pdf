@@ -442,9 +442,12 @@ class Page(PdfPageObject):
             ]
         raise ValueError(f"unsupported text extraction kind: {kind}")
 
-    def get_textbox(self, rect: tuple[float, float, float, float], *args: object) -> str:
-        del args
-        return cast(str, self.get_text("text", clip=rect))
+    def get_textbox(self, rect: object, textpage: TextPage | None = None) -> str:
+        if textpage is None:
+            textpage = self.get_textpage()
+        elif textpage.parent != self:
+            raise ValueError("not a textpage of this page")
+        return textpage.extractTextbox(rect)
 
     def get_text_length(self, text: str, fontname: str = "helv", fontsize: float = 11.0) -> float:
         del fontname
@@ -578,26 +581,19 @@ class Page(PdfPageObject):
         return Pixmap(data, raster.width, raster.height, channels, requested_dpi)
 
     def search_for(
-        self, needle: str, *args: object, **kwargs: object
-    ) -> list[tuple[float, float, float, float]]:
-        del args
-        if not needle:
-            return []
-        clip = kwargs.get("clip")
-        query = needle.casefold()
-        results = [
-            item.bbox
-            for item in self._page.elements
-            if item.bbox is not None and query in str(getattr(item, "text", "")).casefold()
-        ]
-        if clip is None:
-            return list(results)
-        x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
-        return [
-            bbox
-            for bbox in results
-            if bbox[0] < x1 and bbox[2] > x0 and bbox[1] < y1 and bbox[3] > y0
-        ]
+        self,
+        needle: str,
+        *,
+        clip: object = None,
+        quads: bool = False,
+        flags: int = 210,
+        textpage: TextPage | None = None,
+    ) -> list[Quad] | list[Rect] | None:
+        if textpage is None:
+            textpage = self.get_textpage(clip=clip, flags=flags)
+        elif textpage.parent != self:
+            raise ValueError("not a textpage of this page")
+        return textpage.search(needle, quads=quads)
 
     def get_links(self) -> list[dict[str, object]]:
         links = self._page.links
@@ -1160,6 +1156,21 @@ class TextPage:
         return cast(str, self._legacy["text"])
 
     extractTEXT = extractText
+
+    def search(
+        self, needle: str, hit_max: int = 0, quads: bool = True
+    ) -> list[Quad] | list[Rect] | None:
+        del hit_max
+        projection = self._projection or TextProjection.from_rawdict(self._legacy["rawdict"])
+        return projection.search(needle, quads=quads)
+
+    def extractTextbox(self, rect: object) -> str:
+        projection = self._projection or TextProjection.from_rawdict(self._legacy["rawdict"])
+        return projection.textbox(Rect(rect))
+
+    def extractSelection(self, pointa: object, pointb: object) -> str:
+        projection = self._projection or TextProjection.from_rawdict(self._legacy["rawdict"])
+        return projection.selection(Point(pointa), Point(pointb))
 
     def extractWORDS(self, delimiters: str | None = None) -> list[tuple[Any, ...]]:
         if self._projection is not None:

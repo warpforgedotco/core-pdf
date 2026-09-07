@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field, replace
 from itertools import groupby
 from typing import Any
 
 from core_pdf.api.compat._shared import BBox, float32
-from core_pdf.api.compat.pymupdf.geometry import Matrix, Point, Rect
+from core_pdf.api.compat.pymupdf.geometry import Matrix, Point, Quad, Rect
 from core_pdf.api.compat.pymupdf.images import capture_images
 from core_pdf.api.document import PdfPage
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
@@ -198,6 +199,7 @@ class internal_Character:
     style: internal_Style | None = None
     synthetic: bool = False
     seqno: int = 0
+    quad: tuple[tuple[float, float], ...] | None = None
 
 
 @dataclass
@@ -218,6 +220,128 @@ class TextProjection:
     blocks: list[list[internal_Line]] = field(default_factory=list)
     clip_box: Rect | None = None
     images: list[tuple[int, dict[str, Any]]] = field(default_factory=list)
+
+    @classmethod
+    def from_rawdict(cls, payload: dict[str, Any]) -> TextProjection:
+        """Retain the character geometry available in a structured editing snapshot."""
+        result = cls()
+        for block in payload["blocks"]:
+            lines = []
+            for line in block.get("lines", []):
+                characters = []
+                for span in line["spans"]:
+                    for char in span["chars"]:
+                        box = Rect(char["bbox"])
+                        characters.append(
+                            internal_Character(
+                                char["c"],
+                                (box.x0, box.y0, box.x1, box.y1),
+                                (box.x0, box.y1),
+                                (box.x1, box.y1),
+                                span.get("size", box.height),
+                                (1.0, 0.0),
+                            )
+                        )
+                if characters:
+                    lines.append(internal_Line(characters))
+            if lines:
+                result.blocks.append(lines)
+        return result
+
+    def search(self, needle: str, *, quads: bool) -> list[Quad] | list[Rect] | None:
+        def canonical(value: str) -> str:
+            if value.isspace():
+                return " "
+            return value.lower() if "A" <= value <= "Z" else value
+
+        query = "".join(canonical(c) for c in needle)
+        query = re.sub(" +", " ", query)
+        if not query:
+            return None
+        text: list[str] = []
+        characters: list[list[tuple[int, internal_Character]]] = []
+        line_number = 0
+        for block in self.blocks:
+            for line in block:
+                for char in self.internal_characters(line):
+                    value = canonical(char.text)
+                    if value == " " and text and text[-1] == " ":
+                        characters[-1].append((line_number, char))
+                        continue
+                    text.append(value)
+                    characters.append([(line_number, char)])
+                if not text or text[-1] != " ":
+                    text.append(" ")
+                    characters.append([])
+                line_number += 1
+        haystack = "".join(text)
+        hits: list[tuple[int, int, list[internal_Character]]] = []
+        offset = 0
+        while (found := haystack.find(query, offset)) >= 0:
+            end = found + len(query)
+            for index in range(found, end):
+                for line_index, char in characters[index]:
+                    if hits and hits[-1][0] == line_index and hits[-1][1] in (index, index + 1):
+                        hits[-1][2].append(char)
+                        hits[-1] = (line_index, index + 1, hits[-1][2])
+                    else:
+                        hits.append((line_index, index + 1, [char]))
+            offset = end
+        result = []
+        for _, _, chars in hits:
+            first = Quad(chars[0].quad) if chars[0].quad is not None else Rect(chars[0].bbox).quad
+            last = Quad(chars[-1].quad) if chars[-1].quad is not None else Rect(chars[-1].bbox).quad
+            result.append(Quad(first.ul, last.ur, first.ll, last.lr))
+        return result if quads else [quad.rect for quad in result]
+
+    def textbox(self, rect: Rect) -> str:
+        if rect.is_empty:
+            return ""
+        return "\n".join(
+            value
+            for block in self.blocks
+            for line in block
+            if (value := "".join(c.text for c in line.characters if rect.intersects(Rect(c.bbox))))
+        )
+
+    def selection(self, start: Point, end: Point) -> str:
+        lines = [line for block in self.blocks for line in block if line.characters]
+        if not lines:
+            return ""
+
+        def caret(point: Point) -> tuple[int, int]:
+            def distance(line: internal_Line) -> tuple[float, float]:
+                x0, y0, x1, y1 = line.bbox
+                dx, dy = line.characters[0].direction
+                normal = [-dy * x + dx * y for x in (x0, x1) for y in (y0, y1)]
+                position = -dy * point.x + dx * point.y
+                perpendicular = max(min(normal) - position, 0, position - max(normal))
+                squared = (
+                    max(x0 - point.x, 0, point.x - x1) ** 2
+                    + max(y0 - point.y, 0, point.y - y1) ** 2
+                )
+                return perpendicular, squared
+
+            index = min(range(len(lines)), key=lambda i: distance(lines[i]))
+            chars = lines[index].characters
+            for offset, char in enumerate(chars):
+                dx, dy = char.direction
+                middle_x = (char.origin[0] + char.end[0]) / 2
+                middle_y = (char.origin[1] + char.end[1]) / 2
+                if (point.x - middle_x) * dx + (point.y - middle_y) * dy < 0:
+                    return index, offset
+            return index, len(chars)
+
+        first, last = sorted((caret(start), caret(end)))
+        selected = []
+        for index in range(first[0], last[0] + 1):
+            chars = lines[index].characters
+            left = first[1] if index == first[0] else 0
+            right = last[1] if index == last[0] else len(chars)
+            value = "".join(c.text for c in chars[left:right])
+            if value:
+                selected.append(value)
+        return "\n".join(selected)
 
     def internal_characters(self, line: internal_Line) -> list[internal_Character]:
         if self.clip_box is None:
@@ -501,6 +625,13 @@ def capture_text(
             float32(px + float32(advance * dx * unit)),
             float32(py - float32(advance * dy * unit)),
         )
+        if dy:
+            # The PDF text cursor advances in bottom-up coordinates before
+            # the page transform. Rounding after flipping Y loses that cursor's
+            # single-precision increments on vertical text.
+            top = float32(crop.y1 * unit)
+            pdf_y = float32(top - py)
+            end = (end[0], float32(top - float32(pdf_y + float32(advance * dy * unit))))
         previous_raw_end, previous_end, previous_group = (ex, ey), end, group
         ascender, descender = internal_metrics(glyph)
         glyph_matrix = glyph.glyph_transform
@@ -544,7 +675,15 @@ def capture_text(
             for c in value
         )
         char = internal_Character(
-            value[0], bbox, (px, py), end, size, (dx, -dy), internal_style(glyph), seqno=glyph.seqno
+            value[0],
+            bbox,
+            (px, py),
+            end,
+            size,
+            (dx, -dy),
+            internal_style(glyph),
+            seqno=glyph.seqno,
+            quad=(corners[0], corners[2], corners[1], corners[3]),
         )
         new_line = previous is None
         new_block = previous is None
@@ -619,6 +758,7 @@ def capture_text(
                 (dx, -dy),
                 char.style,
                 seqno=glyph.seqno,
+                quad=(corners[2], corners[2], corners[3], corners[3]),
             )
             line.characters.append(previous)
     return projection

@@ -91,6 +91,21 @@ superscripts, and bidirectional span metadata also need further work.
 HTML, XHTML, and XML still use the earlier page-backed implementation and do not yet provide
 this snapshot lifecycle or complete reference output shapes.
 
+Rectangle extraction and selection now use captured character geometry.
+`Page.get_textbox()` and `TextPage.extractTextbox()` include characters with positive-area
+rectangle intersections and omit the final line terminator. `TextPage.extractSelection()`
+orders endpoints in the captured text flow and selects at character carets, including reversed
+endpoints and orthogonal text rotations. These snapshots remain usable after document closure.
+
+`Page.search_for()` and `TextPage.search()` now return match rectangles or oriented `Quad`
+objects instead of containing block boxes. Tests compare substring and multiline matches,
+adjacent repeated hits, normalized whitespace, ASCII-only case folding, empty queries,
+snapshot reuse, and page ownership. Vertical cursor advances round in PDF coordinates before
+the page transform, preserving reference geometry on rotated text. Broader layouts,
+bidirectional text, dehyphenation, nonorthogonal selection geometry, and search flags still
+need corpus-wide verification. Selection/search over structured edits inherit the existing
+editing snapshot's approximate glyph geometry.
+
 Run the focused tests with:
 
 ```sh
@@ -100,7 +115,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_geometry.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_textpage.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_structured_text.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_structured_text.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_selection.py
 ```
 
 These tests use eight explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
