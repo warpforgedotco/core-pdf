@@ -95,7 +95,8 @@ upstream libraries.
 The native PyMuPDF facade is available as `core_pdf.api.compat.pymupdf`. Its target is full
 public-API compatibility with PyMuPDF, without importing PyMuPDF at runtime. Implementation
 is in progress: the public import path does **not** yet imply full behavioral compatibility.
-The first differential coverage checks affine matrices using page geometry from upstream PDFs.
+Initial differential coverage checks affine matrices, document creation, opening, page access,
+and lifecycle behavior using upstream PDFs.
 See [PyMuPDF compatibility](pymupdf-compatibility.md) for current coverage and outstanding work.
 
 Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`,

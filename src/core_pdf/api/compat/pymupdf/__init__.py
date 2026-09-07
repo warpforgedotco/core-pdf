@@ -4,19 +4,28 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_left
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from html import escape
-from typing import Any, cast
+from io import BytesIO
+from os import PathLike
+from pathlib import Path
+from typing import Any, cast, overload
 
-from core_pdf.api.compat._shared import BBox, coerce_bbox, encode_png, float32, write_bytes
+from core_pdf.api.compat._shared import (
+    BBox,
+    ClosingMixin,
+    coerce_bbox,
+    encode_png,
+    float32,
+    write_bytes,
+)
 from core_pdf.api.compat.pymupdf.geometry import Matrix
 from core_pdf.api.compat.pypdf import (
-    PdfInput,
     PdfPageObject,
-    PdfReader,
     StructuredState,
 )
+from core_pdf.api.document import PdfDocument
 from core_pdf.impl._impl.model.geometry import bbox_intersects
 from core_pdf.impl._impl.output.model import (
     Annotation,
@@ -26,6 +35,9 @@ from core_pdf.impl._impl.output.model import (
     FormField,
     Link,
     TextLine,
+)
+from core_pdf.impl._impl.output.model import (
+    Document as StructuredDocument,
 )
 from core_pdf.impl._impl.output.model import (
     Page as StructuredPage,
@@ -122,17 +134,38 @@ class Page(PdfPageObject):
     ) -> None:
         super().__init__(document, page)
         self._owner = owner
+        self._generation = owner._page_generation if owner is not None else 0
+        self._number: int | tuple[int, int] | list[int] = page.page_number - 1
+
+    @property
+    def parent(self) -> Document | None:
+        if self._owner is not None and (
+            self._owner.is_closed or self._generation != self._owner._page_generation
+        ):
+            return None
+        return self._owner
+
+    @property
+    def number(self) -> int | tuple[int, int] | list[int] | None:
+        return self._number if self.parent is not None else None
 
     @property
     def rect(self) -> tuple[float, float, float, float]:
+        if self.parent is None:
+            raise AssertionError("page is None")
         x0, y0, x1, y1 = self.cropbox
-        return (0.0, 0.0, float32(x1 - x0), float32(y1 - y0))
+        width, height = float32(x1 - x0), float32(y1 - y0)
+        if self.rotation % 180:
+            width, height = height, width
+        return (0.0, 0.0, width, height)
 
     def _native_text_view(self) -> Any:
         """Return only text represented by PDF text operators, as MuPDF does by default."""
         return self._page.text_view
 
     def _mupdf_plain_text(self) -> str:
+        if self._document.pdf is None:
+            return self._native_text_view().text
         runs = self._document.capability_page(self._page.page_number).get_page_program().runs
         output = ""
         previous: Any | None = None
@@ -312,6 +345,8 @@ class Page(PdfPageObject):
         return indexed
 
     def get_text(self, kind: str = "text", *args: object, **kwargs: object) -> object:
+        if self.parent is None:
+            raise AssertionError("page is None")
         del args
         clip = kwargs.pop("clip", None)
         sort = bool(kwargs.pop("sort", False))
@@ -720,21 +755,174 @@ class Page(PdfPageObject):
         self._document.apply_redactions()
 
 
-class Document(PdfReader):
-    def __init__(self, stream: PdfInput, password: str | None = None) -> None:
-        super().__init__(stream, password)
-        self.pages = cast(tuple[Page, ...], self.pages)
+class FileDataError(RuntimeError):
+    """A document stream could not be read."""
+
+
+class EmptyFileError(FileDataError):
+    """An input file or stream is empty."""
+
+
+class FileNotFoundError(RuntimeError):
+    """A requested document does not exist."""
+
+
+class Document(ClosingMixin):
+    def __init__(
+        self,
+        filename: str | PathLike[str] | None = None,
+        stream: bytes | bytearray | BytesIO | None = None,
+        filetype: str | None = None,
+    ) -> None:
+        if filename is not None and not isinstance(filename, (str, PathLike)):
+            raise TypeError("bad filename")
+        if stream is not None and not isinstance(stream, (bytes, bytearray, BytesIO)):
+            raise TypeError("bad stream")
+        self.name = str(filename) if filename is not None else None
+        self.is_closed = False
+        self.is_encrypted = False
+        self._page_generation = 0
+        self._source_document: PdfDocument | None = None
         self._pending_redactions: dict[int, list[tuple[float, float, float, float]]] = {}
         self._toc_override: list[list[object]] | None = None
-        self._embedded_files = {
-            item.filename: item.data for item in self._document.source_pdf.embedded_files()
+        self._embedded_files: dict[str, bytes] = {}
+        self.metadata: dict[str, Any] = {
+            "format": "PDF 1.7",
+            **dict.fromkeys(
+                (
+                    "title",
+                    "author",
+                    "subject",
+                    "keywords",
+                    "creator",
+                    "producer",
+                    "creationDate",
+                    "modDate",
+                    "trapped",
+                ),
+                "",
+            ),
+            "encryption": None,
         }
+        if stream is None and not filename:
+            self._document = StructuredState.synthetic(StructuredDocument())
+            return
+        source: bytes | str
+        if stream is not None:
+            source = stream.getvalue() if isinstance(stream, BytesIO) else bytes(stream)
+            if not source:
+                raise EmptyFileError("Cannot open empty stream.")
+        else:
+            source = str(filename)
+            path = Path(source)
+            if not path.exists():
+                raise FileNotFoundError(f"no such file: '{source}'")
+            if not path.is_file():
+                raise FileDataError(f"'{source}' is no file")
+            if not path.stat().st_size:
+                raise EmptyFileError(f"Cannot open empty file: filename='{source}'.")
+        if filetype is not None and filetype.lower() != "pdf":
+            raise NotImplementedError("non-PDF input formats are not implemented")
+        pdf = PdfDocument.open(source)
+        try:
+            self._document = StructuredState(pdf)
+            info = pdf.get_metadata().get("info", {})
+            if isinstance(info, Mapping):
+                for key in self.metadata:
+                    if key not in {"format", "encryption"}:
+                        pdf_key = key[0].upper() + key[1:]
+                        self.metadata[key] = str(info.get(pdf_key, ""))
+            header = bytes(pdf.raw_data[:32]).splitlines()[0]
+            if header.startswith(b"%PDF-"):
+                self.metadata["format"] = "PDF " + header[5:].decode("ascii", errors="replace")
+            self._embedded_files = {item.filename: item.data for item in pdf.embedded_files()}
+        except Exception:
+            pdf.close()
+            raise
+        self._source_document = pdf
 
-    def __getitem__(self, index: int) -> Page:
-        return Page(self._document, self._document.pages[index], self)
+    def _check_open(self, *, check_encrypted: bool = False) -> None:
+        if check_encrypted and (self.is_closed or self.is_encrypted):
+            raise ValueError("document closed or encrypted")
+        if self.is_closed:
+            raise ValueError("document closed")
 
-    def load_page(self, index: int) -> Page:
-        return self[index]
+    def close(self) -> None:
+        self._check_open()
+        if self._source_document is not None:
+            self._source_document.close()
+        self.is_closed = True
+
+    @property
+    def is_pdf(self) -> bool:
+        self._check_open()
+        return True
+
+    @property
+    def chapter_count(self) -> int:
+        self._check_open()
+        return 1
+
+    def chapter_page_count(self, chapter: int = 0) -> int:
+        self._check_open()
+        if chapter != 0:
+            raise ValueError("bad chapter number")
+        return self.page_count
+
+    def __iter__(self) -> Iterator[Page]:
+        return self.pages()
+
+    def __contains__(self, index: object) -> bool:
+        count = self.page_count
+        if type(index) is int:
+            return count > 0 and index < count
+        if isinstance(index, (tuple, list)) and len(index) == 2:
+            chapter, page = index
+            return type(chapter) is int and chapter == 0 and type(page) is int and 0 <= page < count
+        return False
+
+    @overload
+    def __getitem__(self, index: int | tuple[int, int]) -> Page: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[Page]: ...
+
+    def __getitem__(self, index: int | tuple[int, int] | slice) -> Page | list[Page]:
+        self._check_open()
+        if isinstance(index, slice):
+            return [self.load_page(i) for i in range(*index.indices(self.page_count))]
+        if not isinstance(index, int) and not (isinstance(index, tuple) and len(index) == 2):
+            raise AssertionError(f"Invalid item number: i={index!r}.")
+        if index not in self:
+            raise IndexError(f"page {index} not in document")
+        return self.load_page(index)
+
+    def load_page(self, index: int | tuple[int, int] | list[int]) -> Page:
+        self._check_open(check_encrypted=True)
+        if index not in self:
+            raise ValueError("page not in document")
+        page_index = index if isinstance(index, int) else index[1]
+        page_index %= self.page_count
+        page = Page(self._document, self._document.pages[page_index], self)
+        page._number = page_index if isinstance(index, int) else index
+        return page
+
+    def pages(
+        self, start: int | None = None, stop: int | None = None, step: int | None = None
+    ) -> Iterator[Page]:
+        self._check_open()
+        count = self.page_count
+        start = 0 if start is None else start
+        if count and start < 0:
+            start %= count
+        if start < 0 or (count and start >= count):
+            raise ValueError("bad start page number")
+        stop = count if stop is None else min(count, stop)
+        step = (1 if start < stop else -1) if step is None else step
+        if not step:
+            raise ValueError("arg 3 must not be zero")
+        for index in range(start, stop, step):
+            yield self.load_page(index)
 
     def new_page(
         self,
@@ -742,10 +930,12 @@ class Document(PdfReader):
         width: float = 595.0,
         height: float = 842.0,
     ) -> Page:
-        if pno < 0:
-            index = len(self._document.pages)
-        else:
-            index = min(pno, len(self._document.pages))
+        self._check_open(check_encrypted=True)
+        if pno < -1:
+            raise RuntimeError("bad page number(s)")
+        if pno > self.page_count:
+            raise RuntimeError("code=4: cannot insert page beyond end of page tree")
+        index = self.page_count if pno == -1 else pno
         blank = StructuredPage(
             page_number=index + 1,
             width=float(width),
@@ -755,11 +945,15 @@ class Document(PdfReader):
         pages = tuple(
             replace(page, page_number=page_index + 1) for page_index, page in enumerate(pages)
         )
+        self._page_generation += 1
         return self._set_pages(pages)[index]
 
     @property
     def page_count(self) -> int:
-        return len(self.pages)
+        self._check_open()
+        if self._document.pdf is not None:
+            return len(self._document.pdf.pages)
+        return len(self._document.pages)
 
     def __len__(self) -> int:
         return self.page_count
@@ -795,12 +989,15 @@ class Document(PdfReader):
 
     def get_toc(self, simple: bool = True) -> list[list[object]]:
         """Return PyMuPDF-style ``[level, title, page]`` outline rows."""
+        self._check_open()
         if self._toc_override is not None:
             rows = [list(row[:3]) for row in self._toc_override]
             if not simple:
                 for toc_row in rows:
                     toc_row.append({"kind": "goto", "page": toc_row[2]})
             return rows
+        if self._document.pdf is None:
+            return []
         outlines = self._document.source_pdf.iter_outlines()
         result: list[list[object]] = []
         for item in outlines:
@@ -835,7 +1032,6 @@ class Document(PdfReader):
         """Adopt ``document`` and rebuild the facade page objects from it."""
         self._document = document
         typed_pages = tuple(Page(document, page, self) for page in document.pages)
-        self.pages = typed_pages
         return typed_pages
 
     def _set_pages(self, pages: Sequence[StructuredPage]) -> tuple[Page, ...]:
@@ -944,9 +1140,18 @@ class TextPage:
         return cast(str, self._page.get_text("xml", textpage=self, **kwargs))
 
 
-def open(stream: object, *args: object, **kwargs: object) -> Document:
-    del args, kwargs
-    return Document(cast(PdfInput, stream))
+open = Document
 
 
-__all__ = ("Document", "Matrix", "Page", "Pixmap", "TextPage", "Widget", "open")
+__all__ = (
+    "Document",
+    "EmptyFileError",
+    "FileDataError",
+    "FileNotFoundError",
+    "Matrix",
+    "Page",
+    "Pixmap",
+    "TextPage",
+    "Widget",
+    "open",
+)

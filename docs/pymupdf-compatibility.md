@@ -12,22 +12,31 @@ both type checkers, and architecture checks. This is the start of support work, 
 of complete compatibility. Existing methods outside the tested surface retain their previous
 limitations.
 
-The first differential tests use `small-table.pdf` and `test_2957_1.pdf` from the unmodified
-PyMuPDF corpus. They compare page counts and page rectangles, then exercise matrix
+The differential tests use `small-table.pdf`, `test_2957_1.pdf`, and `test_4043.pdf` from the
+unmodified PyMuPDF corpus. Matrix tests compare page counts and page rectangles, then exercise matrix
 construction, copying, sequence access, arithmetic, concatenation, inversion, rotation,
 scaling, shearing, and translation using the same page geometry. Singular inversion and
 invalid assignment indices are also checked. Matrix composition uses single-precision
 arithmetic at the same boundary as the reference; pure Python matrix operations retain
 double precision. Inversion comparisons allow a small floating-point tolerance.
 
+Document tests compare filename and keyword-stream constructors (bytes, bytearrays, and
+`BytesIO`), metadata, page counts, iteration, ranges, reverse slices, negative indexes,
+membership, and chapter/page addresses. They also cover empty-document creation, blank-page
+insertion using fixture dimensions, page-handle invalidation, and selected invalid-argument
+and closed-document errors. `Document` owns its lifecycle directly rather than inheriting
+pypdf's constructor and page-access policies. The original native source remains owned and
+is closed even after a structured editing snapshot replaces the current document state.
+
 Run the initial tests with:
 
 ```sh
 uv run --locked --group test --group vendor-test pytest \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_document.py
 ```
 
-These initial tests use two explicit fixtures. They do not yet run the complete PyMuPDF corpus
+These initial tests use three explicit fixtures. They do not yet run the complete PyMuPDF corpus
 or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
 
 ## Remaining implementation
@@ -41,8 +50,10 @@ Work must cover these areas before claiming complete compatibility:
 
 1. Geometry and public value types: `Rect`, `IRect`, `Point`, `Quad`, colorspaces, constants,
    operator behavior, errors, and integration of full affine transforms into rendering.
-2. Document lifecycle: constructor overloads, empty documents, authentication, page iteration,
-   indexing, ownership, closed-document errors, metadata, navigation, and damaged PDFs.
+2. Document lifecycle: complete constructor and metadata semantics, authentication, all
+   ownership/invalidation paths, closed-document errors across all methods, navigation,
+   and damaged PDFs. Expand the currently covered creation and page-access operations
+   across the full fixture corpus.
 3. Text: glyph geometry, line and block grouping, all extraction formats, flags, clipping,
    sorting, searching, fonts, and text-page lifecycle.
 4. Rendering and images: transformed and clipped pixmaps, colorspaces, alpha, image metadata,
@@ -52,10 +63,9 @@ Work must cover these areas before claiming complete compatibility:
 6. Remaining public facilities, including tables, structured content, optional integrations,
    and supported input formats, with explicit behavior and dependency contracts.
 
-Known examples from the initial `small-table.pdf` comparison: plain text combines table cells
+Known remaining examples from the initial `small-table.pdf` comparison: plain text combines table cells
 that the reference separates into lines; word boxes have different vertical metrics;
-`Document.pages` is a tuple instead of a callable iterator; `open()` cannot create an empty
-document; and `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
+`Document.tobytes()` is absent. Existing edit helpers change structured snapshots
 without providing the full persistent editing behavior of PyMuPDF.
 
 Each implementation increment needs differential tests over the same PDFs and explicit
