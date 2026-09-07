@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import zlib
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 from core_pdf.api.compat._shared import float32
 from core_pdf.api.document import PdfDocument
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
+from core_pdf.impl._impl.document.write import write_pdf
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
@@ -93,7 +97,9 @@ def format_object(
                 separator = "\n" + " " * (2 * depth + (4 if depth else 2)) if current > 60 else " "
                 output += separator
                 current = len(separator.rsplit("\n", 1)[-1]) if "\n" in separator else current + 1
-            token = format_object(item, depth=depth + 1, column=current, ascii_only=ascii_only)
+            token = format_object(
+                item, depth=depth + (2 if depth else 1), column=current, ascii_only=ascii_only
+            )
             output += token
             current = len(token.rsplit("\n", 1)[-1]) if "\n" in token else current + len(token)
         return output + (" ]" if value else "]")
@@ -138,9 +144,20 @@ def format_object(
     raise TypeError(f"unsupported PDF object: {type(value).__name__}")
 
 
+def internal_clone(value: object) -> Any:
+    if isinstance(value, dict):
+        return {key: internal_clone(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [internal_clone(item) for item in value]
+    return value
+
+
 class ObjectAccess:
     def __init__(self, source: PdfDocument | None) -> None:
         self.source = source
+        self.overrides: dict[int, object] = {}
+        self.extra_count = 0
+        self.trailer_override: dict[Any, Any] | None = None
         # Catalog defaults of the pinned 1.28.2 reference, before adding pages.
         self.empty: dict[int, Any] = {
             1: {
@@ -154,21 +171,28 @@ class ObjectAccess:
     @property
     def length(self) -> int:
         if self.source is None:
-            return 3
+            return 3 + self.extra_count
         declared_size = self.source.trailer_dict.get("Size", 0)
-        return max(
-            int(declared_size) if isinstance(declared_size, (int, float)) else 0,
-            max((key >> 16 for key in self.source.xref), default=0) + 1,
+        return (
+            max(
+                int(declared_size) if isinstance(declared_size, (int, float)) else 0,
+                max((key >> 16 for key in self.source.xref), default=0) + 1,
+            )
+            + self.extra_count
         )
 
     @property
     def trailer(self) -> dict[Any, Any]:
+        if self.trailer_override is not None:
+            return self.trailer_override
         if self.source is None:
             return {"Size": 3, "Root": PdfReference(1)}
         trailer = self.source.trailer_dict
         return trailer if "Size" in trailer else {"Size": self.length, **trailer}
 
     def resolve(self, value: object) -> object:
+        if isinstance(value, PdfReference) and value.object_number in self.overrides:
+            return self.overrides[value.object_number]
         if self.source is not None:
             return self.source.resolver.resolve(value)
         return self.empty.get(value.object_number) if isinstance(value, PdfReference) else value
@@ -178,6 +202,8 @@ class ObjectAccess:
             return self.trailer
         if not 0 < xref < self.length:
             raise ValueError("bad xref")
+        if xref in self.overrides:
+            return self.overrides[xref]
         if self.source is None:
             return self.empty.get(xref)
         entries = [
@@ -189,6 +215,167 @@ class ObjectAccess:
         if not entry.in_use:
             return None
         return self.resolve(PdfReference(xref, generation))
+
+    def page_references(self) -> list[PdfReference]:
+        catalog = self.resolve(self.trailer.get("Root"))
+        if not isinstance(catalog, dict):
+            return []
+        result: list[PdfReference] = []
+        pending = [catalog.get("Pages")]
+        seen: set[int] = set()
+        while pending:
+            ref = pending.pop()
+            if isinstance(ref, PdfReference):
+                if ref.object_number in seen:
+                    continue
+                seen.add(ref.object_number)
+            obj = self.resolve(ref)
+            if not isinstance(obj, dict):
+                continue
+            if str(obj.get("Type")) == "Page" and isinstance(ref, PdfReference):
+                result.append(ref)
+            else:
+                kids = self.resolve(obj.get("Kids"))
+                if isinstance(kids, list):
+                    pending.extend(reversed(kids))
+        return result
+
+    def insert_blank_page(self, index: int, width: float, height: float) -> None:
+        catalog = self.resolve(self.trailer.get("Root"))
+        if not isinstance(catalog, dict):
+            raise ValueError("invalid page tree")
+        parent_ref = catalog.get("Pages")
+        if not isinstance(parent_ref, PdfReference):
+            raise ValueError("invalid page tree")
+        parent = internal_clone(self.resolve(parent_ref))
+        if not isinstance(parent, dict):
+            raise ValueError("invalid page tree")
+        pages = self.page_references()
+        if index == 0 and pages:
+            labels = self.resolve(catalog.get("PageLabels"))
+            old_nums = labels.get("Nums") if isinstance(labels, dict) else None
+            nums = (
+                internal_clone(old_nums)
+                if isinstance(old_nums, list)
+                else [0, {"S": PdfName.of("D")}]
+            )
+            for offset in range(0, len(nums), 2):
+                number = nums[offset]
+                if not isinstance(number, int):
+                    raise ValueError("invalid page label index")
+                nums[offset] = number + 1
+            updated_catalog = internal_clone(catalog)
+            updated_catalog["PageLabels"] = {"Nums": [0, {"S": PdfName.of("D")}, *nums]}
+            root = self.trailer["Root"]
+            if isinstance(root, PdfReference):
+                self.overrides[root.object_number] = updated_catalog
+        resources = self.allocate()
+        self.overrides[resources] = {}
+        page = self.allocate()
+        self.overrides[page] = {
+            "Type": PdfName.of("Page"),
+            "MediaBox": [0, 0, width, height],
+            "Rotate": 0,
+            "Resources": PdfReference(resources),
+            "Parent": parent_ref,
+        }
+        pages.insert(index, PdfReference(page))
+        parent["Kids"], parent["Count"] = pages, len(pages)
+        self.overrides[parent_ref.object_number] = parent
+        for ref in pages:
+            child = internal_clone(self.get(ref.object_number))
+            if isinstance(child, dict):
+                ancestor = child.get("Parent")
+                visited: set[int] = set()
+                while isinstance(ancestor, PdfReference) and ancestor.object_number not in visited:
+                    visited.add(ancestor.object_number)
+                    inherited = self.resolve(ancestor)
+                    if not isinstance(inherited, dict):
+                        break
+                    for key in ("Resources", "MediaBox", "CropBox", "Rotate"):
+                        if key not in child and key in inherited:
+                            child[key] = internal_clone(inherited.get(key))
+                    ancestor = inherited.get("Parent")
+                child["Parent"] = parent_ref
+                self.overrides[ref.object_number] = child
+
+    def allocate(self) -> int:
+        number = self.length
+        self.extra_count += 1
+        self.overrides[number] = None
+        return number
+
+    def update(self, xref: int, text: str) -> None:
+        if not 0 < xref < self.length:
+            raise Exception("bad xref")
+        previous = self.get(xref)
+        obj = PdfLexer(text.encode("utf-8")).parse_object()
+        if isinstance(previous, PdfStream) and isinstance(obj, dict):
+            obj = previous.replace(dictionary=obj)
+        self.overrides[xref] = obj
+
+    def set_key(self, xref: int, key: str, value: str) -> None:
+        obj = self.get(xref)
+        stream = obj if isinstance(obj, PdfStream) else None
+        dictionary = internal_clone(stream.dictionary if stream is not None else obj)
+        if not isinstance(dictionary, dict):
+            raise ValueError("not a dict (null)")
+        parts = key.encode("utf-8", "surrogateescape").decode("latin-1").split("/")
+        parent = dictionary
+        for name in parts[:-1]:
+            child = parent.get(name)
+            if isinstance(child, PdfReference):
+                raise NotImplementedError(
+                    "writing through indirect dictionary paths is not implemented"
+                )
+            if not isinstance(child, dict):
+                child = {}
+                parent[name] = child
+            parent = child
+        parent[parts[-1]] = PdfLexer(value.encode("utf-8")).parse_object()
+        replacement = stream.replace(dictionary=dictionary) if stream is not None else dictionary
+        if xref == -1:
+            self.trailer_override = dictionary
+        else:
+            self.overrides[xref] = replacement
+
+    def update_stream(self, xref: int, data: bytes, *, compress: bool) -> None:
+        obj = self.get(xref)
+        dictionary = dict(obj.dictionary) if isinstance(obj, PdfStream) else internal_clone(obj)
+        if not isinstance(dictionary, dict):
+            raise ValueError("object is no PDF dict")
+        dictionary.pop("Filter", None)
+        dictionary.pop("DecodeParms", None)
+        encoded = zlib.compress(data, 9) if compress else data
+        if compress and len(encoded) < len(data):
+            dictionary["Filter"] = PdfName.of("FlateDecode")
+        else:
+            encoded = data
+        dictionary["Length"] = len(encoded)
+        self.overrides[xref] = PdfStream(dictionary, encoded, spec=dictionary)
+
+    def tobytes(self, *, no_new_id: bool = False, version: str = "1.7") -> bytes:
+        objects: dict[int, tuple[int, object]] = {}
+        if self.source is not None:
+            for key, entry in self.source.xref.items():
+                number, generation = key >> 16, key & 65535
+                if (
+                    number
+                    and entry.in_use
+                    and (number not in objects or generation >= objects[number][0])
+                ):
+                    objects[number] = (generation, self.get(number))
+        else:
+            objects.update((number, (0, obj)) for number, obj in self.empty.items())
+        for number, obj in self.overrides.items():
+            objects[number] = (objects.get(number, (0, None))[0], obj)
+        trailer = dict(self.trailer)
+        if not no_new_id:
+            old_id = trailer.get("ID")
+            first = old_id[0] if isinstance(old_id, list) and old_id else PdfString(uuid4().bytes)
+            trailer["ID"] = [first, PdfString(uuid4().bytes)]
+            self.trailer_override = trailer
+        return write_pdf(objects, trailer, size=self.length, version=version)
 
     def keys(self, xref: int) -> list[str]:
         obj = self.get(xref)

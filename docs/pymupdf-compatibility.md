@@ -54,10 +54,17 @@ stream/font/image/form type checks. Tests compare every object and stream in thr
 fixtures, plus shared variants covering object syntax, float formatting, escaped names,
 Unicode/binary strings, ASCII formatting policy, nested indirect dictionary paths, empty
 catalogs, invalid references, and closed-document errors. Text capture preserves the objects
-seen by these accessors. Object inspection currently supports original native PDFs and
-pristine empty documents; structured editing snapshots raise `NotImplementedError` until
-their changes have a native object representation. Object mutation and saving remain open
-work, as do broader damaged-file, free-object, generation, and encryption comparisons.
+seen by these accessors. Native object edits now support allocation, object replacement, direct dictionary paths,
+and stream replacement with optional compression. `page_xref()` and `Page.xref` expose page
+references. Default `tobytes()` and `save()` serialize native objects and streams, preserve
+metadata, and manage document IDs; tests reopen the results with the reference engine.
+Blank-page insertion also uses native objects and preserves inherited page settings.
+Retained pages reflect low-level edits while captured text pages remain frozen.
+
+Structured editing snapshots still raise `NotImplementedError` for object access and saving
+until their changes have a native object representation. Non-default save policies,
+incremental output, encryption, indirect dictionary writes, complex page-label trees,
+free-object semantics, generations, and damaged-file recovery need further work.
 
 Text, words, and text-block extraction now project native glyph captures directly, with
 reader-specific font metrics, character clipping, spacing, and line/block grouping. Loading
@@ -147,7 +154,8 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_selection.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_spacing.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text_transform.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_objects.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_objects.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_write.py
 ```
 
 These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
@@ -189,7 +197,7 @@ Work must cover these areas before claiming complete compatibility:
 
 Known remaining examples: HTML/XHTML/XML still use the old structured layout; sorted-text
 reconstruction, several text flags, complete image/color behavior, and snapshot support for
-the remaining text formats need implementation. `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
+the remaining text formats need implementation. High-level edit helpers still change structured snapshots
 without providing the full persistent editing behavior of PyMuPDF.
 
 Each implementation increment needs differential tests over the same PDFs and explicit

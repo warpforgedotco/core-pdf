@@ -154,6 +154,7 @@ class Page(PdfPageObject):
         self._page_number = page.page_number
         self._owner = owner
         self._generation = owner._page_generation if owner is not None else 0
+        self._object_revision = owner._object_revision if owner is not None else 0
         self._number: int | tuple[int, int] | list[int] = page.page_number - 1
         self.mediabox = Rect(self.mediabox)
         raw_crop = Rect(self.cropbox)
@@ -175,6 +176,7 @@ class Page(PdfPageObject):
 
     @property
     def _page(self) -> StructuredPage:
+        self._refresh_native()
         if self._lazy_source is not None:
             self._page_storage = self._lazy_source.structured_view
             self._lazy_source = None
@@ -205,13 +207,31 @@ class Page(PdfPageObject):
     def cropbox(self, value: Any) -> None:
         self._cropbox = Rect(value)
 
+    def _refresh_native(self) -> None:
+        owner = getattr(self, "_owner", None)
+        if (
+            owner is not None
+            and not owner.is_closed
+            and self._generation == owner._page_generation
+            and self._object_revision != owner._object_revision
+        ):
+            replacement = owner.load_page(self._number)
+            self.__dict__.update(replacement.__dict__)
+
     @property
     def parent(self) -> Document | None:
         if self._owner is not None and (
             self._owner.is_closed or self._generation != self._owner._page_generation
         ):
             return None
+        self._refresh_native()
         return self._owner
+
+    @property
+    def xref(self) -> int:
+        if self.parent is None:
+            raise AssertionError("page is None")
+        return self.parent.page_xref(self._page_number - 1)
 
     @property
     def number(self) -> int | tuple[int, int] | list[int] | None:
@@ -782,6 +802,10 @@ class Document(ClosingMixin):
         self.is_encrypted = False
         self._page_generation = 0
         self._objects_invalidated = False
+        self._object_access: ObjectAccess | None = None
+        self._object_revision = 0
+        self._native_revision = 0
+        self._working_document: PdfDocument | None = None
         self._source_document: PdfDocument | None = None
         self._pending_redactions: dict[int, list[tuple[float, float, float, float]]] = {}
         self._toc_override: list[list[object]] | None = None
@@ -849,6 +873,8 @@ class Document(ClosingMixin):
 
     def close(self) -> None:
         self._check_open()
+        if self._working_document is not None:
+            self._working_document.close()
         if self._source_document is not None:
             self._source_document.close()
         self.is_closed = True
@@ -862,10 +888,109 @@ class Document(ClosingMixin):
     def _objects(self) -> ObjectAccess:
         self._check_open()
         if self._objects_invalidated or (
-            self._document.pdf is None and (self._source_document is not None or self.page_count)
+            self._document.pdf is None and self._source_document is not None
         ):
             raise NotImplementedError("object access for structured edits is not implemented")
-        return ObjectAccess(self._source_document)
+        if self._object_access is None:
+            self._object_access = ObjectAccess(self._source_document)
+        return self._object_access
+
+    def _refresh_native(self) -> None:
+        if self._native_revision == self._object_revision:
+            return
+        assert self._object_access is not None
+        data = self._object_access.tobytes(no_new_id=True)
+        document = PdfDocument.open(data)
+        previous = self._working_document
+        self._working_document = document
+        self._document = StructuredState(document)
+        self._native_revision = self._object_revision
+        if previous is not None:
+            previous.close()
+
+    def page_xref(self, pno: int) -> int:
+        references = self._objects.page_references()
+        if not references or pno >= len(references):
+            raise ValueError("bad page number(s)")
+        return references[pno % len(references)].object_number
+
+    def get_new_xref(self) -> int:
+        result = self._objects.allocate()
+        self._object_revision += 1
+        return result
+
+    def update_object(self, xref: int, text: str, page: Page | None = None) -> None:
+        del page
+        self._objects.update(xref, text)
+        self._object_revision += 1
+
+    def xref_set_key(self, xref: int, key: str, value: str) -> None:
+        self._objects.set_key(xref, key, value)
+        self._object_revision += 1
+
+    def update_stream(
+        self,
+        xref: int = 0,
+        stream: bytes | bytearray | None = None,
+        new: bool = True,
+        compress: bool = True,
+    ) -> None:
+        del new
+        self._check_open(check_encrypted=True)
+        if not isinstance(stream, (bytes, bytearray)):
+            raise ValueError("bad type: 'stream'")
+        self._objects.update_stream(xref, bytes(stream), compress=compress)
+        self._object_revision += 1
+
+    def tobytes(self, *args: object, **kwargs: object) -> bytes:
+        if args:
+            raise TypeError("positional save options are not implemented")
+        self._check_open()
+        access = self._objects
+        if not self.page_count:
+            raise ValueError("cannot save with zero pages")
+        no_new_id = bool(kwargs.pop("no_new_id", False))
+        defaults = {
+            "garbage": 0,
+            "clean": 0,
+            "deflate": 0,
+            "deflate_images": 0,
+            "deflate_fonts": 0,
+            "incremental": 0,
+            "ascii": 0,
+            "expand": 0,
+            "linear": 0,
+            "appearance": 0,
+            "pretty": 0,
+            "encryption": 1,
+            "permissions": 4095,
+            "owner_pw": None,
+            "user_pw": None,
+            "preserve_metadata": 1,
+            "use_objstms": 0,
+            "compression_effort": 0,
+            "raise_on_repair": False,
+            "reproducible": False,
+        }
+        for key, value in kwargs.items():
+            if key not in defaults:
+                raise TypeError(f"Document.write() got an unexpected keyword argument '{key}'")
+            if value != defaults[key]:
+                raise NotImplementedError(f"save option is not implemented: {key}")
+        version = str(self.metadata.get("format", "PDF 1.7")).removeprefix("PDF ")
+        return access.tobytes(no_new_id=no_new_id, version=version)
+
+    def save(self, filename: object, **kwargs: object) -> None:
+        self._check_open()
+        if (
+            isinstance(filename, (str, PathLike))
+            and self.name is not None
+            and Path(cast("str | PathLike[str]", filename)).resolve() == Path(self.name).resolve()
+            and not kwargs.get("incremental")
+        ):
+            raise ValueError("save to original must be incremental")
+        data = self.tobytes(**kwargs)
+        write_bytes(cast(Any, filename), data)
 
     def xref_length(self) -> int:
         return self._objects.length
@@ -883,7 +1008,7 @@ class Document(ClosingMixin):
             obj = access.get(xref)
         except ValueError as error:
             raise RuntimeError("bad xref") from error
-        if obj is None:
+        if obj is None and xref not in access.overrides:
             raise RuntimeError(f"code=7: cannot find object in xref ({xref} 0 R)")
         return format_object(obj, compressed=compressed, ascii_only=ascii)
 
@@ -966,6 +1091,7 @@ class Document(ClosingMixin):
             raise ValueError("page not in document")
         page_index = index if isinstance(index, int) else index[1]
         page_index %= self.page_count
+        self._refresh_native()
         if self._document.pdf is not None:
             source = self._document.pdf.pages[page_index]
             media = source.media_box or (0.0, 0.0, 612.0, 792.0)
@@ -1011,6 +1137,12 @@ class Document(ClosingMixin):
         if pno > self.page_count:
             raise RuntimeError("code=4: cannot insert page beyond end of page tree")
         index = self.page_count if pno == -1 else pno
+        if not self._objects_invalidated:
+            self._objects.insert_blank_page(index, float(width), float(height))
+            self._object_revision += 1
+            self._page_generation += 1
+            self._refresh_native()
+            return self.load_page(index)
         blank = StructuredPage(
             page_number=index + 1,
             width=float(width),
@@ -1026,6 +1158,7 @@ class Document(ClosingMixin):
     @property
     def page_count(self) -> int:
         self._check_open()
+        self._refresh_native()
         if self._document.pdf is not None:
             return len(self._document.pdf.pages)
         return len(self._document.pages)
@@ -1174,6 +1307,7 @@ class Document(ClosingMixin):
             annotations = page.annotations + tuple(Annotation("Redact", box) for box in boxes)
             pages[index] = replace(page, annotations=annotations)
         self._document = self._document.replace_pages(pages)
+        self._objects_invalidated = True
         self._pending_redactions.clear()
 
 
