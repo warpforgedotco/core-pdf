@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field, replace
+from itertools import groupby
 from typing import Any
 
 from core_pdf.api.compat._shared import BBox, float32
@@ -11,6 +13,7 @@ from core_pdf.api.compat.pymupdf.geometry import Rect
 from core_pdf.api.document import PdfPage
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
 # Metrics of the reference reader's standard-font substitutes, in em units.
 internal_STANDARD_METRICS = {
@@ -108,6 +111,10 @@ internal_SYMBOL_WIDTHS = {
 # fmt: on
 
 
+def internal_word_separator(value: str) -> bool:
+    return ord(value) <= 32 or value == "\xa0"
+
+
 def internal_union(boxes: list[BBox]) -> BBox:
     return (
         min(box[0] for box in boxes),
@@ -157,7 +164,11 @@ class TextProjection:
                 pending: list[internal_Character] = []
                 index = 0
                 for char in [*line.characters, None]:
-                    if char is not None and not char.text.isspace() and char.text not in delimiters:
+                    if (
+                        char is not None
+                        and not internal_word_separator(char.text)
+                        and char.text not in delimiters
+                    ):
                         pending.append(char)
                         continue
                     if pending:
@@ -204,6 +215,60 @@ def internal_metrics(glyph: GlyphObservation) -> tuple[float, float]:
     return float32(ascender), float32(descender)
 
 
+# The reader's whitespace set excludes C0/C1 controls used as unresolved CIDs,
+# and Unicode paragraph / line separators.
+internal_WHITESPACE = (
+    "\b\t\n\v\f\r \xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
+    "\u2007\u2008\u2009\u200a\u202f\u205f\u3000"
+)
+
+internal_LIGATURES = {
+    "ﬀ": "ff",
+    "ﬁ": "fi",
+    "ﬂ": "fl",
+    "ﬃ": "ffi",
+    "ﬄ": "ffl",
+    "ﬅ": "st",
+    "ﬆ": "st",
+}
+
+
+def internal_capture_glyphs(glyphs: Iterable[GlyphObservation]) -> Iterator[GlyphObservation]:
+    # Native capture may split one PDF glyph into multiple Unicode observations.
+    # Rejoin only observations carrying the same source cluster, never adjacent letters.
+    for _, members in groupby(glyphs, key=lambda g: g.cluster_key or id(g)):
+        cluster = list(members)
+        first, last = cluster[0], cluster[-1]
+        value = "".join(g.text for g in cluster)
+        decoder = first.font_decoder
+        if isinstance(decoder, FontDecoder):
+            raw = None
+            if decoder.to_unicode is not None:
+                raw = decoder.to_unicode.mappings.get(first.code_bytes)
+            code = first.char_code
+            if (
+                raw is None
+                and code is not None
+                and 0 <= code < len(decoder.simple_encoding_glyph_names)
+            ):
+                raw = glyph_name_to_unicode(decoder.simple_encoding_glyph_names[code])
+            if raw is not None and raw in internal_LIGATURES:
+                value = raw
+            if (
+                len(value) == 1
+                and (ord(value) < 8 or 14 <= ord(value) < 32 or 127 <= ord(value) < 160)
+                and code is not None
+                and 0 <= code < len(decoder.simple_encoding_glyph_names)
+            ):
+                fallback = glyph_name_to_unicode(decoder.simple_encoding_glyph_names[code])
+                if fallback:
+                    value = fallback
+        baseline = first.baseline
+        if baseline is not None and last.baseline is not None:
+            baseline = (*baseline[:2], *last.baseline[2:])
+        yield replace(first, text=value, baseline=baseline)
+
+
 def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> TextProjection:
     crop = Rect(page.crop_box or page.media_box)
     unit_value = page.document.resolver.resolve(page.page_dict.get("UserUnit"))
@@ -221,7 +286,7 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
     previous_end: tuple[float, float] | None = None
     previous_group: object = None
     previous: internal_Character | None = None
-    for glyph in page.get_page_program().glyphs:
+    for glyph in internal_capture_glyphs(page.get_page_program().glyphs):
         if not glyph.text or glyph.baseline is None or not glyph.font_size:
             continue
         x, y, ex, ey = glyph.baseline
@@ -279,7 +344,14 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
         if (clip is not None or flags & 64) and not clip_box.intersects(bbox):
             continue
         size = abs(float32(glyph.effective_font_height * unit))
-        char = internal_Character(glyph.text, bbox, (px, py), end, size, (dx, -dy))
+        value = glyph.text
+        if not flags & 1:
+            value = internal_LIGATURES.get(value, value)
+        value = "".join(
+            " " if c in "\b\t\n\v\f\r" or (not flags & 2 and c in internal_WHITESPACE) else c
+            for c in value
+        )
+        char = internal_Character(value[0], bbox, (px, py), end, size, (dx, -dy))
         new_line = previous is None
         new_block = previous is None
         gap = 0.0
@@ -322,6 +394,22 @@ def capture_text(page: PdfPage, *, flags: int = 195, clip: object = None) -> Tex
             )
         line.characters.append(char)
         previous = char
+        for continuation in value[1:]:
+            trailing_bbox: BBox = (
+                min(float32(end[0] + float32(vx * m)) for m in (ascender, descender)),
+                min(float32(end[1] + float32(vy * m)) for m in (ascender, descender)),
+                max(float32(end[0] + float32(vx * m)) for m in (ascender, descender)),
+                max(float32(end[1] + float32(vy * m)) for m in (ascender, descender)),
+            )
+            if (clip is not None or flags & 64) and (
+                trailing_bbox[2] < clip_box.x0
+                or trailing_bbox[0] > clip_box.x1
+                or trailing_bbox[3] < clip_box.y0
+                or trailing_bbox[1] > clip_box.y1
+            ):
+                continue
+            previous = internal_Character(continuation, trailing_bbox, end, end, size, (dx, -dy))
+            line.characters.append(previous)
     return projection
 
 

@@ -107,3 +107,101 @@ def test_rotated_hidden_text_and_spacing_flags(rotation: int, flags: int) -> Non
     assert internal_text_snapshot(
         compat_pymupdf, source, flags=flags
     ) == internal_geometry_expected(internal_text_snapshot(real_pymupdf, source, flags=flags))
+
+
+def internal_ligature_source() -> bytes:
+    source = FIXTURES_ROOT / "PyMuPDF/tests/resources/2201.00069.pdf"
+    with real_pymupdf.open(source) as fixture:
+        fixture.select([0])
+        page = fixture[0]
+        content = page.get_contents()[0]
+        page.set_contents(content)
+        fixture.update_stream(content, b"BT /F68 12 Tf 50 700 Td <411b421c431d441e451f46> Tj ET")
+        return fixture.tobytes()
+
+
+@pytest.mark.parametrize("flags", [0, 1, 2, 3, 194, 195])
+@pytest.mark.parametrize("clip", [None, (60, 130, 90, 145)])
+def test_ligature_preservation_and_expansion(flags: int, clip: object) -> None:
+    source = internal_ligature_source()
+    assert internal_text_snapshot(
+        compat_pymupdf, source, flags=flags, clip=clip
+    ) == internal_geometry_expected(
+        internal_text_snapshot(real_pymupdf, source, flags=flags, clip=clip)
+    )
+
+
+@pytest.mark.parametrize("flags", [0, 1])
+def test_ligature_word_delimiter_geometry(flags: int) -> None:
+    source = internal_ligature_source()
+    with real_pymupdf.open(stream=source) as expected, compat_pymupdf.open(stream=source) as actual:
+        for delimiters in ("f", "i", "ﬁ", "BDE"):
+            assert actual[0].get_text(
+                "words", flags=flags, delimiters=delimiters
+            ) == internal_geometry_expected(
+                expected[0].get_text("words", flags=flags, delimiters=delimiters)
+            )
+
+
+def internal_unicode_source(codepoints: list[int]) -> bytes:
+    with real_pymupdf.open(internal_PDFS[0]) as fixture:
+        page = fixture.new_page(width=2000)
+        page.insert_text((50, 50), " ".join(chr(65 + i) for i in range(len(codepoints))))
+        font = page.get_fonts()[0][0]
+        cmap = fixture.get_new_xref()
+        fixture.update_object(cmap, "<<>>")
+        pairs = " ".join(f"<{65 + i:02x}> <{point:04x}>" for i, point in enumerate(codepoints))
+        fixture.update_stream(
+            cmap,
+            (
+                "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+                "1 begincodespacerange <00> <ff> endcodespacerange "
+                f"{len(codepoints)} beginbfchar {pairs} endbfchar "
+                "endcmap CMapName currentdict /CMap defineresource pop end end"
+            ).encode(),
+        )
+        fixture.xref_set_key(font, "ToUnicode", f"{cmap} 0 R")
+        fixture.select([len(fixture) - 1])
+        return fixture.tobytes()
+
+
+@pytest.mark.parametrize("flags", [0, 2, 195])
+def test_unicode_whitespace_flags_and_word_boundaries(flags: int) -> None:
+    source = internal_unicode_source(
+        [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            32,
+            0x85,
+            0xA0,
+            0x1680,
+            *range(0x2000, 0x200B),
+            0x2028,
+            0x2029,
+            0x202F,
+            0x205F,
+            0x3000,
+        ]
+    )
+    assert internal_text_snapshot(
+        compat_pymupdf, source, flags=flags
+    ) == internal_geometry_expected(internal_text_snapshot(real_pymupdf, source, flags=flags))
+
+
+@pytest.mark.parametrize("flags", [0, 195])
+def test_invalid_control_mappings_fall_back_to_font_encoding(flags: int) -> None:
+    source = internal_unicode_source([*range(8), *range(14, 32), *range(127, 160)])
+    assert internal_text_snapshot(
+        compat_pymupdf, source, flags=flags
+    ) == internal_geometry_expected(internal_text_snapshot(real_pymupdf, source, flags=flags))
+
+
+@pytest.mark.parametrize("name", ["test_2791_content.pdf", "test_3376.pdf"])
+def test_unresolved_control_cids_are_preserved(name: str) -> None:
+    source = (FIXTURES_ROOT / "PyMuPDF/tests/resources" / name).read_bytes()
+    with real_pymupdf.open(stream=source) as expected, compat_pymupdf.open(stream=source) as actual:
+        assert actual[0].get_text() == expected[0].get_text()

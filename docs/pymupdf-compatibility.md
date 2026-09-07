@@ -56,6 +56,16 @@ partial character clipping, orthogonal text rotations, hidden text, and spacing 
 Symbol and ZapfDingbats substitute advances follow raw character codes even with explicit
 Latin encodings. These cases do not establish parity for arbitrary fonts or layouts.
 
+Ligature flags preserve source glyphs by default and expand them when requested. Expansion
+assigns the glyph advance to its first letter and zero advance to subsequent letters;
+clipping and word delimiters use these character geometries. Native source-cluster IDs
+rejoin captured fragments without merging separate letters. Shared variants of
+`2201.00069.pdf` exercise these policies against an embedded font. Unicode mapping variants
+also compare whitespace preservation, word boundaries for Unicode spaces, and rejection of
+invalid control mappings in favor of the font encoding. Unresolved character IDs remain
+intact when no font mapping is available; `test_2791_content.pdf` and `test_3376.pdf`
+provide regression coverage for that distinction.
+
 Run the focused tests with:
 
 ```sh
@@ -66,16 +76,17 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py
 ```
 
-These tests use five explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
+These tests use eight explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
 or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
 
 A diagnostic first-page audit of all 179 PDFs in the pinned PyMuPDF corpus completed
-176 comparisons: 126 had exactly equal plain text and 54 had exactly equal word records
-(including coordinates). Three exceeded the audit's ten-second per-file limit:
-`test_4147.pdf`, `test_4182.pdf`, and `test_4599.pdf`. Empty-text pages count in these results;
+174 comparisons: 127 had exactly equal plain text and 53 had exactly equal word records
+(including coordinates). Five reached the audit's ten-second per-file time budget:
+`dotted-gridlines.pdf`, `test_3186.pdf`, `test_3362.pdf`, `test_3806.pdf`, and
+`test_3887.pdf`. Timeout outcomes vary with concurrent validation workloads. Empty-text pages count in these results;
 this is not an all-page compatibility measure or part of the regression suite. Differences
-include ligature preservation (`2201.00069.pdf`), bidirectional text (`test-E+A.pdf`),
-character decoding (`test_2957_1.pdf`), and CJK spacing (`chinese-tables.pdf`). These provide
+include spacing around mathematical symbols (`2201.00069.pdf`), bidirectional text
+(`test-E+A.pdf`), clipping (`test_2957_1.pdf`), and CJK spacing (`chinese-tables.pdf`). These provide
 concrete cases for the next text increments.
 
 ## Remaining implementation
