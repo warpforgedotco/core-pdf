@@ -12,13 +12,24 @@ both type checkers, and architecture checks. This is the start of support work, 
 of complete compatibility. Existing methods outside the tested surface retain their previous
 limitations.
 
-The differential tests use `small-table.pdf`, `test_2957_1.pdf`, and `test_4043.pdf` from the
-unmodified PyMuPDF corpus. Matrix tests compare page counts and page rectangles, then exercise matrix
+The differential tests use `small-table.pdf`, `test_2957_1.pdf`, `test_4043.pdf`, and
+`test-3143.pdf` from the unmodified PyMuPDF corpus. Matrix tests compare page counts and
+page rectangles, then exercise matrix
 construction, copying, sequence access, arithmetic, concatenation, inversion, rotation,
 scaling, shearing, and translation using the same page geometry. Singular inversion and
 invalid assignment indices are also checked. Matrix composition uses single-precision
 arithmetic at the same boundary as the reference; pure Python matrix operations retain
 double precision. Inversion comparisons allow a small floating-point tolerance.
+
+Native `Point`, `Rect`, `IRect`, and `Quad` types now provide coordinate access, arithmetic,
+affine transformations, rectangle regions, integer pixel bounds, and fixed-point morphs.
+`Page.rect` returns a `Rect`. Geometry tests compare these operations on normal and rotated
+pages, including empty and invalid regions, half-open containment, singular shapes, and
+integer rounding near pixel boundaries. This coverage does not yet prove complete parity
+for every constructor/error case, integer-rectangle method, or geometry integration.
+The initial integer-rectangle audit specifically found differences in `abs(IRect)`, the
+coordinate types retained after region mutation, and direct `IRect.transform` errors. These
+remain compatibility gaps even though the covered scalar and matrix operators compare equal.
 
 Document tests compare filename and keyword-stream constructors (bytes, bytearrays, and
 `BytesIO`), metadata, page counts, iteration, ranges, reverse slices, negative indexes,
@@ -33,10 +44,11 @@ Run the initial tests with:
 ```sh
 uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_document.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_document.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_geometry.py
 ```
 
-These initial tests use three explicit fixtures. They do not yet run the complete PyMuPDF corpus
+These initial tests use four explicit fixtures. They do not yet run the complete PyMuPDF corpus
 or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
 
 ## Remaining implementation
@@ -48,8 +60,9 @@ separate verification.
 
 Work must cover these areas before claiming complete compatibility:
 
-1. Geometry and public value types: `Rect`, `IRect`, `Point`, `Quad`, colorspaces, constants,
-   operator behavior, errors, and integration of full affine transforms into rendering.
+1. Geometry and public value types: finish constructor, integer-rectangle, and error parity;
+   provide geometry types consistently across page boxes, annotations, and searches; implement
+   colorspaces and constants; and integrate full affine transforms into rendering.
 2. Document lifecycle: complete constructor and metadata semantics, authentication, all
    ownership/invalidation paths, closed-document errors across all methods, navigation,
    and damaged PDFs. Expand the currently covered creation and page-access operations

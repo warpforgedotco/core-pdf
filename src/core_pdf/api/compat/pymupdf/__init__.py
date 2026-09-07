@@ -20,7 +20,7 @@ from core_pdf.api.compat._shared import (
     float32,
     write_bytes,
 )
-from core_pdf.api.compat.pymupdf.geometry import Matrix
+from core_pdf.api.compat.pymupdf.geometry import IRect, Matrix, Point, Quad, Rect
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
     StructuredState,
@@ -150,14 +150,14 @@ class Page(PdfPageObject):
         return self._number if self.parent is not None else None
 
     @property
-    def rect(self) -> tuple[float, float, float, float]:
+    def rect(self) -> Rect:
         if self.parent is None:
             raise AssertionError("page is None")
         x0, y0, x1, y1 = self.cropbox
         width, height = float32(x1 - x0), float32(y1 - y0)
         if self.rotation % 180:
             width, height = height, width
-        return (0.0, 0.0, width, height)
+        return Rect(0.0, 0.0, width, height)
 
     def _native_text_view(self) -> Any:
         """Return only text represented by PDF text operators, as MuPDF does by default."""
@@ -1148,9 +1148,13 @@ __all__ = (
     "EmptyFileError",
     "FileDataError",
     "FileNotFoundError",
+    "IRect",
     "Matrix",
     "Page",
     "Pixmap",
+    "Point",
+    "Quad",
+    "Rect",
     "TextPage",
     "Widget",
     "open",
