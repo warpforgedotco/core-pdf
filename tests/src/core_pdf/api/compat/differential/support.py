@@ -119,7 +119,11 @@ def metadata(value: Any) -> dict[str, str]:
 
 
 def words(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compare geometry at five-decimal precision without quantization-boundary noise."""
     return [
-        {key: round(value, 5) if isinstance(value, float) else value for key, value in word.items()}
+        {
+            key: pytest.approx(value, rel=0, abs=1e-5) if isinstance(value, float) else value
+            for key, value in word.items()
+        }
         for word in values
     ]

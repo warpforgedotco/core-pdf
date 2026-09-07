@@ -260,20 +260,18 @@ class EnginePageAdapter:
 
     def text_characters(self) -> Iterator[Any]:
         from ..pdfminer import (
+            internal_pdfminer_descent,
             internal_pdfminer_embedded_cmap_is_unusable,
             internal_pdfminer_font_name,
             internal_pdfminer_glyph_text,
             internal_pdfminer_ligature_overrides,
-            internal_pdfminer_literal_glyphs,
-            internal_pdfminer_offsets,
+            internal_pdfminer_normalized_width,
+            internal_pdfminer_page_program,
             internal_pdfminer_validate_page_resources,
         )
 
         internal_pdfminer_validate_page_resources(self.page)
-        projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(
-            self.page.get_page_program().glyphs
-        )
-        pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
+        projected_glyphs: tuple[Any, ...] = internal_pdfminer_page_program(self.page).glyphs
         ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
         for glyph in projected_glyphs:
             if internal_pdfminer_embedded_cmap_is_unusable(glyph):
@@ -285,11 +283,6 @@ class EnginePageAdapter:
             if not text or ("source", "annotation_appearance") in glyph.provenance:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
-            offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
-            x0 += offset_x
-            x1 += offset_x
-            y0 += offset_y
-            y1 += offset_y
             font_height = glyph.effective_font_height or glyph.font_size
             provenance = dict(glyph.provenance) if glyph.provenance else {}
             matrix = provenance.get("text_matrix")
@@ -298,6 +291,44 @@ class EnginePageAdapter:
             if isinstance(matrix, (tuple, list)) and len(matrix) == 4:
                 a, b, c, d = (float(value) for value in matrix)
                 scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
+                baseline = ligature[2] if ligature is not None else glyph.baseline
+                if baseline is not None:
+                    if glyph.font_decoder.is_vertical:
+                        # Capture's baseline already includes the vertical
+                        # origin displacement. LTChar extends one em across
+                        # the writing line and uses W2 for its vertical extent.
+                        metric = glyph.font_decoder.vertical_glyph_metric(glyph.cid)
+                        left = -float(metric[1]) * glyph.font_size * 0.001
+                        advance = float(metric[0]) * glyph.font_size * 0.001 * scaling
+                        horizontal = (left, left + glyph.font_size)
+                        vertical = (glyph.font_size + advance, glyph.font_size)
+                    else:
+                        # LTChar uses a one-em layout box anchored at the font's
+                        # descent, independently of the native ink/ascent bounds.
+                        descent = internal_pdfminer_descent(glyph) * glyph.font_size
+                        descent += float(provenance.get("text_rise", 0.0))
+                        advance = (
+                            internal_pdfminer_normalized_width(glyph) * glyph.font_size * scaling
+                        )
+                        horizontal = (0.0, advance)
+                        vertical = (descent, descent + glyph.font_size)
+                    corners = [
+                        (
+                            along * a + across * c + baseline[0],
+                            along * b + across * d + baseline[1],
+                        )
+                        for along in horizontal
+                        for across in vertical
+                    ]
+                    x0 = min(point[0] for point in corners)
+                    y0 = min(point[1] for point in corners)
+                    x1 = max(point[0] for point in corners)
+                    y1 = max(point[1] for point in corners)
+                    font_height = (
+                        x1 - x0
+                        if glyph.font_decoder.is_vertical or glyph.rotation_angle % 180
+                        else y1 - y0
+                    )
                 # The engine records the text matrix in unrotated page space,
                 # while pdfminer folds the page's rotation into LTChar.matrix.
                 # Apply that final coordinate transform before evaluating the
