@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from bisect import bisect_left
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from html import escape
@@ -21,11 +20,13 @@ from core_pdf.api.compat._shared import (
     write_bytes,
 )
 from core_pdf.api.compat.pymupdf.geometry import IRect, Matrix, Point, Quad, Rect
+from core_pdf.api.compat.pymupdf.text import capture_text
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
     StructuredState,
 )
 from core_pdf.api.document import PdfDocument
+from core_pdf.api.document import PdfPage as NativePdfPage
 from core_pdf.impl._impl.model.geometry import bbox_intersects
 from core_pdf.impl._impl.output.model import (
     Annotation,
@@ -129,10 +130,13 @@ class Widget:
 
 
 class Page(PdfPageObject):
+    _lazy_source: NativePdfPage | None
+
     def __init__(
         self, document: StructuredState, page: Any, owner: "Document | None" = None
     ) -> None:
         super().__init__(document, page)
+        self._page_number = page.page_number
         self._owner = owner
         self._generation = owner._page_generation if owner is not None else 0
         self._number: int | tuple[int, int] | list[int] = page.page_number - 1
@@ -153,6 +157,18 @@ class Page(PdfPageObject):
             unit = document.pdf.resolver.resolve(source.page_dict.get("UserUnit"))
             if isinstance(unit, (int, float)):
                 self._user_unit = float32(unit)
+
+    @property
+    def _page(self) -> StructuredPage:
+        if self._lazy_source is not None:
+            self._page_storage = self._lazy_source.structured_view
+            self._lazy_source = None
+        return self._page_storage
+
+    @_page.setter
+    def _page(self, value: StructuredPage) -> None:
+        self._page_storage = value
+        self._lazy_source = None
 
     @property
     def mediabox(self) -> Any:
@@ -208,7 +224,7 @@ class Page(PdfPageObject):
         if self.parent is None:
             raise AssertionError("page is None")
         if self._document.pdf is not None:
-            source = self._document.pdf.pages[self._page.page_number - 1]
+            source = self._document.pdf.pages[self._page_number - 1]
             box = source.resolve_box(name)
             if box is not None:
                 x0, y0, x1, y1 = map(float32, box)
@@ -272,197 +288,29 @@ class Page(PdfPageObject):
         """Return only text represented by PDF text operators, as MuPDF does by default."""
         return self._page.text_view
 
-    def _mupdf_plain_text(self) -> str:
-        if self._document.pdf is None:
-            return self._native_text_view().text
-        runs = self._document.capability_page(self._page.page_number).get_page_program().runs
-        output = ""
-        previous: Any | None = None
-        for run in runs:
-            if not run.text:
-                continue
-            if previous is not None:
-                current_height = max(
-                    run.advance_bbox[3] - run.advance_bbox[1], run.coords[run.FONT_SIZE]
-                )
-                previous_height = max(
-                    previous.advance_bbox[3] - previous.advance_bbox[1],
-                    previous.coords[previous.FONT_SIZE],
-                )
-                degenerate = (
-                    run.advance_bbox[3] == run.advance_bbox[1]
-                    or previous.advance_bbox[3] == previous.advance_bbox[1]
-                )
-                vertically_separate = (
-                    run.baseline is not None
-                    and previous.baseline is not None
-                    and abs(run.baseline[1] - previous.baseline[1])
-                    > (
-                        max(current_height, previous_height)
-                        if degenerate
-                        else min(current_height, previous_height)
-                    )
-                    * 0.8
-                )
-                if vertically_separate and "\f" not in run.text and not output.endswith("\x00"):
-                    output += "\n"
-                elif (
-                    not output.endswith((" ", "\n"))
-                    and not run.text.startswith(" ")
-                    and run.advance_bbox[0] - previous.advance_bbox[2]
-                    > (run.advance_bbox[3] - run.advance_bbox[1]) * 0.2
-                ):
-                    output += " "
-            if not output and run.text.startswith(" "):
-                output = " \n" + run.text[1:]
-            else:
-                output += run.text
-            previous = run
-        return output + ("\n" if output else "")
-
-    def _mupdf_words(self) -> list[tuple[float, float, float, float, str, int, int, int]]:
-        page = self._document.capability_page(self._page.page_number)
-        products = page.get_page_program()
-        crop_box = page.crop_box or page.media_box
-        crop_x0, _crop_y0, _crop_x1, crop_y1 = crop_box
-        glyphs_by_sequence: dict[int, list[Any]] = {}
-        for glyph in products.glyphs:
-            glyphs_by_sequence.setdefault(glyph.seqno, []).append(glyph)
-        sequence_numbers = sorted(glyphs_by_sequence)
-        indexed_words = list(self._native_text_view().words)
-        search_from = 0
-        output: list[tuple[float, float, float, float, str, int, int, int]] = []
-        fallback_block = 0
-        previous_raw_x1: float | None = None
-        previous_word_y: tuple[float, float] | None = None
-        previous_baseline: float | None = None
-        previous_mupdf_baseline: float | None = None
-        for run_index, run in enumerate(products.runs):
-            if not run.text or not run.visible or run.baseline is None:
-                continue
-            font_size = run.coords[run.FONT_SIZE]
-            ascent = (run.advance_bbox[3] - run.baseline[1]) / font_size
-            descent = (run.baseline[1] - run.advance_bbox[1]) / font_size
-            metric_height = ascent + descent
-            baseline = run.baseline[1]
-            mupdf_baseline = (
-                float32(baseline)
-                if previous_baseline is None or previous_mupdf_baseline is None
-                else float32(previous_mupdf_baseline + float32(baseline - previous_baseline))
-            )
-            previous_baseline = baseline
-            previous_mupdf_baseline = mupdf_baseline
-            next_sequence = (
-                products.runs[run_index + 1].seqno
-                if run_index + 1 < len(products.runs)
-                else float("inf")
-            )
-            start = bisect_left(sequence_numbers, run.seqno)
-            stop = bisect_left(sequence_numbers, next_sequence, start)
-            run_glyphs = [
-                glyph
-                for sequence in sequence_numbers[start:stop]
-                for glyph in glyphs_by_sequence[sequence]
-            ]
-            if not font_size:
-                continue
-            origin_y = float32(float32(float(crop_y1)) - mupdf_baseline)
-            if metric_height:
-                y0 = float32(origin_y - float32(font_size * float32(ascent / metric_height)))
-                y1 = float32(origin_y + float32(font_size * float32(descent / metric_height)))
-            elif run_glyphs:
-                y0 = float32(crop_y1 - max(glyph.ink_bbox[3] for glyph in run_glyphs))
-                y1 = float32(crop_y1 - min(glyph.ink_bbox[1] for glyph in run_glyphs))
-            else:
-                continue
-            current: list[Any] = []
-            for glyph in (*run_glyphs, None):
-                if glyph is not None and not glyph.text.isspace():
-                    current.append(glyph)
-                    continue
-                if not current:
-                    continue
-                text = "".join(item.text for item in current)
-                raw_x0 = current[0].advance_bbox[0] - crop_x0
-                same_line = previous_word_y == (y0, y1)
-                if same_line and previous_raw_x1 is not None and output:
-                    x0 = float32(output[-1][2] + float32(raw_x0 - previous_raw_x1))
-                else:
-                    x0 = float32(raw_x0)
-                x1 = x0
-                raw_previous_x1 = raw_x0
-                for item_index, item in enumerate(current):
-                    if item_index:
-                        x1 = float32(x1 + float32(item.advance_bbox[0] - crop_x0 - raw_previous_x1))
-                    width_units = round(
-                        (item.advance_bbox[2] - item.advance_bbox[0]) / font_size * 1000
-                    )
-                    advance = float32(float32(font_size) * float32(width_units * float32(0.001)))
-                    x1 = float32(x1 + advance)
-                    raw_previous_x1 = item.advance_bbox[2] - crop_x0
-                if len({item.seqno for item in current}) > 1:
-                    x1 = float32(current[-1].advance_bbox[2] - crop_x0)
-                indices = None
-                for index in range(search_from, len(indexed_words)):
-                    candidate = indexed_words[index]
-                    if candidate.text == text:
-                        indices = (
-                            candidate.block_index,
-                            candidate.line_index,
-                            candidate.word_index,
-                        )
-                        search_from = index + 1
-                        break
-                if indices is None:
-                    if same_line and output:
-                        indices = (output[-1][5], output[-1][6], output[-1][7] + 1)
-                    else:
-                        indices = (fallback_block, 0, 0)
-                        fallback_block += 1
-                if same_line and output and x0 - output[-1][2] <= (y1 - y0) * 0.1:
-                    previous = output[-1]
-                    output[-1] = (
-                        *previous[:2],
-                        x1,
-                        previous[3],
-                        previous[4] + text,
-                        *previous[5:],
-                    )
-                else:
-                    output.append((x0, y0, x1, y1, text, *indices))
-                previous_raw_x1 = current[-1].advance_bbox[2] - crop_x0
-                previous_word_y = (y0, y1)
-                current = []
-        indexed: list[tuple[float, float, float, float, str, int, int, int]] = []
-        block_index = 0
-        line_index = 0
-        word_index = 0
-        previous_line: tuple[float, float] | None = None
-        for x0, y0, x1, y1, text, *_indices in output:
-            line = (y0, y1)
-            if previous_line is not None and line != previous_line:
-                gap = y0 - previous_line[1]
-                if gap > min(y1 - y0, previous_line[1] - previous_line[0]) * 0.25:
-                    block_index += 1
-                    line_index = 0
-                else:
-                    line_index += 1
-                word_index = 0
-            indexed.append((x0, y0, x1, y1, text, block_index, line_index, word_index))
-            word_index += 1
-            previous_line = line
-        return indexed
-
     def get_text(self, kind: str = "text", *args: object, **kwargs: object) -> object:
         if self.parent is None:
             raise AssertionError("page is None")
         del args
         clip = kwargs.pop("clip", None)
         sort = bool(kwargs.pop("sort", False))
-        for option in ("flags", "textpage"):
-            kwargs.pop(option, None)
+        flags = kwargs.pop("flags", None)
+        kwargs.pop("textpage", None)
+        delimiters_value = kwargs.pop("delimiters", None)
+        delimiters = "" if delimiters_value is None else str(delimiters_value)
         if kwargs:
             raise TypeError(f"unsupported text options: {', '.join(kwargs)}")
+        if self._document.pdf is not None and kind in {"text", "plain", "words", "blocks"}:
+            projection = capture_text(
+                self._document.capability_page(self._page_number),
+                flags=195 if flags is None else int(cast(Any, flags)),
+                clip=clip,
+            )
+            if kind == "words":
+                return projection.words(sort=sort, delimiters=delimiters)
+            if kind == "blocks":
+                return projection.block_records(sort=sort)
+            return projection.text(sort=sort)
         text_view = self._native_text_view()
         if clip is not None:
             clip_bbox = cast(tuple[float, float, float, float], clip)
@@ -471,12 +319,12 @@ class Page(PdfPageObject):
                 for element in text_view.elements
                 if element.bbox is not None and bbox_intersects(clip_bbox, element.bbox)
             )
-            text_view = type(text_view)(elements, page_number=self._page.page_number)
+            text_view = type(text_view)(elements, page_number=self._page_number)
         text = text_view.text
         if sort:
             text = "\n".join(sorted(text.splitlines(), key=str.casefold))
         if kind in {"text", "plain"}:
-            return self._mupdf_plain_text() if clip is None and not sort else text
+            return text + ("\n" if text else "")
         if kind == "html":
             return "<div>" + escape(text).replace("\n", "<br>\n") + "</div>"
         if kind == "xhtml":
@@ -530,27 +378,15 @@ class Page(PdfPageObject):
             payload = {"width": self._page.width, "height": self._page.height, "blocks": blocks}
             return json.dumps(payload) if kind in {"json", "rawjson"} else payload
         if kind == "words":
-            if clip is None:
-                return self._mupdf_words()
-            x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
-            words = tuple(
-                word
-                for word in self._native_text_view().words
-                if word.bbox is not None
-                and word.bbox[0] < x1
-                and word.bbox[2] > x0
-                and word.bbox[1] < y1
-                and word.bbox[3] > y0
-            )
             return [
                 (
-                    *(word.bbox if word.bbox is not None else (0.0, 0.0, 0.0, 0.0)),
+                    *(word.bbox or (0.0, 0.0, 0.0, 0.0)),
                     word.text,
                     word.block_index,
                     word.line_index,
                     word.word_index,
                 )
-                for word in words
+                for word in text_view.words
             ]
         raise ValueError(f"unsupported text extraction kind: {kind}")
 
@@ -601,7 +437,7 @@ class Page(PdfPageObject):
                 y + line_height * len(lines),
             ),
         )
-        self._owner._append_block(self._page.page_number, block)
+        self._owner._append_block(self._page_number, block)
         return len(text)
 
     def insert_textbox(
@@ -627,7 +463,7 @@ class Page(PdfPageObject):
         if self._owner is None:
             raise RuntimeError("drawing requires a document-owned page")
         self._owner._append_figure(
-            self._page.page_number,
+            self._page_number,
             Figure(
                 order=max((item.order for item in self._page.elements), default=-1) + 1,
                 bbox=coerce_bbox(rect),
@@ -635,7 +471,7 @@ class Page(PdfPageObject):
                 metadata={"color": color, "fill": fill, "width": width},
             ),
         )
-        self._page = self._owner._document.pages[self._page.page_number - 1]
+        self._page = self._owner._document.pages[self._page_number - 1]
         return self
 
     def draw_line(
@@ -650,7 +486,7 @@ class Page(PdfPageObject):
         if self._owner is None:
             raise RuntimeError("drawing requires a document-owned page")
         self._owner._append_figure(
-            self._page.page_number,
+            self._page_number,
             Figure(
                 order=max((item.order for item in self._page.elements), default=-1) + 1,
                 bbox=(p1[0], p1[1], p2[0], p2[1]),
@@ -658,7 +494,7 @@ class Page(PdfPageObject):
                 metadata={"p1": p1, "p2": p2, "color": color, "width": width},
             ),
         )
-        self._page = self._owner._document.pages[self._page.page_number - 1]
+        self._page = self._owner._document.pages[self._page_number - 1]
         return self
 
     def get_textpage(self, *args: object, **kwargs: object) -> "TextPage":
@@ -678,7 +514,7 @@ class Page(PdfPageObject):
         if matrix is not None and matrix.d != matrix.a:
             raise ValueError("non-uniform pixmap matrices are not supported")
         requested_dpi = float(dpi if dpi is not None else 72.0 * scale)
-        engine_page = self._document.capability_page(self._page.page_number)
+        engine_page = self._document.capability_page(self._page_number)
         raster = engine_page.render().rasterize(scale=max(0.01, requested_dpi / 72.0), crop=clip)
         data = bytes(raster.pixels)
         if not alpha and raster.channels == 4:
@@ -695,7 +531,7 @@ class Page(PdfPageObject):
         clip = kwargs.get("clip")
         query = needle.casefold()
         results = [
-            cast(BBox, item.bbox)
+            item.bbox
             for item in self._page.elements
             if item.bbox is not None and query in str(getattr(item, "text", "")).casefold()
         ]
@@ -719,7 +555,7 @@ class Page(PdfPageObject):
         bbox = cast(tuple[float, float, float, float], link.get("from", self.mediabox))
         url = link.get("uri")
         owner._replace_links(
-            self._page.page_number,
+            self._page_number,
             (*self._page.links, Link(bbox=bbox, url=str(url) if url is not None else None)),
         )
 
@@ -734,7 +570,7 @@ class Page(PdfPageObject):
             raise ValueError("link was not found")
         url = link.get("uri")
         links[index] = replace(links[index], bbox=bbox, url=str(url) if url is not None else None)
-        owner._replace_links(self._page.page_number, tuple(links))
+        owner._replace_links(self._page_number, tuple(links))
 
     def delete_link(self, link: Mapping[str, object]) -> None:
         owner = self._owner
@@ -746,10 +582,10 @@ class Page(PdfPageObject):
         if index is None:
             raise ValueError("link was not found")
         del links[index]
-        owner._replace_links(self._page.page_number, tuple(links))
+        owner._replace_links(self._page_number, tuple(links))
 
     def get_drawings(self) -> list[dict[str, object]]:
-        page = self._document.capability_page(self._page.page_number).structured_view
+        page = self._document.capability_page(self._page_number).structured_view
         figures = self._page.figures or page.figures
         drawings = [
             {"type": figure.kind, "bbox": figure.bbox, **dict(figure.metadata)}
@@ -778,7 +614,7 @@ class Page(PdfPageObject):
 
     def get_images(self, full: bool = False) -> list[dict[str, object]]:
         del full
-        images = self._document.capability_page(self._page.page_number).extract_images()
+        images = self._document.capability_page(self._page_number).extract_images()
         return [
             {
                 "bbox": image.rect or image.image_clip,
@@ -805,7 +641,7 @@ class Page(PdfPageObject):
         if document is None:
             raise RuntimeError("annotation mutation requires a document-owned page")
         return [
-            Annot(document, self._page.page_number, annotation, index)
+            Annot(document, self._page_number, annotation, index)
             for index, annotation in enumerate(self._page.annotations)
             if annotation.subtype != "CoreFigure"
         ]
@@ -814,7 +650,7 @@ class Page(PdfPageObject):
         if self._owner is None:
             raise RuntimeError("widget access requires a document-owned page")
         return [
-            Widget(self._owner, self._page.page_number, field, index)
+            Widget(self._owner, self._page_number, field, index)
             for index, field in enumerate(self._page.form_fields)
         ]
 
@@ -829,11 +665,11 @@ class Page(PdfPageObject):
                 bbox=coerce_bbox(rect),
             ),
         )
-        owner._replace_page_annotations(self._page.page_number, annotations)
-        self._page = owner._document.pages[self._page.page_number - 1]
+        owner._replace_page_annotations(self._page_number, annotations)
+        self._page = owner._document.pages[self._page_number - 1]
         return Annot(
             owner,
-            self._page.page_number,
+            self._page_number,
             self._page.annotations[-1],
             len(self._page.annotations) - 1,
         )
@@ -857,7 +693,7 @@ class Page(PdfPageObject):
 
     def redact(self, bbox: tuple[float, float, float, float]) -> None:
         pending = getattr(self._document, "_pending_redactions", {})
-        pending.setdefault(self._page.page_number, []).append(tuple(bbox))
+        pending.setdefault(self._page_number, []).append(tuple(bbox))
         cast(Any, self._document)._pending_redactions = pending
 
     def apply_redactions(self) -> None:
@@ -1012,7 +848,19 @@ class Document(ClosingMixin):
             raise ValueError("page not in document")
         page_index = index if isinstance(index, int) else index[1]
         page_index %= self.page_count
-        page = Page(self._document, self._document.pages[page_index], self)
+        if self._document.pdf is not None:
+            source = self._document.pdf.pages[page_index]
+            media = source.media_box or (0.0, 0.0, 612.0, 792.0)
+            model = StructuredPage(
+                page_number=page_index + 1,
+                width=media[2] - media[0],
+                height=media[3] - media[1],
+                rotation=source.rotation,
+            )
+            page = Page(self._document, model, self)
+            page._lazy_source = source
+        else:
+            page = Page(self._document, self._document.pages[page_index], self)
         page._number = page_index if isinstance(index, int) else index
         return page
 

@@ -48,17 +48,35 @@ and closed-document errors. `Document` owns its lifecycle directly rather than i
 pypdf's constructor and page-access policies. The original native source remains owned and
 is closed even after a structured editing snapshot replaces the current document state.
 
-Run the initial tests with:
+Text, words, and text-block extraction now project native glyph captures directly, with
+reader-specific font metrics, character clipping, spacing, and line/block grouping. Loading
+a page no longer builds the whole document's structured layout. Differential coverage adds
+`mupdf-title.pdf` and shared in-memory variants for all 14 standard fonts, word delimiters,
+partial character clipping, orthogonal text rotations, hidden text, and spacing flags.
+Symbol and ZapfDingbats substitute advances follow raw character codes even with explicit
+Latin encodings. These cases do not establish parity for arbitrary fonts or layouts.
+
+Run the focused tests with:
 
 ```sh
 uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf.py \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_document.py \
-  tests/src/core_pdf/api/compat/differential/test_pymupdf_geometry.py
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_geometry.py \
+  tests/src/core_pdf/api/compat/differential/test_pymupdf_text.py
 ```
 
-These initial tests use four explicit fixtures. They do not yet run the complete PyMuPDF corpus
+These tests use five explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
 or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
+
+A diagnostic first-page audit of all 179 PDFs in the pinned PyMuPDF corpus completed
+176 comparisons: 126 had exactly equal plain text and 54 had exactly equal word records
+(including coordinates). Three exceeded the audit's ten-second per-file limit:
+`test_4147.pdf`, `test_4182.pdf`, and `test_4599.pdf`. Empty-text pages count in these results;
+this is not an all-page compatibility measure or part of the regression suite. Differences
+include ligature preservation (`2201.00069.pdf`), bidirectional text (`test-E+A.pdf`),
+character decoding (`test_2957_1.pdf`), and CJK spacing (`chinese-tables.pdf`). These provide
+concrete cases for the next text increments.
 
 ## Remaining implementation
 
@@ -85,9 +103,9 @@ Work must cover these areas before claiming complete compatibility:
 6. Remaining public facilities, including tables, structured content, optional integrations,
    and supported input formats, with explicit behavior and dependency contracts.
 
-Known remaining examples from the initial `small-table.pdf` comparison: plain text combines table cells
-that the reference separates into lines; word boxes have different vertical metrics;
-`Document.tobytes()` is absent. Existing edit helpers change structured snapshots
+Known remaining examples: extraction formats other than text/words/blocks still use the old
+structured layout; image blocks, sorted-text reconstruction, several text flags, and text-page
+reuse need implementation. `Document.tobytes()` is absent. Existing edit helpers change structured snapshots
 without providing the full persistent editing behavior of PyMuPDF.
 
 Each implementation increment needs differential tests over the same PDFs and explicit
