@@ -162,17 +162,24 @@ def english_word_ranks() -> Mapping[str, int]:
         return {word: freq.rank for word, freq in english_word_frequencies().items()}
 
 
-def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
-    res = files(WORDLIST_PACKAGE).joinpath(NORVIG_COUNTS)
+def internal_gzipped_wordlist_lines(resource: str) -> list[str]:
+    """The lines of a gzipped bundled wordlist, however the loader exposes it.
+
+    A zipped or namespace package cannot always hand back bytes, so fall back to
+    materializing the resource on disk and streaming it.
+    """
+    res = files(WORDLIST_PACKAGE).joinpath(resource)
     try:
-        raw_bytes = res.read_bytes()
-        lines = gzip.decompress(raw_bytes).decode("utf-8").splitlines()
+        return gzip.decompress(res.read_bytes()).decode("utf-8").splitlines()
     except (TypeError, ValueError, OSError, AttributeError):
         from importlib.resources import as_file
 
         with as_file(res) as path_obj, gzip.open(str(path_obj), "rt", encoding="utf-8") as handle:
-            lines = handle.readlines()
+            return handle.readlines()
 
+
+def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
+    lines = internal_gzipped_wordlist_lines(NORVIG_COUNTS)
     for rank, line in enumerate(lines, start=1):
         parts = line.strip().split()
         if len(parts) != 2:
@@ -189,16 +196,7 @@ def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
 
 
 def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
-    res = files(WORDLIST_PACKAGE).joinpath(WORDNINJA_WORDS)
-    try:
-        raw_bytes = res.read_bytes()
-        lines = gzip.decompress(raw_bytes).decode("utf-8").splitlines()
-    except (TypeError, ValueError, OSError, AttributeError):
-        from importlib.resources import as_file
-
-        with as_file(res) as path_obj, gzip.open(str(path_obj), "rt", encoding="utf-8") as handle:
-            lines = handle.readlines()
-
+    lines = internal_gzipped_wordlist_lines(WORDNINJA_WORDS)
     for rank, line in enumerate(lines, start=1):
         word = line.strip().casefold()
         if not word or not word.isalpha() or word in frequencies:
