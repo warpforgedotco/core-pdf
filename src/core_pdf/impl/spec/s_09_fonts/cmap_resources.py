@@ -12,7 +12,7 @@ RESOURCE_PACKAGE = "core_pdf.impl.spec.s_09_fonts.data"
 
 
 def normalized_cmap_name(name: str) -> str:
-    return name[1:] if name.startswith("/") else name
+    return name.removeprefix("/")
 
 
 @cache

@@ -62,7 +62,7 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
                         continue
                     values = w2[index + 1]
                     if isinstance(values, (list, tuple)):
-                        for offset in range(0, len(values) // 3):
+                        for offset in range(len(values) // 3):
                             cid = first + offset
                             if internal_MIN_CID <= cid <= internal_MAX_CID:
                                 vertical_metrics[cid] = (

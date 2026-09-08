@@ -122,7 +122,7 @@ class TableSettings:
         if unknown:
             if "strategy" in unknown:
                 raise TypeError("strategy is not a valid table setting")
-            raise ValueError(f"Unknown table setting: {sorted(unknown)[0]}")
+            raise ValueError(f"Unknown table setting: {min(unknown)}")
         self.vertical_strategy = values.pop("vertical_strategy", "lines")
         self.horizontal_strategy = values.pop("horizontal_strategy", "lines")
         self.text_settings = values.pop("text_settings", {})

@@ -164,7 +164,7 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
                     valid_range_count += 1
                 else:
                     invalid_range_count += 1
-            elif t3.startswith(b"<") or t3.startswith(b"("):
+            elif t3.startswith((b"<", b"(")):
                 try:
                     base_dst = internal_decode_utf16be(decode_cmap_token(t3))
                     mappings = expand_range(

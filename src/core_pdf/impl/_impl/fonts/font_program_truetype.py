@@ -80,8 +80,12 @@ class internal_RecoverableFontTableWarningFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
         return not (
-            message.endswith("extra bytes in post.stringData array")
-            or message.endswith(" timestamp seems very low; regarding as unix timestamp")
+            message.endswith(
+                (
+                    "extra bytes in post.stringData array",
+                    " timestamp seems very low; regarding as unix timestamp",
+                )
+            )
         )
 
 
