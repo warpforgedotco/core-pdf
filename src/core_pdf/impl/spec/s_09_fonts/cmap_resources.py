@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 
@@ -14,13 +15,26 @@ def normalized_cmap_name(name: str) -> str:
     return name[1:] if name.startswith("/") else name
 
 
-def resolve_cmap_resource(name: str) -> bytes | None:
+@cache
+def internal_cmap_resource_index() -> dict[str, Traversable]:
+    """Map each CMap resource name to the file a lookup for it resolves to.
+
+    The bundled resource tree is fixed at install time, so it is walked once
+    rather than per lookup: a miss used to stat all 207 files, and resolving the
+    CMaps of one CJK page walked the tree dozens of times over.
+
+    The walk keeps the order the per-lookup scan used, so the entry chosen for a
+    name is the one that scan would have returned: the first non-deprecated
+    match wins outright, and a deprecated match is only a fallback -- the last
+    one seen, which is what repeated assignment to its ``deprecated`` local left
+    behind.
+    """
     root = resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
     if not root.is_dir():
-        return None
+        return {}
 
-    target = normalized_cmap_name(name)
-    deprecated: Traversable | None = None
+    preferred: dict[str, Traversable] = {}
+    deprecated: dict[str, Traversable] = {}
     candidates: list[tuple[Traversable, str | None]] = [(root, None)]
     while candidates:
         current, parent_name = candidates.pop()
@@ -28,12 +42,23 @@ def resolve_cmap_resource(name: str) -> bytes | None:
             if child.is_dir():
                 candidates.append((child, child.name))
                 continue
-            if parent_name != "CMap" or child.name != target:
+            if parent_name != "CMap":
                 continue
             if "/deprecated/" not in str(child):
-                return child.read_bytes()
-            deprecated = child
-    return deprecated.read_bytes() if deprecated is not None else None
+                preferred.setdefault(child.name, child)
+            else:
+                deprecated[child.name] = child
+    return deprecated | preferred
+
+
+def cmap_resource_exists(name: str) -> bool:
+    """Whether a CMap resource is bundled, without reading it."""
+    return normalized_cmap_name(name) in internal_cmap_resource_index()
+
+
+def resolve_cmap_resource(name: str) -> bytes | None:
+    entry = internal_cmap_resource_index().get(normalized_cmap_name(name))
+    return entry.read_bytes() if entry is not None else None
 
 
 def resolve_cmap_decoder(name: str) -> CMapDecoder | None:

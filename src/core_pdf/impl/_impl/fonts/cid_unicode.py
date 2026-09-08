@@ -10,9 +10,9 @@ from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl._impl.fonts.cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
+    cmap_resource_exists,
     normalized_cmap_name,
     resolve_cmap_decoder,
-    resolve_cmap_resource,
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
 )
@@ -57,7 +57,7 @@ def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
 
 def compact_cmap(name: str) -> CompactCMap | None:
     normalized_name = normalized_cmap_name(name)
-    if resolve_cmap_resource(normalized_name) is None:
+    if not cmap_resource_exists(normalized_name):
         return None
     decoder = resolve_cmap_decoder(normalized_name)
     return internal_compact_cmap(decoder) if decoder is not None else None

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl.spec.s_09_fonts.cmap_resources import normalized_cmap_name, resolve_cmap_resource
+from core_pdf.impl.spec.s_09_fonts.cmap_resources import (
+    cmap_resource_exists,
+    normalized_cmap_name,
+    resolve_cmap_resource,
+)
 
 RESOURCE_PACKAGE = "core_pdf.impl.spec.s_09_fonts.data"
 CMapUnicodeSource = tuple[str, str, int]
@@ -334,6 +338,7 @@ def unicode_candidate_preference(text: str) -> tuple[int, int, int, int, int]:
 
 
 __all__ = (
+    "cmap_resource_exists",
     "normalized_cmap_name",
     "predefined_cmap_unicode",
     "resolve_cmap_decoder",

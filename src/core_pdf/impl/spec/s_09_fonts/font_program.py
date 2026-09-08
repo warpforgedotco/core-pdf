@@ -493,8 +493,19 @@ def internal_cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> 
     if discriminant < 0.0:
         return ()
     root_delta = sqrt(discriminant)
-    roots = ((-b - root_delta) / (2.0 * a), (-b + root_delta) / (2.0 * a))
-    return tuple(dict.fromkeys(root for root in roots if 0.0 < root < 1.0))
+    first = (-b - root_delta) / (2.0 * a)
+    second = (-b + root_delta) / (2.0 * a)
+    # At most two roots, so the duplicate check is a comparison rather than a
+    # dict build; this runs twice per curve segment.
+    first_interior = 0.0 < first < 1.0
+    second_interior = 0.0 < second < 1.0
+    if first_interior and second_interior:
+        return (first,) if first == second else (first, second)
+    if first_interior:
+        return (first,)
+    if second_interior:
+        return (second,)
+    return ()
 
 
 def internal_cubic_point(
@@ -717,12 +728,20 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
         if depth > TYPE2_MAX_SUBR_DEPTH:
             raise ValueError("invalid Type 2 charstring")
         pos = 0
+        # Operand bytes outnumber operator bytes several to one, so the number
+        # branch below is written out rather than calling push(), and the three
+        # lookups it used to repeat per byte are bound once.
+        program_length = len(program)
+        parse_number = CFFFont.internal_parse_number
+        stack_append = stack.append
         try:
-            while pos < len(program):
+            while pos < program_length:
                 byte = program[pos]
                 if byte > 31 or byte in {28, 255}:
-                    value, pos = CFFFont.internal_parse_number(program, pos)
-                    push(value)
+                    value, pos = parse_number(program, pos)
+                    if len(stack) >= internal_TYPE2_MAX_STACK or not isfinite(value):
+                        raise ValueError("invalid Type 2 operand stack")
+                    stack_append(float(value))
                     continue
                 pos += 1
                 match byte:

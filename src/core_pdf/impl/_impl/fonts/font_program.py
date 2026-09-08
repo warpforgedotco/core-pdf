@@ -28,7 +28,6 @@ from core_pdf.impl.spec.s_09_fonts.font_program import (
     internal_CFF_EXPERT_ENCODING_CODES,
     internal_compose_cff_matrices,
     internal_cubic_extrema_times,
-    internal_cubic_point,
     internal_DEFAULT_CFF_FONT_MATRIX,
 )
 from core_pdf.impl.spec.s_09_fonts.font_program import CFFFont as PdfCFFFont
@@ -53,6 +52,7 @@ assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
 internal_TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
 internal_CUBIC_FLATNESS = 0.25
 internal_CUBIC_MAX_DEPTH = 12
+internal_CUBIC_TOLERANCE_SQUARED = internal_CUBIC_FLATNESS * internal_CUBIC_FLATNESS
 
 
 def internal_cff_font_matrix(
@@ -568,29 +568,6 @@ def internal_feature_from_contours(
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
 
-def internal_cubic_is_flat(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-) -> bool:
-    dx = p3[0] - p0[0]
-    dy = p3[1] - p0[1]
-    chord_squared = dx * dx + dy * dy
-    tolerance_squared = internal_CUBIC_FLATNESS * internal_CUBIC_FLATNESS
-    if chord_squared <= 1e-18:
-        return (
-            max(
-                (p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2,
-                (p2[0] - p0[0]) ** 2 + (p2[1] - p0[1]) ** 2,
-            )
-            <= tolerance_squared
-        )
-    cross1 = dx * (p1[1] - p0[1]) - dy * (p1[0] - p0[0])
-    cross2 = dx * (p2[1] - p0[1]) - dy * (p2[0] - p0[0])
-    return max(cross1 * cross1, cross2 * cross2) <= tolerance_squared * chord_squared
-
-
 def internal_cubic_sample_times(
     p0: tuple[float, float],
     p1: tuple[float, float],
@@ -603,38 +580,68 @@ def internal_cubic_sample_times(
         *internal_cubic_extrema_times(p0[0], p1[0], p2[0], p3[0]),
         *internal_cubic_extrema_times(p0[1], p1[1], p2[1], p3[1]),
     }
+    # Bound in the enclosing scope rather than looked up per recursion: this is
+    # the hottest loop in glyph outlining, entered once per curve segment and
+    # recursing until every span is flat.
+    add_time = times.add
+    tolerance_squared = internal_CUBIC_TOLERANCE_SQUARED
+    max_depth = internal_CUBIC_MAX_DEPTH
 
     def subdivide(
-        start: tuple[float, float],
-        control1: tuple[float, float],
-        control2: tuple[float, float],
-        end: tuple[float, float],
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        x3: float,
+        y3: float,
         start_t: float,
         end_t: float,
         depth: int,
     ) -> None:
-        if depth >= internal_CUBIC_MAX_DEPTH or internal_cubic_is_flat(
-            start, control1, control2, end
-        ):
-            times.add(end_t)
-            return
-        point01 = ((start[0] + control1[0]) / 2.0, (start[1] + control1[1]) / 2.0)
-        point12 = (
-            (control1[0] + control2[0]) / 2.0,
-            (control1[1] + control2[1]) / 2.0,
-        )
-        point23 = ((control2[0] + end[0]) / 2.0, (control2[1] + end[1]) / 2.0)
-        point012 = ((point01[0] + point12[0]) / 2.0, (point01[1] + point12[1]) / 2.0)
-        point123 = ((point12[0] + point23[0]) / 2.0, (point12[1] + point23[1]) / 2.0)
-        midpoint = (
-            (point012[0] + point123[0]) / 2.0,
-            (point012[1] + point123[1]) / 2.0,
-        )
-        middle_t = (start_t + end_t) / 2.0
-        subdivide(start, point01, point012, midpoint, start_t, middle_t, depth + 1)
-        subdivide(midpoint, point123, point23, end, middle_t, end_t, depth + 1)
+        # The flatness test is written out here rather than called: it runs once
+        # per subdivision and the call was a fifth of the cost of outlining a
+        # glyph. Points travel as loose coordinates for the same reason -- the
+        # de Casteljau step below builds six of them per level, and packing each
+        # into a tuple only to index it straight back out dominated the rest.
+        if depth < max_depth:
+            dx = x3 - x0
+            dy = y3 - y0
+            chord_squared = dx * dx + dy * dy
+            if chord_squared <= 1e-18:
+                first = (x1 - x0) ** 2 + (y1 - y0) ** 2
+                second = (x2 - x0) ** 2 + (y2 - y0) ** 2
+                # ``second if second > first else first`` is what max() of two
+                # arguments does, NaN included; the same shape is used below.
+                flat = (second if second > first else first) <= tolerance_squared
+            else:
+                cross1 = dx * (y1 - y0) - dy * (x1 - x0)
+                cross2 = dx * (y2 - y0) - dy * (x2 - x0)
+                first = cross1 * cross1
+                second = cross2 * cross2
+                flat = (second if second > first else first) <= tolerance_squared * chord_squared
+            if not flat:
+                x01 = (x0 + x1) / 2.0
+                y01 = (y0 + y1) / 2.0
+                x12 = (x1 + x2) / 2.0
+                y12 = (y1 + y2) / 2.0
+                x23 = (x2 + x3) / 2.0
+                y23 = (y2 + y3) / 2.0
+                x012 = (x01 + x12) / 2.0
+                y012 = (y01 + y12) / 2.0
+                x123 = (x12 + x23) / 2.0
+                y123 = (y12 + y23) / 2.0
+                mid_x = (x012 + x123) / 2.0
+                mid_y = (y012 + y123) / 2.0
+                middle_t = (start_t + end_t) / 2.0
+                next_depth = depth + 1
+                subdivide(x0, y0, x01, y01, x012, y012, mid_x, mid_y, start_t, middle_t, next_depth)
+                subdivide(mid_x, mid_y, x123, y123, x23, y23, x3, y3, middle_t, end_t, next_depth)
+                return
+        add_time(end_t)
 
-    subdivide(p0, p1, p2, p3, 0.0, 1.0, 0)
+    subdivide(p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1], 0.0, 1.0, 0)
     return tuple(sorted(times))
 
 
@@ -702,10 +709,18 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         nonlocal current_min_x, current_min_y, current_max_x, current_max_y
         nonlocal current_has_points
         current.append((px, py))
-        current_min_x = min(current_min_x, px)
-        current_min_y = min(current_min_y, py)
-        current_max_x = max(current_max_x, px)
-        current_max_y = max(current_max_y, py)
+        # Comparisons rather than min()/max(): this runs once per flattened
+        # curve point, and the four builtin calls cost more than the branches
+        # they replace. NaN takes the same arm either way -- both forms keep the
+        # incumbent when the comparison is false.
+        if px < current_min_x:
+            current_min_x = px
+        if py < current_min_y:
+            current_min_y = py
+        if px > current_max_x:
+            current_max_x = px
+        if py > current_max_y:
+            current_max_y = py
         current_has_points = True
 
     def move(dx: float, dy: float) -> None:
@@ -727,8 +742,24 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         point1 = (x + dx1, y + dy1)
         point2 = (point1[0] + dx2, point1[1] + dy2)
         point3 = (point2[0] + dx3, point2[1] + dy3)
+        x0, y0 = point0
+        x1, y1 = point1
+        x2, y2 = point2
+        x3, y3 = point3
+        # internal_cubic_point written out, to spend one call per sample instead
+        # of two and to keep the coordinates unpacked. The ** form is load
+        # bearing: mt**3 and mt*mt*mt disagree on about a quarter of random
+        # floats, which would move the golden rasters.
         for t in internal_cubic_sample_times(point0, point1, point2, point3):
-            record_point(*internal_cubic_point(point0, point1, point2, point3, t))
+            mt = 1.0 - t
+            mt3 = mt**3
+            t3 = t**3
+            mt2t = 3.0 * mt * mt * t
+            mtt2 = 3.0 * mt * t * t
+            record_point(
+                mt3 * x0 + mt2t * x1 + mtt2 * x2 + t3 * x3,
+                mt3 * y0 + mt2t * y1 + mtt2 * y2 + t3 * y3,
+            )
         x, y = point3
 
     def has_current_point() -> bool:
