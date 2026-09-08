@@ -1557,6 +1557,15 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
 
 
+def internal_corner_bounds(
+    corners: tuple[tuple[float, float], ...],
+) -> tuple[float, float, float, float]:
+    """The axis-aligned box around transformed glyph corners."""
+    xs = [point[0] for point in corners]
+    ys = [point[1] for point in corners]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 def internal_pdfminer_normalized_width(glyph: Any) -> float:
     width_code = (
         glyph.cid
@@ -1930,10 +1939,7 @@ def extract_pages(  # noqa: C901 - mirrors pdfminer's own single-function
                         for local_horizontal in (local_left, local_left + local_font_size)
                         for local_vertical in (local_top + local_advance, local_top)
                     )
-                    x0 = min(point[0] for point in corners)
-                    y0 = min(point[1] for point in corners)
-                    x1 = max(point[0] for point in corners)
-                    y1 = max(point[1] for point in corners)
+                    x0, y0, x1, y1 = internal_corner_bounds(corners)
                     effective_font_height = x1 - x0
                     line_origin = glyph_provenance.get("line_matrix_origin")
                     if isinstance(line_origin, (tuple, list)) and len(line_origin) == 2:
@@ -1970,10 +1976,7 @@ def extract_pages(  # noqa: C901 - mirrors pdfminer's own single-function
                                 )
                                 for local_vertical in (local_top + local_advance, local_top)
                             )
-                            x0 = min(point[0] for point in corners)
-                            y0 = min(point[1] for point in corners)
-                            x1 = max(point[0] for point in corners)
-                            y1 = max(point[1] for point in corners)
+                            x0, y0, x1, y1 = internal_corner_bounds(corners)
                 elif (
                     baseline is not None
                     and isinstance(text_matrix, (tuple, list))
@@ -2025,10 +2028,7 @@ def extract_pages(  # noqa: C901 - mirrors pdfminer's own single-function
                         for along in (0.0, advance)
                         for vertical in (descent, top)
                     )
-                    x0 = min(point[0] for point in corners)
-                    y0 = min(point[1] for point in corners)
-                    x1 = max(point[0] for point in corners)
-                    y1 = max(point[1] for point in corners)
+                    x0, y0, x1, y1 = internal_corner_bounds(corners)
                     effective_font_height = x1 - x0 if orientation % 180 else y1 - y0
                     coordinates_in_layout_space = True
                 elif orientation == 0:
