@@ -702,10 +702,25 @@ class Page:
         links = self._page.links
         return [{"uri": link.url, "kind": link.link_type, "from": link.bbox} for link in links]
 
-    def insert_link(self, link: Mapping[str, object]) -> None:
+    def internal_link_owner(self) -> Document:
+        """The document backing this page, for a mutation that cannot go anywhere else."""
         owner = self._owner
         if owner is None:
             raise RuntimeError("link mutation requires a document-owned page")
+        return owner
+
+    def internal_link_index(
+        self, bbox: tuple[float, float, float, float]
+    ) -> tuple[list[Link], int]:
+        """This page's links, and the position of the one ``bbox`` addresses."""
+        links = list(self._page.links)
+        index = next((index for index, item in enumerate(links) if item.bbox == bbox), None)
+        if index is None:
+            raise ValueError("link was not found")
+        return links, index
+
+    def insert_link(self, link: Mapping[str, object]) -> None:
+        owner = self.internal_link_owner()
         bbox = cast(tuple[float, float, float, float], link.get("from", self.mediabox))
         url = link.get("uri")
         owner._replace_links(
@@ -714,27 +729,17 @@ class Page:
         )
 
     def update_link(self, link: Mapping[str, object]) -> None:
-        owner = self._owner
-        if owner is None:
-            raise RuntimeError("link mutation requires a document-owned page")
+        owner = self.internal_link_owner()
         bbox = cast(tuple[float, float, float, float], link.get("from", self.mediabox))
-        links = list(self._page.links)
-        index = next((index for index, item in enumerate(links) if item.bbox == bbox), None)
-        if index is None:
-            raise ValueError("link was not found")
+        links, index = self.internal_link_index(bbox)
         url = link.get("uri")
         links[index] = replace(links[index], bbox=bbox, url=str(url) if url is not None else None)
         owner._replace_links(self._page_number, tuple(links))
 
     def delete_link(self, link: Mapping[str, object]) -> None:
-        owner = self._owner
-        if owner is None:
-            raise RuntimeError("link mutation requires a document-owned page")
+        owner = self.internal_link_owner()
         bbox = cast(tuple[float, float, float, float], link.get("from", self.mediabox))
-        links = list(self._page.links)
-        index = next((index for index, item in enumerate(links) if item.bbox == bbox), None)
-        if index is None:
-            raise ValueError("link was not found")
+        links, index = self.internal_link_index(bbox)
         del links[index]
         owner._replace_links(self._page_number, tuple(links))
 
