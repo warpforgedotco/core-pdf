@@ -32,6 +32,7 @@ from core_pdf.impl._impl.output.model import (
     TableColumnBand,
     TableRowBand,
     TextLine,
+    internal_join_text_lines,
 )
 
 ElementResultT = TypeVar("ElementResultT")
@@ -390,17 +391,13 @@ def internal_selected_pages(document: Document, pages: PageSelection | None) -> 
     return tuple(document.pages[index] for index in indexes)
 
 
-def internal_page_lines(page: Page) -> tuple[TextLine, ...]:
-    return tuple(line for block in page.blocks for line in block.lines)
-
-
 def document_to_csv(document: Document, *, pages: PageSelection | None = None) -> str:
     """Export deterministic page text rows with geometry as CSV."""
     output = StringIO()
     rows = writer(output, lineterminator="\n")
     rows.writerow(("page_number", "line_index", "text", "x0", "y0", "x1", "y1"))
     for page in internal_selected_pages(document, pages):
-        for index, line in enumerate(internal_page_lines(page)):
+        for index, line in enumerate(page.text_view.lines):
             bbox = line.bbox
             rows.writerow(
                 (
@@ -423,7 +420,7 @@ def document_to_tei(document: Document, *, pages: PageSelection | None = None) -
     body = SubElement(text, "body")
     for page in internal_selected_pages(document, pages):
         SubElement(body, "pb", {"n": str(page.page_number)})
-        for line in internal_page_lines(page):
+        for line in page.text_view.lines:
             paragraph = SubElement(body, "p")
             paragraph.text = line.text
     return tostring(root, encoding="unicode", short_empty_elements=True)
@@ -517,7 +514,7 @@ def block_to_markdown(block: Block) -> str:
             for line in block.lines
             for prefix in (internal_list_prefix(line.text),)
         )
-    text = "\n".join(internal_markdown_line(line) for line in block.lines)
+    text = internal_join_text_lines(block.lines, internal_markdown_line)
     if block.kind is BlockKind.HEADING:
         return f"{'#' * (block.level or 2)} {text}"
     return text
@@ -547,7 +544,7 @@ def block_to_html(block: Block) -> str:
 
     if block.kind is BlockKind.HEADING:
         tag = f"h{block.level or 2}"
-        heading = "<br />".join(internal_html_line(line) for line in block.lines)
+        heading = internal_join_text_lines(block.lines, internal_html_line, separator="<br />")
         return f"<{tag}{attributes}>{heading}</{tag}>"
     if block.kind is BlockKind.LIST:
         items = "".join(
@@ -555,7 +552,7 @@ def block_to_html(block: Block) -> str:
             for line in block.lines
         )
         return f"<ul{attributes}>{items}</ul>"
-    text = "<br />".join(internal_html_line(line) for line in block.lines)
+    text = internal_join_text_lines(block.lines, internal_html_line, separator="<br />")
     return f"<p{attributes}>{text}</p>"
 
 

@@ -11,7 +11,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
 
 from core_pdf.impl._impl.document.document_xref import DocumentXRefMixin
-from core_pdf.impl._impl.document.fields import collect_field_records
+from core_pdf.impl._impl.document.fields import collect_field_records, resolve_field_array
 from core_pdf.impl._impl.document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl._impl.document.page import PAGE_INHERITED_KEYS
 from core_pdf.impl._impl.document.page_labels import format_page_label
@@ -960,14 +960,9 @@ class PdfDocument(
         af = self.acroform
         records: list[RawFormField] = []
         if af is not None:
-            field_list = af.get("Fields")
-            if field_list is None:
-                field_list = []
-            elif not isinstance(field_list, list):
-                if self.recovery_enabled:
-                    field_list = []
-                else:
-                    raise ValueError("invalid AcroForm Fields array")
+            field_list = resolve_field_array(
+                self.resolver, af.get("Fields"), key="Fields", recover=self.recovery_enabled
+            )
             for field in field_list:
                 field_obj = self.resolver.resolve(field)
                 records.extend(

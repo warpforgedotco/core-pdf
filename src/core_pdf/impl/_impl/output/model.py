@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -237,12 +237,22 @@ class Block:
 
     @property
     def text(self) -> str:
-        parts: list[str] = []
-        for line in self.lines:
-            if parts:
-                parts.append("\n" * max(1, line.break_before))
-            parts.append(line.text)
-        return "".join(parts)
+        return internal_join_text_lines(self.lines, lambda line: line.text)
+
+
+def internal_join_text_lines(
+    lines: tuple[TextLine, ...],
+    render_line: Callable[[TextLine], str],
+    *,
+    separator: str = "\n",
+) -> str:
+    """Render canonical line spacing consistently in plain and styled block text."""
+    parts: list[str] = []
+    for index, line in enumerate(lines):
+        if index:
+            parts.append(separator * max(1, line.break_before))
+        parts.append(render_line(line))
+    return "".join(parts)
 
 
 PageElement: TypeAlias = Block | Table | Figure

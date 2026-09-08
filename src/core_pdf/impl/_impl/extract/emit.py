@@ -118,11 +118,11 @@ def internal_line_decoration_flags(
     decoration_boxes: tuple[tuple[float, float, float, float], ...],
 ) -> dict[str, bool]:
     """Infer simple text decorations from nearby, thin PDF paths."""
+    flags = {"underline": line.underline, "strikeout": line.strikeout}
     if line.bbox is None:
-        return {}
+        return flags
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
-    flags = {"underline": False, "strikeout": False}
     for bbox in decoration_boxes:
         dx0, dy0, dx1, dy1 = bbox
         width = dx1 - dx0

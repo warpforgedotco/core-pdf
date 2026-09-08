@@ -7,6 +7,7 @@ from typing import Literal, Protocol, TypeAlias, cast
 
 from core_pdf.impl._impl.document.records import RawFormField
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_document.fields import (
     field_children,
     inherited_field_value,
@@ -23,6 +24,28 @@ class FieldResolver(PdfValueResolver, Protocol):
 FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
 FieldTraversalRecord: TypeAlias = tuple[Literal["record"], RawFormField]
 FieldTraversalEntry: TypeAlias = FieldTraversalNode | FieldTraversalRecord
+
+
+def resolve_field_array(
+    resolver: PdfValueResolver,
+    value: object,
+    *,
+    key: Literal["Fields", "Kids"],
+    recover: bool,
+) -> list[PdfObject]:
+    """Resolve field-tree arrays before applying the reader's recovery policy."""
+    try:
+        value = resolver.resolve(value)
+    except PdfParseError:
+        if not recover:
+            raise
+        return []
+    try:
+        return field_children(value)
+    except ValueError as exc:
+        if recover:
+            return []
+        raise ValueError(f"invalid AcroForm {key} array") from exc
 
 
 def field_value_text(resolver: FieldResolver, value: object) -> str:
@@ -72,12 +95,11 @@ def internal_field_record(
     field_type = resolver.resolve_name_or_text(node.get("FT"), name_like=True) or parent_type
     value = inherited_field_value(node, "V", cast(PdfObject, parent_value))
     value_text = field_value_text(resolver, value)
-    try:
-        kids = field_children(None if terminal_widget else node.get("Kids"))
-    except ValueError:
-        if not recover:
-            raise
-        kids = []
+    kids = (
+        []
+        if terminal_widget
+        else resolve_field_array(resolver, node.get("Kids"), key="Kids", recover=recover)
+    )
     is_widget = terminal_widget or resolver.resolve_name_or_text(node.get("Subtype")) == "Widget"
     return RawFormField(
         name,

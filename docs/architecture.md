@@ -29,6 +29,8 @@ Output lines own their canonical text. Words are reconciled with that text, and 
 are retained only when they reproduce it, keeping plain text, Markdown, HTML, and JSON
 consistent. JSON payloads are interned by object identity within each page; repeated ordered
 nodes may reference one payload, while distinct objects with equal content remain distinct.
+CSV and TEI use the same reading-order line projection as the text view. Plain text, Markdown,
+and HTML share paragraph and heading line spacing, including explicit blank lines.
 
 The companion enriches captured PDF evidence, selects recognition work, and combines native
 and recovered text before using core's generic layout and output stages:

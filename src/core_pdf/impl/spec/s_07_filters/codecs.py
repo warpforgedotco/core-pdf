@@ -193,10 +193,12 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
             full_end = clean_len - clean_len % 5
             pos = 0
             invalid_digits = clean.translate(None, ASCII85_DIGITS)
+            if invalid_digits:
+                raise ValueError(f"Non-Ascii85 digit found: {chr(invalid_digits[0])}")
             # Keep short streams on the allocation-free scalar path.  For large,
             # validated streams, five ASCII85 digits form an independent numeric
             # group and can be decoded in bulk.
-            if not invalid_digits and full_end >= 4096:
+            if full_end >= 4096:
                 import numpy
 
                 groups = numpy.frombuffer(clean[:full_end], dtype=numpy.uint8).reshape(-1, 5)
@@ -214,71 +216,33 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                 decoded[: len(encoded)] = encoded
                 out_pos = len(encoded)
                 pos = full_end
-            if invalid_digits:
-                while pos < full_end:
-                    byte0 = clean[pos]
-                    byte1 = clean[pos + 1]
-                    byte2 = clean[pos + 2]
-                    byte3 = clean[pos + 3]
-                    byte4 = clean[pos + 4]
-                    if not (
-                        33 <= byte0 <= 117
-                        and 33 <= byte1 <= 117
-                        and 33 <= byte2 <= 117
-                        and 33 <= byte3 <= 117
-                        and 33 <= byte4 <= 117
-                    ):
-                        for byte in (byte0, byte1, byte2, byte3, byte4):
-                            if not 33 <= byte <= 117:
-                                raise ValueError(f"Non-Ascii85 digit found: {chr(byte)}")
-                    acc = (
-                        (byte0 - 33) * 52200625
-                        + (byte1 - 33) * 614125
-                        + (byte2 - 33) * 7225
-                        + (byte3 - 33) * 85
-                        + byte4
-                        - 33
-                    )
-                    if acc > ASCII85_MAX:
-                        raise ValueError("Ascii85 overflow")
-                    pack_quad(decoded, out_pos, acc)
-                    out_pos += 4
-                    pos += 5
-            else:
-                while pos < full_end:
-                    byte0 = clean[pos]
-                    byte1 = clean[pos + 1]
-                    byte2 = clean[pos + 2]
-                    byte3 = clean[pos + 3]
-                    byte4 = clean[pos + 4]
-                    acc = (
-                        (byte0 - 33) * 52200625
-                        + (byte1 - 33) * 614125
-                        + (byte2 - 33) * 7225
-                        + (byte3 - 33) * 85
-                        + byte4
-                        - 33
-                    )
-                    if acc > ASCII85_MAX:
-                        raise ValueError("Ascii85 overflow")
-                    pack_quad(decoded, out_pos, acc)
-                    out_pos += 4
-                    pos += 5
+            while pos < full_end:
+                byte0 = clean[pos]
+                byte1 = clean[pos + 1]
+                byte2 = clean[pos + 2]
+                byte3 = clean[pos + 3]
+                byte4 = clean[pos + 4]
+                acc = (
+                    (byte0 - 33) * 52200625
+                    + (byte1 - 33) * 614125
+                    + (byte2 - 33) * 7225
+                    + (byte3 - 33) * 85
+                    + byte4
+                    - 33
+                )
+                if acc > ASCII85_MAX:
+                    raise ValueError("Ascii85 overflow")
+                pack_quad(decoded, out_pos, acc)
+                out_pos += 4
+                pos += 5
 
             digits = clean_len - full_end
             if digits:
                 if digits == 1:
                     raise ValueError("invalid final Ascii85 tuple")
                 acc = 0
-                if invalid_digits:
-                    for byte in clean[full_end:]:
-                        if 33 <= byte <= 117:
-                            acc = acc * 85 + (byte - 33)
-                            continue
-                        raise ValueError(f"Non-Ascii85 digit found: {chr(byte)}")
-                else:
-                    for byte in clean[full_end:]:
-                        acc = acc * 85 + (byte - 33)
+                for byte in clean[full_end:]:
+                    acc = acc * 85 + (byte - 33)
                 for count in range(5 - digits):
                     acc = acc * 85 + 84
                 if acc > ASCII85_MAX:
