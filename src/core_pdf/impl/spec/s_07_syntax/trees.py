@@ -80,8 +80,7 @@ def internal_iter_tree_items(
             if on_error is not None and on_error(f"invalid {tree_name} tree Kids array"):
                 continue
             raise ValueError(f"invalid {tree_name} tree Kids array")
-        for kid in reversed(kids):
-            stack.append((kid, current_depth + 1))
+        stack.extend((kid, current_depth + 1) for kid in reversed(kids))
 
 
 def iter_number_tree_items(

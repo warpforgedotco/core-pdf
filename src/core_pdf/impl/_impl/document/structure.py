@@ -92,9 +92,7 @@ def find_all(
         el = stack.pop()
         if match_func(el):
             yield el
-        for child in reversed(list(el)):
-            if isinstance(child, StructureElement):
-                stack.append(child)
+        stack.extend(child for child in reversed(list(el)) if isinstance(child, StructureElement))
 
 
 def literal_name(value: Any) -> str | None:
@@ -555,8 +553,7 @@ def make_kids(
         if current is None:
             continue
         if isinstance(current, list):
-            for item in reversed(current):
-                stack.append((item, depth + 1))
+            stack.extend((item, depth + 1) for item in reversed(current))
             continue
         if type(current) is bool:
             if recover_structure:
