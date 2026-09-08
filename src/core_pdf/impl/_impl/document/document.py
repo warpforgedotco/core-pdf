@@ -568,15 +568,24 @@ class PdfDocument(
             self.page_tree_was_recovered = True
         return discovered
 
+    def internal_page_tree_root(self) -> PdfDict:
+        """The resolved /Pages node.
+
+        Raises ValueError when the catalog names no page tree or names one that
+        does not resolve to a dictionary; both callers run inside a handler that
+        falls back to scanning the file for pages.
+        """
+        pages_ref = self.catalog().get("Pages")
+        if pages_ref is None:
+            raise ValueError("missing page tree root")
+        pages_node = self.resolver.resolve(pages_ref)
+        if not isinstance(pages_node, dict):
+            raise ValueError("invalid page tree root")
+        return cast(PdfDict, pages_node)
+
     def internal_iter_page_nodes(self) -> Iterator[internal_PageNode]:
         try:
-            catalog = self.catalog()
-            pages_ref = catalog.get("Pages")
-            if pages_ref is None:
-                raise ValueError("missing page tree root")
-            pages_node = self.resolver.resolve(pages_ref)
-            if not isinstance(pages_node, dict):
-                raise ValueError("invalid page tree root")
+            pages_node = self.internal_page_tree_root()
             page_dicts = list(
                 iter_page_nodes(
                     pages_node,
@@ -605,13 +614,7 @@ class PdfDocument(
         if self.page_tree_was_recovered:
             return len(self.build_page_dicts())
         try:
-            catalog = self.catalog()
-            pages_ref = catalog.get("Pages")
-            if pages_ref is None:
-                raise ValueError("missing page tree root")
-            pages_node = self.resolver.resolve(pages_ref)
-            if not isinstance(pages_node, dict):
-                raise ValueError("invalid page tree root")
+            pages_node = self.internal_page_tree_root()
             count = self.resolver.resolve(pages_node.get("Count"))
             if type(count) is int and count >= 0:
                 return count
