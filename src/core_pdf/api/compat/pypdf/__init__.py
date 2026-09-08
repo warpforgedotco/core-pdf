@@ -241,7 +241,7 @@ class PdfPageObject:
     def _capability_view(self) -> Any:
         return self._document.capability_page(self._page.page_number).structured_view
 
-    def extract_text(self, *args: object, **kwargs: object) -> str:  # noqa: C901
+    def extract_text(self, *args: object, **kwargs: object) -> str:
         del args, kwargs
         if self.internal_text_override is not None:
             return self.internal_text_override

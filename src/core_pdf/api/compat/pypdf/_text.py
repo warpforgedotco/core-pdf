@@ -593,7 +593,7 @@ class LegacyTextExtractor:
         self.check_position(self.accumulated_width / 1000.0)
         self.accumulated_width = 0.0
 
-    def process(self, operator: str, operands: tuple[object, ...]) -> None:  # noqa: C901
+    def process(self, operator: str, operands: tuple[object, ...]) -> None:
         if operator == "BT":
             self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             self.flush()

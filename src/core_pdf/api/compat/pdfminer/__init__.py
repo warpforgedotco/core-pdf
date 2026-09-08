@@ -183,7 +183,9 @@ def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
     )
 
 
-def internal_pdfminer_resolvable_pages(  # noqa: C901
+def internal_pdfminer_resolvable_pages(  # noqa: C901 - one pass over every
+    # recovery strategy pdfminer accepts; splitting it would duplicate the
+    # page-reachability state each branch reads
     document: PdfDocument,
 ) -> Iterator[tuple[int, PdfPage]]:
     """Walk the declared page tree with pdfminer's stale-xref semantics."""
@@ -1725,7 +1727,8 @@ def _pdfminer_layout_figure_box(
     return (x0, y0, x1, y1)
 
 
-def extract_pages(  # noqa: C901
+def extract_pages(  # noqa: C901 - mirrors pdfminer's own single-function
+    # layout walk; see the extraction stages marked below
     pdf_file: PdfInput,
     password: str = "",
     page_numbers: Iterable[int] | None = None,

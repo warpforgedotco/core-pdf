@@ -94,14 +94,12 @@ line-length = 100
 
 [tool.ruff.lint.per-file-ignores]
 "src/core_pdf/__main__.py" = ["E501"]
-# C901 exemptions. Each of these files holds a function above the complexity gate
-# that is either a deliberate optimization pinned by docs/architecture.md or known
-# debt. Shrink this list rather than raising max-complexity.
-#   operations.py  dispatch_operations (162) — protected: hand-unrolled dispatch loop
-"src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 60
+# The ceiling is fallback_projection at 39. Functions that genuinely exceed
+# this carry an inline `noqa: C901` with the reason; prefer that over raising
+# the gate, so each exemption stays attached to the code that needs it.
+max-complexity = 40
 
 [tool.ruff.lint]
 select = [
