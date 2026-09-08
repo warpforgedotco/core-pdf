@@ -101,21 +101,18 @@ See [PyMuPDF compatibility](pymupdf-compatibility.md) for current coverage and o
 
 Differential tests in `tests/src/core_pdf/api/compat/differential` compare the `pdfplumber`, `pymupdf`,
 `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray facades against their reference
-libraries. By default, each facade uses its own upstream fixture corpus, plus selected
-cross-corpus redaction cases for x-ray:
+libraries. Every facade's corpus comparison runs against every PDF discovered recursively
+under `tests/fixtures` by default, including large files and cross-project fixtures.
+PyMuPDF compares page geometry and text outputs across every page; its targeted API tests
+also retain their explicit fixtures and generated variants. No full-matrix flag is needed.
 
 ```sh
 git submodule update --init --recursive
 uv run --locked --group test --group vendor-test pytest -n auto
 ```
 
-Run the exhaustive every-facade/every-fixture matrix explicitly when compatibility work
-calls for it:
-
-```sh
-CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --group test --group vendor-test pytest -n auto
-```
+To focus a local investigation, select a test file or use pytest's `-k` filter. CI uses the
+same exhaustive default corpus selection.
 
 The x-ray facade performs its redaction inspection directly from engine drawing, glyph, and
 raster evidence:

@@ -9,7 +9,7 @@ real_pdfplumber = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("pdf_path", differential_pdfs("pdfplumber"), ids=pdf_id)
+@pytest.mark.parametrize("pdf_path", differential_pdfs(), ids=pdf_id)
 def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
     from core_pdf.api.compat import pdfplumber as compat_pdfplumber
 

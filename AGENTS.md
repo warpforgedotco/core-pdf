@@ -40,13 +40,9 @@ prek run --all-files                 # run repository hooks across all files
 
 Run the differential suite after changes affecting compatibility behavior. To focus a
 run, pass a facade's test file under `tests/src/core_pdf/api/compat/differential`.
-The default matrix uses each facade's own reference corpus, with selected cross-corpus
-cases for x-ray. Run every facade against every fixture explicitly with:
-
-```sh
-CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --group test --group vendor-test pytest -n auto
-```
+The default corpus matrix runs every facade, including PyMuPDF, against every PDF discovered
+under `tests/fixtures`, including large and previously excluded files. No environment flag
+is required. Targeted API and generated-variant tests run alongside these corpus cases.
 
 Initialize reference corpora with `git submodule update --init --recursive` before
 running the suite. CI checks the lockfile and runs repository hooks alongside the

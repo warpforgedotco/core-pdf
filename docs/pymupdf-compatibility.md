@@ -173,8 +173,12 @@ uv run --locked --group test --group vendor-test pytest \
   tests/src/core_pdf/api/compat/differential/test_pymupdf_page_edit.py
 ```
 
-These tests use nine explicit fixtures and shared in-memory variants. They do not yet run the complete PyMuPDF corpus
-or expand with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL`.
+These targeted API tests use nine explicit fixtures and shared in-memory variants.
+`test_pymupdf_corpus.py` additionally runs by default over every PDF discovered under
+`tests/fixtures`, including other projects' corpora. It compares document metadata, page
+counts, and every page's geometry, rotation, text, words, blocks, and raw dictionaries.
+The former `CORE_PDF_COMPAT_DIFFERENTIAL_FULL` flag is no longer needed. Discovery coverage
+does not mean these broader compatibility comparisons all pass.
 
 A diagnostic first-page audit of all 179 PDFs in the pinned PyMuPDF corpus completed
 177 comparisons: 129 had exactly equal plain text and 54 had exactly equal word records

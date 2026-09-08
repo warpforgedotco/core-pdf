@@ -57,9 +57,9 @@ writing, and inspecting PDF documents.
   `pymupdf`, `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
   maps cleanly to the shared capability model.
 - Maintain differential comparisons in `tests/src/core_pdf/api/compat/differential` against
-  each reference corpus using `uv run --locked --group test --group vendor-test pytest -n auto`.
+  every discovered PDF across all facades using `uv run --locked --group test --group vendor-test pytest -n auto`.
 - Expand differential comparisons over malformed, security-sensitive, and real-world PDFs.
-  Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run the exhaustive facade/fixture matrix.
+  The exhaustive facade/fixture corpus matrix runs by default, without an environment flag.
 
 ## Dependency policy
 

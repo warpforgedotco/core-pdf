@@ -23,7 +23,7 @@ def real_xray() -> Iterator[Any]:
         yield pytest.importorskip("xray")
 
 
-@pytest.mark.parametrize("pdf_path", differential_pdfs("xray"), ids=pdf_id)
+@pytest.mark.parametrize("pdf_path", differential_pdfs(), ids=pdf_id)
 def test_matches_real_library_on_fixture_corpus(real_xray: Any, pdf_path: Path) -> None:
     from core_pdf.api.compat.xray import inspect
 

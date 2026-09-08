@@ -172,13 +172,10 @@ uv run --all-packages --group lint --group test --group vendor-test ty check
 uv run --all-packages --group lint lint-imports
 ```
 
-The default differential matrix uses each facade's own upstream corpus, plus selected
-cross-corpus redaction cases for x-ray. To run every facade against every PDF fixture:
-
-```sh
-CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --group test --group vendor-test pytest -n auto
-```
+The default differential corpus matrix runs every facade, including PyMuPDF, against every
+PDF discovered recursively under `tests/fixtures`. Large and formerly excluded fixtures
+are included. Targeted API cases and generated variants run alongside the corpus matrix;
+no environment flag is required. Use pytest file selection or `-k` to focus local runs.
 
 ## Rendering constraints
 
