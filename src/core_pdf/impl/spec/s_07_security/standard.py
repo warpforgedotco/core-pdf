@@ -58,16 +58,13 @@ internal_SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
 
 # Adobe PDF Reference 1.7, sixth edition (November 2006), Table 3.20, and
 # ISO 32000-2:2020, Table 22 define these reserved positions explicitly.
-# ISO 32000-1:2008, 7.6.3.2 states the reserved bits as requirements on the
-# *writer*, and then binds readers the other way: "Conforming readers shall
-# ignore all flags other than those at bit positions 3, 4, 5, 6, 9, 10, 11,
-# and 12." ISO 32000-2:2020, 7.6.4.2 repeats it verbatim. These tuples record
-# what Table 22 documents -- test_specification_evidence.py checks them against
-# the published table -- but they are deliberately NOT enforced when parsing:
-# refusing a document over a bit the reader is told to ignore denied every page
-# of files real producers emit (Distiller writes P = -9, clearing bits 1 and 2).
-internal_RESERVED_ZERO_PERMISSION_BITS = (1, 2)
-internal_RESERVED_ONE_PERMISSION_BITS = (7, 8, *range(13, 33))
+# ISO 32000-1:2008, 7.6.3.2 states the reserved bits (1-2 clear; 7-8 and 13-32
+# set) as requirements on the *writer*, and then binds readers the other way:
+# "Conforming readers shall ignore all flags other than those at bit positions
+# 3, 4, 5, 6, 9, 10, 11, and 12." ISO 32000-2:2020, 7.6.4.2 repeats it verbatim.
+# So they are deliberately not enforced here: refusing a document over a bit the
+# reader is told to ignore denied every page of files real producers emit
+# (Distiller writes P = -9, clearing bits 1 and 2).
 internal_SUPPORTED_RC4_KEY_BITS = (40, 56, 64, 80, 128)
 internal_REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
 internal_PDF_MAC_PERMISSION_BIT = 13
