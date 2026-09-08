@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compiled PDF scalar and container coercion kernels."""
+"""Compiled PDF scalar and container coercion kernels.
+
+The strict half of a deliberate pair with _impl/runtime/scalars.py: these
+accept only ISO 32000-1 7.3.3 numbers, where the tolerant half also takes
+exponents, surrounding whitespace and non-finite words. Functions that look
+identical across the two are not interchangeable for that reason.
+"""
 
 from __future__ import annotations
 

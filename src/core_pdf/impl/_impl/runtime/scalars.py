@@ -1,5 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Host scalar conversion for tolerant adapters."""
+"""Host scalar conversion for tolerant adapters.
+
+Deliberately twinned with spec/s_07_syntax_primitives/coercion.py. Several
+functions here -- internal_scalar_text, parse_int_strict, parse_float_strict,
+parse_box -- are textually identical to their namesakes there, and merging them
+would be wrong: the two modules bind different parse_int/parse_float. This one
+accepts what a real producer emits, the spec one accepts only ISO 32000-1's
+number grammar, so they disagree on b"1e5", b"  2.0 ", b"nan" and b"inf" (7.3.3
+admits neither exponents nor non-finite values). Fix a bug in one and decide,
+explicitly, whether the other has it too.
+"""
 
 from __future__ import annotations
 
