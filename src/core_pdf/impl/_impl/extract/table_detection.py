@@ -481,14 +481,7 @@ def internal_stream_table(
         rows=tuple(table_rows),
         bbox=bbox,
         confidence=0.75,
-        metadata={
-            "source": "stream",
-            "rows": len(table_rows),
-            "columns": len(columns),
-            "density": round(density, 4),
-            "average_text": round(average_text, 2),
-            "numeric_cells": numeric_total,
-        },
+        metadata={"source": "stream"},
     )
 
 

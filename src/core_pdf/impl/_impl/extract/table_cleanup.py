@@ -500,7 +500,7 @@ def internal_merge_wrapped_stream_rows(table: Table) -> Table:
         table.metadata.get("source") != "stream"
         or len(table.rows) < 8
         or max((len(row) for row in table.rows), default=0) < 5
-        or table.metadata.get("numeric_cells", 0) > 2
+        or internal_TableFacts.from_rows(table.rows).numeric_cells > 2
     ):
         return table
     merged: list[list[TableCell]] = []
