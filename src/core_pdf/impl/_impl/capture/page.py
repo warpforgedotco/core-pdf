@@ -170,7 +170,7 @@ def capture_annotation_appearances(
             resolved_resources = resolve_resource_dict(
                 stream.dictionary.get("Resources"), document.resolver
             )
-            resources = cast(PdfDict, resolved_resources if resolved_resources else page.resources)
+            resources = cast(PdfDict, resolved_resources or page.resources)
 
             previous_source = state.capture_source
             state.run_accumulator.flush()

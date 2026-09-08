@@ -27,7 +27,7 @@ def flatten_path(source: PdfPath) -> CapturedPath:
                 control_len = (
                     hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) + hypot(x3 - x2, y3 - y2)
                 )
-                flatness = max(0.1, command.flatness if command.flatness else 0.25)
+                flatness = max(0.1, command.flatness or 0.25)
                 segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
                 previous_x, previous_y = x0, y0
                 segment_step = 1.0 / segments

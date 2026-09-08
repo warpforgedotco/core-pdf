@@ -1386,8 +1386,7 @@ class Document(ClosingMixin):
         """Adopt ``document`` and rebuild the facade page objects from it."""
         self._objects_invalidated = True
         self._document = document
-        typed_pages = tuple(Page(document, page, self) for page in document.pages)
-        return typed_pages
+        return tuple(Page(document, page, self) for page in document.pages)
 
     def _set_pages(self, pages: Sequence[StructuredPage]) -> tuple[Page, ...]:
         return self._set_document(self._document.replace_pages(tuple(pages)))

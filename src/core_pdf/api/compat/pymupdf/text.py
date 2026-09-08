@@ -516,7 +516,7 @@ class TextProjection:
                     {
                         "spans": spans,
                         "wmode": characters[0].style.wmode if characters[0].style else 0,
-                        "dir": tuple(value if value else 0.0 for value in characters[0].direction),
+                        "dir": tuple(value or 0.0 for value in characters[0].direction),
                         "bbox": internal_union([c.bbox for c in characters]),
                     }
                 )

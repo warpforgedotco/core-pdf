@@ -233,14 +233,13 @@ class internal_PageExtraction:
         cropbox = assembled.cropbox
         with suppress(TypeError, ValueError):
             cropbox = self.page.crop_box
-        assembled = replace(
+        return replace(
             assembled,
             annotations=annotations,
             links=links,
             form_fields=field_records,
             cropbox=cropbox,
         )
-        return assembled
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:

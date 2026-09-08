@@ -34,7 +34,7 @@ def internal_glyph_name_for_unicode(text: str) -> str:
 
 
 def internal_normalize_glyph_names(values: Sequence[str | None]) -> tuple[str, ...]:
-    return tuple(name if name else ".notdef" for name in values)
+    return tuple(name or ".notdef" for name in values)
 
 
 STANDARD_ENCODING_GLYPH_NAMES = internal_normalize_glyph_names(list(StandardEncoding))
