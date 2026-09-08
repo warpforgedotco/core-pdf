@@ -72,12 +72,6 @@ internal_SUPPORTED_RC4_KEY_BITS = (40, 56, 64, 80, 128)
 internal_REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
 internal_PDF_MAC_PERMISSION_BIT = 13
 internal_PDF_MAC_PERMISSION_MASK = 1 << (internal_PDF_MAC_PERMISSION_BIT - 1)
-internal_RESERVED_ZERO_PERMISSION_MASK = sum(
-    1 << (bit_position - 1) for bit_position in internal_RESERVED_ZERO_PERMISSION_BITS
-)
-internal_RESERVED_ONE_PERMISSION_MASK = sum(
-    1 << (bit_position - 1) for bit_position in internal_RESERVED_ONE_PERMISSION_BITS
-)
 
 
 @dataclass(frozen=True, slots=True)

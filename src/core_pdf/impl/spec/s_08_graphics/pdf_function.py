@@ -246,8 +246,3 @@ def internal_compile_pdf_function(
         return evaluate_stitching
 
     raise ValueError(f"unsupported PDF function type: {function_type}")
-
-
-def internal_evaluate_pdf_function(function: Any, *inputs: float) -> tuple[float, ...]:
-    """Evaluate a supported PDF Function without retaining its compiled form."""
-    return internal_compile_pdf_function(function)(*inputs)

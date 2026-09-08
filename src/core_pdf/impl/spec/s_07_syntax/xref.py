@@ -69,11 +69,6 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     return int(row[:10]), generation, row[17] == 110, pos + 20
 
 
-def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
-    offset, generation, in_use, _ = parse_xref_entry_at(line, 0)
-    return offset, generation, in_use
-
-
 class XRefScanner:
     @staticmethod
     def find_startxref(data: PdfByteBuffer) -> int | None:

@@ -52,11 +52,6 @@ def build_parser(program_name: str = "core-pdf") -> argparse.ArgumentParser:
         default=None,
         help="Directory to save output files (implies --write)",
     )
-    parser.add_argument(
-        "--plain",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
     return parser
 
 

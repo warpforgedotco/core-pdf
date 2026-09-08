@@ -699,9 +699,6 @@ class PdfDocument(
     def page_index_for(self, page_obj: object) -> int | None:
         return internal_PageLookup(self).page_index_for(page_obj)
 
-    def selected_page_indexes(self, pages: PageSelection | None = None) -> list[int]:
-        return resolve_page_selection(pages, len(self.pages))
-
     def iter_selected_pages(
         self, pages: PageSelection | None = None
     ) -> Iterator[tuple[int, internal_PageT]]:

@@ -115,9 +115,7 @@ def internal_remove_off_page_blocks(
 
 def internal_line_decoration_flags(
     line: ParsedLine,
-    drawings: tuple[CapturedDrawing, ...],
-    *,
-    decoration_boxes: tuple[tuple[float, float, float, float], ...] | None = None,
+    decoration_boxes: tuple[tuple[float, float, float, float], ...],
 ) -> dict[str, bool]:
     """Infer simple text decorations from nearby, thin PDF paths."""
     if line.bbox is None:
@@ -125,15 +123,7 @@ def internal_line_decoration_flags(
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
     flags = {"underline": False, "strikeout": False}
-    candidates = decoration_boxes
-    if candidates is None:
-        candidates = tuple(
-            bbox
-            for drawing in drawings
-            if drawing.kind in {"fill", "fillstroke", "stroke"}
-            and (bbox := internal_line_decoration_bbox(drawing)) is not None
-        )
-    for bbox in candidates:
+    for bbox in decoration_boxes:
         dx0, dy0, dx1, dy1 = bbox
         width = dx1 - dx0
         height = dy1 - dy0
@@ -181,11 +171,7 @@ def internal_normalized_blocks(
         sources = tuple(dict.fromkeys(line.source for line in parsed_block.lines))
         lines: list[TextLine] = []
         for line in parsed_block.lines:
-            flags = internal_line_decoration_flags(
-                line,
-                drawings,
-                decoration_boxes=decoration_boxes,
-            )
+            flags = internal_line_decoration_flags(line, decoration_boxes)
             lines.append(
                 TextLine(
                     line.text,
