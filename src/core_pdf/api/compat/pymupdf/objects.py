@@ -12,6 +12,7 @@ from core_pdf.api.document import PdfDocument
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl._impl.document.write import write_pdf
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax.serialize import serialize_name
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
@@ -47,10 +48,7 @@ def internal_number(value: float) -> str:
 
 
 def internal_name(value: object) -> str:
-    data = value.value_bytes if isinstance(value, PdfName) else str(value).encode("latin-1")
-    return "/" + "".join(
-        chr(c) if 33 <= c <= 126 and c not in b"()<>[]{}/%#" else f"#{c:02X}" for c in data
-    )
+    return serialize_name(value).decode("ascii")
 
 
 def internal_string(data: bytes, *, ascii_only: bool = False) -> str:

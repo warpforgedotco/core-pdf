@@ -16,7 +16,7 @@ def serialize_object(value: object) -> bytes:
     if isinstance(value, PdfReference):
         return str(value).encode("ascii")
     if isinstance(value, PdfName):
-        return serialize_name(value.value_bytes)
+        return serialize_name(value)
     if isinstance(value, PdfString):
         return b"<" + value.data.hex().encode("ascii") + b">"
     if isinstance(value, (bytes, bytearray, memoryview)):
@@ -37,26 +37,23 @@ def serialize_object(value: object) -> bytes:
     if isinstance(value, dict):
         return (
             b"<<"
-            + b" ".join(
-                serialize_name(
-                    k.value_bytes
-                    if isinstance(k, PdfName)
-                    else k
-                    if isinstance(k, bytes)
-                    else str(k).encode("latin-1")
-                )
-                + b" "
-                + serialize_object(v)
-                for k, v in value.items()
-            )
+            + b" ".join(serialize_name(k) + b" " + serialize_object(v) for k, v in value.items())
             + b">>"
         )
     raise TypeError(f"unsupported PDF object: {type(value).__name__}")
 
 
-def serialize_name(value: bytes) -> bytes:
+def serialize_name(value: object) -> bytes:
+    """Write a name token, escaping per ISO 32000-1 7.3.5."""
+    data = (
+        value.value_bytes
+        if isinstance(value, PdfName)
+        else value
+        if isinstance(value, bytes)
+        else str(value).encode("latin-1")
+    )
     return b"/" + "".join(
-        chr(c) if 33 <= c <= 126 and c not in b"()<>[]{}/%#" else f"#{c:02X}" for c in value
+        chr(c) if 33 <= c <= 126 and c not in b"()<>[]{}/%#" else f"#{c:02X}" for c in data
     ).encode("ascii")
 
 
