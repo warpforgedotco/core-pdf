@@ -569,16 +569,20 @@ def internal_feature_from_contours(
 
 
 def internal_cubic_sample_times(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    x3: float,
+    y3: float,
 ) -> tuple[float, ...]:
     """Adaptively flatten a cubic while retaining its exact coordinate extrema."""
     times = {
         1.0,
-        *internal_cubic_extrema_times(p0[0], p1[0], p2[0], p3[0]),
-        *internal_cubic_extrema_times(p0[1], p1[1], p2[1], p3[1]),
+        *internal_cubic_extrema_times(x0, x1, x2, x3),
+        *internal_cubic_extrema_times(y0, y1, y2, y3),
     }
     # Bound in the enclosing scope rather than looked up per recursion: this is
     # the hottest loop in glyph outlining, entered once per curve segment and
@@ -641,7 +645,7 @@ def internal_cubic_sample_times(
                 return
         add_time(end_t)
 
-    subdivide(p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1], 0.0, 1.0, 0)
+    subdivide(x0, y0, x1, y1, x2, y2, x3, y3, 0.0, 1.0, 0)
     return tuple(sorted(times))
 
 
@@ -738,19 +742,15 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
 
     def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
         nonlocal x, y
-        point0 = (x, y)
-        point1 = (x + dx1, y + dy1)
-        point2 = (point1[0] + dx2, point1[1] + dy2)
-        point3 = (point2[0] + dx3, point2[1] + dy3)
-        x0, y0 = point0
-        x1, y1 = point1
-        x2, y2 = point2
-        x3, y3 = point3
-        # internal_cubic_point written out, to spend one call per sample instead
-        # of two and to keep the coordinates unpacked. The ** form is load
-        # bearing: mt**3 and mt*mt*mt disagree on about a quarter of random
-        # floats, which would move the golden rasters.
-        for t in internal_cubic_sample_times(point0, point1, point2, point3):
+        x0, y0 = x, y
+        x1, y1 = x + dx1, y + dy1
+        x2, y2 = x1 + dx2, y1 + dy2
+        x3, y3 = x2 + dx3, y2 + dy3
+        # The cubic is evaluated inline, to spend one call per sample instead of
+        # two and to keep the coordinates unpacked. The ** form is load bearing:
+        # mt**3 and mt*mt*mt disagree on about a quarter of random floats, which
+        # would move the golden rasters.
+        for t in internal_cubic_sample_times(x0, y0, x1, y1, x2, y2, x3, y3):
             mt = 1.0 - t
             mt3 = mt**3
             t3 = t**3
@@ -760,7 +760,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
                 mt3 * x0 + mt2t * x1 + mtt2 * x2 + t3 * x3,
                 mt3 * y0 + mt2t * y1 + mtt2 * y2 + t3 * y3,
             )
-        x, y = point3
+        x, y = x3, y3
 
     def has_current_point() -> bool:
         return current_has_points
