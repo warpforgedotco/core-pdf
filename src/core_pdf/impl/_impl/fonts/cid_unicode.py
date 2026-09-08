@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import cache
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl._impl.fonts.cmap_resources import (
@@ -55,7 +56,11 @@ def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
     )
 
 
+@cache
 def compact_cmap(name: str) -> CompactCMap | None:
+    # Inverting a CMap walks every code in every codespace range, and the
+    # bundled resources are fixed at install time. Without this, a CID page
+    # with no usable /ToUnicode rebuilt the same map once per glyph.
     normalized_name = normalized_cmap_name(name)
     if not cmap_resource_exists(normalized_name):
         return None
