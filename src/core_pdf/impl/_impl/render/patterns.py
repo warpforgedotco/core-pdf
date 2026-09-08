@@ -118,7 +118,6 @@ class internal_PatternTargetMixin:
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
@@ -139,7 +138,7 @@ class internal_PatternTargetMixin:
         ix0, iy0, ix1, iy1 = clipped_box[1]
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         # Fixed for the whole shading; resolving it per pixel re-ran is_pdf_number
         # and float() once per device pixel of the fill.
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None

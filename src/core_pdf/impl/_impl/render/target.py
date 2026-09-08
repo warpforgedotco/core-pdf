@@ -271,9 +271,6 @@ class internal_RasterTarget(
         pixels[idx + 2] = max(0, min(255, out_b))
         pixels[idx + 3] = max(0, min(255, out_a_i))
 
-    def can_blend_normal_fast(self, blend_mode: str | None) -> bool:
-        return blend_mode is None
-
     def blend_normal_pixel(self, idx: int, sr: int, sg: int, sb: int, sa: int) -> None:
         if sa <= 0:
             return

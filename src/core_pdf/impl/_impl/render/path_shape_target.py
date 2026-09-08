@@ -262,7 +262,6 @@ class internal_PathShapeTargetMixin:
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = clip.clip_row_visible_spans
@@ -285,7 +284,7 @@ class internal_PathShapeTargetMixin:
             return
         ix0, iy0, ix1, iy1 = pixel_box
         radius2 = radius * radius
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         rectangular_clip = not clip_regions or clip_paths_are_axis_aligned_rects()
         if normal_fast and rgba[3] >= 255 and rectangular_clip:
             if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:

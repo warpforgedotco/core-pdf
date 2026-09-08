@@ -45,7 +45,6 @@ class internal_PathFillTargetMixin:
         blend_normal_solid_span = self.blend_normal_solid_span
         blend_px = self.blend_px
         blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
@@ -59,7 +58,7 @@ class internal_PathFillTargetMixin:
         ix0, iy0, ix1, iy1 = pixel_box
         rectangular_clip = clip_paths_are_axis_aligned_rects()
         simple_opaque = rgba[3] == 255 and blend_mode is None and rectangular_clip
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         normal_target = pixel_view(pixels) if normal_fast and not simple_opaque else None
         blend_target = pixel_view(pixels) if not normal_fast and rgba[3] > 0 else None
 
@@ -237,7 +236,6 @@ class internal_PathFillTargetMixin:
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_resolved_mode = self.internal_resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
@@ -284,7 +282,7 @@ class internal_PathFillTargetMixin:
         ix0, iy0, ix1, iy1 = pixel_box
         pixel_area = (ix1 - ix0) * (iy1 - iy0)
         rectangular_clip = clip_paths_are_axis_aligned_rects()
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
             # Analytic coverage for the whole box in one pass, then one blend.
             # Cost follows the edges' extents rather than rows x edges, and the

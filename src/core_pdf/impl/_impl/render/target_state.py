@@ -77,8 +77,6 @@ class internal_RasterState(Protocol):
         transposed: bool = False,
     ) -> None: ...
 
-    def can_blend_normal_fast(self, blend_mode: str | None) -> bool: ...
-
     def fast_fill_path(
         self,
         edges: list[tuple[float, float, float, float]],
