@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 
 def write_pdf(
@@ -34,11 +35,14 @@ def write_pdf(
             output.extend(
                 f"{next_free[number]:010d} {65535 if number == 0 else 0:05d} f \n".encode("ascii")
             )
-    final_trailer = {
-        k: v
-        for k, v in trailer.items()
-        if str(k)
-        not in {"Size", "Prev", "XRefStm", "Type", "W", "Index", "Length", "Filter", "DecodeParms"}
+    # One complete revision, so the trailer has a closed key set (ISO 32000-1
+    # Table 15): Size is computed here, Prev and XRefStm describe earlier
+    # revisions that no longer apply, and Encrypt is rejected above. Anything
+    # else the scanner carried over came from an xref *stream* dictionary --
+    # XRefScanner.parse_stream returns it verbatim as the trailer -- and is not
+    # a trailer key at all.
+    final_trailer: dict[object, object] = {
+        k: v for k, v in trailer.items() if normalize_pdf_name(k) in {"Root", "Info", "ID"}
     }
     final_trailer["Size"] = size
     output.extend(b"trailer\n" + serialize_object(final_trailer))
