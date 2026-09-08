@@ -435,33 +435,22 @@ class XRefScanner(SyntaxXRefScanner):
             try:
                 obj = lexer.parse_indirect_object()
             except Exception:
-                if stop_at_first_trailer:
-                    stream_marker = data.find(b"stream", offset, scan_end)
-                    next_object_marker = data.find(b"obj", marker + 3, scan_end)
-                    if stream_marker >= 0 and (
-                        next_object_marker < 0 or stream_marker < next_object_marker
-                    ):
-                        prefix = data[marker + 3 : stream_marker]
-                        uncommented = b"\n".join(
-                            line.split(b"%", 1)[0] for line in prefix.splitlines()
-                        )
-                        if not uncommented.strip():
-                            break
+                if (
+                    stop_at_first_trailer
+                    and internal_bare_stream_start(data, marker, offset, scan_end) is not None
+                ):
+                    break
                 continue
             if stop_at_first_trailer and not isinstance(obj, PdfStream):
-                stream_marker = data.find(b"stream", offset, scan_end)
-                next_object_marker = data.find(b"obj", marker + 3, scan_end)
-                if stream_marker >= 0 and (
-                    next_object_marker < 0 or stream_marker < next_object_marker
+                bare_stream = internal_bare_stream_start(data, marker, offset, scan_end)
+                # An unterminated one is what pdfminer's fallback parser treats
+                # as running to end of file, taking the rest of the objects with
+                # it; a terminated one leaves the following objects readable.
+                if (
+                    bare_stream is not None
+                    and data.find(b"endstream", bare_stream + 6, scan_end) < 0
                 ):
-                    prefix = data[marker + 3 : stream_marker]
-                    uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
-                    endstream = data.find(b"endstream", stream_marker + 6, scan_end)
-                    if not uncommented.strip() and endstream < 0:
-                        # pdfminer's fallback parser treats the remainder of an
-                        # unterminated, dictionary-less stream as that object's
-                        # payload; later object-looking bytes are not xref entries.
-                        break
+                    break
             # A damaged stream /Length can carry the lexer past an earlier
             # endstream/endobj pair and over later, valid indirect objects. In
             # that case keep scanning from the current marker. Otherwise skip
@@ -649,6 +638,26 @@ class XRefScanner(SyntaxXRefScanner):
             on_invalid_generation=XRefScanner.internal_invalid_generation,
         )
         return entries, typing.cast(PdfDict, dict_obj)
+
+
+def internal_bare_stream_start(
+    data: PdfByteBuffer, marker: int, offset: int, scan_end: int
+) -> int | None:
+    """Offset of a ``stream`` keyword this object reaches with no dictionary between.
+
+    Returns None when another ``obj`` header comes first, or when the bytes
+    between the header and the keyword hold anything but comments. Both callers
+    use it to recognise the dictionary-less stream that pdfminer's fallback
+    parser swallows to end of file, so object-looking bytes after it are not
+    xref entries.
+    """
+    stream_marker = data.find(b"stream", offset, scan_end)
+    next_object_marker = data.find(b"obj", marker + 3, scan_end)
+    if stream_marker < 0 or not (next_object_marker < 0 or stream_marker < next_object_marker):
+        return None
+    prefix = data[marker + 3 : stream_marker]
+    uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
+    return None if uncommented.strip() else stream_marker
 
 
 def find_eof_marker(data: PdfByteBuffer) -> int:
