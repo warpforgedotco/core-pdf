@@ -183,6 +183,22 @@ def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
     )
 
 
+def internal_parse_object_at(data: bytes, offset: int, *, recover: bool) -> object:
+    """Parse the indirect object at ``offset``, always releasing the lexer.
+
+    PdfLexer.close() releases a memoryview over ``data``; every caller below
+    runs inside a per-candidate loop, so leaking one lexer per object adds up.
+    Errors propagate -- callers differ on whether a failed parse is a skip or
+    a signal, and one of them parses purely to see whether it raises.
+    """
+    lexer = PdfLexer(data, recover_malformed_objects=recover)
+    try:
+        lexer.rewind(offset)
+        return lexer.parse_indirect_object()
+    finally:
+        lexer.close()
+
+
 def internal_pdfminer_resolvable_pages(  # noqa: C901 - one pass over every
     # recovery strategy pdfminer accepts; splitting it would duplicate the
     # page-reachability state each branch reads
@@ -202,10 +218,8 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901 - one pass over every
             entry = strict_xref.get((object_number << 16) | generation_number)
             value: object = None
             if entry is not None and entry.object_stream is None:
-                lexer = PdfLexer(data, recover_malformed_objects=False)
-                lexer.rewind(entry.offset)
                 try:
-                    parsed = lexer.parse_indirect_object()
+                    parsed = internal_parse_object_at(data, entry.offset, recover=False)
                 except Exception:
                     parsed = None
                 if isinstance(parsed, dict):
@@ -255,10 +269,8 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901 - one pass over every
             root_generation = int(root_match.group(2))
             recovered_root = recovered.get(root_number)
             if recovered_root is not None and recovered_root[0] == root_generation:
-                root_lexer = PdfLexer(data, recover_malformed_objects=True)
-                root_lexer.rewind(recovered_root[1])
                 try:
-                    root_value = root_lexer.parse_indirect_object()
+                    root_value = internal_parse_object_at(data, recovered_root[1], recover=True)
                 except Exception:
                     root_value = None
                 if (
@@ -335,10 +347,8 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901 - one pass over every
             value_start += len(data[value_start:]) - len(data[value_start:].lstrip())
             if data[value_start : value_start + 2] != b"<<" and not malformed_root:
                 continue
-            lexer = PdfLexer(data, recover_malformed_objects=True)
-            lexer.rewind(offset)
             try:
-                value = lexer.parse_indirect_object()
+                value = internal_parse_object_at(data, offset, recover=True)
             except Exception:
                 continue
             if not isinstance(value, dict):
@@ -478,9 +488,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901 - one pass over every
             # the requested object.  Only apply its strict dictionary parser
             # after confirming that the xref points at that object.
             if expected_header.match(data, info_entry.offset):
-                info_lexer = PdfLexer(data, recover_malformed_objects=False)
-                info_lexer.rewind(info_entry.offset)
-                info_lexer.parse_indirect_object()
+                internal_parse_object_at(data, info_entry.offset, recover=False)
 
     def reference_is_resolvable(value: object) -> bool:
         if not isinstance(value, PdfReference):
