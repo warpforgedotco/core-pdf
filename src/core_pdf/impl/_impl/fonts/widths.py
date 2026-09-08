@@ -111,43 +111,35 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
             default_width = parse_float(desc_missing_width, default_width)
             default_width_explicit = True
 
-    if subtype == "Type0":
-        return FontMetrics(
-            widths=widths,
-            default_width=default_width,
-            default_width_explicit=default_width_explicit,
-            is_vertical=is_vertical,
-            default_vertical_displacement_y=default_vertical_displacement_y,
-            default_vertical_origin_y=default_vertical_origin_y,
-            vertical_metrics=vertical_metrics,
-        )
-
-    first_char_val = font.get("FirstChar")
-    if first_char_val is None:
-        first_char = 0
-    else:
-        try:
-            first_char = parse_int_strict(first_char_val, "invalid font FirstChar")
-        except ValueError:
+    # Type0 widths came from /W above; only simple fonts carry /Widths, and
+    # nothing below touches any other field of the result.
+    if subtype != "Type0":
+        first_char_val = font.get("FirstChar")
+        if first_char_val is None:
             first_char = 0
-    last_char_val = font.get("LastChar")
-    last_char = None
-    if last_char_val is not None:
-        try:
-            last_char = parse_int_strict(last_char_val, "invalid font LastChar")
-        except ValueError:
-            last_char = None
-    font_widths = font.get("Widths")
-    if isinstance(font_widths, (list, tuple)):
-        sparse_widths: dict[int, float] = {}
-        for index, width in enumerate(font_widths):
-            code = first_char + index
-            if last_char is not None and code > last_char:
-                break
-            sparse_widths[code] = parse_float(width, default_width)
-        widths = SparseFontWidthMap(sparse_widths)
-    elif font_widths is not None:
-        raise ValueError("invalid font widths array")
+        else:
+            try:
+                first_char = parse_int_strict(first_char_val, "invalid font FirstChar")
+            except ValueError:
+                first_char = 0
+        last_char_val = font.get("LastChar")
+        last_char = None
+        if last_char_val is not None:
+            try:
+                last_char = parse_int_strict(last_char_val, "invalid font LastChar")
+            except ValueError:
+                last_char = None
+        font_widths = font.get("Widths")
+        if isinstance(font_widths, (list, tuple)):
+            sparse_widths: dict[int, float] = {}
+            for index, width in enumerate(font_widths):
+                code = first_char + index
+                if last_char is not None and code > last_char:
+                    break
+                sparse_widths[code] = parse_float(width, default_width)
+            widths = SparseFontWidthMap(sparse_widths)
+        elif font_widths is not None:
+            raise ValueError("invalid font widths array")
     return FontMetrics(
         widths=widths,
         default_width=default_width,
