@@ -156,17 +156,29 @@ def line_text_segment_from_atom(
     )
 
 
+def internal_visible_run_text(text: str, run: TextRun) -> str | None:
+    """``text`` with private-use characters removed, or None if the run is not visible.
+
+    A run drops out either because stripping unmapped private-use codepoints
+    leaves nothing behind, or because it is a page footer set too small to read.
+    """
+    if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
+        text = rules.strip_private_use_chars(text)
+        if not text:
+            return None
+    if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+        return None
+    return text
+
+
 def render_single_run_text(run: TextRun) -> str:
     text = run.text
     if not text:
         return ""
-    if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
-        text = rules.strip_private_use_chars(text)
-        if not text:
-            return ""
-    if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+    visible = internal_visible_run_text(text, run)
+    if visible is None:
         return ""
-    return rules.collapse_repeated_spaces(text)
+    return rules.collapse_repeated_spaces(visible)
 
 
 def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText:
@@ -435,12 +447,10 @@ class GlyphLineBuilder:
             if run.stripped_text.casefold() == "page":
                 return ""
             text = run.stripped_text
-        if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
-            text = rules.strip_private_use_chars(text)
-            if not text:
-                return ""
-        if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+        visible = internal_visible_run_text(text, run)
+        if visible is None:
             return ""
+        text = visible
         if self.is_trademark_marker_run(run, index):
             return "™"
         if self.is_superscript_like_numeric_run(run, index) or self.is_unit_exponent_run(run):
