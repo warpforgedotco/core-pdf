@@ -1239,9 +1239,12 @@ class Page:
         if not results and regex and not kwargs.get("layout"):
             formatted = self.extract_text()
             fallback_expression = re.sub(r"\\ +", r"\\s+", re.escape(pattern))
-            for match in re.finditer(fallback_expression, formatted, flags):
-                if self.chars:
-                    results.append(build_result(match, self.chars))
+            page_chars = self.chars
+            if page_chars:
+                results.extend(
+                    build_result(match, page_chars)
+                    for match in re.finditer(fallback_expression, formatted, flags)
+                )
         return results
 
     def crop(self, bbox: BBox, relative: bool = False, strict: bool = True) -> "CroppedPage":
