@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -327,5 +328,79 @@ def test_page_geometry_copy_and_closed_handle_behavior(pdf_path: Path) -> None:
             else:
                 pytest.fail(f"closed page accepted {name}")
         return output
+
+    assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)
+
+
+def test_rotation_matrices_keep_unnormalized_angles() -> None:
+    """PyMuPDF feeds the raw angle to `math.radians`, so signed zeros must survive."""
+
+    def snapshot(module: Any) -> list[Any]:
+        return [
+            (angle, repr(module.Matrix(angle)), tuple(module.Matrix(angle)))
+            for angle in (
+                -450,
+                -360,
+                -270,
+                -180,
+                -90,
+                -45,
+                -0.0,
+                0,
+                37,
+                90,
+                180,
+                270,
+                360,
+                450,
+                720,
+                1e10,
+            )
+        ]
+
+    assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)
+
+
+@pytest.mark.parametrize(
+    "determinant",
+    [
+        0.0,
+        1e-30,
+        1e-20,
+        sys.float_info.epsilon / 2,
+        sys.float_info.epsilon,
+        sys.float_info.epsilon * 2,
+        1e-12,
+        1e-8,
+        1.0,
+        -sys.float_info.epsilon / 2,
+        -sys.float_info.epsilon,
+        -sys.float_info.epsilon * 2,
+        -1.0,
+    ],
+)
+def test_matrix_inversion_rejects_the_same_determinants(determinant: float) -> None:
+    """`util_invert_matrix` refuses anything within `DBL_EPSILON` and leaves the matrix alone."""
+    scale = abs(determinant) ** 0.5 or 1.0
+    coefficients = (scale, 0.0, 0.0, determinant / scale, 3.0, -4.0)
+
+    def snapshot(module: Any) -> tuple[Any, ...]:
+        matrix = module.Matrix(coefficients)
+        status = matrix.invert()
+        return (status, tuple(matrix), tuple(~module.Matrix(coefficients)))
+
+    assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)
+
+
+@pytest.mark.parametrize("shear", [0.0, 1e-9, 1e-8, 1e-6, 9.9e-6, 1e-5, 1.1e-5, 1e-4, 1.0])
+def test_is_rectilinear_shares_the_pymupdf_epsilon(shear: float) -> None:
+    """PyMuPDF compares against `EPSILON = 1e-5`, on both the shear and the scale pair."""
+
+    def snapshot(module: Any) -> tuple[bool, ...]:
+        return (
+            module.Matrix(1.0, shear, shear, 1.0, 0.0, 0.0).is_rectilinear,
+            module.Matrix(shear, 1.0, 1.0, shear, 0.0, 0.0).is_rectilinear,
+            module.Matrix(shear, shear, shear, shear, 0.0, 0.0).is_rectilinear,
+        )
 
     assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)

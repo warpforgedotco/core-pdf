@@ -96,3 +96,38 @@ def test_page_matrix_sequence_and_singular_inversion(pdf_path: Path) -> None:
             )
 
     assert snapshot(compat_pymupdf) == snapshot(real_pymupdf)
+
+
+@pytest.mark.parametrize("pdf_path", internal_PDFS, ids=lambda path: path.name)
+def test_page_pixmap_scale_matrices(pdf_path: Path) -> None:
+    """Uniform scales must match PyMuPDF; the facade honours nothing else, so it refuses."""
+    supported = (None, (1, 1), (2, 2), (0.5, 0.5))
+    # `matrix.a` is the only coefficient the facade can honour, so anything carrying rotation,
+    # shear, translation, a non-uniform scale or a non-positive scale has to raise rather than
+    # silently render an unrotated, unshifted, minimum-scale page.
+    unsupported = ((90,), (-2, -2), (0, 0), (1, 2), ((1, 1, 0, 1, 0, 0),), ((1, 0, 0, 1, 5, 7),))
+
+    def snapshot(module: Any) -> list[Any]:
+        output: list[Any] = []
+        with module.open(pdf_path) as document:
+            page = document[0]
+            for args in supported:
+                matrix = module.Matrix(*args) if args is not None else None
+                pixmap = page.get_pixmap(matrix=matrix)
+                output.append((args, pixmap.width, pixmap.height))
+            for args in unsupported:
+                try:
+                    page.get_pixmap(matrix=module.Matrix(*args))
+                except ValueError:
+                    output.append((args, "ValueError"))
+                else:
+                    output.append((args, "rendered"))
+        return output
+
+    actual = snapshot(compat_pymupdf)
+    assert [entry for entry in actual if entry[0] in supported] == [
+        entry for entry in snapshot(real_pymupdf) if entry[0] in supported
+    ]
+    assert [entry for entry in actual if entry[0] in unsupported] == [
+        (args, "ValueError") for args in unsupported
+    ]

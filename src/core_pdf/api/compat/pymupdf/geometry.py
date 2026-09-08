@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import math
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from typing import Any, Self, cast, overload
 
 from core_pdf.api.compat._shared import float32
+
+#: PyMuPDF's geometry tolerance, used for the same comparisons it guards there.
+EPSILON = 1e-5
 
 
 class Matrix:
@@ -20,7 +24,7 @@ class Matrix:
         if len(args) == 1:
             value = args[0]
             if isinstance(value, (int, float)):
-                angle = math.radians(value % 360)
+                angle = math.radians(value)
                 self.a = self.d = round(math.cos(angle), 8)
                 self.b = round(math.sin(angle), 8)
                 self.c = -self.b
@@ -108,8 +112,8 @@ class Matrix:
 
     @property
     def is_rectilinear(self) -> bool:
-        return (abs(self.b) < 1e-8 and abs(self.c) < 1e-8) or (
-            abs(self.a) < 1e-8 and abs(self.d) < 1e-8
+        return (abs(self.b) < EPSILON and abs(self.c) < EPSILON) or (
+            abs(self.a) < EPSILON and abs(self.d) < EPSILON
         )
 
     def concat(self, one: Any, two: Any) -> Matrix:
@@ -158,7 +162,7 @@ class Matrix:
     def invert(self, src: Any = None) -> int:
         a, b, c, d, e, f = map(float32, self if src is None else Matrix(src))
         determinant = a * d - b * c
-        if abs(determinant) <= 1e-30:
+        if abs(determinant) <= sys.float_info.epsilon:
             return 1
         inverse = 1.0 / determinant
         self.a, self.b = float32(d * inverse), float32(-b * inverse)

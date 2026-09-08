@@ -668,8 +668,12 @@ class Page:
     ) -> Pixmap:
         del kwargs
         scale = matrix.a if matrix is not None else 1.0
-        if matrix is not None and matrix.d != matrix.a:
-            raise ValueError("non-uniform pixmap matrices are not supported")
+        if matrix is not None and (
+            matrix.d != scale
+            or scale <= 0.0
+            or any(value != 0.0 for value in (matrix.b, matrix.c, matrix.e, matrix.f))
+        ):
+            raise ValueError("only positive uniform scale pixmap matrices are supported")
         requested_dpi = float(dpi if dpi is not None else 72.0 * scale)
         engine_page = self._document.capability_page(self._page_number)
         raster = engine_page.render().rasterize(scale=max(0.01, requested_dpi / 72.0), crop=clip)
