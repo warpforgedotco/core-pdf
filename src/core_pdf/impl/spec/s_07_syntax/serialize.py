@@ -9,37 +9,75 @@ from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 
 def serialize_object(value: object) -> bytes:
+    out = bytearray()
+    serialize_into(out, value)
+    return bytes(out)
+
+
+def serialize_into(out: bytearray, value: object) -> None:
+    """Append ``value``'s object syntax to ``out``.
+
+    Appending rather than returning matters for streams: a stream body is
+    already the largest thing in the file, and building the object by
+    concatenation copied it once to join it to its dictionary and again to
+    reach the caller's buffer.
+    """
     if value is None:
-        return b"null"
+        out += b"null"
+        return
     if isinstance(value, bool):
-        return b"true" if value else b"false"
+        out += b"true" if value else b"false"
+        return
     if isinstance(value, PdfReference):
-        return str(value).encode("ascii")
+        out += str(value).encode("ascii")
+        return
     if isinstance(value, PdfName):
-        return serialize_name(value)
+        out += serialize_name(value)
+        return
     if isinstance(value, PdfString):
-        return b"<" + value.data.hex().encode("ascii") + b">"
+        out += b"<" + value.data.hex().encode("ascii") + b">"
+        return
     if isinstance(value, (bytes, bytearray, memoryview)):
-        return b"<" + bytes(value).hex().encode("ascii") + b">"
+        out += b"<" + bytes(value).hex().encode("ascii") + b">"
+        return
     if isinstance(value, int):
-        return str(value).encode("ascii")
+        out += str(value).encode("ascii")
+        return
     if isinstance(value, float):
-        return format(Decimal(str(value)), "f").encode("ascii")
+        out += format(Decimal(str(value)), "f").encode("ascii")
+        return
     if isinstance(value, str):
-        return value.encode("latin-1")
+        out += value.encode("latin-1")
+        return
     if isinstance(value, (list, tuple)):
-        return b"[" + b" ".join(serialize_object(v) for v in value) + b"]"
+        out += b"["
+        for index, item in enumerate(value):
+            if index:
+                out += b" "
+            serialize_into(out, item)
+        out += b"]"
+        return
     if isinstance(value, PdfStream):
-        raw = bytes(value.raw_data)
+        raw = value.raw_data
         dictionary = dict(value.dictionary)
-        dictionary["Length"] = len(raw)
-        return serialize_object(dictionary) + b"\nstream\n" + raw + b"\nendstream"
+        # A memoryview's len() counts elements rather than bytes. These views
+        # are always itemsize 1, but /Length has to be right either way.
+        dictionary["Length"] = raw.nbytes if isinstance(raw, memoryview) else len(raw)
+        serialize_into(out, dictionary)
+        out += b"\nstream\n"
+        out += raw
+        out += b"\nendstream"
+        return
     if isinstance(value, dict):
-        return (
-            b"<<"
-            + b" ".join(serialize_name(k) + b" " + serialize_object(v) for k, v in value.items())
-            + b">>"
-        )
+        out += b"<<"
+        for index, (key, item) in enumerate(value.items()):
+            if index:
+                out += b" "
+            out += serialize_name(key)
+            out += b" "
+            serialize_into(out, item)
+        out += b">>"
+        return
     raise TypeError(f"unsupported PDF object: {type(value).__name__}")
 
 
@@ -57,4 +95,4 @@ def serialize_name(value: object) -> bytes:
     ).encode("ascii")
 
 
-__all__ = ("serialize_object", "serialize_name")
+__all__ = ("serialize_object", "serialize_into", "serialize_name")

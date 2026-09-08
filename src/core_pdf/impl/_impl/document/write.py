@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object
+from core_pdf.impl.spec.s_07_syntax.serialize import serialize_into
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 
@@ -22,7 +22,7 @@ def write_pdf(
     for number, (generation, obj) in sorted(objects.items()):
         offsets[number] = len(output)
         output.extend(f"{number} {generation} obj\n".encode("ascii"))
-        output.extend(serialize_object(obj))
+        serialize_into(output, obj)
         output.extend(b"\nendobj\n")
     xref_offset = len(output)
     output.extend(f"xref\n0 {size}\n".encode("ascii"))
@@ -45,7 +45,8 @@ def write_pdf(
         k: v for k, v in trailer.items() if normalize_pdf_name(k) in {"Root", "Info", "ID"}
     }
     final_trailer["Size"] = size
-    output.extend(b"trailer\n" + serialize_object(final_trailer))
+    output.extend(b"trailer\n")
+    serialize_into(output, final_trailer)
     output.extend(f"\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii"))
     return bytes(output)
 
