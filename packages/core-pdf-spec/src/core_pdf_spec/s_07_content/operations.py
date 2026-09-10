@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
@@ -149,9 +149,47 @@ class ContentOperationState:
             raise PdfParseError("unmatched EX operator")
         self.compatibility_depth -= 1
 
+    def internal_advance_compatibility(self, operator: str) -> None:
+        if operator == "BX":
+            self.begin_compatibility()
+        elif operator == "EX":
+            self.end_compatibility()
+
+    def internal_validate_operation(self, operator: str, operands: ContentOperands) -> None:
+        validate_content_operands(operator, operands)
+        self.internal_advance_compatibility(operator)
+
     def finish(self) -> None:
         if self.compatibility_depth:
             raise PdfParseError("unterminated compatibility section")
+
+
+class internal_OperationStateOwner(Protocol):
+    @property
+    def operation_state(self) -> ContentOperationState: ...
+
+
+@dataclass(frozen=True, slots=True)
+class internal_StrictOperationHandler:
+    """A strict callable whose semantic callback runs after scope validation.
+
+    Keep the owner, rather than its current scope: retained handlers must follow
+    the owner's active stream when nested execution replaces that scope.
+    """
+
+    name: str
+    owner: internal_OperationStateOwner
+    callback: OperationHandler
+
+    def __call__(self, operands: ContentOperands, depth: int) -> None:
+        self.dispatch(operands, depth, self.owner.operation_state)
+
+    def dispatch(self, operands: ContentOperands, depth: int, state: ContentOperationState) -> None:
+        state.internal_validate_operation(self.name, operands)
+        owner_state = self.owner.operation_state
+        if owner_state is not state:
+            owner_state.internal_advance_compatibility(self.name)
+        self.callback(operands, depth)
 
 
 def internal_dispatch_operations(
@@ -191,6 +229,11 @@ def dispatch_operations(
 
     The lexer is positioned after the complete operation before calling its
     handler, so a suspended nested stream can resume without replaying it.
+
+    Handlers returned directly by TextState.get_operation_handler share fixed
+    validation with this dispatcher. Each distinct compatibility scope advances
+    once. Other callbacks own their semantics; wrapping a strict handler in an
+    opaque callable hides this ownership information.
     """
     state = operation_state if operation_state is not None else ContentOperationState()
 
@@ -200,12 +243,11 @@ def dispatch_operations(
         handler = get_handler(op_name)
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {op_name}")
-        validate_content_operands(op_name, operands)
-        if op_name == "BX":
-            state.begin_compatibility()
-        elif op_name == "EX":
-            state.end_compatibility()
-        handler(operands, depth)
+        if isinstance(handler, internal_StrictOperationHandler) and handler.name == op_name:
+            handler.dispatch(operands, depth, state)
+        else:
+            state.internal_validate_operation(op_name, operands)
+            handler(operands, depth)
 
     internal_dispatch_operations(lexer, execute, depth)
     state.finish()

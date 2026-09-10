@@ -151,22 +151,20 @@ class RecordingMethods(SemanticTextState):
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
+        if self.internal_text_paint_mode() in internal_NON_PAINTING_RENDER_MODES:
+            return False
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
             return False
-        if (
-            not self.marked_content_stack
-            and self.render_mode not in internal_NON_PAINTING_RENDER_MODES
-            and self.font_size >= 0.1
-        ):
+        if not self.marked_content_stack and self.font_size >= 0.1:
             return True
 
-        # Render mode 3 and sub-0.1pt text paint nothing, so they are not visible
-        # here. Whether such a layer is nonetheless the page's real text -- a scan
+        # Sub-0.1pt text is not visible here. Whether such a layer is nonetheless
+        # the page's real text -- a scan
         # carrying an OCR layer -- is a property of the whole page, not of the runs
         # captured before this operator, so that call belongs to
         # `internal_hidden_text_is_trusted` once parsing has seen every run.
-        if self.render_mode in internal_NON_PAINTING_RENDER_MODES or self.font_size < 0.1:
+        if self.font_size < 0.1:
             return False
 
         return self.is_graphics_visible()
@@ -241,8 +239,6 @@ class RecordingMethods(SemanticTextState):
             font_ascent=self.font_ascent,
             font_descent=self.font_descent,
             advance_scale=self.text_advance_scale,
-            char_space_scale=self.char_space_scale,
-            word_space_scale=self.word_space_scale,
             char_space=self.char_space,
             word_space=self.word_space,
             horizontal_scale=self.horizontal_scale,
@@ -256,7 +252,7 @@ class RecordingMethods(SemanticTextState):
             clip_bbox=self.clip_bbox,
             page_clip=self.page_clip,
             fill=self.capture_color(stroke=False),
-            render_mode=self.render_mode,
+            render_mode=self.internal_text_paint_mode(),
             fill_opacity=self.fill_opacity,
             stroke_color=self.capture_color(stroke=True),
             stroke_opacity=self.stroke_opacity,
@@ -266,6 +262,7 @@ class RecordingMethods(SemanticTextState):
             dash_pattern=self.transformed_dash_pattern(),
             blend_mode=self.blend_mode,
             group_alpha=self.group_alpha,
+            clip_glyph=4 <= self.render_mode <= 7 and self.is_graphics_visible(),
         )
         provenance = (
             ("source", self.capture_source),
@@ -275,6 +272,7 @@ class RecordingMethods(SemanticTextState):
             ("layout_form_bbox", self.layout_form_bbox),
             ("layout_form_id", self.layout_form_id),
             ("text_matrix", text_basis[2:]),
+            ("text_render_mode", self.render_mode),
             ("line_matrix_origin", (self.lm_e, self.lm_f)),
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
@@ -346,6 +344,8 @@ class RecordingMethods(SemanticTextState):
         decoder = cast(FontDecoder, decoder)
         glyphs = cast(tuple[DecodedGlyph, ...], glyphs)
         visible = self.is_text_visible(text)
+        if 4 <= self.render_mode <= 7 and self.is_graphics_visible():
+            self.internal_emit_clip_scope_push()
 
         fs = self.font_size
         rise = self.rise
@@ -489,6 +489,13 @@ class RecordingMethods(SemanticTextState):
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not self.is_graphics_visible():
             return
+        fills = kind in {"fill", "fillstroke"} and not self.internal_initial_pattern(stroke=False)
+        strokes = kind in {"stroke", "fillstroke"} and not self.internal_initial_pattern(
+            stroke=True
+        )
+        if not fills and not strokes:
+            return
+        kind = "fillstroke" if fills and strokes else "fill" if fills else "stroke"
 
         captured_path = flatten_path(source)
         if (
@@ -569,6 +576,9 @@ class RecordingMethods(SemanticTextState):
     def paint_image(self, state: object, xobj: PdfStream) -> None:
         xobj_dict = xobj.dictionary
         if self.is_graphics_visible():
+            image_is_stencil = self.document.resolver.resolve(xobj_dict.get("ImageMask")) is True
+            if image_is_stencil and self.internal_initial_pattern(stroke=False):
+                return
             width = self.document.resolver.resolve_int(xobj_dict.get("Width")) or 0
             height = self.document.resolver.resolve_int(xobj_dict.get("Height")) or 0
             bbox = None
@@ -581,7 +591,6 @@ class RecordingMethods(SemanticTextState):
             # set bits in the current fill colour. Every other image ignores
             # the fill, so recording it is only meaningful for the mask case,
             # but it costs nothing to carry and the renderer decides.
-            image_is_stencil = xobj_dict.get("ImageMask") is True
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
@@ -606,6 +615,8 @@ class RecordingMethods(SemanticTextState):
     def paint_inline_image(self, state: object, image: "InlineImage") -> None:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
+            if dictionary.get("ImageMask") is True and self.internal_initial_pattern(stroke=False):
+                return
             data = getattr(image, "data", b"")
             color_name = normalize_pdf_name(dictionary.get("ColorSpace"))
             if color_name is not None:
@@ -758,6 +769,21 @@ class RecordingMethods(SemanticTextState):
             )
             self.sequence += 1
 
+    def internal_initial_pattern(self, *, stroke: bool) -> bool:
+        space = self.stroke_color_space if stroke else self.fill_color_space
+        pattern = self.stroke_pattern if stroke else self.fill_pattern
+        return space == "Pattern" and pattern is None
+
+    def internal_text_paint_mode(self) -> int:
+        """Remove unselected Pattern contributions without changing text clipping."""
+        mode = self.render_mode
+        if mode not in range(8):
+            return mode
+        fills = mode in {0, 2, 4, 6} and not self.internal_initial_pattern(stroke=False)
+        strokes = mode in {1, 2, 5, 6} and not self.internal_initial_pattern(stroke=True)
+        paint = 2 if fills and strokes else 0 if fills else 1 if strokes else 3
+        return paint + (4 if mode >= 4 else 0)
+
     def capture_color(self, *, stroke: bool) -> tuple[float, ...] | None:
         """Project PDF color components only when creating output records."""
         color = self.stroke_color if stroke else self.fill_color
@@ -794,14 +820,19 @@ class RecordingMethods(SemanticTextState):
                 self.capture_patterns[key] = (pattern, None)
                 return None
             if pattern.paint_type == 2:
+                base_color = pattern.base_color
+                if base_color is not None and pattern.base_color_spec is not None:
+                    converted = color_operands_to_srgb(pattern.base_color_spec, base_color)
+                    if converted is not None:
+                        base_color = converted
                 for drawing in nested.drawings:
                     if drawing.kind in {"fill", "fillstroke"}:
-                        drawing.fill = pattern.base_color
+                        drawing.fill = base_color
                     if drawing.kind in {"stroke", "fillstroke"}:
-                        drawing.stroke_color = pattern.base_color
+                        drawing.stroke_color = base_color
                 for glyph in nested.glyphs:
-                    glyph.fill = pattern.base_color
-                    glyph.stroke_color = pattern.base_color
+                    glyph.fill = base_color
+                    glyph.stroke_color = base_color
             result = TilingPattern(
                 pattern.bbox,
                 pattern.x_step,

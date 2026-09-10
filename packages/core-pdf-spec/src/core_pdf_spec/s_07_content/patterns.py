@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Passive pattern selections defined by PDF pattern dictionaries."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypeAlias
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.types import Rectangle
 
@@ -25,6 +26,7 @@ class TilingPattern:
     matrix: Matrix
     paint_type: int
     base_color: tuple[float, ...] | None
+    base_color_spec: ImageColorSpec | None = field(default=None, kw_only=True)
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

@@ -72,9 +72,25 @@ def glyph_advance_vector(
     return (0.0, displacement) if vertical else (displacement * horizontal_scale / 100.0, 0.0)
 
 
+def text_adjustment_vector(
+    adjustment: float,
+    *,
+    vertical: bool,
+    font_size: float,
+    horizontal_scale: float,
+) -> tuple[float, float]:
+    """PDF 32000-1 9.4.4: TJ adjusts only the current writing direction.
+
+    Horizontal scaling applies only to a horizontal displacement.
+    """
+    displacement = -adjustment * font_size / 1000.0
+    return (0.0, displacement) if vertical else (displacement * horizontal_scale / 100.0, 0.0)
+
+
 __all__ = [
     "standard_14_widths",
     "font_descriptor_metrics",
     "type3_width_scale",
     "glyph_advance_vector",
+    "text_adjustment_vector",
 ]

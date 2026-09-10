@@ -38,7 +38,9 @@ def tj_state_with_recording(
     state.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
     state.tm_a, state.tm_b, state.tm_c, state.tm_d = 2.0, 3.0, 5.0, 7.0
     state.tm_e, state.tm_f = 11.0, 13.0
-    state.text_advance_scale = 0.1
+    state.font_size = 100
+    state.horizontal_scale = 100
+    state.update_text_scales()
     shown: list[tuple[bytes, float, float]] = []
 
     def append_text(*, data: bytes, decoder: object) -> None:

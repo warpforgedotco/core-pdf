@@ -155,3 +155,69 @@ def test_reader_cff_dict_retains_complete_entries_before_trailing_operand() -> N
 
 def test_reader_infers_missing_font_widths_range() -> None:
     assert dict(parse_font_widths({"Widths": [500]}, "Type1").widths) == {0: 500}
+
+
+@pytest.mark.parametrize("reader", [CMapDecoder, ToUnicodeCMap])
+def test_reader_cmap_preserves_five_byte_codes(reader: type[CMapDecoder | ToUnicodeCMap]) -> None:
+    codespace = b"1 begincodespacerange <0000000000> <ffffffffff> endcodespacerange "
+    mapping = (
+        b"1 begincidchar <0000000001> 7 endcidchar"
+        if reader is CMapDecoder
+        else b"1 beginbfchar <0000000001> <0041> endbfchar"
+    )
+    cmap = reader(codespace + mapping)
+    if isinstance(cmap, CMapDecoder):
+        assert cmap.decode_entries(b"\x00\x00\x00\x00\x01") == [(b"\x00\x00\x00\x00\x01", 7)]
+    else:
+        assert cmap.lookup(b"\x00\x00\x00\x00\x01") == "A"
+    assert cmap.decode_lengths == (5,)
+
+
+@pytest.mark.parametrize("reader", [CMapDecoder, ToUnicodeCMap])
+def test_reader_preserves_disjoint_child_codespace_redeclarations(
+    reader: type[CMapDecoder | ToUnicodeCMap],
+) -> None:
+    parent = b"1 begincodespacerange <00> <7f> endcodespacerange "
+    child = b"/Parent usecmap 1 begincodespacerange <80> <ff> endcodespacerange "
+    cmap = reader(child, usecmap_resolver=lambda name: parent)
+    assert tuple(cmap.code_space_ranges) == ((b"\x00", b"\x7f"), (b"\x80", b"\xff"))
+
+
+def test_reader_tounicode_preserves_overlapping_inherited_codespaces_and_local_mappings() -> None:
+    parent = CODESPACE + b"1 beginbfchar <01> <0041> endbfchar"
+    child = b"/Parent usecmap " + CODESPACE + b"1 beginbfchar <01> <0042> endbfchar"
+    cmap = ToUnicodeCMap(child, usecmap_resolver=lambda name: parent)
+    assert len(cmap.code_space_ranges) == 2
+    assert cmap.lookup(b"\x01") == "B"
+
+
+def test_reader_tounicode_keeps_mapping_outside_parent_codespace() -> None:
+    parent = b"1 begincodespacerange <00> <7f> endcodespacerange"
+    child = b"/Parent usecmap 1 beginbfchar <80> <0041> endbfchar"
+    cmap = ToUnicodeCMap(child, usecmap_resolver=lambda name: parent)
+    assert cmap.lookup(b"\x80") == "A"
+
+
+def test_reader_tounicode_keeps_mappings_after_invalid_codespace() -> None:
+    cmap = ToUnicodeCMap(
+        b"1 begincodespacerange <0083> <020c> endcodespacerange "
+        b"1 beginbfchar <0100> <0041> endbfchar"
+    )
+    assert not cmap.code_space_ranges
+    assert cmap.lookup(b"\x01\x00") == "A"
+
+
+@pytest.mark.parametrize("font", [{}, {"FontDescriptor": None}, {"FontDescriptor": {}}])
+def test_reader_keeps_default_width_recovery_for_absent_and_null_descriptors(
+    font: dict[str, object],
+) -> None:
+    metrics = parse_font_widths(font, "Type1")
+    assert metrics.default_width == 1000.0
+    assert metrics.default_width_explicit is False
+    assert internal_font_program_for_pdf_font(font) is None
+
+
+def test_reader_does_not_substitute_for_explicit_zero_missing_width() -> None:
+    metrics = parse_font_widths({"FontDescriptor": {"MissingWidth": 0}}, "Type1")
+    assert metrics.default_width == 0.0
+    assert metrics.default_width_explicit is True

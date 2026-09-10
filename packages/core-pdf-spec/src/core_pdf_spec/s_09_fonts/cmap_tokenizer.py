@@ -69,7 +69,13 @@ class CMapProgram:
             token.kind == "word" and token.value == b"begincmap" for token in tokens
         ) and not any(token.kind == "word" and token.value == b"endcmap" for token in tokens):
             raise ValueError("unterminated CMap program")
-        return cls(source, scope_cmap_tokens(tokens))
+        scoped_tokens = scope_cmap_tokens(tokens)
+        operators = {token.value for token in scoped_tokens if token.kind == "word"}
+        # Adobe Technical Note 5014, 5.4 and 7.3: usecmap adopts its parent's
+        # codespace; a child must not redefine that codespace.
+        if {b"usecmap", b"begincodespacerange"} <= operators:
+            raise ValueError("CMap usecmap cannot redefine codespacerange")
+        return cls(source, scoped_tokens)
 
     def blocks(self, begin: bytes, end: bytes) -> typing.Iterator[CMapBlock]:
         """Yield blocks delimited by exact word tokens.

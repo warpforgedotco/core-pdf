@@ -63,7 +63,7 @@ def internal_append_glyph_paint(
     *,
     include_paint: bool = True,
 ) -> bool:
-    if glyph.visible is False:
+    if glyph.visible is False and not glyph.clip_glyph:
         return True
     mode = int(glyph.text_render_mode)
     if not include_paint and mode < 4:
@@ -73,7 +73,7 @@ def internal_append_glyph_paint(
         return False
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
-    if not include_paint or mode in NON_PAINTING_RENDER_MODES:
+    if not include_paint or mode in NON_PAINTING_RENDER_MODES or glyph.visible is False:
         return True
     paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
     display_list.append(

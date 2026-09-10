@@ -153,7 +153,7 @@ def capture_annotation_appearances(
                 continue
             rect = internal_normalized_rect(rect)
 
-            raw_matrix = stream.dictionary.get("Matrix")
+            raw_matrix = document.resolver.deep_resolve(stream.dictionary.get("Matrix"))
             if isinstance(raw_matrix, (list, tuple)) and len(raw_matrix) > 6:
                 raw_matrix = raw_matrix[:6]
             matrix = Matrix.from_operand(raw_matrix) if raw_matrix is not None else IDENTITY_MATRIX

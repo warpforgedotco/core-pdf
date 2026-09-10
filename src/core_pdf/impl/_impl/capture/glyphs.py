@@ -217,8 +217,6 @@ class TextGeometry:
     font_ascent: float
     font_descent: float
     advance_scale: float
-    char_space_scale: float
-    word_space_scale: float
     char_space: float
     word_space: float
     horizontal_scale: float
@@ -246,6 +244,7 @@ class GlyphPaint:
     dash_pattern: tuple[list[float], float] | None
     blend_mode: str | None
     group_alpha: float | None
+    clip_glyph: bool = False
 
 
 @dataclass(slots=True)
@@ -286,8 +285,6 @@ def capture_glyphs(
     font_descent = geometry.font_descent
     rise = geometry.rise
     advance_scale = geometry.advance_scale
-    char_space_scale = geometry.char_space_scale
-    word_space_scale = geometry.word_space_scale
     effective_font_name = decoder.font_name or font_name
     is_vertical = decoder.is_vertical
     axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
@@ -314,23 +311,16 @@ def capture_glyphs(
     # the slice it just wrote.
     add_run_geometry = result.geometry.add
     for glyph in glyphs:
-        if is_vertical:
-            _, advance_y = decoder.glyph_advance_vector(
-                glyph.width_code,
-                font_size=font_size,
-                char_space=geometry.char_space,
-                word_space=geometry.word_space,
-                horizontal_scale=geometry.horizontal_scale,
-                encoded_space=glyph.code_bytes == b" ",
-            )
-            # Capture measures positive distance down the writing line.
-            advance = -advance_y
-        else:
-            advance = (
-                decoder.glyph_width(glyph.width_code)
-                + char_space_scale
-                + (word_space_scale if glyph.code_bytes == b" " else 0.0)
-            ) * advance_scale
+        advance_x, advance_y = decoder.glyph_advance_vector(
+            glyph.width_code,
+            font_size=font_size,
+            char_space=geometry.char_space,
+            word_space=geometry.word_space,
+            horizontal_scale=geometry.horizontal_scale,
+            encoded_space=glyph.code_bytes == b" ",
+        )
+        # Capture measures positive distance down the vertical writing line.
+        advance = -advance_y if is_vertical else advance_x
         chunk_text = glyph.unicode
         if not chunk_text:
             chunk_text = text[cursor : cursor + 1]
@@ -524,6 +514,7 @@ def capture_glyphs(
                 provenance=provenance,
                 glyph_transform=outline_transform,
                 text_render_mode=paint.render_mode,
+                clip_glyph=paint.clip_glyph,
                 fill_opacity=paint.fill_opacity,
                 stroke_color=paint.stroke_color,
                 stroke_opacity=paint.stroke_opacity,

@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Final, NamedTuple
 
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
+
 
 class Matrix(NamedTuple):
     a: float
@@ -29,7 +31,7 @@ class Matrix(NamedTuple):
         )
         if not all(type(v) in (int, float) for v in (a0, a1, a2, a3, a4, a5)):
             raise ValueError("invalid matrix operand")
-        return cls(float(a0), float(a1), float(a2), float(a3), float(a4), float(a5))
+        return cls(*(parse_float_strict(value, "invalid matrix operand") for value in operands))
 
     def multiply(self, right: Matrix) -> Matrix:
         if right == IDENTITY_MATRIX:

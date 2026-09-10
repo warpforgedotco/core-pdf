@@ -52,6 +52,9 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
     def parse_program(data: bytes) -> ParsedToUnicodeCMap:
         return parse_to_unicode_cmap(data)
 
+    def validate_mappings(self) -> None:
+        """Keep recovered mappings even when their effective codespace is malformed."""
+
     def __init__(
         self,
         data: bytes | bytearray | memoryview,

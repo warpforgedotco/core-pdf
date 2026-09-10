@@ -17,7 +17,7 @@ def info_dictionary(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | N
 
 
 def metadata_stream(resolver: PdfValueResolver, trailer: PdfDict) -> PdfStream | None:
-    root = resolver.deep_resolve(trailer.get("Root"))
+    root = resolver.resolve(trailer.get("Root"))
     if root is None:
         return None
     return catalog_metadata_stream(resolver, root)

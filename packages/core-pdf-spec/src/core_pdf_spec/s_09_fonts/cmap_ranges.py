@@ -67,6 +67,22 @@ def validate_codespace_range(start: bytes, end: bytes) -> None:
         raise ValueError("invalid CMap range")
 
 
+def internal_validate_pdf_codespace(ranges: CodeSpaceRanges, codes: typing.Iterable[bytes]) -> None:
+    """Validate the effective PDF codespace after adopting any parent CMap."""
+    # ISO 32000-1, 9.7.6.2: PDF codes have at most four bytes, and codespace
+    # ranges cannot overlap. Generic PostScript CMap ranges need no PDF limit.
+    if not ranges:
+        raise ValueError("missing CMap codespacerange")
+    for index, (start, end) in enumerate(ranges):
+        validate_codespace_range(start, end)
+        if len(start) > 4:
+            raise ValueError("invalid PDF CMap character code length")
+        if any(ranges_overlap((start, end), previous) for previous in ranges[:index]):
+            raise ValueError("overlapping CMap codespacerange")
+    if any(not code_in_ranges(code, ranges) for code in codes):
+        raise ValueError("CMap mapping outside codespace")
+
+
 def range_offset(
     code: bytes,
     start: bytes,

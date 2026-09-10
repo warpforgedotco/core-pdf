@@ -40,6 +40,7 @@ class ImageColorSpec:
     tint_fn: object = None
     channels: int = 1
     icc_profile: bytes | None = field(default=None, repr=False)
+    pattern_base: ImageColorSpec | None = field(default=None, kw_only=True)
 
 
 def normalize_indexed_base_color_space_name(value: object) -> str | None:
@@ -108,6 +109,19 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
 
     if isinstance(color_space, (list, tuple)) and color_space:
         kind = normalize_pdf_name(color_space[0])
+        if kind == "Pattern":
+            if len(color_space) not in {1, 2}:
+                raise ValueError("invalid Pattern color space")
+            base = (
+                color_spec_from_value(color_space[1], bits_per_component=bits_per_component)
+                if len(color_space) == 2
+                else None
+            )
+            if base is not None and base.kind == "Pattern":
+                raise ValueError("Pattern cannot be its own underlying color space")
+            return ImageColorSpec(
+                kind="Pattern", params={}, bits_per_component=bits_per_component, pattern_base=base
+            )
         if kind == "Indexed" and len(color_space) >= 4:
             lookup = color_space[3]
             lookup_bytes: bytes | None

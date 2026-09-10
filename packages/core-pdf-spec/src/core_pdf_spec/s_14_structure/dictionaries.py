@@ -8,6 +8,7 @@ from typing import cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.types import MISSING
 
 
 def parse_role_map(
@@ -41,8 +42,10 @@ def attribute_entries(
     consumer. An omitted revision number denotes revision zero.
     """
     index = 0
+    pending: object = MISSING
     while index < len(entries):
-        attribute = resolve(entries[index])
+        attribute = resolve(entries[index]) if pending is MISSING else pending
+        pending = MISSING
         if not isinstance(attribute, (dict, PdfStream)):
             raise ValueError("invalid structure attribute entry")
         index += 1
@@ -50,7 +53,9 @@ def attribute_entries(
         explicit_revision = False
         if index < len(entries):
             candidate = resolve(entries[index])
-            if not isinstance(candidate, (dict, PdfStream)):
+            if isinstance(candidate, (dict, PdfStream)):
+                pending = candidate
+            else:
                 parsed = resolve_revision(candidate)
                 if parsed is None:
                     raise ValueError("invalid structure attribute revision")

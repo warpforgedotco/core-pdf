@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from itertools import chain
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from core_pdf_spec.s_09_fonts.cmap_ranges import (
     CIDRange,
     NotdefRange,
     code_in_range,
+    internal_validate_pdf_codespace,
     range_offset,
     ranges_overlap,
     remove_codes_in_range,
@@ -145,11 +147,10 @@ class CMapDecoder:
         return cmap_metadata(program)
 
     def validate_mappings(self) -> None:
-        if not self.code_space_ranges:
-            raise ValueError("missing CMap codespacerange")
-        for code in (*self.cid_mappings, *self.notdef_mappings):
-            if not any(code_in_range(code, start, end) for start, end in self.code_space_ranges):
-                raise ValueError("CMap mapping outside codespace")
+        """Validate all inherited and local codespaces and CID/notdef mappings."""
+        internal_validate_pdf_codespace(
+            self.code_space_ranges, chain(self.cid_mappings, self.notdef_mappings)
+        )
         mapping_ranges: tuple[CIDRange | NotdefRange, ...] = (*self.cid_ranges, *self.notdef_ranges)
         for item in mapping_ranges:
             if not any(

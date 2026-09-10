@@ -136,7 +136,6 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     parms_raw = dictionary.get("DecodeParms")
     if is_pdf_null(parms_raw):
         parms_raw = dictionary.get("FDecodeParms")
-    raw_param_items = list(parms_raw) if isinstance(parms_raw, (list, tuple)) else None
 
     names: list[str] = []
     for item in filters:
@@ -145,37 +144,19 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
             raise FilterParseError("invalid stream decode filter")
         names.append(name)
 
-    if is_pdf_null(parms_raw):
-        decode_parms: list[object] = []
-    elif raw_param_items is not None:
-        decode_parms = raw_param_items
-    else:
-        if len(names) > 1:
-            raise FilterParseError("invalid stream decode parameters")
-        decode_parms = [parms_raw]
-
     if not names:
-        decode_parms = []
-
-    if isinstance(parms_raw, (list, tuple)) and len(decode_parms) != len(names):
+        params: tuple[DecodeParam, ...] = ()
+    elif is_pdf_null(parms_raw):
+        params = (None,) * len(names)
+    elif isinstance(parms_raw, (list, tuple)):
+        if len(parms_raw) != len(names):
+            raise FilterParseError("invalid stream decode parameters")
+        params = tuple(parms_raw)
+    elif len(names) == 1:
+        params = (parms_raw,)
+    else:
         raise FilterParseError("invalid stream decode parameters")
-
-    if len(decode_parms) not in {0, 1, len(names)}:
-        raise FilterParseError("invalid stream decode parameters")
-
-    if len(decode_parms) == 1 and len(names) > 1:
-        raise FilterParseError("invalid stream decode parameters")
-
-    params: list[DecodeParam] = []
-    for index, filter_name in enumerate(names):
-        if len(decode_parms) == 1:
-            parms = decode_parms[0]
-        elif len(decode_parms) == len(names):
-            parms = decode_parms[index]
-        else:
-            parms = None
-        params.append(parms)
-    return StreamDecodeSpec(filters=tuple(names), params=tuple(params))
+    return StreamDecodeSpec(filters=tuple(names), params=params)
 
 
 class StreamDecoder(Protocol):

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy
 
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
@@ -47,6 +49,25 @@ def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> byte
     return numpy.cumsum(rows, axis=1, dtype=numpy.uint16).astype(">u2").tobytes()
 
 
+def internal_unpack_subbyte_rows(
+    packed_rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    samples_per_row: int,
+    bits_per_component: int,
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+    """Unpack prepared byte rows into MSB-first samples, discarding row padding.
+
+    Callers supply a two-dimensional uint8 array containing enough bytes for
+    each row, normally with sample depths of 1, 2, or 4. Input validation and
+    incomplete-row policy belong to the caller.
+    """
+    binary = numpy.unpackbits(packed_rows, axis=1, bitorder="big")[
+        :, : samples_per_row * bits_per_component
+    ]
+    groups = binary.reshape(len(packed_rows), samples_per_row, bits_per_component)
+    shifts = numpy.arange(bits_per_component - 1, -1, -1, dtype=numpy.uint8)
+    return numpy.sum(groups << shifts, axis=2, dtype=numpy.uint8)
+
+
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
     """Undo TIFF differences modulo the sample depth, preserving row alignment."""
     sample_count = colors * columns
@@ -59,12 +80,8 @@ def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits:
         dtype=numpy.uint8,
         count=complete_rows * row_byte_length,
     )
-    binary = numpy.unpackbits(
-        encoded.reshape(complete_rows, row_byte_length), axis=1, bitorder="big"
-    )[:, : sample_count * bits]
-    groups = binary.reshape(complete_rows, sample_count, bits)
-    samples = numpy.sum(
-        groups << numpy.arange(bits - 1, -1, -1, dtype=numpy.uint8), axis=2, dtype=numpy.uint8
+    samples = internal_unpack_subbyte_rows(
+        encoded.reshape(complete_rows, row_byte_length), sample_count, bits
     ).reshape(complete_rows, columns, colors)
     # uint8 accumulation wraps modulo 256, and 2**bits divides 256 for every
     # width here, so masking once at the end agrees with masking every step.
@@ -109,23 +126,16 @@ def png_predict(
         raise PredictorError("truncated PNG predictor row")
     out = bytearray((n // (row_length + 1)) * row_length)
     out_view = numpy.frombuffer(out, dtype=numpy.uint8)
-    out_pos = 0
-    pos = 0
     previous: bytes | bytearray | memoryview | numpy.ndarray = bytearray(row_length)
     bpp = bytes_per_pixel
     rl = row_length
-    while pos < n:
-        if pos + 1 > n:
-            break
-        filter_type = data[pos]
-        pos += 1
-        if pos + rl > n:
-            break
+    for row_index, start in enumerate(range(0, n, rl + 1)):
+        filter_type = data[start]
+        pos = start + 1
+        out_pos = row_index * rl
         if filter_type == 0:
             raw_row = memoryview(data)[pos : pos + rl]
-            pos += rl
             out_view[out_pos : out_pos + rl] = numpy.frombuffer(raw_row, dtype=numpy.uint8)
-            out_pos += rl
             previous = raw_row
             continue
         if filter_type == 1:
@@ -178,11 +188,9 @@ def png_predict(
             row = row_bytes
         else:
             raise UnsupportedPngFilterError(f"Unsupported PNG predictor filter {filter_type}")
-        pos += rl
         out_view[out_pos : out_pos + rl] = row
-        out_pos += rl
         previous = row
-    return bytes(out[:out_pos])
+    return bytes(out)
 
 
 SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})

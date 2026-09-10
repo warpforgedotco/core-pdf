@@ -127,6 +127,8 @@ class GlyphObservation:
     # source glyph; a dedicated slot so the per-call provenance tuple can be
     # shared by reference across every glyph of a text-showing op.
     cluster_key: tuple[int, int] | None = None
+    # Text may contribute clipping even when its selected color paints nothing.
+    clip_glyph: bool = False
 
     @property
     def has_paint(self) -> bool:

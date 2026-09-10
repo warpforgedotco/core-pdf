@@ -7,9 +7,7 @@ from dataclasses import dataclass
 
 from core_pdf_spec.s_09_fonts.cmap_ranges import (
     CodeSpaceRanges,
-    code_in_ranges,
-    ranges_overlap,
-    validate_codespace_range,
+    internal_validate_pdf_codespace,
 )
 from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
     CMapProgram,
@@ -142,6 +140,7 @@ class ToUnicodeCMap:
         )
         self.mappings = dict(parent.mappings) if parent else {}
         self.mappings.update(parsed.mappings)
+        self.validate_mappings()
         self.decode_lengths = tuple(
             sorted(
                 length
@@ -157,6 +156,13 @@ class ToUnicodeCMap:
     @staticmethod
     def parse_program(data: bytes) -> ParsedToUnicodeCMap:
         return parse_to_unicode_cmap(data)
+
+    def validate_mappings(self) -> None:
+        """Validate the complete codespace and mappings after parent resolution.
+
+        Recovery adapters may override this completion step for recovered maps.
+        """
+        internal_validate_pdf_codespace(self.code_space_ranges, self.mappings)
 
     def resolve_parent(
         self,
@@ -189,6 +195,7 @@ class ToUnicodeCMap:
 
 
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
+    """Parse local definitions, deferring inherited codespace checks to resolution."""
     program = CMapProgram.parse(data)
     ranges: list[tuple[bytes, bytes]] = []
     mappings: dict[bytes, str] = {}
@@ -198,9 +205,6 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
             raise ValueError("invalid ToUnicode codespacerange")
         for index in range(0, len(values), 2):
             start, end = (decode_cmap_hex_token(value) for value in values[index : index + 2])
-            validate_codespace_range(start, end)
-            if any(ranges_overlap((start, end), previous) for previous in ranges):
-                raise ValueError("overlapping ToUnicode codespacerange")
             ranges.append((start, end))
     for mapping_block in cmap_mapping_blocks(program):
         if mapping_block.trailing_operand_count:
@@ -229,10 +233,8 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
                 (source_range.source_at(offset), text) for offset, text in enumerate(texts)
             )
     parent = cmap_metadata(program)[0]
-    if not ranges and parent is None:
-        raise ValueError("missing ToUnicode codespacerange")
-    if ranges and any(not code_in_ranges(code, ranges) for code in mappings):
-        raise ValueError("ToUnicode mapping outside codespace")
+    if parent is None:
+        internal_validate_pdf_codespace(ranges, mappings)
     return ParsedToUnicodeCMap(tuple(ranges), mappings, parent)
 
 

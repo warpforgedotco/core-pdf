@@ -11,19 +11,10 @@ from core_pdf_spec.s_09_fonts.cmap_widths import (
     SparseFontWidthMap,
     parse_cid_widths,
 )
-
-
-def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
-    descendant_fonts = font.get("DescendantFonts")
-    if descendant_fonts is None:
-        return None
-    if (
-        not isinstance(descendant_fonts, (list, tuple))
-        or len(descendant_fonts) != 1
-        or not isinstance(descendant_fonts[0], dict)
-    ):
-        raise ValueError("invalid DescendantFonts array")
-    return descendant_fonts[0]
+from core_pdf_spec.s_09_fonts.dictionaries import (
+    get_descendant,
+    internal_font_descriptor,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,9 +85,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             vy,
             vertical,
         )
-    descriptor = font.get("FontDescriptor", {})
-    if not isinstance(descriptor, dict):
-        raise ValueError("invalid font descriptor")
+    descriptor = internal_font_descriptor(font.get("FontDescriptor")) or {}
     default = parse_float_strict(descriptor.get("MissingWidth", 0), "invalid MissingWidth")
     values = font.get("Widths", [])
     if not isinstance(values, (list, tuple)):

@@ -92,7 +92,7 @@ def test_cid_cmap_rejects_malformed_mappings(mapping: bytes) -> None:
 def test_cmap_rejects_unresolved_and_cyclic_parent(
     reader: type[CMapDecoder | ToUnicodeCMap],
 ) -> None:
-    data = CODESPACE + b"/Missing usecmap"
+    data = b"/Missing usecmap"
     with pytest.raises(ValueError, match="unresolved"):
         reader(data)
     with pytest.raises(ValueError, match="cyclic"):

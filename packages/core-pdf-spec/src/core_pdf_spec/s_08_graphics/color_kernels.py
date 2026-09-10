@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy
 
+from core_pdf_spec.s_07_filters.predictors import internal_unpack_subbyte_rows
+
 
 def unpack_subbyte_image_samples(
     data: bytes | memoryview | numpy.ndarray[Any, Any],
@@ -26,12 +28,9 @@ def unpack_subbyte_image_samples(
     )
     if len(packed) < row_bytes * height:
         raise ValueError("invalid image sample data")
-    bits = numpy.unpackbits(
-        packed[: row_bytes * height].reshape(height, row_bytes), axis=1, bitorder="big"
-    )[:, : row_samples * bits_per_component]
-    groups = bits.reshape(height, row_samples, bits_per_component)
-    shifts = numpy.arange(bits_per_component - 1, -1, -1, dtype=numpy.uint8)
-    return numpy.sum(groups << shifts, axis=2, dtype=numpy.uint8).reshape(-1)
+    return internal_unpack_subbyte_rows(
+        packed[: row_bytes * height].reshape(height, row_bytes), row_samples, bits_per_component
+    ).reshape(-1)
 
 
 def decode_sample_values(

@@ -16,7 +16,7 @@ from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
     ContentOperationState,
     OperationHandler,
-    validate_content_operands,
+    internal_StrictOperationHandler,
 )
 from core_pdf_spec.s_07_content.paths import PdfPath
 from core_pdf_spec.s_07_content.patterns import PatternPaint, ShadingPattern, TilingPattern
@@ -35,10 +35,15 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float,
 )
 from core_pdf_spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
-from core_pdf_spec.s_08_graphics.color import internal_indexed_color_index
+from core_pdf_spec.s_08_graphics.color import (
+    color_component_count,
+    initial_color_components,
+    normalize_color_components,
+)
 from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
 from core_pdf_spec.s_08_graphics.geometry import transform_bbox
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf_spec.s_09_fonts.metrics import text_adjustment_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph as DecodedGlyph
 from core_pdf_spec.s_09_fonts.service import FontProvider
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
@@ -336,9 +341,9 @@ class TextState:
             return None
 
         def execute(operands: ContentOperands, depth: int) -> None:
-            self.internal_execute_operation(name, handler, operands, depth)
+            self.internal_execute_validated_operation(name, handler, operands, depth)
 
-        return execute
+        return internal_StrictOperationHandler(name, self, execute)
 
     def execute_operation(self, name: str, operands: ContentOperands, depth: int) -> None:
         """Validate and execute one operation in this stream's active scope.
@@ -352,54 +357,49 @@ class TextState:
         handler = self.op_handlers.get(name)
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {name}")
-        self.internal_execute_operation(name, handler, operands, depth)
+        self.operation_state.internal_validate_operation(name, operands)
+        self.internal_execute_validated_operation(name, handler, operands, depth)
 
-    def internal_execute_operation(
+    def internal_execute_validated_operation(
         self, name: str, handler: OperationHandler, operands: ContentOperands, depth: int
     ) -> None:
-        validate_content_operands(name, operands)
-        if name == "BX":
-            self.operation_state.begin_compatibility()
-        elif name == "EX":
-            self.operation_state.end_compatibility()
         if name in {"l", "c", "v", "y"} and self.current_point is None:
             raise PdfParseError("path operator has no current point")
         if name == "EMC" and not self.marked_content_stack:
             raise PdfParseError("unmatched EMC operator")
-        if name in {"SC", "SCN", "sc", "scn"} and not self.type3_uncolored:
-            stroke = name in {"SC", "SCN"}
-            color_space = self.stroke_color_space if stroke else self.fill_color_space
-            spec = self.stroke_color_spec if stroke else self.fill_color_spec
-            components = operands
-            expected: int | None
-            if color_space == "Pattern":
-                if (
-                    name not in {"SCN", "scn"}
-                    or not operands
-                    or not isinstance(operands[-1], PdfName)
-                ):
-                    raise PdfParseError("Pattern color requires a pattern name")
-                components = operands[:-1]
-                expected = len(components)
-            else:
-                expected = {
-                    "DeviceGray": 1,
-                    "CalGray": 1,
-                    "DeviceRGB": 3,
-                    "CalRGB": 3,
-                    "Lab": 3,
-                    "DeviceCMYK": 4,
-                    "Indexed": 1,
-                    "Separation": 1,
-                }.get(color_space)
-                if expected is None:
-                    expected = spec.channels if spec is not None else 1
-            if len(components) != expected or any(
-                type(value) not in (int, float) or parse_float(value, default=None) is None
-                for value in components
-            ):
-                raise PdfParseError("invalid color component operands")
+        self.internal_validate_color_operation(name, operands)
         handler(operands, depth)
+
+    def internal_validate_color_operation(self, name: str, operands: ContentOperands) -> None:
+        if name not in {"SC", "SCN", "sc", "scn"} or self.type3_uncolored:
+            return
+        stroke = name in {"SC", "SCN"}
+        color_space = self.stroke_color_space if stroke else self.fill_color_space
+        spec = (self.stroke_color_spec if stroke else self.fill_color_spec) or ImageColorSpec(
+            color_space, {}
+        )
+        if name in {"SC", "sc"} and color_space not in {
+            "DeviceGray",
+            "DeviceRGB",
+            "DeviceCMYK",
+            "CalGray",
+            "CalRGB",
+            "Lab",
+            "Indexed",
+        }:
+            raise PdfParseError("color space requires SCN or scn")
+        try:
+            if color_space == "Pattern":
+                if not operands or not isinstance(operands[-1], PdfName):
+                    raise PdfParseError("Pattern color requires a pattern name")
+                if len(operands) - 1 != color_component_count(spec):
+                    raise PdfParseError("invalid color component operands")
+                if spec.pattern_base is not None:
+                    normalize_color_components(spec.pattern_base, operands[:-1])
+            else:
+                normalize_color_components(spec, operands)
+        except ValueError as error:
+            raise PdfParseError(str(error)) from error
 
     def consume_stream(
         self,
@@ -424,6 +424,8 @@ class TextState:
         )
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
+        """Resolve an optional six-number matrix; readers may recover by context."""
+        value = self.document.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
         return Matrix.from_operand(value)
@@ -557,21 +559,7 @@ class TextState:
             self.internal_render_type3_glyphs(data, decoder)
             self.text_matrix = text_matrix
             self.line_matrix = line_matrix
-        if not text:
-            if data:
-                adv_x, adv_y = decoder.text_advance_vector(
-                    data,
-                    font_size=self.font_size,
-                    char_space=self.char_space,
-                    word_space=self.word_space,
-                    horizontal_scale=self.horizontal_scale,
-                    glyphs=glyphs,
-                )
-                te, tf = self.tm_e, self.tm_f
-                ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
-                self.tm_e = te + adv_x * ta + adv_y * tc
-                self.tm_f = tf + adv_x * tb + adv_y * td
-                self.sink.text_boundary(self, "shown")
+        if not text and not data:
             return
 
         adv_x, adv_y = decoder.text_advance_vector(
@@ -584,7 +572,8 @@ class TextState:
         )
         te, tf = self.tm_e, self.tm_f
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
-        self.sink.show_text(self, text, data, glyphs, decoder, adv_x, adv_y)
+        if text:
+            self.sink.show_text(self, text, data, glyphs, decoder, adv_x, adv_y)
         self.tm_e = te + adv_x * ta + adv_y * tc
         self.tm_f = tf + adv_x * tb + adv_y * td
         self.sink.text_boundary(self, "shown")
@@ -603,10 +592,6 @@ class TextState:
             return
         resources = self.resolve_resources(font.get("Resources")) or self.resources
         font_matrix = decoder.font_matrix
-        widths = self.font_widths or decoder.fast_widths
-        cs = self.char_space_scale
-        ws = self.word_space_scale
-        scale = self.text_advance_scale
 
         for code in data:
             glyph_name = decoder.glyph_name(code)
@@ -651,16 +636,16 @@ class TextState:
                 finally:
                     self.type3_uncolored = previous_type3_uncolored
 
-            total = widths[code] + cs
-            if code == 32:
-                total += ws
-            advance = total * scale
-            if decoder.is_vertical:
-                self.tm_e += -advance * self.tm_c
-                self.tm_f += -advance * self.tm_d
-            else:
-                self.tm_e += advance * self.tm_a
-                self.tm_f += advance * self.tm_b
+            advance_x, advance_y = decoder.glyph_advance_vector(
+                code,
+                font_size=self.font_size,
+                char_space=self.char_space,
+                word_space=self.word_space,
+                horizontal_scale=self.horizontal_scale,
+                encoded_space=code == 32,
+            )
+            self.tm_e += advance_x * self.tm_a + advance_y * self.tm_c
+            self.tm_f += advance_x * self.tm_b + advance_y * self.tm_d
 
     def tj_array_extra_bytes(self, item: object) -> bytes:
         """Reject a TJ entry outside the exact PDF string and number types.
@@ -677,7 +662,6 @@ class TextState:
         if not array:
             return
         pending_bytes = bytearray()
-        scale = self.text_advance_scale
 
         decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
         is_vert = decoder.is_vertical
@@ -696,13 +680,14 @@ class TextState:
                     self.append_text(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.tm_e, self.tm_f
                     pending_bytes.clear()
-                adjustment = item * scale
-                if is_vert:
-                    te -= adjustment * tc
-                    tf -= adjustment * td
-                else:
-                    te -= adjustment * ta
-                    tf -= adjustment * tb
+                advance_x, advance_y = text_adjustment_vector(
+                    item,
+                    vertical=is_vert,
+                    font_size=self.font_size,
+                    horizontal_scale=self.horizontal_scale,
+                )
+                te += advance_x * ta + advance_y * tc
+                tf += advance_x * tb + advance_y * td
             else:
                 pending_bytes.extend(self.tj_array_extra_bytes(item))
 
@@ -1130,11 +1115,14 @@ class TextState:
         name = self.document.resolver.resolve_name(name_obj)
         if name is None:
             raise PdfParseError("color space operand must be a name")
-        value = self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
+        # Table 74: these names identify spaces directly, not same-named resources.
+        value = (
+            name
+            if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
+            else self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
+        )
         if value is None:
-            if name not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
-                raise PdfParseError("missing color space resource")
-            value = name
+            raise PdfParseError("missing color space resource")
         base = value[0] if isinstance(value, (list, tuple)) and value else value
         color_space = normalize_pdf_name(base) or name
         try:
@@ -1147,22 +1135,27 @@ class TextState:
         self, operands: Any, spec: ImageColorSpec | None
     ) -> tuple[float, ...] | None:
         """Retain PDF components; output colour conversion belongs to consumers."""
-        values = tuple(self.as_float(value) for value in operands)
-        if spec is not None and spec.kind == "Indexed":
-            if len(values) != 1:
-                raise PdfParseError("Indexed color requires one component")
-            return (float(internal_indexed_color_index(values[0], spec.hival)),)
-        if spec is not None and spec.kind == "Lab":
-            limits = spec.params.get("Range", [-100, 100, -100, 100])
-            if len(values) != 3 or not isinstance(limits, (list, tuple)) or len(limits) != 4:
-                raise PdfParseError("invalid Lab color components")
-            a_min, a_max, b_min, b_max = (self.as_float(limit) for limit in limits)
-            return (
-                max(0.0, min(100.0, values[0])),
-                max(a_min, min(a_max, values[1])),
-                max(b_min, min(b_max, values[2])),
-            )
-        return self.normalize_color_operands(values)
+        if spec is None:
+            return self.normalize_color_operands(operands)
+        return self.normalize_color_components(spec, operands)
+
+    def normalize_color_components(
+        self, spec: ImageColorSpec, components: typing.Sequence[object]
+    ) -> tuple[float, ...] | None:
+        """Normalize one PDF color; readers may recover malformed components here."""
+        try:
+            return normalize_color_components(spec, components)
+        except ValueError as error:
+            raise PdfParseError(str(error)) from error
+
+    def initial_color_components(
+        self, spec: ImageColorSpec, *, stroke: bool
+    ) -> tuple[float, ...] | None:
+        """Initialize a selected space; readers may retain color for invalid spaces."""
+        try:
+            return initial_color_components(spec)
+        except ValueError as error:
+            raise PdfParseError(str(error)) from error
 
     def internal_set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
         if self.type3_uncolored:
@@ -1173,12 +1166,19 @@ class TextState:
             return
         if operands:
             color_space, spec = self.resolve_color_space(operands[0])
+            color = self.initial_color_components(
+                spec or ImageColorSpec(color_space, {}), stroke=stroke
+            )
             if stroke:
                 self.stroke_color_space = color_space
                 self.stroke_color_spec = spec
+                self.stroke_color = color
+                self.stroke_pattern = None
             else:
                 self.fill_color_space = color_space
                 self.fill_color_spec = spec
+                self.fill_color = color
+                self.fill_pattern = None
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
@@ -1196,20 +1196,16 @@ class TextState:
             return
         color_space = self.stroke_color_space if stroke else self.fill_color_space
         if allow_pattern and color_space == "Pattern":
-            pattern = self.resolve_pattern_color(operands)
+            pattern = self.resolve_pattern_color(
+                operands, color_spec=self.stroke_color_spec if stroke else self.fill_color_spec
+            )
+            color = pattern.base_color if isinstance(pattern, TilingPattern) else None
             if stroke:
                 self.stroke_pattern = pattern
+                self.stroke_color = color
             else:
                 self.fill_pattern = pattern
-            if len(operands) > 1:
-                normalized = self.internal_color_from_operands(
-                    operands[:-1], self.stroke_color_spec if stroke else self.fill_color_spec
-                )
-                if normalized is not None:
-                    if stroke:
-                        self.stroke_color = normalized
-                    else:
-                        self.fill_color = normalized
+                self.fill_color = color
             return
         normalized = self.internal_color_from_operands(
             operands, self.stroke_color_spec if stroke else self.fill_color_spec
@@ -1395,7 +1391,15 @@ class TextState:
     def internal_record_clip(self, fill_rule: str) -> None:
         self.sink.clip_path(self, self.current_path, fill_rule)
 
-    def resolve_pattern_color(self, operands: tuple[Any, ...]) -> PatternPaint | None:
+    def resolve_pattern_color(
+        self, operands: tuple[Any, ...], *, color_spec: ImageColorSpec | None = None
+    ) -> PatternPaint | None:
+        """Resolve a selection using its active Pattern space when supplied.
+
+        The optional context distinguishes colored patterns from stencils and
+        preserves the stencil's underlying component ranges. Reader overrides
+        may recover malformed resources while retaining this keyword contract.
+        """
         if not operands:
             raise PdfParseError("invalid pattern resource or operands")
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -1413,6 +1417,10 @@ class TextState:
             raise PdfParseError("invalid pattern resource or operands")
         pattern_type = self.document.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
+            if color_spec is not None and (
+                color_spec.pattern_base is not None or len(operands) != 1
+            ):
+                raise PdfParseError("shading pattern requires a colored Pattern space")
             shading: object = pattern_dict.get("Shading")
             shading = self.document.resolver.resolve(shading)
             shading_dict = (
@@ -1426,9 +1434,18 @@ class TextState:
         paint_type = self.document.resolver.resolve_int(pattern_dict.get("PaintType"))
         if paint_type not in {1, 2}:
             raise PdfParseError("invalid pattern resource or operands")
+        base_spec = color_spec.pattern_base if color_spec is not None else None
+        if color_spec is not None and (paint_type == 2) != (base_spec is not None):
+            raise PdfParseError("pattern PaintType does not match its color space")
+        if paint_type == 1 and color_spec is not None and len(operands) != 1:
+            raise PdfParseError("colored pattern requires only a pattern name")
         base_color = None
         if paint_type == 2:
-            base_color = self.normalize_color_operands(operands[:-1])
+            base_color = (
+                self.normalize_color_components(base_spec, operands[:-1])
+                if base_spec is not None
+                else self.normalize_color_operands(operands[:-1])
+            )
             if base_color is None:
                 raise PdfParseError("invalid pattern resource or operands")
         bbox = self.document.resolver.resolve_box(pattern_dict.get("BBox"))
@@ -1438,9 +1455,7 @@ class TextState:
         y_step = self.document.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
             raise PdfParseError("invalid pattern resource or operands")
-        matrix = self.matrix_operand(
-            self.document.resolver.deep_resolve(pattern_dict.get("Matrix")), "pattern"
-        )
+        matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
         resources = self.resolve_resources(pattern_dict.get("Resources")) or {}
         return TilingPattern(
             bbox=bbox,
@@ -1451,6 +1466,7 @@ class TextState:
             matrix=matrix,
             paint_type=paint_type,
             base_color=base_color,
+            base_color_spec=base_spec,
         )
 
 

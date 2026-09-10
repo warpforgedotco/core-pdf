@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import typing
+from dataclasses import replace
 from typing import Any, cast
 
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
@@ -182,7 +183,11 @@ class RecoveringTextState(SpecTextState):
         name = self.document.resolver.resolve_name(name_obj)
         if name is None:
             return "DeviceGray", None
-        value = self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
+        value = (
+            name
+            if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
+            else self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
+        )
         if value is None:
             # An inline device space (`/DeviceRGB cs`) names no resource.
             value = name
@@ -195,7 +200,9 @@ class RecoveringTextState(SpecTextState):
             spec = None
         return color_space, spec
 
-    def resolve_pattern_color(self, operands: tuple[Any, ...]) -> PatternPaint | None:
+    def resolve_pattern_color(
+        self, operands: tuple[Any, ...], *, color_spec: ImageColorSpec | None = None
+    ) -> PatternPaint | None:
         if not operands:
             return None
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -227,8 +234,13 @@ class RecoveringTextState(SpecTextState):
         if paint_type not in {1, 2}:
             return None
         base_color = None
+        base_spec = color_spec.pattern_base if color_spec is not None else None
         if paint_type == 2:
-            base_color = self.normalize_color_operands(operands[:-1])
+            base_color = (
+                self.normalize_color_components(base_spec, operands[:-1])
+                if base_spec is not None
+                else self.normalize_color_operands(operands[:-1])
+            )
             if base_color is None:
                 return None
         bbox = self.document.resolver.resolve_box(pattern_dict.get("BBox"))
@@ -238,9 +250,7 @@ class RecoveringTextState(SpecTextState):
         y_step = self.document.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
             return None
-        matrix = self.matrix_operand(
-            self.document.resolver.deep_resolve(pattern_dict.get("Matrix")), "pattern"
-        )
+        matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
         resources = self.resolve_resources(pattern_dict.get("Resources")) or {}
         return TilingPattern(
             bbox=bbox,
@@ -251,6 +261,7 @@ class RecoveringTextState(SpecTextState):
             matrix=matrix,
             paint_type=paint_type,
             base_color=base_color,
+            base_color_spec=base_spec,
         )
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
@@ -448,6 +459,34 @@ class RecoveringTextState(SpecTextState):
             return None
         return tuple(values)
 
+    def normalize_color_components(
+        self, spec: ImageColorSpec, components: typing.Sequence[object]
+    ) -> tuple[float, ...] | None:
+        try:
+            values = tuple(self.as_float(value) for value in components)
+            if spec.kind == "Lab":
+                limits = spec.params.get("Range")
+                if isinstance(limits, (list, tuple)) and len(limits) == 4:
+                    spec = replace(
+                        spec,
+                        params={**spec.params, "Range": [self.as_float(value) for value in limits]},
+                    )
+            return super().normalize_color_components(spec, values)
+        except (PdfParseError, TypeError, ValueError) as error:
+            self.handle_operand_error(error, "color-components")
+            if spec.kind in {"Indexed", "Lab"}:
+                return None
+            return self.normalize_color_operands(components)
+
+    def initial_color_components(
+        self, spec: ImageColorSpec, *, stroke: bool
+    ) -> tuple[float, ...] | None:
+        try:
+            return super().initial_color_components(spec, stroke=stroke)
+        except PdfParseError as error:
+            self.handle_operand_error(error, "color-space")
+            return self.stroke_color if stroke else self.fill_color
+
     def resolve_resources(self, value: object) -> PdfDict | None:
         return recover_resources(value, self.document.resolver)
 
@@ -455,6 +494,7 @@ class RecoveringTextState(SpecTextState):
         pass
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
+        value = self.document.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
         try:

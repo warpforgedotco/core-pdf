@@ -5,6 +5,7 @@ from typing import Any, cast
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_content import operations
 from core_pdf_spec.s_07_content.events import ContentSink
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
@@ -75,7 +76,9 @@ def tj_state_with_recording(
     state.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
     state.tm_a, state.tm_b, state.tm_c, state.tm_d = 2.0, 3.0, 5.0, 7.0
     state.tm_e, state.tm_f = 11.0, 13.0
-    state.text_advance_scale = 0.1
+    state.font_size = 100
+    state.horizontal_scale = 100
+    state.update_text_scales()
     shown: list[tuple[bytes, float, float]] = []
 
     def append_text(*, data: bytes, decoder: object) -> None:
@@ -331,7 +334,6 @@ def test_normal_execution_validates_each_fixed_signature_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from core_pdf_spec.s_07_content import operations
-    from core_pdf_spec.s_07_content import state as state_module
 
     checked: list[str] = []
     validate = operations.validate_content_operands
@@ -341,7 +343,6 @@ def test_normal_execution_validates_each_fixed_signature_once(
         validate(name, operands)
 
     monkeypatch.setattr(operations, "validate_content_operands", record)
-    monkeypatch.setattr(state_module, "validate_content_operands", record)
     state, _ = state_with_sink()
     state.consume_stream(PdfStream(raw_data=b"q BX 3 w extension EX Q"), {}, IDENTITY_MATRIX, 0)
     assert checked == ["q", "BX", "w", "EX", "Q"]
@@ -575,6 +576,154 @@ def test_lab_components_use_numeric_pdf_ranges() -> None:
     dispatch_operations(PdfLexer(b"/Test cs 150 4 -4 sc"), state.get_operation_handler, 0)
     assert state.fill_color == (100.0, 2.0, -3.0)
     params["Range"] = [PdfString(b"-2"), 2, -3, 3]
-    dispatch_operations(PdfLexer(b"/Test cs"), state.get_operation_handler, 0)
     with pytest.raises(PdfParseError, match="PDF number"):
-        dispatch_operations(PdfLexer(b"50 0 0 sc"), state.get_operation_handler, 0)
+        dispatch_operations(PdfLexer(b"/Test cs"), state.get_operation_handler, 0)
+
+
+@pytest.mark.parametrize("scope_kind", ["shared", "separate", "implicit"])
+def test_strict_dispatch_validates_once_and_advances_each_scope_once(
+    monkeypatch: pytest.MonkeyPatch, scope_kind: str
+) -> None:
+    state, _ = state_with_sink()
+    scope = state.operation_state if scope_kind == "shared" else ContentOperationState()
+    checked: list[str] = []
+    depths: list[tuple[int, int]] = []
+    validate = operations.validate_content_operands
+
+    def record(name: str, operands: ContentOperands) -> None:
+        checked.append(name)
+        validate(name, operands)
+
+    def observe(operands: ContentOperands, depth: int) -> None:
+        depths.append((state.compatibility_depth, scope.compatibility_depth))
+
+    monkeypatch.setattr(operations, "validate_content_operands", record)
+    state.op_handlers.update(BX=observe, EX=observe)
+    dispatch_operations(
+        PdfLexer(b"BX 3 w extension EX"),
+        state.get_operation_handler,
+        0,
+        operation_state=None if scope_kind == "implicit" else scope,
+    )
+    assert checked == ["BX", "w", "EX"]
+    assert depths == ([(1, 0), (0, 0)] if scope_kind == "implicit" else [(1, 1), (0, 0)])
+    assert state.line_width == 3
+    assert state.compatibility_depth == scope.compatibility_depth == 0
+
+
+def test_retained_handlers_follow_stream_scope_and_keep_captured_callback() -> None:
+    state, _ = state_with_sink()
+    observed: list[ContentOperationState] = []
+    state.op_handlers["BX"] = lambda operands, depth: observed.append(state.operation_state)
+    begin = state.get_operation_handler("BX")
+    end = state.get_operation_handler("EX")
+    assert begin is not None
+    assert end is not None
+    state.op_handlers["BX"] = lambda operands, depth: pytest.fail("callback was replaced")
+    parent = state.operation_state
+    frame = ContentStreamFrame(PdfStream(raw_data=b""), {}, IDENTITY_MATRIX, 1, None)
+    state.stream_executor.enter(frame)
+    try:
+        begin((), 1)
+        assert frame.operation_state.compatibility_depth == 1
+        assert parent.compatibility_depth == 0
+        end((), 1)
+    finally:
+        state.stream_executor.exit(frame)
+    begin((), 0)
+    assert parent.compatibility_depth == 1
+    end((), 0)
+    assert observed == [frame.operation_state, parent]
+
+
+@pytest.mark.parametrize(("dispatcher_depth", "handler_depth"), [(1, 0), (0, 1)])
+def test_distinct_scope_failure_preserves_dispatcher_first_transition(
+    dispatcher_depth: int, handler_depth: int
+) -> None:
+    state, _ = state_with_sink()
+    state.compatibility_depth = handler_depth
+    scope = ContentOperationState(dispatcher_depth)
+    with pytest.raises(PdfParseError, match="unmatched EX"):
+        dispatch_operations(PdfLexer(b"EX"), state.get_operation_handler, 0, operation_state=scope)
+    assert scope.compatibility_depth == 0
+    assert state.compatibility_depth == handler_depth
+
+
+def test_remapped_strict_handler_retains_both_operator_validations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state, _ = state_with_sink()
+    checked: list[str] = []
+    validate = operations.validate_content_operands
+
+    def record(name: str, operands: ContentOperands) -> None:
+        checked.append(name)
+        validate(name, operands)
+
+    monkeypatch.setattr(operations, "validate_content_operands", record)
+    with pytest.raises(PdfParseError, match="q requires 0 operands"):
+        dispatch_operations(PdfLexer(b"1 w"), lambda name: state.get_operation_handler("q"), 0)
+    assert checked == ["w", "q"]
+    assert not state.stack
+
+
+def test_dispatch_resumes_after_callback_suspension_without_replaying_scope() -> None:
+    class Suspended(Exception):
+        pass
+
+    state, _ = state_with_sink()
+    widths: list[ContentOperands] = []
+
+    def suspend(operands: ContentOperands, depth: int) -> None:
+        widths.append(operands)
+        raise Suspended
+
+    state.op_handlers["w"] = suspend
+    lexer = PdfLexer(b"BX 7 w extension EX")
+    with pytest.raises(Suspended):
+        dispatch_operations(
+            lexer, state.get_operation_handler, 0, operation_state=state.operation_state
+        )
+    assert lexer.pos == len(b"BX 7 w")
+    assert state.compatibility_depth == 1
+    dispatch_operations(
+        lexer, state.get_operation_handler, 0, operation_state=state.operation_state
+    )
+    assert widths == [(7,)]
+    assert state.compatibility_depth == 0
+
+
+def test_mixed_generic_and_strict_callbacks_use_the_supplied_scope() -> None:
+    state, _ = state_with_sink()
+    widths: list[ContentOperands] = []
+
+    def get_handler(name: str) -> operations.OperationHandler | None:
+        if name == "w":
+            return lambda operands, depth: widths.append(operands)
+        return state.get_operation_handler(name)
+
+    dispatch_operations(
+        PdfLexer(b"BX 4 w extension EX"), get_handler, 0, operation_state=state.operation_state
+    )
+    assert widths == [(4,)]
+    assert state.compatibility_depth == 0
+
+
+@pytest.mark.parametrize(
+    ("content", "message", "final_depth"),
+    [
+        (b"1 BX", "requires 0 operands", 0),
+        (b"EX", "unmatched EX", 0),
+        (b"BX", "unterminated compatibility", 1),
+        (b"BX 1", "ends with operands", 1),
+    ],
+)
+def test_composed_dispatch_retains_validation_and_eof_errors(
+    content: bytes, message: str, final_depth: int
+) -> None:
+    state, _ = state_with_sink()
+    with pytest.raises(PdfParseError, match=message):
+        dispatch_operations(
+            PdfLexer(content), state.get_operation_handler, 0, operation_state=state.operation_state
+        )
+    assert state.compatibility_depth == final_depth
