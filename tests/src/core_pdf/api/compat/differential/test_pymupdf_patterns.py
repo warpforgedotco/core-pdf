@@ -35,8 +35,7 @@ def internal_pattern_pdf(
             return xref
 
         image = stream(
-            "<< /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB "
-            "/BitsPerComponent 8 >>",
+            "<< /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 >>",
             b"\xff\x40\x00",
         )
         xstep, ystep = step.split()

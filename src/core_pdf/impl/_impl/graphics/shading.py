@@ -36,7 +36,9 @@ class PreparedShading:
 def prepare_shading(
     dictionary: object,
     *,
-    compile_function: Callable[[object], internal_PdfFunctionEvaluator] = internal_compile_pdf_function,
+    compile_function: Callable[
+        [object], internal_PdfFunctionEvaluator
+    ] = internal_compile_pdf_function,
 ) -> PreparedShading | None:
     """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
