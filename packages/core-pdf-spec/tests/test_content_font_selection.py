@@ -5,8 +5,8 @@ from typing import Any, cast
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.operations import ContentOperands
-from core_pdf_spec.s_07_content.state import TextState
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -22,11 +22,11 @@ class Sink:
     def __getattr__(self, name: str) -> Any:
         return lambda *args, **kwargs: None
 
-    def paint_image(self, state: TextState, image: PdfStream) -> None:
+    def paint_image(self, state: ContentInterpreter, image: PdfStream) -> None:
         self.images.append(image)
 
 
-class RecordingState(TextState):
+class RecordingState(ContentInterpreter):
     def __init__(self) -> None:
         self.events: list[str] = []
 
@@ -40,11 +40,8 @@ class RecordingState(TextState):
                 glyph_width=lambda code: 500.0,
             )
 
-        super().__init__(
-            SimpleNamespace(resolver=ObjectResolver(b"", {}, {})), cast(Any, Sink()), provide
-        )
+        super().__init__(ObjectResolver(b"", {}, {}), cast(Any, Sink()), provide)
         self.resources = {"Font": {"F": {}, "Other": {"BaseFont": PdfName.of("Other")}}}
-        self.resources_id = id(self.resources)
 
     def resolve_font_name(self, value: object) -> str | None:
         self.events.append("name")
@@ -54,75 +51,57 @@ class RecordingState(TextState):
         self.events.append("size")
         return super().parse_font_size(value)
 
-    def update_font_metrics(self) -> None:
-        self.events.append("metrics")
-        super().update_font_metrics()
 
-
-def test_tf_preserves_identity_and_equal_name_fast_paths() -> None:
+def test_tf_reuses_decoder_for_equal_font_names_and_changed_sizes() -> None:
     state = RecordingState()
-    name = PdfName.of("F")
-    size = float("12.5")
-    state.op_Tf((name, size), 0)
-    assert state.events == ["name", "size", "load", "metrics"]
-    decoder = state.current_decoder
+    state.op_Tf((PdfName.of("F"), 12.5), 0)
+    assert state.events == ["name", "size", "load"]
+    decoder = state.graphics.current_decoder
 
-    state.events.clear()
-    state.op_Tf((name, size), 0)
-    assert state.events == []
-
-    equal_size = float("12.5")
-    assert equal_size is not size
-    state.op_Tf((name, equal_size), 0)
-    assert state.events == ["size"]
-    assert state.font_size_operand is equal_size
-
-    state.events.clear()
-    equal_name = PdfName.of("F")
-    state.op_Tf((equal_name, 20), 0)
-    assert state.events == ["name", "size", "metrics"]
-    assert state.current_decoder is decoder
-    assert state.font_operand is equal_name
-    assert state.font_ascent == 16
-
-    state.events.clear()
-    state.op_Tf((equal_name, 30), 0)
-    assert state.events == ["size", "metrics"]
-    assert state.font_ascent == 24
+    for size in (12.5, 20.0, 30.0):
+        state.events.clear()
+        state.op_Tf((PdfName.of("F"), size), 0)
+        assert state.events == ["name", "size"]
+        assert state.graphics.current_decoder is decoder
+        assert state.graphics.font_size == size
 
 
 def test_tf_reloads_same_name_only_when_selected_in_new_resources() -> None:
     state = RecordingState()
     name = PdfName.of("F")
     state.op_Tf((name, 12), 0)
-    original_decoder = state.current_decoder
-    state.resources = {"Font": {"F": {"BaseFont": PdfName.of("Child")}}}
-    state.resources_id = id(state.resources)
+    original_decoder = state.graphics.current_decoder
+    original_resources = state.resources
+    # Equal dictionaries still represent distinct resource scopes.
+    state.resources = dict(state.resources)
     state.events.clear()
 
     # A Form inherits its selected font until Tf selects a name in the new scope.
     assert state.get_decoder() is original_decoder
+    assert state.graphics.decoder_resources is original_resources
     assert state.events == []
     state.op_Tf((name, 12), 0)
-    assert state.events == ["name", "size", "load", "metrics"]
-    assert state.current_decoder is not original_decoder
-    assert state.current_decoder_resources_id == state.resources_id
+    assert state.events == ["name", "size", "load"]
+    assert state.graphics.current_decoder is not original_decoder
+    assert state.graphics.decoder_resources is state.resources
 
 
-def test_tf_graphics_restore_recovers_font_and_operand_cache() -> None:
+def test_tf_graphics_restore_recovers_selected_font_size_and_resource_scope() -> None:
     state = RecordingState()
-    name, size = PdfName.of("F"), float("12.5")
+    name, size = PdfName.of("F"), 12.5
     state.op_Tf((name, size), 0)
-    decoder = state.current_decoder
+    decoder = state.graphics.current_decoder
+    resources = state.graphics.decoder_resources
     state.op_q((), 0)
     state.op_Tf((PdfName.of("Other"), 20), 0)
     state.op_Q((), 0)
-    assert state.current_decoder is decoder
-    assert state.font_size == size
-    assert state.font_ascent == 10
+    assert state.graphics.current_decoder is decoder
+    assert state.graphics.current_font == "F"
+    assert state.graphics.font_size == size
+    assert state.graphics.decoder_resources is resources
     state.events.clear()
     state.op_Tf((name, size), 0)
-    assert state.events == []
+    assert state.events == ["name", "size"]
 
 
 @pytest.mark.parametrize("operands", [(), (PdfName.of("F"),), (PdfName.of("F"), 12, 99)])
@@ -138,16 +117,14 @@ def test_tf_invalid_size_preserves_existing_selection(reuse_operand: bool) -> No
     state = RecordingState()
     name = PdfName.of("F")
     state.op_Tf((name, 12), 0)
-    decoder = state.current_decoder
+    decoder = state.graphics.current_decoder
     state.events.clear()
     with pytest.raises(PdfParseError):
         state.op_Tf((name if reuse_operand else PdfName.of("Other"), "bad"), 0)
-    assert state.events == (["size"] if reuse_operand else ["name", "size"])
-    assert state.current_decoder is decoder
-    assert state.current_font == "F"
-    assert state.font_size == 12
-    assert state.font_operand is name
-    assert state.font_size_operand == 12
+    assert state.events == ["name", "size"]
+    assert state.graphics.current_decoder is decoder
+    assert state.graphics.current_font == "F"
+    assert state.graphics.font_size == 12
 
 
 def test_tf_invalid_name_precedes_size_parsing() -> None:
@@ -167,10 +144,9 @@ def test_tf_provider_error_occurs_after_selection_update() -> None:
     state.font_provider = fail
     with pytest.raises(ValueError, match="provider failed"):
         state.op_Tf((name, 12), 0)
-    assert state.current_font == "F"
-    assert state.font_operand is name
-    assert state.font_size == state.font_size_operand == 12
-    assert state.current_decoder is None
+    assert state.graphics.current_font == "F"
+    assert state.graphics.font_size == 12
+    assert state.graphics.current_decoder is None
     assert state.events == ["name", "size"]
 
 
@@ -188,7 +164,7 @@ def test_type3_resource_scope_distinguishes_absent_and_empty(scope: str) -> None
         font["Resources"] = {}
     elif scope == "indirect-empty":
         font["Resources"] = PdfReference(1, 0)
-        resolver = cast(ObjectResolver, state.document.resolver)
+        resolver = cast(ObjectResolver, state.resolver)
         resolver.objects[key_for(1, 0)] = {}
     elif scope == "local":
         font["Resources"] = {"XObject": {"Image": local}}

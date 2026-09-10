@@ -23,8 +23,8 @@ from core_pdf.impl._impl.render.model import (
     PathPaintItem,
 )
 from core_pdf.impl._impl.render.paths import internal_translate_rect
-from core_pdf_spec.s_07_content.image_capture import unit_square_placement
-from core_pdf_spec.s_07_content.state import NON_PAINTING_RENDER_MODES
+from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
+from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
 
 def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:

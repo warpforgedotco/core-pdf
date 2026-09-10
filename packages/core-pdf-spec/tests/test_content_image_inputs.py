@@ -4,11 +4,11 @@ import zlib
 
 import pytest
 
-from core_pdf_spec.s_07_content.image_capture import image_source_from_stream
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
+from core_pdf_spec.s_08_graphics.image_spec import image_source_from_stream
 from core_pdf_spec.types import PdfName, PdfReference
 
 

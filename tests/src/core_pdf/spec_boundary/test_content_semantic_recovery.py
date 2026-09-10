@@ -7,15 +7,14 @@ import pytest
 
 from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl._impl.capture.program import CapturedProgram
-from core_pdf.impl._impl.capture.recovery import dispatch_operations
+from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.render.commands import append_captured_program, internal_append_glyph_paint
 from core_pdf.impl._impl.render.display import DisplayList
 from core_pdf_spec.s_07_content.inline_images import InlineImage
-from core_pdf_spec.s_07_content.marked_content import MarkedContentEntry
-from core_pdf_spec.s_07_content.patterns import TilingPattern
+from core_pdf_spec.s_07_content.model import MarkedContentEntry, TilingPattern
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -30,12 +29,17 @@ def internal_state() -> TextState:
 
 
 def internal_execute(state: TextState, content: bytes) -> None:
-    dispatch_operations(PdfLexer(content), state.op_handlers.get, 0)
+    lexer = PdfLexer(content)
+    try:
+        for name, operands in iter_content_operations(lexer):
+            assert state.execute_operation(name, operands, 0) is None
+    finally:
+        lexer.close()
 
 
 def test_reader_matrix_resolution_retains_truncation_and_default_policies() -> None:
     state = internal_state()
-    resolver = cast(ObjectResolver, state.document.resolver)
+    resolver = cast(ObjectResolver, state.resolver)
     resolver.objects[key_for(1, 0)] = [1, 0, 0, 1, PdfReference(2, 0), 6, 99]
     resolver.objects[key_for(2, 0)] = 5
     assert state.matrix_operand(PdfReference(1, 0), "form") == Matrix(1, 0, 0, 1, 5, 6)
@@ -60,24 +64,24 @@ def test_reader_color_selection_inherits_reserved_names_and_initialization() -> 
     state = internal_state()
     state.resources = {"ColorSpace": {"DeviceRGB": PdfName.of("DeviceGray")}}
     internal_execute(state, b"1 0 0 rg /DeviceRGB cs")
-    assert state.fill_color_space == "DeviceRGB"
-    assert state.fill_color == (0, 0, 0)
+    assert state.graphics.fill_color_space == "DeviceRGB"
+    assert state.graphics.fill_color == (0, 0, 0)
     internal_execute(state, b"/DeviceCMYK cs")
-    assert state.fill_color == (0, 0, 0, 1)
+    assert state.graphics.fill_color == (0, 0, 0, 1)
     internal_execute(state, b"/Pattern cs")
-    assert state.fill_color is None
-    assert state.fill_pattern is None
+    assert state.graphics.fill_color is None
+    assert state.graphics.fill_pattern is None
 
 
 def test_reader_still_tolerates_special_space_sc_and_wrong_component_counts() -> None:
     state = internal_state()
-    state.fill_color_space = "Separation"
-    state.fill_color_spec = ImageColorSpec("Separation", {})
+    state.graphics.fill_color_space = "Separation"
+    state.graphics.fill_color_spec = ImageColorSpec("Separation", {})
     internal_execute(state, b"0.5 sc")
-    assert state.fill_color == (0.5,)
+    assert state.graphics.fill_color == (0.5,)
     internal_execute(state, b"/DeviceRGB cs 0.5 sc /Unknown cs")
-    assert state.fill_color == (0.5,)
-    assert state.fill_color_space == "Unknown"
+    assert state.graphics.fill_color == (0.5,)
+    assert state.graphics.fill_color_space == "Unknown"
 
 
 def test_reader_pattern_keeps_missing_painttype_and_matrix_fallbacks() -> None:
@@ -94,9 +98,9 @@ def test_reader_pattern_keeps_missing_painttype_and_matrix_fallbacks() -> None:
     )
     state.resources = {"Pattern": {"P": pattern}}
     internal_execute(state, b"/Pattern cs /P scn")
-    assert isinstance(state.fill_pattern, TilingPattern)
-    assert state.fill_pattern.paint_type == 1
-    assert state.fill_pattern.matrix == IDENTITY_MATRIX
+    assert isinstance(state.graphics.fill_pattern, TilingPattern)
+    assert state.graphics.fill_pattern.paint_type == 1
+    assert state.graphics.fill_pattern.matrix == IDENTITY_MATRIX
 
 
 def test_reader_pattern_projects_the_retained_indexed_base_space() -> None:
@@ -128,32 +132,29 @@ def test_reader_pattern_projects_the_retained_indexed_base_space() -> None:
         "Pattern": {"Tile": pattern},
     }
     internal_execute(state, b"/P cs 2 /Tile scn")
-    assert isinstance(state.fill_pattern, TilingPattern)
-    assert state.fill_pattern.base_color == (2,)
-    captured = state.capture_pattern(state.fill_pattern)
+    assert isinstance(state.graphics.fill_pattern, TilingPattern)
+    assert state.graphics.fill_pattern.base_color == (2,)
+    captured = state.capture_pattern(state.graphics.fill_pattern)
     assert captured is not None
     assert cast(Any, captured).drawings[0].fill == (0, 1, 0)
 
 
 def test_reader_vertical_tj_uses_shared_displacement() -> None:
     state = internal_state()
-    state.current_decoder = cast(Any, SimpleNamespace(is_vertical=True))
-    state.font_size, state.horizontal_scale = 10, 200
-    state.update_text_scales()
+    state.graphics.current_decoder = cast(Any, SimpleNamespace(is_vertical=True))
+    state.graphics.font_size, state.graphics.horizontal_scale = 10, 200
     internal_execute(state, b"[100] TJ")
-    assert (state.tm_e, state.tm_f) == (0, -1)
+    assert (state.text_matrix.e, state.text_matrix.f) == (0, -1)
 
 
 def test_reader_glyph_origins_preserve_spacing_at_zero_font_size() -> None:
     state = internal_state()
     font = FontDecoder({"Subtype": PdfName.of("Type1"), "BaseFont": PdfName.of("Helvetica")})
-    state.current_decoder = font
-    state.font_size, state.char_space, state.word_space = 0, 2, 3
-    state.update_text_scales()
-    state.update_font_metrics()
+    state.graphics.current_decoder = font
+    state.graphics.font_size, state.graphics.char_space, state.graphics.word_space = 0, 2, 3
     state.append_text(data=b"A A", decoder=font)
     assert [glyph.advance_bbox[0] for glyph in state.glyphs] == [0, 2, 7]
-    assert state.tm_e == 9
+    assert state.text_matrix.e == 9
 
 
 @pytest.mark.parametrize(
@@ -200,9 +201,8 @@ def test_initial_pattern_removes_only_its_text_paint_without_losing_clipping(
 ) -> None:
     state = internal_state()
     font = FontDecoder({"Subtype": PdfName.of("Type1"), "BaseFont": PdfName.of("Helvetica")})
-    state.current_decoder = font
-    state.update_font_metrics()
-    state.render_mode = mode
+    state.graphics.current_decoder = font
+    state.graphics.render_mode = mode
     internal_execute(state, selection)
     state.append_text(data=b"A", decoder=font)
     fill = mode in {0, 2, 4, 6} and b" cs" not in selection
@@ -214,8 +214,8 @@ def test_initial_pattern_removes_only_its_text_paint_without_losing_clipping(
     assert state.glyphs[0].text_render_mode == expected
     assert state.glyphs[0].visible is (expected not in {3, 7})
     assert state.glyphs[0].clip_glyph is (mode >= 4)
-    assert state.render_mode == mode
-    assert state.tm_e > 0
+    assert state.graphics.render_mode == mode
+    assert state.text_matrix.e > 0
 
 
 def test_nonpainting_pattern_text_retains_clip_and_hidden_text_does_not(
@@ -223,9 +223,8 @@ def test_nonpainting_pattern_text_retains_clip_and_hidden_text_does_not(
 ) -> None:
     state = internal_state()
     font = FontDecoder({"Subtype": PdfName.of("Type1"), "BaseFont": PdfName.of("Helvetica")})
-    state.current_decoder = font
-    state.update_font_metrics()
-    state.render_mode = 4
+    state.graphics.current_decoder = font
+    state.graphics.render_mode = 4
     internal_execute(state, b"/Pattern cs")
     state.append_text(data=b"A", decoder=font)
     glyph = state.glyphs[0]

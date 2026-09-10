@@ -39,7 +39,7 @@ from core_pdf.impl._impl.capture.text_runs import (
     RunAccumulator,
     is_garbage_text,
 )
-from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState as SemanticTextState
+from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState
 from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
@@ -54,14 +54,13 @@ from core_pdf.impl.types import (
     PdfName,
     Rectangle,
 )
-from core_pdf_spec.s_07_content.image_capture import unit_square_placement
-from core_pdf_spec.s_07_content.marked_content import (
+from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, PdfPath
+from core_pdf_spec.s_07_content.model import (
     MarkedContentEntry as SemanticMarkedContentEntry,
 )
-from core_pdf_spec.s_07_content.paths import PdfPath
-from core_pdf_spec.s_07_content.patterns import ShadingPattern as PdfShadingPattern
-from core_pdf_spec.s_07_content.patterns import TilingPattern as PdfTilingPattern
-from core_pdf_spec.s_07_content.stream_state import (
+from core_pdf_spec.s_07_content.model import ShadingPattern as PdfShadingPattern
+from core_pdf_spec.s_07_content.model import TilingPattern as PdfTilingPattern
+from core_pdf_spec.s_07_content.streams import (
     ContentStreamFrame,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -70,7 +69,8 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
 )
 from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
-from core_pdf_spec.s_08_graphics.matrix import Matrix
+from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 
 
@@ -82,7 +82,6 @@ class CaptureGraphicsSave:
 
 
 MATRIX_TOLERANCE = 0.1
-internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
 def detect_rotation_from_linear(
@@ -124,7 +123,8 @@ def detect_rotation_from_linear(
     return 0
 
 
-class RecordingMethods(SemanticTextState):
+class RecordingMethods(RecoveringTextState):
+    document: Any
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
     glyph_clusters: list[GlyphCluster]
@@ -151,12 +151,12 @@ class RecordingMethods(SemanticTextState):
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
-        if self.internal_text_paint_mode() in internal_NON_PAINTING_RENDER_MODES:
+        if self.internal_text_paint_mode() in NON_PAINTING_RENDER_MODES:
             return False
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
             return False
-        if not self.marked_content_stack and self.font_size >= 0.1:
+        if not self.marked_content_stack and self.graphics.font_size >= 0.1:
             return True
 
         # Sub-0.1pt text is not visible here. Whether such a layer is nonetheless
@@ -164,7 +164,7 @@ class RecordingMethods(SemanticTextState):
         # carrying an OCR layer -- is a property of the whole page, not of the runs
         # captured before this operator, so that call belongs to
         # `internal_hidden_text_is_trusted` once parsing has seen every run.
-        if self.font_size < 0.1:
+        if self.graphics.font_size < 0.1:
             return False
 
         return self.is_graphics_visible()
@@ -176,8 +176,9 @@ class RecordingMethods(SemanticTextState):
         return True
 
     def graphics_scale(self) -> float:
-        x_scale = hypot(self.ca, self.cb)
-        y_scale = hypot(self.cc, self.cd)
+        ctm = self.graphics.ctm
+        x_scale = hypot(ctm.a, ctm.b)
+        y_scale = hypot(ctm.c, ctm.d)
         if x_scale == 0 and y_scale == 0:
             return 1.0
         if x_scale == 0:
@@ -187,13 +188,13 @@ class RecordingMethods(SemanticTextState):
         return (x_scale + y_scale) * 0.5
 
     def transformed_line_width(self) -> float:
-        line_width = max(0.0, self.line_width)
+        line_width = max(0.0, self.graphics.line_width)
         if line_width == 0:
             return 0.0
         return line_width * self.graphics_scale()
 
     def transformed_dash_pattern(self) -> tuple[list[float], float] | None:
-        dash_pattern = self.dash_pattern
+        dash_pattern = self.graphics.dash_pattern
         if not dash_pattern:
             return None
         dash_array, phase = dash_pattern
@@ -230,19 +231,23 @@ class RecordingMethods(SemanticTextState):
         text_basis: TextBasis,
         effective_font_size: float,
         effective_font_height: float,
+        font_scale: float,
+        font_ascent: float,
+        font_descent: float,
+        advance_scale: float,
     ) -> GlyphCapture:
         """Snapshot this text show's inputs for the independent glyph recorder."""
         geometry = TextGeometry(
             basis=text_basis,
-            font_size=self.font_size,
-            font_scale=self.font_scale,
-            font_ascent=self.font_ascent,
-            font_descent=self.font_descent,
-            advance_scale=self.text_advance_scale,
-            char_space=self.char_space,
-            word_space=self.word_space,
-            horizontal_scale=self.horizontal_scale,
-            rise=self.rise,
+            font_size=self.graphics.font_size,
+            font_scale=font_scale,
+            font_ascent=font_ascent,
+            font_descent=font_descent,
+            advance_scale=advance_scale,
+            char_space=self.graphics.char_space,
+            word_space=self.graphics.word_space,
+            horizontal_scale=self.graphics.horizontal_scale,
+            rise=self.graphics.rise,
             rotation_angle=rotation_angle,
             effective_font_size=effective_font_size,
             effective_font_height=effective_font_height,
@@ -253,16 +258,16 @@ class RecordingMethods(SemanticTextState):
             page_clip=self.page_clip,
             fill=self.capture_color(stroke=False),
             render_mode=self.internal_text_paint_mode(),
-            fill_opacity=self.fill_opacity,
+            fill_opacity=self.graphics.fill_opacity,
             stroke_color=self.capture_color(stroke=True),
-            stroke_opacity=self.stroke_opacity,
+            stroke_opacity=self.graphics.stroke_opacity,
             line_width=self.transformed_line_width(),
-            line_cap=self.line_cap,
-            line_join=self.line_join,
+            line_cap=self.graphics.line_cap,
+            line_join=self.graphics.line_join,
             dash_pattern=self.transformed_dash_pattern(),
-            blend_mode=self.blend_mode,
+            blend_mode=self.graphics.blend_mode,
             group_alpha=self.group_alpha,
-            clip_glyph=4 <= self.render_mode <= 7 and self.is_graphics_visible(),
+            clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
         )
         provenance = (
             ("source", self.capture_source),
@@ -272,11 +277,11 @@ class RecordingMethods(SemanticTextState):
             ("layout_form_bbox", self.layout_form_bbox),
             ("layout_form_id", self.layout_form_id),
             ("text_matrix", text_basis[2:]),
-            ("text_render_mode", self.render_mode),
-            ("line_matrix_origin", (self.lm_e, self.lm_f)),
-            ("horizontal_scale", self.horizontal_scale),
-            ("char_space", self.char_space),
-            ("text_rise", self.rise),
+            ("text_render_mode", self.graphics.render_mode),
+            ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
+            ("horizontal_scale", self.graphics.horizontal_scale),
+            ("char_space", self.graphics.char_space),
+            ("text_rise", self.graphics.rise),
         )
         return capture_glyphs(
             text,
@@ -284,7 +289,7 @@ class RecordingMethods(SemanticTextState):
             decoder,
             geometry=geometry,
             paint=paint,
-            font_name=self.current_font,
+            font_name=self.graphics.current_font,
             provenance=provenance,
             seqno=self.sequence,
             text_object_id=self.text_object_id,
@@ -344,27 +349,26 @@ class RecordingMethods(SemanticTextState):
         decoder = cast(FontDecoder, decoder)
         glyphs = cast(tuple[DecodedGlyph, ...], glyphs)
         visible = self.is_text_visible(text)
-        if 4 <= self.render_mode <= 7 and self.is_graphics_visible():
+        if 4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible():
             self.internal_emit_clip_scope_push()
 
-        fs = self.font_size
-        rise = self.rise
+        fs = self.graphics.font_size
+        rise = self.graphics.rise
 
-        ascent = self.font_ascent
-        descent = self.font_descent
+        font_scale = fs / 1000.0
+        metrics_decoder = self.graphics.current_decoder
+        ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
+        descent = metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
+        advance_scale = fs * self.graphics.horizontal_scale / 100000.0
+        space_width = (
+            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
+        )
 
-        A = self.combined_A
-        B = self.combined_B
-        C = self.combined_C
-        D = self.combined_D
-
-        ca = self.ca
-        cb = self.cb
-        cc = self.cc
-        cd = self.cd
-        ce = self.ce
-        cf = self.cf
-        te, tf = self.tm_e, self.tm_f
+        text_matrix = self.text_matrix
+        combined = text_matrix.multiply(self.graphics.ctm)
+        A, B, C, D = combined.a, combined.b, combined.c, combined.d
+        ca, cb, cc, cd, ce, cf = self.graphics.ctm
+        te, tf = text_matrix.e, text_matrix.f
         E = te * ca + tf * cc + ce
         F = te * cb + tf * cd + cf
 
@@ -403,7 +407,7 @@ class RecordingMethods(SemanticTextState):
         scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
         effective_font_size = fs * scale_factor
         effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
-        effective_space_width = self.font_space_width * scale_factor
+        effective_space_width = space_width * scale_factor
         baseline = (
             E,
             F,
@@ -413,10 +417,10 @@ class RecordingMethods(SemanticTextState):
         provenance = (
             ("source", self.capture_source),
             ("seqno", seqno),
-            ("font_name", self.current_font),
+            ("font_name", self.graphics.current_font),
             ("stream_order", self.stream_order),
             ("xobject_depth", self.xobject_depth),
-            ("text_render_mode", self.render_mode),
+            ("text_render_mode", self.graphics.render_mode),
             ("font_size", fs),
             ("clip_bbox", self.clip_bbox),
             ("layout_form_bbox", self.layout_form_bbox),
@@ -438,7 +442,7 @@ class RecordingMethods(SemanticTextState):
             tx=te,
             ty=tf,
             font_size=effective_font_size,
-            font_name=self.current_font,
+            font_name=self.graphics.current_font,
             space_width=effective_space_width,
             order=seqno,
             stream_order=self.stream_order,
@@ -473,6 +477,10 @@ class RecordingMethods(SemanticTextState):
                 text_basis=(E, F, A, B, C, D),
                 effective_font_size=effective_font_size,
                 effective_font_height=effective_font_height,
+                font_scale=font_scale,
+                font_ascent=ascent,
+                font_descent=descent,
+                advance_scale=advance_scale,
             )
             self.glyphs.extend(captured.glyphs)
             self.glyph_clusters.extend(captured.clusters)
@@ -498,19 +506,10 @@ class RecordingMethods(SemanticTextState):
         kind = "fillstroke" if fills and strokes else "fill" if fills else "stroke"
 
         captured_path = flatten_path(source)
-        if (
-            self.ca == 1.0
-            and self.cb == 0.0
-            and self.cc == 0.0
-            and self.cd == 1.0
-            and self.ce == 0.0
-            and self.cf == 0.0
-        ):
+        if self.graphics.ctm == IDENTITY_MATRIX:
             path = captured_path
         else:
-            path = captured_path.transformed(
-                Matrix(self.ca, self.cb, self.cc, self.cd, self.ce, self.cf)
-            )
+            path = captured_path.transformed(self.graphics.ctm)
         if path.has_segments():
             line_width = self.transformed_line_width()
             if len(path.subpaths) == 1 and len(path.subpaths[0].points) == 2:
@@ -523,17 +522,17 @@ class RecordingMethods(SemanticTextState):
                 CapturedDrawing(
                     seqno=self.sequence,
                     fill=self.capture_color(stroke=False),
-                    fill_pattern=self.capture_pattern(self.fill_pattern),
-                    fill_opacity=self.fill_opacity,
+                    fill_pattern=self.capture_pattern(self.graphics.fill_pattern),
+                    fill_opacity=self.graphics.fill_opacity,
                     stroke_color=self.capture_color(stroke=True),
-                    stroke_pattern=self.capture_pattern(self.stroke_pattern),
-                    stroke_opacity=self.stroke_opacity,
+                    stroke_pattern=self.capture_pattern(self.graphics.stroke_pattern),
+                    stroke_opacity=self.graphics.stroke_opacity,
                     line_width=line_width,
-                    line_cap=self.line_cap,
-                    line_join=self.line_join,
+                    line_cap=self.graphics.line_cap,
+                    line_join=self.graphics.line_join,
                     dash_pattern=self.transformed_dash_pattern(),
                     fill_rule=fill_rule,
-                    blend_mode=self.blend_mode,
+                    blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     kind=kind,
                     path=path,
@@ -547,7 +546,7 @@ class RecordingMethods(SemanticTextState):
             self.sequence += 1
 
     def clip_path(self, state: object, source: PdfPath, fill_rule: str) -> None:
-        path = flatten_path(source).transformed(self.ctm)
+        path = flatten_path(source).transformed(self.graphics.ctm)
         if not path.has_segments():
             return
         clip_bbox = path.bbox()
@@ -560,11 +559,11 @@ class RecordingMethods(SemanticTextState):
                     seqno=self.sequence,
                     fill=None,
                     fill_opacity=None,
-                    blend_mode=self.blend_mode,
+                    blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     line_width=0.0,
-                    line_cap=self.line_cap,
-                    line_join=self.line_join,
+                    line_cap=self.graphics.line_cap,
+                    line_join=self.graphics.line_join,
                     dash_pattern=self.transformed_dash_pattern(),
                     fill_rule=fill_rule,
                     kind="clip",
@@ -576,17 +575,17 @@ class RecordingMethods(SemanticTextState):
     def paint_image(self, state: object, xobj: PdfStream) -> None:
         xobj_dict = xobj.dictionary
         if self.is_graphics_visible():
-            image_is_stencil = self.document.resolver.resolve(xobj_dict.get("ImageMask")) is True
+            image_is_stencil = self.resolver.resolve(xobj_dict.get("ImageMask")) is True
             if image_is_stencil and self.internal_initial_pattern(stroke=False):
                 return
-            width = self.document.resolver.resolve_int(xobj_dict.get("Width")) or 0
-            height = self.document.resolver.resolve_int(xobj_dict.get("Height")) or 0
+            width = self.resolver.resolve_int(xobj_dict.get("Width")) or 0
+            height = self.resolver.resolve_int(xobj_dict.get("Height")) or 0
             bbox = None
             quad = None
             if width > 0 and height > 0:
-                bounds, quad = unit_square_placement(self.ctm)
+                bounds, quad = unit_square_placement(self.graphics.ctm)
                 bbox = RectBox(*bounds)
-            source, smask_alpha = image_source_from_stream(xobj, self.document.resolver)
+            source, smask_alpha = image_source_from_stream(xobj, self.resolver)
             # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
             # set bits in the current fill colour. Every other image ignores
             # the fill, so recording it is only meaningful for the mask case,
@@ -595,8 +594,8 @@ class RecordingMethods(SemanticTextState):
                 CapturedDrawing(
                     seqno=self.sequence,
                     fill=self.capture_color(stroke=False) if image_is_stencil else None,
-                    fill_opacity=self.fill_opacity,
-                    blend_mode=self.blend_mode,
+                    fill_opacity=self.graphics.fill_opacity,
+                    blend_mode=self.graphics.blend_mode,
                     dash_pattern=self.transformed_dash_pattern(),
                     soft_mask_alpha=smask_alpha,
                     kind="image",
@@ -620,13 +619,13 @@ class RecordingMethods(SemanticTextState):
             data = getattr(image, "data", b"")
             color_name = normalize_pdf_name(dictionary.get("ColorSpace"))
             if color_name is not None:
-                color_resource = self.document.resolver.deep_resolve(
+                color_resource = self.resolver.deep_resolve(
                     self.lookup_page_resource("ColorSpace", color_name)
                 )
                 if color_resource is not None:
                     dictionary[PdfName.of("ColorSpace")] = cast(PdfObject, color_resource)
             source, _ = image_source_from_stream(
-                PdfStream(raw_data=data, dictionary=dictionary), self.document.resolver
+                PdfStream(raw_data=data, dictionary=dictionary), self.resolver
             )
             self.inline_images.append(
                 CapturedInlineImage(
@@ -635,15 +634,15 @@ class RecordingMethods(SemanticTextState):
                     data=data,
                     image_source=source,
                     image_clip=self.clip_bbox,
-                    ctm=self.ctm,
+                    ctm=self.graphics.ctm,
                     xobject_depth=self.xobject_depth,
-                    blend_mode=self.blend_mode,
+                    blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     stream_order=self.stream_order,
                     fill=self.capture_color(stroke=False)
                     if dictionary.get("ImageMask") is True
                     else None,
-                    fill_opacity=self.fill_opacity,
+                    fill_opacity=self.graphics.fill_opacity,
                 )
             )
             self.sequence += 1
@@ -655,14 +654,14 @@ class RecordingMethods(SemanticTextState):
             CapturedDrawing(
                 seqno=self.sequence,
                 fill=self.capture_color(stroke=False),
-                fill_opacity=self.fill_opacity,
+                fill_opacity=self.graphics.fill_opacity,
                 stroke_color=self.capture_color(stroke=True),
-                stroke_opacity=self.stroke_opacity,
-                line_width=self.line_width,
-                line_cap=self.line_cap,
-                line_join=self.line_join,
+                stroke_opacity=self.graphics.stroke_opacity,
+                line_width=self.graphics.line_width,
+                line_cap=self.graphics.line_cap,
+                line_join=self.graphics.line_join,
                 dash_pattern=self.transformed_dash_pattern(),
-                blend_mode=self.blend_mode,
+                blend_mode=self.graphics.blend_mode,
                 soft_mask_alpha=self.group_alpha,
                 kind="shading",
                 items=[],
@@ -723,7 +722,7 @@ class RecordingMethods(SemanticTextState):
                     "group-begin",
                     self.sequence,
                     fill_opacity=frame.group_alpha,
-                    blend_mode=self.blend_mode,
+                    blend_mode=self.graphics.blend_mode,
                 )
             )
             self.sequence += 1
@@ -732,7 +731,7 @@ class RecordingMethods(SemanticTextState):
         raw_bbox = frame.form_bbox_operand
         if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
             values = tuple(
-                self.document.resolver.resolve_float(value, default=None) for value in raw_bbox[:4]
+                self.resolver.resolve_float(value, default=None) for value in raw_bbox[:4]
             )
             if all(value is not None for value in values):
                 x, y, w, h = cast(Rectangle, values)
@@ -764,19 +763,19 @@ class RecordingMethods(SemanticTextState):
                     "group-end",
                     self.sequence,
                     fill_opacity=frame.group_alpha,
-                    blend_mode=self.blend_mode,
+                    blend_mode=self.graphics.blend_mode,
                 )
             )
             self.sequence += 1
 
     def internal_initial_pattern(self, *, stroke: bool) -> bool:
-        space = self.stroke_color_space if stroke else self.fill_color_space
-        pattern = self.stroke_pattern if stroke else self.fill_pattern
+        space = self.graphics.stroke_color_space if stroke else self.graphics.fill_color_space
+        pattern = self.graphics.stroke_pattern if stroke else self.graphics.fill_pattern
         return space == "Pattern" and pattern is None
 
     def internal_text_paint_mode(self) -> int:
         """Remove unselected Pattern contributions without changing text clipping."""
-        mode = self.render_mode
+        mode = self.graphics.render_mode
         if mode not in range(8):
             return mode
         fills = mode in {0, 2, 4, 6} and not self.internal_initial_pattern(stroke=False)
@@ -786,8 +785,8 @@ class RecordingMethods(SemanticTextState):
 
     def capture_color(self, *, stroke: bool) -> tuple[float, ...] | None:
         """Project PDF color components only when creating output records."""
-        color = self.stroke_color if stroke else self.fill_color
-        spec = self.stroke_color_spec if stroke else self.fill_color_spec
+        color = self.graphics.stroke_color if stroke else self.graphics.fill_color
+        spec = self.graphics.stroke_color_spec if stroke else self.graphics.fill_color_spec
         if (
             color is not None
             and spec is not None
@@ -845,7 +844,7 @@ class RecordingMethods(SemanticTextState):
         return result
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
-        resolver = cast(Any, self.document.resolver)
+        resolver = cast(Any, self.resolver)
         if allow_text:
             return cast(str | None, resolver.resolve_name_or_text(value))
         return cast(str | None, resolver.resolve_name_like_value(value))

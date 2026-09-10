@@ -605,7 +605,7 @@ requires-dist = [
 
 [[package]]
 name = "core-pdf-spec"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/core-pdf-spec" }
 dependencies = [
     { name = "asn1crypto" },

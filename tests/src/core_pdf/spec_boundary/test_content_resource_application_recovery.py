@@ -8,7 +8,7 @@ import pytest
 
 from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
-from core_pdf_spec.s_07_content.patterns import ShadingPattern, TilingPattern
+from core_pdf_spec.s_07_content.model import ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
@@ -25,22 +25,30 @@ def test_reader_extgstate_retains_numeric_and_name_coercion() -> None:
     state = internal_state()
     state.resources = {"ExtGState": {"G": {"ca": "0.25", "CA": "0.75", "BM": PdfString(b"Screen")}}}
     state.op_gs((PdfName.of("G"),), 0)
-    assert (state.fill_opacity, state.stroke_opacity, state.blend_mode) == (0.25, 0.75, "Screen")
+    assert (
+        state.graphics.fill_opacity,
+        state.graphics.stroke_opacity,
+        state.graphics.blend_mode,
+    ) == (0.25, 0.75, "Screen")
 
 
 def test_reader_extgstate_keeps_partial_application_and_reports_error_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = internal_state()
-    state.stroke_opacity = 0.75
-    state.blend_mode = "Screen"
+    state.graphics.stroke_opacity = 0.75
+    state.graphics.blend_mode = "Screen"
     state.resources = {"ExtGState": {"G": {"ca": "0.5", "CA": "bad", "BM": PdfName.of("Multiply")}}}
     errors: list[tuple[Exception, str]] = []
     monkeypatch.setattr(
         state, "handle_operand_error", lambda error, context: errors.append((error, context))
     )
     state.op_gs((PdfName.of("G"),), 0)
-    assert (state.fill_opacity, state.stroke_opacity, state.blend_mode) == (0.5, 0.75, "Screen")
+    assert (
+        state.graphics.fill_opacity,
+        state.graphics.stroke_opacity,
+        state.graphics.blend_mode,
+    ) == (0.5, 0.75, "Screen")
     assert len(errors) == 1
     assert isinstance(errors[0][0], ValueError)
     assert errors[0][1] == "extended-graphics-state"
@@ -49,11 +57,11 @@ def test_reader_extgstate_keeps_partial_application_and_reports_error_context(
 @pytest.mark.parametrize("resource", [None, {}, 42, []])
 def test_reader_skips_absent_or_invalid_extgstate_resources(resource: object) -> None:
     state = internal_state()
-    state.fill_opacity = 0.25
+    state.graphics.fill_opacity = 0.25
     state.resources = {"ExtGState": {"G": resource}}
     state.op_gs((PdfName.of("G"),), 0)
     state.op_gs((), 0)
-    assert state.fill_opacity == 0.25
+    assert state.graphics.fill_opacity == 0.25
 
 
 @pytest.mark.parametrize("resource", [None, 42, [], PdfName.of("Invalid")])

@@ -6,6 +6,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 
+from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.types import Rectangle
 
 
@@ -36,7 +37,17 @@ def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
     return (min(xs), min(ys), max(xs), max(ys))
 
 
+def unit_square_placement(matrix: Matrix) -> tuple[Rectangle, tuple[tuple[float, float], ...]]:
+    """Image bounds and ordered affine sampling corners in page coordinates."""
+    a, b, c, d, e, f = matrix
+    quad = ((e, f), (a + e, b + f), (c + e, d + f), (a + c + e, b + d + f))
+    bbox = points_bbox(quad)
+    assert bbox is not None
+    return bbox, quad
+
+
 __all__ = (
     "points_bbox",
     "transform_bbox",
+    "unit_square_placement",
 )

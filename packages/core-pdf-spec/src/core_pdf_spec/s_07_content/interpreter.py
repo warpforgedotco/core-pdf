@@ -3,27 +3,29 @@
 
 from __future__ import annotations
 
-import operator
 import typing
 from collections.abc import Callable
+from copy import copy
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.events import ContentSink
-from core_pdf_spec.s_07_content.marked_content import MarkedContentEntry
-from core_pdf_spec.s_07_content.operations import (
-    ContentOperand,
-    ContentOperands,
-    ContentOperationState,
-    OperationHandler,
-    internal_StrictOperationHandler,
+from core_pdf_spec.s_07_content.model import (
+    ContentSink,
+    GraphicsState,
+    MarkedContentEntry,
+    PatternPaint,
+    PdfPath,
+    ShadingPattern,
+    TilingPattern,
 )
-from core_pdf_spec.s_07_content.paths import PdfPath
-from core_pdf_spec.s_07_content.patterns import PatternPaint, ShadingPattern, TilingPattern
-from core_pdf_spec.s_07_content.stream_execution import ContentStreamExecutor
-from core_pdf_spec.s_07_content.stream_state import (
-    GRAPHICS_STATE_FIELDS,
-    GraphicsSave,
+from core_pdf_spec.s_07_content.operations import (
+    ContentOperands,
+    OperationHandler,
+    validate_content_operands,
+)
+from core_pdf_spec.s_07_content.streams import (
+    ContentStreamExecutor,
+    ContentStreamFrame,
     StreamState,
 )
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -44,223 +46,45 @@ from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_fr
 from core_pdf_spec.s_08_graphics.geometry import transform_bbox
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.metrics import text_adjustment_vector
-from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph as DecodedGlyph
-from core_pdf_spec.s_09_fonts.service import FontProvider
-from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
+from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
 from core_pdf_spec.types import PdfName, PdfReference, PdfString, Rectangle
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
-internal_capture_graphics_state = operator.attrgetter(*GRAPHICS_STATE_FIELDS)
-NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
-
-class TextDocument(typing.Protocol):
-    @property
-    def resolver(self) -> PdfValueResolver: ...
-
-
-class TextState:
-    document: TextDocument
-
-    current_path: PdfPath
-
-    current_point: tuple[float, float] | None
-
-    subpath_start: tuple[float, float] | None
-
-    stack: list[GraphicsSave]
-
-    graphics_stack_floor: int
-
-    fill_color: tuple[float, ...] | None
-
-    fill_pattern: PatternPaint | None
-
-    fill_opacity: float
-
-    stroke_color: tuple[float, ...] | None
-
-    stroke_pattern: PatternPaint | None
-
-    stroke_opacity: float
-
-    blend_mode: str | None
-
-    flatness: float
-
-    render_intent: str | None
-
-    fill_color_space: str
-
-    fill_color_spec: ImageColorSpec | None
-
-    stroke_color_space: str
-
-    stroke_color_spec: ImageColorSpec | None
-
-    dash_pattern: tuple[list[float], float]
-
-    font_operand: object
-
-    font_size_operand: object
-
-    font_widths: tuple[float, ...] | None
-
-    current_font: str | None
-
-    current_decoder: FontDecoder | None
-
-    current_decoder_resources_id: int | None
-
-    marked_content_stack: list[MarkedContentEntry]
-
-    type3_uncolored: bool
-
-    resources: PdfDict
-
-    op_handlers: dict[str, OperationHandler]
+class ContentInterpreter:
+    """Execute PDF content with strict operands and an explicit graphics state."""
 
     def __init__(
         self,
-        document: TextDocument,
+        resolver: PdfValueResolver,
         sink: ContentSink,
         font_provider: FontProvider,
         lexer_factory: Callable[[bytes | memoryview], PdfLexer] = PdfLexer,
     ):
-        self.document = document
+        self.resolver = resolver
         self.sink = sink
         self.font_provider = font_provider
         self.lexer_factory = lexer_factory
-
-        self.ca, self.cb, self.cc, self.cd, self.ce, self.cf = (
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-        )
-
-        self.tm_a, self.tm_b, self.tm_c, self.tm_d, self.tm_e, self.tm_f = (
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-        )
-
-        self.lm_a, self.lm_b, self.lm_c, self.lm_d, self.lm_e, self.lm_f = (
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-        )
-
-        self.fill_color = (0.0,)
-        self.fill_pattern = None
-        self.fill_opacity = 1.0
-        self.stroke_color = (0.0,)
-        self.stroke_pattern = None
-        self.stroke_opacity = 1.0
-        self.blend_mode = None
-        self.flatness = 1.0
-        self.render_intent = None
-        self.fill_color_space = "DeviceGray"
-        self.fill_color_spec = None
-        self.stroke_color_spec = None
-        self.stroke_color_space = "DeviceGray"
-        self.line_width = 1.0
-        self.line_cap = 0
-        self.line_join = 0
-        self.miter_limit = 10.0
-        self.dash_pattern = ([], 0.0)
-        self.stack = []
+        self.graphics = GraphicsState()
+        self.text_matrix = IDENTITY_MATRIX
+        self.line_matrix = IDENTITY_MATRIX
+        self.stack: list[GraphicsState] = []
         self.graphics_stack_floor = 0
         self.current_path = PdfPath()
-        self.current_point = None
-        self.subpath_start = None
+        self.current_point: tuple[float, float] | None = None
+        self.subpath_start: tuple[float, float] | None = None
         self.internal_pending_clip_rule: str | None = None
-        self.font_size = 0.0
-        self.font_operand = None
-        self.font_size_operand = None
-        self.horizontal_scale = 100.0
-        self.char_space = 0.0
-        self.word_space = 0.0
-        self.font_scale = self.font_size / 1000.0
-        self.font_ascent = 0.0
-        self.font_descent = 0.0
-        self.font_space_width = 0.0
-        self.font_widths = None
-        self.text_advance_scale = self.font_size * self.horizontal_scale / 100000.0
-        self.char_space_scale = 0.0
-        self.word_space_scale = 0.0
-        self.rise = 0.0
-        self.leading = 0.0
-        self.render_mode = 0
-        self.current_font = None
-        self.current_decoder = None
-        self.current_decoder_resources_id = None
         self.xobject_depth = 0
-        self.operation_state = ContentOperationState()
-        self.marked_content_stack = []
+        self.compatibility_depth = 0
+        self.marked_content_stack: list[MarkedContentEntry] = []
         self.type3_uncolored = False
-        self.resources = {}
-        self.resources_id = 0
-        self.op_handlers = {
+        self.resources: PdfDict = {}
+        self.op_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
         }
-
-        self.combined_A = 1.0
-        self.combined_B = 0.0
-        self.combined_C = 0.0
-        self.combined_D = 1.0
         self.stream_executor = ContentStreamExecutor(self)
-
-    @property
-    def compatibility_depth(self) -> int:
-        return self.operation_state.compatibility_depth
-
-    @compatibility_depth.setter
-    def compatibility_depth(self, value: int) -> None:
-        self.operation_state.compatibility_depth = value
-
-    @property
-    def ctm(self) -> Matrix:
-        return Matrix(self.ca, self.cb, self.cc, self.cd, self.ce, self.cf)
-
-    @ctm.setter
-    def ctm(self, val: Matrix) -> None:
-        self.ca, self.cb, self.cc, self.cd, self.ce, self.cf = val
-        self.update_combined()
-
-    @property
-    def text_matrix(self) -> Matrix:
-        return Matrix(self.tm_a, self.tm_b, self.tm_c, self.tm_d, self.tm_e, self.tm_f)
-
-    @text_matrix.setter
-    def text_matrix(self, val: Matrix) -> None:
-        self.tm_a, self.tm_b, self.tm_c, self.tm_d, self.tm_e, self.tm_f = val
-        self.update_combined()
-
-    @property
-    def line_matrix(self) -> Matrix:
-        return Matrix(self.lm_a, self.lm_b, self.lm_c, self.lm_d, self.lm_e, self.lm_f)
-
-    @line_matrix.setter
-    def line_matrix(self, val: Matrix) -> None:
-        self.lm_a, self.lm_b, self.lm_c, self.lm_d, self.lm_e, self.lm_f = val
-
-    def update_combined(self) -> None:
-        combined = self.text_matrix.multiply(self.ctm)
-        self.combined_A = combined.a
-        self.combined_B = combined.b
-        self.combined_C = combined.c
-        self.combined_D = combined.d
 
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
@@ -268,119 +92,71 @@ class TextState:
         if self.current_point is None:
             raise PdfParseError("curve has no current point")
         x0, y0 = self.current_point
-        self.current_path.cubic_to((x0, y0, x1, y1, x2, y2, x3, y3), self.ctm, float(self.flatness))
+        self.current_path.cubic_to(
+            (x0, y0, x1, y1, x2, y2, x3, y3), self.graphics.ctm, float(self.graphics.flatness)
+        )
         self.current_point = (x3, y3)
-
-    def update_text_scales(self) -> None:
-        fs = self.font_size
-        self.font_scale = fs / 1000.0
-        self.text_advance_scale = fs * self.horizontal_scale / 100000.0
-        if fs:
-            self.char_space_scale = self.char_space * 1000.0 / fs
-            self.word_space_scale = self.word_space * 1000.0 / fs
-        else:
-            self.char_space_scale = 0.0
-            self.word_space_scale = 0.0
-
-    def update_font_metrics(self) -> None:
-        decoder = self.current_decoder
-        if decoder is None:
-            self.font_ascent = 0.0
-            self.font_descent = 0.0
-            self.font_space_width = 0.0
-            self.font_widths = None
-            return
-        self.font_ascent = decoder.ascent * self.font_scale
-        self.font_descent = decoder.descent * self.font_scale
-        self.font_space_width = decoder.glyph_width(32) * self.font_size * 0.001
-        self.font_widths = decoder.fast_widths
 
     def capture_stream_state(self) -> StreamState:
         return StreamState(
-            graphics_state=internal_capture_graphics_state(self),
+            graphics_state=copy(self.graphics),
             resources=self.resources,
-            resources_id=self.resources_id,
             text_matrix=self.text_matrix,
             line_matrix=self.line_matrix,
             graphics_stack_floor=self.graphics_stack_floor,
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
             xobject_depth=self.xobject_depth,
-            operation_state=self.operation_state,
             compatibility_depth=self.compatibility_depth,
             pending_clip_rule=self.internal_pending_clip_rule,
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
         self.resources = state.resources
-        self.resources_id = state.resources_id
         self.text_matrix = state.text_matrix
         self.line_matrix = state.line_matrix
         self.graphics_stack_floor = state.graphics_stack_floor
         self.xobject_depth = state.xobject_depth
-        self.operation_state = state.operation_state
         self.compatibility_depth = state.compatibility_depth
         self.internal_pending_clip_rule = state.pending_clip_rule
         while len(self.stack) > state.graphics_stack_len:
             self.pop_graphics_save()
         del self.marked_content_stack[state.marked_content_stack_len :]
-        self.restore_graphics_state(state.graphics_state)
+        self.graphics = copy(state.graphics_state)
 
-    def restore_graphics_state(self, state: tuple[Any, ...]) -> None:
-        for name, value in zip(GRAPHICS_STATE_FIELDS, state, strict=True):
-            setattr(self, name, value)
-        self.update_combined()
-        self.update_text_scales()
-        self.update_font_metrics()
-
-    def get_operation_handler(self, name: str) -> OperationHandler | None:
-        """Return a strict handler for direct calls to a known PDF operator.
-
-        Stream execution uses execute_operation directly. The op_handlers table
-        contains raw callbacks, whose caller owns operand and scope validation.
-        """
-        handler = self.op_handlers.get(name)
-        if handler is None:
-            return None
-
-        def execute(operands: ContentOperands, depth: int) -> None:
-            self.internal_execute_validated_operation(name, handler, operands, depth)
-
-        return internal_StrictOperationHandler(name, self, execute)
-
-    def execute_operation(self, name: str, operands: ContentOperands, depth: int) -> None:
-        """Validate and execute one operation in this stream's active scope.
-
-        Unknown operators are ignored only in BX/EX sections. Raw callbacks may
-        be replaced in op_handlers; validation and compatibility scope remain
-        owned by this entry point, before the callback runs.
-        """
-        if not self.operation_state.accepts_operator(name):
-            return
+    def execute_operation(
+        self, name: str, operands: ContentOperands, depth: int
+    ) -> ContentStreamFrame | None:
+        """Validate before mutation, then execute in the active stream's scope."""
+        if name not in CONTENT_OPERATOR_HANDLERS:
+            if self.compatibility_depth:
+                return None
+            raise PdfParseError(f"unknown content operator: {name}")
         handler = self.op_handlers.get(name)
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {name}")
-        self.operation_state.internal_validate_operation(name, operands)
-        self.internal_execute_validated_operation(name, handler, operands, depth)
-
-    def internal_execute_validated_operation(
-        self, name: str, handler: OperationHandler, operands: ContentOperands, depth: int
-    ) -> None:
+        validate_content_operands(name, operands)
+        if name == "BX":
+            self.compatibility_depth += 1
+        elif name == "EX":
+            if not self.compatibility_depth:
+                raise PdfParseError("unmatched EX operator")
+            self.compatibility_depth -= 1
         if name in {"l", "c", "v", "y"} and self.current_point is None:
             raise PdfParseError("path operator has no current point")
         if name == "EMC" and not self.marked_content_stack:
             raise PdfParseError("unmatched EMC operator")
         self.internal_validate_color_operation(name, operands)
-        handler(operands, depth)
+        return handler(operands, depth)
 
     def internal_validate_color_operation(self, name: str, operands: ContentOperands) -> None:
         if name not in {"SC", "SCN", "sc", "scn"} or self.type3_uncolored:
             return
         stroke = name in {"SC", "SCN"}
-        color_space = self.stroke_color_space if stroke else self.fill_color_space
-        spec = (self.stroke_color_spec if stroke else self.fill_color_spec) or ImageColorSpec(
-            color_space, {}
-        )
+        color_space = self.graphics.stroke_color_space if stroke else self.graphics.fill_color_space
+        spec = (
+            self.graphics.stroke_color_spec if stroke else self.graphics.fill_color_spec
+        ) or ImageColorSpec(color_space, {})
         if name in {"SC", "sc"} and color_space not in {
             "DeviceGray",
             "DeviceRGB",
@@ -421,53 +197,39 @@ class TextState:
         return entries.get(name) if entries is not None else None
 
     def resolve_resources(self, value: object) -> PdfDict | None:
-        return resolve_resource_dict(
-            value,
-            self.document.resolver,
-        )
+        return resolve_resource_dict(value, self.resolver)
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
         """Resolve an optional six-number matrix; readers may recover by context."""
-        value = self.document.resolver.deep_resolve(value)
+        value = self.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
         return Matrix.from_operand(value)
 
-    def decode_operand(
-        self, operand: object, decoder: FontDecoder
-    ) -> tuple[str, bytes, tuple[DecodedGlyph, ...]]:
-        if not isinstance(operand, PdfString):
-            raise PdfParseError("text operand must be a PDF string")
-        data = bytes(operand.data)
-        glyphs = decoder.decode_glyphs(data)
-        return "".join(glyph.unicode for glyph in glyphs), data, glyphs
-
-    def get_decoder(self, *, update_metrics: bool = True) -> FontDecoder:
-        if self.current_decoder is not None:
-            return self.current_decoder
-        if self.current_font is None:
+    def get_decoder(self) -> FontService:
+        if self.graphics.current_decoder is not None:
+            return self.graphics.current_decoder
+        if self.graphics.current_font is None:
             raise PdfParseError("text operation has no selected font")
-        font_reference = self.lookup_page_resource("Font", self.current_font)
-        font = self.document.resolver.resolve(font_reference)
+        font_reference = self.lookup_page_resource("Font", self.graphics.current_font)
+        font = self.resolver.resolve(font_reference)
         if not isinstance(font, dict):
             raise PdfParseError("font resource must be a dictionary")
-        resolved_font = self.document.resolver.resolve_font_dict(cast(PdfDict, font))
+        resolved_font = self.resolver.resolve_font_dict(cast(PdfDict, font))
         decoder = self.font_provider(
             cast(dict[str, Any], resolved_font), cast(dict[str, Any], self.resources)
         )
-        self.current_decoder = decoder
-        self.current_decoder_resources_id = self.resources_id
-        if update_metrics:
-            self.update_font_metrics()
+        self.graphics.current_decoder = decoder
+        self.graphics.decoder_resources = self.resources
         return decoder
 
-    def op_Do(self, operands: ContentOperands, depth: int) -> None:
+    def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
         if not operands:
-            return
-        self.append_xobject(operands[0], depth)
+            return None
+        return self.append_xobject(operands[0], depth)
 
-    def append_xobject(self, name_obj: Any, depth: int) -> None:
-        name = self.document.resolver.resolve_name(name_obj)
+    def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:
+        name = self.resolver.resolve_name(name_obj)
         if not name:
             raise PdfParseError("XObject operand must be a name")
         raw_xobj = self.lookup_page_resource("XObject", name)
@@ -476,23 +238,23 @@ class TextState:
             if isinstance(raw_xobj, PdfReference)
             else None
         )
-        xobj = self.document.resolver.resolve(raw_xobj)
+        xobj = self.resolver.resolve(raw_xobj)
         if not isinstance(xobj, PdfStream):
             raise PdfParseError("XObject resource must be a stream")
         xobj_dict = xobj.dictionary
-        subtype = self.document.resolver.resolve_name(xobj_dict.get("Subtype"))
+        subtype = self.resolver.resolve_name(xobj_dict.get("Subtype"))
         if subtype == "Image":
             self.sink.paint_image(self, xobj)
-            return
+            return None
         if subtype != "Form":
             raise PdfParseError("unsupported XObject subtype")
         group_alpha = None
         group = xobj_dict.get("Group")
         if group is not None:
-            group_dict = self.document.resolver.resolve_dict(group)
+            group_dict = self.resolver.resolve_dict(group)
             if (
                 isinstance(group_dict, dict)
-                and self.document.resolver.resolve_name(group_dict.get("S")) == "Transparency"
+                and self.resolver.resolve_name(group_dict.get("S")) == "Transparency"
             ):
                 # PDF 32000-1 Table 147: a transparency group dictionary holds
                 # S/CS/I/K and nothing else. The constant alpha and blend mode
@@ -504,23 +266,27 @@ class TextState:
                 #
                 # An explicitly isolated group has its own transparent backdrop,
                 # even at full opacity: a child's blend must not see the page.
-                blend = self.blend_mode
-                isolated = self.document.resolver.resolve(group_dict.get("I")) is True
-                if isolated or self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
-                    group_alpha = max(0.0, min(1.0, self.fill_opacity))
+                blend = self.graphics.blend_mode
+                isolated = self.resolver.resolve(group_dict.get("I")) is True
+                if (
+                    isolated
+                    or self.graphics.fill_opacity < 1.0
+                    or (blend is not None and blend != "Normal")
+                ):
+                    group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
         resources = self.resolve_resources(xobj_dict.get("Resources"))
         if resources is None:
             resources = self.resources
         xobj_matrix = xobj_dict.get("Matrix")
-        nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.ctm)
+        nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
-        form_bbox = self.document.resolver.resolve_box(raw_form_bbox)
+        form_bbox = self.resolver.resolve_box(raw_form_bbox)
         if form_bbox is None:
             raise PdfParseError("Form XObject requires a BBox")
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
-        self.stream_executor.queue(
+        return self.stream_executor.queue(
             xobj,
             resources,
             nested_ctm,
@@ -531,31 +297,21 @@ class TextState:
             stream_key=stream_key,
         )
 
-    def transform_point(self, x: float, y: float) -> tuple[float, float]:
-        return (
-            x * self.ca + y * self.cc + self.ce,
-            x * self.cb + y * self.cd + self.cf,
-        )
-
-    def append_text(
-        self,
-        operand: Any = None,
-        *,
-        data: bytes | memoryview | None = None,
-        decoder: FontDecoder | None = None,
-    ) -> None:
+    def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
+        """Decode bytes once, then execute their glyphs and text advance."""
         decoder = decoder if decoder is not None else self.get_decoder()
+        glyphs = decoder.decode_glyphs(data if isinstance(data, bytes) else bytes(data))
+        text = "".join(glyph.unicode for glyph in glyphs)
+        self.append_decoded_text(text, data, glyphs, decoder)
 
-        glyphs: tuple[DecodedGlyph, ...]
-        if data is not None:
-            glyphs = decoder.decode_glyphs(data if isinstance(data, bytes) else bytes(data))
-            # Keep undecodable painted glyphs in the page program. Native
-            # consumers can retain the replacement marker, while legacy
-            # facades project the source code as their exact ``(cid:N)``
-            # spelling. Dropping them here also lost their cursor advance.
-            text = "".join([glyph.unicode for glyph in glyphs])
-        else:
-            text, data, glyphs = self.decode_operand(operand, decoder)
+    def append_decoded_text(
+        self,
+        text: str,
+        data: bytes | memoryview,
+        glyphs: tuple[DecodedFontGlyph, ...],
+        decoder: FontService,
+    ) -> None:
+        """Execute decoded text, retaining painted glyphs even without Unicode."""
         if decoder.is_type3 and data:
             text_matrix = self.text_matrix
             line_matrix = self.line_matrix
@@ -567,27 +323,33 @@ class TextState:
 
         adv_x, adv_y = decoder.text_advance_vector(
             data,
-            font_size=self.font_size,
-            char_space=self.char_space,
-            word_space=self.word_space,
-            horizontal_scale=self.horizontal_scale,
+            font_size=self.graphics.font_size,
+            char_space=self.graphics.char_space,
+            word_space=self.graphics.word_space,
+            horizontal_scale=self.graphics.horizontal_scale,
             glyphs=glyphs,
         )
-        te, tf = self.tm_e, self.tm_f
-        ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
+        te, tf = self.text_matrix.e, self.text_matrix.f
+        ta, tb, tc, td = (
+            self.text_matrix.a,
+            self.text_matrix.b,
+            self.text_matrix.c,
+            self.text_matrix.d,
+        )
         if text:
             self.sink.show_text(self, text, data, glyphs, decoder, adv_x, adv_y)
-        self.tm_e = te + adv_x * ta + adv_y * tc
-        self.tm_f = tf + adv_x * tb + adv_y * td
+        self.text_matrix = self.text_matrix._replace(
+            e=te + adv_x * ta + adv_y * tc, f=tf + adv_x * tb + adv_y * td
+        )
         self.sink.text_boundary(self, "shown")
 
-    def internal_render_type3_glyphs(self, data: bytes | memoryview, decoder: FontDecoder) -> None:
+    def internal_render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
         # ISO 32000-1 9.3.6: "Only a value of 3 for text rendering mode shall
         # have any effect on text displayed in a Type 3 font", and Table 106
         # makes mode 3 invisible. Mode 7 deliberately still paints here -- for a
         # Type 3 font the clause says only mode 3 has an effect, unlike the
         # simple-font case where 7 also adds no marks.
-        if self.render_mode == 3:
+        if self.graphics.render_mode == 3:
             return
         font = decoder.font
         char_procs = font.get("CharProcs")
@@ -600,9 +362,7 @@ class TextState:
 
         for code in data:
             glyph_name = decoder.glyph_name(code)
-            char_proc = self.document.resolver.resolve(
-                char_procs.get(glyph_name) if glyph_name else None
-            )
+            char_proc = self.resolver.resolve(char_procs.get(glyph_name) if glyph_name else None)
             if isinstance(char_proc, PdfStream):
                 # ISO 32000-1 9.6.5: when the glyph description begins, the CTM
                 # is "the concatenation of the font matrix ... and the text space
@@ -615,23 +375,16 @@ class TextState:
                 # to lead. It was trailing, and the Tfs/Th/Trise factor was
                 # missing entirely, which left every Type 3 glyph painted at
                 # FontMatrix scale near the origin and independent of font size.
-                text_space = Matrix(
-                    self.combined_A,
-                    self.combined_B,
-                    self.combined_C,
-                    self.combined_D,
-                    self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
-                    self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
-                )
-                font_size = self.font_size
+                text_space = self.text_matrix.multiply(self.graphics.ctm)
+                font_size = self.graphics.font_size
                 glyph_ctm = font_matrix.multiply(
                     Matrix(
-                        font_size * self.horizontal_scale / 100.0,
+                        font_size * self.graphics.horizontal_scale / 100.0,
                         0.0,
                         0.0,
                         font_size,
                         0.0,
-                        self.rise,
+                        self.graphics.rise,
                     ).multiply(text_space)
                 )
                 previous_type3_uncolored = self.type3_uncolored
@@ -643,14 +396,17 @@ class TextState:
 
             advance_x, advance_y = decoder.glyph_advance_vector(
                 code,
-                font_size=self.font_size,
-                char_space=self.char_space,
-                word_space=self.word_space,
-                horizontal_scale=self.horizontal_scale,
+                font_size=self.graphics.font_size,
+                char_space=self.graphics.char_space,
+                word_space=self.graphics.word_space,
+                horizontal_scale=self.graphics.horizontal_scale,
                 encoded_space=code == 32,
             )
-            self.tm_e += advance_x * self.tm_a + advance_y * self.tm_c
-            self.tm_f += advance_x * self.tm_b + advance_y * self.tm_d
+            tm = self.text_matrix
+            self.text_matrix = tm._replace(
+                e=tm.e + (advance_x * tm.a + advance_y * tm.c),
+                f=tm.f + (advance_x * tm.b + advance_y * tm.d),
+            )
 
     def tj_array_extra_bytes(self, item: object) -> bytes:
         """Reject a TJ entry outside the exact PDF string and number types.
@@ -668,11 +424,20 @@ class TextState:
             return
         pending_bytes = bytearray()
 
-        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
+        decoder = (
+            self.graphics.current_decoder
+            if self.graphics.current_decoder is not None
+            else self.get_decoder()
+        )
         is_vert = decoder.is_vertical
 
-        te, tf = self.tm_e, self.tm_f
-        ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
+        te, tf = self.text_matrix.e, self.text_matrix.f
+        ta, tb, tc, td = (
+            self.text_matrix.a,
+            self.text_matrix.b,
+            self.text_matrix.c,
+            self.text_matrix.d,
+        )
         for item in array:
             t = type(item)
             if t is PdfString:
@@ -681,15 +446,15 @@ class TextState:
                 pending_bytes.extend(item)
             elif t is int or t is float:
                 if pending_bytes:
-                    self.tm_e, self.tm_f = te, tf
+                    self.text_matrix = self.text_matrix._replace(e=te, f=tf)
                     self.append_text(data=bytes(pending_bytes), decoder=decoder)
-                    te, tf = self.tm_e, self.tm_f
+                    te, tf = self.text_matrix.e, self.text_matrix.f
                     pending_bytes.clear()
                 advance_x, advance_y = text_adjustment_vector(
                     item,
                     vertical=is_vert,
-                    font_size=self.font_size,
-                    horizontal_scale=self.horizontal_scale,
+                    font_size=self.graphics.font_size,
+                    horizontal_scale=self.graphics.horizontal_scale,
                 )
                 te += advance_x * ta + advance_y * tc
                 tf += advance_x * tb + advance_y * td
@@ -697,11 +462,11 @@ class TextState:
                 pending_bytes.extend(self.tj_array_extra_bytes(item))
 
         if pending_bytes:
-            self.tm_e, self.tm_f = te, tf
+            self.text_matrix = self.text_matrix._replace(e=te, f=tf)
             self.append_text(data=bytes(pending_bytes), decoder=decoder)
-            te, tf = self.tm_e, self.tm_f
+            te, tf = self.text_matrix.e, self.text_matrix.f
 
-        self.tm_e, self.tm_f = te, tf
+        self.text_matrix = self.text_matrix._replace(e=te, f=tf)
 
     def current_actual_text_span(self) -> MarkedContentEntry | None:
         for entry in reversed(self.marked_content_stack):
@@ -716,42 +481,27 @@ class TextState:
         return None
 
     def internal_begin_text(self) -> None:
-        self.tm_a = self.lm_a = 1.0
-        self.tm_b = self.lm_b = 0.0
-        self.tm_c = self.lm_c = 0.0
-        self.tm_d = self.lm_d = 1.0
-        self.tm_e = self.lm_e = 0.0
-        self.tm_f = self.lm_f = 0.0
-        self.update_combined()
+        self.text_matrix = self.line_matrix = IDENTITY_MATRIX
 
     def op_ET(self, operands: ContentOperands, depth: int) -> None:
         self.sink.text_boundary(self, "end")
 
     def move_text(self, tx: float, ty: float) -> None:
         self.sink.text_boundary(self, "move")
-        # Preserve the specification's affine operation order. Exact layout
-        # grouping can hinge on the final ULP at a character-margin boundary.
-        self.tm_e = tx * self.lm_a + ty * self.lm_c + self.lm_e
-        self.tm_f = tx * self.lm_b + ty * self.lm_d + self.lm_f
-        self.lm_e = self.tm_e
-        self.lm_f = self.tm_f
-
-    def show_text_operand(self, operand: ContentOperand) -> None:
-        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
-        if type(operand) is PdfString:
-            self.append_text(
-                data=operand.data,
-                decoder=decoder,
-            )
-        else:
-            self.append_text(operand, decoder=decoder)
+        # Keep the affine operation order: exact layout grouping can hinge on
+        # the final ULP at a character-margin boundary.
+        lm = self.line_matrix
+        e = tx * lm.a + ty * lm.c + lm.e
+        f = tx * lm.b + ty * lm.d + lm.f
+        self.text_matrix = self.text_matrix._replace(e=e, f=f)
+        self.line_matrix = lm._replace(e=e, f=f)
 
     def op_BT(self, operands: ContentOperands, depth: int) -> None:
         self.sink.text_boundary(self, "begin")
         self.internal_begin_text()
 
     def op_T_star(self, operands: ContentOperands, depth: int) -> None:
-        self.move_text(0.0, -self.leading)
+        self.move_text(0.0, -self.graphics.leading)
 
     def op_Td(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 2)) is None:
@@ -762,13 +512,13 @@ class TextState:
         if (values := self.as_floats(operands, 2)) is None:
             return
         tx, ty = values
-        self.leading = -ty
+        self.graphics.leading = -ty
         self.move_text(tx, ty)
 
     def op_Tj(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) != 1:
+        if len(operands) != 1 or not isinstance(operands[0], PdfString):
             raise PdfParseError("Tj requires one string")
-        self.show_text_operand(operands[0])
+        self.append_text(operands[0].data)
 
     def op_TJ(self, operands: ContentOperands, depth: int) -> None:
         if operands:
@@ -777,19 +527,12 @@ class TextState:
     def op_Tm(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 6)) is None:
             return
-        a, b, c, d_, e, f = values
         self.sink.text_boundary(self, "matrix")
-        self.tm_a = self.lm_a = a
-        self.tm_b = self.lm_b = b
-        self.tm_c = self.lm_c = c
-        self.tm_d = self.lm_d = d_
-        self.tm_e = self.lm_e = e
-        self.tm_f = self.lm_f = f
-        self.update_combined()
+        self.text_matrix = self.line_matrix = Matrix(*values)
 
     def resolve_font_name(self, value: object) -> str | None:
         """Resolve a Tf name; parsing extensions may return None to skip selection."""
-        name = self.document.resolver.resolve_name(value)
+        name = self.resolver.resolve_name(value)
         if name is None:
             raise PdfParseError("Tf requires a font name")
         return name
@@ -804,91 +547,65 @@ class TextState:
     def op_Tf(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:
             raise PdfParseError("Tf requires two operands")
-        font_operand = operands[0]
-        font_size_operand = operands[1]
-        decoder_matches_resources = (
-            self.current_decoder is not None
-            and self.current_decoder_resources_id == self.resources_id
-        )
-        same_font_operand = decoder_matches_resources and font_operand is self.font_operand
-        if same_font_operand:
-            if font_size_operand is self.font_size_operand:
-                return
-            font_name = self.current_font
-        else:
-            font_name = self.resolve_font_name(font_operand)
-            if font_name is None:
-                return
-        font_size = self.parse_font_size(font_size_operand)
+        font_name = self.resolve_font_name(operands[0])
+        if font_name is None:
+            return
+        font_size = self.parse_font_size(operands[1])
         if font_size is None:
             return
-        if decoder_matches_resources and (same_font_operand or self.current_font == font_name):
-            if self.font_size != font_size:
-                self.font_size = font_size
-                self.update_text_scales()
-                self.update_font_metrics()
-            self.font_operand = font_operand
-            self.font_size_operand = font_size_operand
-            return
-        self.current_font = font_name
-        self.font_size = font_size
-        self.update_text_scales()
-        self.font_operand = font_operand
-        self.font_size_operand = font_size_operand
-        self.current_decoder = None
-        self.current_decoder = self.get_decoder(update_metrics=False)
-        self.update_font_metrics()
+        graphics = self.graphics
+        if graphics.current_font != font_name or graphics.decoder_resources is not self.resources:
+            graphics.current_decoder = None
+        graphics.current_font = font_name
+        graphics.font_size = font_size
+        graphics.current_decoder = self.get_decoder()
 
     def op_TL(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is None:
             return
-        self.leading = values[0]
+        self.graphics.leading = values[0]
 
     def op_Tc(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is None:
             return
-        self.char_space = values[0]
-        self.update_text_scales()
+        self.graphics.char_space = values[0]
 
     def op_Tw(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is None:
             return
         word_space = values[0]
-        if self.word_space == word_space:
+        if self.graphics.word_space == word_space:
             return
-        self.word_space = word_space
-        self.update_text_scales()
+        self.graphics.word_space = word_space
 
     def op_Tr(self, operands: ContentOperands, depth: int) -> None:
         if (value := self.as_int_operand(operands)) is not None:
-            self.render_mode = value
+            self.graphics.render_mode = value
 
     def op_Tz(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is None:
             return
-        self.horizontal_scale = values[0]
-        self.update_text_scales()
+        self.graphics.horizontal_scale = values[0]
 
     def op_Ts(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is None:
             return
-        self.rise = values[0]
+        self.graphics.rise = values[0]
 
     def op_quote(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
-        self.move_text(0.0, -self.leading)
+        self.move_text(0.0, -self.graphics.leading)
         self.sink.text_boundary(self, "quoted")
-        self.show_text_operand(operands[0])
+        self.op_Tj((operands[0],), depth)
 
     def op_double_quote(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 3 or (values := self.as_floats(operands, 2)) is None:
             return
-        self.word_space, self.char_space = values
-        self.update_text_scales()
-        self.move_text(0.0, -self.leading)
+        self.graphics.word_space, self.graphics.char_space = values
+        self.move_text(0.0, -self.graphics.leading)
         self.sink.text_boundary(self, "quoted")
-        self.show_text_operand(operands[2])
+        self.op_Tj((operands[2],), depth)
 
     def op_BI(self, operands: ContentOperands, depth: int) -> None:
         if operands and hasattr(operands[0], "dictionary"):
@@ -898,7 +615,7 @@ class TextState:
         # A run owns one marked-content context. Finish neighboring text before
         # changing that context so ActualText cannot replace unrelated glyphs.
         self.sink.text_boundary(self, "marked")
-        tag = self.document.resolver.resolve_name(operands[0]) if operands else None
+        tag = self.resolver.resolve_name(operands[0]) if operands else None
         layer: str | None = None
         actual_text: str | None = None
         mcid: int | None = None
@@ -910,7 +627,7 @@ class TextState:
             # once can mean one fewer page-resource lookup per BDC.
             props = self.resolve_marked_content_properties(properties)
             if props is not None:
-                resolver = self.document.resolver
+                resolver = self.resolver
                 if tag == "Span":
                     actual_text = resolver.resolve_str(props.get("ActualText"))
                 mcid = resolver.resolve_int(props.get("MCID"))
@@ -941,21 +658,21 @@ class TextState:
         if (values := self.as_floats(operands, 1)) is not None:
             if values[0] < 0:
                 raise PdfParseError("line width must not be negative")
-            self.line_width = values[0]
+            self.graphics.line_width = values[0]
 
     def op_J(self, operands: ContentOperands, depth: int) -> None:
         if (value := self.as_int_operand(operands)) is not None:
-            self.line_cap = value
+            self.graphics.line_cap = value
 
     def op_j(self, operands: ContentOperands, depth: int) -> None:
         if (value := self.as_int_operand(operands)) is not None:
-            self.line_join = value
+            self.graphics.line_join = value
 
     def op_M(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             if values[0] < 1:
                 raise PdfParseError("miter limit must be at least one")
-            self.miter_limit = values[0]
+            self.graphics.miter_limit = values[0]
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:
@@ -965,10 +682,10 @@ class TextState:
             array_obj = operands[0]
             if not isinstance(array_obj, (list, tuple)):
                 raise PdfParseError("dash pattern must be an array")
-            dash_array = [self.as_float(value) for value in array_obj]
+            dash_array = tuple(self.as_float(value) for value in array_obj)
         except (TypeError, ValueError) as error:
             raise PdfParseError(str(error)) from error
-        self.dash_pattern = (dash_array, phase)
+        self.graphics.dash_pattern = (dash_array, phase)
 
     def op_m(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 2)) is None:
@@ -1048,22 +765,22 @@ class TextState:
         self.internal_pending_clip_rule = None
 
     def op_paint_stroke(self, operands: ContentOperands, depth: int) -> None:
-        self.flush_drawing("stroke")
+        self.internal_complete_path("stroke")
 
     def op_paint_close_stroke(self, operands: ContentOperands, depth: int) -> None:
         self.internal_complete_path("stroke", close=True)
 
     def op_paint_fill(self, operands: ContentOperands, depth: int) -> None:
-        self.flush_drawing("fill", "nonzero")
+        self.internal_complete_path("fill", "nonzero")
 
     def op_paint_fill_evenodd(self, operands: ContentOperands, depth: int) -> None:
-        self.flush_drawing("fill", "evenodd")
+        self.internal_complete_path("fill", "evenodd")
 
     def op_paint_fillstroke(self, operands: ContentOperands, depth: int) -> None:
-        self.flush_drawing("fillstroke", "nonzero")
+        self.internal_complete_path("fillstroke", "nonzero")
 
     def op_paint_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
-        self.flush_drawing("fillstroke", "evenodd")
+        self.internal_complete_path("fillstroke", "evenodd")
 
     def op_paint_close_fillstroke(self, operands: ContentOperands, depth: int) -> None:
         self.internal_complete_path("fillstroke", "nonzero", close=True)
@@ -1102,15 +819,15 @@ class TextState:
         # Device operators select both a space and its components. Leaving a
         # previous Indexed/Separation spec behind misinterprets a later sc/SC.
         if stroke:
-            self.stroke_color_space = color_space
-            self.stroke_color_spec = None
-            self.stroke_color = normalized
-            self.stroke_pattern = None
+            self.graphics.stroke_color_space = color_space
+            self.graphics.stroke_color_spec = None
+            self.graphics.stroke_color = normalized
+            self.graphics.stroke_pattern = None
         else:
-            self.fill_color_space = color_space
-            self.fill_color_spec = None
-            self.fill_color = normalized
-            self.fill_pattern = None
+            self.graphics.fill_color_space = color_space
+            self.graphics.fill_color_spec = None
+            self.graphics.fill_color = normalized
+            self.graphics.fill_pattern = None
 
     def normalize_color_operands(self, o: Any) -> tuple[float, ...] | None:
         # Plain numeric operands (the overwhelming majority) clamp directly;
@@ -1121,14 +838,14 @@ class TextState:
 
     def resolve_color_space(self, name_obj: Any) -> tuple[str, ImageColorSpec | None]:
         """Resolve a cs/CS resource once for both its name and conversion spec."""
-        name = self.document.resolver.resolve_name(name_obj)
+        name = self.resolver.resolve_name(name_obj)
         if name is None:
             raise PdfParseError("color space operand must be a name")
         # Table 74: these names identify spaces directly, not same-named resources.
         value = (
             name
             if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
-            else self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
+            else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
         )
         if value is None:
             raise PdfParseError("missing color space resource")
@@ -1179,15 +896,15 @@ class TextState:
                 spec or ImageColorSpec(color_space, {}), stroke=stroke
             )
             if stroke:
-                self.stroke_color_space = color_space
-                self.stroke_color_spec = spec
-                self.stroke_color = color
-                self.stroke_pattern = None
+                self.graphics.stroke_color_space = color_space
+                self.graphics.stroke_color_spec = spec
+                self.graphics.stroke_color = color
+                self.graphics.stroke_pattern = None
             else:
-                self.fill_color_space = color_space
-                self.fill_color_spec = spec
-                self.fill_color = color
-                self.fill_pattern = None
+                self.graphics.fill_color_space = color_space
+                self.graphics.fill_color_spec = spec
+                self.graphics.fill_color = color
+                self.graphics.fill_pattern = None
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
@@ -1203,29 +920,32 @@ class TextState:
     ) -> None:
         if self.type3_uncolored:
             return
-        color_space = self.stroke_color_space if stroke else self.fill_color_space
+        color_space = self.graphics.stroke_color_space if stroke else self.graphics.fill_color_space
         if allow_pattern and color_space == "Pattern":
             pattern = self.resolve_pattern_color(
-                operands, color_spec=self.stroke_color_spec if stroke else self.fill_color_spec
+                operands,
+                color_spec=self.graphics.stroke_color_spec
+                if stroke
+                else self.graphics.fill_color_spec,
             )
             color = pattern.base_color if isinstance(pattern, TilingPattern) else None
             if stroke:
-                self.stroke_pattern = pattern
-                self.stroke_color = color
+                self.graphics.stroke_pattern = pattern
+                self.graphics.stroke_color = color
             else:
-                self.fill_pattern = pattern
-                self.fill_color = color
+                self.graphics.fill_pattern = pattern
+                self.graphics.fill_color = color
             return
         normalized = self.internal_color_from_operands(
-            operands, self.stroke_color_spec if stroke else self.fill_color_spec
+            operands, self.graphics.stroke_color_spec if stroke else self.graphics.fill_color_spec
         )
         if normalized is not None:
             if stroke:
-                self.stroke_color = normalized
-                self.stroke_pattern = None
+                self.graphics.stroke_color = normalized
+                self.graphics.stroke_pattern = None
             else:
-                self.fill_color = normalized
-                self.fill_pattern = None
+                self.graphics.fill_color = normalized
+                self.graphics.fill_pattern = None
 
     def op_SCN(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color(operands, stroke=True, allow_pattern=True)
@@ -1238,14 +958,14 @@ class TextState:
 
     def op_i(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
-            self.flatness = max(0.0, min(100.0, values[0]))
+            self.graphics.flatness = max(0.0, min(100.0, values[0]))
 
     def op_ri(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
         value = self.named_value(operands[0])
         if isinstance(value, str):
-            self.render_intent = value
+            self.graphics.render_intent = value
 
     def op_MP(self, operands: ContentOperands, depth: int) -> None:
         # A marked-content point is not a scope. Only BMC/BDC push and EMC pops.
@@ -1257,28 +977,28 @@ class TextState:
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
         """Resolve a PDF name, or a text string where the grammar allows it."""
-        name = self.document.resolver.resolve_name(value)
+        name = self.resolver.resolve_name(value)
         if name is not None or not allow_text:
             return name
-        return self.document.resolver.resolve_str(value)
+        return self.resolver.resolve_str(value)
 
     def resolve_marked_content_properties(self, value: Any) -> dict[str, Any] | None:
         if value is None:
             return None
-        resolved = self.document.resolver.resolve(value)
+        resolved = self.resolver.resolve(value)
         if isinstance(resolved, dict):
             return cast("dict[str, Any]", resolved)
-        name = self.document.resolver.resolve_name(value)
+        name = self.resolver.resolve_name(value)
         if not name:
             return None
-        props = self.document.resolver.resolve(self.lookup_page_resource("Properties", name))
+        props = self.resolver.resolve(self.lookup_page_resource("Properties", name))
         return cast("dict[str, Any]", props) if isinstance(props, dict) else None
 
     def resolve_marked_content_layer(self, value: Any) -> str | None:
         if value is None:
             return None
 
-        resolved = self.document.resolver.resolve(value)
+        resolved = self.resolver.resolve(value)
         if isinstance(resolved, dict):
             oc = resolved.get("OC")
             if oc is not None:
@@ -1301,10 +1021,10 @@ class TextState:
     def op_sh(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             raise PdfParseError("resource operator requires a name")
-        name = self.document.resolver.resolve_name(operands[0])
+        name = self.resolver.resolve_name(operands[0])
         if not name:
             raise PdfParseError("resource operator requires a name")
-        shading = self.document.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
+        shading = self.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
         if not isinstance(shading, dict):
             raise PdfParseError("missing shading resource")
         self.sink.paint_shading(self, shading)
@@ -1335,29 +1055,29 @@ class TextState:
         return self.as_int(operands[0])
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
-        resolved = self.document.resolver.resolve_dict(self.lookup_page_resource("ExtGState", name))
+        resolved = self.resolver.resolve_dict(self.lookup_page_resource("ExtGState", name))
         if not isinstance(resolved, dict):
             return None
         return cast("dict[str, Any]", resolved)
 
     def op_q(self, operands: ContentOperands, depth: int) -> None:
-        self.stack.append(GraphicsSave(internal_capture_graphics_state(self)))
+        self.stack.append(copy(self.graphics))
         self.sink.save_graphics(self)
 
-    def pop_graphics_save(self) -> tuple[Any, ...]:
+    def pop_graphics_save(self) -> GraphicsState:
         saved = self.stack.pop()
         self.sink.restore_graphics(self)
-        return saved.graphics_state
+        return saved
 
     def op_Q(self, operands: ContentOperands, depth: int) -> None:
         if len(self.stack) <= self.graphics_stack_floor:
             raise PdfParseError("unmatched Q operator")
-        self.restore_graphics_state(self.pop_graphics_save())
+        self.graphics = self.pop_graphics_save()
 
     def op_cm(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 6)) is None:
             return
-        self.ctm = Matrix(*values).multiply(self.ctm)
+        self.graphics.ctm = Matrix(*values).multiply(self.graphics.ctm)
 
     def op_g(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_device_color(operands, "DeviceGray", 1, stroke=False)
@@ -1371,7 +1091,7 @@ class TextState:
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             raise PdfParseError("resource operator requires a name")
-        name = self.document.resolver.resolve_name(operands[0])
+        name = self.resolver.resolve_name(operands[0])
         if not name:
             raise PdfParseError("resource operator requires a name")
         extgstate = self.resolve_extgstate(name)
@@ -1390,20 +1110,16 @@ class TextState:
         """
         fill_opacity = extgstate.get("ca")
         if fill_opacity is not None:
-            self.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
+            self.graphics.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
         stroke_opacity = extgstate.get("CA")
         if stroke_opacity is not None:
-            self.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
+            self.graphics.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
         blend_mode = extgstate.get("BM")
         if blend_mode is not None:
             if isinstance(blend_mode, (list, tuple)):
                 blend_mode = blend_mode[0] if blend_mode else None
             if blend_mode is not None:
-                self.blend_mode = self.named_value(blend_mode)
-
-    def flush_drawing(self, kind: str, fill_rule: str = "nonzero") -> None:
-        """Complete a painted path, including any pending clipping operation."""
-        self.internal_complete_path(kind, fill_rule)
+                self.graphics.blend_mode = self.named_value(blend_mode)
 
     def resolve_pattern_resource(self, name_operand: object) -> tuple[object, PdfDict] | None:
         """Look up a selected pattern source and its dictionary without decoding it.
@@ -1411,17 +1127,15 @@ class TextState:
         An absent name or dictionary returns None; the selection caller decides
         whether to reject it. Resolver failures propagate to the caller.
         """
-        pattern_name = self.document.resolver.resolve_name(name_operand)
+        pattern_name = self.resolver.resolve_name(name_operand)
         if not pattern_name:
             return None
-        pattern = self.document.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
+        pattern = self.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
         pattern_dict: PdfDict | None
         if isinstance(pattern, PdfStream):
             pattern_dict = cast(PdfDict, pattern.dictionary)
         else:
-            pattern_dict = (
-                self.document.resolver.resolve_dict(pattern) if pattern is not None else None
-            )
+            pattern_dict = self.resolver.resolve_dict(pattern) if pattern is not None else None
         return (pattern, pattern_dict) if isinstance(pattern_dict, dict) else None
 
     def resolve_pattern_color(
@@ -1439,23 +1153,21 @@ class TextState:
         if resource is None:
             raise PdfParseError("invalid pattern resource or operands")
         pattern, pattern_dict = resource
-        pattern_type = self.document.resolver.resolve_int(pattern_dict.get("PatternType"))
+        pattern_type = self.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
             if color_spec is not None and (
                 color_spec.pattern_base is not None or len(operands) != 1
             ):
                 raise PdfParseError("shading pattern requires a colored Pattern space")
             shading: object = pattern_dict.get("Shading")
-            shading = self.document.resolver.resolve(shading)
-            shading_dict = (
-                self.document.resolver.resolve_dict(shading) if shading is not None else None
-            )
+            shading = self.resolver.resolve(shading)
+            shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 raise PdfParseError("invalid pattern resource or operands")
             return ShadingPattern(dict(shading_dict))
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             raise PdfParseError("invalid pattern resource or operands")
-        paint_type = self.document.resolver.resolve_int(pattern_dict.get("PaintType"))
+        paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))
         if paint_type not in {1, 2}:
             raise PdfParseError("invalid pattern resource or operands")
         base_spec = color_spec.pattern_base if color_spec is not None else None
@@ -1472,11 +1184,11 @@ class TextState:
             )
             if base_color is None:
                 raise PdfParseError("invalid pattern resource or operands")
-        bbox = self.document.resolver.resolve_box(pattern_dict.get("BBox"))
+        bbox = self.resolver.resolve_box(pattern_dict.get("BBox"))
         if bbox is None:
             raise PdfParseError("invalid pattern resource or operands")
-        x_step = self.document.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
-        y_step = self.document.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
+        x_step = self.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
+        y_step = self.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
             raise PdfParseError("invalid pattern resource or operands")
         matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
@@ -1494,4 +1206,4 @@ class TextState:
         )
 
 
-__all__ = ("TextDocument", "TextState", "NON_PAINTING_RENDER_MODES")
+__all__ = ("ContentInterpreter",)

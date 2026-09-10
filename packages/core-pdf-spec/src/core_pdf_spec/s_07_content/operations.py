@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Strict tokenization and dispatch of PDF content-stream operations.
+"""Content-stream tokenization, operation parsing, and operand validation.
 
 Token parsing advances the lexer only through the token being read. On failure
 its cursor identifies the failure location; readers may recover outside this
@@ -8,10 +8,9 @@ module and call the primitive again at a selected boundary.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
@@ -19,24 +18,21 @@ from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.types import CachedPdfObject
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
-    CONTENT_OPERATOR_HANDLERS,
     CONTENT_OPERATOR_SIGNATURES,
 )
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
-    full_source_bytes,
     is_number_word_bytes,
-    skip_comment,
-    skip_hex_string,
-    skip_literal_string,
-    skip_name,
 )
 from core_pdf_spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
 from core_pdf_spec.types import PdfName, PdfString
 
+if TYPE_CHECKING:
+    from core_pdf_spec.s_07_content.streams import ContentStreamFrame
+
 ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
-OperationHandler: TypeAlias = Callable[[ContentOperands, int], None]
+OperationHandler: TypeAlias = Callable[[ContentOperands, int], "ContentStreamFrame | None"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,80 +123,12 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
         raise PdfParseError("miter limit must be at least one")
 
 
-@dataclass(slots=True)
-class ContentOperationState:
-    """Compatibility nesting retained when execution suspends for a child stream."""
+def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
+    """Yield complete operations without executing or validating their semantics.
 
-    compatibility_depth: int = 0
-
-    def accepts_operator(self, operator: str) -> bool:
-        """Ignore unknown operators only inside a compatibility section."""
-        if operator in CONTENT_OPERATOR_HANDLERS:
-            return True
-        if not self.compatibility_depth:
-            raise PdfParseError(f"unknown content operator: {operator}")
-        return False
-
-    def begin_compatibility(self) -> None:
-        self.compatibility_depth += 1
-
-    def end_compatibility(self) -> None:
-        if not self.compatibility_depth:
-            raise PdfParseError("unmatched EX operator")
-        self.compatibility_depth -= 1
-
-    def internal_advance_compatibility(self, operator: str) -> None:
-        if operator == "BX":
-            self.begin_compatibility()
-        elif operator == "EX":
-            self.end_compatibility()
-
-    def internal_validate_operation(self, operator: str, operands: ContentOperands) -> None:
-        validate_content_operands(operator, operands)
-        self.internal_advance_compatibility(operator)
-
-    def finish(self) -> None:
-        if self.compatibility_depth:
-            raise PdfParseError("unterminated compatibility section")
-
-
-class internal_OperationStateOwner(Protocol):
-    @property
-    def operation_state(self) -> ContentOperationState: ...
-
-
-@dataclass(frozen=True, slots=True)
-class internal_StrictOperationHandler:
-    """A strict callable whose semantic callback runs after scope validation.
-
-    Keep the owner, rather than its current scope: retained handlers must follow
-    the owner's active stream when nested execution replaces that scope.
-    """
-
-    name: str
-    owner: internal_OperationStateOwner
-    callback: OperationHandler
-
-    def __call__(self, operands: ContentOperands, depth: int) -> None:
-        self.dispatch(operands, depth, self.owner.operation_state)
-
-    def dispatch(self, operands: ContentOperands, depth: int, state: ContentOperationState) -> None:
-        state.internal_validate_operation(self.name, operands)
-        owner_state = self.owner.operation_state
-        if owner_state is not state:
-            owner_state.internal_advance_compatibility(self.name)
-        self.callback(operands, depth)
-
-
-def internal_dispatch_operations(
-    lexer: PdfLexer,
-    execute_operation: Callable[[str, ContentOperands, int], None],
-    depth: int,
-) -> None:
-    """Read complete operations for an executor that owns validation and scope.
-
-    Advance past the operation before invoking the executor, so nested streams
-    can suspend execution without replaying the parent operation on return.
+    The lexer advances past each operation before yielding. Interpreter execution
+    may then suspend for a child stream and resume at the next parent operation.
+    Operator signatures and state constraints belong to execute_operation.
     """
     operands: list[ContentOperand] = []
     while (token := parse_content_token(lexer)) is not None:
@@ -212,127 +140,11 @@ def internal_dispatch_operations(
             continue
         else:
             op_name = cast(str, token.value)
-        execute_operation(op_name, tuple(operands), depth)
+        operation = (op_name, tuple(operands))
         operands.clear()
+        yield operation
     if operands:
         raise PdfParseError("content stream ends with operands")
-
-
-def dispatch_operations(
-    lexer: PdfLexer,
-    get_handler: Callable[[str], OperationHandler | None],
-    depth: int,
-    *,
-    operation_state: ContentOperationState | None = None,
-) -> None:
-    """Execute complete operations; unknown operators require a BX/EX scope.
-
-    The lexer is positioned after the complete operation before calling its
-    handler, so a suspended nested stream can resume without replaying it.
-
-    Handlers returned directly by TextState.get_operation_handler share fixed
-    validation with this dispatcher. Each distinct compatibility scope advances
-    once. Other callbacks own their semantics; wrapping a strict handler in an
-    opaque callable hides this ownership information.
-    """
-    state = operation_state if operation_state is not None else ContentOperationState()
-
-    def execute(op_name: str, operands: ContentOperands, depth: int) -> None:
-        if not state.accepts_operator(op_name):
-            return
-        handler = get_handler(op_name)
-        if handler is None:
-            raise PdfParseError(f"unsupported content operator: {op_name}")
-        if isinstance(handler, internal_StrictOperationHandler) and handler.name == op_name:
-            handler.dispatch(operands, depth, state)
-        else:
-            state.internal_validate_operation(op_name, operands)
-            handler(operands, depth)
-
-    internal_dispatch_operations(lexer, execute, depth)
-    state.finish()
-
-
-def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
-    results: list[ContentOperation] = []
-
-    def get_handler(op_name: str) -> OperationHandler:
-        def collect(operands: ContentOperands, depth: int) -> None:
-            results.append((op_name, operands))
-
-        return collect
-
-    dispatch_operations(lexer, get_handler, 0)
-    yield from results
-
-
-internal_INLINE_IMAGE_MARKER_RE = re.compile(rb"[%(/<>\[\]]|BI")
-
-
-def internal_next_inline_image(
-    raw_bytes: bytes,
-    pos: int,
-    data_len: int,
-) -> int | None:
-    """Find a top-level BI token, ignoring names, strings and containers."""
-    container_depth = 0
-    while match := internal_INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
-        marker = match.start()
-        token = match.group()
-        if token == b"%":
-            pos = skip_comment(raw_bytes, marker, data_len)
-            continue
-        if token == b"(":
-            pos = skip_literal_string(raw_bytes, marker, data_len)
-            continue
-        if token == b"<":
-            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
-                container_depth += 1
-                pos = marker + 2
-            else:
-                pos = skip_hex_string(raw_bytes, marker, data_len)
-            continue
-        if token == b">":
-            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
-                container_depth = max(0, container_depth - 1)
-                pos = marker + 2
-            else:
-                pos = marker + 1
-            continue
-        if token == b"[":
-            container_depth += 1
-            pos = marker + 1
-            continue
-        if token == b"]":
-            container_depth = max(0, container_depth - 1)
-            pos = marker + 1
-            continue
-        if token == b"/":
-            pos = skip_name(raw_bytes, marker, data_len)
-            continue
-        after = match.end()
-        delimited = bool(
-            (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]])
-            and (after == data_len or SEPARATOR_TABLE[raw_bytes[after]])
-        )
-        if not container_depth and delimited:
-            return after
-        pos = after
-    return None
-
-
-def validate_inline_images(data: bytes | memoryview) -> None:
-    """Validate inline-image boundaries without executing content operators."""
-    raw_bytes = full_source_bytes(data)
-    if raw_bytes is None:
-        raw_bytes = bytes(data)
-    data_len = len(raw_bytes)
-    pos = 0
-    lexer = PdfLexer(raw_bytes)
-    while (after := internal_next_inline_image(raw_bytes, pos, data_len)) is not None:
-        lexer.pos = after
-        parse_inline_image(lexer)
-        pos = lexer.pos
 
 
 __all__ = (
@@ -340,11 +152,8 @@ __all__ = (
     "ContentOperands",
     "ContentOperation",
     "ContentToken",
-    "ContentOperationState",
     "OperationHandler",
     "parse_content_token",
     "validate_content_operands",
-    "dispatch_operations",
     "iter_content_operations",
-    "validate_inline_images",
 )

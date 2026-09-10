@@ -688,7 +688,10 @@ class LegacyTextExtractor:
             and re.search(rb"(?<!\S)EI(?:\s|$)", data[inline_image.end() :]) is None
         ):
             raise ValueError("unexpected end of inline image stream")
-        for operator, operands in iter_content_operations(PdfLexer(data)):
+        # Complete parsing before projection so later parse errors cannot leave
+        # partially applied text state or trigger Form processing prematurely.
+        parsed = list(iter_content_operations(PdfLexer(data)))
+        for operator, operands in parsed:
             if operator == "Do":
                 self.flush()
                 self.output_last = internal_ensure_line_break(self.output_parts, self.output_last)

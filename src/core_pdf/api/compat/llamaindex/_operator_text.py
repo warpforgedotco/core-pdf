@@ -593,7 +593,9 @@ class OperatorTextProjection:
                 # streams remain independently usable and must still be projected.
                 continue
         content = b"\n".join(decoded_streams)
-        for operator, raw_operands in iter_content_operations(PdfLexer(content)):
+        # Preserve complete parsing before mutating the projection's text state.
+        parsed = list(iter_content_operations(PdfLexer(content)))
+        for operator, raw_operands in parsed:
             operands = list(raw_operands)
             if operator == "BT":
                 state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]

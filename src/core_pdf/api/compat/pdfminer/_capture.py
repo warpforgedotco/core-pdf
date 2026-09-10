@@ -13,7 +13,8 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.types import PdfString, Rectangle
-from core_pdf_spec.s_07_content.stream_state import ContentStreamFrame
+from core_pdf_spec.s_07_content.operations import ContentOperands
+from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
@@ -92,8 +93,9 @@ class internal_PdfminerTextState(TextState):
             self.internal_cursor = 0.0
         super().text_boundary(state, kind)
 
-    def show_text_operand(self, operand: Any) -> None:
-        self.append_tj_array([operand])
+    def op_Tj(self, operands: ContentOperands, depth: int) -> None:
+        if operands:
+            self.append_tj_array([operands[-1]])
 
     def append_tj_array(self, array: Any) -> None:
         decoder = cast(FontDecoder, self.get_decoder())
@@ -102,10 +104,10 @@ class internal_PdfminerTextState(TextState):
             return
         if not isinstance(array, (list, tuple)):
             return
-        scale = self.horizontal_scale * 0.01
-        adjustment_scale = 0.001 * self.font_size * scale
-        char_space = self.char_space * scale
-        word_space = 0.0 if decoder.is_cid_font else self.word_space * scale
+        scale = self.graphics.horizontal_scale * 0.01
+        adjustment_scale = 0.001 * self.graphics.font_size * scale
+        char_space = self.graphics.char_space * scale
+        word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale
         # Spacing precedes each subsequent glyph in one show operation. Keep
         # advances in text space until projection, including across TJ strings.
         # Adding them to the page origin first changes exact line-margin ties.
@@ -120,15 +122,17 @@ class internal_PdfminerTextState(TextState):
             for decoded in decoder.decode_glyphs(value.data):
                 if needs_spacing:
                     self.internal_cursor += char_space
-                self.tm_e = self.internal_cursor * self.lm_a + self.lm_e
-                self.tm_f = self.internal_cursor * self.lm_b + self.lm_f
+                self.text_matrix = self.text_matrix._replace(
+                    e=self.internal_cursor * self.line_matrix.a + self.line_matrix.e,
+                    f=self.internal_cursor * self.line_matrix.b + self.line_matrix.f,
+                )
                 start = len(self.glyphs)
                 advance_x, advance_y = decoder.glyph_advance_vector(
                     decoded.width_code,
-                    font_size=self.font_size,
-                    char_space=self.char_space,
-                    word_space=self.word_space,
-                    horizontal_scale=self.horizontal_scale,
+                    font_size=self.graphics.font_size,
+                    char_space=self.graphics.char_space,
+                    word_space=self.graphics.word_space,
+                    horizontal_scale=self.graphics.horizontal_scale,
                     encoded_space=decoded.code_bytes == b" ",
                 )
                 self.show_text(
@@ -145,12 +149,14 @@ class internal_PdfminerTextState(TextState):
                     width = internal_pdfminer_normalized_width(glyph)
                     if internal_pdfminer_embedded_cmap_is_unusable(glyph):
                         width = 0.0
-                    self.internal_cursor += width * self.font_size * scale
+                    self.internal_cursor += width * self.graphics.font_size * scale
                 if decoded.width_code == 32:
                     self.internal_cursor += word_space
                 needs_spacing = True
-        self.tm_e = self.internal_cursor * self.lm_a + self.lm_e
-        self.tm_f = self.internal_cursor * self.lm_b + self.lm_f
+        self.text_matrix = self.text_matrix._replace(
+            e=self.internal_cursor * self.line_matrix.a + self.line_matrix.e,
+            f=self.internal_cursor * self.line_matrix.b + self.line_matrix.f,
+        )
         self.text_boundary(self, "shown")
 
 

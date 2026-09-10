@@ -3,12 +3,12 @@
 
 import numpy
 
-from core_pdf_spec.s_07_content.image_capture import (
-    image_source_from_stream as resolve_image_source,
-)
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfValueResolver
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+from core_pdf_spec.s_08_graphics.image_spec import (
+    image_source_from_stream as resolve_image_source,
+)
 
 
 def image_source_from_stream(

@@ -14,11 +14,12 @@ from core_pdf.impl._impl.document.recovery.resources import (
 from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
 from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf_spec.s_07_content.model import PatternPaint, ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
 )
-from core_pdf_spec.s_07_content.patterns import PatternPaint, ShadingPattern, TilingPattern
-from core_pdf_spec.s_07_content.state import TextState as SpecTextState
+from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -26,23 +27,30 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
 )
 from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph as DecodedGlyph
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
 from core_pdf_spec.types import PdfReference, PdfString
 
 
-class RecoveringTextState(SpecTextState):
+class RecoveringTextState(ContentInterpreter):
     """Reader repairs layered over the shared PDF state transitions."""
 
     recovery: CaptureRecovery
 
-    def get_decoder(self, *, update_metrics: bool = True) -> "FontDecoder":
-        if self.current_decoder is not None:
-            return self.current_decoder
+    def execute_operation(
+        self, name: str, operands: ContentOperands, depth: int
+    ) -> ContentStreamFrame | None:
+        handler = self.op_handlers.get(name)
+        return handler(operands, depth) if handler is not None else None
+
+    def get_decoder(self) -> FontDecoder:
+        if self.graphics.current_decoder is not None:
+            return self.graphics.current_decoder
 
         try:
             font_obj_ref = (
-                self.lookup_page_resource("Font", self.current_font) if self.current_font else None
+                self.lookup_page_resource("Font", self.graphics.current_font)
+                if self.graphics.current_font
+                else None
             )
         except PdfParseError as error:
             self.handle_operand_error(error, "font-resource")
@@ -51,7 +59,7 @@ class RecoveringTextState(SpecTextState):
             return self.font_provider({}, typing.cast(dict[str, Any], self.resources))
 
         try:
-            font_obj = self.document.resolver.resolve(font_obj_ref)
+            font_obj = self.resolver.resolve(font_obj_ref)
         except PdfParseError as error:
             self.handle_operand_error(error, "font-resolution")
             font_obj = None
@@ -59,52 +67,48 @@ class RecoveringTextState(SpecTextState):
             font_obj = font_obj.dictionary
         if not isinstance(font_obj, dict):
             decoder = self.font_provider({}, typing.cast(dict[str, Any], self.resources))
-            self.current_decoder = decoder
-            self.current_decoder_resources_id = self.resources_id
-            if update_metrics:
-                self.update_font_metrics()
+            self.graphics.current_decoder = decoder
+            self.graphics.decoder_resources = self.resources
             return decoder
 
         font_dict = typing.cast(PdfDict, font_obj)
-        resolved_font = self.document.resolver.resolve_font_dict(font_dict)
+        resolved_font = self.resolver.resolve_font_dict(font_dict)
         decoder = self.font_provider(
             typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], self.resources)
         )
-        self.current_decoder = decoder
-        self.current_decoder_resources_id = self.resources_id
-        if update_metrics:
-            self.update_font_metrics()
+        self.graphics.current_decoder = decoder
+        self.graphics.decoder_resources = self.resources
         return decoder
 
-    def append_xobject(self, name_obj: Any, depth: int) -> None:
-        name = self.document.resolver.resolve_name(name_obj)
+    def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:
+        name = self.resolver.resolve_name(name_obj)
         if not name:
-            return
+            return None
         raw_xobj = self.lookup_page_resource("XObject", name)
         stream_key = (
             ("ref", raw_xobj.object_number, raw_xobj.generation_number)
             if isinstance(raw_xobj, PdfReference)
             else None
         )
-        xobj = self.document.resolver.resolve(raw_xobj)
+        xobj = self.resolver.resolve(raw_xobj)
         if not isinstance(xobj, PdfStream):
-            return
+            return None
         xobj_dict = xobj.dictionary
-        subtype = self.document.resolver.resolve_name(xobj_dict.get("Subtype"))
-        if self.document.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
-            return
+        subtype = self.resolver.resolve_name(xobj_dict.get("Subtype"))
+        if self.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
+            return None
         if subtype == "Image":
             self.sink.paint_image(self, xobj)
-            return
+            return None
         if subtype != "Form":
-            return
+            return None
         group_alpha = None
         group = xobj_dict.get("Group")
         if group is not None:
-            group_dict = self.document.resolver.resolve_dict(group)
+            group_dict = self.resolver.resolve_dict(group)
             if (
                 isinstance(group_dict, dict)
-                and self.document.resolver.resolve_name(group_dict.get("S")) == "Transparency"
+                and self.resolver.resolve_name(group_dict.get("S")) == "Transparency"
             ):
                 # PDF 32000-1 Table 147: a transparency group dictionary holds
                 # S/CS/I/K and nothing else. The constant alpha and blend mode
@@ -116,19 +120,23 @@ class RecoveringTextState(SpecTextState):
                 #
                 # An explicitly isolated group has its own transparent backdrop,
                 # even at full opacity: a child's blend must not see the page.
-                blend = self.blend_mode
-                isolated = self.document.resolver.resolve(group_dict.get("I")) is True
-                if isolated or self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
-                    group_alpha = max(0.0, min(1.0, self.fill_opacity))
+                blend = self.graphics.blend_mode
+                isolated = self.resolver.resolve(group_dict.get("I")) is True
+                if (
+                    isolated
+                    or self.graphics.fill_opacity < 1.0
+                    or (blend is not None and blend != "Normal")
+                ):
+                    group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
         resources = self.resolve_resources(xobj_dict.get("Resources")) or self.resources
         xobj_matrix = xobj_dict.get("Matrix")
-        nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.ctm)
+        nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
-        form_bbox = self.document.resolver.resolve_box(raw_form_bbox)
+        form_bbox = self.resolver.resolve_box(raw_form_bbox)
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
-        self.stream_executor.queue(
+        return self.stream_executor.queue(
             xobj,
             resources,
             nested_ctm,
@@ -138,27 +146,6 @@ class RecoveringTextState(SpecTextState):
             group_alpha=group_alpha,
             stream_key=stream_key,
         )
-
-    def decode_operand(
-        self, operand: object, decoder: FontDecoder
-    ) -> tuple[str, bytes, tuple[DecodedGlyph, ...]]:
-        text: str | None
-        if type(operand) is PdfString:
-            data, text = operand.data, None
-        elif type(operand) is bytes:
-            data, text = operand, None
-        elif type(operand) is str:
-            data, text = operand.encode("latin-1", "replace"), operand
-        else:
-            text = self.document.resolver.resolve_str(operand)
-            if text is None:
-                return "", b"", ()
-            data = text.encode("latin-1", "replace")
-
-        glyphs = decoder.decode_glyphs(data if isinstance(data, bytes) else bytes(data))
-        if text is None:
-            text = "".join([glyph.unicode for glyph in glyphs])
-        return text, data, glyphs
 
     def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
@@ -176,17 +163,28 @@ class RecoveringTextState(SpecTextState):
         # A well-formed Tj has exactly one string, but damaged streams sometimes
         # leave older operands before it.  Those older values are not part of
         # the text-showing operation.
-        self.show_text_operand(operands[-1])
+        decoder = self.get_decoder()
+        operand = operands[-1]
+        if type(operand) is PdfString:
+            self.append_text(operand.data, decoder=decoder)
+        elif type(operand) is bytes:
+            self.append_text(operand, decoder=decoder)
+        else:
+            text = operand if type(operand) is str else self.resolver.resolve_str(operand)
+            if text is None:
+                return
+            data = text.encode("latin-1", "replace")
+            self.append_decoded_text(text, data, decoder.decode_glyphs(data), decoder)
 
     def resolve_color_space(self, name_obj: Any) -> tuple[str, ImageColorSpec | None]:
         """Resolve a cs/CS resource once for both its name and conversion spec."""
-        name = self.document.resolver.resolve_name(name_obj)
+        name = self.resolver.resolve_name(name_obj)
         if name is None:
             return "DeviceGray", None
         value = (
             name
             if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
-            else self.document.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
+            else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
         )
         if value is None:
             # An inline device space (`/DeviceRGB cs`) names no resource.
@@ -209,19 +207,17 @@ class RecoveringTextState(SpecTextState):
         if resource is None:
             return None
         pattern, pattern_dict = resource
-        pattern_type = self.document.resolver.resolve_int(pattern_dict.get("PatternType"))
+        pattern_type = self.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
             shading: object = pattern_dict.get("Shading")
-            shading = self.document.resolver.resolve(shading)
-            shading_dict = (
-                self.document.resolver.resolve_dict(shading) if shading is not None else None
-            )
+            shading = self.resolver.resolve(shading)
+            shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 return None
             return ShadingPattern(dict(shading_dict))
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
-        paint_type = self.document.resolver.resolve_int(pattern_dict.get("PaintType"), 1)
+        paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"), 1)
         if paint_type not in {1, 2}:
             return None
         base_color = None
@@ -234,11 +230,11 @@ class RecoveringTextState(SpecTextState):
             )
             if base_color is None:
                 return None
-        bbox = self.document.resolver.resolve_box(pattern_dict.get("BBox"))
+        bbox = self.resolver.resolve_box(pattern_dict.get("BBox"))
         if bbox is None:
             return None
-        x_step = self.document.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
-        y_step = self.document.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
+        x_step = self.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
+        y_step = self.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
             return None
         matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
@@ -280,7 +276,7 @@ class RecoveringTextState(SpecTextState):
     def op_Q(self, operands: ContentOperands, depth: int) -> None:
         if len(self.stack) <= self.graphics_stack_floor:
             return
-        self.restore_graphics_state(self.pop_graphics_save())
+        self.graphics = self.pop_graphics_save()
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
         # Reader dispatch invokes raw callbacks without strict scope validation.
@@ -318,7 +314,9 @@ class RecoveringTextState(SpecTextState):
             self.current_point = (x3, y3)
             return
         x0, y0 = self.current_point
-        self.current_path.cubic_to((x0, y0, x1, y1, x2, y2, x3, y3), self.ctm, float(self.flatness))
+        self.current_path.cubic_to(
+            (x0, y0, x1, y1, x2, y2, x3, y3), self.graphics.ctm, float(self.graphics.flatness)
+        )
         self.current_point = (x3, y3)
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
@@ -335,18 +333,18 @@ class RecoveringTextState(SpecTextState):
         except (TypeError, ValueError) as error:
             self.handle_operand_error(error, "dash-pattern")
             return
-        self.dash_pattern = (dash_array, phase)
+        self.graphics.dash_pattern = (tuple(dash_array), phase)
 
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
-            self.line_width = max(0.0, values[0])
+            self.graphics.line_width = max(0.0, values[0])
 
     def op_M(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
-            self.miter_limit = max(1.0, values[0])
+            self.graphics.miter_limit = max(1.0, values[0])
 
     def resolve_font_name(self, value: object) -> str | None:
-        return self.document.resolver.resolve_name(value)
+        return self.resolver.resolve_name(value)
 
     def parse_font_size(self, value: object) -> float | None:
         try:
@@ -363,7 +361,7 @@ class RecoveringTextState(SpecTextState):
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
-        name = self.document.resolver.resolve_name(operands[0])
+        name = self.resolver.resolve_name(operands[0])
         if not name:
             return
         extgstate = self.resolve_extgstate(name)
@@ -378,10 +376,10 @@ class RecoveringTextState(SpecTextState):
     def op_sh(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
-        name = self.document.resolver.resolve_name(operands[0])
+        name = self.resolver.resolve_name(operands[0])
         if not name:
             return
-        shading = self.document.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
+        shading = self.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
         if isinstance(shading, dict):
             self.sink.paint_shading(self, shading)
 
@@ -428,16 +426,16 @@ class RecoveringTextState(SpecTextState):
             return super().initial_color_components(spec, stroke=stroke)
         except PdfParseError as error:
             self.handle_operand_error(error, "color-space")
-            return self.stroke_color if stroke else self.fill_color
+            return self.graphics.stroke_color if stroke else self.graphics.fill_color
 
     def resolve_resources(self, value: object) -> PdfDict | None:
-        return recover_resources(value, self.document.resolver)
+        return recover_resources(value, self.resolver)
 
     def handle_operand_error(self, error: Exception, context: str) -> None:
         pass
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
-        value = self.document.resolver.deep_resolve(value)
+        value = self.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
         try:

@@ -1,19 +1,19 @@
 """The shared operator vocabulary preserves parser and handler contracts."""
 
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.events import ContentSink
+from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf_spec.s_07_content.model import ContentSink
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
-    dispatch_operations,
     iter_content_operations,
+    validate_content_operands,
 )
-from core_pdf_spec.s_07_content.state import TextState
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
     CONTENT_OPERATOR_HANDLERS,
     CONTENT_OPERATOR_SIGNATURES,
@@ -38,7 +38,9 @@ def test_operator_vocabulary_separates_fixed_color_and_inline_data_operators() -
     } == PDF_CONTENT_OPERATOR_BYTES
     assert "ID" not in CONTENT_OPERATOR_HANDLERS
     assert "EI" not in CONTENT_OPERATOR_HANDLERS
-    assert all(callable(getattr(TextState, name)) for name in CONTENT_OPERATOR_HANDLERS.values())
+    assert all(
+        callable(getattr(ContentInterpreter, name)) for name in CONTENT_OPERATOR_HANDLERS.values()
+    )
 
 
 @pytest.mark.parametrize(
@@ -47,13 +49,14 @@ def test_operator_vocabulary_separates_fixed_color_and_inline_data_operators() -
 )
 def test_catalog_fixed_signatures_reject_wrong_operands(content: bytes) -> None:
     with pytest.raises(PdfParseError):
-        list(iter_content_operations(PdfLexer(content)))
+        for name, operands in iter_content_operations(PdfLexer(content)):
+            validate_content_operands(name, operands)
 
 
 def test_operator_aliases_keep_overridden_handler_bindings() -> None:
     calls: list[tuple[str, ContentOperands, int]] = []
 
-    class State(TextState):
+    class State(ContentInterpreter):
         def op_paint_fill(self, operands: ContentOperands, depth: int) -> None:
             calls.append(("fill", operands, depth))
 
@@ -63,8 +66,13 @@ def test_operator_aliases_keep_overridden_handler_bindings() -> None:
         def op_double_quote(self, operands: ContentOperands, depth: int) -> None:
             calls.append(("double_quote", operands, depth))
 
-    state = State(SimpleNamespace(), cast(ContentSink, object()), cast(Any, None))
-    dispatch_operations(PdfLexer(b"f F (one) ' 1 2 (two) \""), state.get_operation_handler, 3)
+    resolver = ObjectResolver(b"", {}, {})
+    state = State(resolver, cast(ContentSink, object()), cast(Any, None))
+    try:
+        for name, operands in iter_content_operations(PdfLexer(b"f F (one) ' 1 2 (two) \"")):
+            assert state.execute_operation(name, operands, 3) is None
+    finally:
+        resolver.close()
     assert calls == [
         ("fill", (), 3),
         ("fill", (), 3),

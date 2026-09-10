@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from core_pdf.impl._impl.capture.interpreter import TextState
-from core_pdf.impl._impl.capture.recovery import dispatch_operations
+from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf_spec.s_08_graphics.color import indexed_color_components
@@ -26,9 +26,10 @@ def test_reader_capture_preserves_indexed_quantization(value: float, index: int)
     }
     lexer = PdfLexer(f"/Palette cs {value} sc 0 0 1 1 re f".encode("ascii"))
     try:
-        dispatch_operations(lexer, state.op_handlers.get, 0)
+        for name, operands in iter_content_operations(lexer):
+            assert state.execute_operation(name, operands, 0) is None
     finally:
         lexer.close()
-    assert state.fill_color == (float(index),)
+    assert state.graphics.fill_color == (float(index),)
     spec = ImageColorSpec("Indexed", {}, hival=3, lookup=palette)
     assert state.drawings[-1].fill == indexed_color_components(spec, value, 3)

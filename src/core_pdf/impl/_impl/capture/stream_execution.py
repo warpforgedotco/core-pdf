@@ -8,10 +8,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState
 
-from core_pdf.impl._impl.capture.recovery import dispatch_operations
+from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.stream_execution import ContentStreamExecutor
-from core_pdf_spec.s_07_content.stream_state import ContentStreamFrame, StreamKey
+from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame, StreamKey
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
@@ -32,10 +31,10 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         form_bbox_operand: object = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
-    ) -> None:
+    ) -> ContentStreamFrame | None:
         if depth > 10 or (stream_key or self.execution_key(stream)) in self.active_streams:
-            return
-        super().queue(
+            return None
+        return super().queue(
             stream,
             resources,
             ctm,
@@ -54,12 +53,18 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             return False
         return super().enter(frame)
 
-    def dispatch_frame(self, frame: ContentStreamFrame) -> None:
+    def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
-        dispatch_operations(
-            frame.lexer, state.op_handlers.get, frame.depth, recovery=state.recovery
-        )
+        for name, operands in iter_content_operations(
+            frame.lexer,
+            recovery=state.recovery,
+            is_operator=lambda word: word.decode("latin-1") in state.op_handlers,
+        ):
+            child = state.execute_operation(name, operands, frame.depth)
+            if child is not None:
+                return child
+        return None
 
     def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
         if not frame.is_form:

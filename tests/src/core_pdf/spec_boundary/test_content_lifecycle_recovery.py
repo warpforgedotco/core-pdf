@@ -8,13 +8,13 @@ from typing import NoReturn
 import pytest
 
 from core_pdf.impl._impl.capture.interpreter import TextState
-from core_pdf.impl._impl.capture.recovery import dispatch_operations
+from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import ContentOperands
-from core_pdf_spec.s_07_content.paths import PdfPath
-from core_pdf_spec.s_07_content.stream_state import ContentStreamFrame
+from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
@@ -27,7 +27,8 @@ def internal_state() -> TextState:
 
 
 def internal_execute(state: TextState, content: bytes) -> None:
-    dispatch_operations(PdfLexer(content), state.op_handlers.get, 0)
+    for name, operands in iter_content_operations(PdfLexer(content)):
+        assert state.execute_operation(name, operands, 0) is None
 
 
 def internal_assert_clean(state: TextState) -> None:
@@ -41,7 +42,7 @@ def internal_assert_clean(state: TextState) -> None:
     assert state.layout_form_id is None
     assert state.group_alpha is None
     assert state.internal_pending_clip_rule is None
-    assert state.ctm == IDENTITY_MATRIX
+    assert state.graphics.ctm == IDENTITY_MATRIX
 
 
 @pytest.mark.parametrize(("clip_operator", "clip_rule"), [(b"W", "nonzero"), (b"W*", "evenodd")])
@@ -141,15 +142,15 @@ def test_reader_preserves_default_and_fractional_flatness_with_numeric_recovery(
     flatness: str | float,
 ) -> None:
     state = internal_state()
-    assert state.flatness == 1.0
+    assert state.graphics.flatness == 1.0
     state.op_q((), 0)
     state.op_i((flatness,), 0)
-    assert state.flatness == float(flatness)
+    assert state.graphics.flatness == float(flatness)
     internal_execute(state, b"0 0 m 1 2 3 4 5 6 c")
     curve = state.current_path.commands[-1]
     assert curve.flatness == float(flatness)
     state.op_Q((), 0)
-    assert state.flatness == 1.0
+    assert state.graphics.flatness == 1.0
     assert curve.flatness == float(flatness)
     internal_assert_clean(state)
 

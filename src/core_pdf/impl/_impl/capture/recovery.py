@@ -12,10 +12,8 @@ from core_pdf_spec.s_07_content.inline_images import (
 )
 from core_pdf_spec.s_07_content.operations import (
     ContentOperand,
-    ContentOperands,
     ContentOperation,
     ContentToken,
-    OperationHandler,
     parse_content_token,
 )
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -102,28 +100,18 @@ class CaptureRecovery:
         return lexer.pos if lexer.pos > start else None
 
 
-def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
-    results: list[ContentOperation] = []
-
-    def get_handler(op_name: str) -> OperationHandler:
-        def collect(operands: ContentOperands, depth: int) -> None:
-            results.append((op_name, operands))
-
-        return collect
-
-    dispatch_operations(lexer, get_handler, 0, handlers_reject_unknown=False)
-    yield from results
-
-
-def dispatch_operations(
+def iter_content_operations(
     lexer: PdfLexer,
-    get_handler: Callable[[str], OperationHandler | None],
-    depth: int,
     *,
     recovery: CaptureRecovery | None = None,
-    handlers_reject_unknown: bool = True,
-) -> None:
-    """Apply reader operand limits and resume after malformed content tokens."""
+    is_operator: Callable[[bytes], bool] | None = None,
+) -> Iterator[ContentOperation]:
+    """Yield reader operations with operand limits and malformed-token recovery.
+
+    The lexer advances past each operation before yielding, allowing nested
+    execution to resume without replaying a parent operation. Callers that need
+    complete parsing before projection can explicitly materialize the iterator.
+    """
     operands: list[ContentOperand] = []
     recovery = recovery if recovery is not None else CaptureRecovery()
     while True:
@@ -155,9 +143,7 @@ def dispatch_operations(
                 error,
                 kind,
                 start,
-                (lambda word: get_handler(word.decode("latin-1")) is not None)
-                if handlers_reject_unknown
-                else None,
+                is_operator,
             )
             if resumed is None:
                 raise
@@ -177,8 +163,7 @@ def dispatch_operations(
             if len(operands) < 16:
                 operands.append(token.value)
             continue
-        if op_name not in {"R", "obj", "endobj", "stream", "endstream"}:
-            handler = get_handler(op_name)
-            if handler is not None:
-                handler(tuple(operands), depth)
+        operation = (op_name, tuple(operands))
         operands.clear()
+        if op_name not in {"R", "obj", "endobj", "stream", "endstream"}:
+            yield operation
