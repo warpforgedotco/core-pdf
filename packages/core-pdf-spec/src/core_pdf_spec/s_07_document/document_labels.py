@@ -61,24 +61,27 @@ def normalize_page_label_style(value: object) -> PageLabelStyle | None:
         raise ValueError("invalid page label style") from error
 
 
+numerals = (
+    (1000, "m"),
+    (900, "cm"),
+    (500, "d"),
+    (400, "cd"),
+    (100, "c"),
+    (90, "xc"),
+    (50, "l"),
+    (40, "xl"),
+    (10, "x"),
+    (9, "ix"),
+    (5, "v"),
+    (4, "iv"),
+    (1, "i"),
+)
+
+
 def format_roman(value: int) -> str:
     if value <= 0:
         return ""
-    numerals = (
-        (1000, "m"),
-        (900, "cm"),
-        (500, "d"),
-        (400, "cd"),
-        (100, "c"),
-        (90, "xc"),
-        (50, "l"),
-        (40, "xl"),
-        (10, "x"),
-        (9, "ix"),
-        (5, "v"),
-        (4, "iv"),
-        (1, "i"),
-    )
+
     result: list[str] = []
     for amount, numeral in numerals:
         while value >= amount:
