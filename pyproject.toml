@@ -33,6 +33,7 @@ members = [
 
 [tool.uv.sources]
 core-pdf-spec = { workspace = true }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
 # [tool.uv.sources]
 # nuitka = { path = "../Nuitka", editable = true }
@@ -44,6 +45,12 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Commercial license terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-COMMERCIAL.txt"
 "Evaluation license terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-EVALUATION.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
+
+[project.optional-dependencies]
+unstructured = [
+    "en-core-web-sm==3.8.0",
+    "spacy>=3.8.15,<3.9.0",
+]
 
 [dependency-groups]
 dev = [

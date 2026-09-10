@@ -1,4 +1,4 @@
-"""Local Unstructured-style partition and element conversion APIs."""
+"""Unstructured-style APIs requiring spaCy and the English en_core_web_sm model."""
 
 from __future__ import annotations
 
@@ -144,17 +144,6 @@ internal_ADDRESS = re.compile(
     r"TN|TX|UT|VT|VI|VA|WA|WV|WI|WY)(?:, |\s)?\d{5}(?:-\d{4})?\b",
     re.IGNORECASE,
 )
-internal_VERB = re.compile(
-    r"\b(?:am|are|be|been|being|can|could|did|do|does|had|has|have|is|may|might|must|"
-    r"shall|should|was|were|will|would|suggest|suggests|include|includes|included|"
-    r"provide|provides|provided|show|shows|shown|use|uses|used|observations?|"
-    r"accepts?|agrees?|applies|built|clears?|closes?|consider|constructs?|contains?|"
-    r"convert|create|creates|declares?|define|describe|describes|determine|display|"
-    r"escape|explain|extract|gives?|inspect|install|live|looks|mail|make|makes|means|"
-    r"merge|needs?|note|observe|offer|perform|points|reads?|reference|refund|regain|"
-    r"represents?|run|save|saves|see|sign|supports?|take|transform|watch|wins?)\b",
-    re.IGNORECASE,
-)
 internal_GRAPHICS_OPS = re.compile(
     rb"(?:^|(?<=\s))(?:m|l|c|v|y|h|re|S|s|f|F|f\*|B|B\*|b|b\*|n|W|W\*|cm|q|Q|"
     rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)"
@@ -162,39 +151,34 @@ internal_GRAPHICS_OPS = re.compile(
 internal_TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
 internal_POS_VERB_TAGS = frozenset({"VB", "VBG", "VBD", "VBN", "VBP", "VBZ"})
 internal_NLP: Any | None = None
-internal_NLP_UNAVAILABLE = False
 
 
-def internal_nlp() -> Any | None:
-    """Return an optional English POS pipeline without depending on Unstructured.
-
-    The compatibility package remains usable in core-pdf's minimal installation.
-    When the standard ``en_core_web_sm`` model is present, use its tokenizer,
-    sentence boundaries, and POS tagger to reproduce Unstructured's semantic
-    element classification instead of maintaining an ever-growing lexical
-    approximation here.
-    """
-    global internal_NLP, internal_NLP_UNAVAILABLE
+def internal_nlp() -> Any:
+    """Load the required English pipeline without installing dependencies at runtime."""
+    global internal_NLP
     if internal_NLP is not None:
         return internal_NLP
-    if internal_NLP_UNAVAILABLE:
-        return None
     try:
         model = import_module("en_core_web_sm")
         internal_NLP = model.load()
-    except (ImportError, OSError):
-        internal_NLP_UNAVAILABLE = True
-        return None
+    except (ImportError, OSError) as error:
+        raise ImportError(
+            "The Unstructured compatibility facade requires spaCy and en_core_web_sm. "
+            "Install them with: python -m pip install 'core-pdf[unstructured]' "
+            "'https://github.com/explosion/spacy-models/releases/download/"
+            "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl'"
+        ) from error
     return internal_NLP
+
+
+internal_nlp()
 
 
 @lru_cache(maxsize=4096)
 def internal_nlp_features(
     text: str,
-) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]] | None:
+) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
     nlp = internal_nlp()
-    if nlp is None:
-        return None
     document = nlp(text[: nlp.max_length])
     tokens = tuple((token.text, token.tag_) for token in document)
     sentences = tuple(sentence.text for sentence in document.sents)
@@ -335,24 +319,14 @@ def internal_element_class(
     alphabetic = sum(character.isalpha() for character in text)
     non_space = sum(not character.isspace() for character in text)
     alpha_ratio = alphabetic / max(non_space, 1)
-    nlp_features = internal_nlp_features(text)
-    if nlp_features is None:
-        tagged_tokens: tuple[tuple[str, str], ...] = ()
-        sentences = tuple(part for part in re.split(r"(?<=[.!?])\s+", text) if part)
-        word_tokens = re.findall(r"[^\W\d_]+", text, re.UNICODE)
-    else:
-        tagged_tokens, sentences = nlp_features
-        word_tokens = [token for token, _tag in tagged_tokens if token.isalpha()]
+    tagged_tokens, sentences = internal_nlp_features(text)
+    word_tokens = [token for token, _tag in tagged_tokens if token.isalpha()]
     capitalized = sum(word.istitle() or word.isupper() for word in word_tokens)
     long_sentence_count = internal_sentence_count(sentences, 3)
     exceeds_cap_ratio = long_sentence_count <= 1 and (
         text.isupper() or not word_tokens or capitalized / len(word_tokens) > 0.5
     )
-    has_verb = (
-        any(tag in internal_POS_VERB_TAGS for _token, tag in tagged_tokens)
-        if nlp_features is not None
-        else internal_VERB.search(text) is not None
-    )
+    has_verb = any(tag in internal_POS_VERB_TAGS for _token, tag in tagged_tokens)
     if (
         alpha_ratio >= 0.5
         and not text.isnumeric()

@@ -75,11 +75,11 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Install core-pdf and reference libraries
-        run: uv sync --locked --package core-pdf --group test --group vendor-test
+        run: uv sync --locked --package core-pdf --extra unstructured --group test --group vendor-test
 
       - name: Run differential tests
         run: >-
-          uv run --locked --package core-pdf --group test --group vendor-test pytest
+          uv run --locked --package core-pdf --extra unstructured --group test --group vendor-test pytest
           tests/src/core_pdf/api/compat/differential/ -n 2
 
       - name: Prune uv cache

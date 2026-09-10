@@ -3,11 +3,30 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import tempfile
+from email import message_from_bytes
 from pathlib import Path
 from zipfile import ZipFile
+
+MODEL_WHEEL_URL = (
+    "https://github.com/explosion/spacy-models/releases/download/"
+    "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+)
+
+# Model installation belongs to the installer. A facade import or classification
+# must not try to repair its environment by downloading a dependency at runtime.
+OFFLINE_RUNTIME = """
+import sys
+
+def reject_runtime_download(event, arguments):
+    if event in {"socket.connect", "subprocess.Popen", "os.system"}:
+        raise AssertionError(f"runtime dependency download attempted: {event}")
+
+sys.addaudithook(reject_runtime_download)
+"""
 
 SPEC_SMOKE = """
 import importlib
@@ -44,18 +63,119 @@ print("Standalone spec wheel: imports, parsing, decoding, CMaps and notices pass
 """
 
 CORE_SMOKE = """
+import importlib.util
 import sys
 from pathlib import Path
 import core_pdf
 import core_pdf_spec.exceptions as errors
 from core_pdf import PdfDocument
+from core_pdf.api.compat.pypdf import PdfReader
+assert importlib.util.find_spec("spacy") is None
+assert importlib.util.find_spec("en_core_web_sm") is None
 assert core_pdf.PdfError is errors.PdfError
 assert core_pdf.PdfParseError is errors.PdfParseError
 with PdfDocument(Path(sys.argv[1])) as document:
     assert document.page_count() > 0
+assert len(PdfReader(sys.argv[1]).pages) > 0
 assert not any(name == "core_pdf_ocr" or name.startswith("core_pdf_ocr.") for name in sys.modules)
-print("Core wheel: public API, parsing and exception identities passed")
+print("Core wheel: native and pypdf APIs work without NLP dependencies")
 """
+
+UNSTRUCTURED_FAILURE_SMOKE = (
+    OFFLINE_RUNTIME
+    + """
+import importlib
+import importlib.abc
+import importlib.util
+import types
+
+mode, failure, expected_spacy, model_url = sys.argv[1:]
+assert (importlib.util.find_spec("spacy") is not None) == (expected_spacy == "present")
+assert importlib.util.find_spec("en_core_web_sm") is None
+expected_cause = None
+if failure == "load-oserror":
+    expected_cause = OSError("simulated unreadable English model")
+    model = types.ModuleType("en_core_web_sm")
+    def broken_load():
+        raise expected_cause
+    model.load = broken_load
+    sys.modules[model.__name__] = model
+elif failure == "import-error":
+    expected_cause = ImportError("simulated missing transitive NLP dependency")
+    class BrokenModelFinder(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname == "en_core_web_sm":
+                raise expected_cause
+            return None
+    sys.meta_path.insert(0, BrokenModelFinder())
+else:
+    assert failure == "missing-model"
+
+try:
+    if mode == "direct":
+        importlib.import_module("core_pdf.api.compat.unstructured")
+    elif mode == "parent":
+        from core_pdf.api.compat import partition_pdf
+    elif mode == "elements":
+        from core_pdf.api.compat.unstructured import Element
+    else:
+        raise AssertionError(f"unexpected import mode: {mode}")
+except ImportError as error:
+    assert "pip install" in str(error), str(error)
+    assert "core-pdf[unstructured]" in str(error), str(error)
+    assert model_url in str(error), str(error)
+    if expected_cause is None:
+        assert isinstance(error.__cause__, ModuleNotFoundError), repr(error.__cause__)
+        assert error.__cause__.name == "en_core_web_sm", repr(error.__cause__)
+    else:
+        assert error.__cause__ is expected_cause, repr(error.__cause__)
+else:
+    raise AssertionError(f"{mode} import succeeded with {failure}")
+print(f"Unstructured wheel: {mode} import explains {failure}, spaCy {expected_spacy}")
+"""
+)
+
+UNSTRUCTURED_SMOKE = (
+    OFFLINE_RUNTIME
+    + """
+import importlib.util
+import en_core_web_sm
+
+assert importlib.util.find_spec("unstructured") is None
+loads = []
+original_load = en_core_web_sm.load
+def counted_load(*args, **kwargs):
+    loads.append(None)
+    return original_load(*args, **kwargs)
+en_core_web_sm.load = counted_load
+
+from core_pdf.api.compat import partition_pdf
+from core_pdf.api.compat import unstructured as facade
+
+assert len(loads) == 1, "the model must load during facade import"
+pipeline = facade.internal_nlp()
+assert pipeline is facade.internal_nlp()
+assert len(loads) == 1, "the model must load once, during facade import"
+assert pipeline.meta["version"] == "3.8.0"
+assert {"tagger", "parser"} <= set(pipeline.pipe_names)
+assert partition_pdf is facade.partition_pdf
+assert facade.Element("Example").text == "Example"
+for text, category in (
+    ("Document Overview", facade.Title),
+    (
+        "The researchers measured the samples and found that the treatment improved recovery.",
+        facade.NarrativeText,
+    ),
+):
+    assert facade.internal_element_class(text, (0, 40, 80, 60), 100) is category
+    first = facade.internal_nlp_features(text)
+    previous_hits = facade.internal_nlp_features.cache_info().hits
+    assert facade.internal_nlp_features(text) is first
+    assert facade.internal_nlp_features.cache_info().hits == previous_hits + 1
+assert len(loads) == 1
+print("Unstructured extra: real model semantics, eager initialization and caches passed")
+"""
+)
 
 OCR_SMOKE = """
 import core_pdf
@@ -68,6 +188,58 @@ print("OCR wheel: document/page integration passed")
 
 def run(*arguments: str, cwd: Path) -> None:
     subprocess.run(arguments, cwd=cwd, check=True)
+
+
+def check_unstructured_metadata(wheel: Path) -> str:
+    """Check the published extra and return its spaCy installation requirement."""
+    with ZipFile(wheel) as archive:
+        metadata_names = [
+            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+        ]
+        assert len(metadata_names) == 1, metadata_names
+        metadata = message_from_bytes(archive.read(metadata_names[0]))
+    assert "unstructured" in metadata.get_all("Provides-Extra", [])
+    nlp_requirements: dict[str, str] = {}
+    expected_versions = {"spacy": {">=3.8.15", "<3.9.0"}, "en-core-web-sm": {"==3.8.0"}}
+    for requirement in metadata.get_all("Requires-Dist", []):
+        assert "@" not in requirement, f"published dependency uses a direct URL: {requirement}"
+        dependency, separator, marker = requirement.partition(";")
+        match = re.fullmatch(r"([A-Za-z0-9_.-]+)(.*)", dependency.strip())
+        assert match is not None, requirement
+        name = re.sub(r"[-_.]+", "-", match[1]).lower()
+        if name not in expected_versions:
+            continue
+        assert name not in nlp_requirements, f"duplicate NLP requirement: {requirement}"
+        assert separator, f"NLP dependency must be optional: {requirement}"
+        assert marker.strip() in {
+            'extra == "unstructured"',
+            "extra == 'unstructured'",
+        }, f"NLP dependency must be conditional only on the unstructured extra: {requirement}"
+        versions = set(match[2].replace(" ", "").strip("()").split(","))
+        assert versions == expected_versions[name], requirement
+        nlp_requirements[name] = dependency.strip()
+    assert nlp_requirements.keys() == expected_versions.keys(), nlp_requirements
+    print("Core wheel metadata: named, versioned optional NLP dependencies passed", flush=True)
+    return nlp_requirements["spacy"]
+
+
+def check_unstructured_failures(python: Path, work: Path, *, spacy_installed: bool) -> None:
+    failures = (
+        ("missing-model", "load-oserror", "import-error") if spacy_installed else ("missing-model",)
+    )
+    for failure in failures:
+        for mode in ("direct", "parent", "elements"):
+            run(
+                str(python),
+                "-I",
+                "-c",
+                UNSTRUCTURED_FAILURE_SMOKE,
+                mode,
+                failure,
+                "present" if spacy_installed else "absent",
+                MODEL_WHEEL_URL,
+                cwd=work,
+            )
 
 
 def main() -> None:
@@ -86,6 +258,7 @@ def main() -> None:
         assert not any(
             "__pycache__" in name or name.endswith((".pyc", ".so")) for name in archive.namelist()
         ), "the spec wheel contains cached or compiled source artifacts"
+    spacy_requirement = check_unstructured_metadata(wheels["core_pdf"])
     with tempfile.TemporaryDirectory(prefix="core-pdf-spec-wheel-") as temporary:
         work = Path(temporary)
         environment = work / "environment"
@@ -97,8 +270,13 @@ def main() -> None:
         run(*install, str(wheels["core_pdf"]), cwd=work)
         run(str(python), "-I", "-c", CORE_SMOKE, str(args.fixture.resolve()), cwd=work)
         run(str(python), "-I", "-m", "core_pdf", "--help", cwd=work)
+        check_unstructured_failures(python, work, spacy_installed=False)
         run(*install, str(wheels["core_pdf_ocr"]), cwd=work)
         run(str(python), "-I", "-c", OCR_SMOKE, cwd=work)
+        run(*install, spacy_requirement, cwd=work)
+        check_unstructured_failures(python, work, spacy_installed=True)
+        run(*install, f"{wheels['core_pdf']}[unstructured]", MODEL_WHEEL_URL, cwd=work)
+        run(str(python), "-I", "-c", UNSTRUCTURED_SMOKE, cwd=work)
 
 
 if __name__ == "__main__":

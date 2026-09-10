@@ -11,6 +11,11 @@ output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recogn
 All three distributions share the uv workspace. Spec releases independently: core currently
 accepts `core-pdf-spec>=0.1.0,<0.2.0`. Spec never imports core or OCR, including for typing.
 
+The `core-pdf[unstructured]` extra supplies spaCy and the pinned English model required by the
+Unstructured facade. That facade loads its model at import time and fails if it cannot load;
+it never substitutes lexical approximations or installs a model at runtime. Compatibility
+imports remain lazy, so core, spec, OCR, and other facades do not load or require that pipeline.
+
 Core's `impl/_impl/extract/` initializer exposes only `extract_page` and `extract_document`;
 stage internals are imported from their owning modules. Native extraction runs in this order:
 
@@ -187,13 +192,13 @@ Initialize the corpora and install the workspace's development dependencies:
 
 ```sh
 git submodule update --init --recursive
-uv sync --all-packages --all-groups
+uv sync --all-packages --all-groups --extra unstructured
 ```
 
 Run the differential suite and source checks with:
 
 ```sh
-uv run --locked --group test --group vendor-test pytest -n auto
+uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
 uv run --all-packages --group lint ruff check .
 uv run --all-packages --group lint mypy
 uv run --all-packages --group lint --group test --group vendor-test ty check
@@ -205,7 +210,7 @@ cross-corpus redaction cases for x-ray. To run every facade against every PDF fi
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --group test --group vendor-test pytest -n auto
+  uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 ## Rendering constraints

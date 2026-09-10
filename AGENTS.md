@@ -13,6 +13,12 @@ spec must never import core or OCR, including type-only imports. Spec exposes lo
 chapter APIs, not a document facade or CLI. Its exported symbols and documented parsing
 extension methods form the cross-distribution compatibility contract.
 
+The Unstructured compatibility facade requires `core-pdf[unstructured]`, including the pinned
+`en_core_web_sm` model. Its import must fail clearly if the model cannot load; do not add lexical
+fallbacks or runtime model installation. The parent compatibility package stays lazy so native
+core and other facades remain usable without the extra. Use `--extra unstructured` for
+differential runs; ordinary `uv sync`/`uv run` commands may otherwise remove the model.
+
 This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. `src/core_pdf/api/document.py` owns the public `PdfDocument` and `PdfPage` APIs; third-party compatibility facades live in `src/core_pdf/api/compat`. Nothing under `impl/` may import from `api/`. Internal implementation is organized under `src/core_pdf/impl`:
 
 - `packages/core-pdf-spec/src/core_pdf_spec/` contains PDF-defined semantics and referenced-standard algorithms, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …). Reader recovery, substitute fonts, Unicode guesses, capture products, selected device profiles, and raster preparation belong under `_impl/`. This boundary also applies to type-only imports.
@@ -36,8 +42,8 @@ Start with `docs/architecture.md` — it describes the pipeline and how the sour
 Use `uv` for environments and locked dependencies:
 
 ```sh
-uv sync --all-packages --all-groups                 # install development dependencies
-uv run --locked --group test --group vendor-test pytest -n auto  # differential suite
+uv sync --all-packages --all-groups --extra unstructured                 # install development dependencies
+uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto  # differential suite
 uv run --all-packages --group lint ruff check .     # lint Python files
 uv run --all-packages --group lint ruff format --check .
 uv run --all-packages --group lint mypy             # static type checking
@@ -53,7 +59,7 @@ cases for x-ray. Run every facade against every fixture explicitly with:
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --group test --group vendor-test pytest -n auto
+  uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 Initialize reference corpora with `git submodule update --init --recursive` before
@@ -103,7 +109,7 @@ run without core or OCR installed; integration tests in `tests/src/core_pdf/spec
 verify preserved core recovery, shared object identities, and dependency direction.
 Use spec citations for non-obvious mandated behavior and positive controls for valid defaults.
 Preserve reference fixture contents and distinguish compatibility differences from failures
-on both sides. Validate with `uv run --locked --group test --group vendor-test pytest -n auto`.
+on both sides. Validate with `uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto`.
 
 ## Commit & Pull Request Guidelines
 
@@ -111,4 +117,4 @@ Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...
 
 ## Local and CI Validation
 
-Local commands may use the installed environment directly. To reproduce CI’s locked dependency validation, use `uv run --locked` with the relevant group, such as `uv run --locked --group test --group vendor-test pytest -n auto` or `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.
+Local commands may use the installed environment directly. To reproduce CI’s locked dependency validation, use `uv run --locked` with the relevant group, such as `uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto` or `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.

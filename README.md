@@ -19,9 +19,21 @@ For scanned or hybrid documents, install `core-pdf-ocr` and change the import to
 `from core_pdf_ocr import PdfDocument`. Its `core-pdf-ocr` command accepts the same arguments
 as `core-pdf`; both packages support `python -m` invocation.
 
+The Unstructured compatibility facade requires the `unstructured` extra and its pinned English
+spaCy model. Supply the official model wheel when installing the published package:
+
 ```sh
-uv sync --all-packages --all-groups
-uv run --locked --group test --group vendor-test pytest -n auto
+pip install "core-pdf[unstructured]" \
+  "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+```
+
+Importing `core_pdf.api.compat.unstructured` raises `ImportError` if the model cannot load.
+The facade never downloads models at runtime. Native core and other facades do not require
+this extra. Workspace uv commands resolve the model from the configured source:
+
+```sh
+uv sync --all-packages --all-groups --extra unstructured
+uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 ## License
