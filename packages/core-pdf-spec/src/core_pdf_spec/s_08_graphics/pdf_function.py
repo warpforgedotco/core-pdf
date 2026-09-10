@@ -87,41 +87,41 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
     range_obj = dictionary.get("Range")
     if not isinstance(size_obj, (list, tuple)):
         raise ValueError("invalid sampled function size")
-    if not isinstance(domain_obj, (list, tuple)):
-        raise ValueError("invalid sampled function domain")
-    if not isinstance(range_obj, (list, tuple)) or len(range_obj) < 2:
-        raise ValueError("invalid sampled function range")
-
     if any(type(value) is not int for value in size_obj):
         raise ValueError("invalid sampled function size")
     sizes = tuple(cast(int, value) for value in size_obj)
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")
-    if len(domain_obj) < len(sizes) * 2:
+    # ISO 32000-1, Tables 38/39: dimensions determine exact array lengths.
+    domain_values = internal_number_array(domain_obj)
+    if len(domain_values) != len(sizes) * 2:
+        raise ValueError("invalid sampled function domain")
+    domains = tuple(zip(domain_values[::2], domain_values[1::2], strict=True))
+    if any(upper <= lower for lower, upper in domains):
         raise ValueError("invalid sampled function domain")
 
-    domains: list[tuple[float, float]] = []
-    for input_index in range(len(sizes)):
-        lower = parse_float(domain_obj[input_index * 2], None)
-        upper = parse_float(domain_obj[input_index * 2 + 1], None)
-        if lower is None or upper is None or upper <= lower:
-            raise ValueError("invalid sampled function domain")
-        domains.append((lower, upper))
+    range_values = internal_number_array(range_obj)
+    if not range_values or len(range_values) % 2:
+        raise ValueError("invalid sampled function range")
+    ranges = tuple(zip(range_values[::2], range_values[1::2], strict=True))
+    if any(upper < lower for lower, upper in ranges):
+        raise ValueError("invalid sampled function range")
 
-    ranges: list[tuple[float, float]] = []
-    for output_index in range(len(range_obj) // 2):
-        lower = parse_float(range_obj[output_index * 2], None)
-        upper = parse_float(range_obj[output_index * 2 + 1], None)
-        if lower is None or upper is None:
-            raise ValueError("invalid sampled function range")
-        ranges.append((lower, upper))
+    order = dictionary.get("Order")
+    if order is None:
+        order = 1
+    if type(order) is not int or order not in {1, 3}:
+        raise ValueError("invalid sampled function interpolation order")
+    # Section 7.10.2 prescribes ignoring Order 3 where Size is less than 4.
+    if order == 3 and any(size >= 4 for size in sizes):
+        raise ValueError("unsupported cubic sampled function interpolation")
 
     decode_obj = dictionary.get("Decode")
     if decode_obj is None:
         decodes = tuple(ranges)
     else:
         decode_values = internal_number_array(decode_obj)
-        if len(decode_values) < len(ranges) * 2:
+        if len(decode_values) != len(ranges) * 2:
             raise ValueError("invalid sampled function decode")
         decodes = tuple(
             (decode_values[index * 2], decode_values[index * 2 + 1]) for index in range(len(ranges))
@@ -274,11 +274,25 @@ def compile_pdf_function(
         if not isinstance(functions, (list, tuple)) or not functions:
             raise ValueError("invalid stitching PDF function")
         domain_min, domain_max = internal_scalar_domain(dictionary)
-        bounds = internal_number_array(dictionary.get("Bounds"))
+        bounds_obj = dictionary.get("Bounds")
+        if not isinstance(bounds_obj, (list, tuple)):
+            raise ValueError("invalid stitching function bounds")
+        bounds = internal_number_array(bounds_obj)
         encode = internal_number_array(dictionary.get("Encode"))
         parts = tuple(compile_child(entry) for entry in functions)
-        if len(bounds) != len(parts) - 1 or len(encode) != len(parts) * 2:
+        if (
+            len(bounds) != len(bounds_obj)
+            or len(bounds) != len(parts) - 1
+            or len(encode) != len(parts) * 2
+        ):
             raise ValueError("invalid stitching function parameters")
+        # ISO 32000-1, 7.10.4: strictly increasing intervals, except that the
+        # final bound may equal Domain1 and maps that endpoint to Encode2i.
+        previous = domain_min
+        for bound in bounds:
+            if not previous < bound <= domain_max:
+                raise ValueError("invalid stitching function bounds")
+            previous = bound
 
         def evaluate_stitching(*inputs: float) -> tuple[float, ...]:
             if len(inputs) != 1:

@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import core_pdf_spec.s_08_graphics.pdf_function as strict
 from core_pdf.impl._impl.runtime.scalars import parse_float, parse_int
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float as parse_pdf_float
 from core_pdf_spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
 )
@@ -23,6 +25,44 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
             return ()
         output.append(parsed)
     return tuple(output)
+
+
+def internal_sampled_number_array(values: list[Any] | tuple[Any, ...]) -> tuple[float, ...]:
+    """Read the consumed prefix when other array entries prevented reader coercion."""
+    output: list[float] = []
+    for value in values:
+        parsed = parse_pdf_float(value, None)
+        if parsed is None:
+            return ()
+        output.append(parsed)
+    return tuple(output)
+
+
+def internal_compile_unordered_stitching(
+    functions: list[Any],
+    domain: tuple[float, float],
+    bounds: tuple[float, ...],
+    encode: tuple[float, ...],
+) -> PdfFunctionEvaluator:
+    """Retain the reader's first-match selection for malformed intervals."""
+    parts = tuple(internal_compile_pdf_function(entry) for entry in functions)
+    domain_min, domain_max = domain
+
+    def evaluate(*inputs: float) -> tuple[float, ...]:
+        if len(inputs) != 1:
+            raise ValueError("invalid stitching function input count")
+        value = max(domain_min, min(domain_max, inputs[0]))
+        index = 0
+        while index < len(bounds) and value >= bounds[index]:
+            index += 1
+        low = bounds[index - 1] if index > 0 else domain_min
+        high = bounds[index] if index < len(bounds) else domain_max
+        enc0 = encode[index * 2]
+        enc1 = encode[index * 2 + 1]
+        encoded = enc0 if high == low else enc0 + (value - low) * (enc1 - enc0) / (high - low)
+        return parts[index](encoded)
+
+    return evaluate
 
 
 def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
@@ -68,11 +108,16 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         if values:
             dictionary[name] = values
     if kind == 0:
+        # The reader has always interpolated linearly, regardless of Order.
+        dictionary["Order"] = 1
         dictionary["BitsPerSample"] = parse_int(dictionary.get("BitsPerSample"), 0)
         sizes = dictionary.get("Size")
         if isinstance(sizes, (list, tuple)):
             sizes = tuple(parse_int(value, 0) or 0 for value in sizes)
             dictionary["Size"] = sizes
+            domain = dictionary.get("Domain")
+            if isinstance(domain, (list, tuple)):
+                dictionary["Domain"] = internal_sampled_number_array(domain[: 2 * len(sizes)])
             raw_encode = dictionary.get("Encode")
             encodes: list[float] = []
             for index, size in enumerate(sizes):
@@ -84,6 +129,21 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
                         lower, upper = parsed_lower, parsed_upper
                 encodes.extend((lower, upper))
             dictionary["Encode"] = encodes
+        raw_range = dictionary.get("Range")
+        if isinstance(raw_range, (list, tuple)):
+            ranges = internal_sampled_number_array(raw_range[: len(raw_range) // 2 * 2])
+            # A reversed pair historically clipped every value to its lower bound.
+            dictionary["Range"] = tuple(
+                value
+                for lower, upper in zip(ranges[::2], ranges[1::2], strict=True)
+                for value in (lower, max(lower, upper))
+            )
+            if dictionary.get("Decode") is None:
+                dictionary["Decode"] = ranges
+            else:
+                decodes = internal_number_array(dictionary["Decode"])
+                if decodes and all(math.isfinite(value) for value in decodes):
+                    dictionary["Decode"] = decodes[: len(ranges)]
     if kind in {2, 3} and dictionary.get("Domain") is None:
         dictionary["Domain"] = [0.0, 1.0]
     elif kind in {2, 3}:
@@ -107,14 +167,28 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             functions = list(functions[:count])
             functions.extend([functions[-1]] * (count - len(functions)))
             encode = internal_number_array(dictionary.get("Encode"))
+            encode = tuple(
+                encode[index] if index < len(encode) else float(index % 2)
+                for index in range(2 * count)
+            )
             dictionary.update(
                 Functions=functions,
                 Bounds=bounds,
-                Encode=tuple(
-                    encode[index] if index < len(encode) else float(index % 2)
-                    for index in range(2 * count)
-                ),
+                Encode=encode,
             )
+            domain = internal_number_array(dictionary["Domain"])
+            if (
+                len(domain) == 2
+                and domain[0] <= domain[1]
+                and all(math.isfinite(value) for value in (*domain, *bounds, *encode))
+                and any(
+                    lower >= upper or upper > domain[1]
+                    for lower, upper in zip((domain[0], *bounds), bounds)
+                )
+            ):
+                return internal_compile_unordered_stitching(
+                    functions, (domain[0], domain[1]), bounds, encode
+                )
     prepared = (
         function.replace(dictionary=dictionary, spec=function.spec)
         if isinstance(function, PdfStream)
