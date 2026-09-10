@@ -6,13 +6,20 @@ import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.events import ContentSink
-from core_pdf_spec.s_07_content.operations import dispatch_operations, iter_content_operations
+from core_pdf_spec.s_07_content.operations import (
+    ContentOperands,
+    ContentOperationState,
+    dispatch_operations,
+    iter_content_operations,
+    parse_content_token,
+)
 from core_pdf_spec.s_07_content.state import TextState
+from core_pdf_spec.s_07_content.stream_state import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf_spec.types import PdfName, PdfString
 
@@ -193,6 +200,317 @@ def test_compatibility_scope_survives_nested_stream_suspension() -> None:
         IDENTITY_MATRIX,
         0,
     )
+
+
+@pytest.mark.parametrize(
+    "content", [b"q BX Q extension EX", b"BX q extension EX Q", b"BX BX EX EX"]
+)
+def test_compatibility_sections_are_independent_of_graphics_saves(content: bytes) -> None:
+    # ISO 32000-1 7.8.2: compatibility sections are not graphics state.
+    list(iter_content_operations(PdfLexer(content)))
+    state, sink = state_with_sink()
+    original = state.capture_stream_state()
+    state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
+    assert state.capture_stream_state() == original
+    assert sink.saved == 0
+
+
+@pytest.mark.parametrize("content", [b"BX q EX Q EX", b"q BX EX Q extension", b"BX q Q"])
+def test_invalid_compatibility_sections_fail_in_both_entry_points(content: bytes) -> None:
+    with pytest.raises(PdfParseError):
+        list(iter_content_operations(PdfLexer(content)))
+    state, sink = state_with_sink()
+    original = state.capture_stream_state()
+    with pytest.raises(PdfParseError):
+        state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
+    assert state.capture_stream_state() == original
+    assert sink.saved == 0
+
+
+@pytest.mark.parametrize("child_content", [b"EX", b"extension", b"BX"])
+def test_child_compatibility_scope_cannot_use_or_leak_into_parent(child_content: bytes) -> None:
+    state, sink = state_with_sink()
+    original = state.capture_stream_state()
+    child = PdfStream(
+        raw_data=child_content,
+        dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
+    )
+    with pytest.raises(PdfParseError):
+        state.consume_stream(
+            PdfStream(raw_data=b"BX /Child Do extension EX"),
+            {"XObject": {"Child": child}},
+            IDENTITY_MATRIX,
+            0,
+        )
+    assert state.capture_stream_state() == original
+    assert sink.saved == 0
+    assert not state.stream_executor.active_streams
+
+
+def test_parent_scope_object_survives_child_suspension() -> None:
+    state, _ = state_with_sink()
+    scopes: list[tuple[ContentOperationState, int]] = []
+    state.op_handlers["w"] = lambda operands, depth: scopes.append(
+        (state.operation_state, state.compatibility_depth)
+    )
+    child = PdfStream(
+        raw_data=b"3 w BX 4 w extension EX 5 w",
+        dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
+    )
+    state.consume_stream(
+        PdfStream(raw_data=b"BX 1 w /Child Do 2 w extension EX"),
+        {"XObject": {"Child": child}},
+        IDENTITY_MATRIX,
+        0,
+    )
+    assert [nesting for _, nesting in scopes] == [1, 0, 1, 0, 1]
+    assert scopes[0][0] is scopes[-1][0]
+    assert all(scope is scopes[1][0] for scope, _ in scopes[1:4])
+    assert scopes[0][0] is not scopes[1][0]
+
+
+def test_reentrant_stream_execution_restores_parent_scope() -> None:
+    state, _ = state_with_sink()
+    scopes: list[tuple[ContentOperationState, int]] = []
+
+    def execute(operands: ContentOperands, depth: int) -> None:
+        scopes.append((state.operation_state, state.compatibility_depth))
+        if operands == (1,):
+            state.consume_stream(PdfStream(raw_data=b"2 w BX extension EX"), {}, IDENTITY_MATRIX, 1)
+            scopes.append((state.operation_state, state.compatibility_depth))
+
+    state.op_handlers["w"] = execute
+    state.consume_stream(PdfStream(raw_data=b"BX 1 w extension EX"), {}, IDENTITY_MATRIX, 0)
+    assert [nesting for _, nesting in scopes] == [1, 0, 1]
+    assert scopes[0][0] is scopes[2][0]
+    assert scopes[0][0] is not scopes[1][0]
+
+
+def test_custom_scope_callbacks_observe_scope_without_owning_it() -> None:
+    state, _ = state_with_sink()
+    depths: list[int] = []
+
+    def callback(operands: ContentOperands, depth: int) -> None:
+        depths.append(state.compatibility_depth)
+
+    state.op_handlers.update(BX=callback, EX=callback)
+    state.consume_stream(PdfStream(raw_data=b"BX extension EX"), {}, IDENTITY_MATRIX, 0)
+    assert depths == [1, 0]
+
+
+@pytest.mark.parametrize("name", ["BX", "EX"])
+def test_direct_scope_handlers_validate_before_mutation(name: str) -> None:
+    state, _ = state_with_sink()
+    state.compatibility_depth = 1
+    handler = state.get_operation_handler(name)
+    assert handler is not None
+    with pytest.raises(PdfParseError, match="requires 0 operands"):
+        handler((1,), 0)
+    assert state.compatibility_depth == 1
+    handler((), 0)
+    assert state.compatibility_depth == (2 if name == "BX" else 0)
+    if name == "EX":
+        with pytest.raises(PdfParseError, match="unmatched EX"):
+            handler((), 0)
+
+
+@pytest.mark.parametrize("name", [b"BX", b"EX"])
+def test_standalone_scope_dispatch_validates_before_mutation(name: bytes) -> None:
+    scope = ContentOperationState(1)
+    with pytest.raises(PdfParseError, match="requires 0 operands"):
+        dispatch_operations(
+            PdfLexer(b"1 " + name),
+            lambda name: lambda operands, depth: None,
+            0,
+            operation_state=scope,
+        )
+    assert scope.compatibility_depth == 1
+
+
+def test_normal_execution_validates_each_fixed_signature_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core_pdf_spec.s_07_content import operations
+    from core_pdf_spec.s_07_content import state as state_module
+
+    checked: list[str] = []
+    validate = operations.validate_content_operands
+
+    def record(name: str, operands: ContentOperands) -> None:
+        checked.append(name)
+        validate(name, operands)
+
+    monkeypatch.setattr(operations, "validate_content_operands", record)
+    monkeypatch.setattr(state_module, "validate_content_operands", record)
+    state, _ = state_with_sink()
+    state.consume_stream(PdfStream(raw_data=b"q BX 3 w extension EX Q"), {}, IDENTITY_MATRIX, 0)
+    assert checked == ["q", "BX", "w", "EX", "Q"]
+
+
+@pytest.mark.parametrize(("name", "category"), [("gs", "ExtGState"), ("sh", "Shading")])
+@pytest.mark.parametrize("entry_point", ["stream", "handler"])
+def test_resource_operator_looks_up_and_resolves_once(
+    monkeypatch: pytest.MonkeyPatch, name: str, category: str, entry_point: str
+) -> None:
+    class Resolver(ObjectResolver):
+        def __init__(self) -> None:
+            super().__init__(b"", {}, {})
+            self.dictionary_calls = 0
+
+        def resolve_dict(self, value: object) -> PdfDict | None:
+            self.dictionary_calls += 1
+            return super().resolve_dict(value)
+
+    state, sink = state_with_sink()
+    resolver = Resolver()
+    state.document = SimpleNamespace(resolver=resolver)
+    lookups: list[tuple[str, str]] = []
+    paints: list[PdfDict] = []
+    resource: PdfDict = {"ca": 0.5} if name == "gs" else {"ShadingType": 2}
+
+    def lookup(category: str, name: str) -> object:
+        lookups.append((category, name))
+        return resource
+
+    monkeypatch.setattr(state, "lookup_page_resource", lookup)
+    monkeypatch.setattr(sink, "paint_shading", lambda state, shading: paints.append(shading))
+    if entry_point == "stream":
+        state.consume_stream(
+            PdfStream(raw_data=f"/Resource {name}".encode()), {}, IDENTITY_MATRIX, 0
+        )
+    else:
+        handler = state.get_operation_handler(name)
+        assert handler is not None
+        handler((PdfName.of("Resource"),), 0)
+        if name == "gs":
+            assert state.fill_opacity == 0.5
+    assert lookups == [(category, "Resource")]
+    assert resolver.dictionary_calls == 1
+    assert paints == ([resource] if name == "sh" else [])
+
+
+@pytest.mark.parametrize("name", ["gs", "sh"])
+@pytest.mark.parametrize("resource", [None, 1, [], PdfName.of("Invalid")])
+def test_resource_handlers_reject_missing_or_invalid_resources(name: str, resource: object) -> None:
+    state, _ = state_with_sink()
+    category = "ExtGState" if name == "gs" else "Shading"
+    state.resources = cast(PdfDict, {category: {"Resource": resource}})
+    original = state.capture_stream_state()
+    handler = state.get_operation_handler(name)
+    assert handler is not None
+    with pytest.raises(PdfParseError, match="resource"):
+        handler((PdfName.of("Resource"),), 0)
+    assert state.capture_stream_state() == original
+
+
+def test_stream_snapshot_restores_fields_before_unwinding_graphics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state, sink = state_with_sink()
+    state.resources = {"Original": 1}
+    state.resources_id = id(state.resources)
+    state.text_matrix = Matrix(2, 0, 0, 3, 4, 5)
+    state.line_matrix = Matrix(3, 0, 0, 2, 5, 4)
+    state.xobject_depth = 7
+    state.compatibility_depth = 2
+    original = state.capture_stream_state()
+    state.resources = {}
+    state.resources_id = 42
+    state.text_matrix = IDENTITY_MATRIX
+    state.line_matrix = IDENTITY_MATRIX
+    state.xobject_depth = 9
+    state.operation_state = ContentOperationState(5)
+    state.op_q((), 0)
+    state.graphics_stack_floor = 1
+    observed = []
+    restore = sink.restore_graphics
+
+    def observe(current: TextState) -> None:
+        observed.append(
+            (
+                current.resources,
+                current.resources_id,
+                current.text_matrix,
+                current.line_matrix,
+                current.graphics_stack_floor,
+                current.xobject_depth,
+                current.operation_state,
+            )
+        )
+        restore(current)
+
+    monkeypatch.setattr(sink, "restore_graphics", observe)
+    state.restore_stream_state(original)
+    assert observed == [
+        (
+            original.resources,
+            original.resources_id,
+            original.text_matrix,
+            original.line_matrix,
+            original.graphics_stack_floor,
+            original.xobject_depth,
+            original.operation_state,
+        )
+    ]
+    assert state.operation_state is original.operation_state
+    assert state.capture_stream_state() == original
+    assert sink.saved == 0
+
+
+def test_failed_stream_decode_does_not_replace_parent_scope() -> None:
+    class FailingStream(PdfStream):
+        @property
+        def data(self) -> bytes:
+            raise PdfParseError("cannot decode child")
+
+    state, sink = state_with_sink()
+    state.compatibility_depth = 2
+    original = state.capture_stream_state()
+    frame = ContentStreamFrame(FailingStream(raw_data=b""), {}, IDENTITY_MATRIX, 1, None)
+    with pytest.raises(PdfParseError, match="cannot decode child"):
+        state.stream_executor.enter(frame)
+    assert state.operation_state is original.operation_state
+    assert state.capture_stream_state() == original
+    assert sink.saved == 0
+
+
+def test_stream_snapshot_restores_compatibility_depth_after_direct_execution() -> None:
+    state, _ = state_with_sink()
+    state.compatibility_depth = 2
+    original = state.capture_stream_state()
+    state.execute_operation("BX", (), 0)
+    assert state.compatibility_depth == 3
+    state.restore_stream_state(original)
+    assert state.operation_state is original.operation_state
+    assert state.compatibility_depth == 2
+    state.execute_operation("EX", (), 0)
+    assert state.compatibility_depth == 1
+    state.restore_stream_state(original)
+    assert state.operation_state is original.operation_state
+    assert state.compatibility_depth == 2
+
+
+@pytest.mark.parametrize("value", [float("inf"), float("nan"), 10**400, True])
+@pytest.mark.parametrize("operator", ["w", "sc", "TJ"])
+def test_content_numeric_validation_rejects_unrepresentable_values_without_mutation(
+    value: Any, operator: str
+) -> None:
+    state, _ = state_with_sink()
+    original = state.capture_stream_state()
+    operands = ([value],) if operator == "TJ" else (value,)
+    handler = state.get_operation_handler(operator)
+    assert handler is not None
+    with pytest.raises(PdfParseError):
+        handler(operands, 0)
+    assert state.capture_stream_state() == original
+
+
+def test_content_real_token_rejects_conversion_overflow() -> None:
+    with pytest.raises(PdfParseError, match="implementation limits"):
+        parse_content_token(PdfLexer(b"9" * 400 + b".0"))
+    token = parse_content_token(PdfLexer(b"12.5"))
+    assert token is not None
+    assert token.value == 12.5
 
 
 def test_empty_unicode_still_advances_text() -> None:

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -35,7 +34,6 @@ GRAPHICS_STATE_FIELDS: tuple[str, ...] = (
     "stroke_color_space",
     "fill_color_spec",
     "stroke_color_spec",
-    "compatibility_depth",
     "blend_mode",
     "flatness",
     "render_intent",
@@ -79,6 +77,10 @@ class StreamState:
     graphics_stack_len: int
     marked_content_stack_len: int
     xobject_depth: int
+    operation_state: ContentOperationState = field(
+        default_factory=ContentOperationState, kw_only=True
+    )
+    compatibility_depth: int = field(default=0, kw_only=True)
 
 
 @dataclass(slots=True)
@@ -103,12 +105,17 @@ class ContentStreamFrame:
     old_state: StreamState | None = field(default=None, init=False)
 
 
-# Stream-only fields mirror TextState attributes; the common graphics fields
-# above and the two stack depths are saved separately.
-STREAM_STATE_MIRRORED: tuple[str, ...] = tuple(
-    f.name
-    for f in dataclasses.fields(StreamState)
-    if f.name not in ("graphics_state", "graphics_stack_len", "marked_content_stack_len")
+# Compatibility metadata for callers inspecting snapshots. Capture and restore
+# use explicit typed assignments; graphics fields and stack lengths are separate.
+STREAM_STATE_MIRRORED: tuple[str, ...] = (
+    "resources",
+    "resources_id",
+    "text_matrix",
+    "line_matrix",
+    "graphics_stack_floor",
+    "xobject_depth",
+    "operation_state",
+    "compatibility_depth",
 )
 
 

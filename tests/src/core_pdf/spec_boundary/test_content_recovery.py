@@ -110,6 +110,46 @@ def test_reader_skips_unknown_operators_and_stray_delimiters(delimiter: bytes) -
     assert state.line_width == 3
 
 
+@pytest.mark.parametrize("content", [b"EX BX extension", b"q BX Q extension EX EX"])
+def test_reader_keeps_tolerant_compatibility_scope_execution(content: bytes) -> None:
+    state = new_state()
+    state.consume_stream(PdfStream(raw_data=content + b" 0 0 10 10 re f"), {}, IDENTITY_MATRIX, 0)
+    assert len(state.drawings) == 1
+    assert not state.stack
+    assert state.compatibility_depth == 0
+
+
+def test_reader_raw_scope_handlers_still_track_and_clamp_depth() -> None:
+    state = new_state()
+    dispatch_operations(PdfLexer(b"BX BX EX"), state.op_handlers.get, 0)
+    assert state.compatibility_depth == 1
+    dispatch_operations(PdfLexer(b"EX EX EX"), state.op_handlers.get, 0)
+    assert state.compatibility_depth == 0
+
+
+def test_reader_content_preserves_legacy_real_overflow_acceptance() -> None:
+    state = new_state()
+    dispatch_operations(PdfLexer(b"9" * 400 + b".0 w"), state.op_handlers.get, 0)
+    assert state.line_width == float("inf")
+
+
+def test_reader_child_scope_failure_does_not_change_parent_recovery() -> None:
+    state = new_state()
+    child = PdfStream(
+        raw_data=b"EX BX extension",
+        dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
+    )
+    state.consume_stream(
+        PdfStream(raw_data=b"BX /Child Do extension EX 0 0 10 10 re f"),
+        {"XObject": {"Child": child}},
+        IDENTITY_MATRIX,
+        0,
+    )
+    assert len(state.drawings) == 1
+    assert state.compatibility_depth == 0
+    assert not state.capture_frames
+
+
 def test_reader_caps_operands_and_preserves_existing_first_values() -> None:
     seen = []
     dispatch_operations(

@@ -304,43 +304,58 @@ class XRefScanner:
         widths = dictionary.get("W")
         if type(size) is not int or size <= 0:
             raise PdfParseError("invalid xref stream size")
-        if (
-            not isinstance(widths, list)
-            or len(widths) != 3
-            or not all(type(w) is int and w >= 0 for w in widths)
-        ):
+        if not isinstance(widths, list):
             raise PdfParseError("invalid xref stream W")
-        index = dictionary.get("Index", [0, size])
-        if (
-            not isinstance(index, list)
-            or len(index) % 2
-            or not all(type(v) is int and v >= 0 for v in index)
-        ):
-            raise PdfParseError("invalid xref stream Index")
         w = cast(list[int], widths)
-        indices = cast(list[int], index)
-        if any(indices[i] + indices[i + 1] > size for i in range(0, len(indices), 2)):
+        row_size = internal_validate_xref_widths(w)
+        index = dictionary.get("Index", [0, size])
+        if not isinstance(index, list):
             raise PdfParseError("invalid xref stream Index")
-        data = stream.data
-        if sum(w) <= 0 or len(data) != sum(indices[1::2]) * sum(w):
-            raise PdfParseError("xref stream length mismatch")
-        return decode_xref_rows(data, w, indices, size), cast(PdfDict, dictionary)
+        indices = cast(list[int], index)
+        row_count = internal_validate_xref_index(indices, size)
+        return (
+            internal_decode_xref_rows(stream.data, w, indices, row_size, row_count),
+            cast(PdfDict, dictionary),
+        )
+
+
+def internal_validate_xref_widths(widths: list[int]) -> int:
+    if len(widths) != 3 or any(type(width) is not int or width < 0 for width in widths):
+        raise PdfParseError("invalid xref stream W")
+    row_size = sum(widths)
+    if row_size <= 0:
+        raise PdfParseError("invalid xref stream W")
+    return row_size
+
+
+def internal_validate_xref_index(index: list[int], size: int) -> int:
+    if type(size) is not int or size <= 0 or len(index) % 2:
+        raise PdfParseError("invalid xref stream Index")
+    if any(type(value) is not int or value < 0 for value in index):
+        raise PdfParseError("invalid xref stream Index")
+    if any(index[i] + index[i + 1] > size for i in range(0, len(index), 2)):
+        raise PdfParseError("invalid xref stream Index")
+    return sum(index[1::2])
 
 
 def decode_xref_row(
     data: bytes, pos: int, widths: list[int], object_number: int
 ) -> tuple[int, PdfXRefEntry, int]:
     """Decode one xref-stream row and return its key, entry, and next offset."""
-    if len(widths) != 3 or any(type(width) is not int or width < 0 for width in widths):
-        raise PdfParseError("invalid xref stream W")
+    row_size = internal_validate_xref_widths(widths)
     if object_number < 0:
         raise PdfParseError("invalid xref stream Index")
-    row_size = sum(widths)
-    if row_size <= 0:
-        raise PdfParseError("invalid xref stream W")
     end = pos + row_size
     if pos < 0 or end > len(data):
         raise PdfParseError("xref stream length mismatch")
+    return internal_decode_xref_row(data, pos, widths, object_number, row_size)
+
+
+def internal_decode_xref_row(
+    data: bytes, pos: int, widths: list[int], object_number: int, row_size: int
+) -> tuple[int, PdfXRefEntry, int]:
+    """Decode a bounded row using an already validated field layout."""
+    end = pos + row_size
     type_end = pos + widths[0]
     offset_end = type_end + widths[1]
     kind = int.from_bytes(data[pos:type_end], "big") if widths[0] else 1
@@ -361,21 +376,22 @@ def decode_xref_row(
 
 
 def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> XRefTable:
-    if type(size) is not int or size <= 0 or len(index) % 2:
-        raise PdfParseError("invalid xref stream Index")
-    if any(type(value) is not int or value < 0 for value in index):
-        raise PdfParseError("invalid xref stream Index")
-    if any(index[i] + index[i + 1] > size for i in range(0, len(index), 2)):
-        raise PdfParseError("invalid xref stream Index")
-    if len(w) != 3 or any(type(width) is not int or width < 0 for width in w) or sum(w) <= 0:
-        raise PdfParseError("invalid xref stream W")
-    if len(data) != sum(index[1::2]) * sum(w):
+    """Validate an entire xref-stream layout and decode its rows in order."""
+    row_count = internal_validate_xref_index(index, size)
+    row_size = internal_validate_xref_widths(w)
+    return internal_decode_xref_rows(data, w, index, row_size, row_count)
+
+
+def internal_decode_xref_rows(
+    data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
+) -> XRefTable:
+    if len(data) != row_count * row_size:
         raise PdfParseError("xref stream length mismatch")
     entries: XRefTable = {}
     pos = 0
     for i in range(0, len(index), 2):
         for object_number in range(index[i], index[i] + index[i + 1]):
-            key, entry, pos = decode_xref_row(data, pos, w, object_number)
+            key, entry, pos = internal_decode_xref_row(data, pos, widths, object_number, row_size)
             entries[key] = entry
     return entries
 

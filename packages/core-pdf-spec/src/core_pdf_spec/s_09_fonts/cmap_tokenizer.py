@@ -49,12 +49,9 @@ class CMapBlock:
     def token_values(
         self, *, include_arrays: bool = False, include_words: bool = False
     ) -> list[bytes]:
-        kinds: set[CMapTokenKind] = {"hex", "literal"}
-        if include_arrays:
-            kinds.add("array")
-        if include_words:
-            kinds.update(("delimiter", "word"))
-        return [token.value for token in self.tokens if token.kind in kinds]
+        return internal_cmap_token_values(
+            self.tokens, include_arrays=include_arrays, include_words=include_words
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +306,14 @@ def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:
     tokens = iter_cmap_tokens(data, group_arrays=include_arrays)
+    return internal_cmap_token_values(
+        tokens, include_arrays=include_arrays, include_words=include_words
+    )
+
+
+def internal_cmap_token_values(
+    tokens: typing.Iterable[CMapToken], *, include_arrays: bool, include_words: bool
+) -> list[bytes]:
     kinds: set[CMapTokenKind] = {"hex", "literal"}
     if include_arrays:
         kinds.add("array")

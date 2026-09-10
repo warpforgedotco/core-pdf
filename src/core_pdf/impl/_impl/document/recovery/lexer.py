@@ -132,6 +132,10 @@ class PdfLexer(SyntaxLexer):
         # Retain reader acceptance of Python numeric spellings in array fast paths.
         return True
 
+    def parse_real_token(self, token: bytes | memoryview) -> float:
+        # Keep the reader's existing numeric conversion, including overflow to infinity.
+        return float(token)
+
     def handle_missing_endobj(self, keyword: tuple[bytes, int] | None) -> bool:
         if (
             keyword is not None

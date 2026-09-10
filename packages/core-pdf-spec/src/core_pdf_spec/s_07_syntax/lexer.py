@@ -14,6 +14,7 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
@@ -317,7 +318,7 @@ class PdfLexer:
         if is_number_word_bytes(raw):
             raw_is_integer = 46 not in raw
             if not raw_is_integer:
-                return float(raw)
+                return self.parse_real_token(raw)
             next_pos = self.skip_ignored_at(end)
             if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
                 next_token = self.scan_word_at(next_pos, skip_ignored=False)
@@ -423,7 +424,10 @@ class PdfLexer:
                     values: list[int | float] = list(map(int, tokens))
                 except ValueError:
                     try:
-                        values = [float(token) if b"." in token else int(token) for token in tokens]
+                        values = [
+                            self.parse_real_token(token) if b"." in token else int(token)
+                            for token in tokens
+                        ]
                     except ValueError:
                         pass
                     else:
@@ -477,7 +481,7 @@ class PdfLexer:
                 self.pos = start_pos
                 return None
             try:
-                value = float(raw) if has_decimal else int(raw)
+                value = self.parse_real_token(raw) if has_decimal else int(raw)
             except ValueError:
                 self.pos = start_pos
                 return None
@@ -491,6 +495,21 @@ class PdfLexer:
         state; returning False leaves the token to ordinary array parsing.
         """
         return is_number_word_bytes(raw.tobytes() if isinstance(raw, memoryview) else raw)
+
+    def parse_real_token(self, token: bytes | memoryview) -> float:
+        """Convert one complete PDF number token without changing parser state.
+
+        Valid syntax outside the implementation's finite real-number range
+        raises PdfParseError, as required by ISO 32000-2:2020, Annex C.
+        Consumers may override this conversion while reusing lexical traversal.
+        """
+        value = parse_float(token, default=None)
+        if value is not None:
+            return value
+        raw = token.tobytes() if isinstance(token, memoryview) else token
+        if is_number_word_bytes(raw):
+            raise PdfParseError("PDF real number exceeds implementation limits")
+        raise PdfParseError("invalid PDF real number")
 
     def parse_reference_suffix(
         self, raw: bytes, next_raw: bytes, next_end: int
@@ -562,7 +581,7 @@ class PdfLexer:
             self.pos = end
             if is_number_word_bytes(raw):
                 if 46 in raw:
-                    values.append(float(raw))
+                    values.append(self.parse_real_token(raw))
                     continue
                 next_pos = self.skip_ignored_at(end)
                 if next_pos < self.data_len and 48 <= data[next_pos] <= 57:

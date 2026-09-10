@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import cast
 
-from core_pdf_spec.s_07_syntax.types import CachedPdfObject, InheritedValueMap, PdfDict
+from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_values
+from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf_spec.types import Rectangle
 
@@ -43,10 +44,7 @@ def page_inherited_values(
 ) -> InheritedValueMap:
     """Overlay present page-tree entries on the ancestor's inherited values."""
     values = dict(inherited)
-    for key in keys:
-        value = node.get(key)
-        if value is not None:
-            values[key] = cast(CachedPdfObject, value)
+    values.update(inherited_dictionary_values(node, keys))
     return values
 
 
@@ -57,11 +55,9 @@ def iter_page_nodes(
     inherited_keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
 ) -> Iterator[PageNode]:
     """Walk Kids in source order and carry each ancestor's inheritable values."""
-    stack: list[tuple[object, int, InheritedValueMap, frozenset[int]]] = [
-        (root, 0, {}, frozenset())
-    ]
+    stack: list[tuple[object, InheritedValueMap, frozenset[int]]] = [(root, {}, frozenset())]
     while stack:
-        raw, depth, inherited, ancestors = stack.pop()
+        raw, inherited, ancestors = stack.pop()
         current = resolve(raw)
         if not isinstance(current, dict):
             raise ValueError("invalid page tree node")
@@ -77,7 +73,7 @@ def iter_page_nodes(
             if not isinstance(kids, list):
                 raise ValueError("invalid page tree Kids array")
             ancestry = ancestors | {id(current)}
-            stack.extend((kid, depth + 1, values, ancestry) for kid in reversed(kids))
+            stack.extend((kid, values, ancestry) for kid in reversed(kids))
         else:
             raise ValueError("invalid page tree node")
 

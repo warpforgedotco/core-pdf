@@ -8,7 +8,6 @@ module and call the primitive again at a selected boundary.
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -18,6 +17,7 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.types import CachedPdfObject
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
     CONTENT_OPERATOR_HANDLERS,
     CONTENT_OPERATOR_SIGNATURES,
@@ -60,7 +60,7 @@ def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
         assert scanned is not None
         word, lexer.pos = scanned
         if is_number_word_bytes(word):
-            return ContentToken(start, float(word) if b"." in word else int(word))
+            return ContentToken(start, lexer.parse_real_token(word) if b"." in word else int(word))
         if word == b"BI":
             return ContentToken(start, parse_inline_image(lexer))
         if word in (b"true", b"false", b"null"):
@@ -90,7 +90,7 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
     for category, operand in zip(signature, operands, strict=True):
         valid = False
         if category == "n":
-            valid = type(operand) in (int, float) and math.isfinite(cast(float, operand))
+            valid = type(operand) in (int, float) and parse_float(operand, default=None) is not None
         elif category == "i":
             valid = type(operand) is int
         elif category == "/":
@@ -108,7 +108,7 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
     if operator in {"TJ", "d"}:
         array = cast(list[ContentOperand], operands[0])
         for value in array:
-            if type(value) in (int, float) and math.isfinite(cast(float, value)):
+            if type(value) in (int, float) and parse_float(value, default=None) is not None:
                 if operator == "d" and cast(float, value) < 0:
                     raise PdfParseError("negative dash length")
                 continue
@@ -133,6 +133,52 @@ class ContentOperationState:
 
     compatibility_depth: int = 0
 
+    def accepts_operator(self, operator: str) -> bool:
+        """Ignore unknown operators only inside a compatibility section."""
+        if operator in CONTENT_OPERATOR_HANDLERS:
+            return True
+        if not self.compatibility_depth:
+            raise PdfParseError(f"unknown content operator: {operator}")
+        return False
+
+    def begin_compatibility(self) -> None:
+        self.compatibility_depth += 1
+
+    def end_compatibility(self) -> None:
+        if not self.compatibility_depth:
+            raise PdfParseError("unmatched EX operator")
+        self.compatibility_depth -= 1
+
+    def finish(self) -> None:
+        if self.compatibility_depth:
+            raise PdfParseError("unterminated compatibility section")
+
+
+def internal_dispatch_operations(
+    lexer: PdfLexer,
+    execute_operation: Callable[[str, ContentOperands, int], None],
+    depth: int,
+) -> None:
+    """Read complete operations for an executor that owns validation and scope.
+
+    Advance past the operation before invoking the executor, so nested streams
+    can suspend execution without replaying the parent operation on return.
+    """
+    operands: list[ContentOperand] = []
+    while (token := parse_content_token(lexer)) is not None:
+        if isinstance(token.value, InlineImage):
+            operands.append(token.value)
+            op_name = "BI"
+        elif not token.is_operator:
+            operands.append(token.value)
+            continue
+        else:
+            op_name = cast(str, token.value)
+        execute_operation(op_name, tuple(operands), depth)
+        operands.clear()
+    if operands:
+        raise PdfParseError("content stream ends with operands")
+
 
 def dispatch_operations(
     lexer: PdfLexer,
@@ -146,38 +192,23 @@ def dispatch_operations(
     The lexer is positioned after the complete operation before calling its
     handler, so a suspended nested stream can resume without replaying it.
     """
-    operands: list[ContentOperand] = []
     state = operation_state if operation_state is not None else ContentOperationState()
-    while (token := parse_content_token(lexer)) is not None:
-        if isinstance(token.value, InlineImage):
-            operands.append(token.value)
-            op_name = "BI"
-        elif not token.is_operator:
-            operands.append(token.value)
-            continue
-        else:
-            op_name = cast(str, token.value)
-        if op_name not in CONTENT_OPERATOR_HANDLERS:
-            if not state.compatibility_depth:
-                raise PdfParseError(f"unknown content operator: {op_name}")
-            operands.clear()
-            continue
-        if op_name == "BX":
-            state.compatibility_depth += 1
-        elif op_name == "EX":
-            if not state.compatibility_depth:
-                raise PdfParseError("unmatched EX operator")
-            state.compatibility_depth -= 1
+
+    def execute(op_name: str, operands: ContentOperands, depth: int) -> None:
+        if not state.accepts_operator(op_name):
+            return
         handler = get_handler(op_name)
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {op_name}")
-        validate_content_operands(op_name, tuple(operands))
-        handler(tuple(operands), depth)
-        operands.clear()
-    if operands:
-        raise PdfParseError("content stream ends with operands")
-    if state.compatibility_depth:
-        raise PdfParseError("unterminated compatibility section")
+        validate_content_operands(op_name, operands)
+        if op_name == "BX":
+            state.begin_compatibility()
+        elif op_name == "EX":
+            state.end_compatibility()
+        handler(operands, depth)
+
+    internal_dispatch_operations(lexer, execute, depth)
+    state.finish()
 
 
 def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:

@@ -71,6 +71,22 @@ def test_numeric_arrays_reject_non_pdf_number_spellings(data: bytes) -> None:
 
 
 @pytest.mark.parametrize(
+    ("prefix", "suffix"), [(b"", b""), (b"[", b"]"), (b"[% comment\n", b"]"), (b"[(x) ", b"]")]
+)
+@pytest.mark.parametrize("sliced_view", [False, True])
+def test_real_number_overflow_reports_implementation_limit(
+    prefix: bytes, suffix: bytes, sliced_view: bool
+) -> None:
+    data = prefix + b"9" * 400 + b".0" + suffix
+    lexer = PdfLexer(memoryview(b"x" + data)[1:] if sliced_view else data)
+    try:
+        with pytest.raises(PdfParseError, match="real number exceeds implementation limits"):
+            lexer.parse_object()
+    finally:
+        lexer.close()
+
+
+@pytest.mark.parametrize(
     ("data", "expected"),
     [
         (b"[]", []),

@@ -9,12 +9,17 @@ from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 
 
+def internal_indexed_color_index(value: float, hival: int) -> int:
+    """Round an Indexed component half up, then clamp it to the palette bounds."""
+    return max(0, min(hival, int(value + 0.5)))
+
+
 def indexed_color_components(
     spec: ImageColorSpec, value: float, components: int
 ) -> tuple[float, ...]:
     if spec.lookup is None or components <= 0:
         raise ValueError("invalid Indexed color lookup")
-    index = max(0, min(spec.hival, round(value)))
+    index = internal_indexed_color_index(value, spec.hival)
     entry = spec.lookup[index * components : (index + 1) * components]
     if len(entry) != components:
         raise ValueError("invalid Indexed color lookup")

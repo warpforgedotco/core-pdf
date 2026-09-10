@@ -7,11 +7,11 @@ import re
 import pytest
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl._impl.fonts.cmap_tokenizer import decode_cmap_token
+from core_pdf.impl._impl.fonts.cmap_tokenizer import cmap_tokens, decode_cmap_token
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.fonts.cmap_widths import parse_cid_widths
 from core_pdf.impl._impl.fonts.decoder import internal_font_program_for_pdf_font
-from core_pdf.impl._impl.fonts.font_program import CFFFont
+from core_pdf.impl._impl.fonts.font_program import CFFFont, internal_type2_glyph_geometry_impl
 from core_pdf.impl._impl.fonts.font_program_type1 import Type1FontProgram
 from core_pdf.impl._impl.fonts.helpers import build_simple_encoding_glyph_names
 from core_pdf.impl._impl.fonts.widths import get_descendant, parse_font_widths
@@ -47,6 +47,44 @@ def test_reader_keeps_local_maps_when_parent_is_missing(
 def test_reader_tounicode_recovers_single_byte_destination_and_truncated_suffix() -> None:
     cmap = ToUnicodeCMap(CODESPACE + b"1 beginbfchar <01> <41> endbfchar\n<broken")
     assert cmap.lookup(b"\x01") == "A"
+
+
+@pytest.mark.parametrize(
+    ("include_arrays", "expected"),
+    [(False, [b"<01>", b"<02>"]), (True, [b"<01>", b"[<02>]"])],
+)
+def test_reader_cmap_tokens_retain_prefix_before_incomplete_suffix(
+    include_arrays: bool, expected: list[bytes]
+) -> None:
+    assert cmap_tokens(b"<01> [<02>] <broken", include_arrays=include_arrays) == expected
+
+
+@pytest.mark.parametrize("operator", [10, 29], ids=["local", "global"])
+def test_reader_type2_keeps_completed_contours_before_invalid_subroutine(operator: int) -> None:
+    # The second moveto flushes the first contour before the failing call.
+    prefix = bytes([139, 139, 21, 149, 159, 6, 140, 141, 21])
+    assert internal_type2_glyph_geometry_impl(
+        prefix + bytes([139, operator, 14]),
+        local_subrs=(b"\x0b",),
+        global_subrs=(b"\x0b",),
+    ) == ([[(0.0, 0.0), (10.0, 0.0), (10.0, 20.0)]], (0.0, 0.0, 10.0, 20.0))
+    assert internal_type2_glyph_geometry_impl(
+        prefix + bytes([32, operator, 14]),
+        local_subrs=(b"\x0b",),
+        global_subrs=(b"\x0b",),
+    ) == (
+        [[(0.0, 0.0), (10.0, 0.0), (10.0, 20.0)], [(11.0, 22.0)]],
+        (0.0, 0.0, 11.0, 22.0),
+    )
+
+
+@pytest.mark.parametrize("operator", [10, 29], ids=["local", "global"])
+def test_reader_type2_subroutine_endchar_keeps_geometry_and_stops_caller(operator: int) -> None:
+    assert internal_type2_glyph_geometry_impl(
+        bytes([139, 139, 21, 149, 159, 6, 32, operator, 149, 139, 21, 149, 6, 14]),
+        local_subrs=(b"\x0e",),
+        global_subrs=(b"\x0e",),
+    ) == ([[(0.0, 0.0), (10.0, 0.0), (10.0, 20.0)]], (0.0, 0.0, 10.0, 20.0))
 
 
 def test_reader_ignores_incomplete_mapping_block() -> None:

@@ -280,6 +280,10 @@ class RecoveringTextState(SpecTextState):
             return
         self.restore_graphics_state(self.pop_graphics_save())
 
+    def op_BX(self, operands: ContentOperands, depth: int) -> None:
+        # Reader dispatch invokes raw callbacks without strict scope validation.
+        self.compatibility_depth += 1
+
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
         self.compatibility_depth = max(0, self.compatibility_depth - 1)
 

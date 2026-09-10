@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import math
 import operator
 import typing
 from collections.abc import Callable
@@ -15,6 +14,7 @@ from core_pdf_spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf_spec.s_07_content.operations import (
     ContentOperand,
     ContentOperands,
+    ContentOperationState,
     OperationHandler,
     validate_content_operands,
 )
@@ -23,7 +23,6 @@ from core_pdf_spec.s_07_content.patterns import PatternPaint, ShadingPattern, Ti
 from core_pdf_spec.s_07_content.stream_execution import ContentStreamExecutor
 from core_pdf_spec.s_07_content.stream_state import (
     GRAPHICS_STATE_FIELDS,
-    STREAM_STATE_MIRRORED,
     GraphicsSave,
     StreamState,
 )
@@ -33,8 +32,10 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
+    parse_float,
 )
 from core_pdf_spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
+from core_pdf_spec.s_08_graphics.color import internal_indexed_color_index
 from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
 from core_pdf_spec.s_08_graphics.geometry import transform_bbox
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -199,7 +200,7 @@ class TextState:
         self.current_decoder = None
         self.current_decoder_resources_id = None
         self.xobject_depth = 0
-        self.compatibility_depth = 0
+        self.operation_state = ContentOperationState()
         self.marked_content_stack = []
         self.type3_uncolored = False
         self.resources = {}
@@ -213,6 +214,14 @@ class TextState:
         self.combined_C = 0.0
         self.combined_D = 1.0
         self.stream_executor = ContentStreamExecutor(self)
+
+    @property
+    def compatibility_depth(self) -> int:
+        return self.operation_state.compatibility_depth
+
+    @compatibility_depth.setter
+    def compatibility_depth(self, value: int) -> None:
+        self.operation_state.compatibility_depth = value
 
     @property
     def ctm(self) -> Matrix:
@@ -283,14 +292,27 @@ class TextState:
     def capture_stream_state(self) -> StreamState:
         return StreamState(
             graphics_state=internal_capture_graphics_state(self),
+            resources=self.resources,
+            resources_id=self.resources_id,
+            text_matrix=self.text_matrix,
+            line_matrix=self.line_matrix,
+            graphics_stack_floor=self.graphics_stack_floor,
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
-            **{name: getattr(self, name) for name in STREAM_STATE_MIRRORED},
+            xobject_depth=self.xobject_depth,
+            operation_state=self.operation_state,
+            compatibility_depth=self.compatibility_depth,
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
-        for name in STREAM_STATE_MIRRORED:
-            setattr(self, name, getattr(state, name))
+        self.resources = state.resources
+        self.resources_id = state.resources_id
+        self.text_matrix = state.text_matrix
+        self.line_matrix = state.line_matrix
+        self.graphics_stack_floor = state.graphics_stack_floor
+        self.xobject_depth = state.xobject_depth
+        self.operation_state = state.operation_state
+        self.compatibility_depth = state.compatibility_depth
         while len(self.stack) > state.graphics_stack_len:
             self.pop_graphics_save()
         del self.marked_content_stack[state.marked_content_stack_len :]
@@ -304,63 +326,80 @@ class TextState:
         self.update_font_metrics()
 
     def get_operation_handler(self, name: str) -> OperationHandler | None:
-        """Validate operands before executing the selected PDF state transition."""
+        """Return a strict handler for direct calls to a known PDF operator.
+
+        Stream execution uses execute_operation directly. The op_handlers table
+        contains raw callbacks, whose caller owns operand and scope validation.
+        """
         handler = self.op_handlers.get(name)
         if handler is None:
             return None
 
         def execute(operands: ContentOperands, depth: int) -> None:
-            validate_content_operands(name, operands)
-            if name in {"l", "c", "v", "y"} and self.current_point is None:
-                raise PdfParseError("path operator has no current point")
-            if name == "EMC" and not self.marked_content_stack:
-                raise PdfParseError("unmatched EMC operator")
-            if name in {"gs", "sh"}:
-                resource_name = self.document.resolver.resolve_name(operands[0])
-                category = "ExtGState" if name == "gs" else "Shading"
-                value = self.document.resolver.resolve(
-                    self.lookup_page_resource(category, resource_name or "")
-                )
-                if not isinstance(value, dict) and not (
-                    name == "sh" and isinstance(value, PdfStream)
-                ):
-                    raise PdfParseError(f"missing or invalid {category} resource")
-            if name in {"SC", "SCN", "sc", "scn"} and not self.type3_uncolored:
-                stroke = name in {"SC", "SCN"}
-                color_space = self.stroke_color_space if stroke else self.fill_color_space
-                spec = self.stroke_color_spec if stroke else self.fill_color_spec
-                components = operands
-                expected: int | None
-                if color_space == "Pattern":
-                    if (
-                        name not in {"SCN", "scn"}
-                        or not operands
-                        or not isinstance(operands[-1], PdfName)
-                    ):
-                        raise PdfParseError("Pattern color requires a pattern name")
-                    components = operands[:-1]
-                    expected = len(components)
-                else:
-                    expected = {
-                        "DeviceGray": 1,
-                        "CalGray": 1,
-                        "DeviceRGB": 3,
-                        "CalRGB": 3,
-                        "Lab": 3,
-                        "DeviceCMYK": 4,
-                        "Indexed": 1,
-                        "Separation": 1,
-                    }.get(color_space)
-                    if expected is None:
-                        expected = spec.channels if spec is not None else 1
-                if len(components) != expected or any(
-                    type(value) not in (int, float) or not math.isfinite(cast(float, value))
-                    for value in components
-                ):
-                    raise PdfParseError("invalid color component operands")
-            handler(operands, depth)
+            self.internal_execute_operation(name, handler, operands, depth)
 
         return execute
+
+    def execute_operation(self, name: str, operands: ContentOperands, depth: int) -> None:
+        """Validate and execute one operation in this stream's active scope.
+
+        Unknown operators are ignored only in BX/EX sections. Raw callbacks may
+        be replaced in op_handlers; validation and compatibility scope remain
+        owned by this entry point, before the callback runs.
+        """
+        if not self.operation_state.accepts_operator(name):
+            return
+        handler = self.op_handlers.get(name)
+        if handler is None:
+            raise PdfParseError(f"unsupported content operator: {name}")
+        self.internal_execute_operation(name, handler, operands, depth)
+
+    def internal_execute_operation(
+        self, name: str, handler: OperationHandler, operands: ContentOperands, depth: int
+    ) -> None:
+        validate_content_operands(name, operands)
+        if name == "BX":
+            self.operation_state.begin_compatibility()
+        elif name == "EX":
+            self.operation_state.end_compatibility()
+        if name in {"l", "c", "v", "y"} and self.current_point is None:
+            raise PdfParseError("path operator has no current point")
+        if name == "EMC" and not self.marked_content_stack:
+            raise PdfParseError("unmatched EMC operator")
+        if name in {"SC", "SCN", "sc", "scn"} and not self.type3_uncolored:
+            stroke = name in {"SC", "SCN"}
+            color_space = self.stroke_color_space if stroke else self.fill_color_space
+            spec = self.stroke_color_spec if stroke else self.fill_color_spec
+            components = operands
+            expected: int | None
+            if color_space == "Pattern":
+                if (
+                    name not in {"SCN", "scn"}
+                    or not operands
+                    or not isinstance(operands[-1], PdfName)
+                ):
+                    raise PdfParseError("Pattern color requires a pattern name")
+                components = operands[:-1]
+                expected = len(components)
+            else:
+                expected = {
+                    "DeviceGray": 1,
+                    "CalGray": 1,
+                    "DeviceRGB": 3,
+                    "CalRGB": 3,
+                    "Lab": 3,
+                    "DeviceCMYK": 4,
+                    "Indexed": 1,
+                    "Separation": 1,
+                }.get(color_space)
+                if expected is None:
+                    expected = spec.channels if spec is not None else 1
+            if len(components) != expected or any(
+                type(value) not in (int, float) or parse_float(value, default=None) is None
+                for value in components
+            ):
+                raise PdfParseError("invalid color component operands")
+        handler(operands, depth)
 
     def consume_stream(
         self,
@@ -1112,7 +1151,7 @@ class TextState:
         if spec is not None and spec.kind == "Indexed":
             if len(values) != 1:
                 raise PdfParseError("Indexed color requires one component")
-            return (float(max(0, min(spec.hival, int(values[0] + 0.5)))),)
+            return (float(internal_indexed_color_index(values[0], spec.hival)),)
         if spec is not None and spec.kind == "Lab":
             limits = spec.params.get("Range", [-100, 100, -100, 100])
             if len(values) != 3 or not isinstance(limits, (list, tuple)) or len(limits) != 4:
@@ -1243,12 +1282,10 @@ class TextState:
         return self.named_value(value, allow_text=True)
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
-        self.compatibility_depth += 1
+        """Observe BX after the validated executor has entered its scope."""
 
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
-        if not self.compatibility_depth:
-            raise PdfParseError("unmatched EX operator")
-        self.compatibility_depth -= 1
+        """Observe EX after the validated executor has left its scope."""
 
     def op_d0(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = False
@@ -1269,11 +1306,10 @@ class TextState:
 
     @staticmethod
     def as_float(value: Any) -> float:
-        value_type = type(value)
-        if value_type is float:
-            return value
-        if value_type is int:
-            return float(value)
+        if type(value) in (float, int):
+            parsed = parse_float(value, default=None)
+            if parsed is not None:
+                return parsed
         raise PdfParseError("numeric operand must be a PDF number")
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:

@@ -10,7 +10,13 @@ import pytest
 
 from core_pdf_spec.s_09_fonts.cmap_decoder import CMapDecoder
 from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import CMapProgram, decode_cmap_hex_token
+from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
+    CMapBlock,
+    CMapProgram,
+    cmap_tokens,
+    decode_cmap_hex_token,
+    iter_cmap_tokens,
+)
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf_spec.s_09_fonts.dictionaries import prepare_font_program_inputs
 from core_pdf_spec.s_09_fonts.font_program import (
@@ -29,6 +35,39 @@ from core_pdf_spec.s_09_fonts.helpers import (
 from core_pdf_spec.s_09_fonts.widths import get_descendant, parse_font_widths
 
 CODESPACE = b"1 begincodespacerange <00> <ff> endcodespacerange\n"
+
+
+def internal_execute_type2(
+    program: bytes,
+    events: list[tuple[str, tuple[float, ...]]],
+    *,
+    local_subrs: tuple[bytes, ...] = (),
+    global_subrs: tuple[bytes, ...] = (),
+) -> bool:
+    current_point = False
+
+    def move(x: float, y: float) -> None:
+        nonlocal current_point
+        current_point = True
+        events.append(("move", (x, y)))
+
+    def flush() -> None:
+        nonlocal current_point
+        current_point = False
+        events.append(("flush", ()))
+
+    return execute_type2_charstring(
+        program,
+        local_subrs=local_subrs,
+        global_subrs=global_subrs,
+        move=move,
+        line=lambda *args: events.append(("line", args)),
+        curve=lambda *args: events.append(("curve", args)),
+        flush_contour=flush,
+        has_current_point=lambda: current_point,
+        seac=lambda *args: events.append(("seac", args)),
+        random_value=lambda: 0.5,
+    )
 
 
 @pytest.mark.parametrize(
@@ -67,6 +106,50 @@ def test_cmap_rejects_unresolved_and_cyclic_parent(
 def test_cmap_rejects_incomplete_tokens_and_scope(suffix: bytes) -> None:
     with pytest.raises(ValueError, match="unterminated"):
         CMapProgram.parse(CODESPACE + suffix)
+
+
+@pytest.mark.parametrize(
+    ("include_arrays", "include_words", "block_values", "direct_values"),
+    [
+        (False, False, [b"<01>", b"(A)"], [b"<01>", b"(A)", b"<02>", b"(B)"]),
+        (
+            False,
+            True,
+            [b"<01>", b"(A)", b"word", b"<<", b">>"],
+            [b"<01>", b"(A)", b"[", b"<02>", b"(B)", b"]", b"word", b"<<", b">>"],
+        ),
+        (
+            True,
+            False,
+            [b"<01>", b"(A)", b"[<02> (B)]"],
+            [b"<01>", b"(A)", b"[<02> (B)]"],
+        ),
+        (
+            True,
+            True,
+            [b"<01>", b"(A)", b"[<02> (B)]", b"word", b"<<", b">>"],
+            [b"<01>", b"(A)", b"[<02> (B)]", b"word", b"<<", b">>"],
+        ),
+    ],
+)
+def test_cmap_token_selection_preserves_array_grouping(
+    include_arrays: bool,
+    include_words: bool,
+    block_values: list[bytes],
+    direct_values: list[bytes],
+) -> None:
+    data = b"<01> (A) [<02> (B)] word << >> {<03>} % <04> ignored\n"
+    block = CMapBlock(data, tuple(iter_cmap_tokens(data, group_arrays=True)))
+    assert (
+        block.token_values(include_arrays=include_arrays, include_words=include_words)
+        == block_values
+    )
+    assert (
+        cmap_tokens(data, include_arrays=include_arrays, include_words=include_words)
+        == direct_values
+    )
+    with pytest.raises(ValueError, match="unterminated"):
+        cmap_tokens(data + b"<broken", include_arrays=include_arrays, include_words=include_words)
 
 
 def test_cmap_preserves_spec_defined_identity_and_invalid_code_consumption() -> None:
@@ -127,25 +210,113 @@ def test_cff_parses_without_font_backend_and_keeps_standard_encoding() -> None:
 
 
 def test_type2_operators_emit_exact_displacements() -> None:
-    moves: list[tuple[float, float]] = []
-    lines: list[tuple[float, float]] = []
+    events: list[tuple[str, tuple[float, ...]]] = []
+    assert internal_execute_type2(bytes([149, 159, 21, 169, 139, 5, 14]), events) is False
+    assert events == [("move", (10.0, 20.0)), ("line", (30.0, 0.0)), ("flush", ())]
+
+
+@pytest.mark.parametrize(
+    ("operator", "expected"),
+    [
+        (6, [(10.0, 0.0), (0.0, 20.0), (30.0, 0.0), (0.0, 40.0)]),
+        (7, [(0.0, 10.0), (20.0, 0.0), (0.0, 30.0), (40.0, 0.0)]),
+    ],
+    ids=["hlineto", "vlineto"],
+)
+@pytest.mark.parametrize("count", [3, 4], ids=["odd", "even"])
+def test_type2_axis_lines_alternate_and_clear_operands(
+    operator: int, expected: list[tuple[float, float]], count: int
+) -> None:
+    # Adobe Type 2 Charstring Format, 4.1: each operand alternates the drawing axis.
+    values = [10, 20, 30, 40][:count]
+    program = bytes([139, 139, 21, *(value + 139 for value in values), operator, 144, 22, 14])
+    events: list[tuple[str, tuple[float, ...]]] = []
+    assert internal_execute_type2(program, events) is False
+    assert events == [
+        ("move", (0.0, 0.0)),
+        *(("line", point) for point in expected[:count]),
+        ("move", (5.0, 0.0)),
+        ("flush", ()),
+    ]
+
+
+@pytest.mark.parametrize("operator", [6, 7])
+@pytest.mark.parametrize("prefix", [b"\x95", b"\x8b\x8b\x15"], ids=["no-point", "no-operands"])
+def test_type2_axis_lines_reject_missing_point_or_operands(operator: int, prefix: bytes) -> None:
+    with pytest.raises(ValueError, match="invalid Type 2"):
+        internal_execute_type2(prefix + bytes([operator]), [])
+
+
+@pytest.mark.parametrize("operator", [10, 29], ids=["local", "global"])
+@pytest.mark.parametrize(("count", "bias"), [(1, 107), (1240, 1131), (33900, 32768)])
+def test_type2_subroutines_share_operands_and_use_their_own_bias(
+    operator: int, count: int, bias: int
+) -> None:
+    # Adobe Type 2 Charstring Format, 4.7: calls consume only their index, sharing the stack.
+    subrs = (bytes([5, 153, 154, 11]),) + (b"\x0b",) * (count - 1)
+    local, global_ = (subrs, (b"\x00",)) if operator == 10 else ((b"\x00",), subrs)
+    program = bytes([149, 159, 21, 169, 179, 28]) + (-bias).to_bytes(2, "big", signed=True)
+    events: list[tuple[str, tuple[float, ...]]] = []
     assert (
-        execute_type2_charstring(
-            bytes([149, 159, 21, 169, 139, 5, 14]),
-            local_subrs=(),
-            global_subrs=(),
-            move=lambda x, y: moves.append((x, y)),
-            line=lambda x, y: lines.append((x, y)),
-            curve=lambda *args: None,
-            flush_contour=lambda: None,
-            has_current_point=lambda: bool(moves),
-            seac=lambda *args: None,
-            random_value=lambda: 0.5,
+        internal_execute_type2(
+            program + bytes([operator, 5, 14]), events, local_subrs=local, global_subrs=global_
         )
         is False
     )
-    assert moves == [(10.0, 20.0)]
-    assert lines == [(30.0, 0.0)]
+    assert events == [
+        ("move", (10.0, 20.0)),
+        ("line", (30.0, 40.0)),
+        ("line", (14.0, 15.0)),
+        ("flush", ()),
+    ]
+
+
+@pytest.mark.parametrize("operator", [10, 29], ids=["local", "global"])
+@pytest.mark.parametrize(
+    "operand",
+    [b"", b"\x8b", b"\xfb\x00", b"\xff\x00\x00\x80\x00"],
+    ids=["missing", "above-range", "below-range", "fractional"],
+)
+def test_type2_subroutines_reject_invalid_indices(operator: int, operand: bytes) -> None:
+    with pytest.raises(ValueError, match="invalid Type 2"):
+        internal_execute_type2(
+            operand + bytes([operator]), [], local_subrs=(b"\x0b",), global_subrs=(b"\x0b",)
+        )
+
+
+@pytest.mark.parametrize("operator", [10, 29], ids=["local", "global"])
+@pytest.mark.parametrize("depth", [10, 11])
+def test_type2_subroutine_depth_limit(operator: int, depth: int) -> None:
+    subrs = tuple(bytes([33 + index, operator, 11]) for index in range(depth - 1)) + (b"\x0b",)
+    program = bytes([32, operator, 14])
+    if depth == 10:
+        assert internal_execute_type2(program, [], local_subrs=subrs, global_subrs=subrs) is False
+    else:
+        with pytest.raises(ValueError, match="invalid Type 2"):
+            internal_execute_type2(program, [], local_subrs=subrs, global_subrs=subrs)
+
+
+@pytest.mark.parametrize("operators", [(10,), (29,), (10, 10), (10, 29), (29, 10), (29, 29)])
+def test_type2_subroutine_endchar_completes_all_enclosing_calls(operators: tuple[int, ...]) -> None:
+    # Adobe Type 2 Charstring Format, 2.3 and 4.2 note 6: endchar may terminate a subroutine.
+    subrs = {10: [b"\x00"] * len(operators), 29: [b"\x00"] * len(operators)}
+    for index, operator in enumerate(operators):
+        subrs[operator][index] = (
+            bytes([159, 6, 14])
+            if index == len(operators) - 1
+            else bytes([33 + index, operators[index + 1], 149, 6, 11])
+        )
+    events: list[tuple[str, tuple[float, ...]]] = []
+    assert (
+        internal_execute_type2(
+            bytes([139, 139, 21, 32, operators[0], 149, 139, 21, 149, 6, 14]),
+            events,
+            local_subrs=tuple(subrs[10]),
+            global_subrs=tuple(subrs[29]),
+        )
+        is False
+    )
+    assert events == [("move", (0.0, 0.0)), ("line", (20.0, 0.0)), ("flush", ())]
 
 
 def test_type1_byte_primitives_reject_truncation_and_preserve_unencrypted_charstrings() -> None:

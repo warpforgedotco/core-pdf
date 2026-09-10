@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 import pytest
@@ -85,6 +86,33 @@ def test_reader_preserves_legacy_string_line_endings() -> None:
         assert lexer.parse_object().data == b"a\nb"
     finally:
         lexer.close()
+
+
+@pytest.mark.parametrize(
+    ("prefix", "suffix"), [(b"", b""), (b"[", b"]"), (b"[% comment\n", b"]"), (b"[(x) ", b"]")]
+)
+def test_reader_keeps_real_overflow_acceptance(prefix: bytes, suffix: bytes) -> None:
+    lexer = PdfLexer(prefix + b"9" * 400 + b".0" + suffix)
+    try:
+        value = lexer.parse_object()
+        if isinstance(value, list):
+            value = value[-1]
+        assert value == math.inf
+    finally:
+        lexer.close()
+
+
+def test_reader_keeps_direct_nonfinite_float_resolution() -> None:
+    resolver = ObjectResolver(b"", {}, {})
+    try:
+        assert resolver.resolve_float(math.inf, default=None) == math.inf
+        value = resolver.resolve_float(math.nan)
+        assert value is not None
+        assert math.isnan(value)
+        with pytest.raises(OverflowError):
+            resolver.resolve_float(10**400, default=None)
+    finally:
+        resolver.close()
 
 
 @pytest.mark.parametrize(

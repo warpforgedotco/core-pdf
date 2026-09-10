@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.operations import dispatch_operations
+from core_pdf_spec.s_07_content.operations import internal_dispatch_operations
 from core_pdf_spec.s_07_content.stream_state import (
     ContentStreamFrame,
     StreamKey,
@@ -87,6 +87,9 @@ class ContentStreamExecutor:
         # caller saves, while exit can discard unfinished child scopes safely.
         state.op_q((), frame.depth)
         state.graphics_stack_floor = len(state.stack)
+        # ISO 32000-1 7.8.2: BX/EX sections are not graphics state. A child
+        # stream has its own scope; suspension retains the parent's object.
+        state.operation_state = frame.operation_state
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key
         state.sink.enter_stream(state, frame)
@@ -134,12 +137,12 @@ class ContentStreamExecutor:
                         stream_stack.pop()
                         continue
                     assert frame.lexer is not None
-                    dispatch_operations(
+                    internal_dispatch_operations(
                         frame.lexer,
-                        state.get_operation_handler,
+                        state.execute_operation,
                         frame.depth,
-                        operation_state=frame.operation_state,
                     )
+                    frame.operation_state.finish()
                     if len(state.stack) != state.graphics_stack_floor:
                         raise PdfParseError("content stream ends with unbalanced graphics saves")
                     assert frame.old_state is not None

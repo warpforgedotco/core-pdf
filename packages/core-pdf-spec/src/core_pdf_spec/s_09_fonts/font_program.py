@@ -635,9 +635,6 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
     subr_bias = internal_type2_subr_bias(len(local_subrs))
     gsubr_bias = internal_type2_subr_bias(len(global_subrs))
 
-    def clear_stack() -> None:
-        del stack[:]
-
     def push(value: float) -> None:
         if len(stack) >= internal_TYPE2_MAX_STACK or not isfinite(value):
             raise ValueError("invalid Type 2 operand stack")
@@ -655,7 +652,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
     def execute_escaped_operator(operator: int) -> None:
         match operator:
             case 0:  # dotsection -- deprecated no-op with a clearing stack contract
-                clear_stack()
+                stack.clear()
             case 3:  # and
                 second = stack.pop()
                 first = stack.pop()
@@ -731,7 +728,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                 if not has_current_point():
                     raise ValueError("Type 2 flex operator has no current point")
                 internal_execute_type2_flex(operator, stack, curve)
-                clear_stack()
+                stack.clear()
             case _:
                 raise ValueError("unsupported Type 2 escaped operator")
 
@@ -740,10 +737,8 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
     ) -> bool:
         """Interpret one Type 2 charstring, appending to the enclosing contour state.
 
-        Returns whether the caller still owns an unflushed contour: ``True`` when the
-        program simply ran out (so the caller must call ``flush_contour``), ``False``
-        when ``endchar`` already flushed it or the charstring was malformed. A
-        subroutine returning ``False`` aborts its caller the same way.
+        Return ``True`` on exhaustion or ``return``, and ``False`` when ``endchar``
+        has flushed the contour. Malformed programs raise.
 
         The branches below are keyed by raw Type 2 operator bytes; each carries the
         operator's spec name. Operands are values above 31, plus 28 (a two-byte
@@ -772,7 +767,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         if stem_count > 96:
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
-                        clear_stack()
+                        stack.clear()
                     case 4:  # vmoveto
                         if len(stack) == 1:
                             dy = stack[0]
@@ -782,43 +777,40 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         move(0.0, dy)
-                        clear_stack()
+                        stack.clear()
                     case 5:  # rlineto
                         if not has_current_point() or len(stack) < 2 or len(stack) % 2:
                             raise ValueError("invalid Type 2 charstring")
                         for i in range(0, len(stack) - 1, 2):
                             line(stack[i], stack[i + 1])
-                        clear_stack()
-                    case 6:  # hlineto -- alternates horizontal/vertical
+                        stack.clear()
+                    case 6 | 7:  # hlineto / vlineto -- alternating axes
                         if not has_current_point() or not stack:
                             raise ValueError("invalid Type 2 charstring")
-                        horizontal = True
+                        horizontal = byte == 6
                         for value in stack:
                             line(value, 0.0) if horizontal else line(0.0, value)
                             horizontal = not horizontal
-                        clear_stack()
-                    case 7:  # vlineto -- alternates vertical/horizontal
-                        if not has_current_point() or not stack:
-                            raise ValueError("invalid Type 2 charstring")
-                        vertical = True
-                        for value in stack:
-                            line(0.0, value) if vertical else line(value, 0.0)
-                            vertical = not vertical
-                        clear_stack()
+                        stack.clear()
                     case 8:  # rrcurveto
                         if not has_current_point() or len(stack) < 6 or len(stack) % 6:
                             raise ValueError("invalid Type 2 charstring")
                         for i in range(0, len(stack) - 5, 6):
                             curve(*stack[i : i + 6])
-                        clear_stack()
-                    case 10:  # callsubr (local)
+                        stack.clear()
+                    case 10 | 29:  # callsubr / callgsubr
                         if not stack:
                             raise ValueError("invalid Type 2 charstring")
-                        subr_index = pop_integer() + subr_bias
-                        if not 0 <= subr_index < len(local_subrs) or not execute(
-                            local_subrs[subr_index], depth + 1
-                        ):
+                        subrs, bias = (
+                            (local_subrs, subr_bias) if byte == 10 else (global_subrs, gsubr_bias)
+                        )
+                        subr_index = pop_integer() + bias
+                        if not 0 <= subr_index < len(subrs):
                             raise ValueError("invalid Type 2 charstring")
+                        # Type 2, 4.2 note 6 permits endchar in a subroutine;
+                        # it completes the glyph through every enclosing call.
+                        if not execute(subrs[subr_index], depth + 1):
+                            return False
                     case 11:  # return -- leave this subroutine, caller keeps going
                         return True
                     case 12:  # two-byte escaped operator
@@ -837,7 +829,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             width_resolved = True
                         elif len(arguments) not in {0, 4}:
                             raise ValueError("invalid Type 2 charstring")
-                        clear_stack()
+                        stack.clear()
                         flush_contour()
                         if arguments:
                             seac(
@@ -860,7 +852,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         if pos + mask_bytes > len(program):
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
-                        clear_stack()
+                        stack.clear()
                         pos += mask_bytes
                     case 21:  # rmoveto
                         if len(stack) == 2:
@@ -871,7 +863,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         move(dx, dy)
-                        clear_stack()
+                        stack.clear()
                     case 22:  # hmoveto
                         if len(stack) == 1:
                             dx = stack[0]
@@ -881,7 +873,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         move(dx, 0.0)
-                        clear_stack()
+                        stack.clear()
                     case 24:  # rcurveline -- curves followed by exactly one line
                         if not has_current_point() or len(stack) < 8 or (len(stack) - 2) % 6:
                             raise ValueError("invalid Type 2 charstring")
@@ -889,7 +881,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         for i in range(0, len(curve_args) - 5, 6):
                             curve(*curve_args[i : i + 6])
                         line(stack[-2], stack[-1])
-                        clear_stack()
+                        stack.clear()
                     case 25:  # rlinecurve -- lines followed by exactly one curve
                         if not has_current_point() or len(stack) < 8 or (len(stack) - 6) % 2:
                             raise ValueError("invalid Type 2 charstring")
@@ -897,7 +889,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         for i in range(0, len(line_args) - 1, 2):
                             line(line_args[i], line_args[i + 1])
                         curve(*stack[-6:])
-                        clear_stack()
+                        stack.clear()
                     case 26:  # vvcurveto
                         if (
                             not has_current_point()
@@ -916,7 +908,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                                 stack[i + 3],
                             )
                             dx1 = 0.0
-                        clear_stack()
+                        stack.clear()
                     case 27:  # hhcurveto
                         if (
                             not has_current_point()
@@ -935,15 +927,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                                 0.0,
                             )
                             dy1 = 0.0
-                        clear_stack()
-                    case 29:  # callgsubr (global)
-                        if not stack:
-                            raise ValueError("invalid Type 2 charstring")
-                        subr_index = pop_integer() + gsubr_bias
-                        if not 0 <= subr_index < len(global_subrs) or not execute(
-                            global_subrs[subr_index], depth + 1
-                        ):
-                            raise ValueError("invalid Type 2 charstring")
+                        stack.clear()
                     case 30 | 31:  # vhcurveto / hvcurveto -- alternating tangents
                         if (
                             not has_current_point()
@@ -953,7 +937,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             raise ValueError("invalid Type 2 charstring")
                         horizontal = byte == 31
                         args = list(stack)
-                        clear_stack()
+                        stack.clear()
                         while len(args) >= 4:
                             if horizontal:  # this segment starts horizontal
                                 dx1 = args.pop(0)

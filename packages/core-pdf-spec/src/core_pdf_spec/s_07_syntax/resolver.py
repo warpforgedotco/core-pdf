@@ -98,8 +98,9 @@ class ObjectResolver:
         if type(ref) is not PdfReference:
             return ref
 
+        cache_key = key_for(ref.object_number, ref.generation_number)
         with self.lock:
-            cached = self.internal_cached_object(ref)
+            cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
                 return cached
 
@@ -107,7 +108,6 @@ class ObjectResolver:
         if resolving is None:
             resolving = set()
             self.thread_state.resolving = resolving
-        cache_key = key_for(ref.object_number, ref.generation_number)
         if cache_key in resolving:
             return ref
 
@@ -118,10 +118,10 @@ class ObjectResolver:
             resolving.remove(cache_key)
 
         with self.lock:
-            cached = self.internal_cached_object(ref)
+            cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
                 return cached
-            self.internal_store_object(ref, cast(CachedPdfObject, resolved))
+            self.objects[cache_key] = cast(CachedPdfObject, resolved)
         return resolved
 
     def deep_resolve(
@@ -137,20 +137,7 @@ class ObjectResolver:
             return value
 
         if t is PdfReference:
-            # Walk the chain iteratively with its own seen set, the way
-            # resolve_str does. Recursing through deep_resolve instead never
-            # recorded the reference keys -- `seen` is only populated for
-            # containers below -- so a cyclic chain (1 0 R -> 2 0 R -> 1 0 R)
-            # recursed until RecursionError. A cycle yields the reference
-            # unresolved, matching what resolve() itself returns for one.
-            res: object = value
-            chain: set[int] = set()
-            while type(res) is PdfReference:
-                reference_key = key_for(res.object_number, res.generation_number)
-                if reference_key in chain:
-                    return res
-                chain.add(reference_key)
-                res = self.resolve(res)
+            res = self.internal_resolve_chain(value)
             if type(res) in (dict, list, PdfStream, tuple):
                 return self.deep_resolve(res, seen, internal_memo)
             return res
@@ -241,12 +228,6 @@ class ObjectResolver:
         return result
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
-        if type(value) is int:
-            return float(value)
-        if type(value) is float:
-            return value
-        if type(value) is bool:
-            return default
         return parse_float(self.resolve(value), default=default)
 
     def resolve_name(self, value: object) -> str | None:
@@ -265,26 +246,23 @@ class ObjectResolver:
         # ISO 32000-2:2020, 12.3.2.2 allow a GoTo destination to be an array
         # beginning with an indirect page reference. Deep-resolving such an
         # array merely to decide whether it is a string walks the page graph.
-        resolved = value
-        seen: set[int] = set()
-        while type(resolved) is PdfReference:
-            reference = resolved
-            reference_key = key_for(reference.object_number, reference.generation_number)
-            if reference_key in seen:
-                return None
-            seen.add(reference_key)
-            resolved = self.resolve(reference)
+        resolved = self.internal_resolve_chain(value)
         if isinstance(resolved, PdfString):
             return self.decode_text(resolved.data)
         if isinstance(resolved, bytes):
             return self.decode_text(resolved)
         return resolved if isinstance(resolved, str) else None
 
-    def internal_cached_object(self, ref: PdfReference) -> object:
-        return self.objects.get(key_for(ref.object_number, ref.generation_number), MISSING)
-
-    def internal_store_object(self, ref: PdfReference, resolved: CachedPdfObject) -> None:
-        self.objects[key_for(ref.object_number, ref.generation_number)] = resolved
+    def internal_resolve_chain(self, value: object) -> object:
+        """Resolve scalar links, leaving a repeated reference or a container intact."""
+        seen: set[int] = set()
+        while type(value) is PdfReference:
+            reference_key = key_for(value.object_number, value.generation_number)
+            if reference_key in seen:
+                return value
+            seen.add(reference_key)
+            value = self.resolve(value)
+        return value
 
     def internal_resolve_reference(self, ref: PdfReference) -> object:
         obj_num = ref.object_number
