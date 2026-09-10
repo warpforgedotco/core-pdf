@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
+from core_pdf._vendor.pypdf_encodings.symbol import _symbol_encoding
+from core_pdf._vendor.pypdf_encodings.zapfding import _zapfding_encoding
 from core_pdf.impl._impl.fonts.helpers import build_decode_table
 from core_pdf.impl._impl.model.text import is_neutral_character, is_rtl_character
 from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
@@ -51,6 +53,10 @@ def internal_orientation(matrix: Sequence[float]) -> int:
 
 def internal_legacy_base_table(name: str) -> list[str]:
     """Build the encoding table expected by the legacy text projections."""
+    if name == "Symbol":
+        return _symbol_encoding.copy()
+    if name == "ZapfDingbats":
+        return _zapfding_encoding.copy()
     table = list(build_decode_table(name, ()))
     if name == "StandardEncoding":
         table = [value or chr(code) for code, value in enumerate(table)]

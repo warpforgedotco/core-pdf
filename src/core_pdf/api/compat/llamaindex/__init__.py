@@ -6,19 +6,34 @@ import contextlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from functools import partial
 from os import PathLike
 from pathlib import Path
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl._impl.document.page_labels import format_page_label
+from core_pdf.impl._impl.document.recovery.text_strings import parse_text_string
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
+from core_pdf.impl.types import PdfString
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
 
 PdfInput: TypeAlias = Any
+
+
+def internal_page_label_prefix(value: object) -> str | None:
+    """Preserve pypdf's PDFDocEncoding policy for non-UTF-16 text strings."""
+    data = value.data if isinstance(value, PdfString) else value
+    if isinstance(data, (bytes, memoryview)) and not bytes(data).startswith(
+        (b"\xfe\xff", b"\xff\xfe")
+    ):
+        return "".join(PDFDOC_ENCODING_TABLE[code] for code in data)
+    return parse_text_string(value)
 
 
 class MetadataMode(StrEnum):
@@ -141,13 +156,22 @@ def load_data(
             for stream in page.content_streams:
                 with contextlib.suppress(FilterParseError):
                     validate_inline_images(stream.data)
-        labels = pdf.build_page_labels(page_count=len(pages)) if pages else None
+        labels = (
+            pdf.build_page_labels(
+                page_count=len(pages),
+                format_label=partial(format_page_label, decode_prefix=internal_page_label_prefix),
+            )
+            if pages
+            else None
+        )
         return [
             Document(
                 OperatorTextProjection(page).extract_text(),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
-                    "page_label": (labels[page_number - 1] if labels else None) or str(page_number),
+                    "page_label": labels[page_number - 1]
+                    if labels is not None
+                    else str(page_number),
                     "file_name": source_path.name,
                 },
             )

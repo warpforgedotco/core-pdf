@@ -3,21 +3,31 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.spec.s_07_security.pdf_mac import (
     validate_pdf_mac_extension,
     validate_pdf_mac_if_present,
 )
-from core_pdf.impl.spec.s_07_security.standard import create_standard_security_handler
+from core_pdf.impl.spec.s_07_security.standard import (
+    create_standard_security_handler,
+    internal_StandardSecurityHandler,
+)
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf.impl.types import PdfByteBuffer, PdfReference
 
 
 def initialize_document_security(
-    data: PdfByteBuffer, trailer: PdfDict, resolver: ObjectResolver, password: str
+    data: PdfByteBuffer,
+    trailer: PdfDict,
+    resolver: ObjectResolver,
+    password: str,
+    *,
+    handler_factory: Callable[
+        [Sequence[object], PdfDict, str], internal_StandardSecurityHandler
+    ] = create_standard_security_handler,
 ) -> Decipher | None:
     encrypt_ref = trailer.get("Encrypt")
     if encrypt_ref is None:
@@ -38,7 +48,7 @@ def initialize_document_security(
         raise PdfUnsupportedError("Invalid trailer ID array")
     docid_list: Sequence[object] = docid
 
-    security_handler = create_standard_security_handler(docid_list, encrypt_dict, password)
+    security_handler = handler_factory(docid_list, encrypt_dict, password)
     # ISO/TS 32004:2024 integrity validation authenticates the complete
     # serialized file. Perform it before installing the object decipher so
     # no decrypted string, stream, catalog, or page can be exposed first.

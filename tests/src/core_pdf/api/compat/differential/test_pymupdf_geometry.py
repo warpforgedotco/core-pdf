@@ -16,6 +16,23 @@ internal_PDFS = tuple(
 )
 
 
+@pytest.mark.parametrize("height", [841.89, 841.88999, 700.12345])
+def test_page_box_translation_quantizes_coordinates_before_subtracting(height: float) -> None:
+    with real_pymupdf.open() as document:
+        page = document.new_page(width=595.28, height=height)
+        for name in ("MediaBox", "CropBox", "TrimBox", "BleedBox", "ArtBox"):
+            document.xref_set_key(page.xref, name, f"[0 0 595.28 {height}]")
+        source = document.tobytes()
+    with (
+        real_pymupdf.open(stream=source) as expected,
+        compat_pymupdf.open(stream=source) as actual,
+    ):
+        for name in ("mediabox", "cropbox", "trimbox", "bleedbox", "artbox", "rect"):
+            assert tuple(getattr(actual[0], name)) == internal_geometry_expected(
+                tuple(getattr(expected[0], name))
+            )
+
+
 def internal_geometry_expected(value: Any) -> Any:
     if isinstance(value, float):
         return pytest.approx(value, rel=1e-6, abs=1e-5)

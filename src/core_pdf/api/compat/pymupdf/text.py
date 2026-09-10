@@ -4,18 +4,33 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from itertools import groupby
-from typing import Any
+from typing import Any, cast
 
+from core_pdf._vendor.fontTools.pens.basePen import NullPen
 from core_pdf.api.compat._shared import BBox, float32
+from core_pdf.api.compat.pymupdf.colors import color_int
 from core_pdf.api.compat.pymupdf.geometry import Matrix, Point, Quad, Rect
+from core_pdf.api.compat.pymupdf.glyphs import capture_glyphs, internal_LIGATURES
 from core_pdf.api.compat.pymupdf.images import capture_images
+from core_pdf.api.compat.pymupdf.projection import (
+    appearance_glyphs,
+    glyph_group_origin,
+    glyph_size_basis,
+)
 from core_pdf.api.document import PdfPage
+from core_pdf.impl._impl.capture.program import PageProgram
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedInlineImage
+from core_pdf.impl._impl.document.structure import PageStructure
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
+from core_pdf.impl._impl.fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl._impl.fonts.font_program_type1 import Type1FontProgram
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl.spec.s_07_content.image_capture import unit_square_placement
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
 # Metrics of the reference reader's standard-font substitutes, in em units.
@@ -114,8 +129,21 @@ internal_SYMBOL_WIDTHS = {
 # fmt: on
 
 
+def internal_list_marker(value: str) -> bool:
+    """Recognize bullet and list-number starts when testing paragraph indentation."""
+    if value in "*·•‣⁃⁌⁍∙◉○●◘◦☙☚☛☜☝☞☟♥❥❧⦾⦿�0123456789":
+        return True
+    code = ord(value)
+    return (
+        0x2660 <= code <= 0x2667
+        or 0x1F446 <= code <= 0x1F449
+        or 0x1F597 <= code <= 0x1F5A3
+        or 0x1FBC1 <= code <= 0x1FBC3
+    )
+
+
 def internal_word_separator(value: str) -> bool:
-    return ord(value) <= 32 or value == "\xa0"
+    return ord(value) <= 32 or value == "\xa0" or 0x202A <= ord(value) <= 0x202E
 
 
 def internal_union(boxes: list[BBox]) -> BBox:
@@ -140,42 +168,93 @@ class internal_Style:
     bidi: int = 0
 
 
-def internal_style(glyph: GlyphObservation) -> internal_Style:
-    font = (glyph.font_name or "").split("+", 1)[-1]
+def internal_font_flags(glyph: GlyphObservation) -> int:
+    font = glyph.font_name or ""
     decoder = glyph.font_decoder
     descriptor = decoder.font.get("FontDescriptor", {}) if isinstance(decoder, FontDecoder) else {}
     descriptor_flags = int(descriptor.get("Flags", 0)) if isinstance(descriptor, dict) else 0
     lower = font.lower()
     bold = "bold" in lower or bool(descriptor_flags & 262144)
-    italic = "italic" in lower or "oblique" in lower or bool(descriptor_flags & 64)
+    font_file = descriptor.get("FontFile") if isinstance(descriptor, dict) else None
+    if not bold and isinstance(font_file, PdfStream):
+        weight = re.search(rb"/Weight\s*\(([^)]*)\)", font_file.data)
+        if weight is not None:
+            bold = weight[1] in (b"Bold", b"Black")
+    italic_angle = descriptor.get("ItalicAngle", 0) if isinstance(descriptor, dict) else 0
+    italic = (
+        "italic" in lower
+        or "oblique" in lower
+        or bool(descriptor_flags & 64)
+        or (isinstance(italic_angle, (int, float)) and italic_angle != 0)
+    )
     mono = "courier" in lower or bool(descriptor_flags & 1)
     serif = "times" in lower or bool(descriptor_flags & 2)
+    if isinstance(decoder, FontDecoder) and decoder.font_program is None and "courier" in lower:
+        serif = False
     if isinstance(decoder, FontDecoder) and decoder.font_program is not None:
         serif = True
-    font_flags = (
-        (16 if bold else 0) | (2 if italic else 0) | (8 if mono else 0) | (4 if serif else 0)
-    )
+        program = decoder.font_program
+        if isinstance(program, TrueTypeFontProgram):
+            if "post" in program.font:
+                post = program.font.getTableData("post")
+                if len(post) >= 16:
+                    mono = int.from_bytes(post[12:16], "big") != 0
+            if "OS/2" in program.font:
+                metrics = program.font.getTableData("OS/2")
+                if len(metrics) >= 32:
+                    serif = metrics[30] < 8
+    return (16 if bold else 0) | (2 if italic else 0) | (8 if mono else 0) | (4 if serif else 0)
+
+
+def internal_outline_advance(decoder: FontDecoder, character: str) -> float:
+    """Return an encoded outline's advance in em units for a degenerate quad."""
+    program = decoder.font_program
+    if isinstance(program, TrueTypeFontProgram):
+        gid = program.unicode_cmap.get(ord(character), 0)
+        if not gid:
+            return 0.0
+        name = program.font.getGlyphName(gid)
+        return float(program.font["hmtx"].metrics[name][0]) / program.units_per_em
+    if isinstance(program, Type1FontProgram):
+        type1_name = next(
+            (name for name in program.glyph_names if glyph_name_to_unicode(name) == character),
+            None,
+        )
+        if type1_name is None:
+            return 0.0
+        charstring = program.charstrings[type1_name]
+        try:
+            charstring.draw(NullPen())
+        except (ValueError, TypeError, IndexError, KeyError):
+            return 0.0
+        return float(charstring.width) * program.font_matrix[0]
+    for code, name in enumerate(decoder.simple_encoding_glyph_names):
+        if glyph_name_to_unicode(name) == character:
+            return decoder.glyph_width(code) * 0.001
+    return 0.0
+
+
+def internal_style(glyph: GlyphObservation, font_flags: int) -> internal_Style:
+    # The reader stores the complete PDF font name in a 32-byte buffer before
+    # removing the subset prefix for structured-text output.
+    font = (glyph.font_name or "").encode("utf-8")[:31].decode("utf-8", errors="replace")
+    if len(font) > 7 and font[6] == "+":
+        font = font[7:]
     mode = glyph.text_render_mode % 4
-    char_flags = (8 if bold else 0) | (16 if mode in (0, 2) else 0) | (32 if mode == 1 else 0)
+    char_flags = (
+        (8 if font_flags & 16 else 0)
+        | (16 if mode in (0, 2) else 0)
+        | (32 if mode == 1 else 0)
+        | (128 if glyph.unicode_source == "identity" else 0)
+    )
     components = (glyph.stroke_color if mode == 1 else glyph.fill) or (0.0,)
-    rgb: tuple[float, ...]
-    if len(components) == 1:
-        rgb = components * 3
-    elif len(components) == 4:
-        cyan, magenta, yellow, black = components
-        # Keep native color management; the default press profile currently
-        # differs from MuPDF's, so DeviceCMYK span colors are not yet identical.
-        rgb = tuple(value / 255 for value in cmyk_floats_to_srgb(cyan, magenta, yellow, black))
-    else:
-        rgb = components[:3]
-    color = 0
-    for component in rgb:
-        color = (color << 8) | round(max(0, min(1, component)) * 255)
+    color = color_int(components, glyph.stroke_source if mode == 1 else glyph.fill_source)
     opacity = glyph.stroke_opacity if mode == 1 else glyph.fill_opacity
     alpha = round(max(0, min(1, 1.0 if opacity is None else opacity)) * 255)
     if mode == 3:
         alpha = 0
     ascender, descender = internal_metrics(glyph, normalize=False)
+    decoder = glyph.font_decoder
     return internal_Style(
         font,
         font_flags,
@@ -200,6 +279,7 @@ class internal_Character:
     synthetic: bool = False
     seqno: int = 0
     quad: tuple[tuple[float, float], ...] | None = None
+    word_bbox: BBox | None = None
 
 
 @dataclass
@@ -397,7 +477,8 @@ class TextProjection:
             sorted(self.blocks, key=lambda b: (b[0].bbox[3], b[0].bbox[0])) if sort else self.blocks
         )
         return "".join(
-            "".join(char.text for char in chars) + "\n"
+            "".join(char.text for char in chars)
+            + ("\n" if chars[-1].text not in ("\x00", "\n") else "")
             for block in blocks
             for line in block
             if (chars := self.internal_characters(line, include_degenerate=True))
@@ -406,29 +487,50 @@ class TextProjection:
     def words(self, *, sort: bool = False, delimiters: str = "") -> list[tuple[Any, ...]]:
         output: list[tuple[Any, ...]] = []
         for block_index, block in enumerate(self.blocks):
+            word_bbox: BBox | None = None
             for line_index, line in enumerate(block):
                 pending: list[internal_Character] = []
                 index = 0
                 for char in [*self.internal_characters(line), None]:
-                    if (
+                    if char is not None and char.text == "\u200d" and not pending:
+                        continue
+                    is_word_character = (
                         char is not None
                         and not internal_word_separator(char.text)
                         and char.text not in delimiters
-                    ):
-                        pending.append(char)
-                        continue
-                    if pending:
-                        output.append(
-                            (
-                                *internal_union([c.bbox for c in pending]),
-                                "".join(c.text for c in pending),
-                                block_index,
-                                line_index,
-                                index,
+                    )
+                    same_direction = (
+                        char is None
+                        or not pending
+                        or (0x590 <= ord(char.text) <= 0x900)
+                        == (0x590 <= ord(pending[-1].text) <= 0x900)
+                    )
+                    if pending and not (is_word_character and same_direction):
+                        assert word_bbox is not None
+                        bbox = word_bbox
+                        if bbox[0] < bbox[2] and bbox[1] < bbox[3]:
+                            output.append(
+                                (
+                                    *bbox,
+                                    "".join(c.text for c in pending),
+                                    block_index,
+                                    line_index,
+                                    index,
+                                )
                             )
-                        )
+                            index += 1
+                            word_bbox = None
+                        # A zero-area word has no output record, but its bounds
+                        # remain until a later word can be emitted, even across
+                        # line breaks within the same block.
                         pending = []
-                        index += 1
+                    if is_word_character:
+                        assert char is not None
+                        pending.append(char)
+                        bounds = char.word_bbox or char.bbox
+                        word_bbox = (
+                            internal_union([word_bbox, bounds]) if word_bbox is not None else bounds
+                        )
         if sort:
             output.sort(key=lambda word: (word[3], word[0]))
         return output
@@ -463,7 +565,9 @@ class TextProjection:
                 events.append((seqno, (*image["bbox"], description, 0, 1)))
             records = [
                 (*record[:5], number, record[6])
-                for number, (_, record) in enumerate(sorted(events, key=lambda event: event[0]))
+                for number, (_, record) in enumerate(
+                    sorted(events, key=lambda event: (event[0], event[1][6] == 0))
+                )
             ]
         return sorted(records, key=lambda block: (block[3], block[0])) if sort else records
 
@@ -478,7 +582,19 @@ class TextProjection:
                 if not characters:
                     continue
                 spans: list[dict[str, Any]] = []
-                for _, members in groupby(characters, key=lambda char: (char.style, char.size)):
+
+                def span_key(
+                    char: internal_Character, baseline: internal_Character = characters[0]
+                ) -> tuple[internal_Style | None, float, int]:
+                    superscript = int(
+                        char.style is not None
+                        and char.style.wmode == 0
+                        and baseline.direction == (1.0, 0.0)
+                        and char.origin[1] < baseline.origin[1] - char.size * 0.1
+                    )
+                    return char.style, char.size, superscript
+
+                for (_, _, superscript), members in groupby(characters, key=span_key):
                     chars = list(members)
                     first = chars[0]
                     style = first.style
@@ -486,7 +602,7 @@ class TextProjection:
                         continue
                     span: dict[str, Any] = {
                         "size": first.size,
-                        "flags": style.flags,
+                        "flags": style.flags | superscript,
                         "bidi": style.bidi,
                         "char_flags": style.char_flags,
                         "font": style.font,
@@ -539,7 +655,10 @@ class TextProjection:
                 (self.blocks[block["number"]][0].characters[0].seqno, block) for block in blocks
             ]
             events.extend((seqno, dict(image)) for seqno, image in self.images)
-            blocks = [block for _, block in sorted(events, key=lambda event: event[0])]
+            blocks = [
+                block
+                for _, block in sorted(events, key=lambda event: (event[0], event[1]["type"] == 0))
+            ]
             for number, payload_block in enumerate(blocks):
                 payload_block["number"] = number
         if sort:
@@ -552,14 +671,44 @@ def internal_metrics(glyph: GlyphObservation, *, normalize: bool = True) -> tupl
     if not isinstance(decoder, FontDecoder):
         return float32(0.8), float32(-0.2)
     name = (glyph.font_name or "").split("+", 1)[-1]
-    if decoder.font_program is None and name in internal_STANDARD_METRICS:
+    if (
+        decoder.font_program is None
+        and name in internal_STANDARD_METRICS
+        and not isinstance(decoder.font.get("FontDescriptor"), dict)
+    ):
         ascender, descender = internal_STANDARD_METRICS[name]
     else:
         ascender, descender = decoder.ascent / 1000, decoder.descent / 1000
     height = ascender - descender
+    if height == 0:
+        ascender, descender, height = 0.8, -0.2, 1.0
     if normalize and 0 < height < 1:
         ascender, descender = ascender / height, descender / height
     return float32(ascender), float32(descender)
+
+
+def internal_glyph_size(glyph: GlyphObservation, unit: float, matrix: Matrix | None) -> float:
+    size = abs(float32(glyph.effective_font_height * unit))
+    glyph_matrix = glyph.glyph_transform
+    if glyph_matrix is not None:
+        a, b, c, d = (float32(value * 1000 * unit) for value in glyph_matrix[:4])
+        reader_basis = glyph_size_basis(glyph, unit)
+        if reader_basis is not None:
+            a, b, c, d = reader_basis
+        if matrix is not None:
+            ma, mb, mc, md = (float32(value) for value in tuple(matrix)[:4])
+            a, b, c, d = (
+                float32(ma * a + mc * b),
+                float32(mb * a + md * b),
+                float32(ma * c + mc * d),
+                float32(mb * c + md * d),
+            )
+        # Retain the reference's fused multiply/subtract rounding, including
+        # the small nonzero determinant of nearly singular transformations.
+        return float32(math.sqrt(abs(float32(a * d - float32(b * c)))))
+    if matrix is not None:
+        size = float32(size * math.sqrt(abs(matrix.a * matrix.d - matrix.b * matrix.c)))
+    return size
 
 
 # The reader's whitespace set excludes C0/C1 controls used as unresolved CIDs,
@@ -569,51 +718,123 @@ internal_WHITESPACE = (
     "\u2007\u2008\u2009\u200a\u202f\u205f\u3000"
 )
 
-internal_LIGATURES = {
-    "ﬀ": "ff",
-    "ﬁ": "fi",
-    "ﬂ": "fl",
-    "ﬃ": "ffi",
-    "ﬄ": "ffl",
-    "ﬅ": "st",
-    "ﬆ": "st",
-}
+
+def internal_image_replacement_text(
+    page: PdfPage,
+    crop: Rect,
+    unit: float,
+    matrix: Matrix | None,
+    *,
+    program: PageProgram | None = None,
+) -> list[internal_Character]:
+    """Keep image-only ActualText as unstyled, zero-advance text observations."""
+    program = program if program is not None else page.get_page_program()
+    images: list[CapturedDrawing | CapturedInlineImage] = [
+        *(drawing for drawing in program.drawings if drawing.kind == "image"),
+        *program.inline_images,
+    ]
+    grouped: dict[int, list[CapturedDrawing | CapturedInlineImage]] = {}
+    for image in images:
+        if image.marked_content is not None:
+            grouped.setdefault(id(image.marked_content), []).append(image)
+    result = []
+    structure: PageStructure | None = None
+    structure_checked = False
+    for group in grouped.values():
+        image = max(group, key=lambda item: item.seqno)
+        context = image.marked_content
+        if context is None or context.run is not None or context.last_image_sequence != image.seqno:
+            continue
+        text = context.actual_text
+        if text is None and context.mcid is not None:
+            if not structure_checked:
+                structure_checked = True
+                try:
+                    structure = page.structure
+                except ValueError:
+                    # Tagged-image replacement is optional when a damaged or
+                    # absent parent tree cannot associate the MCID with text.
+                    structure = None
+            if structure is not None and 0 <= context.mcid < len(structure):
+                element = structure[context.mcid]
+                text = element.actual_text if element is not None else None
+        if not text:
+            continue
+        points: list[tuple[float, float]] = []
+        for item in group:
+            quad: tuple[tuple[float, float], ...] | None
+            if isinstance(item, CapturedInlineImage):
+                _, quad = unit_square_placement(item.ctm)
+            else:
+                quad = dict(item.items).get("quad")
+            if quad is not None:
+                points.extend(quad)
+        if not points:
+            continue
+        x0, y0, y1 = (
+            min(point[0] for point in points),
+            min(point[1] for point in points),
+            max(point[1] for point in points),
+        )
+        origin = Point(float32((x0 - crop.x0) * unit), float32((crop.y1 - y0) * unit))
+        vertical = Point(0, float32((y0 - y1) * unit))
+        if matrix is not None:
+            origin = origin * matrix
+            vertical = Point(
+                matrix.a * vertical.x + matrix.c * vertical.y,
+                matrix.b * vertical.x + matrix.d * vertical.y,
+            )
+        edges = [
+            Point(
+                float32(origin.x + float32(vertical.x * metric)),
+                float32(origin.y + float32(vertical.y * metric)),
+            )
+            for metric in (float32(1.075), float32(-0.299))
+        ]
+        bbox = (
+            min(point.x for point in edges),
+            min(point.y for point in edges),
+            max(point.x for point in edges),
+            max(point.y for point in edges),
+        )
+        result.append(
+            internal_Character(
+                text,
+                bbox,
+                (origin.x, origin.y),
+                (origin.x, origin.y),
+                0,
+                (1, 0),
+                seqno=image.seqno + 1,
+            )
+        )
+    return result
 
 
-def internal_capture_glyphs(glyphs: Iterable[GlyphObservation]) -> Iterator[GlyphObservation]:
-    # Native capture may split one PDF glyph into multiple Unicode observations.
-    # Rejoin only observations carrying the same source cluster, never adjacent letters.
-    for _, members in groupby(glyphs, key=lambda g: g.cluster_key or id(g)):
-        cluster = list(members)
-        first, last = cluster[0], cluster[-1]
-        value = "".join(g.text for g in cluster)
-        decoder = first.font_decoder
-        if isinstance(decoder, FontDecoder):
-            raw = None
-            if decoder.to_unicode is not None:
-                raw = decoder.to_unicode.mappings.get(first.code_bytes)
-            code = first.char_code
-            if (
-                raw is None
-                and code is not None
-                and 0 <= code < len(decoder.simple_encoding_glyph_names)
-            ):
-                raw = glyph_name_to_unicode(decoder.simple_encoding_glyph_names[code])
-            if raw is not None and raw in internal_LIGATURES:
-                value = raw
-            if (
-                len(value) == 1
-                and (ord(value) < 8 or 14 <= ord(value) < 32 or 127 <= ord(value) < 160)
-                and code is not None
-                and 0 <= code < len(decoder.simple_encoding_glyph_names)
-            ):
-                fallback = glyph_name_to_unicode(decoder.simple_encoding_glyph_names[code])
-                if fallback:
-                    value = fallback
-        baseline = first.baseline
-        if baseline is not None and last.baseline is not None:
-            baseline = (*baseline[:2], *last.baseline[2:])
-        yield replace(first, text=value, baseline=baseline)
+def internal_text_events(
+    page: PdfPage,
+    crop: Rect,
+    unit: float,
+    matrix: Matrix | None,
+    *,
+    program: PageProgram | None = None,
+) -> Iterator[GlyphObservation | internal_Character]:
+    program = program if program is not None else page.get_page_program()
+    replacements = iter(
+        sorted(
+            internal_image_replacement_text(page, crop, unit, matrix, program=program),
+            key=lambda char: char.seqno,
+        )
+    )
+    pending = next(replacements, None)
+    for glyph in capture_glyphs(page, appearance_glyphs(page, program)):
+        while pending is not None and pending.seqno <= glyph.seqno:
+            yield pending
+            pending = next(replacements, None)
+        yield glyph
+    if pending is not None:
+        yield pending
+        yield from replacements
 
 
 def capture_text(
@@ -630,11 +851,22 @@ def capture_text(
     previous_raw_end: tuple[float, float] | None = None
     previous_end: tuple[float, float] | None = None
     previous_group: object = None
+    origin_correction = (0.0, 0.0)
+    previous_origin_key: object = None
     previous_matrix_id: object = None
     previous_line_origin: tuple[float, float] | None = None
     reader_line_origin: tuple[float, float] | None = None
     previous: internal_Character | None = None
-    for glyph in internal_capture_glyphs(page.get_page_program().glyphs):
+    font_flags_by_decoder: dict[tuple[int, str | None], int] = {}
+    for glyph in internal_text_events(page, crop, unit, matrix):
+        if isinstance(glyph, internal_Character):
+            if not projection.blocks or any(
+                seqno == glyph.seqno - 1 for seqno, _ in projection.images
+            ):
+                projection.blocks.append([])
+            projection.blocks[-1].append(internal_Line([glyph]))
+            previous = None
+            continue
         if not glyph.text or glyph.baseline is None or not glyph.font_size:
             continue
         x, y, ex, ey = glyph.baseline
@@ -669,6 +901,7 @@ def capture_text(
             provenance.get("text_matrix_id"),
             provenance.get("line_matrix_origin"),
             provenance.get("text_matrix"),
+            provenance.get("matrix_trace"),
         )
         if group == previous_group and previous_raw_end is not None and previous_end is not None:
             cursor_x = float32(previous_end[0] + float32(x - previous_raw_end[0]))
@@ -681,6 +914,21 @@ def capture_text(
                 cursor_x, cursor_y = float32(x), float32(y)
         px = float32(float32(cursor_x - float32(crop.x0)) * unit)
         py = float32(float32(float32(crop.y1) - cursor_y) * unit)
+        origin_key = (
+            glyph.text_object_id,
+            provenance.get("text_matrix_id"),
+            provenance.get("line_matrix_origin"),
+            provenance.get("matrix_trace"),
+        )
+        if origin_key != previous_origin_key:
+            projected_origin = glyph_group_origin(glyph, crop, unit, line_origin=reader_line_origin)
+            origin_correction = (
+                (projected_origin[0] - px, projected_origin[1] - py)
+                if projected_origin is not None
+                else (0.0, 0.0)
+            )
+            previous_origin_key = origin_key
+        px, py = float32(px + origin_correction[0]), float32(py + origin_correction[1])
         # PDF widths use thousandths of an em. Quantize before advancing the reader cursor.
         scale = glyph.effective_font_size
         distance = math.hypot(ex - x, ey - y)
@@ -708,6 +956,26 @@ def capture_text(
                 if decoder.is_vertical
                 else decoder.glyph_width(width_code)
             )
+            if (
+                width == 0
+                and not decoder.is_cid_font
+                and decoder.font_program is None
+                and (metrics := FONT_DATA.get(glyph.font_name or "")) is not None
+            ):
+                # Zero-width entries use the substitute's outline advance for the
+                # box, while the PDF cursor keeps the declared width.
+                name = decoder.simple_encoding_glyph_names[width_code]
+                text = glyph_name_to_unicode(name)
+                width = float(metrics["widths"].get(text or glyph.text, 0))
+        if (
+            isinstance(decoder, FontDecoder)
+            and not decoder.is_cid_font
+            and decoder.font_program is None
+            and "courier" in (glyph.font_name or "").lower()
+            and "Widths" not in decoder.font
+        ):
+            cursor_width += 600 - width
+            width = 600
         builtin_widths = internal_SYMBOL_WIDTHS.get(glyph.font_name or "")
         if (
             builtin_widths is not None
@@ -719,6 +987,9 @@ def capture_text(
         ):
             cursor_width += builtin_widths[glyph.char_code] - width
             width = builtin_widths[glyph.char_code]
+        rounded_width = math.floor(width + 0.5)
+        cursor_width += rounded_width - width
+        width = rounded_width
         advance = float32(float32(scale) * float32(width * float32(0.001)))
         end = (
             float32(px + float32(advance * dx * unit)),
@@ -728,12 +999,31 @@ def capture_text(
         # cursor rounding in PDF space before crop translation and the Y flip.
         spacing = float32(scale * (cursor_width - width) * 0.001)
         cursor_advance = float32(float32(float32(scale) * float32(width / 1000)) + spacing)
+        text_basis = provenance.get("text_matrix")
+        horizontal_scale = provenance.get("horizontal_scale")
+        if (
+            isinstance(text_basis, tuple)
+            and len(text_basis) == 4
+            and all(isinstance(item, (int, float)) for item in text_basis)
+            and isinstance(horizontal_scale, (int, float))
+            and isinstance(decoder, FontDecoder)
+            and not decoder.is_vertical
+        ):
+            basis_x, basis_y = float(cast(float, text_basis[0])), float(cast(float, text_basis[1]))
+            basis_length = math.hypot(basis_x, basis_y)
+            unscaled_spacing = float32(abs(glyph.font_size) * (cursor_width - width) * 0.001)
+            text_advance = float32(
+                float32(float32(abs(glyph.font_size)) * float32(width / 1000)) + unscaled_spacing
+            )
+            text_advance = float32(text_advance * float32(abs(horizontal_scale) * 0.01))
+            cursor_advance = float32(text_advance * float32(basis_length))
         previous_raw_end = (ex, ey)
         previous_end = (
             float32(cursor_x + float32(cursor_advance * dx)),
             float32(cursor_y + float32(cursor_advance * dy)),
         )
         previous_group = group
+        size = internal_glyph_size(glyph, unit, matrix)
         ascender, descender = internal_metrics(glyph)
         if glyph_matrix is None:
             vx = float32(-dy * glyph.effective_font_height * unit)
@@ -751,6 +1041,15 @@ def capture_text(
             dx, dy = (
                 (tx / direction_length, -ty / direction_length) if direction_length else (1.0, 0.0)
             )
+        raw_ascender, raw_descender = internal_metrics(glyph, normalize=False)
+        raw_height = raw_ascender - raw_descender
+        if 0 < raw_height < 1 and isinstance(decoder, FontDecoder) and not decoder.is_vertical:
+            # Correct short font metrics to the reported text size in the line's
+            # coordinate system, retaining any shear along its baseline.
+            parallel = (vx * dx - vy * dy) * raw_height
+            orientation = -1 if dx == 1 and vy > 0 else 1
+            vx = float32(parallel * dx - dy * size * orientation)
+            vy = float32(-parallel * dy - dx * size * orientation)
         corners = [
             (float32(ox + float32(vx * metric)), float32(oy + float32(vy * metric)))
             for ox, oy in ((px, py), end)
@@ -769,29 +1068,59 @@ def capture_text(
             and bbox[1] < clip_box.y1
         ):
             continue
-        size = abs(float32(glyph.effective_font_height * unit))
-        if glyph_matrix is not None:
-            a, b, c, d = (float32(value * 1000 * unit) for value in glyph_matrix[:4])
-            if matrix is not None:
-                ma, mb, mc, md = (float32(value) for value in tuple(matrix)[:4])
-                a, b, c, d = (
-                    float32(ma * a + mc * b),
-                    float32(mb * a + md * b),
-                    float32(ma * c + mc * d),
-                    float32(mb * c + md * d),
+        content_clip = provenance.get("clip_bbox")
+        if (
+            flags & 64
+            and isinstance(content_clip, tuple)
+            and len(content_clip) == 4
+            and isinstance(decoder, FontDecoder)
+            and (
+                (decoder.font_program is not None and glyph.gid is not None)
+                or (
+                    not decoder.is_cid_font
+                    and glyph.char_code is not None
+                    and decoder.glyph_name(glyph.char_code) == "space"
                 )
-            # Retain the reference's fused multiply/subtract rounding. A
-            # nearly singular transform can have a small nonzero determinant.
-            size = float32(math.sqrt(abs(float32(a * d - float32(b * c)))))
-        elif matrix is not None:
-            size = float32(size * math.sqrt(abs(matrix.a * matrix.d - matrix.b * matrix.c)))
+            )
+        ):
+            # Content clipping uses outline bounds. Empty embedded glyphs have
+            # only their origin; their font-height advance box would retain
+            # clipped spaces and prevent synthetic gap reconstruction.
+            ink = glyph.ink_bbox
+            if decoder.font_program is None or (
+                glyph.gid is not None and decoder.font_program.glyph_bbox_for_gid(glyph.gid) is None
+            ):
+                ink = (x, y, x, y)
+            source_clip = cast(BBox, content_clip)
+            if (
+                ink[2] <= source_clip[0]
+                or ink[0] >= source_clip[2]
+                or ink[3] <= source_clip[1]
+                or ink[1] >= source_clip[3]
+            ):
+                continue
         value = glyph.text
         if not flags & 1:
             value = internal_LIGATURES.get(value, value)
+        unknown_identifier = glyph.unicode_source == "identity"
+        if unknown_identifier and not flags & 128:
+            value = "\ufffd"
+            glyph = replace(glyph, unicode_source="replacement")
+            unknown_identifier = False
         value = "".join(
-            " " if c in "\b\t\n\v\f\r" or (not flags & 2 and c in internal_WHITESPACE) else c
+            " "
+            if (not unknown_identifier and c in "\b\t\n\v\f\r")
+            or (
+                not flags & 2
+                and c in internal_WHITESPACE
+                and (not unknown_identifier or c == "\t" or ord(c) >= 32)
+            )
+            else c
             for c in value
         )
+        font_key = (id(decoder), glyph.font_name)
+        if font_key not in font_flags_by_decoder:
+            font_flags_by_decoder[font_key] = internal_font_flags(glyph)
         char = internal_Character(
             value[0],
             bbox,
@@ -799,7 +1128,7 @@ def capture_text(
             end,
             size,
             (dx, -dy),
-            internal_style(glyph),
+            internal_style(glyph, font_flags_by_decoder[font_key]),
             seqno=glyph.seqno,
             quad=(corners[0], corners[2], corners[1], corners[3]),
         )
@@ -813,11 +1142,29 @@ def capture_text(
             perpendicular = delta_y * ux - delta_x * uy
             same_direction = abs(ux - dx) < 0.01 and abs(uy + dy) < 0.01
             em = max(size, 1e-9)
+            if (
+                size > 0
+                and same_direction
+                and char.text == previous.text
+                and glyph.char_code is not None
+                and char.style is not None
+                and previous.style is not None
+                and char.style.wmode == previous.style.wmode
+                and math.dist(char.origin, previous.origin) < em * 0.1
+            ):
+                continue
             new_line = not same_direction or abs(perpendicular) > em * 0.8 or abs(gap) > em * 0.8
             new_block = not same_direction or abs(perpendicular) > em * 1.5
+            if same_direction and em * 0.8 <= abs(perpendicular) <= em * 1.5:
+                first = projection.blocks[-1][-1].characters[0]
+                new_block = (
+                    (char.style is None or char.style.wmode == 0)
+                    and px > first.origin[0] + 0.5
+                    and not internal_list_marker(first.text)
+                )
         if size == 0 or (
             previous is not None
-            and any(previous.seqno < seqno < glyph.seqno for seqno, _ in projection.images)
+            and any(previous.seqno < seqno <= glyph.seqno for seqno, _ in projection.images)
         ):
             new_line = new_block = True
         if new_block:
@@ -825,19 +1172,32 @@ def capture_text(
         if new_line:
             projection.blocks[-1].append(internal_Line())
         line = projection.blocks[-1][-1]
+        # Reader gap reconstruction is limited to text scripts and punctuation;
+        # mathematical symbols and CJK characters do not request a following space.
         if (
             not new_line
             and previous is not None
             and gap > size * 0.15
             and not flags & 8
-            and not previous.text.isspace()
-            and not char.text.isspace()
+            and previous.text != " "
+            and (ord(previous.text) < 0x700 or 0x2000 <= ord(previous.text) <= 0x20CF)
+            and char.text != " "
         ):
-            previous_quad = (
-                Quad(previous.quad) if previous.quad is not None else Rect(previous.bbox).quad
-            )
             next_quad = Quad(char.quad) if char.quad is not None else Rect(char.bbox).quad
-            space_quad = Quad(previous_quad.ur, next_quad.ul, previous_quad.lr, next_quad.ll)
+            offset = Point(previous.end) - Point(char.origin)
+            space_quad = Quad(
+                next_quad.ul + offset, next_quad.ul, next_quad.ll + offset, next_quad.ll
+            )
+            if 0 < raw_height < 1:
+                # Corrected short-font quads use the synthetic character's own
+                # baseline, even when the next character ends a superscript.
+                offset = Point(gap * dx, -gap * dy)
+                space_quad = Quad(
+                    space_quad.ul,
+                    space_quad.ul + offset,
+                    space_quad.ll,
+                    space_quad.ll + offset,
+                )
             space_box = space_quad.rect
             line.characters.append(
                 internal_Character(
@@ -848,10 +1208,10 @@ def capture_text(
                     size,
                     char.direction,
                     replace(
-                        previous.style,
-                        char_flags=previous.style.char_flags | (512 if gap > size * 0.3 else 0),
+                        char.style,
+                        char_flags=char.style.char_flags | (512 if gap > size * 0.3 else 0),
                     )
-                    if previous.style is not None
+                    if char.style is not None
                     else None,
                     True,
                     previous.seqno,
@@ -861,11 +1221,23 @@ def capture_text(
         line.characters.append(char)
         previous = char
         for continuation in value[1:]:
+            trailing_end = end
+            if 0 < raw_height < 1 and isinstance(decoder, FontDecoder) and not decoder.is_vertical:
+                outline_advance = internal_outline_advance(decoder, continuation) * size
+                trailing_end = (
+                    float32(end[0] + outline_advance * dx),
+                    float32(end[1] - outline_advance * dy),
+                )
+            trailing_corners = [
+                (float32(ox + float32(vx * metric)), float32(oy + float32(vy * metric)))
+                for ox, oy in (end, trailing_end)
+                for metric in (ascender, descender)
+            ]
             trailing_bbox: BBox = (
-                min(float32(end[0] + float32(vx * m)) for m in (ascender, descender)),
-                min(float32(end[1] + float32(vy * m)) for m in (ascender, descender)),
-                max(float32(end[0] + float32(vx * m)) for m in (ascender, descender)),
-                max(float32(end[1] + float32(vy * m)) for m in (ascender, descender)),
+                min(p[0] for p in trailing_corners),
+                min(p[1] for p in trailing_corners),
+                max(p[0] for p in trailing_corners),
+                max(p[1] for p in trailing_corners),
             )
             if flags & 64 and (
                 trailing_bbox[2] < clip_box.x0
@@ -883,7 +1255,20 @@ def capture_text(
                 (dx, -dy),
                 char.style,
                 seqno=glyph.seqno,
-                quad=(corners[2], corners[2], corners[3], corners[3]),
+                quad=(
+                    trailing_corners[0],
+                    trailing_corners[2],
+                    trailing_corners[1],
+                    trailing_corners[3],
+                ),
+                # Word extraction keeps a ligature continuation's zero advance;
+                # structured character boxes additionally recover outline widths.
+                word_bbox=(
+                    min(p[0] for p in trailing_corners[:2]),
+                    min(p[1] for p in trailing_corners[:2]),
+                    max(p[0] for p in trailing_corners[:2]),
+                    max(p[1] for p in trailing_corners[:2]),
+                ),
             )
             line.characters.append(previous)
     return projection

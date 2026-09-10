@@ -48,16 +48,29 @@ def resolve_field_array(
         raise ValueError(f"invalid AcroForm {key} array") from exc
 
 
-def field_value_text(resolver: FieldResolver, value: object) -> str:
+def field_value_text(resolver: FieldResolver, value: object, *, recover: bool = False) -> str:
     parts: list[str] = []
-    stack: list[object] = [value]
+    active_arrays: set[int] = set()
+    stack: list[tuple[object, bool]] = [(value, False)]
     while stack:
-        current = stack.pop()
+        current, leaving = stack.pop()
+        if leaving:
+            active_arrays.remove(id(current))
+            continue
         current = resolver.resolve(current) if isinstance(current, PdfReference) else current
         if current is None:
             continue
         if isinstance(current, (list, tuple)):
-            stack.extend(reversed(current))
+            marker = id(current)
+            if marker in active_arrays:
+                if recover:
+                    continue
+                raise ValueError("AcroForm value cycle detected")
+            active_arrays.add(marker)
+            # Remove each array only after its children finish, preserving
+            # repeated uses of a shared array outside the active path.
+            stack.append((current, True))
+            stack.extend((item, False) for item in reversed(current))
             continue
         if isinstance(current, PdfName):
             item_text = current.value
@@ -94,7 +107,7 @@ def internal_field_record(
     name = qualified_field_name(parent_name, title)
     field_type = resolver.resolve_name_or_text(node.get("FT"), name_like=True) or parent_type
     value = inherited_field_value(node, "V", cast(PdfObject, parent_value))
-    value_text = field_value_text(resolver, value)
+    value_text = field_value_text(resolver, value, recover=recover)
     kids = (
         []
         if terminal_widget

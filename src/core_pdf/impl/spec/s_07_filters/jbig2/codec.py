@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy
 
+from core_pdf.impl.spec.s_07_filters.jbig2.arithmetic import decode_arithmetic_generic_bitmap
 from core_pdf.impl.spec.s_07_filters.jbig2.bitmap_kernels import (
     compose_packed_bitmap_data,
     uint8_matrix_view,
     uint8_view,
+)
+from core_pdf.impl.spec.s_07_filters.jbig2.structures import (
+    MAX_REFERENCES,
+    MAX_SYMBOLS,
+    Jbig2Error,
+    JBIG2Image,
+    JBIG2PageInfo,
+    Jbig2ParseError,
+    JBIG2Region,
+    JBIG2Segment,
+    JBIG2SegmentHeader,
+    Jbig2UnsupportedError,
+    read_be_i8,
+    read_be_i32,
+    read_be_u32,
+)
+from core_pdf.impl.spec.s_07_filters.jbig2.symbols import (
+    decode_symbol_dictionary,
+    decode_text_bitmap,
 )
 
 JBIG2_FILE_HEADER = b"\x97JB2\r\n\x1a\n"
@@ -17,212 +35,6 @@ JBIG2_PAGE_INFO = 48
 JBIG2_END_OF_FILE = 51
 JBIG2_IMMEDIATE_GENERIC_REGION = 38
 JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION = 39
-
-
-class Jbig2Error(Exception):
-    """Base error for JBIG2 codec failures."""
-
-
-class Jbig2ParseError(Jbig2Error):
-    """Raised when JBIG2 bytes are malformed."""
-
-
-class Jbig2UnsupportedError(Jbig2Error):
-    """Raised when valid JBIG2 data uses unsupported features."""
-
-
-GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
-
-# The MQ-coder probability estimation table, ITU-T T.88 Table E.1. One row per
-# state index: the Qe probability, the next index after a more-probable-symbol
-# renormalization, the next index after a less-probable one, and whether that
-# LPS path swaps the sense of the MPS.
-#
-internal_MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
-    (0x5601, 1, 1, 1),
-    (0x3401, 2, 6, 0),
-    (0x1801, 3, 9, 0),
-    (0x0AC1, 4, 12, 0),
-    (0x0521, 5, 29, 0),
-    (0x0221, 38, 33, 0),
-    (0x5601, 7, 6, 1),
-    (0x5401, 8, 14, 0),
-    (0x4801, 9, 14, 0),
-    (0x3801, 10, 14, 0),
-    (0x3001, 11, 17, 0),
-    (0x2401, 12, 18, 0),
-    (0x1C01, 13, 20, 0),
-    (0x1601, 29, 21, 0),
-    (0x5601, 15, 14, 1),
-    (0x5401, 16, 14, 0),
-    (0x5101, 17, 15, 0),
-    (0x4801, 18, 16, 0),
-    (0x3801, 19, 17, 0),
-    (0x3401, 20, 18, 0),
-    (0x3001, 21, 19, 0),
-    (0x2801, 22, 19, 0),
-    (0x2401, 23, 20, 0),
-    (0x2201, 24, 21, 0),
-    (0x1C01, 25, 22, 0),
-    (0x1801, 26, 23, 0),
-    (0x1601, 27, 24, 0),
-    (0x1401, 28, 25, 0),
-    (0x1201, 29, 26, 0),
-    (0x1101, 30, 27, 0),
-    (0x0AC1, 31, 28, 0),
-    (0x09C1, 32, 29, 0),
-    (0x08A1, 33, 30, 0),
-    (0x0521, 34, 31, 0),
-    (0x0441, 35, 32, 0),
-    (0x02A1, 36, 33, 0),
-    (0x0221, 37, 34, 0),
-    (0x0141, 38, 35, 0),
-    (0x0111, 39, 36, 0),
-    (0x0085, 40, 37, 0),
-    (0x0049, 41, 38, 0),
-    (0x0025, 42, 39, 0),
-    (0x0015, 43, 40, 0),
-    (0x0009, 44, 41, 0),
-    (0x0005, 45, 42, 0),
-    (0x0001, 45, 43, 0),
-    (0x5601, 46, 46, 0),
-)
-
-# The decoder indexes these per pixel, so the columns stay flat tuples of ints.
-MQ_QE = tuple(state[0] for state in internal_MQ_STATES)
-MQ_NMPS = tuple(state[1] for state in internal_MQ_STATES)
-MQ_NLPS = tuple(state[2] for state in internal_MQ_STATES)
-MQ_SWITCH = tuple(state[3] for state in internal_MQ_STATES)
-
-
-@dataclass(slots=True)
-class JBIG2Segment:
-    number: int
-    flags: int
-    retention_flags: int
-    page_association: int
-    data: bytes
-
-    @property
-    def segment_type(self) -> int:
-        return self.flags & 0x3F
-
-
-@dataclass(slots=True)
-class JBIG2PageInfo:
-    width: int
-    height: int
-    x_resolution: int
-    y_resolution: int
-    flags: int
-
-
-@dataclass(slots=True)
-class JBIG2TextRegion:
-    width: int
-    height: int
-    x: int
-    y: int
-    flags: int
-    raw: bytes
-
-
-@dataclass(slots=True)
-class JBIG2GenericRegion:
-    width: int
-    height: int
-    x: int
-    y: int
-    flags: int
-    raw: bytes
-
-
-@dataclass(slots=True)
-class JBIG2SegmentHeader:
-    number: int
-    flags: int
-    retention_flags: int
-    referred_to_count: int
-    referred_to_segments: list[int]
-    page_association: int
-    data_length: int
-    header_length: int
-
-
-@dataclass(slots=True)
-class JBIG2Image:
-    width: int
-    height: int
-    stride: int
-    data: bytearray
-
-    @classmethod
-    def create(cls, width: int, height: int) -> "JBIG2Image":
-        if width <= 0 or height <= 0:
-            raise Jbig2ParseError("invalid JBIG2 image dimensions")
-        stride = (width + 7) // 8
-        return cls(width=width, height=height, stride=stride, data=bytearray(stride * height))
-
-    def fill(self, value: int) -> None:
-        fill_byte = 0xFF if value else 0x00
-        self.data[:] = bytes([fill_byte]) * len(self.data)
-
-
-class JBIG2MQDecoder:
-    __slots__ = ("data", "bp", "data_end", "a", "chigh", "clow", "ct", "ctx")
-
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-        self.bp = 0
-        self.data_end = len(data)
-        self.chigh = data[0] if data else 0xFF
-        self.clow = 0
-        self.ct = 0
-        self.ctx: dict[int, int] = {}
-        self.byte_in()
-        self.chigh = ((self.chigh << 7) & 0xFFFF) | ((self.clow >> 9) & 0x7F)
-        self.clow = (self.clow << 7) & 0xFFFF
-        self.ct -= 7
-        self.a = 0x8000
-
-    def byte_in(self) -> None:
-        data = self.data
-        bp = self.bp
-        current = data[bp] if bp < self.data_end else 0xFF
-        following = data[bp + 1] if bp + 1 < self.data_end else 0xFF
-        if current == 0xFF:
-            if following > 0x8F:
-                self.clow += 0xFF00
-                self.ct = 8
-            else:
-                bp += 1
-                value = data[bp] if bp < self.data_end else 0xFF
-                self.clow += value << 9
-                self.ct = 7
-                self.bp = bp
-        else:
-            bp += 1
-            value = data[bp] if bp < self.data_end else 0xFF
-            self.clow += value << 8
-            self.ct = 8
-            self.bp = bp
-        if self.clow > 0xFFFF:
-            self.chigh += self.clow >> 16
-            self.clow &= 0xFFFF
-
-
-def read_be_u32(data: bytes, pos: int) -> int:
-    return (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]
-
-
-def read_be_i32(data: bytes, pos: int) -> int:
-    value = read_be_u32(data, pos)
-    return value - 0x100000000 if value & 0x80000000 else value
-
-
-def read_be_i8(data: bytes, pos: int) -> int:
-    value = data[pos]
-    return value - 0x100 if value & 0x80 else value
 
 
 def parse_page_info(data: bytes) -> JBIG2PageInfo:
@@ -255,20 +67,15 @@ def internal_region_fields(data: bytes, kind: str) -> tuple[int, int, int, int, 
     )
 
 
-def parse_text_region(data: bytes) -> JBIG2TextRegion:
-    width, height, x, y, flags = internal_region_fields(data, "text")
-    return JBIG2TextRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
-
-
-def parse_generic_region(data: bytes) -> JBIG2GenericRegion:
+def parse_region(data: bytes) -> JBIG2Region:
     width, height, x, y, flags = internal_region_fields(data, "generic")
-    return JBIG2GenericRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
+    return JBIG2Region(width=width, height=height, x=x, y=y, flags=flags, raw=data)
 
 
 def parse_generic_region_header(
     data: bytes,
-) -> tuple[JBIG2GenericRegion, bool, int, bool, tuple[tuple[int, int], ...], int]:
-    region = parse_generic_region(data)
+) -> tuple[JBIG2Region, bool, int, bool, tuple[tuple[int, int], ...], int]:
+    region = parse_region(data)
     if len(data) < 18:
         raise Jbig2ParseError("truncated JBIG2 generic region")
     flags = data[17]
@@ -314,11 +121,19 @@ def parse_page_association(data: bytes, pos: int, long_form: bool) -> tuple[int,
 
 
 def parse_referred_to_segments(
-    data: bytes, pos: int, count: int, long_form: bool
+    data: bytes, pos: int, count: int, number: int
 ) -> tuple[list[int], int]:
+    width = 1 if number <= 256 else 2 if number <= 65536 else 4
+    if count > (len(data) - pos) // width:
+        raise Jbig2ParseError("truncated JBIG2 segment references")
+    if count > MAX_REFERENCES:
+        raise Jbig2UnsupportedError("JBIG2 segment exceeds supported reference limit")
     segments: list[int] = []
     for ignored in range(count):
-        value, pos = read_u32(data, pos) if long_form else read_u8(data, pos)
+        value = int.from_bytes(data[pos : pos + width], "big")
+        pos += width
+        if value >= number:
+            raise Jbig2ParseError("JBIG2 segment reference must precede its referring segment")
         segments.append(value)
     return segments, pos
 
@@ -336,15 +151,14 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
         if pos + 3 > len(data):
             raise Jbig2ParseError("truncated JBIG2 segment header")
         ref_count, pos = read_u24(data, pos)
-        referred_to_count = ref_count & 0x1FFFFFFF
+        referred_to_count = ((retention_flags & 31) << 24) | ref_count
         bit_bytes = (referred_to_count + 1 + 7) // 8
         if pos + bit_bytes > len(data):
             raise Jbig2ParseError("truncated JBIG2 segment header")
         pos += bit_bytes
-    else:
-        referred_to_segments, pos = parse_referred_to_segments(
-            data, pos, referred_to_count, number > 65536
-        )
+    elif referred_to_count > 4:
+        raise Jbig2ParseError("invalid JBIG2 segment reference count")
+    referred_to_segments, pos = parse_referred_to_segments(data, pos, referred_to_count, number)
     if pos + (4 if (flags & 0x40) else 1) + 4 > len(data):
         raise Jbig2ParseError("truncated JBIG2 segment header")
     page_association, pos = parse_page_association(data, pos, bool(flags & 0x40))
@@ -367,22 +181,25 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
 def parse_jbig2_file(data: bytes) -> list[JBIG2Segment]:
     if data.startswith(JBIG2_FILE_HEADER):
         pos = len(JBIG2_FILE_HEADER)
-        if pos >= len(data):
-            return []
-        pos += 1
-        ignored, pos = read_u32(data, pos)
+        flags, pos = read_u8(data, pos)
+        if not flags & 1:
+            raise Jbig2UnsupportedError("JBIG2 random-access file organization is unsupported")
+        if flags & 0xFC:
+            raise Jbig2ParseError("invalid JBIG2 file header flags")
+        if not flags & 2:
+            ignored, pos = read_u32(data, pos)
     else:
         pos = 0
 
     segments: list[JBIG2Segment] = []
-    while pos + 11 <= len(data):
+    while pos < len(data):
         header, pos = parse_segment_header(data, pos)
-        if header.data_length == 0xFFFFFFFF or pos + header.data_length > len(data):
-            payload = data[pos:]
-            pos = len(data)
-        else:
-            payload = data[pos : pos + header.data_length]
-            pos += header.data_length
+        if header.data_length == 0xFFFFFFFF:
+            raise Jbig2UnsupportedError("JBIG2 regions with unknown data length are unsupported")
+        if header.data_length > len(data) - pos:
+            raise Jbig2ParseError("truncated JBIG2 segment data")
+        payload = data[pos : pos + header.data_length]
+        pos += header.data_length
         segments.append(
             JBIG2Segment(
                 number=header.number,
@@ -390,6 +207,7 @@ def parse_jbig2_file(data: bytes) -> list[JBIG2Segment]:
                 retention_flags=header.retention_flags,
                 page_association=header.page_association,
                 data=payload,
+                referred_to_segments=tuple(header.referred_to_segments),
             )
         )
         if header.flags & 0x3F == JBIG2_END_OF_FILE:
@@ -404,10 +222,14 @@ def decode_jbig2_segments(segments: list[JBIG2Segment]) -> bytes:
     max_y = 0
     inferred_width = 0
     inferred_height = 0
+    decoded_segments: dict[int, JBIG2Segment] = {}
+    dictionaries: dict[int, list[JBIG2Image]] = {}
 
     def ensure_image(width: int, height: int) -> None:
         nonlocal image, inferred_width, inferred_height
         if width <= 0 or height <= 0:
+            return
+        if page_info is not None:
             return
         if image is None:
             image = JBIG2Image.create(width, height)
@@ -427,29 +249,59 @@ def decode_jbig2_segments(segments: list[JBIG2Segment]) -> bytes:
         inferred_height = new_height
 
     for segment in segments:
+        if segment.number in decoded_segments:
+            raise Jbig2ParseError("duplicate JBIG2 segment number")
+        imported: list[JBIG2Image] = []
+        for reference_id in segment.referred_to_segments:
+            reference = decoded_segments.get(reference_id)
+            if reference is None or reference_id >= segment.number:
+                raise Jbig2ParseError("missing or invalid JBIG2 segment reference")
+            if reference.page_association not in (0, segment.page_association):
+                raise Jbig2ParseError("JBIG2 segment refers to a different page")
+            if segment.segment_type == 62:
+                continue
+            if reference_id in dictionaries:
+                if len(imported) + len(dictionaries[reference_id]) > MAX_SYMBOLS:
+                    raise Jbig2UnsupportedError("JBIG2 segment exceeds supported symbol limit")
+                imported.extend(dictionaries[reference_id])
+            else:
+                raise Jbig2UnsupportedError("unsupported JBIG2 non-dictionary segment reference")
+        decoded_segments[segment.number] = segment
         if segment.segment_type == JBIG2_PAGE_INFO:
+            if page_info is not None:
+                raise Jbig2UnsupportedError("multiple JBIG2 pages in one image are unsupported")
             page_info = parse_page_info(segment.data)
             image = JBIG2Image.create(page_info.width, page_info.height)
             image.fill(jbig2_page_default_pixel(page_info))
             inferred_width = page_info.width
             inferred_height = page_info.height
-        elif segment.segment_type == 6:
-            text_region = parse_text_region(segment.data)
+        elif segment.segment_type == 0:
+            dictionaries[segment.number] = decode_symbol_dictionary(segment.data, imported)
+        elif segment.segment_type in {6, 7}:
+            text_region = parse_region(segment.data)
             max_x = max(max_x, text_region.x + text_region.width)
             max_y = max(max_y, text_region.y + text_region.height)
             ensure_image(max_x, max_y)
+            bitmap = decode_text_bitmap(segment.data, imported)
             if image is not None:
-                decode_text_region(segment.data, image)
+                compose_packed_bitmap_region(text_region, bitmap.data, image, page_info)
         elif segment.segment_type in {
             JBIG2_IMMEDIATE_GENERIC_REGION,
             JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
         }:
-            generic_region = parse_generic_region(segment.data)
+            generic_region = parse_region(segment.data)
             max_x = max(max_x, generic_region.x + generic_region.width)
             max_y = max(max_y, generic_region.y + generic_region.height)
             ensure_image(max_x, max_y)
             if image is not None:
                 decode_generic_region(segment.data, image, page_info)
+        elif segment.segment_type == 62:
+            if len(segment.data) < 4:
+                raise Jbig2ParseError("truncated JBIG2 extension segment")
+            if read_be_u32(segment.data, 0) & 0x80000000:
+                raise Jbig2UnsupportedError("unsupported mandatory JBIG2 extension")
+        elif segment.segment_type not in {49, 50, 51, 52}:
+            raise Jbig2UnsupportedError(f"unsupported JBIG2 segment type {segment.segment_type}")
     if image is None:
         raise Jbig2UnsupportedError("JBIG2Decode produced no image")
     return jbig2_bitmap_to_pdf_image(image.data)
@@ -479,32 +331,6 @@ def jbig2_bitmap_to_pdf_image(data: bytes | bytearray) -> bytes:
     return numpy.bitwise_xor(uint8_view(data), 0xFF).tobytes()
 
 
-def decode_text_region(data: bytes, image: JBIG2Image) -> None:
-    # Symbol-dictionary-based text regions are not implemented: the region's
-    # trailing bytes are composited as a raw packed bitmap.
-    region = parse_text_region(data)
-    if len(region.raw) < 20:
-        raise Jbig2ParseError("truncated JBIG2 text region")
-    x = region.x
-    y = region.y
-    width = region.width
-    height = region.height
-    bitmap = region.raw[20:]
-    row_bytes = max(1, (width + 7) // 8)
-    compose_packed_bitmap_data(
-        bitmap,
-        min(height, len(bitmap) // row_bytes),
-        width,
-        x,
-        y,
-        image.width,
-        image.height,
-        image.stride,
-        image.data,
-        0,
-    )
-
-
 def decode_generic_region(
     data: bytes, image: JBIG2Image, page_info: JBIG2PageInfo | None = None
 ) -> None:
@@ -512,147 +338,15 @@ def decode_generic_region(
     if region.width <= 0 or region.height <= 0:
         return
     if mmr:
-        packed_bitmap = region.raw[bitmap_start:]
-        compose_packed_bitmap_region(region, packed_bitmap, image, page_info)
-        return
+        raise Jbig2UnsupportedError("JBIG2 MMR generic regions are unsupported")
     packed_bitmap = decode_arithmetic_generic_bitmap(
         region.raw[bitmap_start:], region.width, region.height, template, prediction, at
     )
     compose_packed_bitmap_region(region, packed_bitmap, image, page_info)
 
 
-def decode_arithmetic_generic_bitmap(
-    data: bytes,
-    width: int,
-    height: int,
-    template: int,
-    prediction: bool,
-    at: tuple[tuple[int, int], ...],
-) -> bytes | bytearray:
-    if (
-        template != 0
-        or prediction
-        or at != GENERIC_TEMPLATE_0_DEFAULT_AT
-        or width <= 0
-        or height <= 0
-    ):
-        raise Jbig2UnsupportedError("unsupported JBIG2 generic bitmap template")
-    return decode_arithmetic_generic_template0(data, width, height)
-
-
-def decode_arithmetic_generic_template0(data: bytes, width: int, height: int) -> bytearray:
-    decoder = JBIG2MQDecoder(data)
-    contexts = [0] * 65536
-    row_byte_length = (width + 7) // 8
-    bitmap = bytearray(row_byte_length * height)
-    previous_row = bytearray(width + 4)
-    previous_previous_row = bytearray(width + 4)
-    old_pixel_mask = 0x7BF7
-    a = decoder.a
-    chigh = decoder.chigh
-    clow = decoder.clow
-    ct = decoder.ct
-    bp = decoder.bp
-    data_end = decoder.data_end
-    for row_index in range(height):
-        # Four sentinel bytes eliminate bounds checks for the look-ahead
-        # samples at col + 3 and col + 4 in the template-0 context.
-        row = bytearray(width + 4)
-        row1 = row if row_index < 1 else previous_row
-        row2 = row if row_index < 2 else previous_previous_row
-        context = (
-            (row2[0] << 13)
-            | (row2[1] << 12)
-            | (row2[2] << 11)
-            | (row1[0] << 7)
-            | (row1[1] << 6)
-            | (row1[2] << 5)
-            | (row1[3] << 4)
-        )
-        for col in range(width):
-            packed = contexts[context]
-            idx = packed >> 1
-            mps = packed & 1
-            qe = MQ_QE[idx]
-            next_a = a - qe
-            if chigh < qe:
-                if next_a < qe:
-                    next_a = qe
-                    pixel = mps
-                    idx = MQ_NMPS[idx]
-                else:
-                    next_a = qe
-                    pixel = 1 ^ mps
-                    if MQ_SWITCH[idx]:
-                        mps = pixel
-                    idx = MQ_NLPS[idx]
-            else:
-                chigh -= qe
-                if next_a & 0x8000:
-                    a = next_a
-                    contexts[context] = (idx << 1) | mps
-                    pixel = mps
-                    row[col] = pixel
-                    if pixel:
-                        bitmap[row_index * row_byte_length + (col >> 3)] |= 0x80 >> (col & 7)
-                    context = (
-                        ((context & old_pixel_mask) << 1)
-                        | (row2[col + 3] << 11)
-                        | (row1[col + 4] << 4)
-                        | pixel
-                    )
-                    continue
-                if next_a < qe:
-                    pixel = 1 ^ mps
-                    if MQ_SWITCH[idx]:
-                        mps = pixel
-                    idx = MQ_NLPS[idx]
-                else:
-                    pixel = mps
-                    idx = MQ_NMPS[idx]
-            while not (next_a & 0x8000):
-                if ct == 0:
-                    current = data[bp] if bp < data_end else 0xFF
-                    following = data[bp + 1] if bp + 1 < data_end else 0xFF
-                    if current == 0xFF:
-                        if following > 0x8F:
-                            clow += 0xFF00
-                            ct = 8
-                        else:
-                            bp += 1
-                            value = data[bp] if bp < data_end else 0xFF
-                            clow += value << 9
-                            ct = 7
-                    else:
-                        bp += 1
-                        value = data[bp] if bp < data_end else 0xFF
-                        clow += value << 8
-                        ct = 8
-                    if clow > 0xFFFF:
-                        chigh += clow >> 16
-                        clow &= 0xFFFF
-                next_a <<= 1
-                chigh = ((chigh << 1) & 0xFFFF) | ((clow >> 15) & 1)
-                clow = (clow << 1) & 0xFFFF
-                ct -= 1
-            a = next_a
-            contexts[context] = (idx << 1) | mps
-            row[col] = pixel
-            if pixel:
-                bitmap[row_index * row_byte_length + (col >> 3)] |= 0x80 >> (col & 7)
-            context = (
-                ((context & old_pixel_mask) << 1)
-                | (row2[col + 3] << 11)
-                | (row1[col + 4] << 4)
-                | pixel
-            )
-        previous_previous_row = previous_row
-        previous_row = row
-    return bitmap
-
-
 def compose_packed_bitmap_region(
-    region: JBIG2GenericRegion,
+    region: JBIG2Region,
     packed_bitmap: bytes | bytearray,
     image: JBIG2Image,
     page_info: JBIG2PageInfo | None,
@@ -675,7 +369,7 @@ def compose_packed_bitmap_region(
     )
 
 
-def region_operator(region: JBIG2GenericRegion, page_info: JBIG2PageInfo | None) -> int:
+def region_operator(region: JBIG2Region, page_info: JBIG2PageInfo | None) -> int:
     if jbig2_page_allows_region_operator(page_info):
         return region.flags & 7
     return jbig2_page_combination_operator(page_info)

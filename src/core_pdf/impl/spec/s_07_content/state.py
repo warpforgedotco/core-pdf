@@ -20,6 +20,7 @@ from core_pdf.impl.spec.s_07_content.operations import (
 )
 from core_pdf.impl.spec.s_07_content.paths import PdfPath
 from core_pdf.impl.spec.s_07_content.patterns import PatternPaint, ShadingPattern, TilingPattern
+from core_pdf.impl.spec.s_07_content.soft_masks import SoftMaskSelection
 from core_pdf.impl.spec.s_07_content.stream_execution import ContentStreamExecutor
 from core_pdf.impl.spec.s_07_content.stream_state import (
     GRAPHICS_STATE_FIELDS,
@@ -83,6 +84,8 @@ class TextState:
 
     blend_mode: str | None
 
+    soft_mask: SoftMaskSelection | None
+
     flatness: int
 
     render_intent: str | None
@@ -91,9 +94,13 @@ class TextState:
 
     fill_color_spec: ImageColorSpec | None
 
+    fill_color_components: tuple[float, ...] | None
+
     stroke_color_space: str
 
     stroke_color_spec: ImageColorSpec | None
+
+    stroke_color_components: tuple[float, ...] | None
 
     dash_pattern: tuple[list[float], float]
 
@@ -165,11 +172,14 @@ class TextState:
         self.stroke_pattern = None
         self.stroke_opacity = 1.0
         self.blend_mode = None
+        self.soft_mask = None
         self.flatness = 0
         self.render_intent = None
         self.fill_color_space = "DeviceGray"
         self.fill_color_spec = None
         self.stroke_color_spec = None
+        self.fill_color_components = None
+        self.stroke_color_components = None
         self.stroke_color_space = "DeviceGray"
         self.line_width = 1.0
         self.line_cap = 0
@@ -456,7 +466,12 @@ class TextState:
                 # even at full opacity: a child's blend must not see the page.
                 blend = self.blend_mode
                 isolated = self.document.resolver.resolve(group_dict.get("I")) is True
-                if isolated or self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
+                if (
+                    isolated
+                    or self.fill_opacity < 1.0
+                    or self.soft_mask is not None
+                    or (blend is not None and blend != "Normal")
+                ):
                     group_alpha = max(0.0, min(1.0, self.fill_opacity))
         resources = self.resolve_resources(xobj_dict.get("Resources")) or self.resources
         xobj_matrix = xobj_dict.get("Matrix")
@@ -1057,11 +1072,13 @@ class TextState:
             self.stroke_color_space = color_space
             self.stroke_color_spec = None
             self.stroke_color = normalized
+            self.stroke_color_components = normalized
             self.stroke_pattern = None
         else:
             self.fill_color_space = color_space
             self.fill_color_spec = None
             self.fill_color = normalized
+            self.fill_color_components = normalized
             self.fill_pattern = None
 
     def normalize_color_operands(self, o: Any) -> tuple[float, ...] | None:
@@ -1129,9 +1146,11 @@ class TextState:
             if stroke:
                 self.stroke_color_space = color_space
                 self.stroke_color_spec = spec
+                self.stroke_color_components = None
             else:
                 self.fill_color_space = color_space
                 self.fill_color_spec = spec
+                self.fill_color_components = None
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
@@ -1159,20 +1178,28 @@ class TextState:
                     operands[:-1], self.stroke_color_spec if stroke else self.fill_color_spec
                 )
                 if normalized is not None:
+                    numeric = self.internal_numeric_operands(operands[:-1])
+                    components = tuple(numeric) if numeric is not None else None
                     if stroke:
                         self.stroke_color = normalized
+                        self.stroke_color_components = components
                     else:
                         self.fill_color = normalized
+                        self.fill_color_components = components
             return
         normalized = self.internal_color_from_operands(
             operands, self.stroke_color_spec if stroke else self.fill_color_spec
         )
         if normalized is not None:
+            numeric = self.internal_numeric_operands(operands)
+            components = tuple(numeric) if numeric is not None else None
             if stroke:
                 self.stroke_color = normalized
+                self.stroke_color_components = components
                 self.stroke_pattern = None
             else:
                 self.fill_color = normalized
+                self.fill_color_components = components
                 self.fill_pattern = None
 
     def op_SCN(self, operands: ContentOperands, depth: int) -> None:
@@ -1309,7 +1336,9 @@ class TextState:
     def op_cm(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 6)) is None:
             return
-        self.ctm = Matrix(*values).multiply(self.ctm)
+        matrix = Matrix(*values)
+        self.ctm = matrix.multiply(self.ctm)
+        self.sink.concatenate_matrix(self, matrix)
 
     def op_g(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_device_color(operands, "DeviceGray", 1, stroke=False)
@@ -1329,6 +1358,20 @@ class TextState:
         extgstate = self.resolve_extgstate(name)
         if not extgstate:
             return
+        if "SMask" in extgstate:
+            mask = self.document.resolver.resolve(extgstate["SMask"])
+            if isinstance(mask, dict):
+                source = self.lookup_page_resource("ExtGState", name)
+                source_key = (
+                    ("ref", source.object_number, source.generation_number)
+                    if isinstance(source, PdfReference)
+                    else ("direct", id(source), 0)
+                )
+                self.soft_mask = SoftMaskSelection(
+                    cast(PdfDict, mask), self.ctm, self.resources, source_key
+                )
+            elif self.document.resolver.resolve_name(mask) == "None":
+                self.soft_mask = None
         try:
             fill_opacity = extgstate.get("ca")
             if fill_opacity is not None:

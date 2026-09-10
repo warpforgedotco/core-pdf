@@ -35,6 +35,7 @@ class ImageColorSpec:
     tint_fn: object = None
     channels: int = 1
     icc_profile: bytes | None = field(default=None, repr=False)
+    base_spec: ImageColorSpec | None = None
 
 
 def normalize_indexed_base_color_space_name(value: object) -> str | None:
@@ -111,6 +112,14 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
     if isinstance(color_space, (list, tuple)) and color_space:
         kind = normalize_pdf_name(color_space[0])
         if kind == "Indexed" and len(color_space) >= 4:
+            base_value = color_space[1]
+            base_kind = normalize_pdf_name(
+                base_value[0]
+                if isinstance(base_value, (list, tuple)) and base_value
+                else base_value
+            )
+            if base_kind in {"Indexed", "Pattern"}:
+                raise ValueError("invalid Indexed base color space")
             lookup = color_space[3]
             lookup_bytes: bytes | None
             if isinstance(lookup, PdfStream):
@@ -124,6 +133,7 @@ def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -
                 base=normalize_indexed_base_color_space_name(color_space[1]),
                 hival=parse_indexed_hival(color_space[2]),
                 lookup=lookup_bytes,
+                base_spec=color_spec_from_value(base_value),
             )
         if kind == "Indexed":
             raise ValueError("invalid Indexed color space")

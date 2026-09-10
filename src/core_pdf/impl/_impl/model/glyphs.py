@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from core_pdf.impl._impl.model.geometry import bbox_union
-from core_pdf.impl.types import Rectangle
-
-Matrix6 = tuple[float, float, float, float, float, float]
+from core_pdf.impl.types import Matrix6, Rectangle
 
 
 class UnicodeSource(StrEnum):
@@ -83,6 +81,14 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
+@dataclass(frozen=True, slots=True)
+class PaintColorSource:
+    """Original color operands and their opaque color-space specification."""
+
+    specification: object
+    components: tuple[float, ...]
+
+
 @dataclass(slots=True)
 class GlyphObservation:
     text: str
@@ -127,6 +133,11 @@ class GlyphObservation:
     # source glyph; a dedicated slot so the per-call provenance tuple can be
     # shared by reference across every glyph of a text-showing op.
     cluster_key: tuple[int, int] | None = None
+    # ActualText replaces text while retaining the source glyph placements for
+    # consumers that expose character-level geometry.
+    source_glyphs: tuple[GlyphObservation, ...] = ()
+    fill_source: PaintColorSource | None = None
+    stroke_source: PaintColorSource | None = None
 
     @property
     def has_paint(self) -> bool:

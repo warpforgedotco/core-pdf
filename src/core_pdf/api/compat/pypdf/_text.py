@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, cast
@@ -21,18 +22,114 @@ from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
+from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.fonts.glyphs import (
     TEX_GLYPH_ALIASES,
     ensure_glyph_map,
 )
-from core_pdf.impl._impl.fonts.widths import parse_font_widths
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
-from core_pdf.impl.types import PdfName, PdfString
+from core_pdf.impl.spec.s_09_fonts.data.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 Matrix = list[float]
+
+
+def internal_legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
+    """Use legacy glyph-list spellings rather than native Unicode recovery."""
+    if name == "negationslash":
+        return "⁄"
+    if name in {"tildewide", "tildewider", "tildewidest"}:
+        return "~"
+    if name == ".notdef":
+        return "□"
+    if name.startswith("a") and name[1:].isdecimal():
+        code = int(name[1:])
+        if 0 <= code <= 255:
+            return chr(code)
+    mapped = ensure_glyph_map().get(name)
+    if mapped is None:
+        mapped = TEX_GLYPH_ALIASES.get(name)
+    if mapped is not None:
+        return mapped
+    return f"/{name}" if unknown is None else unknown
+
+
+def internal_type1_glyph_name(name: str) -> str:
+    mapped = internal_legacy_glyph_name(name, unknown="")
+    if not mapped and name.startswith("uni"):
+        with suppress(ValueError, OverflowError):
+            return chr(int(name[3:], 16))
+    return mapped
+
+
+def internal_standard_font_widths(name: str, encoding: tuple[str, ...] | str) -> dict[int, float]:
+    """Look up standard-font metrics before applying ToUnicode recovery."""
+    metrics = FONT_DATA.get(name)
+    if metrics is None:
+        return {}
+    widths = metrics["widths"]
+    if name == "ZapfDingbats":
+        widths = {
+            internal_legacy_glyph_name(glyph): widths[text]
+            for glyph, text in ZAPF_DINGBATS_GLYPHS.items()
+            if text in widths
+        }
+    return {
+        code: float(widths[text])
+        for code, text in enumerate(
+            encoding if not isinstance(encoding, str) else map(chr, range(256))
+        )
+        if text in widths
+    }
+
+
+def internal_simple_font_widths(
+    font: Mapping[object, object], resolver: PdfValueResolver
+) -> dict[int, float]:
+    """Read the legacy integer Widths entries before any FontMatrix scaling."""
+    first = resolver.resolve(font.get("FirstChar"))
+    widths = resolver.resolve(font.get("Widths"))
+    if not isinstance(first, (int, float)) or not isinstance(widths, (list, tuple)):
+        return {}
+    return {
+        int(first) + offset: float(int(float(cast(Any, resolver.resolve(value)))))
+        for offset, value in enumerate(widths)
+    }
+
+
+def internal_indirect_cid_widths(
+    font: dict[object, object], resolver: PdfValueResolver
+) -> frozenset[int]:
+    """Locate width-list entries the reference leaves as indirect objects."""
+    result: set[int] = set()
+    descendants = resolver.resolve(font.get("DescendantFonts"))
+    if not isinstance(descendants, (list, tuple)):
+        return frozenset()
+    for raw_descendant in descendants:
+        descendant = resolver.resolve(raw_descendant)
+        if not isinstance(descendant, dict):
+            continue
+        widths = resolver.resolve(descendant.get("W"))
+        if not isinstance(widths, (list, tuple)):
+            continue
+        index = 0
+        while index + 1 < len(widths):
+            first = resolver.resolve(widths[index])
+            following = resolver.resolve(widths[index + 1])
+            if isinstance(first, (int, float)) and isinstance(following, (list, tuple)):
+                result.update(
+                    int(first) + offset
+                    for offset, value in enumerate(following)
+                    if isinstance(value, PdfReference)
+                )
+                index += 2
+            else:
+                index += 3
+    return frozenset(result)
 
 
 @dataclass(slots=True)
@@ -49,6 +146,7 @@ class LegacyFont:
     character_map: dict[str, str]
     difference_fallbacks: dict[bytes, str]
     width_uses_source_code: bool
+    indirect_width_codes: frozenset[int]
 
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
         glyphs = self.decoder.decode_glyphs(data)
@@ -120,6 +218,8 @@ class LegacyFont:
         if glyph.code_bytes == self.space_code_bytes:
             return self.space_width
         width_code = glyph.char_code if self.width_uses_source_code else glyph.width_code
+        if width_code in self.indirect_width_codes:
+            raise TypeError("unsupported indirect CID font width")
         width = self.widths.width_for(width_code, self.default_width)
         return float(width if self.decoder.is_cid_font else int(width))
 
@@ -263,6 +363,7 @@ class LegacyTextExtractor:
                 character_map,
                 self.internal_difference_fallbacks(font),
                 width_uses_source_code,
+                internal_indirect_cid_widths(font, self.document.resolver),
             )
         return fonts
 
@@ -363,12 +464,17 @@ class LegacyTextExtractor:
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
             table = [chr(code) for code in range(256)]
         else:
-            table = internal_legacy_base_table(decoder.base_encoding or "StandardEncoding")
+            table_name = base_font if encoding_obj is None else normalize_pdf_name(encoding_obj)
+            table = internal_legacy_base_table(
+                table_name
+                if table_name is not None and table_name in {"Symbol", "ZapfDingbats"}
+                else decoder.base_encoding or "StandardEncoding"
+            )
         character_map: dict[str, str] = {}
 
         for code, name in decoder.differences.items():
             if 0 <= code <= 255:
-                table[code] = self.internal_legacy_glyph_name(name)
+                table[code] = internal_legacy_glyph_name(name)
 
         subtype = normalize_pdf_name(font.get("Subtype") or "")
         descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
@@ -407,35 +513,10 @@ class LegacyTextExtractor:
                 if not 0 <= code <= 255:
                     continue
                 name = words[2].removeprefix(b"/").decode("latin-1")
-                mapped = self.internal_legacy_glyph_name(name, unknown="")
-                if not mapped and name.startswith("uni"):
-                    mapped = chr(int(name[3:], 16))
+                mapped = internal_type1_glyph_name(name)
                 if mapped:
                     result[chr(code)] = mapped
         return result
-
-    @staticmethod
-    def internal_legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
-        if name == "negationslash":
-            return "⁄"
-        # The engine reads cmex's wide tilde accents as U+02DC, which is the
-        # accent rather than the ASCII punctuation. pypdf reports a plain tilde,
-        # and this facade reports what pypdf reports. Its wide circumflexes
-        # already agree, so only the tildes need saying.
-        if name in {"tildewide", "tildewider", "tildewidest"}:
-            return "~"
-        if name == ".notdef":
-            return "□"
-        if name.startswith("a") and name[1:].isdecimal():
-            code = int(name[1:])
-            if 0 <= code <= 255:
-                return chr(code)
-        mapped = ensure_glyph_map().get(name)
-        if mapped is None:
-            mapped = TEX_GLYPH_ALIASES.get(name)
-        if mapped is not None:
-            return mapped
-        return f"/{name}" if unknown is None else unknown
 
     def internal_difference_fallbacks(self, font: dict[object, object]) -> dict[bytes, str]:
         encoding = self.document.resolver.resolve(font.get("Encoding"))
@@ -468,7 +549,6 @@ class LegacyTextExtractor:
         encoding_table: tuple[str, ...] | None,
         encoding_is_mapping: bool,
     ) -> tuple[FontWidthMap, float, float]:
-        subtype = normalize_pdf_name(font.get("Subtype") or "")
         widths = decoder.widths
         if decoder.is_type3:
             char_procs = self.document.resolver.resolve(font.get("CharProcs"))
@@ -476,7 +556,7 @@ class LegacyTextExtractor:
                 cmap is None
                 and isinstance(char_procs, dict)
                 and any(
-                    not self.internal_legacy_glyph_name(
+                    not internal_legacy_glyph_name(
                         normalize_pdf_name(name) or str(name), unknown=""
                     )
                     for name in char_procs
@@ -489,10 +569,26 @@ class LegacyTextExtractor:
             # The legacy API compares unscaled Widths values. The canonical
             # engine scales Type3 metrics through FontMatrix for geometry.
             with suppress(ValueError):
-                widths = parse_font_widths(cast(Any, font), subtype).widths
+                widths = SparseFontWidthMap(
+                    internal_simple_font_widths(font, self.document.resolver)
+                )
 
         default_width = decoder.default_width
         if not decoder.is_cid_font:
+            if font.get("Widths") is None and not decoder.is_type3:
+                metric_encoding = (
+                    tuple(
+                        chr(code) if cmap is not None and bytes((code,)) in cmap.mappings else text
+                        for code, text in enumerate(encoding_table)
+                    )
+                    if encoding_table is not None
+                    else "charmap"
+                )
+                widths = SparseFontWidthMap(
+                    internal_standard_font_widths(
+                        normalize_pdf_name(font.get("BaseFont")) or "", metric_encoding
+                    )
+                )
             descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
             missing_width = (
                 self.document.resolver.resolve(descriptor.get("MissingWidth"))
@@ -502,7 +598,10 @@ class LegacyTextExtractor:
             flags = (
                 self.document.resolver.resolve(descriptor.get("Flags"))
                 if isinstance(descriptor, dict)
-                else 0
+                else int(
+                    normalize_pdf_name(font.get("BaseFont"))
+                    in {"Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"}
+                )
             )
             positive_widths = [
                 int(width) for _, width in widths.iter_explicit_widths() if int(width) > 0

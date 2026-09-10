@@ -13,6 +13,7 @@ from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
+    PaintColorSource,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
@@ -246,6 +247,8 @@ class GlyphPaint:
     dash_pattern: tuple[list[float], float] | None
     blend_mode: str | None
     group_alpha: float | None
+    fill_source: PaintColorSource | None = None
+    stroke_source: PaintColorSource | None = None
 
 
 @dataclass(slots=True)
@@ -511,6 +514,7 @@ def capture_glyphs(
                 baseline=fragment_baseline,
                 rotation_angle=geometry.rotation_angle,
                 fill=paint.fill,
+                fill_source=paint.fill_source,
                 visible=observation_visible,
                 confidence=confidence,
                 unicode_source=glyph.unicode_source,
@@ -526,6 +530,7 @@ def capture_glyphs(
                 text_render_mode=paint.render_mode,
                 fill_opacity=paint.fill_opacity,
                 stroke_color=paint.stroke_color,
+                stroke_source=paint.stroke_source,
                 stroke_opacity=paint.stroke_opacity,
                 line_width=paint.line_width,
                 line_cap=paint.line_cap,

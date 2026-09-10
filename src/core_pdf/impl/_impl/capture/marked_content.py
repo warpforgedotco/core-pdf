@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 from core_pdf.impl._impl.model.geometry import union_bbox
+from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.types import Rectangle
 
@@ -33,6 +34,8 @@ class MarkedContentEntry:
     run: TextRun | None = None
     font_decoder: object | None = None
     effective_font_height: float = 0.0
+    last_image_sequence: int | None = None
+    glyphs: list[GlyphObservation] = field(default_factory=list)
 
     def add_run(
         self,

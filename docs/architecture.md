@@ -106,11 +106,24 @@ geometry. Text advancement remains in the interpreter regardless of whether capt
 character. `ImageSource` holds passive PDF image inputs; `_impl/graphics/images.py` prepares and
 decodes them for a selected raster output.
 
+Capture retains source glyph placement under `ActualText`, original paint-space operands, and
+soft-mask selections with their graphics-state scope. These inputs let facades choose text,
+color, and mask-export behavior without reinterpreting the whole page. Image record projection
+preserves inline and external placement before raster preparation. The PyMuPDF facade separates
+placement, image encoding, mask capture, and shading rasterization; its selected profiles and
+licensed raster kernel live under `_vendor/` and do not change native device-color policy.
+
 `PdfStream` accepts a spec-owned `StreamDecoder`. Its default uses strict filter semantics;
 the document reader supplies the codec/recovery adapter. Replacement and indirect resolution
 preserve an explicitly supplied decoder. The strict syntax layer shares object parsing,
 cross-reference row decoding, revision precedence, and tree traversal with recovery adapters;
 resynchronization, guessed offsets, and skipped malformed entries live in `_impl/document/recovery/`.
+
+Form-value arrays track active ancestry: repeated shared arrays retain their text, while cycles
+are rejected or omitted during document recovery. Destination dictionaries are unwrapped
+iteratively so cycles terminate and deeply nested values do not consume the Python call stack.
+Compatibility facades apply their own page-box access policy without changing core's fallback
+geometry for damaged documents.
 
 Subpackages under `spec/` mirror chapters of the PDF specification:
 

@@ -4,7 +4,42 @@
 from math import ceil, hypot
 
 from core_pdf.impl._impl.capture.records import CapturedPath
+from core_pdf.impl._impl.model.geometry import points_bbox
 from core_pdf.impl.spec.s_07_content.paths import PdfPath
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.types import Rectangle
+
+
+def control_point_bounds(source: PdfPath, matrix: Matrix) -> Rectangle | None:
+    """Bound drawn segments and their Bézier controls without flattening them.
+
+    These conservative bounds are useful to consumers that approximate clipping
+    by the curve's control hull. An isolated or trailing move has no geometry.
+    """
+    points: list[tuple[float, float]] = []
+    current: tuple[float, float] | None = None
+    start: tuple[float, float] | None = None
+    for command in source.commands:
+        values = command.operands
+        match command.operator:
+            case "m":
+                current = start = (values[0], values[1])
+            case "l":
+                if current is not None:
+                    points.append(current)
+                current = (values[0], values[1])
+                points.append(current)
+            case "c":
+                points.extend(zip(values[::2], values[1::2], strict=True))
+                current = (values[6], values[7])
+            case "re":
+                x, y, width, height = values
+                points.extend(((x, y), (x + width, y), (x, y + height), (x + width, y + height)))
+                current = start = (x, y)
+            case "h":
+                current = start
+    a, b, c, d, e, f = matrix
+    return points_bbox((x * a + y * c + e, x * b + y * d + f) for x, y in points)
 
 
 def flatten_path(source: PdfPath) -> CapturedPath:

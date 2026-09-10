@@ -12,6 +12,7 @@ from core_pdf.impl._impl.graphics.functions import (
     internal_number_array,
 )
 from core_pdf.impl._impl.runtime.scalars import parse_int
+from core_pdf.impl.spec.s_08_graphics.pdf_function import internal_PdfFunctionEvaluator
 from core_pdf.impl.spec.s_08_graphics.shading import parse_shading
 
 
@@ -32,7 +33,11 @@ class PreparedShading:
         return self.internal_evaluator(value)
 
 
-def prepare_shading(dictionary: object) -> PreparedShading | None:
+def prepare_shading(
+    dictionary: object,
+    *,
+    compile_function: Callable[[object], internal_PdfFunctionEvaluator] = internal_compile_pdf_function,
+) -> PreparedShading | None:
     """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
         return None
@@ -65,7 +70,7 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
     else:
         normalized["BBox"] = bbox
     try:
-        spec = parse_shading(normalized, compile_function=internal_compile_pdf_function)
+        spec = parse_shading(normalized, compile_function=compile_function)
     except ValueError:
         return None
     return PreparedShading(

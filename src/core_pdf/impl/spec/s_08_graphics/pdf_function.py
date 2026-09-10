@@ -9,6 +9,7 @@ from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float, parse_int
+from core_pdf.impl.spec.s_08_graphics.pdf_calculator import compile_calculator_function
 
 internal_PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
 
@@ -36,7 +37,9 @@ def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     return (domain[0], domain[1])
 
 
-def internal_compile_sampled_function(function: PdfStream) -> internal_PdfFunctionEvaluator:
+def internal_compile_sampled_function(
+    function: PdfStream, *, coordinate_rounding: Callable[[float], float] | None = None
+) -> internal_PdfFunctionEvaluator:
     """Compile an 8-bit sampled function, decoding its stream exactly once."""
     dictionary = function.dictionary
     if parse_int(dictionary.get("FunctionType"), -1) != 0:
@@ -117,6 +120,8 @@ def internal_compile_sampled_function(function: PdfStream) -> internal_PdfFuncti
             clipped = max(domain_min, min(domain_max, raw_input))
             normalized = (clipped - domain_min) / (domain_max - domain_min)
             encoded = encode[0] + normalized * (encode[1] - encode[0])
+            if coordinate_rounding is not None:
+                encoded = coordinate_rounding(encoded)
             encoded = max(0.0, min(float(size - 1), encoded))
             lower_index = int(encoded)
             upper_index = min(size - 1, lower_index + 1)
@@ -184,6 +189,12 @@ def internal_compile_pdf_function(
                 return internal_compile_sampled_function(function)
             except Exception as exc:
                 raise ValueError("invalid sampled PDF function") from exc
+        if function_type == 4:
+            return compile_calculator_function(
+                function.data,
+                internal_number_array(function.dictionary.get("Domain")),
+                internal_number_array(function.dictionary.get("Range")),
+            )
         dictionary = function.dictionary
     elif isinstance(function, dict):
         function_type = parse_int(function.get("FunctionType"), -1)

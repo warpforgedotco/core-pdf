@@ -14,3 +14,25 @@ Evaluation licenses, commercial licenses, and philanthropy waivers may be availa
 License contact: [turcioskevinr@gmail.com](mailto:turcioskevinr@gmail.com)
 
 The philanthropy waiver, if granted, is issued by Kevin Turcios. The Python Software Foundation is not a party to the waiver and does not endorse, verify, or approve this project or its licensing terms.
+
+## Third-party components
+
+Third-party components retain their own licenses and notices. Separate core-pdf
+license arrangements do not replace licenses granted by third-party authors.
+
+- `core_pdf/_vendor/mupdf/shade_raster.py` adapts numeric shading and triangle
+  rasterization kernels from MuPDF 1.28.2, Copyright (C) 2004–2026 Artifex
+  Software, Inc., under GNU AGPL version 3 or later. The exact source files,
+  hashes, and adaptation boundary are recorded in that directory's README.md;
+  the license is retained in LICENSE.txt.
+- `core_pdf/_vendor/icc/Artifex-CMYK-SWOP.icc`, `Artifex-sRGB.icc`, and
+  `Artifex-Gray.icc` are unmodified MuPDF 1.28.2 profiles, Copyright Artifex
+  Software 2011 (CMYK/RGB) and 2018 (gray), under GNU AGPL version 3.
+  Their provenance and hashes are recorded in the ICC README.md, with the
+  license in LICENSE-Artifex.txt.
+- `core_pdf/_vendor/pypdf_encodings/` contains Adobe Symbol and Zapf Dingbats
+  encoding tables from pypdf 6.15.0 under its BSD-3-Clause license, retained in
+  LICENSE. The original Unicode Consortium copyright and permission notices
+  remain attached to the tables. See that directory's README.md for provenance.
+- Existing fontTools code and substitute-font, CMap, word-list, and ICC data
+  retain the licenses and notices provided alongside those components.

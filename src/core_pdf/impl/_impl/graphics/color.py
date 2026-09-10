@@ -74,13 +74,10 @@ def internal_indexed_operand_to_srgb(
     spec: ImageColorSpec, components: Sequence[float]
 ) -> tuple[float, float, float] | None:
     lookup = spec.lookup
-    base = spec.base
-    if lookup is None or base is None or not components:
+    base_spec = spec.base_spec or ImageColorSpec(kind=spec.base, params={})
+    if lookup is None or base_spec.kind is None or not components:
         return None
-    try:
-        width = internal_alternate_color_component_count(base)
-    except ValueError:
-        return None
+    width = image_component_count(base_spec)
     # 8.6.6.3: "If the value is a real number, it shall be rounded to the
     # nearest integer; if it is outside the range 0 to hival, it shall be
     # adjusted to the nearest value within that range."
@@ -89,9 +86,12 @@ def internal_indexed_operand_to_srgb(
     entry = lookup[start : start + width]
     if len(entry) < width:
         return None
-    return internal_srgb_bytes_to_floats(
-        internal_apply_alt_color([byte / 255.0 for byte in entry], base)
-    )
+    if base_spec.kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+        return internal_srgb_bytes_to_floats(
+            internal_apply_alt_color([byte / 255.0 for byte in entry], base_spec.kind)
+        )
+    converted = internal_convert_color_samples(entry, base_spec)
+    return internal_srgb_bytes_to_floats(bytes(converted) if converted is not None else None)
 
 
 def internal_tint_operands_to_srgb(
@@ -203,7 +203,7 @@ def internal_convert_color_samples(
     if kind == "CalRGB":
         return internal_convert_calrgb(samples, spec.params)
     if kind == "Indexed":
-        return internal_convert_indexed(samples, spec)
+        return internal_convert_indexed(samples, spec, depth)
     if kind == "Separation":
         return internal_convert_separation(samples, spec)
     if kind == "DeviceN":
@@ -404,30 +404,26 @@ def internal_convert_cmyk(
     return cmyk_bytes_to_srgb(uint8_view(raw).reshape(-1, 4)).reshape(-1)
 
 
-def internal_convert_indexed(raw: ImageBuffer, spec: ImageColorSpec) -> ImageBuffer | None:
+def internal_convert_indexed(
+    raw: ImageBuffer, spec: ImageColorSpec, depth: int = 0
+) -> ImageBuffer | None:
     lookup = spec.lookup
     if lookup is None or spec.hival < 0:
         return None
     hival = spec.hival
+    base_spec = spec.base_spec or ImageColorSpec(kind=spec.base, params={})
+    width = image_component_count(base_spec)
+    table_size = (hival + 1) * width
+    if len(lookup) < table_size:
+        raise ValueError("invalid Indexed color lookup")
+    converted = internal_convert_color_samples(lookup[:table_size], base_spec, depth + 1)
+    if converted is None:
+        raise ValueError("invalid Indexed color space")
+    table = uint8_view(converted).reshape(-1, 3)
     samples = uint8_view(raw)
     if numpy.any(samples > hival):
         samples = numpy.minimum(samples, hival)
-    if spec.base == "DeviceRGB":
-        if len(lookup) < (hival + 1) * 3:
-            raise ValueError("invalid Indexed color lookup")
-        table = uint8_view(lookup).reshape(-1, 3)
-        return table[samples].reshape(-1)
-    if spec.base == "DeviceGray":
-        if len(lookup) < hival + 1:
-            raise ValueError("invalid Indexed color lookup")
-        values = uint8_view(lookup)[samples]
-        return numpy.repeat(values[:, None], 3, axis=1).reshape(-1)
-    if spec.base == "DeviceCMYK":
-        if len(lookup) < (hival + 1) * 4:
-            raise ValueError("invalid Indexed color lookup")
-        table = uint8_view(lookup)[: (hival + 1) * 4].reshape(-1, 4)
-        return internal_convert_cmyk(table[samples].reshape(-1))
-    raise ValueError("invalid Indexed color space")
+    return table[samples].reshape(-1)
 
 
 def internal_convert_calgray(raw: ImageBuffer, params: object) -> ImageBuffer:

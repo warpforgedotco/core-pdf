@@ -200,8 +200,26 @@ def test_invalid_control_mappings_fall_back_to_font_encoding(flags: int) -> None
     ) == internal_geometry_expected(internal_text_snapshot(real_pymupdf, source, flags=flags))
 
 
-@pytest.mark.parametrize("name", ["test_2791_content.pdf", "test_3376.pdf"])
+@pytest.mark.parametrize("name", ["test_2791_content.pdf", "test_3376.pdf", "001003ED.pdf"])
 def test_unresolved_control_cids_are_preserved(name: str) -> None:
     source = (FIXTURES_ROOT / "PyMuPDF/tests/resources" / name).read_bytes()
     with real_pymupdf.open(stream=source) as expected, compat_pymupdf.open(stream=source) as actual:
         assert actual[0].get_text() == expected[0].get_text()
+
+
+@pytest.mark.parametrize("character", ["A", " "])
+@pytest.mark.parametrize("offset", [0, 0.5, 1.19, 1.21])
+@pytest.mark.parametrize("rotation", [0, 90])
+def test_overlapping_repeated_characters_are_suppressed(
+    character: str, offset: float, rotation: int
+) -> None:
+    with real_pymupdf.open() as document:
+        page = document.new_page()
+        for displacement in (0, offset):
+            page.insert_text((100 + displacement, 200), character, fontsize=12, rotate=rotation)
+        source = document.tobytes()
+    with real_pymupdf.open(stream=source) as expected, compat_pymupdf.open(stream=source) as actual:
+        for kind in ("text", "words", "blocks", "rawdict"):
+            assert actual[0].get_text(kind) == internal_geometry_expected(
+                expected[0].get_text(kind)
+            )

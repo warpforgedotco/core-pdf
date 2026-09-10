@@ -7,7 +7,7 @@ import math
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from io import BytesIO
-from itertools import groupby
+from itertools import dropwhile, groupby
 from operator import itemgetter
 from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
@@ -22,7 +22,7 @@ from core_pdf.impl._impl.model.geometry import (
 from core_pdf.impl._impl.output.model import Table as StructuredTable
 from core_pdf.impl._impl.output.model import TableCell
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfName, PdfReference
 
 from .._shared import ClosingMixin, encode_png, png_chunk
 from .exceptions import PdfminerException
@@ -280,7 +280,7 @@ class EnginePageAdapter:
                 continue
             ligature = ligatures.get(id(glyph))
             text = ligature[0] if ligature is not None else internal_pdfminer_glyph_text(glyph)
-            if not text or ("source", "annotation_appearance") in glyph.provenance:
+            if ("source", "annotation_appearance") in glyph.provenance:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
             font_height = glyph.effective_font_height or glyph.font_size
@@ -306,7 +306,7 @@ class EnginePageAdapter:
                         # LTChar uses a one-em layout box anchored at the font's
                         # descent, independently of the native ink/ascent bounds.
                         descent = internal_pdfminer_descent(glyph) * glyph.font_size
-                        descent += float(provenance.get("text_rise", 0.0))
+                        # Captured baselines already include the transformed text rise.
                         advance = (
                             internal_pdfminer_normalized_width(glyph) * glyph.font_size * scaling
                         )
@@ -357,6 +357,7 @@ class EnginePageAdapter:
                 bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
                 font_name=internal_pdfminer_font_name(glyph),
                 font_size=font_height,
+                is_vertical=glyph.font_decoder.is_vertical,
                 color=glyph.fill,
                 rotation_angle=glyph.rotation_angle,
                 upright=upright,
@@ -491,7 +492,7 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
         y0=item.bbox.y0,
         y1=item.bbox.y1,
         fontname=item.font_name,
-        size=item.font_size or 0.0,
+        size=x1 - x0 if item.is_vertical else bottom - top,
         stroking_color=item.color,
         non_stroking_color=item.color,
         upright=item.upright,
@@ -932,7 +933,10 @@ class Page:
         y_tolerance = float(kwargs.get("y_tolerance", 3))
         words = _words(self.chars, **kwargs)
         lines = cluster_by_preserving_order(words, "top", y_tolerance)
-        return "\n".join(" ".join(word["text"] for word in line) for line in lines)
+        return "\n".join(
+            " ".join(word["text"] for word in dropwhile(lambda word: not word["text"], line))
+            for line in lines
+        )
 
     def extract_text_simple(self, **kwargs: Any) -> str:
         return self.extract_text(**kwargs)
@@ -1786,6 +1790,49 @@ class PageImage:
         return None
 
 
+def internal_metadata_decoded_page_ids(document: PdfDocument) -> set[int]:
+    """Track page Type literals changed by pdfplumber's metadata decoder."""
+    decoded_pages: set[int] = set()
+
+    def visit(value: object, active: frozenset[int] = frozenset()) -> bool:
+        try:
+            value = document.resolver.resolve(value)
+        except Exception:
+            return False
+        if isinstance(value, (dict, list, tuple)):
+            identity = id(value)
+            if identity in active:
+                # Reference decoding eventually raises on this cycle, aborting
+                # the current metadata value after earlier dictionary entries
+                # have already been replaced in its object cache.
+                return False
+            active = active | {identity}
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if (
+                    normalize_pdf_name(key) == "Type"
+                    and isinstance(item, PdfName)
+                    and normalize_pdf_name(item) == "Page"
+                ):
+                    decoded_pages.add(identity)
+                if not visit(item, active):
+                    return False
+        elif isinstance(value, (list, tuple)):
+            return all(visit(item, active) for item in value)
+        return True
+
+    try:
+        info = document.resolver.resolve(document.trailer_dict.get("Info"))
+    except Exception:
+        return decoded_pages
+    if isinstance(info, dict):
+        # PDF.metadata starts as a shallow copy; only referenced/nested
+        # dictionaries are mutated, not the Info dictionary's own values.
+        for value in info.values():
+            visit(value)
+    return decoded_pages
+
+
 class PDF(ClosingMixin):
     def __init__(
         self,
@@ -1807,6 +1854,7 @@ class PDF(ClosingMixin):
         raw_metadata = self._document.get_metadata()
         info = raw_metadata.get("info") if isinstance(raw_metadata, dict) else None
         self.metadata = dict(info) if isinstance(info, dict) else {}
+        self._metadata_decoded_pages = internal_metadata_decoded_page_ids(self._document)
         self.laparams = laparams
         self._page_selection = tuple(pages) if pages is not None else None
         self._pages: list[Page] | None = None
@@ -1835,6 +1883,11 @@ class PDF(ClosingMixin):
                 self._pages = []
                 resolvable = tuple(internal_pdfminer_resolvable_pages(self._document))
                 selected = set(self._page_selection) if self._page_selection is not None else None
+                resolvable = tuple(
+                    item
+                    for item in resolvable
+                    if id(item[1].page_dict) not in self._metadata_decoded_pages
+                )
                 for page_number, (index, engine_page) in enumerate(resolvable, 1):
                     if selected is not None and page_number not in selected:
                         continue
@@ -2232,7 +2285,7 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
                         emit_word(current, direction)
                         current = []
                     continue
-                punctuation_boundary = text in split_punctuation
+                punctuation_boundary = not text or text in split_punctuation
                 previous = current[-1] if current else None
                 if previous is not None:
                     intra_tolerance = (

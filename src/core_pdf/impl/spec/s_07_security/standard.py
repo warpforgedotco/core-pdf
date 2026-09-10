@@ -76,7 +76,7 @@ class internal_StandardSecurityConfig:
     version: int
     revision: int
     permissions: int
-    owner_entry: bytes
+    owner_entry: bytes | None
     user_entry: bytes
     length_bits: int
     document_id: bytes
@@ -96,6 +96,7 @@ class internal_StandardSecurityConfig:
 class internal_StandardSecurityHandler:
     config: internal_StandardSecurityConfig
     file_key: bytes
+    authentication_status: int = 0
 
     def decrypt(
         self,
@@ -182,8 +183,51 @@ def create_standard_security_handler(
     document_id: Sequence[object],
     params: PdfDict,
     password: str = "",
+    *,
+    retain_authentication_status: bool = False,
 ) -> internal_StandardSecurityHandler:
     """Authenticate a Standard Security dictionary and retain its file key."""
+    version, supported_revisions = internal_standard_security_version(params)
+    try:
+        config = internal_parse_config(document_id, params, version, supported_revisions)
+    except (TypeError, ValueError) as exc:
+        raise PdfUnsupportedError("Invalid encryption dictionary") from exc
+    file_key = internal_authenticate(config, password)
+    return internal_authenticated_handler(config, file_key, password, retain_authentication_status)
+
+
+def create_standard_user_security_handler(
+    document_id: Sequence[object],
+    params: PdfDict,
+    password: str = "",
+) -> internal_StandardSecurityHandler:
+    """Authenticate only the modern U/UE credential and validate its permissions.
+
+    Algorithm 11 and Algorithm 2.A(e) operate independently of O/OE. This
+    entry point validates those algorithms' inputs and the shared encryption
+    parameters; the complete dictionary validator remains the standard factory.
+    An absent owner credential cannot grant owner authentication.
+    """
+    version, supported_revisions = internal_standard_security_version(params)
+    if version not in (5, 6):
+        raise PdfUnsupportedError("Independent user authentication requires modern encryption")
+    try:
+        config = internal_parse_parameters(
+            document_id,
+            params,
+            version,
+            supported_revisions,
+            owner_entry=None,
+            owner_encrypted_key=b"",
+        )
+    except (TypeError, ValueError) as exc:
+        raise PdfUnsupportedError("Invalid encryption dictionary") from exc
+    password_bytes = internal_normalize_password(password, config.revision)
+    file_key = internal_authenticate_modern_user(config, password_bytes)
+    return internal_authenticated_handler(config, file_key, password, False)
+
+
+def internal_standard_security_version(params: PdfDict) -> tuple[int, tuple[int, ...]]:
     filter_name = normalize_pdf_name(params.get("Filter"))
     if filter_name is None:
         raise PdfUnsupportedError("Invalid encryption dictionary")
@@ -198,17 +242,26 @@ def create_standard_security_handler(
     supported_revisions = internal_supported_revisions(version)
     if supported_revisions is None:
         raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={version}")
+    return version, supported_revisions
 
-    try:
-        config = internal_parse_config(document_id, params, version, supported_revisions)
-    except (TypeError, ValueError) as exc:
-        raise PdfUnsupportedError("Invalid encryption dictionary") from exc
-    file_key = internal_authenticate(config, password)
+
+def internal_authenticated_handler(
+    config: internal_StandardSecurityConfig,
+    file_key: bytes | None,
+    password: str,
+    retain_authentication_status: bool,
+) -> internal_StandardSecurityHandler:
     if file_key is None:
         raise PdfUnsupportedError("Incorrect password")
     if config.revision >= 5 and not internal_validate_permissions(config, file_key):
         raise PdfDecryptionError("Invalid encryption permissions")
-    return internal_StandardSecurityHandler(config, file_key)
+    return internal_StandardSecurityHandler(
+        config,
+        file_key,
+        internal_authenticated_password_roles(config, password)
+        if retain_authentication_status
+        else 0,
+    )
 
 
 def internal_parse_config(
@@ -216,6 +269,28 @@ def internal_parse_config(
     params: PdfDict,
     version: int,
     supported_revisions: tuple[int, ...],
+) -> internal_StandardSecurityConfig:
+    revision = internal_required_int(params, "R")
+    owner_entry = internal_required_bytes(params, "O", 32 if revision <= 4 else 48)
+    owner_encrypted_key = internal_required_bytes(params, "OE", 32) if version in (5, 6) else b""
+    return internal_parse_parameters(
+        document_id,
+        params,
+        version,
+        supported_revisions,
+        owner_entry=owner_entry,
+        owner_encrypted_key=owner_encrypted_key,
+    )
+
+
+def internal_parse_parameters(
+    document_id: Sequence[object],
+    params: PdfDict,
+    version: int,
+    supported_revisions: tuple[int, ...],
+    *,
+    owner_entry: bytes | None,
+    owner_encrypted_key: bytes,
 ) -> internal_StandardSecurityConfig:
     revision = internal_required_int(params, "R")
     if revision not in supported_revisions:
@@ -267,7 +342,6 @@ def internal_parse_config(
     # - ISO/TS 32003:2023, Table 3 and 5.2: R7 uses the R6 password
     #   algorithms, so those same entry sizes apply.
     entry_length = 32 if revision <= 4 else 48
-    owner_entry = internal_required_bytes(params, "O", entry_length)
     user_entry = internal_required_bytes(params, "U", entry_length)
     first_document_id = coerce_to_bytes(document_id[0]) if document_id else b""
 
@@ -319,7 +393,6 @@ def internal_parse_config(
     string_filter = "Identity"
     embedded_file_filter = "Identity"
     crypt_filters: Mapping[str, internal_CryptMethod] = MappingProxyType({})
-    owner_encrypted_key = b""
     user_encrypted_key = b""
     encrypted_permissions = b""
     kdf_salt: bytes | None = None
@@ -333,7 +406,6 @@ def internal_parse_config(
             crypt_filters,
         ) = internal_parse_crypt_filters(params, version)
     if version in (5, 6):
-        owner_encrypted_key = internal_required_bytes(params, "OE", 32)
         user_encrypted_key = internal_required_bytes(params, "UE", 32)
         encrypted_permissions = internal_required_bytes(params, "Perms", 16)
 
@@ -526,6 +598,29 @@ def internal_authenticate(
             raise ValueError(f"unsupported Standard Security revision R={config.revision}")
 
 
+def internal_authenticated_password_roles(
+    config: internal_StandardSecurityConfig, password: str
+) -> int:
+    """Report validated user/owner roles without changing the selected file key."""
+    if config.revision <= 4:
+        password_bytes = password.encode("latin-1")
+        user = internal_authenticate_legacy_user(config, password_bytes) is not None
+        owner = internal_authenticate_legacy_owner(config, password_bytes) is not None
+    else:
+        password_bytes = internal_normalize_password(password, config.revision)
+        user = compare_digest(
+            internal_password_hash(config.revision, password_bytes, config.user_entry[32:40]),
+            config.user_entry[:32],
+        )
+        owner = config.owner_entry is not None and compare_digest(
+            internal_password_hash(
+                config.revision, password_bytes, config.owner_entry[32:40], config.user_entry
+            ),
+            config.owner_entry[:32],
+        )
+    return (2 if user else 0) | (4 if owner else 0)
+
+
 def internal_authenticate_legacy(
     config: internal_StandardSecurityConfig,
     password: str,
@@ -535,6 +630,14 @@ def internal_authenticate_legacy(
     if key is not None:
         return key
 
+    return internal_authenticate_legacy_owner(config, password_bytes)
+
+
+def internal_authenticate_legacy_owner(
+    config: internal_StandardSecurityConfig,
+    password_bytes: bytes,
+) -> bytes | None:
+    assert config.owner_entry is not None
     digest = md5(internal_pad_password(password_bytes)).digest()
     key_length = 5
     if config.revision >= 3:
@@ -569,6 +672,7 @@ def internal_legacy_file_key(
     config: internal_StandardSecurityConfig,
     password: bytes,
 ) -> bytes:
+    assert config.owner_entry is not None
     digest = md5(internal_pad_password(password))
     digest.update(config.owner_entry)
     digest.update(struct.pack("<L", config.permissions))
@@ -617,43 +721,41 @@ def internal_authenticate_modern(
     password: str,
 ) -> bytes | None:
     password_bytes = internal_normalize_password(password, config.revision)
-    owner_hash = config.owner_entry[:32]
-    owner_validation_salt = config.owner_entry[32:40]
-    owner_key_salt = config.owner_entry[40:]
-    user_hash = config.user_entry[:32]
-    user_validation_salt = config.user_entry[32:40]
-    user_key_salt = config.user_entry[40:]
+    owner_entry = config.owner_entry
+    if owner_entry is not None:
+        password_hash = internal_password_hash(
+            config.revision, password_bytes, owner_entry[32:40], config.user_entry
+        )
+        if compare_digest(password_hash, owner_entry[:32]):
+            password_hash = internal_password_hash(
+                config.revision,
+                password_bytes,
+                owner_entry[40:],
+                config.user_entry,
+            )
+            return internal_aes_cbc_decrypt(
+                password_hash,
+                bytes(16),
+                config.owner_encrypted_key,
+                use_padding=False,
+            )
+    return internal_authenticate_modern_user(config, password_bytes)
 
+
+def internal_authenticate_modern_user(
+    config: internal_StandardSecurityConfig,
+    password_bytes: bytes,
+) -> bytes | None:
     password_hash = internal_password_hash(
         config.revision,
         password_bytes,
-        owner_validation_salt,
-        config.user_entry,
+        config.user_entry[32:40],
     )
-    if compare_digest(password_hash, owner_hash):
+    if compare_digest(password_hash, config.user_entry[:32]):
         password_hash = internal_password_hash(
             config.revision,
             password_bytes,
-            owner_key_salt,
-            config.user_entry,
-        )
-        return internal_aes_cbc_decrypt(
-            password_hash,
-            bytes(16),
-            config.owner_encrypted_key,
-            use_padding=False,
-        )
-
-    password_hash = internal_password_hash(
-        config.revision,
-        password_bytes,
-        user_validation_salt,
-    )
-    if compare_digest(password_hash, user_hash):
-        password_hash = internal_password_hash(
-            config.revision,
-            password_bytes,
-            user_key_salt,
+            config.user_entry[40:],
         )
         return internal_aes_cbc_decrypt(
             password_hash,
@@ -811,4 +913,8 @@ def internal_name(value: object) -> str:
     return normalize_pdf_name(value, "") or ""
 
 
-__all__ = ("create_standard_decipher", "create_standard_security_handler")
+__all__ = (
+    "create_standard_decipher",
+    "create_standard_security_handler",
+    "create_standard_user_security_handler",
+)

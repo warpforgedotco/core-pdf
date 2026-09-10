@@ -16,7 +16,8 @@ import numpy
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
 from core_pdf.impl._impl.model.geometry import flip_rect_vertical
-from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 PdfInput: TypeAlias = Any
@@ -202,7 +203,9 @@ def internal_nlp_features(
 
 
 def internal_pdf_too_complex(filename: object, password: str) -> bool:
-    with PdfDocument.open(cast(Any, filename), password=password) as document:
+    with PdfDocument.open(
+        cast(Any, filename), password=password, recovery_scan_all_revisions=False
+    ) as document:
         strict_xref_error = document.strict_xref_validation_error()
         if strict_xref_error == "invalid hex string" or (
             strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
@@ -523,6 +526,15 @@ def internal_combine_list_regions(
 
 
 def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
+    # The reference fast strategy discards its extraction result when parsing
+    # fails, including errors after earlier pages have already been processed.
+    try:
+        return internal_partition_pdf(filename, **kwargs)
+    except (PdfError, FilterError, ValueError):
+        return []
+
+
+def internal_partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     if (
         isinstance(filename, (str, PathLike))
         and not (isinstance(filename, str) and filename.startswith("%PDF"))
@@ -535,17 +547,8 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     include_metadata = bool(kwargs.pop("include_metadata", True))
     word_margin = float(cast(Any, kwargs.pop("pdfminer_word_margin", 0.185) or 0.185))
     password = str(kwargs.pop("password", "") or "")
-    try:
-        if internal_pdf_too_complex(filename, password):
-            return []
-    except PdfUnsupportedError as error:
-        if str(error) == "Incorrect password":
-            return []
-        raise
-    except PdfSourceError as error:
-        if str(error) == "PDF source is empty":
-            return []
-        raise
+    if internal_pdf_too_complex(filename, password):
+        return []
     result: list[Element] = []
     pages = extract_pages(
         cast(Any, filename),

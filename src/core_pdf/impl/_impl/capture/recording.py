@@ -9,7 +9,7 @@ from __future__ import annotations
 from math import hypot
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl._impl.capture.paths import flatten_path
+from core_pdf.impl._impl.capture.paths import control_point_bounds, flatten_path
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
@@ -46,6 +46,7 @@ from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transfor
 from core_pdf.impl._impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
+    PaintColorSource,
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.model.text import normalize_extracted_text
@@ -69,6 +70,7 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf.impl.types import (
+    Matrix6,
     PdfName,
     Rectangle,
 )
@@ -78,6 +80,8 @@ from core_pdf.impl.types import (
 class CaptureGraphicsSave:
     clip_bbox: Rectangle | None
     group_alpha: float | None
+    matrix_trace: tuple[Matrix6, ...]
+    control_point_clip: Rectangle | None
     clip_scope_emitted: bool = False
 
 
@@ -134,9 +138,12 @@ class RecordingMethods(SemanticTextState):
     hidden_layers: frozenset[str]
     page_clip: Rectangle | None
     clip_bbox: Rectangle | None
+    control_point_clip: Rectangle | None
     layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
     capture_source: str
+    matrix_trace: tuple[Matrix6, ...]
+    stream_matrix: Matrix
     stream_order: int
     sequence: int
     text_object_id: int
@@ -146,8 +153,11 @@ class RecordingMethods(SemanticTextState):
     run_accumulator: RunAccumulator
     capture_graphics_stack: list[CaptureGraphicsSave]
     capture_marked_entries: dict[int, MarkedContentEntry]
-    capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool]]
+    capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool, Matrix]]
     capture_patterns: dict[int, tuple[object, PatternPaint | None]]
+
+    def concatenate_matrix(self, state: object, matrix: Matrix) -> None:
+        self.matrix_trace = (*self.matrix_trace, matrix)
 
     def is_text_visible(self, text: str) -> bool:
         if not text:
@@ -257,9 +267,19 @@ class RecordingMethods(SemanticTextState):
             clip_bbox=self.clip_bbox,
             page_clip=self.page_clip,
             fill=self.fill_color,
+            fill_source=(
+                PaintColorSource(self.fill_color_spec, self.fill_color_components)
+                if self.fill_color_spec is not None and self.fill_color_components is not None
+                else None
+            ),
             render_mode=self.render_mode,
             fill_opacity=self.fill_opacity,
             stroke_color=self.stroke_color,
+            stroke_source=(
+                PaintColorSource(self.stroke_color_spec, self.stroke_color_components)
+                if self.stroke_color_spec is not None and self.stroke_color_components is not None
+                else None
+            ),
             stroke_opacity=self.stroke_opacity,
             line_width=self.transformed_line_width(),
             line_cap=self.line_cap,
@@ -268,8 +288,26 @@ class RecordingMethods(SemanticTextState):
             blend_mode=self.blend_mode,
             group_alpha=self.group_alpha,
         )
+        marked = next(
+            (entry for entry in reversed(self.marked_content_stack) if entry.mcid is not None),
+            None,
+        )
         provenance = (
             ("source", self.capture_source),
+            *(
+                (("marked_content_path", tuple(self.marked_content_stack)),)
+                if self.marked_content_stack
+                else ()
+            ),
+            *(
+                (("mcid", marked.mcid), ("marked_content_scope", marked))
+                if marked is not None
+                else ()
+            ),
+            ("matrix_trace", self.matrix_trace),
+            ("source_text_matrix", tuple(self.text_matrix)),
+            ("source_line_matrix", tuple(self.line_matrix)),
+            ("soft_mask", self.soft_mask),
             ("stream_order", self.stream_order),
             ("xobject_depth", self.xobject_depth),
             ("clip_bbox", self.clip_bbox),
@@ -325,6 +363,7 @@ class RecordingMethods(SemanticTextState):
                 effective_font_size=captured.font_size,
                 effective_font_height=entry.effective_font_height,
                 provenance=captured.provenance,
+                source_glyphs=tuple(entry.glyphs),
             )
         )
 
@@ -458,7 +497,18 @@ class RecordingMethods(SemanticTextState):
             confidence=None,
         )
         actual_text_span = self.current_capture_actual_text_span()
+        captured = self.record_glyph_observations(
+            text,
+            decoder,
+            rot,
+            visible,
+            glyphs=glyphs,
+            text_basis=(E, F, A, B, C, D),
+            effective_font_size=effective_font_size,
+            effective_font_height=effective_font_height,
+        )
         if actual_text_span is not None:
+            actual_text_span.glyphs.extend(captured.glyphs)
             new_run.confidence = 1.0
             actual_text_span.add_run(
                 new_run,
@@ -466,16 +516,6 @@ class RecordingMethods(SemanticTextState):
                 effective_font_height=effective_font_height,
             )
         else:
-            captured = self.record_glyph_observations(
-                text,
-                decoder,
-                rot,
-                visible,
-                glyphs=glyphs,
-                text_basis=(E, F, A, B, C, D),
-                effective_font_size=effective_font_size,
-                effective_font_height=effective_font_height,
-            )
             self.glyphs.extend(captured.glyphs)
             self.glyph_clusters.extend(captured.clusters)
             new_run.glyph_clusters = tuple(captured.clusters)
@@ -531,6 +571,12 @@ class RecordingMethods(SemanticTextState):
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     kind=kind,
+                    matrix_trace=self.matrix_trace,
+                    stream_matrix=self.stream_matrix,
+                    soft_mask=self.soft_mask,
+                    soft_mask_clip=intersect_bbox(
+                        self.clip_bbox, path.bbox() if kind == "fill" else None
+                    ),
                     path=path,
                     stream_order=self.stream_order,
                     xobject_depth=self.xobject_depth,
@@ -548,6 +594,9 @@ class RecordingMethods(SemanticTextState):
         clip_bbox = path.bbox()
         if clip_bbox is not None:
             self.clip_bbox = intersect_bbox(self.clip_bbox, clip_bbox)
+        self.control_point_clip = intersect_bbox(
+            self.control_point_clip, control_point_bounds(source, self.ctm)
+        )
         if self.is_graphics_visible():
             self.internal_emit_clip_scope_push()
             self.drawings.append(
@@ -584,6 +633,7 @@ class RecordingMethods(SemanticTextState):
             # the fill, so recording it is only meaningful for the mask case,
             # but it costs nothing to carry and the renderer decides.
             image_is_stencil = xobj_dict.get("ImageMask") is True
+            marked_content = self.current_capture_image_context()
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
@@ -593,14 +643,22 @@ class RecordingMethods(SemanticTextState):
                     dash_pattern=self.transformed_dash_pattern(),
                     soft_mask_alpha=smask_alpha,
                     kind="image",
+                    matrix_trace=self.matrix_trace,
+                    soft_mask=self.soft_mask,
+                    soft_mask_clip=intersect_bbox(
+                        self.clip_bbox,
+                        (bbox.x0, bbox.y0, bbox.x1, bbox.y1) if bbox is not None else None,
+                    ),
                     image_source=source,
                     raw_data=xobj.raw_data,
                     dictionary=dict(xobj_dict),
                     image_clip=self.clip_bbox,
+                    control_point_clip=self.control_point_clip,
                     items=[("quad", quad)] if quad is not None else [],
                     bbox=bbox,
                     stream_order=self.stream_order,
                     xobject_depth=self.xobject_depth,
+                    marked_content=marked_content,
                 )
             )
             self.sequence += 1
@@ -626,6 +684,7 @@ class RecordingMethods(SemanticTextState):
                     data=data,
                     image_source=source,
                     image_clip=self.clip_bbox,
+                    control_point_clip=self.control_point_clip,
                     ctm=self.ctm,
                     xobject_depth=self.xobject_depth,
                     blend_mode=self.blend_mode,
@@ -633,6 +692,9 @@ class RecordingMethods(SemanticTextState):
                     stream_order=self.stream_order,
                     fill=self.fill_color if dictionary.get("ImageMask") is True else None,
                     fill_opacity=self.fill_opacity,
+                    marked_content=self.current_capture_image_context(),
+                    matrix_trace=self.matrix_trace,
+                    soft_mask=self.soft_mask,
                 )
             )
             self.sequence += 1
@@ -654,8 +716,13 @@ class RecordingMethods(SemanticTextState):
                 blend_mode=self.blend_mode,
                 soft_mask_alpha=self.group_alpha,
                 kind="shading",
+                matrix_trace=self.matrix_trace,
+                soft_mask=self.soft_mask,
                 items=[],
                 dictionary=dict(shading),
+                shading_matrix=self.ctm,
+                shading_clip=self.clip_bbox,
+                control_point_clip=self.control_point_clip,
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
             )
@@ -679,6 +746,23 @@ class RecordingMethods(SemanticTextState):
         entry = self.current_actual_text_span()
         if entry is None:
             return None
+        return self.capture_marked_content_entry(entry)
+
+    def current_capture_image_context(self) -> MarkedContentEntry | None:
+        actual_text_entry = self.current_actual_text_span()
+        entries = (
+            [actual_text_entry]
+            if actual_text_entry is not None
+            else reversed(self.marked_content_stack)
+        )
+        for entry in entries:
+            if entry.actual_text is not None or entry.mcid is not None:
+                captured = self.capture_marked_content_entry(entry)
+                captured.last_image_sequence = self.sequence
+                return captured
+        return None
+
+    def capture_marked_content_entry(self, entry: SemanticMarkedContentEntry) -> MarkedContentEntry:
         key = id(entry)
         captured = self.capture_marked_entries.get(key)
         if captured is None:
@@ -692,22 +776,36 @@ class RecordingMethods(SemanticTextState):
             self.emit_actual_text_span(captured)
 
     def save_graphics(self, state: object) -> None:
-        self.capture_graphics_stack.append(CaptureGraphicsSave(self.clip_bbox, self.group_alpha))
+        self.capture_graphics_stack.append(
+            CaptureGraphicsSave(
+                self.clip_bbox, self.group_alpha, self.matrix_trace, self.control_point_clip
+            )
+        )
 
     def restore_graphics(self, state: object) -> None:
         saved = self.capture_graphics_stack.pop()
         self.clip_bbox = saved.clip_bbox
+        self.control_point_clip = saved.control_point_clip
         self.group_alpha = saved.group_alpha
+        self.matrix_trace = saved.matrix_trace
         if saved.clip_scope_emitted:
             self.drawings.append(marker_drawing("state-pop", self.sequence))
             self.sequence += 1
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        if frame.is_form:
+            raw_matrix = frame.stream.dictionary.get("Matrix")
+            matrix = self.internal_matrix_operand(raw_matrix, "form")
+            self.concatenate_matrix(state, matrix)
+        else:
+            self.matrix_trace = (frame.ctm,)
         self.capture_frames[id(frame)] = (
             self.layout_form_bbox,
             self.layout_form_id,
             self.pending_line_break,
+            self.stream_matrix,
         )
+        self.stream_matrix = frame.ctm
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -715,10 +813,13 @@ class RecordingMethods(SemanticTextState):
                     self.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=self.blend_mode,
+                    soft_mask=self.soft_mask,
+                    soft_mask_clip=intersect_bbox(self.clip_bbox, frame.clip_bbox),
                 )
             )
             self.sequence += 1
             self.group_alpha = None
+            self.soft_mask = None
         layout_bbox = None
         raw_bbox = frame.form_bbox_operand
         if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
@@ -736,13 +837,19 @@ class RecordingMethods(SemanticTextState):
             self.layout_form_id = None
         if frame.clip_bbox is not None:
             self.clip_bbox = intersect_bbox(self.clip_bbox, frame.clip_bbox)
+            self.control_point_clip = intersect_bbox(self.control_point_clip, frame.clip_bbox)
         self.pending_line_break = False
         self.stream_order += 1
 
     def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
         old = self.capture_frames.pop(id(frame), None)
         if old is not None:
-            self.layout_form_bbox, self.layout_form_id, self.pending_line_break = old
+            (
+                self.layout_form_bbox,
+                self.layout_form_id,
+                self.pending_line_break,
+                self.stream_matrix,
+            ) = old
         active_entries = {id(entry) for entry in self.marked_content_stack}
         self.capture_marked_entries = {
             key: value
@@ -800,6 +907,7 @@ class RecordingMethods(SemanticTextState):
                 nested.drawings,
                 [glyph for glyph in nested.glyphs if glyph.has_paint],
                 nested.inline_images,
+                matrix=pattern.matrix,
             )
         self.capture_patterns[key] = (pattern, result)
         return result

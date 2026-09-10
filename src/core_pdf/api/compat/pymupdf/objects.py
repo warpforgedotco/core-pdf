@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import zlib
 from decimal import Decimal
 from typing import Any, cast
@@ -14,6 +15,7 @@ from core_pdf.impl._impl.document.write import write_pdf
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.serialize import serialize_name
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 
@@ -389,12 +391,75 @@ class ObjectAccess:
             self.trailer_override = trailer
         return write_pdf(objects, trailer, size=self.length, version=version)
 
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "format": self.metadata_format(),
+            **{
+                key: self.metadata_text(key[0].upper() + key[1:])
+                for key in (
+                    "title",
+                    "author",
+                    "subject",
+                    "keywords",
+                    "creator",
+                    "producer",
+                    "creationDate",
+                    "modDate",
+                    "trapped",
+                )
+            },
+            "encryption": self.encryption_description(),
+        }
+
+    def metadata_format(self) -> str:
+        """The displayed version gives the catalog entry precedence over the header."""
+        if self.source is None:
+            return "PDF 1.7"
+        header = re.search(rb"%PDF-(\d+)\.(\d+)", bytes(self.source.raw_data[:1024]))
+        version = (int(header[1]), int(header[2])) if header else (1, 7)
+        catalog = self.resolve(self.trailer.get("Root"))
+        catalog_version = (
+            self.resolve(catalog.get("Version")) if isinstance(catalog, dict) else None
+        )
+        if isinstance(catalog_version, PdfName):
+            override = re.fullmatch(r"(\d+)\.(\d+)", catalog_version.value)
+            if override is not None:
+                version = (int(override[1]), int(override[2]))
+        return f"PDF {version[0]}.{version[1]}"
+
+    def encryption_description(self) -> str | None:
+        """Describe the active standard encryption dictionary after authentication."""
+        encrypt = self.resolve(self.trailer.get("Encrypt"))
+        if not isinstance(encrypt, dict):
+            return None
+        security_version = parse_int(encrypt.get("V"), 0)
+        revision = parse_int(encrypt.get("R"), 0)
+        bits = parse_int(encrypt.get("Length"), 256 if security_version >= 5 else 40)
+        algorithm = "RC4"
+        if security_version >= 5:
+            algorithm = "AES"
+        elif security_version == 4:
+            filters = self.resolve(encrypt.get("CF"))
+            stream_filter = self.resolve(encrypt.get("StmF"))
+            selected_filter = (
+                self.resolve(filters.get(stream_filter))
+                if isinstance(filters, dict) and isinstance(stream_filter, PdfName)
+                else None
+            )
+            if isinstance(selected_filter, dict) and str(selected_filter.get("CFM")) == "AESV2":
+                algorithm = "AES"
+                if "Length" not in encrypt:
+                    bits = 128
+        return f"Standard V{security_version} R{revision} {bits}-bit {algorithm}"
+
     def metadata_text(self, key: str) -> str:
         info = self.resolve(self.trailer.get("Info"))
         value = self.resolve(info.get(key)) if isinstance(info, dict) else None
         if not isinstance(value, PdfString):
             return ""
-        text = decode_pdf_text_string(value.data).split("\0", 1)[0]
+        text = decode_pdf_text_string(value.data)
+        if not value.data.startswith((b"\xfe\xff", b"\xff\xfe")):
+            text = text.split("\0", 1)[0]
         if not value.data.startswith((b"\xfe\xff", b"\xff\xfe", b"\xef\xbb\xbf")):
             text = text.replace("\x9f", "\0").replace("\xad", "\0")
         return text

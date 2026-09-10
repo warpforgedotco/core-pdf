@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
+from dataclasses import dataclass
 from decimal import Decimal
 from os import PathLike
 from typing import Any, cast, overload
@@ -17,6 +18,8 @@ from core_pdf.api.compat.pypdf import (
 from core_pdf.impl._impl.document.metadata import resolve_info_metadata
 from core_pdf.impl._impl.document.page_tree import resolve_page_tree_node_type
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
+from core_pdf.impl._impl.model.pdf_values import coerce_value
 from core_pdf.impl._impl.output.model import Document
 from core_pdf.impl._impl.output.model import Page as StructuredPage
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
@@ -49,22 +52,32 @@ class Rectangle(tuple[Decimal, Decimal, Decimal, Decimal]):
 
 class Array(list[Any]):
     def __repr__(self) -> str:
-        values = ", ".join(_pike_repr(value) for value in self)
-        return f"pikepdf.Array([ {values} ])"
+        return f"pikepdf.Array({_pike_repr(self)})"
 
     __str__ = __repr__
 
 
-def _pike_repr(value: object) -> str:
+class internal_PikepdfDictionary(dict[str, Any]):
+    def __repr__(self) -> str:
+        kind = self.get("Type")
+        qualifier = f'(Type="{kind}")' if isinstance(kind, str) and kind.startswith("/") else ""
+        return f"pikepdf.Dictionary{qualifier}({_pike_repr(self)})"
+
+    __str__ = __repr__
+
+
+def _pike_repr(value: object, indent: int = 0) -> str:
     if isinstance(value, str):
         escaped = value.replace('"', '\\"')
         return f'"{escaped}"'
     if isinstance(value, dict):
         rows = [
-            f'  "/{str(key).lstrip("/")}": {_pike_repr(item)}'
+            f'{" " * (indent + 2)}"/{str(key).lstrip("/")}": {_pike_repr(item, indent + 2)}'
             for key, item in sorted(value.items(), key=lambda item: str(item[0]))
         ]
-        return "{\n" + ",\n".join(rows) + "\n}"
+        return "{\n" + ",\n".join(rows) + "\n" + " " * indent + "}"
+    if isinstance(value, list):
+        return "[ " + ", ".join(_pike_repr(item, indent) for item in value) + " ]"
     return repr(value)
 
 
@@ -74,10 +87,76 @@ def _pike_value(value: object) -> object:
     if isinstance(value, list):
         return Array(_pike_value(item) for item in value)
     if isinstance(value, dict):
-        return {str(key): _pike_value(item) for key, item in value.items()}
+        return internal_PikepdfDictionary(
+            {str(key): _pike_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, float):
+        return Decimal(str(value))
     if isinstance(value, str):
         return value.replace("\xad", "\ufffd")
     return value
+
+
+@dataclass(frozen=True, slots=True)
+class internal_PikepdfObjectReference:
+    description: str
+
+    def __repr__(self) -> str:
+        return self.description
+
+
+def internal_pikepdf_page_tree_info(pdf: PdfDocument, info: dict[str, Any]) -> dict[str, Any]:
+    """Project an Info dictionary alias without expanding page objects or cycles."""
+    tree_nodes: set[int] = set()
+    pending = [pdf.catalog().get("Pages")]
+    while pending:
+        node = pdf.resolver.resolve(pending.pop())
+        if not isinstance(node, dict) or id(node) in tree_nodes:
+            continue
+        if pdf.resolver.resolve(node.get("Type")) != PdfName.of("Pages"):
+            continue
+        tree_nodes.add(id(node))
+        kids = pdf.resolver.resolve(node.get("Kids"))
+        if isinstance(kids, list):
+            pending.extend(kids)
+
+    active: set[int] = set()
+    inherited = {"MediaBox", "CropBox", "Resources", "Rotate"}
+
+    def project(value: object, *, parent: bool = False) -> object:
+        reference = value if isinstance(value, PdfReference) else None
+        value = pdf.resolver.resolve(value)
+        if isinstance(value, dict):
+            node_dict = cast(dict[str, Any], value)
+            kind = pdf.resolver.resolve(node_dict.get("Type"))
+            if kind == PdfName.of("Page") and reference is not None:
+                return internal_PikepdfObjectReference(
+                    f"<Pdf.pages.from_objgen({reference.object_number},"
+                    f"{reference.generation_number})>"
+                )
+            if id(value) in active or (parent and kind == PdfName.of("Pages")):
+                return internal_PikepdfObjectReference(f"<reference to /{kind}>")
+            active.add(id(value))
+            # qpdf pushes inheritable attributes from actual /Pages ancestors
+            # onto leaf pages. A separate Info dictionary with /Type /Pages is
+            # not part of that tree and retains its own attributes.
+            result = {
+                str(key): project(item, parent=key == "Parent")
+                for key, item in node_dict.items()
+                if not (id(value) in tree_nodes and key in inherited)
+            }
+            active.remove(id(value))
+            return result
+        if isinstance(value, list):
+            if id(value) in active:
+                return internal_PikepdfObjectReference("<...>")
+            active.add(id(value))
+            items = [project(item) for item in value]
+            active.remove(id(value))
+            return items
+        return coerce_value(value, decode_pdf_text_string)
+
+    return cast(dict[str, Any], project(info))
 
 
 def _pikepdf_info_metadata(pdf: PdfDocument) -> dict[str, Any]:
@@ -98,6 +177,11 @@ def _pikepdf_info_metadata(pdf: PdfDocument) -> dict[str, Any]:
                 return {}
             finally:
                 lexer.close()
+    raw_info = pdf.resolver.resolve(info)
+    if isinstance(raw_info, dict) and pdf.resolver.resolve(raw_info.get("Type")) == PdfName.of(
+        "Pages"
+    ):
+        return internal_pikepdf_page_tree_info(pdf, cast(dict[str, Any], raw_info))
     return dict(resolve_info_metadata(pdf.resolver, pdf.trailer_dict, recover=True))
 
 
@@ -109,11 +193,16 @@ class Page(PdfPageObject):
         media_box: tuple[Decimal, Decimal, Decimal, Decimal] | None = None,
     ) -> None:
         super().__init__(document, page)
-        engine_box = None
-        if document.pdf is not None and media_box is None:
-            engine_box = document.source_pdf.pages[page.page_number - 1].media_box
-        self.mediabox = cast(Any, Rectangle(*(media_box or engine_box or self.mediabox)))
-        self.cropbox = cast(Any, Rectangle(*self.cropbox))
+        engine_media_box = (0.0, 0.0, page.width, page.height)
+        engine_crop_box = page.cropbox
+        if document.pdf is not None and 0 < page.page_number <= len(document.internal_source_pages):
+            source_page = document.internal_source_pages[page.page_number - 1]
+            engine_media_box = source_page.media_box or engine_media_box
+            engine_crop_box = source_page.crop_box
+        # pikepdf adopts recovered geometry independently of pypdf's raw-box
+        # validation. Its crop fallback also precedes any decimal media override.
+        self.mediabox = cast(Any, Rectangle(*(media_box or engine_media_box)))
+        self.cropbox = cast(Any, Rectangle(*(engine_crop_box or engine_media_box)))
 
 
 def _validate_pikepdf_object_graph(document: StructuredState) -> None:

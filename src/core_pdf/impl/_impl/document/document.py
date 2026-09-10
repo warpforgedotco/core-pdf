@@ -27,6 +27,7 @@ from core_pdf.impl._impl.document.records import (
     RawOutlineItem,
 )
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
+from core_pdf.impl._impl.document.recovery.security import initialize_document_security
 from core_pdf.impl._impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
 from core_pdf.impl._impl.document.structure import StructureTree
 from core_pdf.impl._impl.fonts.fallback import internal_RasterFontRepository
@@ -38,7 +39,6 @@ from core_pdf.impl.exceptions import (
 )
 from core_pdf.impl.spec.s_07_document.page import PageNode as internal_PageNode
 from core_pdf.impl.spec.s_07_document.page import iter_page_nodes
-from core_pdf.impl.spec.s_07_security.document import initialize_document_security
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
@@ -385,13 +385,8 @@ class PdfDocument(
             return None
 
     def init_security(self, password: str) -> None:
-        trailer = self.trailer_dict
-        if trailer.get("Encrypt") is not None and trailer.get("ID") is None:
-            # Preserve the reader's legacy handling of missing encrypted-file IDs.
-            trailer = dict(trailer)
-            trailer["ID"] = [b""]
         self.decipher = initialize_document_security(
-            self.raw_data, trailer, self.resolver, password
+            self.raw_data, self.trailer_dict, self.resolver, password
         )
 
     # Page tree and page labels
@@ -658,7 +653,12 @@ class PdfDocument(
             return None
         return labels[page_index]
 
-    def build_page_labels(self, *, page_count: int | None = None) -> list[str] | None:
+    def build_page_labels(
+        self,
+        *,
+        page_count: int | None = None,
+        format_label: Callable[[PdfDict, int, Callable[[object], object]], str] = format_page_label,
+    ) -> list[str] | None:
         try:
             labels_root = self.resolve(self.catalog().get("PageLabels"))
         except ValueError:
@@ -696,7 +696,7 @@ class PdfDocument(
             while spec_pos + 1 < len(specs) and page_index >= specs[spec_pos + 1][0]:
                 spec_pos += 1
                 current_index, current_spec = specs[spec_pos]
-            labels.append(format_page_label(current_spec, page_index - current_index, self.resolve))
+            labels.append(format_label(current_spec, page_index - current_index, self.resolve))
         return labels
 
     def page_index_for(self, page_obj: object) -> int | None:
@@ -868,13 +868,18 @@ class PdfDocument(
         resolve_name: Callable[[str], RawNamedDestination | None],
         internal_lookup: internal_PageLookup[internal_PageT],
     ) -> RawNamedDestination:
+        seen: set[int] = set()
         resolved = self.resolver.resolve(val)
-        if isinstance(resolved, dict):
+        while isinstance(resolved, dict):
+            marker = id(resolved)
+            if marker in seen:
+                raise ValueError("destination cycle detected")
+            seen.add(marker)
             dest_value = resolved.get("D")
-            if dest_value is not None:
-                return self.internal_normalize_destination_value(
-                    dest_value, resolve_name, internal_lookup
-                )
+            if dest_value is None:
+                break
+            val = dest_value
+            resolved = self.resolver.resolve(val)
         resolved_list = val if isinstance(val, list) else resolved
         if isinstance(resolved_list, tuple):
             resolved_list = list(resolved_list)

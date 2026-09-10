@@ -4,25 +4,29 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from functools import cached_property
 from io import BytesIO
 from os import PathLike
 from typing import Any, cast
 
-from core_pdf import PdfDocument
+from core_pdf import PdfDocument, PdfPage
 from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl._impl.output.model import (
     Document,
     Page,
 )
+from core_pdf.impl._impl.runtime.scalars import parse_float
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfReference, PdfString
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 
 
-def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
-    """Preserve pypdf's rejection of repeated/cyclic intermediate page nodes."""
+def internal_validate_pypdf_page_tree(
+    pdf: PdfDocument,
+) -> dict[int, Mapping[str, object]]:
+    """Validate page ancestry and retain raw inherited boxes for lazy access."""
     literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
     if literal_trailers:
         latest_root = literal_trailers[-1].get("Root")
@@ -34,8 +38,9 @@ def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
             raise ValueError("invalid catalog root")
 
     seen: set[tuple[int, int]] = set()
+    page_boxes: dict[int, Mapping[str, object]] = {}
 
-    def visit(value: object) -> None:
+    def visit(value: object, inherited_boxes: Mapping[str, object]) -> None:
         if isinstance(value, PdfReference):
             key = (value.object_number, value.generation_number)
             if key in seen:
@@ -44,20 +49,39 @@ def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
         node = pdf.resolver.resolve(value)
         if not isinstance(node, dict):
             raise ValueError("invalid object in page tree")
+        # Inheritance follows the actual /Kids traversal. Missing or damaged
+        # /Parent back-pointers must not discard those ancestor values. Unlike
+        # core recovery, the facade retains explicit nulls as local overrides.
+        node_dict = cast(dict[str, object], node)
+        boxes = dict(inherited_boxes)
+        for name in ("MediaBox", "CropBox"):
+            if name in node_dict:
+                boxes[name] = node_dict[name]
+        page_boxes[id(node)] = boxes
         kids = pdf.resolver.resolve(node.get("Kids"))
         if isinstance(kids, (list, tuple)):
             for kid in kids:
-                visit(kid)
+                visit(kid, boxes)
 
-    visit(pdf.catalog().get("Pages"))
+    visit(pdf.catalog().get("Pages"), {})
+    return page_boxes
 
 
 class StructuredState(ClosingMixin):
     """Facade-local ownership of an engine document or synthetic structured snapshot."""
 
-    def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
+    def __init__(
+        self,
+        pdf: PdfDocument | None,
+        structured: Document | None = None,
+        *,
+        page_box_values: Mapping[int, Mapping[str, object]] | None = None,
+    ) -> None:
         self.pdf = pdf
         self._structured = structured
+        self.internal_page_box_values: Mapping[int, Mapping[str, object]] = (
+            page_box_values if page_box_values is not None else {}
+        )
 
     @property
     def structured(self) -> Document:
@@ -72,11 +96,11 @@ class StructuredState(ClosingMixin):
         try:
             if pdf.raw_data.find(b"startxref") < 0:
                 raise ValueError("startxref not found")
-            internal_validate_pypdf_page_tree(pdf)
+            page_box_values = internal_validate_pypdf_page_tree(pdf)
         except Exception:
             pdf.close()
             raise
-        return cls(pdf)
+        return cls(pdf, page_box_values=page_box_values)
 
     @classmethod
     def synthetic(cls, structured: Document) -> "StructuredState":
@@ -87,6 +111,11 @@ class StructuredState(ClosingMixin):
         if self.pdf is None:
             raise ValueError("synthetic snapshots do not have a source PDF")
         return self.pdf
+
+    @cached_property
+    def internal_source_pages(self) -> tuple[PdfPage, ...]:
+        """Retain source pages once while materializing pypdf-shaped page wrappers."""
+        return tuple(self.source_pdf.pages)
 
     @property
     def metadata(self) -> Mapping[str, Any]:
@@ -221,12 +250,16 @@ class PdfPageObject:
         self._document = document
         self._page = page
         self.internal_text_override: str | None = None
-        if document.pdf is not None and 0 < page.page_number <= len(document.pdf.pages):
-            source_page = document.pdf.pages[page.page_number - 1]
-            media_box = source_page.media_box or (0.0, 0.0, page.width, page.height)
-            crop_box = source_page.crop_box or media_box
-            self.mediabox = Rectangle(*media_box)
-            self.cropbox = Rectangle(*crop_box)
+        self.internal_boxes: dict[str, Rectangle] = {}
+        self.internal_box_values: Mapping[str, object] = {}
+        if document.pdf is not None and 0 < page.page_number <= len(document.internal_source_pages):
+            source_page = document.internal_source_pages[page.page_number - 1]
+            # Reader state retains explicit nulls from the actual page ancestry.
+            # Other facades construct state directly and keep core's prepared
+            # inheritance policy before applying their own geometry adapters.
+            self.internal_box_values = document.internal_page_box_values.get(
+                id(source_page.page_dict), source_page.inherited_values
+            )
             raw_rotation = source_page.inherited_values.get("Rotate")
             self.rotation = (
                 int(raw_rotation)
@@ -237,6 +270,45 @@ class PdfPageObject:
             self.mediabox = Rectangle(0, 0, page.width, page.height)
             self.cropbox = Rectangle(*(page.cropbox or self.mediabox))
             self.rotation = page.rotation
+
+    def internal_get_box(self, name: str, fallback: str | None = None) -> Rectangle:
+        cached = self.internal_boxes.get(name)
+        if cached is not None:
+            return cached
+        value = self.internal_box_values.get(name)
+        if self._document.pdf is not None:
+            value = self._document.pdf.resolver.resolve(value)
+        if value is None and fallback is not None:
+            value = self.internal_get_box(fallback)
+        if value is None:
+            raise TypeError("object of type 'NoneType' has no len()")
+        if not isinstance(value, (list, tuple)):
+            raise TypeError(f"invalid /{name} rectangle")
+        if len(value) < 4:
+            raise ValueError(f"Expected four values for /{name}, got {len(value)}: {value}")
+        # The reference reader accepts surplus coordinates and substitutes zero
+        # for individual nonnumeric entries in an otherwise shaped rectangle.
+        box = Rectangle(
+            *(parse_float(item.data if isinstance(item, PdfString) else item) for item in value[:4])
+        )
+        self.internal_boxes[name] = box
+        return box
+
+    @property
+    def mediabox(self) -> Rectangle:
+        return self.internal_get_box("MediaBox")
+
+    @mediabox.setter
+    def mediabox(self, value: Rectangle) -> None:
+        self.internal_boxes["MediaBox"] = value
+
+    @property
+    def cropbox(self) -> Rectangle:
+        return self.internal_get_box("CropBox", "MediaBox")
+
+    @cropbox.setter
+    def cropbox(self, value: Rectangle) -> None:
+        self.internal_boxes["CropBox"] = value
 
     def _capability_view(self) -> Any:
         return self._document.capability_page(self._page.page_number).structured_view

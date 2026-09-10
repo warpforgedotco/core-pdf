@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl.spec.s_09_fonts.cmap_resources import (
     cmap_resource_exists,
@@ -248,6 +250,23 @@ def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
         return CMapDecoder.identity(byte_width=2, wmode=int(normalized_name.endswith("-V")))
     if normalized_name in {"OneByteIdentityH", "OneByteIdentityV"}:
         return CMapDecoder.identity(byte_width=1, wmode=int(normalized_name.endswith("V")))
+    template = internal_predefined_cmap_decoder(normalized_name)
+    if template is None:
+        return None
+    # Font switches repeatedly request the same installed resource. Retain its
+    # compiled ranges, but give every caller independent mutable containers so
+    # an embedded usecmap override cannot modify another font's decoder.
+    decoder = CMapDecoder(b"", internal_empty=True)
+    decoder.inherit(template)
+    decoder.decode_lengths = template.decode_lengths
+    decoder.cid_ranges_by_length = template.cid_ranges_by_length.copy()
+    decoder.notdef_ranges_by_length = template.notdef_ranges_by_length.copy()
+    decoder.code_space_ranges_by_length = template.code_space_ranges_by_length.copy()
+    return decoder
+
+
+@lru_cache(maxsize=128)
+def internal_predefined_cmap_decoder(normalized_name: str) -> CMapDecoder | None:
     cmap_data = resolve_cmap_resource(normalized_name)
     if cmap_data is None:
         return None

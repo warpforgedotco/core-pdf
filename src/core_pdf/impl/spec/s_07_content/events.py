@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
 
 if TYPE_CHECKING:
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 
 
 class ContentSink(Protocol):
+    def concatenate_matrix(self, state: TextState, matrix: Matrix, /) -> None: ...
+
     def show_text(
         self,
         state: TextState,

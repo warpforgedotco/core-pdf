@@ -487,7 +487,26 @@ class XRefScanner(SyntaxXRefScanner):
             if data[entry_pos : entry_pos + 7] == b"trailer":
                 pos = entry_pos
                 break
-            offset, generation, in_use, pos = parse_xref_entry_at(data, pos)
+            try:
+                offset, generation, in_use, pos = parse_xref_entry_at(data, pos)
+            except PdfParseError:
+                line, next_pos = cls.read_line(data, pos)
+                parts = line.split()
+                if (
+                    start_obj + i == 0
+                    and len(parts) == 3
+                    and parts[0].isdigit()
+                    and parts[1].isdigit()
+                    and int(parts[1]) > 65535
+                    and parts[2] == b"f"
+                ):
+                    # Object zero is only the free-list head. A producer's
+                    # overflowed generation here must not discard otherwise
+                    # readable revisions (including newer page updates).
+                    pos = next_pos
+                    actual_count += 1
+                    continue
+                raise
             entries[((start_obj + i) << 16) | generation] = PdfXRefEntry(offset, generation, in_use)
             actual_count += 1
         while True:
@@ -573,6 +592,11 @@ class XRefScanner(SyntaxXRefScanner):
                         continue
                     seen.add(nearby)
                     return result
+                if recover_malformed_objects and section_start != start:
+                    # An unreadable older revision cannot invalidate the
+                    # sections already read. Keep their entries/trailer and
+                    # leave missing objects to ordinary resolver recovery.
+                    return {}, {}, None, None
                 raise original_error
 
         return SyntaxXRefScanner.load_section_chain(

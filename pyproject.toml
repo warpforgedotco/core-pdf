@@ -9,7 +9,7 @@ description = "High-Performance PDF Engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
-license-files = ["LICENSE.txt"]
+license-files = ["LICENSE.txt", "docs/license/NOTICE", "src/core_pdf/_vendor/*/LICENSE*"]
 requires-python = ">=3.13"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
@@ -168,7 +168,9 @@ where = ["src"]
 [tool.setuptools.package-data]
 core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
-"core_pdf._vendor.icc" = ["*.icc", "README.md"]
+"core_pdf._vendor.icc" = ["*.icc", "README.md", "LICENSE*"]
+"core_pdf._vendor.mupdf" = ["README.md", "LICENSE.txt"]
+"core_pdf._vendor.pypdf_encodings" = ["README.md", "LICENSE"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
 "core_pdf.impl._impl.layout.data.wordlists" = [
     "*.txt.gz",

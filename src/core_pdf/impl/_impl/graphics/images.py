@@ -232,15 +232,13 @@ def internal_decode_image_samples(
     if native is not None and native.width == width and native.height == height:
         return native
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
-    expected_gray = width * height
-    expected_rgb = expected_gray * 3
-    if len(raw) in {expected_gray, expected_rgb}:
-        return raw
+    pixels = width * height
+    expected_sizes = {pixels, pixels * 3, pixels * 4}
     try:
         decoded = decode_stream_data(raw, dictionary)
     except Exception:
         return None
-    if len(decoded) in {expected_gray, expected_rgb}:
+    if len(decoded) in expected_sizes:
         return decoded
     if bits_per_component in {1, 2, 4}:
         row_bytes = (width * bits_per_component + 7) // 8

@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager, suppress
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
 from core_pdf.impl._impl.document.document import PdfDocument as EnginePdfDocument
 from core_pdf.impl._impl.document.page import PdfPage as EnginePdfPage
 from core_pdf.impl._impl.extract.pipeline import extract_page
@@ -30,6 +31,7 @@ from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.exceptions import PdfDocumentClosedError
+from core_pdf.impl.spec.s_07_content.image_capture import unit_square_placement
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.types import (
     DrawingRecord,
@@ -110,15 +112,14 @@ class PdfPage(EnginePdfPage):
     def get_drawings(self) -> tuple[DrawingRecord, ...]:
         return self.internal_drawing_records(self.get_page_program().drawings)
 
-    def extract_images(
+    def internal_image_records(
         self,
+        program: CapturedProgram | PageProgram,
         *,
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[ImageRecord, ...]:
-        if not include_inline and not include_xobjects:
-            return ()
-        program = self.get_page_program()
+        """Project captured image placement without preparing raster samples."""
         images: list[ImageRecord] = []
         if include_xobjects:
             images.extend(
@@ -149,11 +150,31 @@ class PdfPage(EnginePdfPage):
                     image_source=image.image_source,
                     image_clip=image.image_clip,
                     path=None,
-                    items=(),
-                    rect=None,
+                    items=(("quad", quad),),
+                    rect=bounds,
+                    matrix_trace=image.matrix_trace,
+                    control_point_clip=image.control_point_clip,
                 )
                 for image in program.inline_images
+                for bounds, quad in (unit_square_placement(image.ctm),)
             )
+        return tuple(images)
+
+    def extract_images(
+        self,
+        *,
+        include_inline: bool = True,
+        include_xobjects: bool = True,
+    ) -> tuple[ImageRecord, ...]:
+        if not include_inline and not include_xobjects:
+            return ()
+        images = list(
+            self.internal_image_records(
+                self.get_page_program(),
+                include_inline=include_inline,
+                include_xobjects=include_xobjects,
+            )
+        )
         for index, image in enumerate(images):
             source = cast(ImageSource | None, image.image_source)
             raster = decode_image(source) if source is not None else None

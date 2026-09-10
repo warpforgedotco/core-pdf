@@ -10,6 +10,7 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl._impl.runtime.scalars import parse_float_strict, parse_int_strict
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf.impl.types import Rectangle
 
 
@@ -29,9 +30,12 @@ class TextState(RecordingMethods):
         self.hidden_layers = hidden_layers
         self.page_clip = page_clip
         self.clip_bbox = None
+        self.control_point_clip = None
         self.layout_form_bbox = None
         self.layout_form_id = None
         self.capture_source = "native_text"
+        self.matrix_trace = ()
+        self.stream_matrix = IDENTITY_MATRIX
         self.stream_order = -1
         self.sequence = 0
         self.text_object_id = 0

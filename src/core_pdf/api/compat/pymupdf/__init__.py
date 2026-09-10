@@ -44,7 +44,11 @@ from core_pdf.impl._impl.output.model import (
 from core_pdf.impl._impl.output.model import (
     Page as StructuredPage,
 )
+from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.spec.s_07_security.standard import create_standard_security_handler
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import coerce_to_bytes
 from core_pdf.impl.types import PdfReference
 
 
@@ -154,8 +158,8 @@ class Page:
         self._rotation = page.rotation
         if document.pdf is not None:
             source = document.pdf.pages[page.page_number - 1]
-            self._mediabox = Rect(source.media_box or self._mediabox)
-            self._cropbox = Rect(source.crop_box or self._mediabox)
+            self._mediabox = Rect(tuple(map(float32, source.media_box or self._mediabox)))
+            self._cropbox = Rect(tuple(map(float32, source.crop_box or self._mediabox)))
             rotation = source.inherited_values.get("Rotate")
             self._rotation = (
                 int(rotation) if isinstance(rotation, (int, float)) else source.rotation
@@ -169,9 +173,9 @@ class Page:
         raw_crop = Rect(self.cropbox)
         self.cropbox = Rect(
             raw_crop.x0,
-            self.mediabox.y1 - raw_crop.y1,
+            float32(self.mediabox.y1 - raw_crop.y1),
             raw_crop.x1,
-            self.mediabox.y1 - raw_crop.y0,
+            float32(self.mediabox.y1 - raw_crop.y0),
         )
         self.rotation %= 360
         if self.rotation % 90:
@@ -339,7 +343,7 @@ class Page:
             box = source.resolve_box(name)
             if box is not None:
                 x0, y0, x1, y1 = map(float32, box)
-                return Rect(x0, self.mediabox.y1 - y1, x1, self.mediabox.y1 - y0)
+                return Rect(x0, float32(self.mediabox.y1 - y1), x1, float32(self.mediabox.y1 - y0))
         return Rect(self.cropbox)
 
     @property
@@ -871,6 +875,43 @@ class FileNotFoundError(RuntimeError):
     """A requested document does not exist."""
 
 
+def internal_authentication_status(pdf: PdfDocument, password: str) -> int:
+    document_id = pdf.resolver.resolve(pdf.trailer_dict.get("ID", [b""]))
+    encrypt = pdf.resolver.resolve(pdf.trailer_dict.get("Encrypt"))
+    assert isinstance(document_id, (list, tuple))
+    assert isinstance(encrypt, dict)
+    return create_standard_security_handler(
+        document_id, cast(PdfDict, encrypt), password, retain_authentication_status=True
+    ).authentication_status
+
+
+class internal_PreviewPdfDocument(PdfDocument):
+    """Retain an encrypted file's structural preview until it is authenticated."""
+
+    internal_locked: bool = False
+
+    def init_security(self, password: str) -> None:
+        self.internal_locked = False
+        encrypt = self.resolver.resolve(self.trailer_dict.get("Encrypt"))
+        if isinstance(encrypt, dict):
+            if encrypt.get("R") == 7:
+                raise FileDataError("unsupported encryption revision")
+            if encrypt.get("R") in (5, 6):
+                for key, size in (("O", 48), ("OE", 32)):
+                    try:
+                        value = coerce_to_bytes(encrypt.get(key))
+                    except TypeError as error:
+                        raise FileDataError("invalid owner password entry") from error
+                    if len(value) != size:
+                        raise FileDataError("invalid owner password entry")
+        try:
+            super().init_security(password)
+        except PdfUnsupportedError as error:
+            if str(error) != "Incorrect password":
+                raise
+            self.internal_locked = True
+
+
 class Document(ClosingMixin):
     def __init__(
         self,
@@ -885,6 +926,7 @@ class Document(ClosingMixin):
         self.name = str(filename) if filename is not None else None
         self.is_closed = False
         self.is_encrypted = False
+        self.needs_pass = 0
         self._page_generation = 0
         self._objects_invalidated = False
         self._object_access: ObjectAccess | None = None
@@ -895,24 +937,7 @@ class Document(ClosingMixin):
         self._pending_redactions: dict[int, list[tuple[float, float, float, float]]] = {}
         self._toc_override: list[list[object]] | None = None
         self._embedded_files: dict[str, bytes] = {}
-        self.metadata: dict[str, Any] = {
-            "format": "PDF 1.7",
-            **dict.fromkeys(
-                (
-                    "title",
-                    "author",
-                    "subject",
-                    "keywords",
-                    "creator",
-                    "producer",
-                    "creationDate",
-                    "modDate",
-                    "trapped",
-                ),
-                "",
-            ),
-            "encryption": None,
-        }
+        self.metadata: dict[str, Any] | None = ObjectAccess(None).metadata()
         if stream is None and not filename:
             self._document = StructuredState.synthetic(StructuredDocument())
             return
@@ -932,21 +957,60 @@ class Document(ClosingMixin):
                 raise EmptyFileError(f"Cannot open empty file: filename='{source}'.")
         if filetype is not None and filetype.lower() != "pdf":
             raise NotImplementedError("non-PDF input formats are not implemented")
-        pdf = PdfDocument.open(source)
+        pdf = internal_PreviewPdfDocument.open(source)
         try:
-            self._document = StructuredState(pdf)
-            access = ObjectAccess(pdf)
-            for key in self.metadata:
-                if key not in {"format", "encryption"}:
-                    self.metadata[key] = access.metadata_text(key[0].upper() + key[1:])
-            header = bytes(pdf.raw_data[:32]).splitlines()[0]
-            if header.startswith(b"%PDF-"):
-                self.metadata["format"] = "PDF " + header[5:].decode("ascii", errors="replace")
-            self._embedded_files = {item.filename: item.data for item in pdf.embedded_files()}
+            if not pdf.internal_locked and pdf.trailer_dict.get("Encrypt") is not None:
+                # An empty owner password permits explicit authentication, but only
+                # an empty user password makes the reference open without prompting.
+                pdf.internal_locked = not bool(internal_authentication_status(pdf, "") & 2)
+            self.internal_bind_source(pdf)
         except Exception:
             pdf.close()
             raise
+        self.needs_pass = int(self.is_encrypted)
+
+    def internal_bind_source(self, pdf: internal_PreviewPdfDocument) -> None:
+        metadata = None if pdf.internal_locked else ObjectAccess(pdf).metadata()
+        embedded = (
+            {}
+            if pdf.internal_locked
+            else {item.filename: item.data for item in pdf.embedded_files()}
+        )
+        self._document = StructuredState(pdf)
         self._source_document = pdf
+        self._object_access = None
+        self.is_encrypted = pdf.internal_locked
+        self.metadata = metadata
+        self._embedded_files = embedded
+
+    def authenticate(self, password: str) -> int:
+        self._check_open()
+        previous = self._source_document
+        if previous is None or previous.trailer_dict.get("Encrypt") is None:
+            return 1
+        try:
+            status = internal_authentication_status(previous, password)
+        except PdfUnsupportedError as error:
+            if str(error) != "Incorrect password":
+                raise
+            return 0
+        except UnicodeEncodeError:
+            return 0
+        if not self.is_encrypted:
+            return status
+        authenticated = internal_PreviewPdfDocument.open(
+            bytes(previous.raw_data), password=password
+        )
+        if authenticated.internal_locked:
+            authenticated.close()
+            return 0
+        try:
+            self.internal_bind_source(authenticated)
+        except Exception:
+            authenticated.close()
+            raise
+        previous.close()
+        return status
 
     def _check_open(self, *, check_encrypted: bool = False) -> None:
         if check_encrypted and (self.is_closed or self.is_encrypted):
@@ -1028,7 +1092,7 @@ class Document(ClosingMixin):
     def tobytes(self, *args: object, **kwargs: object) -> bytes:
         if args:
             raise TypeError("positional save options are not implemented")
-        self._check_open()
+        self._check_open(check_encrypted=True)
         access = self._objects
         if not self.page_count:
             raise ValueError("cannot save with zero pages")
@@ -1060,7 +1124,7 @@ class Document(ClosingMixin):
                 raise TypeError(f"Document.write() got an unexpected keyword argument '{key}'")
             if value != defaults[key]:
                 raise NotImplementedError(f"save option is not implemented: {key}")
-        version = str(self.metadata.get("format", "PDF 1.7")).removeprefix("PDF ")
+        version = str((self.metadata or {}).get("format", "PDF 1.7")).removeprefix("PDF ")
         return access.tobytes(no_new_id=no_new_id, version=version)
 
     def save(self, filename: object, **kwargs: object) -> None:
@@ -1280,7 +1344,7 @@ class Document(ClosingMixin):
 
     def get_toc(self, simple: bool = True) -> list[list[object]]:
         """Return PyMuPDF-style ``[level, title, page]`` outline rows."""
-        self._check_open()
+        self._check_open(check_encrypted=True)
         if self._toc_override is not None:
             rows = [list(row[:3]) for row in self._toc_override]
             if not simple:
@@ -1355,6 +1419,7 @@ class Document(ClosingMixin):
             metadata = {}
         if type(metadata) is not dict:
             raise ValueError("bad metadata")
+        assert self.metadata is not None
         fields = {
             key: key[0].upper() + key[1:]
             for key in self.metadata

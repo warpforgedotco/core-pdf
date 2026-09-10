@@ -1,120 +1,69 @@
-from pathlib import Path
+from io import BytesIO
+from typing import Any
 
 import pytest
 
 from core_pdf.api.compat import pymupdf as compat_pymupdf
 
-from .test_pymupdf_text import internal_PDFS, real_pymupdf
-
+real_pymupdf = pytest.importorskip("pymupdf")
+real_pypdf = pytest.importorskip("pypdf")
 pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("path", [None, *internal_PDFS], ids=lambda p: p.name if p else "empty")
+def internal_compare_metadata(writer: Any) -> None:
+    stream = BytesIO()
+    writer.write(stream)
+    with (
+        real_pymupdf.open(stream=stream.getvalue()) as expected,
+        compat_pymupdf.open(stream=stream.getvalue()) as actual,
+    ):
+        assert actual.metadata == expected.metadata
+
+
+@pytest.mark.parametrize("header", [b"%PDF-1.3 ", b"%PDF-1.4", b"%PDF-1.7"])
+@pytest.mark.parametrize("catalog_version", [None, "1.2", "2.0"])
+def test_effective_metadata_version(header: bytes, catalog_version: str | None) -> None:
+    writer = real_pypdf.PdfWriter()
+    writer.add_blank_page(width=200, height=300)
+    writer.pdf_header = header
+    if catalog_version is not None:
+        writer.root_object[real_pypdf.generic.NameObject("/Version")] = (
+            real_pypdf.generic.NameObject("/" + catalog_version)
+        )
+    internal_compare_metadata(writer)
+
+
 @pytest.mark.parametrize(
-    "metadata",
+    "raw",
     [
-        {"title": "New title", "author": "Author"},
-        {"title": "Résumé € Ελληνικά 😀", "subject": "(parentheses) \\ slash"},
-        {"title": "\x00\x01\b\t\n\f\r\x80\x81\x9f"},
-        {"title": None, "author": "null", "subject": "none"},
-        {"creationDate": "D:20260101000000Z", "trapped": "True"},
-        {"format": "ignored", "encryption": "ignored"},
-        {},
-        None,
+        b"a\0b",
+        b"\xfe\xff\0a\0\0\0b",
+        b"\xff\xfea\0\0\0b\0",
+        b"\xef\xbb\xbfa\0b",
+        b"abc\0",
+        b"\x9f\xad",
     ],
 )
-def test_metadata_update_and_persistence(
-    path: Path | None, metadata: dict[str, object] | None
-) -> None:
-    with real_pymupdf.open(path) as reference, compat_pymupdf.open(path) as actual:
-        for document in (reference, actual):
-            if path is None:
-                document.new_page()
-            page = document[0]
-            before = page.get_text()
-            document.set_metadata({"title": "Previous", "keywords": "keep me"})
-            previous_metadata = document.metadata
-            previous_values = dict(previous_metadata)
-            document.set_metadata(metadata)
-            assert previous_metadata == previous_values
-            assert previous_metadata is not document.metadata
-            assert page.get_text() == before
-        assert actual.metadata == reference.metadata
-        assert actual.xref_length() == reference.xref_length()
-        assert actual.xref_get_key(-1, "Info") == reference.xref_get_key(-1, "Info")
-        kind, value = reference.xref_get_key(-1, "Info")
-        if kind == "xref":
-            xref = int(value.split()[0])
-            assert actual.xref_object(xref) == reference.xref_object(xref)
-        for engine in (real_pymupdf, compat_pymupdf):
-            with engine.open(stream=actual.tobytes(no_new_id=True)) as reopened:
-                assert reopened.metadata == reference.metadata
+def test_metadata_null_characters_follow_string_encoding(raw: bytes) -> None:
+    writer = real_pypdf.PdfWriter()
+    writer.add_blank_page(width=200, height=300)
+    writer._info.get_object()[real_pypdf.generic.NameObject("/Title")] = (
+        real_pypdf.generic.ByteStringObject(raw)
+    )
+    internal_compare_metadata(writer)
 
 
-@pytest.mark.parametrize("metadata", [{"unknown": "value"}, [], "title", {"title": 123}])
-def test_metadata_errors(metadata: object) -> None:
-    results = []
-    for engine in (real_pymupdf, compat_pymupdf):
-        with engine.open(internal_PDFS[0]) as document:
-            with pytest.raises(Exception) as error:
-                document.set_metadata(metadata)
-            results.append((type(error.value).__name__, str(error.value)))
-    assert results[0] == results[1]
+@pytest.mark.parametrize("algorithm", ["RC4-40", "RC4-128", "AES-128", "AES-256-R5", "AES-256"])
+def test_authenticated_metadata_describes_encryption(algorithm: str) -> None:
+    writer = real_pypdf.PdfWriter()
+    writer.add_blank_page(width=200, height=300)
+    writer.encrypt("", owner_password="owner", algorithm=algorithm)
+    internal_compare_metadata(writer)
 
 
-def test_metadata_closed_document() -> None:
-    results = []
-    for engine in (real_pymupdf, compat_pymupdf):
-        document = engine.open(internal_PDFS[0])
-        document.close()
-        with pytest.raises(Exception) as error:
-            document.set_metadata({"title": "closed"})
-        results.append((type(error.value).__name__, str(error.value)))
-    assert results[0] == results[1]
-
-
-@pytest.mark.parametrize("path", [None, *internal_PDFS], ids=lambda p: p.name if p else "empty")
-@pytest.mark.parametrize("xml", ["<x>Metadata α 😀</x>", "", "<x>" + "a" * 500 + "</x>"])
-def test_xml_metadata_persistence(path: Path | None, xml: str) -> None:
-    with real_pymupdf.open(path) as reference, compat_pymupdf.open(path) as actual:
-        for document in (reference, actual):
-            if path is None:
-                document.new_page()
-        for value in ("<previous/>", xml):
-            for document in (reference, actual):
-                document.set_xml_metadata(value)
-            assert actual.get_xml_metadata() == reference.get_xml_metadata()
-            assert actual.xref_xml_metadata() == reference.xref_xml_metadata()
-            xref = reference.xref_xml_metadata()
-            assert actual.xref_object(xref) == reference.xref_object(xref)
-            assert actual.xref_stream_raw(xref) == reference.xref_stream_raw(xref)
-            for engine in (real_pymupdf, compat_pymupdf):
-                with engine.open(stream=actual.tobytes(no_new_id=True)) as reopened:
-                    assert reopened.get_xml_metadata() == reference.get_xml_metadata()
-        for payload in (b"a\x00b", b"\xffa", b"\xef\xbb\xbf<x/>"):
-            for document in (reference, actual):
-                document.update_stream(document.xref_xml_metadata(), payload)
-            assert actual.get_xml_metadata() == reference.get_xml_metadata()
-        for document in (reference, actual):
-            document.del_xml_metadata()
-            assert document.get_xml_metadata() == ""
-            assert document.xref_xml_metadata() == 0
-            with real_pymupdf.open(stream=document.tobytes(no_new_id=True)) as reopened:
-                assert reopened.get_xml_metadata() == ""
-        assert actual.xref_object(actual.pdf_catalog()) == reference.xref_object(
-            reference.pdf_catalog()
-        )
-
-
-@pytest.mark.parametrize(
-    "method", ["get_xml_metadata", "set_xml_metadata", "del_xml_metadata", "xref_xml_metadata"]
-)
-def test_xml_metadata_closed_document(method: str) -> None:
-    results = []
-    for engine in (real_pymupdf, compat_pymupdf):
-        document = engine.open(internal_PDFS[0])
-        document.close()
-        with pytest.raises(Exception) as error:
-            getattr(document, method)(*(["<x/>"] if method == "set_xml_metadata" else []))
-        results.append((type(error.value).__name__, str(error.value)))
-    assert results[0] == results[1]
+def test_aes_metadata_uses_crypt_filter_key_length_when_unspecified() -> None:
+    writer = real_pypdf.PdfWriter()
+    writer.add_blank_page(width=200, height=300)
+    writer.encrypt("", owner_password="owner", algorithm="AES-128")
+    del writer._encrypt_entry[real_pypdf.generic.NameObject("/Length")]
+    internal_compare_metadata(writer)

@@ -1,5 +1,30 @@
 # Vendored ICC profiles
 
+## `Artifex-Gray.icc`
+
+This unmodified profile selects MuPDF's scalar DeviceGray-to-RGB conversion for
+compatibility text and shading colors, retaining the intermediate 16-bit samples.
+
+- **Upstream**: MuPDF 1.28.2,
+  [`resources/icc/gray.icc`](https://github.com/ArtifexSoftware/mupdf/blob/1.28.2/resources/icc/gray.icc).
+- **Copyright**: Artifex Software 2018, as recorded in the profile's `cprt` tag.
+- **License**: GNU AGPL version 3; retained in `LICENSE-Artifex.txt`.
+- **SHA-256**: `d3aaaa8ad45ec8a0108fd393a07488073ee24561fd5ed2d1f88c59771278cabd`.
+
+## `Artifex-CMYK-SWOP.icc` and `Artifex-sRGB.icc`
+
+These unmodified profiles select MuPDF's device-color behavior for the PyMuPDF
+compatibility facade. The native renderer continues to use the profile below.
+
+- **Upstream**: MuPDF 1.28.2,
+  [`resources/icc/cmyk.icc`](https://github.com/ArtifexSoftware/mupdf/blob/1.28.2/resources/icc/cmyk.icc)
+  and [`resources/icc/rgb.icc`](https://github.com/ArtifexSoftware/mupdf/blob/1.28.2/resources/icc/rgb.icc).
+- **Descriptions**: "Artifex CMYK SWOP Profile" and "Artifex Software sRGB ICC Profile".
+- **Copyright**: Artifex Software 2011, as recorded in each profile's `cprt` tag.
+- **License**: GNU AGPL version 3; retained in `LICENSE-Artifex.txt`.
+- **SHA-256 (CMYK)**: `8472fa1493a024b800b67dee9424835ec0c41ab79490200ae8ec4a689fd1b9a9`.
+- **SHA-256 (sRGB)**: `eddaf344b5edea13269e0d20055f335610e5e0b6e33e6e536f2701bc18c5f7d5`.
+
 ## `SWOP2006_Coated5v2.icc`
 
 The built-in DeviceCMYK profile. PDF 32000-1 leaves DeviceCMYK device-dependent

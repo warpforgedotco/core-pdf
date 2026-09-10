@@ -32,6 +32,7 @@ PdfSource: TypeAlias = (
     PathSource | bytes | bytearray | memoryview | BinaryReader | SeekableBinaryReader
 )
 Rectangle: TypeAlias = tuple[float, float, float, float]
+Matrix6: TypeAlias = tuple[float, float, float, float, float, float]
 
 
 class MissingObject:
@@ -211,6 +212,8 @@ class DrawingRecord:
     path: object | None
     items: tuple[object, ...]
     rect: Rectangle | None
+    matrix_trace: tuple[Matrix6, ...] = ()
+    control_point_clip: Rectangle | None = None
 
     @classmethod
     def from_captured(cls, source: object, **overrides: object) -> Self:
@@ -248,6 +251,7 @@ __all__ = (
     "ImageMetadata",
     "ImageRecord",
     "MISSING",
+    "Matrix6",
     "MissingObject",
     "PageScoped",
     "PathSource",

@@ -70,3 +70,83 @@ def test_affine_text_geometry_and_font_size(
                 (snapshot.extractText(), snapshot.extractWORDS(), snapshot.extractRAWDICT())
             )
     assert outputs[0] == internal_geometry_expected(outputs[1])
+
+
+@pytest.mark.parametrize("scale", [0.988, 1.02])
+@pytest.mark.parametrize("rotation", [0, 90])
+def test_fractional_text_matrix_long_cursor_advances(scale: float, rotation: int) -> None:
+    with real_pymupdf.open() as document:
+        page = document.new_page(width=2000, height=2000)
+        page.insert_text((100, 1800), "Long text", fontsize=9.9626)
+        font = page.get_fonts()[0][4]
+        basis = f"{scale} 0 0 1" if rotation == 0 else f"0 {scale} -1 0"
+        text = "Repeated long text with fractional scaling. " * 6
+        document.update_stream(
+            page.get_contents()[0],
+            f"BT /{font} 9.9626 Tf {basis} 100 200 Tm ({text}) Tj ET".encode(),
+        )
+        source = document.tobytes()
+    with (
+        real_pymupdf.open(stream=source) as reference,
+        compat_pymupdf.open(stream=source) as actual,
+    ):
+        ref_page, page = reference[0], actual[0]
+        for kind in ("text", "words", "rawdict"):
+            assert page.get_text(kind) == internal_geometry_expected(ref_page.get_text(kind))
+
+
+@pytest.mark.parametrize("rotation", [0, 90])
+@pytest.mark.parametrize("page_height", [792, 2000])
+@pytest.mark.parametrize("restore", [False, True])
+def test_nested_graphics_transforms_preserve_text_origin_precision(
+    rotation: int, page_height: int, restore: bool
+) -> None:
+    with real_pymupdf.open() as document:
+        page = document.new_page(width=1000, height=page_height)
+        page.insert_text((100, 200), "Transformed text", fontsize=12)
+        font = page.get_fonts()[0][4]
+        basis = "1 0 0 1" if rotation == 0 else "0 1 -1 0"
+        paint = f"BT /{font} 12 Tf {basis} 100 100 Tm (Transformed text) Tj ET".encode()
+        content = (
+            b"q 1 0 0 1 143.4393 -.5792 cm q .6121 0 0 .9719 5.4285 -.606 cm " + paint + b" Q "
+        )
+        if restore:
+            content += b"BT /" + font.encode() + b" 12 Tf 1 0 0 1 100 200 Tm (Restored text) Tj ET "
+        document.update_stream(page.get_contents()[0], content + b"Q")
+        source = document.tobytes()
+    with (
+        real_pymupdf.open(stream=source) as reference,
+        compat_pymupdf.open(stream=source) as actual,
+    ):
+        ref_page, page = reference[0], actual[0]
+        for kind in ("text", "words", "blocks", "rawdict"):
+            assert page.get_text(kind) == internal_geometry_expected(ref_page.get_text(kind))
+
+
+@pytest.mark.parametrize("start", [522.48, 500.125])
+@pytest.mark.parametrize("shift", [-477, -475.12])
+@pytest.mark.parametrize("rotation", [0, 90])
+def test_relative_text_move_rounds_before_graphics_transform(
+    start: float, shift: float, rotation: int
+) -> None:
+    with real_pymupdf.open() as document:
+        page = document.new_page(width=1000, height=1000)
+        page.insert_text((100, 200), "Seed", fontsize=9.6)
+        font = page.get_fonts()[0][4]
+        basis = "1 0 0 1" if rotation == 0 else "0 1 -1 0"
+        document.update_stream(
+            page.get_contents()[0],
+            (
+                f"q .12 0 0 .12 0 0 cm q 8.33333 0 0 8.33333 0 0 cm "
+                f"BT /{font} 9.6 Tf {basis} {start} 700.75 Tm (First) Tj "
+                f"{shift} 0 Td (Second) Tj 3.12 -10.51 Td (Third) Tj ET Q Q"
+            ).encode(),
+        )
+        source = document.tobytes()
+    with (
+        real_pymupdf.open(stream=source) as reference,
+        compat_pymupdf.open(stream=source) as actual,
+    ):
+        ref_page, page = reference[0], actual[0]
+        for kind in ("text", "words", "blocks", "rawdict"):
+            assert page.get_text(kind) == internal_geometry_expected(ref_page.get_text(kind))

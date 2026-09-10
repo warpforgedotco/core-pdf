@@ -79,7 +79,12 @@ class DocumentXRefMixin:
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
                 root_ref = self.trailer_dict.get("Root")
                 if root_ref is None or not self.is_valid_catalog_root(root_ref):
-                    self.xref.update(self.brute_force_xref())
+                    freed_objects = {
+                        key >> 16 for key, entry in self.xref.items() if not entry.in_use
+                    }
+                    for key, entry in self.brute_force_xref().items():
+                        if key >> 16 not in freed_objects:
+                            self.xref.setdefault(key, entry)
                     self.xref_was_recovered = True
                     catalog_ref = self.infer_catalog_root()
                     if catalog_ref is not None:

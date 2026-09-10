@@ -19,7 +19,6 @@ from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
@@ -34,47 +33,20 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.types import PdfName, PdfString
 
+from ..pypdf._text import (
+    internal_indirect_cid_widths,
+    internal_legacy_glyph_name,
+    internal_simple_font_widths,
+    internal_standard_font_widths,
+    internal_type1_glyph_name,
+)
+
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
-# Names whose engine translation differs from this facade's projection: the
-# underscore ligature names would fall through untranslated, and negationslash
-# is projected as the fraction slash.
-internal_LEGACY_GLYPH_ALIASES = {
-    "f_f": "ﬀ",
-    "f_f_i": "ﬃ",
-    "f_f_l": "ﬄ",
-    "negationslash": "⁄",
-}
 
 
 def internal_glyph_name_to_unicode(name: str) -> str:
-    alias = internal_LEGACY_GLYPH_ALIASES.get(name)
-    if alias is not None:
-        return alias
-    if "_" in name:
-        return name
-    return glyph_name_to_unicode(name)
-
-
-def internal_difference_text(glyph_name: str, code: int) -> str:
-    """Translate one PDF Encoding Differences name using Adobe semantics."""
-    if glyph_name == ".notdef":
-        return "□"
-    if glyph_name.startswith("a") and glyph_name[1:].isdigit():
-        return chr(code)
-    if glyph_name.isdigit():
-        return f"/{glyph_name}"
-    if (
-        glyph_name.startswith("uni")
-        and len(glyph_name) > 3
-        and len(glyph_name[3:]) % 4 == 0
-        and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
-    ):
-        return f"/{glyph_name}"
-    mapped = internal_glyph_name_to_unicode(glyph_name)
-    if len(glyph_name) == 1:
-        return glyph_name
-    return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
+    return internal_legacy_glyph_name(name, unknown="")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +58,7 @@ class internal_Font:
     character_map: Mapping[str, str]
     character_widths: Mapping[int, float]
     default_width: float
+    indirect_width_codes: frozenset[int]
 
     def encoded(self, data: bytes) -> str:
         if isinstance(self.encoding, str):
@@ -100,6 +73,8 @@ class internal_Font:
 
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
         encoded = self.encoded(data)
+        if any(ord(character) in self.indirect_width_codes for character in encoded):
+            raise TypeError("unsupported indirect CID font width")
         chunks = tuple(self.character_map.get(character, character) for character in encoded)
         width = sum(
             self.space_width
@@ -215,10 +190,10 @@ class OperatorTextProjection:
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
             to_unicode = self.internal_to_unicode(resolved, decoder)
-            widths, default_width = self.internal_widths(font, decoder)
+            encoding = self.internal_encoding(font, decoder, to_unicode)
+            widths, default_width = self.internal_widths(font, encoding)
             if subtype == "Type3" and not self.internal_type3_interpretable(font):
                 widths, default_width = {}, 0.0
-            encoding = self.internal_encoding(font, decoder, to_unicode)
             character_map = self.internal_character_map(decoder, to_unicode)
             builtin_mapping = (
                 self.internal_type1_alternative(resolved)
@@ -249,7 +224,7 @@ class OperatorTextProjection:
                     (
                         code
                         for code, glyph_name in decoder.differences.items()
-                        if internal_difference_text(glyph_name, code) == " "
+                        if internal_legacy_glyph_name(glyph_name) == " "
                     ),
                     None,
                 )
@@ -282,11 +257,7 @@ class OperatorTextProjection:
                 if not isinstance(encoding, str):
                     encoding_table = list(encoding)
                 for code, glyph_name in builtin_mapping.items():
-                    mapped = (
-                        chr(int(glyph_name[1:]))
-                        if glyph_name.startswith("a") and glyph_name[1:].isdigit()
-                        else internal_glyph_name_to_unicode(glyph_name)
-                    )
+                    mapped = internal_type1_glyph_name(glyph_name)
                     if mapped and (mapped != glyph_name or len(glyph_name) == 1):
                         if not isinstance(encoding, str) and 0 <= code < len(encoding_table):
                             encoding_table[code] = chr(code)
@@ -313,6 +284,7 @@ class OperatorTextProjection:
                 character_map=character_map,
                 character_widths=widths,
                 default_width=default_width,
+                indirect_width_codes=internal_indirect_cid_widths(font, self.resolver),
             )
         return result
 
@@ -440,6 +412,13 @@ class OperatorTextProjection:
             if isinstance(descendant, dict):
                 owner = descendant
         descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
+        if descriptor is None and normalize_pdf_name(font.get("BaseFont")) in {
+            "Courier",
+            "Courier-Bold",
+            "Courier-Oblique",
+            "Courier-BoldOblique",
+        }:
+            return 1
         flags = (
             self.resolver.resolve(descriptor.get("Flags")) if isinstance(descriptor, dict) else None
         )
@@ -448,7 +427,7 @@ class OperatorTextProjection:
     def internal_widths(
         self,
         font: Mapping[object, object],
-        decoder: FontDecoder,
+        encoding: tuple[str, ...] | str,
     ) -> tuple[dict[int, float], float]:
         widths: dict[int, float] = {}
         default_width = 0.0
@@ -489,26 +468,18 @@ class OperatorTextProjection:
                 if isinstance(raw_default, (int, float)):
                     default_width = float(raw_default)
         else:
-            first_char = self.resolver.resolve(font.get("FirstChar"))
             raw_widths = self.resolver.resolve(font.get("Widths"))
-            if isinstance(first_char, (int, float)) and isinstance(raw_widths, (list, tuple)):
-                widths.update(
-                    (
-                        int(first_char) + offset,
-                        float(int(float(self.resolver.resolve(value)))),
-                    )
-                    for offset, value in enumerate(raw_widths)
-                )
+            widths.update(internal_simple_font_widths(font, self.resolver))
             descriptor = self.resolver.resolve(font.get("FontDescriptor"))
             if isinstance(descriptor, dict):
                 missing = self.resolver.resolve(descriptor.get("MissingWidth"))
                 if isinstance(missing, (int, float)):
                     default_width = float(int(missing))
-            if not widths:
+            if raw_widths is None:
                 widths.update(
-                    (code, width)
-                    for code, width in decoder.widths.iter_explicit_widths()
-                    if 0 <= code < 256 and width > 0
+                    internal_standard_font_widths(
+                        normalize_pdf_name(font.get("BaseFont")) or "", encoding
+                    )
                 )
         return widths, default_width
 
@@ -521,6 +492,9 @@ class OperatorTextProjection:
         raw_encoding = self.resolver.resolve(font.get("Encoding"))
         encoding_name = normalize_pdf_name(raw_encoding)
         if raw_encoding is None:
+            base_font = normalize_pdf_name(font.get("BaseFont"))
+            if base_font in {"Symbol", "ZapfDingbats"}:
+                return tuple(internal_legacy_base_table(base_font))
             return "charmap"
         elif encoding_name is not None:
             name = encoding_name
@@ -532,6 +506,8 @@ class OperatorTextProjection:
                 if name == "WinAnsiEncoding"
                 else internal_MAC_ROMAN_ENCODING
                 if name == "MacRomanEncoding"
+                else internal_legacy_base_table(name)
+                if name in {"Symbol", "ZapfDingbats"}
                 else STANDARD_ENCODING
             )
         elif isinstance(raw_encoding, dict):
@@ -548,7 +524,7 @@ class OperatorTextProjection:
         for code, glyph_name in decoder.differences.items():
             if not 0 <= code < 256:
                 continue
-            table[code] = internal_difference_text(glyph_name, code)
+            table[code] = internal_legacy_glyph_name(glyph_name)
         if to_unicode is not None:
             for source in to_unicode.mappings:
                 code = int.from_bytes(source, "big")

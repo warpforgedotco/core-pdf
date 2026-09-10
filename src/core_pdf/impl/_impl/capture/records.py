@@ -7,12 +7,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 
+from core_pdf.impl._impl.capture.marked_content import MarkedContentEntry
 from core_pdf.impl._impl.model.geometry import RectBox, bbox_union, points_bbox
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl.spec.s_07_content.soft_masks import SoftMaskSelection
 from core_pdf.impl.spec.s_07_content.stream_state import StreamKey
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.types import Matrix6, Rectangle
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
@@ -44,6 +46,10 @@ class CapturedInlineImage:
     stream_order: int = 0
     fill: tuple[float, ...] | None = None
     fill_opacity: float | None = None
+    marked_content: MarkedContentEntry | None = None
+    soft_mask: SoftMaskSelection | None = None
+    matrix_trace: tuple[Matrix6, ...] = ()
+    control_point_clip: Rectangle | None = None
 
 
 class CapturedSubpath:
@@ -220,16 +226,24 @@ class CapturedDrawing:
     fill_rule: str = "nonzero"
     blend_mode: str | None = None
     soft_mask_alpha: float | None = None
+    soft_mask: SoftMaskSelection | None = None
+    soft_mask_clip: Rectangle | None = None
+    matrix_trace: tuple[Matrix6, ...] = ()
+    stream_matrix: Matrix = IDENTITY_MATRIX
     raw_data: bytes | memoryview | None = None
     dictionary: dict[Any, Any] | None = None
     image_source: ImageSource | None = None
     image_clip: Rectangle | None = None
+    control_point_clip: Rectangle | None = None
     kind: str = "fill"
     items: tuple[DrawingItem, ...] | list[DrawingItem] = internal_EMPTY_DRAWING_ITEMS
     path: CapturedPath | None = None
     bbox: RectBox | None = None
     stream_order: int = 0
     xobject_depth: int = 0
+    marked_content: MarkedContentEntry | None = None
+    shading_matrix: Matrix | None = None
+    shading_clip: Rectangle | None = None
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -284,6 +298,8 @@ def marker_drawing(
     *,
     fill_opacity: float | None = None,
     blend_mode: str | None = None,
+    soft_mask: SoftMaskSelection | None = None,
+    soft_mask_clip: Rectangle | None = None,
 ) -> CapturedDrawing:
     """A zero-geometry drawing that only marks a scope boundary in page order.
 
@@ -295,6 +311,8 @@ def marker_drawing(
         fill=None,
         fill_opacity=fill_opacity,
         blend_mode=blend_mode,
+        soft_mask=soft_mask,
+        soft_mask_clip=soft_mask_clip,
         kind=kind,
     )
 
@@ -321,6 +339,7 @@ class TilingPattern:
     drawings: list[CapturedDrawing]
     glyphs: list[GlyphObservation]
     inline_images: list[CapturedInlineImage]
+    matrix: Matrix = IDENTITY_MATRIX
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

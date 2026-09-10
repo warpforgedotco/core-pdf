@@ -241,413 +241,479 @@ def internal_fallback_pass(
     )
 
 
-def plan_page(capture: PageAnalysis) -> WorkPlan:
+def internal_uncovered_vector_reason(
+    capture: PageAnalysis, uncovered_area: float
+) -> PagePlanReason:
     evidence = capture.evidence
-    total_characters = evidence.native_characters
     characters = evidence.visible_native_characters
     suspicious_ratio = evidence.suspicious_ratio
-    vector_complexity = evidence.vector_complexity
-    text_density = evidence.visible_text_density
+    if (
+        characters >= 32
+        and evidence.image_count == 0
+        and suspicious_ratio <= 0.02
+        and internal_native_mapping_is_usable(evidence)
+        and internal_has_only_simple_vector_rectangles(capture)
+    ):
+        return PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS
+    if internal_vector_native_text_is_trusted(evidence):
+        return PagePlanReason.GLYPH_TRUSTED_VECTOR_TEXT
+    if (
+        evidence.full_page_image
+        and characters >= 1_000
+        and internal_native_mapping_is_usable(evidence)
+    ):
+        return PagePlanReason.FULL_PAGE_IMAGE_NATIVE_TEXT
+    if (
+        characters >= 1_000
+        and evidence.text_coverage >= 0.15
+        and uncovered_area / max(1.0, evidence.page_area) < 0.08
+        and suspicious_ratio <= 0.02
+        and internal_native_mapping_is_usable(evidence)
+    ):
+        return PagePlanReason.MOSTLY_COVERED_NATIVE_TEXT
+    if (
+        characters >= 1_500
+        and evidence.image_count == 0
+        and evidence.text_coverage >= 0.20
+        and suspicious_ratio <= 0.02
+        and internal_native_mapping_is_usable(evidence)
+    ):
+        return PagePlanReason.NATIVE_TEXT_WITHOUT_IMAGES
+    if (
+        characters >= 3_000
+        and evidence.text_coverage >= 0.18
+        and suspicious_ratio <= 0.02
+        and internal_native_mapping_is_usable(evidence)
+    ):
+        return PagePlanReason.DENSE_NATIVE_TEXT
+    return PagePlanReason.UNCOVERED_VECTOR_TEXT
+
+
+def internal_rotated_native_reason(capture: PageAnalysis) -> PagePlanReason:
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    suspicious_ratio = evidence.suspicious_ratio
     text_coverage = evidence.text_coverage
-    observations = capture.observations
-    rotated_native = any(int(value) % 360 for value in observations.rotation)
+    rotated_characters = internal_rotated_native_characters(capture)
+    if (
+        characters >= 1_000
+        and text_coverage >= 0.15
+        and internal_native_mapping_is_usable(evidence)
+    ):
+        return PagePlanReason.GLYPH_TRUSTED_ROTATED_TEXT
+    if (
+        characters >= 500
+        and suspicious_ratio <= 0.05
+        and rotated_characters <= max(80, int(characters * 0.03))
+    ):
+        return PagePlanReason.MINOR_ROTATED_NATIVE_TEXT
+    return PagePlanReason.ROTATED_NATIVE_TEXT
+
+
+def internal_page_plan_reason(capture: PageAnalysis) -> PagePlanReason:
+    """Select the first applicable route before constructing any OCR passes."""
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    suspicious_ratio = evidence.suspicious_ratio
     quality = evidence.text_quality
-    corrupt_mapping = (
+    if (
         characters >= 24
         and quality.noise_score >= 0.20
         and quality.wordlike_ratio < 0.20
-        and vector_complexity < 150
-    )
-    if corrupt_mapping:
-        schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
-        image_modes = (PSM_AUTO,)
-        scale = 6.0
-        weak_threshold = 300 if schematic else 1_000
-        high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
-        return WorkPlan(
-            PageRoute.OCR,
-            reason=PagePlanReason.NATIVE_TEXT_CORRUPT,
-            ocr_passes=(
-                OcrPass(
-                    "primary-page",
-                    OcrPassScope.PAGE,
-                    8.0 if high_resolution_vector else scale,
-                    image_modes,
-                    minimum_confidence=(
-                        STROKED_VECTOR_WORD_MIN_CONFIDENCE
-                        if high_resolution_vector
-                        else 45.0
-                        if evidence.image_count
-                        else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
-                    ),
-                    adaptive_scale=not high_resolution_vector,
-                    character_confidence_threshold=(
-                        55.0 if schematic and not high_resolution_vector else None
-                    ),
-                    region_first=True,
-                    pixel_budget=(MAX_OCR_PIXELS if high_resolution_vector else PRIMARY_OCR_PIXELS),
-                    include_native_text=True,
-                    recognize_words=high_resolution_vector,
-                    parallel_tiles=2,
-                ),
-                internal_fallback_pass(
-                    schematic=schematic,
-                    scale=scale,
-                    modes=(6,),
-                    minimum_confidence=(NATIVE_UNAVAILABLE_MIN_CONFIDENCE if schematic else 45.0),
-                    run_if_characters_below=weak_threshold,
-                    include_native_text=True,
-                ),
-            ),
-            allow_direct_image_ocr=False,
-            augment_page_candidates=True,
-        )
+        and evidence.vector_complexity < 150
+    ):
+        return PagePlanReason.NATIVE_TEXT_CORRUPT
     if evidence.vector_text_trusted:
-        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.NEWSTROKE_VECTOR_TEXT)
+        return PagePlanReason.NEWSTROKE_VECTOR_TEXT
     if evidence.trusted_hidden_text:
-        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.TRUSTED_HIDDEN_NATIVE_TEXT)
+        return PagePlanReason.TRUSTED_HIDDEN_NATIVE_TEXT
     if evidence.hidden_text_layer:
-        hidden_text_scale = 2.0 if evidence.full_page_image and 20 <= characters < 32 else 3.0
-        return WorkPlan(
-            PageRoute.OCR,
-            reason=PagePlanReason.UNPAINTED_NATIVE_TEXT_LAYER,
-            ocr_passes=(
-                OcrPass(
-                    "primary-page",
-                    OcrPassScope.PAGE,
-                    hidden_text_scale,
-                    (PSM_SPARSE_TEXT,),
-                    minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
-                    adaptive_scale=True,
-                    region_first=True,
-                    pixel_budget=PRIMARY_OCR_PIXELS,
-                ),
-                OcrPass(
-                    "fallback-regions",
-                    OcrPassScope.WEAK_REGIONS,
-                    hidden_text_scale,
-                    (6,),
-                    tiles=4,
-                    minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
-                    # Sparse-mode primary OCR drops narrow columns outright
-                    # (single-digit row labels, tick columns), so a page can
-                    # read "well" by character count while missing a column.
-                    # Run the weak-region sweep even on well-read pages, and
-                    # recognize words so the per-word coverage test can admit
-                    # the genuinely novel words while rejecting re-reads of
-                    # text the primary already found (line-level supplements
-                    # sneak whole duplicate rows past the coverage check).
-                    run_if_characters_below=1500,
-                    recognize_words=True,
-                ),
-                OcrPass(
-                    "adaptive-page",
-                    OcrPassScope.PAGE,
-                    hidden_text_scale,
-                    (PSM_SPARSE_TEXT,),
-                    minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
-                    run_if_characters_below=32,
-                    minimum_utility_gain=1.20,
-                    region_first=False,
-                ),
-            ),
-            verify_hidden_text=internal_hidden_text_needs_verification(evidence),
-        )
-
+        return PagePlanReason.UNPAINTED_NATIVE_TEXT_LAYER
     if evidence.stroked_vector_text.trusted:
-        return WorkPlan(
-            PageRoute.HYBRID if characters else PageRoute.OCR,
-            reason=PagePlanReason.STROKED_VECTOR_TEXT,
-            ocr_passes=(
-                OcrPass(
-                    "stroked-vector-text",
-                    OcrPassScope.STROKED_VECTOR_TEXT,
-                    6.0,
-                    (PSM_SPARSE_TEXT,),
-                    minimum_confidence=STROKED_VECTOR_WORD_MIN_CONFIDENCE,
-                    region_first=False,
-                    pixel_budget=MAX_OCR_PIXELS,
-                ),
-            ),
-        )
-
+        return PagePlanReason.STROKED_VECTOR_TEXT
     if evidence.uncovered_vector_area is not None and evidence.uncovered_vector_area >= 20_000.0:
-        if (
-            characters >= 32
-            and evidence.image_count == 0
-            and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
-            and internal_has_only_simple_vector_rectangles(capture)
-        ):
-            return WorkPlan(
-                PageRoute.NATIVE,
-                reason=PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS,
-            )
-        if internal_vector_native_text_is_trusted(evidence):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_VECTOR_TEXT)
-        if (
-            evidence.full_page_image
-            and characters >= 1_000
-            and internal_native_mapping_is_usable(evidence)
-        ):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.FULL_PAGE_IMAGE_NATIVE_TEXT)
-        if (
-            characters >= 1_000
-            and evidence.text_coverage >= 0.15
-            and evidence.uncovered_vector_area / max(1.0, evidence.page_area) < 0.08
-            and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
-        ):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.MOSTLY_COVERED_NATIVE_TEXT)
-        if (
-            characters >= 1_500
-            and evidence.image_count == 0
-            and evidence.text_coverage >= 0.20
-            and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
-        ):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.NATIVE_TEXT_WITHOUT_IMAGES)
-        if (
-            characters >= 3_000
-            and evidence.text_coverage >= 0.18
-            and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
-        ):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.DENSE_NATIVE_TEXT)
-        return WorkPlan(
-            PageRoute.HYBRID if characters else PageRoute.OCR,
-            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
-            ocr_passes=(
-                OcrPass(
-                    "schematic-regions",
-                    OcrPassScope.WEAK_REGIONS,
-                    (
-                        min(6.0, internal_vector_text_scale(capture, vector_complexity) * 1.2)
-                        if characters >= 8
-                        else internal_vector_text_scale(capture, vector_complexity)
-                    ),
-                    (PSM_SPARSE_TEXT,),
-                    tiles=8,
-                    region_columns=4,
-                    max_regions=8,
-                    minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
-                    seed_with_native=True,
-                    include_native_text=True,
-                ),
-                OcrPass(
-                    "primary-page",
-                    OcrPassScope.PAGE,
-                    internal_vector_text_scale(capture, vector_complexity),
-                    (PSM_AUTO,),
-                    minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
-                    run_if_additions_below=4,
-                    adaptive_scale=True,
-                    character_confidence_threshold=55.0,
-                    region_first=True,
-                    include_native_text=True,
-                ),
-                OcrPass(
-                    "schematic-regions-fallback",
-                    OcrPassScope.WEAK_REGIONS,
-                    internal_vector_text_scale(capture, vector_complexity),
-                    (6,),
-                    tiles=8,
-                    region_columns=4,
-                    max_regions=8,
-                    minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
-                    run_if_additions_below=0,
-                    seed_with_native=True,
-                    region_first=True,
-                    include_native_text=True,
-                ),
-            ),
-            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
-        )
-
+        return internal_uncovered_vector_reason(capture, evidence.uncovered_vector_area)
     if internal_noisy_native_text(evidence):
-        scale = min(
-            4.5,
-            max(
-                3.0,
-                internal_ocr_scale(capture, schematic=True, vector_complexity=vector_complexity),
-            ),
-        )
-        return WorkPlan(
-            PageRoute.HYBRID,
-            reason=PagePlanReason.NOISY_NATIVE_TEXT,
-            ocr_passes=(
-                OcrPass(
-                    "clean-regions",
-                    OcrPassScope.WEAK_REGIONS,
-                    scale,
-                    (PSM_SPARSE_TEXT,),
-                    tiles=6,
-                    region_columns=4,
-                    max_regions=8,
-                    minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
-                    run_if_additions_below=4,
-                    seed_with_native=True,
-                    preprocess="binary-clean",
-                    pixel_budget=PRIMARY_OCR_PIXELS,
-                    include_native_text=True,
-                ),
-                OcrPass(
-                    "clean-page",
-                    OcrPassScope.PAGE,
-                    scale,
-                    (PSM_SPARSE_TEXT,),
-                    minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
-                    run_if_additions_below=2,
-                    minimum_utility_gain=1.05,
-                    adaptive_scale=True,
-                    region_first=False,
-                    preprocess="binary-clean",
-                    include_native_text=True,
-                ),
-            ),
-            fusion_policy=FusionPolicy.NOISY_NATIVE,
-        )
-
-    image_text_supplement = (
+        return PagePlanReason.NOISY_NATIVE_TEXT
+    if (
         0.10 <= evidence.image_area_ratio < 0.65
         and evidence.image_count <= 4
         and characters >= 32
         and suspicious_ratio <= 0.05
-    )
-    if image_text_supplement:
-        return WorkPlan(
-            PageRoute.HYBRID,
-            reason=PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT,
-            ocr_passes=(
-                OcrPass(
-                    "image-regions",
-                    OcrPassScope.IMAGE_REGIONS,
-                    2.0,
-                    (PSM_SPARSE_TEXT_OSD,),
-                    minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
-                    adaptive_scale=True,
-                    pixel_budget=PRIMARY_OCR_PIXELS,
-                ),
-            ),
-        )
-
-    if rotated_native:
-        rotated_characters = internal_rotated_native_characters(capture)
-        if (
-            characters >= 1_000
-            and text_coverage >= 0.15
-            and internal_native_mapping_is_usable(evidence)
-        ):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_ROTATED_TEXT)
-        if (
-            characters >= 500
-            and suspicious_ratio <= 0.05
-            and rotated_characters <= max(80, int(characters * 0.03))
-        ):
-            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.MINOR_ROTATED_NATIVE_TEXT)
-        return WorkPlan(
-            PageRoute.HYBRID,
-            reason=PagePlanReason.ROTATED_NATIVE_TEXT,
-            ocr_passes=(
-                OcrPass(
-                    "orientation-page",
-                    OcrPassScope.PAGE,
-                    2.0,
-                    (PSM_SPARSE_TEXT_OSD,),
-                    minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
-                    adaptive_scale=True,
-                    minimum_characters_for_rescue=300,
-                    region_first=True,
-                    pixel_budget=PRIMARY_OCR_PIXELS,
-                    include_native_text=True,
-                ),
-                OcrPass(
-                    "orientation-page-fallback",
-                    OcrPassScope.PAGE,
-                    2.0,
-                    (PSM_SPARSE_TEXT,),
-                    minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
-                    run_if_characters_below=300,
-                    minimum_utility_gain=1.05,
-                    region_first=False,
-                    include_native_text=True,
-                ),
-            ),
-        )
-
+    ):
+        return PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT
+    if any(int(value) % 360 for value in capture.observations.rotation):
+        return internal_rotated_native_reason(capture)
     mapping_usable = internal_native_mapping_is_usable(evidence)
     if characters >= 80 and suspicious_ratio <= 0.02 and mapping_usable:
-        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.HEALTHY_NATIVE_TEXT)
+        return PagePlanReason.HEALTHY_NATIVE_TEXT
     if (
         characters >= 32
         and suspicious_ratio <= 0.05
         and evidence.image_count == 0
         and mapping_usable
     ):
-        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.USABLE_NATIVE_TEXT)
+        return PagePlanReason.USABLE_NATIVE_TEXT
     if (
         characters > 0
-        and characters == total_characters
+        and characters == evidence.native_characters
         and suspicious_ratio == 0.0
         and evidence.image_count == 0
-        and vector_complexity < 30
+        and evidence.vector_complexity < 30
         and mapping_usable
     ):
-        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.CLEAN_SHORT_NATIVE_TEXT)
+        return PagePlanReason.CLEAN_SHORT_NATIVE_TEXT
+    if characters == 0 or suspicious_ratio >= 0.25:
+        return PagePlanReason.NATIVE_TEXT_UNAVAILABLE
+    return PagePlanReason.NATIVE_TEXT_NEEDS_AUGMENTATION
 
+
+def internal_corrupt_native_plan(capture: PageAnalysis) -> WorkPlan:
+    """Replace unusable character mappings with a full raster reading."""
+    evidence = capture.evidence
+    vector_complexity = evidence.vector_complexity
+    text_density = evidence.visible_text_density
+    text_coverage = evidence.text_coverage
+    schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
+    image_modes = (PSM_AUTO,)
+    scale = 6.0
+    weak_threshold = 300 if schematic else 1_000
+    high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
+    return WorkPlan(
+        PageRoute.OCR,
+        reason=PagePlanReason.NATIVE_TEXT_CORRUPT,
+        ocr_passes=(
+            OcrPass(
+                "primary-page",
+                OcrPassScope.PAGE,
+                8.0 if high_resolution_vector else scale,
+                image_modes,
+                minimum_confidence=(
+                    STROKED_VECTOR_WORD_MIN_CONFIDENCE
+                    if high_resolution_vector
+                    else 45.0
+                    if evidence.image_count
+                    else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
+                ),
+                adaptive_scale=not high_resolution_vector,
+                character_confidence_threshold=(
+                    55.0 if schematic and not high_resolution_vector else None
+                ),
+                region_first=True,
+                pixel_budget=(MAX_OCR_PIXELS if high_resolution_vector else PRIMARY_OCR_PIXELS),
+                include_native_text=True,
+                recognize_words=high_resolution_vector,
+                parallel_tiles=2,
+            ),
+            internal_fallback_pass(
+                schematic=schematic,
+                scale=scale,
+                modes=(6,),
+                minimum_confidence=(NATIVE_UNAVAILABLE_MIN_CONFIDENCE if schematic else 45.0),
+                run_if_characters_below=weak_threshold,
+                include_native_text=True,
+            ),
+        ),
+        allow_direct_image_ocr=False,
+        augment_page_candidates=True,
+    )
+
+
+def internal_hidden_text_plan(capture: PageAnalysis) -> WorkPlan:
+    """Read the scan and verify an unpainted native text layer."""
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    hidden_text_scale = 2.0 if evidence.full_page_image and 20 <= characters < 32 else 3.0
+    return WorkPlan(
+        PageRoute.OCR,
+        reason=PagePlanReason.UNPAINTED_NATIVE_TEXT_LAYER,
+        ocr_passes=(
+            OcrPass(
+                "primary-page",
+                OcrPassScope.PAGE,
+                hidden_text_scale,
+                (PSM_SPARSE_TEXT,),
+                minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
+                adaptive_scale=True,
+                region_first=True,
+                pixel_budget=PRIMARY_OCR_PIXELS,
+            ),
+            OcrPass(
+                "fallback-regions",
+                OcrPassScope.WEAK_REGIONS,
+                hidden_text_scale,
+                (6,),
+                tiles=4,
+                minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
+                # Sparse-mode primary OCR drops narrow columns outright
+                # (single-digit row labels, tick columns), so a page can
+                # read "well" by character count while missing a column.
+                # Run the weak-region sweep even on well-read pages, and
+                # recognize words so the per-word coverage test can admit
+                # the genuinely novel words while rejecting re-reads of
+                # text the primary already found (line-level supplements
+                # sneak whole duplicate rows past the coverage check).
+                run_if_characters_below=1500,
+                recognize_words=True,
+            ),
+            OcrPass(
+                "adaptive-page",
+                OcrPassScope.PAGE,
+                hidden_text_scale,
+                (PSM_SPARSE_TEXT,),
+                minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
+                run_if_characters_below=32,
+                minimum_utility_gain=1.20,
+                region_first=False,
+            ),
+        ),
+        verify_hidden_text=internal_hidden_text_needs_verification(evidence),
+    )
+
+
+def internal_stroked_vector_plan(capture: PageAnalysis) -> WorkPlan:
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    return WorkPlan(
+        PageRoute.HYBRID if characters else PageRoute.OCR,
+        reason=PagePlanReason.STROKED_VECTOR_TEXT,
+        ocr_passes=(
+            OcrPass(
+                "stroked-vector-text",
+                OcrPassScope.STROKED_VECTOR_TEXT,
+                6.0,
+                (PSM_SPARSE_TEXT,),
+                minimum_confidence=STROKED_VECTOR_WORD_MIN_CONFIDENCE,
+                region_first=False,
+                pixel_budget=MAX_OCR_PIXELS,
+            ),
+        ),
+    )
+
+
+def internal_uncovered_vector_plan(capture: PageAnalysis) -> WorkPlan:
+    """Read vector regions that lack reliable native text coverage."""
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    vector_complexity = evidence.vector_complexity
+    return WorkPlan(
+        PageRoute.HYBRID if characters else PageRoute.OCR,
+        reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
+        ocr_passes=(
+            OcrPass(
+                "schematic-regions",
+                OcrPassScope.WEAK_REGIONS,
+                (
+                    min(6.0, internal_vector_text_scale(capture, vector_complexity) * 1.2)
+                    if characters >= 8
+                    else internal_vector_text_scale(capture, vector_complexity)
+                ),
+                (PSM_SPARSE_TEXT,),
+                tiles=8,
+                region_columns=4,
+                max_regions=8,
+                minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
+                seed_with_native=True,
+                include_native_text=True,
+            ),
+            OcrPass(
+                "primary-page",
+                OcrPassScope.PAGE,
+                internal_vector_text_scale(capture, vector_complexity),
+                (PSM_AUTO,),
+                minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
+                run_if_additions_below=4,
+                adaptive_scale=True,
+                character_confidence_threshold=55.0,
+                region_first=True,
+                include_native_text=True,
+            ),
+            OcrPass(
+                "schematic-regions-fallback",
+                OcrPassScope.WEAK_REGIONS,
+                internal_vector_text_scale(capture, vector_complexity),
+                (6,),
+                tiles=8,
+                region_columns=4,
+                max_regions=8,
+                minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
+                run_if_additions_below=0,
+                seed_with_native=True,
+                region_first=True,
+                include_native_text=True,
+            ),
+        ),
+        fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
+    )
+
+
+def internal_noisy_native_plan(capture: PageAnalysis) -> WorkPlan:
+    evidence = capture.evidence
+    vector_complexity = evidence.vector_complexity
+    scale = min(
+        4.5,
+        max(
+            3.0,
+            internal_ocr_scale(capture, schematic=True, vector_complexity=vector_complexity),
+        ),
+    )
+    return WorkPlan(
+        PageRoute.HYBRID,
+        reason=PagePlanReason.NOISY_NATIVE_TEXT,
+        ocr_passes=(
+            OcrPass(
+                "clean-regions",
+                OcrPassScope.WEAK_REGIONS,
+                scale,
+                (PSM_SPARSE_TEXT,),
+                tiles=6,
+                region_columns=4,
+                max_regions=8,
+                minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
+                run_if_additions_below=4,
+                seed_with_native=True,
+                preprocess="binary-clean",
+                pixel_budget=PRIMARY_OCR_PIXELS,
+                include_native_text=True,
+            ),
+            OcrPass(
+                "clean-page",
+                OcrPassScope.PAGE,
+                scale,
+                (PSM_SPARSE_TEXT,),
+                minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
+                run_if_additions_below=2,
+                minimum_utility_gain=1.05,
+                adaptive_scale=True,
+                region_first=False,
+                preprocess="binary-clean",
+                include_native_text=True,
+            ),
+        ),
+        fusion_policy=FusionPolicy.NOISY_NATIVE,
+    )
+
+
+def internal_image_supplement_plan(capture: PageAnalysis) -> WorkPlan:
+    return WorkPlan(
+        PageRoute.HYBRID,
+        reason=PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT,
+        ocr_passes=(
+            OcrPass(
+                "image-regions",
+                OcrPassScope.IMAGE_REGIONS,
+                2.0,
+                (PSM_SPARSE_TEXT_OSD,),
+                minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
+                adaptive_scale=True,
+                pixel_budget=PRIMARY_OCR_PIXELS,
+            ),
+        ),
+    )
+
+
+def internal_rotated_native_plan(capture: PageAnalysis) -> WorkPlan:
+    return WorkPlan(
+        PageRoute.HYBRID,
+        reason=PagePlanReason.ROTATED_NATIVE_TEXT,
+        ocr_passes=(
+            OcrPass(
+                "orientation-page",
+                OcrPassScope.PAGE,
+                2.0,
+                (PSM_SPARSE_TEXT_OSD,),
+                minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
+                adaptive_scale=True,
+                minimum_characters_for_rescue=300,
+                region_first=True,
+                pixel_budget=PRIMARY_OCR_PIXELS,
+                include_native_text=True,
+            ),
+            OcrPass(
+                "orientation-page-fallback",
+                OcrPassScope.PAGE,
+                2.0,
+                (PSM_SPARSE_TEXT,),
+                minimum_confidence=RASTER_TEXT_MIN_CONFIDENCE,
+                run_if_characters_below=300,
+                minimum_utility_gain=1.05,
+                region_first=False,
+                include_native_text=True,
+            ),
+        ),
+    )
+
+
+def internal_unavailable_native_plan(capture: PageAnalysis) -> WorkPlan:
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    vector_complexity = evidence.vector_complexity
+    text_density = evidence.visible_text_density
+    text_coverage = evidence.text_coverage
     schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
     mode = PSM_AUTO if (schematic and vector_complexity >= 150_000) else PSM_SPARSE_TEXT
     image_modes = (mode,)
     scale = internal_ocr_scale(capture, schematic=schematic, vector_complexity=vector_complexity)
-    if characters == 0 or suspicious_ratio >= 0.25:
-        weak_threshold = 300 if schematic else 3
-        high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
-        return WorkPlan(
-            PageRoute.OCR,
-            reason=PagePlanReason.NATIVE_TEXT_UNAVAILABLE,
-            ocr_passes=(
-                OcrPass(
-                    "primary-page",
-                    OcrPassScope.PAGE,
-                    8.0 if high_resolution_vector else scale,
-                    image_modes,
-                    minimum_confidence=(
-                        STROKED_VECTOR_WORD_MIN_CONFIDENCE
-                        if high_resolution_vector
-                        else (
-                            55.0
-                            if (characters < 10 and evidence.image_count > 0)
-                            else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
-                        )
-                    ),
-                    adaptive_scale=not high_resolution_vector,
-                    character_confidence_threshold=(
-                        55.0 if schematic and not high_resolution_vector else None
-                    ),
-                    region_first=(
-                        characters >= 10
-                        or bool(evidence.stroked_vector_text.drawing_indexes)
-                        or evidence.image_count >= 2
-                    ),
-                    pixel_budget=(MAX_OCR_PIXELS if high_resolution_vector else PRIMARY_OCR_PIXELS),
-                    include_native_text=bool(characters),
-                    recognize_words=high_resolution_vector,
-                    parallel_tiles=2,
-                ),
-                internal_fallback_pass(
-                    schematic=schematic,
-                    scale=scale,
-                    modes=(6,),
-                    minimum_confidence=(
+    weak_threshold = 300 if schematic else 3
+    high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
+    return WorkPlan(
+        PageRoute.OCR,
+        reason=PagePlanReason.NATIVE_TEXT_UNAVAILABLE,
+        ocr_passes=(
+            OcrPass(
+                "primary-page",
+                OcrPassScope.PAGE,
+                8.0 if high_resolution_vector else scale,
+                image_modes,
+                minimum_confidence=(
+                    STROKED_VECTOR_WORD_MIN_CONFIDENCE
+                    if high_resolution_vector
+                    else (
                         55.0
                         if (characters < 10 and evidence.image_count > 0)
                         else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
-                    ),
-                    run_if_characters_below=weak_threshold,
-                    include_native_text=bool(characters),
+                    )
                 ),
+                adaptive_scale=not high_resolution_vector,
+                character_confidence_threshold=(
+                    55.0 if schematic and not high_resolution_vector else None
+                ),
+                region_first=(
+                    characters >= 10
+                    or bool(evidence.stroked_vector_text.drawing_indexes)
+                    or evidence.image_count >= 2
+                ),
+                pixel_budget=(MAX_OCR_PIXELS if high_resolution_vector else PRIMARY_OCR_PIXELS),
+                include_native_text=bool(characters),
+                recognize_words=high_resolution_vector,
+                parallel_tiles=2,
             ),
-        )
+            internal_fallback_pass(
+                schematic=schematic,
+                scale=scale,
+                modes=(6,),
+                minimum_confidence=(
+                    55.0
+                    if (characters < 10 and evidence.image_count > 0)
+                    else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
+                ),
+                run_if_characters_below=weak_threshold,
+                include_native_text=bool(characters),
+            ),
+        ),
+    )
+
+
+def internal_sparse_native_plan(capture: PageAnalysis) -> WorkPlan:
+    evidence = capture.evidence
+    characters = evidence.visible_native_characters
+    vector_complexity = evidence.vector_complexity
+    text_density = evidence.visible_text_density
+    text_coverage = evidence.text_coverage
+    schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
+    mode = PSM_AUTO if (schematic and vector_complexity >= 150_000) else PSM_SPARSE_TEXT
+    image_modes = (mode,)
+    scale = internal_ocr_scale(capture, schematic=schematic, vector_complexity=vector_complexity)
     return WorkPlan(
         PageRoute.HYBRID,
         reason=PagePlanReason.NATIVE_TEXT_NEEDS_AUGMENTATION,
@@ -676,6 +742,48 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
         ),
         fusion_policy=FusionPolicy.SPARSE_NATIVE,
     )
+
+
+def plan_page(capture: PageAnalysis) -> WorkPlan:
+    """Apply ordered evidence gates, then build the selected recognition recipe."""
+    reason = internal_page_plan_reason(capture)
+    match reason:
+        case PagePlanReason.NATIVE_TEXT_CORRUPT:
+            return internal_corrupt_native_plan(capture)
+        case PagePlanReason.UNPAINTED_NATIVE_TEXT_LAYER:
+            return internal_hidden_text_plan(capture)
+        case PagePlanReason.STROKED_VECTOR_TEXT:
+            return internal_stroked_vector_plan(capture)
+        case PagePlanReason.UNCOVERED_VECTOR_TEXT:
+            return internal_uncovered_vector_plan(capture)
+        case PagePlanReason.NOISY_NATIVE_TEXT:
+            return internal_noisy_native_plan(capture)
+        case PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT:
+            return internal_image_supplement_plan(capture)
+        case PagePlanReason.ROTATED_NATIVE_TEXT:
+            return internal_rotated_native_plan(capture)
+        case PagePlanReason.NATIVE_TEXT_UNAVAILABLE:
+            return internal_unavailable_native_plan(capture)
+        case PagePlanReason.NATIVE_TEXT_NEEDS_AUGMENTATION:
+            return internal_sparse_native_plan(capture)
+        case (
+            PagePlanReason.NEWSTROKE_VECTOR_TEXT
+            | PagePlanReason.TRUSTED_HIDDEN_NATIVE_TEXT
+            | PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS
+            | PagePlanReason.GLYPH_TRUSTED_VECTOR_TEXT
+            | PagePlanReason.FULL_PAGE_IMAGE_NATIVE_TEXT
+            | PagePlanReason.MOSTLY_COVERED_NATIVE_TEXT
+            | PagePlanReason.NATIVE_TEXT_WITHOUT_IMAGES
+            | PagePlanReason.DENSE_NATIVE_TEXT
+            | PagePlanReason.GLYPH_TRUSTED_ROTATED_TEXT
+            | PagePlanReason.MINOR_ROTATED_NATIVE_TEXT
+            | PagePlanReason.HEALTHY_NATIVE_TEXT
+            | PagePlanReason.USABLE_NATIVE_TEXT
+            | PagePlanReason.CLEAN_SHORT_NATIVE_TEXT
+        ):
+            return WorkPlan(PageRoute.NATIVE, reason=reason)
+        case PagePlanReason.UNSPECIFIED:
+            raise ValueError("Page routing must select an explicit plan reason")
 
 
 def internal_duplicate_of_native_text(

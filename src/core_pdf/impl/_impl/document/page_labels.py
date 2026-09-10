@@ -16,9 +16,15 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_nam
 from core_pdf.impl.types import PdfName
 
 
-def format_page_label(spec: PdfDict, page_offset: int, resolve: Callable[[object], object]) -> str:
+def format_page_label(
+    spec: PdfDict,
+    page_offset: int,
+    resolve: Callable[[object], object],
+    *,
+    decode_prefix: Callable[[object], str | None] = parse_text_string,
+) -> str:
     style = normalize_pdf_name(resolve(spec.get("S")))
-    prefix = parse_text_string(resolve(spec.get("P"))) or ""
+    prefix = decode_prefix(resolve(spec.get("P"))) or ""
     start = resolve(spec.get("St"))
     normalized: PdfDict = {
         "P": cast(PdfObject, prefix),
