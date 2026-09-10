@@ -16,7 +16,7 @@ from core_pdf.impl._impl.fonts.cmap_resources import (
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
 )
-from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
+from core_pdf_spec.s_09_fonts.cmap_ranges import (
     code_in_ranges,
     iter_codespace_range,
 )

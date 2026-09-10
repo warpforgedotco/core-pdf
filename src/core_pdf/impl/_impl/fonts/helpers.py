@@ -3,19 +3,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
-from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
+from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.spec.s_09_fonts.helpers import (
+from core_pdf_spec.s_09_fonts.helpers import (
     BASE_ENCODING_GLYPH_NAMES,
     STANDARD_ENCODING_GLYPH_NAMES,
+)
+from core_pdf_spec.s_09_fonts.helpers import (
+    build_simple_encoding_glyph_names as spec_simple_encoding_glyph_names,
 )
 
 
@@ -137,3 +141,23 @@ ENCODING_FALLBACKS: dict[str, tuple[str, ...]] = {
     "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE,
 }
+
+
+def build_simple_encoding_glyph_names(
+    base_encoding: str | None,
+    builtin_encoding: Mapping[int, str],
+    differences: Mapping[int, str],
+    *,
+    authoritative_builtin: bool,
+) -> tuple[str, ...]:
+    """Keep the reader's out-of-range skipping and empty-name substitution."""
+    return spec_simple_encoding_glyph_names(
+        base_encoding,
+        {
+            int(code): name or ".notdef"
+            for code, name in builtin_encoding.items()
+            if 0 <= code < 256
+        },
+        {int(code): name or ".notdef" for code, name in differences.items() if 0 <= code < 256},
+        authoritative_builtin=authoritative_builtin,
+    )

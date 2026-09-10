@@ -1,6 +1,6 @@
 """Application Unicode replacement and legacy range expansion."""
 
-from core_pdf.impl.spec.s_09_fonts.cmap_ranges import MAX_CMAP_RANGE_SPAN
+MAX_CMAP_RANGE_SPAN = 65536
 
 
 def unicode_scalar_or_replacement(codepoint: int) -> str:

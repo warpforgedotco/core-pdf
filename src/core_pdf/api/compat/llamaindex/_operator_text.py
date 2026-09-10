@@ -17,22 +17,22 @@ from core_pdf.api.compat._text_state import (
 )
 from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
-from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
+from core_pdf.impl._impl.fonts.cmap_tokenizer import (
     cmap_tokens,
     decode_cmap_hex_token,
     iter_blocks,
 )
-from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
+from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.types import PdfName, PdfString
+from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_08_graphics.matrix import multiply_affine
+from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
-from core_pdf.impl.types import PdfName, PdfString
 
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))

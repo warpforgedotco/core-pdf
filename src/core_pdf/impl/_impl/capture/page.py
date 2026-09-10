@@ -20,15 +20,15 @@ from core_pdf.impl._impl.document.records import RawAnnotation, RawFormField
 from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dict
 from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_document.annotation_appearance import (
+from core_pdf_spec.s_07_document.annotation_appearance import (
     ANNOTATION_FLAG_HIDDEN,
     ANNOTATION_FLAG_NO_VIEW,
-    internal_appearance_matrix,
+    appearance_matrix,
     normal_appearance_stream,
 )
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
 
@@ -160,9 +160,7 @@ def capture_annotation_appearances(
             bbox = document.resolver.resolve_box(stream.dictionary.get("BBox"))
 
             placement = (
-                internal_appearance_matrix(rect, bbox, matrix)
-                if bbox is not None
-                else IDENTITY_MATRIX
+                appearance_matrix(rect, bbox, matrix) if bbox is not None else IDENTITY_MATRIX
             )
             nested_ctm = matrix.multiply(placement)
             clip = transform_bbox(bbox, nested_ctm) if bbox is not None else rect

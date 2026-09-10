@@ -17,6 +17,7 @@ resolution-markers = [
 members = [
     "core-pdf",
     "core-pdf-ocr",
+    "core-pdf-spec",
 ]
 
 [[package]]
@@ -486,8 +487,7 @@ name = "core-pdf"
 version = "0.0.6"
 source = { editable = "." }
 dependencies = [
-    { name = "asn1crypto" },
-    { name = "cryptography" },
+    { name = "core-pdf-spec" },
     { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
@@ -535,8 +535,7 @@ vendor-test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asn1crypto", specifier = ">=1.5.1" },
-    { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
@@ -593,6 +592,23 @@ requires-dist = [
     { name = "core-pdf", editable = "." },
     { name = "numpy", specifier = ">=2.5.1" },
     { name = "tesserocr", specifier = ">=2.10.0" },
+]
+
+[[package]]
+name = "core-pdf-spec"
+version = "0.1.0"
+source = { editable = "packages/core-pdf-spec" }
+dependencies = [
+    { name = "asn1crypto" },
+    { name = "cryptography" },
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asn1crypto", specifier = ">=1.5.1" },
+    { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "numpy", specifier = ">=2.5.1" },
 ]
 
 [[package]]

@@ -24,13 +24,15 @@ if [[ ! -x "${NUITKA_ROOT}/bin/nuitka" ]]; then
 fi
 
 echo "==> Building core-pdf CLI with C-level PGO (--pgo-c)..."
-PYTHONPATH="${PROJECT_ROOT}/src" \
+PYTHONPATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}/packages/core-pdf-spec/src" \
 NUITKA_CACHE_DIR="${CACHE_DIR}" \
 CCACHE_DISABLE=1 \
 "${PYTHON}" "${NUITKA_ROOT}/bin/nuitka" \
     --mode=accelerated \
     --include-package=core_pdf \
+    --include-package=core_pdf_spec \
     --include-package-data=core_pdf \
+    --include-package-data=core_pdf_spec \
     --pgo-c \
     --lto=yes \
     --assume-yes-for-downloads \

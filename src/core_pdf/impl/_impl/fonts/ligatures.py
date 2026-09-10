@@ -8,8 +8,8 @@ from typing import Any, Protocol, cast
 from core_pdf.impl._impl.fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_float_strict,
     parse_int_strict,

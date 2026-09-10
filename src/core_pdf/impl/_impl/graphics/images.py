@@ -19,8 +19,8 @@ from core_pdf.impl._impl.graphics.stream_decoding import (
 )
 from core_pdf.impl._impl.runtime.array_views import readonly
 from core_pdf.impl._impl.runtime.scalars import parse_int
-from core_pdf.impl.spec.s_07_filters.errors import FilterError
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource, SoftMask
+from core_pdf_spec.s_07_filters.errors import FilterError
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 
 @dataclass(frozen=True, slots=True)

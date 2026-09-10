@@ -39,6 +39,7 @@ from core_pdf.impl._impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
 from core_pdf.impl._impl.extract.quality import internal_analyze_text
+from core_pdf.impl._impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl._impl.model.geometry import bbox_union, rect_tuple
 from core_pdf.impl._impl.model.glyphs import (
     GlyphObservation,
@@ -47,7 +48,6 @@ from core_pdf.impl._impl.model.glyphs import (
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.model.text import normalize_extracted_text
-from core_pdf.impl.spec.s_07_filters.registry import declared_filter_names
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     PageAnalysis,

@@ -9,10 +9,10 @@ from typing import Any, TypeAlias
 
 from core_pdf.impl._impl.model.geometry import RectBox, bbox_union, points_bbox
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
-from core_pdf.impl.spec.s_07_content.stream_state import StreamKey
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
+from core_pdf_spec.s_07_content.stream_state import StreamKey
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 

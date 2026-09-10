@@ -8,7 +8,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 echo "==> Building core-pdf standalone executable with Nuitka..."
-uv run nuitka --python-flag=-m src/core_pdf
+uv run nuitka --include-package=core_pdf_spec --include-package-data=core_pdf_spec \
+  --python-flag=-m src/core_pdf
 
 if [[ -f "${PROJECT_ROOT}/core_pdf.bin" ]]; then
     echo "==> Successfully created standalone binary: ${PROJECT_ROOT}/core_pdf.bin"

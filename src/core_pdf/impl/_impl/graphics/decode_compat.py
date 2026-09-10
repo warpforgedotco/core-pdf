@@ -12,11 +12,11 @@ from core_pdf.impl._impl.graphics.filter_registry import (
 )
 from core_pdf.impl._impl.model.pdf_values import is_pdf_null
 from core_pdf.impl._impl.runtime.scalars import parse_int
-from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
-from core_pdf.impl.spec.s_07_filters.decode_spec import StreamDecodeSpec
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
+from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
+from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 DecodeParam: TypeAlias = object
 

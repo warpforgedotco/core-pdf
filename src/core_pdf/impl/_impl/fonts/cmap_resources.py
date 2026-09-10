@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl.spec.s_09_fonts.cmap_resources import normalized_cmap_name, resolve_cmap_resource
+from core_pdf_spec.s_09_fonts.cmap_resources import normalized_cmap_name, resolve_cmap_resource
 
-RESOURCE_PACKAGE = "core_pdf.impl.spec.s_09_fonts.data"
+RESOURCE_PACKAGE = "core_pdf_spec.s_09_fonts.data"
 CMapUnicodeSource = tuple[str, str, int]
 CID_COLLECTION_UNICODE_SOURCES: dict[tuple[str, str], dict[bool, tuple[CMapUnicodeSource, ...]]] = {
     ("Adobe", "GB1"): {

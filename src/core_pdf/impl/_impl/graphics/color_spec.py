@@ -11,15 +11,15 @@ from core_pdf.impl._impl.graphics.icc_profiles import (
 )
 from core_pdf.impl._impl.model.pdf_values import coerce_to_bytes
 from core_pdf.impl._impl.runtime.scalars import parse_float, parse_int
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.color_spec import (
+from core_pdf.impl.types import MISSING
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_08_graphics.color_spec import (
     ImageColorSpec,
 )
-from core_pdf.impl.spec.s_08_graphics.color_spec import (
+from core_pdf_spec.s_08_graphics.color_spec import (
     color_spec_from_value as parse_pdf_color_spec,
 )
-from core_pdf.impl.types import MISSING
 
 ColorParams: TypeAlias = dict[str, object]
 

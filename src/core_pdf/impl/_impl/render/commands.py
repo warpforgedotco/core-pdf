@@ -23,8 +23,8 @@ from core_pdf.impl._impl.render.model import (
     PathPaintItem,
 )
 from core_pdf.impl._impl.render.paths import internal_translate_rect
-from core_pdf.impl.spec.s_07_content.image_capture import unit_square_placement
-from core_pdf.impl.spec.s_07_content.state import internal_NON_PAINTING_RENDER_MODES
+from core_pdf_spec.s_07_content.image_capture import unit_square_placement
+from core_pdf_spec.s_07_content.state import NON_PAINTING_RENDER_MODES
 
 
 def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
@@ -73,7 +73,7 @@ def internal_append_glyph_paint(
         return False
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
-    if not include_paint or mode in internal_NON_PAINTING_RENDER_MODES:
+    if not include_paint or mode in NON_PAINTING_RENDER_MODES:
         return True
     paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
     display_list.append(
@@ -149,7 +149,7 @@ def append_captured_program(
                 include_paint=include_text,
             ):
                 continue
-            if not include_text or glyph.text_render_mode in internal_NON_PAINTING_RENDER_MODES:
+            if not include_text or glyph.text_render_mode in NON_PAINTING_RENDER_MODES:
                 continue
             bitmap = glyph.resolved_bitmap()
             if not bitmap:

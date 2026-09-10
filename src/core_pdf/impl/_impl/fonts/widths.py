@@ -7,19 +7,28 @@ from dataclasses import replace
 from typing import Any
 
 from core_pdf.impl._impl.fonts.cmap_widths import (
+    MAX_CID,
+    MIN_CID,
     FontWidthMap,
     SparseFontWidthMap,
     internal_clipped_cid_bounds,
-    internal_MAX_CID,
-    internal_MIN_CID,
     parse_cid_widths,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int_strict,
 )
-from core_pdf.impl.spec.s_09_fonts.widths import FontMetrics, get_descendant
-from core_pdf.impl.spec.s_09_fonts.widths import parse_font_widths as pdf_font_widths
+from core_pdf_spec.s_09_fonts.widths import FontMetrics
+from core_pdf_spec.s_09_fonts.widths import parse_font_widths as pdf_font_widths
+
+
+def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
+    descendant_fonts = font.get("DescendantFonts")
+    if isinstance(descendant_fonts, (list, tuple)) and descendant_fonts:
+        candidate = descendant_fonts[0]
+        if isinstance(candidate, dict):
+            return candidate
+    return None
 
 
 def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
@@ -64,7 +73,7 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
                     if isinstance(values, (list, tuple)):
                         for offset in range(0, len(values) // 3):
                             cid = first + offset
-                            if internal_MIN_CID <= cid <= internal_MAX_CID:
+                            if MIN_CID <= cid <= MAX_CID:
                                 vertical_metrics[cid] = (
                                     parse_float(
                                         values[offset * 3], default_vertical_displacement_y

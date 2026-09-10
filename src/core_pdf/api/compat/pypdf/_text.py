@@ -27,10 +27,10 @@ from core_pdf.impl._impl.fonts.glyphs import (
     ensure_glyph_map,
 )
 from core_pdf.impl._impl.fonts.widths import parse_font_widths
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.types import PdfName, PdfString
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 
 Matrix = list[float]
 

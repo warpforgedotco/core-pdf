@@ -36,6 +36,7 @@ from core_pdf.impl._impl.fonts.font_program_truetype import (
 )
 from core_pdf.impl._impl.fonts.font_program_type1 import (
     Type1FontProgram,
+    parse_type1_font_program_encoding,
 )
 from core_pdf.impl._impl.fonts.glyph_decode import (
     build_glyph_decode_table,
@@ -47,6 +48,7 @@ from core_pdf.impl._impl.fonts.glyph_decode import (
 from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl._impl.fonts.helpers import (
     build_decode_table,
+    build_simple_encoding_glyph_names,
     parse_differences,
     unicode_for_glyph_name,
 )
@@ -61,24 +63,22 @@ from core_pdf.impl._impl.fonts.widths import (
 )
 from core_pdf.impl._impl.model.glyphs import UnicodeSource
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
+from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_08_graphics.matrix import Matrix
+from core_pdf_spec.s_09_fonts.cmap_ranges import (
     code_in_ranges,
 )
-from core_pdf.impl.spec.s_09_fonts.dictionaries import (
-    internal_FontProgramInputs,
-    internal_prepare_font_program_inputs,
+from core_pdf_spec.s_09_fonts.dictionaries import (
+    FontProgramInputs,
+    prepare_font_program_inputs,
 )
-from core_pdf.impl.spec.s_09_fonts.font_program_type1 import parse_type1_font_program_encoding
-from core_pdf.impl.spec.s_09_fonts.helpers import (
+from core_pdf_spec.s_09_fonts.helpers import (
     BASE_ENCODING_GLYPH_NAMES,
-    build_simple_encoding_glyph_names,
 )
-from core_pdf.impl.spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
-from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph
-from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
+from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -116,7 +116,7 @@ def resolve_base_font_name(font: dict[str, Any], subtype: str | None) -> str | N
     return descriptor_font_name(font, subtype)
 
 
-def internal_tt_font(inputs: internal_FontProgramInputs) -> TrueTypeFontProgram | None:
+def internal_tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
     if inputs.subtype not in {"CIDFontType2", "TrueType"}:
         return None
     font_file = inputs.font_file2
@@ -151,7 +151,7 @@ def single_code_mapping(
     return mapping
 
 
-def internal_cff_font(inputs: internal_FontProgramInputs) -> CFFFont | None:
+def internal_cff_font(inputs: FontProgramInputs) -> CFFFont | None:
     if inputs.descendant is not None:
         if inputs.subtype != "CIDFontType0":
             return None
@@ -219,7 +219,7 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
                 font.close()
 
 
-def internal_type1_font(inputs: internal_FontProgramInputs) -> Type1FontProgram | None:
+def internal_type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
     if inputs.original_subtype not in {"Type1", "MMType1"}:
         return None
     font_file = inputs.font_file
@@ -233,7 +233,7 @@ def internal_type1_font(inputs: internal_FontProgramInputs) -> Type1FontProgram 
         return None
 
 
-def internal_opentype_font(inputs: internal_FontProgramInputs) -> OpenTypeFontProgram | None:
+def internal_opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | None:
     font_file = inputs.font_file3
     if font_file is None:
         return None
@@ -247,7 +247,29 @@ def internal_opentype_font(inputs: internal_FontProgramInputs) -> OpenTypeFontPr
 
 def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     """Select one embedded outline implementation in format-preference order."""
-    inputs = internal_prepare_font_program_inputs(font)
+    try:
+        inputs = prepare_font_program_inputs(font)
+    except ValueError:
+        descendant = get_descendant(font)
+        font_dict = descendant if descendant is not None else font
+        descriptor = font_dict.get("FontDescriptor")
+        original_descriptor = font.get("FontDescriptor")
+        streams = (
+            original_descriptor.get("FontFile") if isinstance(original_descriptor, dict) else None,
+            descriptor.get("FontFile2") if isinstance(descriptor, dict) else None,
+            descriptor.get("FontFile3") if isinstance(descriptor, dict) else None,
+        )
+        first, second, third = (
+            value if isinstance(value, PdfStream) else None for value in streams
+        )
+        inputs = FontProgramInputs(
+            normalize_pdf_name(font_dict.get("Subtype")),
+            normalize_pdf_name(font.get("Subtype")),
+            descendant,
+            first,
+            second,
+            third,
+        )
     for resolver in (
         internal_cff_font,
         internal_tt_font,

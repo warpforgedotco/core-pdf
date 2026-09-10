@@ -7,13 +7,13 @@ from typing import Literal, Protocol, TypeAlias, cast
 
 from core_pdf.impl._impl.document.records import RawFormField
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
-from core_pdf.impl.spec.s_07_document.fields import (
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_document.fields import (
     field_children,
     inherited_field_value,
     qualified_field_name,
 )
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 
 
 class FieldResolver(PdfValueResolver, Protocol):

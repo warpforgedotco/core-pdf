@@ -11,7 +11,7 @@ import numpy
 
 from core_pdf.impl._impl.capture.records import PatternPaint
 from core_pdf.impl._impl.runtime.array_views import uint8_image_view
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 
 @dataclass(slots=True)

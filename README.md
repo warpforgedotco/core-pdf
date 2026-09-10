@@ -33,3 +33,10 @@ Unless a separate signed evaluation license, commercial license, or philanthropy
 Evaluation licenses, commercial licenses, and philanthropy waivers are available separately. See the [license documentation](https://github.com/core-experiments/core-pdf/blob/main/docs/license/README.md), [notice](https://github.com/core-experiments/core-pdf/blob/main/docs/license/NOTICE), [evaluation terms](https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-EVALUATION.txt), [commercial terms](https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-COMMERCIAL.txt), and [philanthropy waiver terms](https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt). Those alternatives are effective only when signed by the project licensor.
 
 Contact: <turcioskevinr@gmail.com>
+
+
+The low-level algorithms are also available as the independently versioned `core-pdf-spec`
+package (`core_pdf_spec`). It contains strict PDF and referenced-standard semantics;
+`core-pdf` composes these with reader recovery, font backends, extraction, and rendering.
+See [the architecture](docs/architecture.md) for the package boundary and
+[the spec package](packages/core-pdf-spec/README.md) for low-level usage.

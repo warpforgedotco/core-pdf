@@ -30,7 +30,6 @@ from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.exceptions import PdfDocumentClosedError
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
@@ -38,6 +37,7 @@ from core_pdf.impl.types import (
     PageScoped,
     PdfSource,
 )
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.document.records import RawFormField

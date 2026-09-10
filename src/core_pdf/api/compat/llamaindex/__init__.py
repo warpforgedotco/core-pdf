@@ -12,8 +12,8 @@ from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
-from core_pdf.impl.spec.s_07_content.operations import validate_inline_images
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_content.operations import validate_inline_images
+from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection

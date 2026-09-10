@@ -8,11 +8,11 @@ from typing import Any
 
 import numpy
 
+import core_pdf_spec.s_07_filters.decoders as strict
 from core_pdf.impl._impl.graphics.decode_compat import FilterParams
 from core_pdf.impl._impl.model.pdf_values import is_pdf_null
 from core_pdf.impl._impl.runtime import codec_backends
-from core_pdf.impl.spec.s_07_filters import decoders as strict
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 
 def internal_decode(

@@ -29,7 +29,7 @@ from core_pdf.impl._impl.graphics.filter_registry import (
 )
 from core_pdf.impl._impl.graphics.image_models import DecodedImage
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 # Decoders whose native path is exactly "preallocate a shape, hand it the buffer".
 # CCITT (needs FilterParams) and flate/lzw (decode then reshape) stay explicit below.

@@ -12,11 +12,11 @@ from defusedxml.ElementTree import fromstring as defused_fromstring
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl._impl.model.pdf_values import coerce_value
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.spec.s_07_document.metadata import info_dictionary, metadata_stream
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 MetadataScalar: TypeAlias = (
     str
@@ -150,7 +150,10 @@ def resolve_metadata_stream(
     resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> XmpNodeRecord | None:
     try:
-        metadata = metadata_stream(resolver, trailer)
+        catalog = resolver.resolve_dict(trailer.get("Root"))
+        if catalog is None:
+            return None
+        metadata = catalog_metadata_stream(resolver, catalog)
     except ValueError:
         if recover:
             return None

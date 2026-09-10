@@ -19,8 +19,8 @@ from core_pdf.impl._impl.model.geometry import (
 )
 from core_pdf.impl._impl.model.text import collapse_ws
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 from .._shared import float32 as _float32
 

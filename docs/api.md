@@ -121,3 +121,23 @@ from core_pdf.api.compat import inspect_xray
 
 findings = inspect_xray("document.pdf")
 ```
+
+
+## Low-level specification library
+
+`core-pdf-spec` is independently installable and versioned. Its import namespace is
+`core_pdf_spec`, with modules grouped by PDF chapter (`s_07_syntax`, `s_08_graphics`,
+`s_09_fonts`, and the other implemented chapters). It supplies strict algorithms, PDF
+primitives, standard data, and semantic service protocols. It has no `PdfDocument` facade
+or command-line entry point; applications compose those operations or use `core_pdf`.
+
+Core currently supports `core-pdf-spec>=0.1.0,<0.2.0`. Supported module exports are listed in
+`__all__`; names beginning with `internal_` remain private. Parser extension methods used by
+core are documented alongside their strict implementations. Spec reports errors rather than
+repairing malformed input, except where a referenced standard prescribes a fallback or default.
+This covers implemented features and is not a complete PDF conformance validator.
+
+Core's public exceptions remain available under their existing names and share spec's error
+identities. Core retains reader recovery, fontTools backends, Unicode guesses, selected device
+color conversion, capture, extraction, and rendering. OCR continues to depend on core's exact
+version and does not change native behavior when installed.

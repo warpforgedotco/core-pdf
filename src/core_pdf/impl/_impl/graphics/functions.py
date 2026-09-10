@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import core_pdf_spec.s_08_graphics.pdf_function as strict
 from core_pdf.impl._impl.runtime.scalars import parse_float, parse_int
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_08_graphics import pdf_function as strict
-from core_pdf.impl.spec.s_08_graphics.pdf_function import (
-    internal_PdfFunctionEvaluator,
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_08_graphics.pdf_function import (
+    PdfFunctionEvaluator,
 )
 
 
@@ -25,7 +25,7 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
     return tuple(output)
 
 
-def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluator:
+def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
     if callable(function):
 
         def evaluate_callable(*inputs: float) -> tuple[float, ...]:
@@ -60,6 +60,9 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
     dictionary = dict(source_dictionary)
     kind = parse_int(dictionary.get("FunctionType"), -1)
     dictionary["FunctionType"] = kind
+    if kind in {2, 3}:
+        # Preserve the reader's existing unbounded Type 2/3 output behavior.
+        dictionary.pop("Range", None)
     for name in ("Domain", "Range", "Decode"):
         values = internal_number_array(dictionary.get(name))
         if values:
@@ -83,6 +86,8 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
             dictionary["Encode"] = encodes
     if kind in {2, 3} and dictionary.get("Domain") is None:
         dictionary["Domain"] = [0.0, 1.0]
+    elif kind in {2, 3}:
+        dictionary["Domain"] = internal_number_array(dictionary.get("Domain"))[:2]
     if kind == 2:
         if dictionary.get("N") is None:
             dictionary["N"] = 1.0
@@ -115,9 +120,7 @@ def internal_compile_pdf_function(function: Any) -> internal_PdfFunctionEvaluato
         if isinstance(function, PdfStream)
         else dictionary
     )
-    return strict.internal_compile_pdf_function(
-        prepared, compile_nested=internal_compile_pdf_function
-    )
+    return strict.compile_pdf_function(prepared, compile_nested=internal_compile_pdf_function)
 
 
 def internal_evaluate_pdf_function(function: Any, *inputs: float) -> tuple[float, ...]:

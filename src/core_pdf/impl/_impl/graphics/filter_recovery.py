@@ -8,17 +8,17 @@ import zlib
 
 import imagecodecs
 
+import core_pdf_spec.s_07_filters.codecs as strict
 from core_pdf.impl._impl.graphics.decode_compat import FilterParams
-from core_pdf.impl.spec.s_07_filters import codecs as strict
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
-from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
+from core_pdf_spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
+from core_pdf_spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,

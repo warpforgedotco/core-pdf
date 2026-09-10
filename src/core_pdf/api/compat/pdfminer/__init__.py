@@ -22,16 +22,16 @@ from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.exceptions import PdfError, PdfParseError
-from core_pdf.impl.spec.s_07_content.stream_state import ContentStreamFrame
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
+from core_pdf.impl.types import PdfReference, PdfString, Rectangle
+from core_pdf_spec.s_07_content.stream_state import ContentStreamFrame
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
+from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.types import PdfReference, PdfString, Rectangle
 
 from .._shared import LIGATURES
 
@@ -106,7 +106,7 @@ class internal_PdfminerTextState(TextState):
             self.internal_cursor = 0.0
         super().text_boundary(state, kind)
 
-    def internal_show_text(self, operand: Any) -> None:
+    def show_text_operand(self, operand: Any) -> None:
         self.append_tj_array([operand])
 
     def append_tj_array(self, array: Any) -> None:

@@ -12,9 +12,9 @@ from core_pdf.impl._impl.fonts.cmap_widths import (
 from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA, internal_METRIC_RECORD_NAMES
 from core_pdf.impl._impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl._impl.fonts.widths import get_descendant
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
-from core_pdf.impl.spec.s_09_fonts.cmap_widths import scale_font_widths
-from core_pdf.impl.spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
+from core_pdf_spec.s_09_fonts.cmap_widths import scale_font_widths
+from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 

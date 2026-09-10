@@ -8,14 +8,14 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
 
 from core_pdf.impl._impl.document.recovery.trees import iter_number_tree_items
 from core_pdf.impl._impl.model.pdf_values import coerce_value
-from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_14_structure.dictionaries import (
+from core_pdf.impl.types import MISSING, PdfReference
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_14_structure.dictionaries import (
     attribute_entries,
     marked_content_id,
     parse_role_map,
 )
-from core_pdf.impl.types import MISSING, PdfReference
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.document.document import PdfDocument, internal_PageLookup

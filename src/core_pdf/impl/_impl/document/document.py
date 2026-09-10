@@ -18,6 +18,7 @@ from core_pdf.impl._impl.document.page_labels import format_page_label
 from core_pdf.impl._impl.document.page_tree import (
     MAX_PAGE_TREE_DEPTH,
     collect_inherited_values,
+    iter_page_nodes,
     resolve_page_tree_node_type,
 )
 from core_pdf.impl._impl.document.records import (
@@ -36,20 +37,6 @@ from core_pdf.impl.exceptions import (
     PdfParseError,
     PdfSourceError,
 )
-from core_pdf.impl.spec.s_07_document.page import PageNode as internal_PageNode
-from core_pdf.impl.spec.s_07_document.page import iter_page_nodes
-from core_pdf.impl.spec.s_07_security.document import initialize_document_security
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
-    CachedPdfObject,
-    Decipher,
-    InheritedValueMap,
-    PdfArray,
-    PdfDict,
-    PdfObject,
-)
-from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import (
     PathSource,
     PdfByteBuffer,
@@ -57,6 +44,19 @@ from core_pdf.impl.types import (
     PdfSource,
     SeekableBinaryReader,
 )
+from core_pdf_spec.s_07_document.page import PageNode as internal_PageNode
+from core_pdf_spec.s_07_security.document import initialize_document_security
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
+    CachedPdfObject,
+    Decipher,
+    InheritedValueMap,
+    PdfArray,
+    PdfDict,
+    PdfObject,
+)
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.fonts.fallback import (

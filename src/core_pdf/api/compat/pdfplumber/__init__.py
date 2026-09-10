@@ -21,8 +21,8 @@ from core_pdf.impl._impl.model.geometry import (
 )
 from core_pdf.impl._impl.output.model import Table as StructuredTable
 from core_pdf.impl._impl.output.model import TableCell
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 from .._shared import ClosingMixin, encode_png, png_chunk
 from .exceptions import PdfminerException

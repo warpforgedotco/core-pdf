@@ -40,7 +40,7 @@ from core_pdf.impl._impl.graphics.image_kernels import (
 )
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl._impl.runtime.scalars import parse_float
-from core_pdf.impl.spec.s_08_graphics.color_math import lab_to_xyz
+from core_pdf_spec.s_08_graphics.color_math import lab_to_xyz
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]

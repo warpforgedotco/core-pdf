@@ -6,9 +6,10 @@ dependency direction.
 ---
 
 The root package, `src/core_pdf`, owns PDF parsing, native extraction, rendering, and structured
-output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recognition. The two
-distributions share a uv workspace and release version; the companion pins that exact core
-version because it reuses internal extraction stages.
+output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recognition. The companion pins the exact core release because it reuses internal extraction stages.
+`packages/core-pdf-spec/src/core_pdf_spec` owns strict PDF and referenced-standard algorithms.
+All three distributions share the uv workspace. Spec releases independently: core currently
+accepts `core-pdf-spec>=0.1.0,<0.2.0`. Spec never imports core or OCR, including for typing.
 
 Core's `impl/_impl/extract/` initializer exposes only `extract_page` and `extract_document`;
 stage internals are imported from their owning modules. Native extraction runs in this order:
@@ -64,8 +65,7 @@ src/core_pdf/
   _vendor/               vendored third-party source and data
   impl/
     exceptions.py        error hierarchy
-    types.py             PDF primitives, capture records, buffers, protocols, geometry aliases
-    spec/                PDF specification implementation (see below)
+    types.py             capture/source records and re-exported spec primitive identities
     _impl/
       document/          source/lifecycle, recovery, page operations, document projections
       capture/           interpreter event recording, runs, glyphs, and page programs
@@ -90,9 +90,20 @@ packages/core-pdf-ocr/
       ocr/              Tesseract, raster tasks, rescue passes, and vector recognition
 ```
 
-### The `spec/s_NN_*` scheme
+```text
+packages/core-pdf-spec/
+  pyproject.toml          independent distribution, initially 0.1.0
+  src/core_pdf_spec/
+    types.py             shared PDF object identities and byte/geometry types
+    exceptions.py        base, parse, unsupported, and decryption errors
+    s_NN_*/              strict chapter algorithms and semantic service protocols
+    _vendor/font_data/   attributed inert standard font tables; no font backend
+  tests/                 standalone strict semantics and resource tests
+```
 
-`spec/` contains PDF-defined semantics and algorithms from referenced standards. A choice
+### The `core_pdf_spec.s_NN_*` scheme
+
+`core_pdf_spec` contains PDF-defined semantics and algorithms from referenced standards. A choice
 permitted to a PDF reader still belongs under `_impl/`: selected substitute fonts and ICC
 profiles, Unicode recovery, output raster formats, clipping approximations, and malformed-input
 recovery are reader policy. Public behavior is assembled in `_impl/document/`.
@@ -106,11 +117,19 @@ decodes them for a selected raster output.
 
 `PdfStream` accepts a spec-owned `StreamDecoder`. Its default uses strict filter semantics;
 the document reader supplies the codec/recovery adapter. Replacement and indirect resolution
-preserve an explicitly supplied decoder. The strict syntax layer shares object parsing,
-cross-reference row decoding, revision precedence, and tree traversal with recovery adapters;
-resynchronization, guessed offsets, and skipped malformed entries live in `_impl/document/recovery/`.
+preserve an explicitly supplied decoder. The strict syntax layer exposes object/token parsing, cross-reference rows, revision
+precedence, tree node/entry decoding, and strict traversal. Core recovery adapters compose
+these granular operations into tolerant walks and parsing loops. Resynchronization, guessed
+offsets, skipped malformed entries, and partial results live in `_impl/document/recovery/`.
+Content retry/skip control and stream limits likewise live in core capture. Strict parsing
+propagates failures; specification-defined defaults and prescribed fallback rules stay in spec.
 
-Subpackages under `spec/` mirror chapters of the PDF specification:
+Interpreter color state retains PDF components and color spaces. Core capture applies selected
+output conversions when creating its records. Vendored fontTools parsing, outline backends,
+repairs, and rasterization stay in core; spec provides handwritten CFF/Type 2 algorithms,
+audited Type 1 byte helpers, CMaps, widths, standard tables, and font-service protocols.
+
+Subpackages under `core_pdf_spec` mirror chapters of the PDF specification:
 
 | Package | PDF chapter |
 | --- | --- |
@@ -141,8 +160,16 @@ for text already embedded in PDFs, including hidden text layers, stays in core.
 
 Import-linter contracts in the root `pyproject.toml` enforce runtime package direction. Spec
 modules cannot import document recovery, capture, font policy, graphics output, or
-derived-processing packages. Type-only imports follow the same organization rule; neutral
-geometry and runtime array utilities are allowed. Runtime stays independent of PDF semantics.
+derived-processing packages. Type-only imports follow the same organization rule and are checked by the boundary tests.
+Spec has local geometric/byte-view support rather than importing core model/runtime modules.
+Core model and base modules may share spec-owned neutral type identities; they cannot depend
+on chapter algorithms. Runtime stays independent of PDF semantics.
+
+The supported low-level interfaces are explicit module `__all__` exports and documented public
+parser extension methods. Cross-distribution imports of `internal_` symbols are prohibited.
+Breaking spec API changes require a new minor release during `0.x`; core widens its supported
+range only after compatibility validation. Existing public core exception names alias spec's
+base errors so catching `core_pdf.PdfError` continues to cover spec errors.
 
 Font and graphics adapters stay below capture and document composition. Capture can use source
 recovery and passive document records, while page/document orchestration remains above it.
@@ -150,8 +177,9 @@ The extraction/render/layout/output layering remains enforced separately.
 
 ## Workspace validation
 
-The authored test suite contains differential comparisons in
-`tests/src/core_pdf/api/compat/differential`. Each case runs a compatibility facade and
+The authored test suite contains strict standalone tests in `packages/core-pdf-spec/tests`,
+core/spec integration tests in `tests/src/core_pdf/spec_boundary`, and differential comparisons
+in `tests/src/core_pdf/api/compat/differential`. Each case runs a compatibility facade and
 its reference implementation against the same PDF. Reference corpora remain under
 `tests/fixtures`.
 

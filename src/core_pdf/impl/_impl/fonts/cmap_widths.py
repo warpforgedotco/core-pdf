@@ -3,13 +3,13 @@ from __future__ import annotations
 from contextlib import suppress
 from typing import Any
 
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
-from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
+from core_pdf_spec.s_09_fonts.cmap_widths import (
+    MAX_CID,
+    MIN_CID,
     CompactCIDWidthMap,
     FontWidthMap,
     SparseFontWidthMap,
-    internal_MAX_CID,
-    internal_MIN_CID,
 )
 
 
@@ -21,9 +21,9 @@ def internal_clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None
     keeps its valid portion while a reversed or wholly invalid range is
     ignored.
     """
-    if last < first or last < internal_MIN_CID or first > internal_MAX_CID:
+    if last < first or last < MIN_CID or first > MAX_CID:
         return None
-    return (max(first, internal_MIN_CID), min(last, internal_MAX_CID))
+    return (max(first, MIN_CID), min(last, MAX_CID))
 
 
 def require_cid_int(value: Any, message: str) -> int:
@@ -85,7 +85,7 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
         if isinstance(nxt, (list, tuple)):
             code = first
             for w in nxt:
-                if internal_MIN_CID <= code <= internal_MAX_CID:
+                if MIN_CID <= code <= MAX_CID:
                     if type(w) is int:
                         widths[code] = float(w)
                     elif type(w) is float:

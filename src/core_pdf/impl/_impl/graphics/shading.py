@@ -12,7 +12,7 @@ from core_pdf.impl._impl.graphics.functions import (
     internal_number_array,
 )
 from core_pdf.impl._impl.runtime.scalars import parse_int
-from core_pdf.impl.spec.s_08_graphics.shading import parse_shading
+from core_pdf_spec.s_08_graphics.shading import parse_shading
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +55,7 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
     )
     normalized = dict(dictionary)
     normalized.update(
+        ShadingType=shading_type,
         Coords=coords[: 4 if shading_type == 2 else 6],
         Domain=domain,
         Extend=(extend_start, extend_end),

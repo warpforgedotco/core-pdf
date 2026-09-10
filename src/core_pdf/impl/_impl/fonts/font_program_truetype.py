@@ -4,21 +4,58 @@ from __future__ import annotations
 
 import logging
 import struct
+from io import BytesIO
 from typing import Any
 
+from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
+from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl._impl.fonts.raster_kernel import Point, rasterize_contours, scale_contours
 from core_pdf.impl._impl.model.geometry import transform_bbox
-from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
-    internal_fonttools_bbox,
-    internal_glyph_bbox,
+from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
-    parse_truetype_program,
     symbol_character_code,
 )
+
+
+def parse_truetype_program(data: bytes) -> TTFont:
+    font = TTFont(BytesIO(data), lazy=True)
+    if not {"maxp", "glyf", "loca", "head"} <= set(font.keys()):
+        raise ValueError("invalid TrueType glyph tables")
+    return font
+
+
+def internal_fonttools_bbox(
+    font: Any,
+    glyph_id: int,
+    scale: float,
+) -> tuple[float, float, float, float] | None:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    bounds_pen = BoundsPen(glyph_set)
+    glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
+    if bounds_pen.bounds is None:
+        return None
+    x_min, y_min, x_max, y_max = bounds_pen.bounds
+    return float(x_min), float(y_min), float(x_max), float(y_max)
+
+
+def internal_glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] | None:
+    glyph = glyf[glyph_name]
+    if glyph.numberOfContours == 0:
+        return None
+    if not all(hasattr(glyph, attr) for attr in ("xMin", "yMin", "xMax", "yMax")):
+        glyph.recalcBounds(glyf)
+    return (
+        float(glyph.xMin),
+        float(glyph.yMin),
+        float(glyph.xMax),
+        float(glyph.yMax),
+    )
+
 
 # fontTools validates malformed tables with bare `assert` as well as by raising,
 # and it decompiles lazily, so a damaged table surfaces late and as almost any

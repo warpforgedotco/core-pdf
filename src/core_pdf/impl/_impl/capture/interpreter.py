@@ -5,6 +5,7 @@ from typing import Any
 
 from core_pdf.impl._impl.capture.recording import RecordingMethods
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
+from core_pdf.impl._impl.capture.stream_execution import CaptureStreamExecutor
 from core_pdf.impl._impl.capture.text_runs import RunAccumulator
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
@@ -54,13 +55,16 @@ class TextState(RecordingMethods):
             document,
             sink=self,
             font_provider=font_provider,
-            recovery=CaptureRecovery(),
             lexer_factory=PdfLexer,
         )
+
+        self.recovery = CaptureRecovery()
+        self.stream_executor = CaptureStreamExecutor(self)
 
         # Preserve the reader's historical unset-font and diagnostic color defaults.
         self.font_size = 12.0
         self.fill_color = (0.0, 0.0, 0.0)
+        self.stroke_color = (0.0, 0.0, 0.0)
         self.update_text_scales()
 
     @staticmethod

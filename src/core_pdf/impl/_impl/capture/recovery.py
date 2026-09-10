@@ -2,18 +2,26 @@
 """Established tolerant content recovery selected by application composition."""
 
 from collections.abc import Callable, Iterator
+from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_content.operations import (
+from core_pdf_spec.s_07_content.inline_images import (
+    InlineImage,
+    InlineImageDataLengthError,
+    scan_inline_image_data,
+)
+from core_pdf_spec.s_07_content.operations import (
+    ContentOperand,
+    ContentOperands,
     ContentOperation,
+    ContentToken,
+    OperationHandler,
+    parse_content_token,
 )
-from core_pdf.impl.spec.s_07_content.operations import (
-    iter_content_operations as strict_operations,
-)
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax_primitives.tokens import WHITESPACE
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 
 def recover_inline_image_position(
@@ -50,6 +58,18 @@ def recover_inline_image_position(
                 return next_pos
         pos = marker + 1
     return None
+
+
+def recover_inline_image_data(lexer: PdfLexer, error: InlineImageDataLengthError) -> InlineImage:
+    """Preserve the reader's permissive known-length and delimiter fallback."""
+    data_end = error.data_start + error.expected_length
+    marker = data_end
+    while marker < lexer.data_len and lexer.raw_data[marker] in WHITESPACE:
+        marker += 1
+    if data_end <= lexer.data_len and lexer.raw_data[marker : marker + 2] == b"EI":
+        lexer.pos = marker + 2
+        return InlineImage(error.dictionary, bytes(lexer.raw_data[error.data_start : data_end]))
+    return scan_inline_image_data(lexer, error.dictionary, error.data_start)
 
 
 class CaptureRecovery:
@@ -102,4 +122,82 @@ class CaptureRecovery:
 
 
 def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
-    yield from strict_operations(lexer, recovery=CaptureRecovery())
+    results: list[ContentOperation] = []
+
+    def get_handler(op_name: str) -> OperationHandler:
+        def collect(operands: ContentOperands, depth: int) -> None:
+            results.append((op_name, operands))
+
+        return collect
+
+    dispatch_operations(lexer, get_handler, 0, handlers_reject_unknown=False)
+    yield from results
+
+
+def dispatch_operations(
+    lexer: PdfLexer,
+    get_handler: Callable[[str], OperationHandler | None],
+    depth: int,
+    *,
+    recovery: CaptureRecovery | None = None,
+    handlers_reject_unknown: bool = True,
+) -> None:
+    """Apply reader operand limits and resume after malformed content tokens."""
+    operands: list[ContentOperand] = []
+    recovery = recovery if recovery is not None else CaptureRecovery()
+    while True:
+        lexer.skip_ignored()
+        start = lexer.pos
+        try:
+            try:
+                token = parse_content_token(lexer)
+            except InlineImageDataLengthError as error:
+                token = ContentToken(start, recover_inline_image_data(lexer, error))
+        except PdfParseError as error:
+            prefix = bytes(lexer.raw_data[start : start + 2])
+            if str(error) == "unexpected delimiter in content stream":
+                # The reader historically skips all standalone delimiters,
+                # including stray closing strings and PostScript braces.
+                lexer.pos = start + (2 if prefix == b">>" else 1)
+                continue
+            kind = (
+                "inline-image"
+                if prefix == b"BI"
+                else "dictionary"
+                if prefix == b"<<"
+                else "array"
+                if prefix.startswith(b"[")
+                else "token"
+            )
+            resumed = recovery.resume(
+                lexer,
+                error,
+                kind,
+                start,
+                (lambda word: get_handler(word.decode("latin-1")) is not None)
+                if handlers_reject_unknown
+                else None,
+            )
+            if resumed is None:
+                raise
+            lexer.pos = resumed
+            if kind == "inline-image":
+                operands.clear()
+            continue
+        if token is None:
+            return
+        if isinstance(token.value, InlineImage):
+            if len(operands) < 16:
+                operands.append(token.value)
+            op_name = "BI"
+        elif token.is_operator:
+            op_name = cast(str, token.value)
+        else:
+            if len(operands) < 16:
+                operands.append(token.value)
+            continue
+        if op_name not in {"R", "obj", "endobj", "stream", "endstream"}:
+            handler = get_handler(op_name)
+            if handler is not None:
+                handler(tuple(operands), depth)
+        operands.clear()

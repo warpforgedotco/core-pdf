@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 from core_pdf.impl.types import PdfName, PdfString, Rectangle
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
 class RawOutlineItem:

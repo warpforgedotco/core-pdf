@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 from core_pdf.impl._impl.capture.paths import flatten_path
 
 if TYPE_CHECKING:
-    from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
+    from core_pdf_spec.s_07_content.inline_images import InlineImage
 
 from dataclasses import dataclass
 
@@ -39,6 +39,7 @@ from core_pdf.impl._impl.capture.text_runs import (
     RunAccumulator,
     is_garbage_text,
 )
+from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState as SemanticTextState
 from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
@@ -49,29 +50,28 @@ from core_pdf.impl._impl.model.glyphs import (
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.model.text import normalize_extracted_text
-from core_pdf.impl.spec.s_07_content.image_capture import unit_square_placement
-from core_pdf.impl.spec.s_07_content.marked_content import (
-    MarkedContentEntry as SemanticMarkedContentEntry,
-)
-from core_pdf.impl.spec.s_07_content.paths import PdfPath
-from core_pdf.impl.spec.s_07_content.patterns import ShadingPattern as PdfShadingPattern
-from core_pdf.impl.spec.s_07_content.patterns import TilingPattern as PdfTilingPattern
-from core_pdf.impl.spec.s_07_content.state import TextState as SemanticTextState
-from core_pdf.impl.spec.s_07_content.stream_state import (
-    ContentStreamFrame,
-)
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
-)
-from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,
 )
+from core_pdf_spec.s_07_content.image_capture import unit_square_placement
+from core_pdf_spec.s_07_content.marked_content import (
+    MarkedContentEntry as SemanticMarkedContentEntry,
+)
+from core_pdf_spec.s_07_content.paths import PdfPath
+from core_pdf_spec.s_07_content.patterns import ShadingPattern as PdfShadingPattern
+from core_pdf_spec.s_07_content.patterns import TilingPattern as PdfTilingPattern
+from core_pdf_spec.s_07_content.stream_state import (
+    ContentStreamFrame,
+)
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    normalize_pdf_name,
+)
+from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.matrix import Matrix
+from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 
 
 @dataclass(slots=True)
@@ -255,10 +255,10 @@ class RecordingMethods(SemanticTextState):
             visible=visible,
             clip_bbox=self.clip_bbox,
             page_clip=self.page_clip,
-            fill=self.fill_color,
+            fill=self.capture_color(stroke=False),
             render_mode=self.render_mode,
             fill_opacity=self.fill_opacity,
-            stroke_color=self.stroke_color,
+            stroke_color=self.capture_color(stroke=True),
             stroke_opacity=self.stroke_opacity,
             line_width=self.transformed_line_width(),
             line_cap=self.line_cap,
@@ -448,7 +448,7 @@ class RecordingMethods(SemanticTextState):
             visible=visible,
             line_break_before=self.pending_line_break,
             seqno=seqno,
-            fill_color=self.fill_color,
+            fill_color=self.capture_color(stroke=False),
             advance_bbox=advance_bbox,
             ink_bbox=advance_bbox,
             baseline=baseline,
@@ -515,10 +515,10 @@ class RecordingMethods(SemanticTextState):
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
-                    fill=self.fill_color,
+                    fill=self.capture_color(stroke=False),
                     fill_pattern=self.capture_pattern(self.fill_pattern),
                     fill_opacity=self.fill_opacity,
-                    stroke_color=self.stroke_color,
+                    stroke_color=self.capture_color(stroke=True),
                     stroke_pattern=self.capture_pattern(self.stroke_pattern),
                     stroke_opacity=self.stroke_opacity,
                     line_width=line_width,
@@ -585,7 +585,7 @@ class RecordingMethods(SemanticTextState):
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
-                    fill=self.fill_color if image_is_stencil else None,
+                    fill=self.capture_color(stroke=False) if image_is_stencil else None,
                     fill_opacity=self.fill_opacity,
                     blend_mode=self.blend_mode,
                     dash_pattern=self.transformed_dash_pattern(),
@@ -629,7 +629,9 @@ class RecordingMethods(SemanticTextState):
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     stream_order=self.stream_order,
-                    fill=self.fill_color if dictionary.get("ImageMask") is True else None,
+                    fill=self.capture_color(stroke=False)
+                    if dictionary.get("ImageMask") is True
+                    else None,
                     fill_opacity=self.fill_opacity,
                 )
             )
@@ -641,9 +643,9 @@ class RecordingMethods(SemanticTextState):
         self.drawings.append(
             CapturedDrawing(
                 seqno=self.sequence,
-                fill=self.fill_color,
+                fill=self.capture_color(stroke=False),
                 fill_opacity=self.fill_opacity,
-                stroke_color=self.stroke_color,
+                stroke_color=self.capture_color(stroke=True),
                 stroke_opacity=self.stroke_opacity,
                 line_width=self.line_width,
                 line_cap=self.line_cap,
@@ -756,11 +758,22 @@ class RecordingMethods(SemanticTextState):
             )
             self.sequence += 1
 
+    def capture_color(self, *, stroke: bool) -> tuple[float, ...] | None:
+        """Project PDF color components only when creating output records."""
+        color = self.stroke_color if stroke else self.fill_color
+        spec = self.stroke_color_spec if stroke else self.fill_color_spec
+        if (
+            color is not None
+            and spec is not None
+            and spec.kind in {"Indexed", "Separation", "DeviceN"}
+        ):
+            converted = color_operands_to_srgb(spec, list(color))
+            if converted is not None:
+                return converted
+        return color
+
     def parse_color_space(self, value: object) -> ImageColorSpec:
         return color_spec_from_value(value)
-
-    def convert_color(self, spec: ImageColorSpec, values: list[float]) -> tuple[float, ...] | None:
-        return color_operands_to_srgb(spec, values)
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
         if pattern is None:

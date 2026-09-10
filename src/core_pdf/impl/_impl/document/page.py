@@ -23,16 +23,16 @@ from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dic
 from core_pdf.impl._impl.document.structure import PageStructure
 from core_pdf.impl._impl.model.geometry import rotate_page_runs
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_document.page import page_clip, page_rotation
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
+from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_document.page import page_clip, page_rotation
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
     CachedPdfObject,
     InheritedValueMap,
     PdfDict,
     PdfObject,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
-from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",

@@ -35,8 +35,8 @@ from core_pdf.impl._impl.graphics.filter_registry import (
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl._impl.graphics.predictor_backends import apply_predictor
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf.impl.spec.s_07_syntax_primitives.scanning import full_source_bytes
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_syntax_primitives.scanning import full_source_bytes
 
 internal_FILTER_DECODERS: dict[str, FilterFn] = {
     "flate": apply_flate,

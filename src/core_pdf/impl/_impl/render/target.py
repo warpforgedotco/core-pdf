@@ -30,7 +30,7 @@ from core_pdf.impl._impl.render.path_shape_target import internal_PathShapeTarge
 from core_pdf.impl._impl.render.path_stroke_target import internal_PathStrokeTargetMixin
 from core_pdf.impl._impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_image_view
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 
 class internal_RasterTarget(

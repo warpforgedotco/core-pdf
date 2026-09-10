@@ -5,26 +5,30 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 
-from core_pdf.impl._impl.fonts.cmap_ranges import expand_range, unicode_scalar_or_replacement
-from core_pdf.impl._impl.fonts.cmap_tokenizer import decode_cmap_hex_token, decode_cmap_token
-from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
+from core_pdf.impl._impl.fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
-    ranges_overlap,
-    validate_codespace_range,
+    expand_range,
+    unicode_scalar_or_replacement,
 )
-from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
+from core_pdf.impl._impl.fonts.cmap_tokenizer import (
     CMapProgram,
     cmap_metadata,
     cmap_tokens,
+    decode_cmap_hex_token,
+    decode_cmap_token,
 )
-from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import (
+from core_pdf_spec.s_09_fonts.cmap_ranges import (
+    ranges_overlap,
+    validate_codespace_range,
+)
+from core_pdf_spec.s_09_fonts.cmap_tounicode import (
     CMapMappingBlock,
     ParsedToUnicodeCMap,
     cmap_mapping_blocks,
     cmap_source_range,
     decode_utf16be,
 )
-from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
+from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
 
 
 def internal_decode_utf16be(data: bytes) -> str:
@@ -48,11 +52,44 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
     def parse_program(data: bytes) -> ParsedToUnicodeCMap:
         return parse_to_unicode_cmap(data)
 
+    def __init__(
+        self,
+        data: bytes | bytearray | memoryview,
+        *,
+        usecmap_resolver: Callable[[str], bytes | None] | None = None,
+        inheritance_depth: int = 0,
+        empty: bool = False,
+        ancestor_names: tuple[str, ...] = (),
+    ) -> None:
+        if not empty and inheritance_depth > 16:
+            raise ValueError("ToUnicode CMap UseCMap recursion limit exceeded")
+        super().__init__(
+            data,
+            usecmap_resolver=usecmap_resolver,
+            inheritance_depth=inheritance_depth,
+            empty=empty,
+            ancestor_names=ancestor_names,
+        )
+
+    def resolve_parent(
+        self,
+        name: str,
+        resolver: Callable[[str], bytes | None] | None,
+        depth: int,
+        ancestor_names: tuple[str, ...] = (),
+    ) -> PdfToUnicodeCMap | None:
+        data = resolver(name) if resolver is not None else None
+        return self.load_parent(data, resolver, depth) if data is not None else None
+
     def load_parent(
-        self, data: bytes, resolver: Callable[[str], bytes | None], depth: int
+        self,
+        data: bytes,
+        resolver: Callable[[str], bytes | None] | None,
+        depth: int,
+        ancestor_names: tuple[str, ...] = (),
     ) -> PdfToUnicodeCMap | None:
         try:
-            return type(self)(data, usecmap_resolver=resolver, internal_depth=depth)
+            return type(self)(data, usecmap_resolver=resolver, inheritance_depth=depth)
         except ValueError:
             return None
 
@@ -258,7 +295,7 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
 
 
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
-    cmap = ToUnicodeCMap(b"", internal_empty=True)
+    cmap = ToUnicodeCMap(b"", empty=True)
     program = CMapProgram.parse(data)
 
     cmap.parse_mapping_blocks(program)

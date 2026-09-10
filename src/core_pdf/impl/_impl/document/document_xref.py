@@ -16,16 +16,16 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner, iter_indirect_object_headers
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
+from core_pdf.impl.types import PdfByteBuffer, PdfReference
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
     CachedPdfObject,
     PdfDict,
     PdfObject,
     ResolvedObjectCache,
 )
-from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.types import PdfByteBuffer, PdfReference
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
 

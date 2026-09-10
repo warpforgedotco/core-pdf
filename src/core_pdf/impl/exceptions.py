@@ -1,24 +1,21 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-
-class PdfError(Exception):
-    pass
+from core_pdf_spec.exceptions import (
+    PdfDecryptionError as PdfDecryptionError,
+)
+from core_pdf_spec.exceptions import (
+    PdfError as PdfError,
+)
+from core_pdf_spec.exceptions import (
+    PdfParseError as PdfParseError,
+)
+from core_pdf_spec.exceptions import (
+    PdfUnsupportedError as PdfUnsupportedError,
+)
 
 
 class PdfSourceError(PdfError):
-    pass
-
-
-class PdfParseError(PdfError):
-    pass
-
-
-class PdfDecryptionError(PdfError):
-    """Raised when encrypted PDF data fails format-mandated decryption validation."""
-
-
-class PdfUnsupportedError(PdfError):
     pass
 
 
