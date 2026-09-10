@@ -6,6 +6,7 @@ import pytest
 
 from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -131,7 +132,7 @@ def test_reader_uncached_missing_font_keeps_zero_capture_metrics(
     state.op_Tj((PdfString(b"A"),), 0)
     state.run_accumulator.flush()
     if select_font:
-        assert decoder is not None
+        assert isinstance(decoder, FontDecoder)
         assert metrics == [(decoder.ascent * 0.012, decoder.descent * 0.012)]
         assert state.runs[0].space_width == decoder.glyph_width(32) * 12 * 0.001
     else:

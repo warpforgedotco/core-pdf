@@ -8,9 +8,9 @@ from typing import Protocol, TypeAlias
 
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    decoded_name,
     is_pdf_null,
-    normalize_pdf_name,
-    parse_int,
+    require_pdf_integer,
 )
 
 DecodeParam: TypeAlias = object
@@ -48,14 +48,7 @@ class FilterParams:
             value = parms.get(name)
             if is_pdf_null(value):
                 value = default
-            parsed = parse_int(value, default)
-            if parsed is None:
-                raise ValueError(f"invalid DecodeParms {name}")
-            if value is not None and type(value) is bool:
-                raise ValueError(f"invalid DecodeParms {name}")
-            if value is not None and type(value) is not int:
-                raise ValueError(f"invalid DecodeParms {name}")
-            return parsed
+            return require_pdf_integer(value, f"invalid DecodeParms {name}")
 
         def require_pos_int(name: str, default: int | None = None) -> int:
             parsed = require_int(name, default)
@@ -116,11 +109,18 @@ class FilterParams:
 
 
 @dataclass(frozen=True, slots=True)
+class FilterStep:
+    """One declared filter and its associated, unmodified decode parameters."""
+
+    name: str
+    params: DecodeParam = None
+
+
+@dataclass(frozen=True, slots=True)
 class StreamDecodeSpec:
     """Normalized stream filter pipeline and per-filter parameters."""
 
-    filters: tuple[str, ...]
-    params: tuple[DecodeParam, ...]
+    steps: tuple[FilterStep, ...]
 
 
 def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
@@ -139,7 +139,7 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
 
     names: list[str] = []
     for item in filters:
-        name = normalize_pdf_name(item)
+        name = decoded_name(item)
         if name is None:
             raise FilterParseError("invalid stream decode filter")
         names.append(name)
@@ -156,7 +156,7 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
         params = (parms_raw,)
     else:
         raise FilterParseError("invalid stream decode parameters")
-    return StreamDecodeSpec(filters=tuple(names), params=params)
+    return StreamDecodeSpec(tuple(FilterStep(name, param) for name, param in zip(names, params)))
 
 
 class StreamDecoder(Protocol):
@@ -174,6 +174,7 @@ class StreamDecoder(Protocol):
 __all__ = (
     "DecodeParam",
     "FilterParams",
+    "FilterStep",
     "StreamDecodeSpec",
     "normalize_stream_decode_spec",
     "StreamDecoder",

@@ -6,9 +6,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from core_pdf_spec.s_07_filters.errors import FilterParseError
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-
 FilterDecoder: TypeAlias = Literal[
     "ascii85",
     "ascii_hex",
@@ -21,20 +18,6 @@ FilterDecoder: TypeAlias = Literal[
     "lzw",
     "run_length",
 ]
-
-
-def declared_filter_names(value: object) -> list[str]:
-    """Return the PDF names declared by one ``Filter`` entry."""
-    if value is None:
-        return []
-    values = value if isinstance(value, (list, tuple)) else (value,)
-    names: list[str] = []
-    for item in values:
-        name = normalize_pdf_name(item)
-        if name is None:
-            raise FilterParseError("invalid stream filter name")
-        names.append(name)
-    return names
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +78,6 @@ PREDICTOR_FILTERS = frozenset(
 
 __all__ = (
     "FilterDecoder",
-    "declared_filter_names",
     "FilterDescriptor",
     "FILTER_DESCRIPTORS",
     "FILTER_DESCRIPTOR_BY_NAME",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, cast
@@ -20,16 +21,15 @@ from core_pdf.api.compat._text_state import (
 from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl._impl.fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.fonts.glyphs import (
     TEX_GLYPH_ALIASES,
     ensure_glyph_map,
 )
 from core_pdf.impl._impl.fonts.widths import parse_font_widths
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 
 Matrix = list[float]
@@ -39,7 +39,7 @@ Matrix = list[float]
 class LegacyFont:
     decoder: FontDecoder
     cmap: ToUnicodeCMap | None
-    widths: FontWidthMap
+    widths: Mapping[int, float]
     default_width: float
     space_width: float
     synthetic_space_width: float
@@ -113,14 +113,14 @@ class LegacyFont:
                 return self.space_width
             return float(
                 sum(
-                    int(self.widths.width_for(ord(character), self.default_width))
+                    int(self.widths.get(ord(character), self.default_width))
                     for character in encoded
                 )
             )
         if glyph.code_bytes == self.space_code_bytes:
             return self.space_width
         width_code = glyph.char_code if self.width_uses_source_code else glyph.width_code
-        width = self.widths.width_for(width_code, self.default_width)
+        width = self.widths.get(width_code, self.default_width)
         return float(width if self.decoder.is_cid_font else int(width))
 
     def internal_glyph_text(self, glyph: Any) -> str:
@@ -186,7 +186,7 @@ class LegacyTextExtractor:
             font = self.document.resolver.resolve(raw_font)
             if not isinstance(font, dict):
                 continue
-            subtype = normalize_pdf_name(font.get("Subtype") or "")
+            subtype = recover_pdf_name(font.get("Subtype") or "")
             if subtype not in {"Type1", "MMType1", "TrueType", "Type3"}:
                 descendants = self.document.resolver.resolve(font.get("DescendantFonts"))
                 if not isinstance(descendants, (list, tuple)) or not descendants:
@@ -272,7 +272,7 @@ class LegacyTextExtractor:
         cmap: ToUnicodeCMap | None,
         encoding_table: tuple[str, ...] | None,
         encoding_is_mapping: bool,
-        widths: FontWidthMap,
+        widths: Mapping[int, float],
         default_width: float,
         space_width: float,
     ) -> float:
@@ -281,7 +281,7 @@ class LegacyTextExtractor:
         space_code = self.internal_space_code(cmap, encoding_table, encoding_is_mapping)
         if space_code == 32:
             return space_width
-        return float(int(widths.width_for(32, default_width)))
+        return float(int(widths.get(32, default_width)))
 
     @staticmethod
     def internal_space_code(
@@ -318,7 +318,7 @@ class LegacyTextExtractor:
         encoding = self.document.resolver.resolve(font.get("Encoding"))
         if isinstance(encoding, dict):
             return True
-        encoding_name = normalize_pdf_name(encoding or "")
+        encoding_name = recover_pdf_name(encoding or "")
         if encoding_name in {
             "StandardEncoding",
             "WinAnsiEncoding",
@@ -330,7 +330,7 @@ class LegacyTextExtractor:
             return True
         if encoding is not None:
             return False
-        base_font = normalize_pdf_name(font.get("BaseFont") or "") or ""
+        base_font = recover_pdf_name(font.get("BaseFont") or "") or ""
         base_font = base_font.split("+", 1)[-1]
         return base_font in {
             "Courier",
@@ -353,13 +353,13 @@ class LegacyTextExtractor:
         self, font: dict[object, object], decoder: FontDecoder
     ) -> tuple[tuple[str, ...] | None, str | None, dict[str, str]]:
         if decoder.is_cid_font:
-            encoding_name = normalize_pdf_name(font.get("Encoding") or "") or ""
+            encoding_name = recover_pdf_name(font.get("Encoding") or "") or ""
             codec = internal_PREDEFINED_ENCODING_CODECS.get(encoding_name)
             if codec is None and "-UCS2-" in encoding_name:
                 codec = "utf-16-be"
             return None, codec, {}
         encoding_obj = self.document.resolver.resolve(font.get("Encoding"))
-        base_font = normalize_pdf_name(font.get("BaseFont"))
+        base_font = recover_pdf_name(font.get("BaseFont"))
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
             table = [chr(code) for code in range(256)]
         else:
@@ -370,7 +370,7 @@ class LegacyTextExtractor:
             if 0 <= code <= 255:
                 table[code] = self.internal_legacy_glyph_name(name)
 
-        subtype = normalize_pdf_name(font.get("Subtype") or "")
+        subtype = recover_pdf_name(font.get("Subtype") or "")
         descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
         has_type1_font_file = (
             isinstance(descriptor, dict) and descriptor.get("FontFile") is not None
@@ -467,8 +467,8 @@ class LegacyTextExtractor:
         cmap: ToUnicodeCMap | None,
         encoding_table: tuple[str, ...] | None,
         encoding_is_mapping: bool,
-    ) -> tuple[FontWidthMap, float, float]:
-        subtype = normalize_pdf_name(font.get("Subtype") or "")
+    ) -> tuple[Mapping[int, float], float, float]:
+        subtype = recover_pdf_name(font.get("Subtype") or "")
         widths = decoder.widths
         if decoder.is_type3:
             char_procs = self.document.resolver.resolve(font.get("CharProcs"))
@@ -477,7 +477,7 @@ class LegacyTextExtractor:
                 and isinstance(char_procs, dict)
                 and any(
                     not self.internal_legacy_glyph_name(
-                        normalize_pdf_name(name) or str(name), unknown=""
+                        recover_pdf_name(name) or str(name), unknown=""
                     )
                     for name in char_procs
                 )
@@ -485,7 +485,7 @@ class LegacyTextExtractor:
                 # pypdf declares such a Type3 font uninterpretable and skips
                 # its Widths array, but native text mode still emits its
                 # declared encoding with the placeholder metrics.
-                return SparseFontWidthMap(), 500.0, 200.0
+                return {}, 500.0, 200.0
             # The legacy API compares unscaled Widths values. The canonical
             # engine scales Type3 metrics through FontMatrix for geometry.
             with suppress(ValueError):
@@ -504,9 +504,7 @@ class LegacyTextExtractor:
                 if isinstance(descriptor, dict)
                 else 0
             )
-            positive_widths = [
-                int(width) for _, width in widths.iter_explicit_widths() if int(width) > 0
-            ]
+            positive_widths = [int(width) for _, width in widths.items() if int(width) > 0]
             space_code = self.internal_space_code(cmap, encoding_table, encoding_is_mapping)
             raw_space = widths.get(space_code)
             space = int(raw_space) if raw_space is not None else 0
@@ -613,7 +611,7 @@ class LegacyTextExtractor:
             except (TypeError, ValueError):
                 values = []
             self.cm = (
-                multiply_affine(values, self.cm)
+                list(multiply_affine(values, self.cm))
                 if len(values) == 6
                 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             )

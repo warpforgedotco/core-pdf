@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import cast
 
-from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_values
-from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_value
+from core_pdf_spec.s_07_syntax.types import CachedPdfObject, InheritedValueMap, PdfDict
+from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import Rectangle
 
 PAGE_INHERITED_KEYS = ("MediaBox", "CropBox", "Rotate", "Resources")
@@ -40,11 +40,19 @@ def page_rotation(value: object) -> int:
 
 
 def page_inherited_values(
-    node: PdfDict, inherited: InheritedValueMap, keys: tuple[str, ...] = PAGE_INHERITED_KEYS
+    nodes: Iterable[PdfDict],
+    resolve: Callable[[object], object],
+    keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
 ) -> InheritedValueMap:
-    """Overlay present page-tree entries on the ancestor's inherited values."""
-    values = dict(inherited)
-    values.update(inherited_dictionary_values(node, keys))
+    """Select leaf-to-root candidates without reading shadowed ancestor entries."""
+    values: InheritedValueMap = {}
+    for node in nodes:
+        for key in keys:
+            if key in values:
+                continue
+            value = inherited_dictionary_value(node, key, None, resolve)
+            if value is not None:
+                values[key] = cast(CachedPdfObject, value)
     return values
 
 
@@ -55,25 +63,27 @@ def iter_page_nodes(
     inherited_keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
 ) -> Iterator[PageNode]:
     """Walk Kids in source order and carry each ancestor's inheritable values."""
-    stack: list[tuple[object, InheritedValueMap, frozenset[int]]] = [(root, {}, frozenset())]
+    stack: list[tuple[object, tuple[PdfDict, ...], frozenset[int]]] = [(root, (), frozenset())]
     while stack:
-        raw, inherited, ancestors = stack.pop()
+        raw, parents, ancestors = stack.pop()
         current = resolve(raw)
         if not isinstance(current, dict):
             raise ValueError("invalid page tree node")
         current = cast(PdfDict, current)
         if id(current) in ancestors:
             raise ValueError("page tree cycle detected")
-        kind = normalize_pdf_name(resolve(current.get("Type")))
-        values = page_inherited_values(current, inherited, inherited_keys)
+        kind = decoded_name(resolve(current.get("Type")))
         if kind == "Page":
-            yield PageNode(current, values)
+            yield PageNode(
+                current, page_inherited_values((current, *parents), resolve, inherited_keys)
+            )
         elif kind == "Pages":
             kids = resolve(current.get("Kids"))
             if not isinstance(kids, list):
                 raise ValueError("invalid page tree Kids array")
             ancestry = ancestors | {id(current)}
-            stack.extend((kid, values, ancestry) for kid in reversed(kids))
+            parent_nodes = (current, *parents)
+            stack.extend((kid, parent_nodes, ancestry) for kid in reversed(kids))
         else:
             raise ValueError("invalid page tree node")
 

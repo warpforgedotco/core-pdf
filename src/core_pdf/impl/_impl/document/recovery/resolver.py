@@ -10,6 +10,7 @@ from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl._impl.document.recovery.xref import iter_indirect_object_headers
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl._impl.runtime.scalars import parse_box, parse_float, parse_int
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.types import PdfReference, PdfString
@@ -25,7 +26,6 @@ from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 
 class ObjectResolver(SyntaxResolver):
@@ -135,7 +135,7 @@ class ObjectResolver(SyntaxResolver):
 
     def resolve_name_like_value(self, resolved: object) -> str | None:
         val = self.resolve(resolved)
-        name = normalize_pdf_name(val)
+        name = recover_pdf_name(val)
         if name is not None:
             return name
         if type(val) is PdfString:
@@ -150,6 +150,9 @@ class ObjectResolver(SyntaxResolver):
         if type(value) is bool:
             return default
         return parse_float(self.resolve(value), default=default)
+
+    def resolve_name(self, value: object) -> str | None:
+        return recover_pdf_name(self.internal_resolve_chain(value))
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         if type(value) is int:

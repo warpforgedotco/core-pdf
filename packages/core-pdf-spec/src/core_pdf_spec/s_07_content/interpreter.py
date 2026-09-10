@@ -33,21 +33,25 @@ from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
     parse_float,
 )
 from core_pdf_spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf_spec.s_08_graphics.color import (
-    color_component_count,
     initial_color_components,
     normalize_color_components,
 )
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
+from core_pdf_spec.s_08_graphics.color_spec import (
+    DEVICE_CMYK,
+    DEVICE_GRAY,
+    DEVICE_RGB,
+    ColorSpace,
+    parse_color_space,
+)
 from core_pdf_spec.s_08_graphics.geometry import transform_bbox
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.metrics import text_adjustment_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
-from core_pdf_spec.types import PdfName, PdfReference, PdfString, Rectangle
+from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
@@ -81,7 +85,8 @@ class ContentInterpreter:
         self.marked_content_stack: list[MarkedContentEntry] = []
         self.type3_uncolored = False
         self.resources: PdfDict = {}
-        self.op_handlers: dict[str, OperationHandler] = {
+        self.operator_overrides: dict[str, OperationHandler] = {}
+        self.internal_default_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
         }
         self.stream_executor = ContentStreamExecutor(self)
@@ -132,7 +137,8 @@ class ContentInterpreter:
             if self.compatibility_depth:
                 return None
             raise PdfParseError(f"unknown content operator: {name}")
-        handler = self.op_handlers.get(name)
+        override = self.operator_overrides.get(name)
+        handler = override or self.internal_default_handlers.get(name)
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {name}")
         validate_content_operands(name, operands)
@@ -146,18 +152,20 @@ class ContentInterpreter:
             raise PdfParseError("path operator has no current point")
         if name == "EMC" and not self.marked_content_stack:
             raise PdfParseError("unmatched EMC operator")
-        self.internal_validate_color_operation(name, operands)
+        if override is not None:
+            self.internal_validate_color_operation(name, operands)
         return handler(operands, depth)
 
     def internal_validate_color_operation(self, name: str, operands: ContentOperands) -> None:
         if name not in {"SC", "SCN", "sc", "scn"} or self.type3_uncolored:
             return
-        stroke = name in {"SC", "SCN"}
-        color_space = self.graphics.stroke_color_space if stroke else self.graphics.fill_color_space
-        spec = (
-            self.graphics.stroke_color_spec if stroke else self.graphics.fill_color_spec
-        ) or ImageColorSpec(color_space, {})
-        if name in {"SC", "sc"} and color_space not in {
+        space = self.graphics.stroke_space if name in {"SC", "SCN"} else self.graphics.fill_space
+        self.prepare_color_components(space, operands, allow_special=name in {"SCN", "scn"})
+
+    def prepare_color_components(
+        self, space: ColorSpace, operands: ContentOperands, *, allow_special: bool
+    ) -> tuple[float, ...] | None:
+        if not allow_special and space.kind not in {
             "DeviceGray",
             "DeviceRGB",
             "DeviceCMYK",
@@ -167,29 +175,15 @@ class ContentInterpreter:
             "Indexed",
         }:
             raise PdfParseError("color space requires SCN or scn")
-        try:
-            if color_space == "Pattern":
-                if not operands or not isinstance(operands[-1], PdfName):
-                    raise PdfParseError("Pattern color requires a pattern name")
-                if len(operands) - 1 != color_component_count(spec):
+        if space.kind == "Pattern":
+            if not operands or not isinstance(operands[-1], PdfName):
+                raise PdfParseError("Pattern color requires a pattern name")
+            if space.base is None:
+                if len(operands) != 1:
                     raise PdfParseError("invalid color component operands")
-                if spec.pattern_base is not None:
-                    normalize_color_components(spec.pattern_base, operands[:-1])
-            else:
-                normalize_color_components(spec, operands)
-        except ValueError as error:
-            raise PdfParseError(str(error)) from error
-
-    def consume_stream(
-        self,
-        stream: PdfStream,
-        resources: PdfDict,
-        ctm: Matrix,
-        depth: int,
-        *,
-        clip_bbox: Rectangle | None = None,
-    ) -> None:
-        self.stream_executor.consume(stream, resources, ctm, depth, clip_bbox=clip_bbox)
+                return ()
+            return self.normalize_color_components(space.base, operands[:-1])
+        return self.normalize_color_components(space, operands)
 
     def lookup_page_resource(self, category: str, name: str) -> object:
         """Return the raw selected entry; its consumer chooses how far to resolve it."""
@@ -390,7 +384,9 @@ class ContentInterpreter:
                 previous_type3_uncolored = self.type3_uncolored
                 self.type3_uncolored = False
                 try:
-                    self.consume_stream(char_proc, resources, glyph_ctm, self.xobject_depth + 1)
+                    self.stream_executor.consume(
+                        char_proc, resources, glyph_ctm, self.xobject_depth + 1
+                    )
                 finally:
                     self.type3_uncolored = previous_type3_uncolored
 
@@ -797,51 +793,30 @@ class ContentInterpreter:
     def op_W_star(self, operands: ContentOperands, depth: int) -> None:
         self.internal_pending_clip_rule = "evenodd"
 
-    def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
-        values: list[float] = []
-        for component in components:
-            try:
-                values.append(max(0.0, min(1.0, self.as_float(component))))
-            except ValueError as error:
-                raise PdfParseError(str(error)) from error
-        if not values:
-            raise PdfParseError("color requires components")
-        return tuple(values)
-
     def internal_set_device_color(
         self, operands: ContentOperands, color_space: str, count: int, *, stroke: bool
     ) -> None:
         if self.type3_uncolored or len(operands) < count:
             return
-        normalized = self.normalize_color_operands(operands[:count])
+        space = {"DeviceGray": DEVICE_GRAY, "DeviceRGB": DEVICE_RGB, "DeviceCMYK": DEVICE_CMYK}[
+            color_space
+        ]
+        normalized = self.normalize_color_components(space, operands[:count])
         if normalized is None:
             return
-        # Device operators select both a space and its components. Leaving a
-        # previous Indexed/Separation spec behind misinterprets a later sc/SC.
         if stroke:
-            self.graphics.stroke_color_space = color_space
-            self.graphics.stroke_color_spec = None
+            self.graphics.stroke_space = space
             self.graphics.stroke_color = normalized
             self.graphics.stroke_pattern = None
         else:
-            self.graphics.fill_color_space = color_space
-            self.graphics.fill_color_spec = None
+            self.graphics.fill_space = space
             self.graphics.fill_color = normalized
             self.graphics.fill_pattern = None
 
-    def normalize_color_operands(self, o: Any) -> tuple[float, ...] | None:
-        # Plain numeric operands (the overwhelming majority) clamp directly;
-        # anything else -- strings, names, nulls -- goes through the resolver.
-        if o and all(type(c) is float or type(c) is int for c in o):
-            return tuple(max(0.0, min(1.0, float(c))) for c in o)
-        return self.normalize_colors(*o)
-
-    def resolve_color_space(self, name_obj: Any) -> tuple[str, ImageColorSpec | None]:
-        """Resolve a cs/CS resource once for both its name and conversion spec."""
+    def resolve_color_space(self, name_obj: Any) -> ColorSpace:
         name = self.resolver.resolve_name(name_obj)
         if name is None:
             raise PdfParseError("color space operand must be a name")
-        # Table 74: these names identify spaces directly, not same-named resources.
         value = (
             name
             if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
@@ -849,24 +824,13 @@ class ContentInterpreter:
         )
         if value is None:
             raise PdfParseError("missing color space resource")
-        base = value[0] if isinstance(value, (list, tuple)) and value else value
-        color_space = normalize_pdf_name(base) or name
         try:
-            spec = color_spec_from_value(value)
+            return parse_color_space(value)
         except (ValueError, TypeError) as error:
             raise PdfParseError(str(error)) from error
-        return color_space, spec
-
-    def internal_color_from_operands(
-        self, operands: Any, spec: ImageColorSpec | None
-    ) -> tuple[float, ...] | None:
-        """Retain PDF components; output colour conversion belongs to consumers."""
-        if spec is None:
-            return self.normalize_color_operands(operands)
-        return self.normalize_color_components(spec, operands)
 
     def normalize_color_components(
-        self, spec: ImageColorSpec, components: typing.Sequence[object]
+        self, spec: ColorSpace, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
         """Normalize one PDF color; readers may recover malformed components here."""
         try:
@@ -875,7 +839,7 @@ class ContentInterpreter:
             raise PdfParseError(str(error)) from error
 
     def initial_color_components(
-        self, spec: ImageColorSpec, *, stroke: bool
+        self, spec: ColorSpace, *, stroke: bool
     ) -> tuple[float, ...] | None:
         """Initialize a selected space; readers may retain color for invalid spaces."""
         try:
@@ -891,18 +855,14 @@ class ContentInterpreter:
             # a colour space describing a colour it was not allowed to set.
             return
         if operands:
-            color_space, spec = self.resolve_color_space(operands[0])
-            color = self.initial_color_components(
-                spec or ImageColorSpec(color_space, {}), stroke=stroke
-            )
+            space = self.resolve_color_space(operands[0])
+            color = self.initial_color_components(space, stroke=stroke)
             if stroke:
-                self.graphics.stroke_color_space = color_space
-                self.graphics.stroke_color_spec = spec
+                self.graphics.stroke_space = space
                 self.graphics.stroke_color = color
                 self.graphics.stroke_pattern = None
             else:
-                self.graphics.fill_color_space = color_space
-                self.graphics.fill_color_spec = spec
+                self.graphics.fill_space = space
                 self.graphics.fill_color = color
                 self.graphics.fill_pattern = None
 
@@ -920,13 +880,13 @@ class ContentInterpreter:
     ) -> None:
         if self.type3_uncolored:
             return
-        color_space = self.graphics.stroke_color_space if stroke else self.graphics.fill_color_space
-        if allow_pattern and color_space == "Pattern":
+        space = self.graphics.stroke_space if stroke else self.graphics.fill_space
+        normalized = self.prepare_color_components(space, operands, allow_special=allow_pattern)
+        if normalized is None:
+            return
+        if space.kind == "Pattern":
             pattern = self.resolve_pattern_color(
-                operands,
-                color_spec=self.graphics.stroke_color_spec
-                if stroke
-                else self.graphics.fill_color_spec,
+                operands[-1], space=space, base_components=normalized
             )
             color = pattern.base_color if isinstance(pattern, TilingPattern) else None
             if stroke:
@@ -935,17 +895,12 @@ class ContentInterpreter:
             else:
                 self.graphics.fill_pattern = pattern
                 self.graphics.fill_color = color
-            return
-        normalized = self.internal_color_from_operands(
-            operands, self.graphics.stroke_color_spec if stroke else self.graphics.fill_color_spec
-        )
-        if normalized is not None:
-            if stroke:
-                self.graphics.stroke_color = normalized
-                self.graphics.stroke_pattern = None
-            else:
-                self.graphics.fill_color = normalized
-                self.graphics.fill_pattern = None
+        elif stroke:
+            self.graphics.stroke_color = normalized
+            self.graphics.stroke_pattern = None
+        else:
+            self.graphics.fill_color = normalized
+            self.graphics.fill_pattern = None
 
     def op_SCN(self, operands: ContentOperands, depth: int) -> None:
         self.internal_set_color(operands, stroke=True, allow_pattern=True)
@@ -1139,25 +1094,15 @@ class ContentInterpreter:
         return (pattern, pattern_dict) if isinstance(pattern_dict, dict) else None
 
     def resolve_pattern_color(
-        self, operands: tuple[Any, ...], *, color_spec: ImageColorSpec | None = None
+        self, pattern_name: object, *, space: ColorSpace, base_components: tuple[float, ...]
     ) -> PatternPaint | None:
-        """Resolve a selection using its active Pattern space when supplied.
-
-        The optional context distinguishes colored patterns from stencils and
-        preserves the stencil's underlying component ranges. Reader overrides
-        may recover malformed resources while retaining this keyword contract.
-        """
-        if not operands:
-            raise PdfParseError("invalid pattern resource or operands")
-        resource = self.resolve_pattern_resource(operands[-1])
+        resource = self.resolve_pattern_resource(pattern_name)
         if resource is None:
             raise PdfParseError("invalid pattern resource or operands")
         pattern, pattern_dict = resource
         pattern_type = self.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
-            if color_spec is not None and (
-                color_spec.pattern_base is not None or len(operands) != 1
-            ):
+            if space.base is not None:
                 raise PdfParseError("shading pattern requires a colored Pattern space")
             shading: object = pattern_dict.get("Shading")
             shading = self.resolver.resolve(shading)
@@ -1170,20 +1115,10 @@ class ContentInterpreter:
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))
         if paint_type not in {1, 2}:
             raise PdfParseError("invalid pattern resource or operands")
-        base_spec = color_spec.pattern_base if color_spec is not None else None
-        if color_spec is not None and (paint_type == 2) != (base_spec is not None):
+        base_spec = space.base
+        if (paint_type == 2) != (base_spec is not None):
             raise PdfParseError("pattern PaintType does not match its color space")
-        if paint_type == 1 and color_spec is not None and len(operands) != 1:
-            raise PdfParseError("colored pattern requires only a pattern name")
-        base_color = None
-        if paint_type == 2:
-            base_color = (
-                self.normalize_color_components(base_spec, operands[:-1])
-                if base_spec is not None
-                else self.normalize_color_operands(operands[:-1])
-            )
-            if base_color is None:
-                raise PdfParseError("invalid pattern resource or operands")
+        base_color = base_components if paint_type == 2 else None
         bbox = self.resolver.resolve_box(pattern_dict.get("BBox"))
         if bbox is None:
             raise PdfParseError("invalid pattern resource or operands")

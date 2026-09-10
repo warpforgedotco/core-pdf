@@ -9,10 +9,10 @@ from typing import Any, cast
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 
 def internal_pdfminer_resolvable_pages(  # noqa: C901
@@ -49,7 +49,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     value = None
             if not isinstance(value, dict):
                 continue
-            if normalize_pdf_name(value.get("Type")) != "Page":
+            if recover_pdf_name(value.get("Type")) != "Page":
                 continue
             if found >= len(document.pages):
                 raise PdfError("fallback page is unavailable in the native page list")
@@ -93,7 +93,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     root_value = None
                 if (
                     isinstance(root_value, dict)
-                    and normalize_pdf_name(root_value.get("Type")) == "Catalog"
+                    and recover_pdf_name(root_value.get("Type")) == "Catalog"
                 ):
                     fallback_catalog = root_value
         if fallback_catalog is not None:
@@ -120,7 +120,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     return
             if not isinstance(node, dict):
                 return
-            node_type = normalize_pdf_name(node.get("Type"))
+            node_type = recover_pdf_name(node.get("Type"))
             if node_type == "Page":
                 if node_reference is not None:
                     reachable_page_ids.add(node_reference.object_number)
@@ -173,7 +173,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                 continue
             if not isinstance(value, dict):
                 continue
-            if normalize_pdf_name(value.get("Type")) != "Page":
+            if recover_pdf_name(value.get("Type")) != "Page":
                 continue
             try:
                 resolved_value = document.resolver.resolve(
@@ -401,7 +401,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         )
         duplicate = marker in visited
         visited.add(marker)
-        node_type = normalize_pdf_name(node.get("Type"))
+        node_type = recover_pdf_name(node.get("Type"))
         if node_type == "Pages":
             if not valid_reference or duplicate:
                 return

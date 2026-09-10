@@ -15,13 +15,13 @@ def test_reader_normalization_keeps_parameter_padding_and_skipped_filter_alignme
     spec = normalize_stream_decode_spec(
         {"Filter": [None, "ASCII85Decode", "FlateDecode"], "DecodeParms": [None, None, params]}
     )
-    assert spec.filters == ("ASCII85Decode", "FlateDecode")
-    assert spec.params[0] is None
-    assert spec.params[1] is params
+    assert tuple(step.name for step in spec.steps) == ("ASCII85Decode", "FlateDecode")
+    assert spec.steps[0].params is None
+    assert spec.steps[1].params is params
     padded = normalize_stream_decode_spec(
         {"Filter": ["ASCII85Decode", "FlateDecode"], "DecodeParms": [None]}
     )
-    assert padded.params == (None, None)
+    assert tuple(step.params for step in padded.steps) == (None, None)
 
 
 @pytest.mark.parametrize(

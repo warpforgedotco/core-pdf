@@ -12,11 +12,10 @@ from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.color import (
-    color_component_count,
     initial_color_components,
     normalize_color_components,
 )
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
+from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector, text_adjustment_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
@@ -83,7 +82,9 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
         "Pattern": {"P": internal_pattern(Matrix=matrix)},
     }
     frame = state.append_xobject(PdfName.of("F"), 0)
-    pattern = state.resolve_pattern_color((PdfName.of("P"),))
+    pattern = state.resolve_pattern_color(
+        PdfName.of("P"), space=parse_color_space("Pattern"), base_components=()
+    )
     assert isinstance(pattern, TilingPattern)
     assert frame is not None
     assert frame.ctm == pattern.matrix == Matrix(1, 0, 0, 1, 5, 6)
@@ -149,7 +150,9 @@ def test_type3_glyphs_use_font_service_spacing(
     state.graphics.font_size, state.graphics.char_space, state.graphics.word_space = font_size, 2, 3
     origins: list[float] = []
     monkeypatch.setattr(
-        state, "consume_stream", lambda stream, resources, ctm, depth: origins.append(ctm.e)
+        type(state.stream_executor),
+        "consume",
+        lambda executor, stream, resources, ctm, depth: origins.append(ctm.e),
     )
     state.append_text(data=b"A A", decoder=cast(Any, Font()))
     step = font_size / 2 + 2
@@ -202,21 +205,38 @@ def test_text_show_updates_after_callback_and_emits_one_boundary(text: str) -> N
 def test_initial_color_and_component_count(
     kind: str, channels: int, expected: tuple[int, ...] | None
 ) -> None:
-    spec = ImageColorSpec(kind, {}, channels=channels)
+    spec = ColorSpace(kind, ((0.0, 1.0),) * (len(expected) if expected is not None else 0))
     assert initial_color_components(spec) == expected
-    assert color_component_count(spec) == (len(expected) if expected is not None else 0)
+    assert len(spec.component_ranges) == (len(expected) if expected is not None else 0)
 
 
 @pytest.mark.parametrize(
     ("spec", "values", "expected", "initial"),
     [
-        (ImageColorSpec("Lab", {"Range": [2, 4, -4, -2]}), (150, 1, 1), (100, 2, -2), (0, 2, -2)),
-        (ImageColorSpec("ICCBased", {"Range": [2, 4]}, channels=1), (5,), (4,), (2,)),
-        (ImageColorSpec("Indexed", {}, hival=4), (2.5,), (3,), (0,)),
+        (
+            parse_color_space(
+                ["Lab", {"WhitePoint": [0.9505, 1, 1.089], **{"Range": [2, 4, -4, -2]}}]
+            ),
+            (150, 1, 1),
+            (100, 2, -2),
+            (0, 2, -2),
+        ),
+        (
+            parse_color_space(["ICCBased", PdfStream(dictionary={"N": 1, **{"Range": [2, 4]}})]),
+            (5,),
+            (4,),
+            (2,),
+        ),
+        (
+            ColorSpace("Indexed", ((0.0, float(4)),), base=parse_color_space("DeviceRGB"), hival=4),
+            (2.5,),
+            (3,),
+            (0,),
+        ),
     ],
 )
 def test_color_ranges_are_shared_for_components_and_initialization(
-    spec: ImageColorSpec,
+    spec: ColorSpace,
     values: tuple[float, ...],
     expected: tuple[int, ...],
     initial: tuple[int, ...],
@@ -232,13 +252,15 @@ def test_color_components_reject_wrong_count_or_non_pdf_numbers(
     components: tuple[object, ...],
 ) -> None:
     with pytest.raises(ValueError):
-        normalize_color_components(ImageColorSpec("DeviceRGB", {}), components)
+        normalize_color_components(parse_color_space("DeviceRGB"), components)
 
 
 @pytest.mark.parametrize("ranges", [[1], [2, 1], [0, float("nan")], ["0", 1]])
 def test_color_range_validation_precedes_initialization(ranges: list[object]) -> None:
     with pytest.raises(ValueError):
-        initial_color_components(ImageColorSpec("ICCBased", {"Range": ranges}, channels=1))
+        initial_color_components(
+            parse_color_space(["ICCBased", PdfStream(dictionary={"N": 1, **{"Range": ranges}})])
+        )
 
 
 @pytest.mark.parametrize("stroke", [False, True])
@@ -249,7 +271,7 @@ def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> N
     state.graphics.fill_pattern = state.graphics.stroke_pattern = cast(Any, object())
     state.execute_operation("CS" if stroke else "cs", (PdfName.of("DeviceRGB"),), 0)
     assert (
-        state.graphics.stroke_color_space if stroke else state.graphics.fill_color_space
+        state.graphics.stroke_space.kind if stroke else state.graphics.fill_space.kind
     ) == "DeviceRGB"
     assert (state.graphics.stroke_color if stroke else state.graphics.fill_color) == (0, 0, 0)
     assert (state.graphics.stroke_pattern if stroke else state.graphics.fill_pattern) is None
@@ -263,10 +285,7 @@ def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> N
 @pytest.mark.parametrize("stroke", [False, True])
 def test_special_color_spaces_require_extended_operator(kind: str, stroke: bool) -> None:
     state = internal_state()
-    state.graphics.fill_color_space = state.graphics.stroke_color_space = kind
-    state.graphics.fill_color_spec = state.graphics.stroke_color_spec = ImageColorSpec(
-        kind, {}, channels=1
-    )
+    state.graphics.fill_space = state.graphics.stroke_space = ColorSpace(kind, ((0.0, 1.0),) * 1)
     with pytest.raises(PdfParseError, match="requires SCN"):
         state.execute_operation("SC" if stroke else "sc", (0.5,), 0)
     state.execute_operation("SCN" if stroke else "scn", (0.5,), 0)
@@ -305,15 +324,17 @@ def test_pattern_selection_matches_underlying_space(
 
 
 def test_pattern_retains_lab_base_and_public_positional_constructors() -> None:
-    space = color_spec_from_value(["Pattern", ["Lab", {"Range": [-2, 2, -3, 3]}]])
-    assert space.pattern_base is not None
+    space = parse_color_space(
+        ["Pattern", ["Lab", {"WhitePoint": [1, 1, 1], "Range": [-2, 2, -3, 3]}]]
+    )
+    assert space.base is not None
     state = internal_state()
     state.resources = {"Pattern": {"P": internal_pattern(2)}}
-    pattern = state.resolve_pattern_color((50, -5, 5, PdfName.of("P")), color_spec=space)
+    pattern = state.resolve_pattern_color(PdfName.of("P"), space=space, base_components=(50, -2, 3))
     assert isinstance(pattern, TilingPattern)
     assert pattern.base_color == (50, -2, 3)
-    assert pattern.base_color_spec is space.pattern_base
-    assert "pattern_base" not in ImageColorSpec.__match_args__
+    assert pattern.base_color_spec is space.base
+    assert "pattern_base" not in ColorSpace.__match_args__
     assert "base_color_spec" not in TilingPattern.__match_args__
     assert (
         TilingPattern(
@@ -323,4 +344,4 @@ def test_pattern_retains_lab_base_and_public_positional_constructors() -> None:
     )
     for value in (["Pattern", "Pattern"], ["Pattern", "DeviceRGB", 1]):
         with pytest.raises(ValueError, match="Pattern"):
-            color_spec_from_value(value)
+            parse_color_space(value)

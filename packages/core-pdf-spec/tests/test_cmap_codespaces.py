@@ -127,10 +127,12 @@ def test_cid_mapping_range_must_fit_a_single_codespace(mapping: bytes) -> None:
     [[(b"\x00" * 5, b"\xff" * 5)], [(b"\x00", b"\x7f"), (b"\x40", b"\xff")]],
     ids=["five-byte", "overlap"],
 )
-def test_parsed_cid_parent_cannot_bypass_effective_codespace_validation(
+def test_cid_parent_resource_cannot_bypass_effective_codespace_validation(
     ranges: list[tuple[bytes, bytes]],
 ) -> None:
-    parent = CMapDecoder(b"", empty=True)
-    parent.code_space_ranges = ranges
+    entries = b" ".join(
+        b"<" + start.hex().encode() + b"> <" + end.hex().encode() + b">" for start, end in ranges
+    )
+    parent = str(len(ranges)).encode() + b" begincodespacerange " + entries + b" endcodespacerange"
     with pytest.raises(ValueError):
         CMapDecoder(b"/Parent usecmap", usecmap_resolver=lambda name: parent)

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.types import Rectangle
@@ -64,7 +64,7 @@ class TilingPattern:
     matrix: Matrix
     paint_type: int
     base_color: tuple[float, ...] | None
-    base_color_spec: ImageColorSpec | None = field(default=None, kw_only=True)
+    base_color_spec: ColorSpace | None = field(default=None, kw_only=True)
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
@@ -88,10 +88,8 @@ class GraphicsState:
     stroke_color: tuple[float, ...] | None = (0.0,)
     stroke_pattern: PatternPaint | None = None
     stroke_opacity: float = 1.0
-    fill_color_space: str = "DeviceGray"
-    stroke_color_space: str = "DeviceGray"
-    fill_color_spec: ImageColorSpec | None = None
-    stroke_color_spec: ImageColorSpec | None = None
+    fill_space: ColorSpace = DEVICE_GRAY
+    stroke_space: ColorSpace = DEVICE_GRAY
     blend_mode: str | None = None
     flatness: float = 1.0
     render_intent: str | None = None

@@ -16,7 +16,7 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.types import CachedPdfObject
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
+from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
     CONTENT_OPERATOR_SIGNATURES,
 )
@@ -85,10 +85,15 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
         raise PdfParseError(f"{operator} requires {len(signature)} operands")
     for category, operand in zip(signature, operands, strict=True):
         valid = False
-        if category == "n":
-            valid = type(operand) in (int, float) and parse_float(operand, default=None) is not None
-        elif category == "i":
-            valid = type(operand) is int
+        if category in {"n", "i"}:
+            try:
+                if category == "n":
+                    require_pdf_number(operand, f"invalid {operator} operand")
+                else:
+                    require_pdf_integer(operand, f"invalid {operator} operand")
+            except ValueError as error:
+                raise PdfParseError(str(error)) from error
+            valid = True
         elif category == "/":
             valid = isinstance(operand, PdfName)
         elif category == "s":
@@ -104,13 +109,14 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
     if operator in {"TJ", "d"}:
         array = cast(list[ContentOperand], operands[0])
         for value in array:
-            if type(value) in (int, float) and parse_float(value, default=None) is not None:
-                if operator == "d" and cast(float, value) < 0:
-                    raise PdfParseError("negative dash length")
-                continue
             if operator == "TJ" and isinstance(value, PdfString):
                 continue
-            raise PdfParseError(f"invalid {operator} array entry")
+            try:
+                number = require_pdf_number(value, f"invalid {operator} array entry")
+            except ValueError as error:
+                raise PdfParseError(str(error)) from error
+            if operator == "d" and number < 0:
+                raise PdfParseError("negative dash length")
         if operator == "d" and array and not any(array):
             raise PdfParseError("dash array cannot contain only zero lengths")
     if operator in {"J", "j", "Tr"}:

@@ -11,7 +11,7 @@ from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
+    decoded_name,
     parse_int,
 )
 from core_pdf_spec.s_07_syntax_primitives.tokens import WS_TABLE
@@ -298,7 +298,7 @@ class XRefScanner:
     @staticmethod
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDict]:
         dictionary = stream.dictionary
-        if normalize_pdf_name(dictionary.get("Type")) != "XRef":
+        if decoded_name(dictionary.get("Type")) != "XRef":
             raise PdfParseError("invalid xref stream type")
         size = dictionary.get("Size")
         widths = dictionary.get("W")

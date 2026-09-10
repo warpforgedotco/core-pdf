@@ -23,10 +23,10 @@ from core_pdf_spec.s_07_syntax.xref import (
     key_for,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
+    decoded_name,
     parse_box,
-    parse_float,
-    parse_int,
+    require_pdf_integer,
+    require_pdf_number,
 )
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 from core_pdf_spec.types import MISSING, PdfName, PdfReference, PdfString
@@ -163,7 +163,7 @@ class ObjectResolver:
                 resolved_stream = (
                     stream
                     if resolved_dict is stream.dictionary
-                    else stream.replace(dictionary=resolved_dict)
+                    else stream.replace(dictionary=cast(dict[object, object], resolved_dict))
                 )
                 internal_memo[val_id] = (value, resolved_stream)
                 return resolved_stream
@@ -228,15 +228,15 @@ class ObjectResolver:
         return result
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
-        return parse_float(self.resolve(value), default=default)
+        resolved = self.internal_resolve_chain(value)
+        return default if resolved is None else require_pdf_number(resolved)
 
     def resolve_name(self, value: object) -> str | None:
-        return normalize_pdf_name(value) or normalize_pdf_name(self.resolve(value))
+        return decoded_name(self.internal_resolve_chain(value))
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
-        if type(value) is int:
-            return value
-        return parse_int(self.resolve(value), default)
+        resolved = self.internal_resolve_chain(value)
+        return default if resolved is None else require_pdf_integer(resolved)
 
     def resolve_str(self, value: object) -> str | None:
         if type(value) is str:
@@ -301,7 +301,7 @@ class ObjectResolver:
     def resolve_stream(self, stream: PdfStream) -> PdfStream:
         resolved_dict: dict[object, object] | None = None
         for key, value in stream.dictionary.items():
-            if normalize_pdf_name(key) not in STREAM_DECODE_KEYS:
+            if decoded_name(key) not in STREAM_DECODE_KEYS:
                 continue
             resolved_value = self.deep_resolve(value, set())
             if resolved_value is not value:

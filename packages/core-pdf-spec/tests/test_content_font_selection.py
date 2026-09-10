@@ -34,10 +34,6 @@ class RecordingState(ContentInterpreter):
             self.events.append("load")
             return SimpleNamespace(
                 font=font,
-                ascent=800.0,
-                descent=-200.0,
-                fast_widths=(),
-                glyph_width=lambda code: 500.0,
             )
 
         super().__init__(ObjectResolver(b"", {}, {}), cast(Any, Sink()), provide)

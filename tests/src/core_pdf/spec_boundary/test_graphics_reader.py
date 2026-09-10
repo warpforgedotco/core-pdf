@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
+from core_pdf.impl._impl.graphics.color_spec import parse_color_space
 from core_pdf.impl._impl.graphics.decode_compat import FilterParams
 from core_pdf.impl._impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
@@ -43,7 +43,7 @@ def test_reader_preserves_filter_metadata_skipping() -> None:
 
 
 def test_reader_preserves_indexed_color_coercion() -> None:
-    spec = color_spec_from_value(["Indexed", "DeviceRGB", "1", b"\x00" * 6])
+    spec = parse_color_space(["Indexed", "DeviceRGB", "1", b"\x00" * 6])
     assert spec.hival == 1
 
 

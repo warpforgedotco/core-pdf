@@ -146,11 +146,11 @@ def test_flatness_defaults_fractions_and_graphics_restore(flatness: float) -> No
 def test_nested_streams_resume_once_and_emit_boundaries_before_exit() -> None:
     state, sink = new_state()
     observed = []
-    state.op_handlers["w"] = lambda operands, depth: observed.append((operands, depth))
+    state.operator_overrides["w"] = lambda operands, depth: observed.append((operands, depth))
     child = PdfStream(
         raw_data=b"2 w", dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1]}
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"1 w /Child Do 3 w"),
         {"XObject": {"Child": child}},
         IDENTITY_MATRIX,
@@ -202,7 +202,7 @@ def test_nested_failure_unwinds_every_entered_frame(
         def fail_dispatch(operands: Any, depth: int) -> None:
             raise error_type("child failed")
 
-        state.op_handlers["w"] = fail_dispatch
+        state.operator_overrides["w"] = fail_dispatch
     elif stage == "boundary":
         boundary = sink.text_boundary
 
@@ -213,7 +213,7 @@ def test_nested_failure_unwinds_every_entered_frame(
 
         monkeypatch.setattr(sink, "text_boundary", fail_boundary)
     with pytest.raises(error_type, match="child failed"):
-        state.consume_stream(
+        state.stream_executor.consume(
             PdfStream(raw_data=b"/Child Do"),
             {"XObject": {"Child": child}},
             IDENTITY_MATRIX,

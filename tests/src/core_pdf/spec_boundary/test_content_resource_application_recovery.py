@@ -11,7 +11,7 @@ from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf_spec.s_07_content.model import ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.color_spec import parse_color_space
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfString
 
@@ -69,8 +69,16 @@ def test_reader_keeps_missing_pattern_resource_recovery(resource: object) -> Non
     state = internal_state()
     state.resources = {"Pattern": {"P": resource}}
     assert state.resolve_pattern_resource(PdfName.of("P")) is None
-    assert state.resolve_pattern_color((PdfName.of("P"),)) is None
-    assert state.resolve_pattern_color(()) is None
+    assert (
+        state.resolve_pattern_color(
+            PdfName.of("P"), space=parse_color_space("Pattern"), base_components=()
+        )
+        is None
+    )
+    assert (
+        state.resolve_pattern_color(None, space=parse_color_space("Pattern"), base_components=())
+        is None
+    )
 
 
 def test_reader_pattern_lookup_preserves_defaults_and_mismatched_selection() -> None:
@@ -84,8 +92,10 @@ def test_reader_pattern_lookup_preserves_defaults_and_mismatched_selection() -> 
     }
     source = PdfStream(dictionary=dictionary)
     state.resources = {"Pattern": {"P": source}}
-    space = ImageColorSpec("Pattern", {}, pattern_base=ImageColorSpec("DeviceRGB", {}))
-    pattern = state.resolve_pattern_color((0.1, 0.2, 0.3, PdfName.of("P")), color_spec=space)
+    space = parse_color_space(["Pattern", "DeviceRGB"])
+    pattern = state.resolve_pattern_color(
+        PdfName.of("P"), space=space, base_components=(0.1, 0.2, 0.3)
+    )
     assert isinstance(pattern, TilingPattern)
     assert pattern.stream is source
     assert pattern.paint_type == 1
@@ -95,7 +105,9 @@ def test_reader_pattern_lookup_preserves_defaults_and_mismatched_selection() -> 
 def test_reader_shading_pattern_keeps_mismatched_stencil_context() -> None:
     state = internal_state()
     state.resources = {"Pattern": {"P": {"PatternType": 2, "Shading": {"ShadingType": 2}}}}
-    space = ImageColorSpec("Pattern", {}, pattern_base=ImageColorSpec("DeviceRGB", {}))
-    pattern = state.resolve_pattern_color((0.1, 0.2, 0.3, PdfName.of("P")), color_spec=space)
+    space = parse_color_space(["Pattern", "DeviceRGB"])
+    pattern = state.resolve_pattern_color(
+        PdfName.of("P"), space=space, base_components=(0.1, 0.2, 0.3)
+    )
     assert isinstance(pattern, ShadingPattern)
     assert pattern.dictionary == {"ShadingType": 2}

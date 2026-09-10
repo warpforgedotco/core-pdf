@@ -4,15 +4,15 @@
 from __future__ import annotations
 
 import typing
-from dataclasses import replace
 from typing import Any
 
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
 from core_pdf.impl._impl.document.recovery.resources import (
     resolve_resource_dict as recover_resources,
 )
-from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
+from core_pdf.impl._impl.graphics.color_spec import parse_color_space
 from core_pdf.impl._impl.model.geometry import transform_bbox
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PatternPaint, ShadingPattern, TilingPattern
@@ -22,10 +22,7 @@ from core_pdf_spec.s_07_content.operations import (
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
-)
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
 from core_pdf_spec.types import PdfReference, PdfString
@@ -39,7 +36,7 @@ class RecoveringTextState(ContentInterpreter):
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
     ) -> ContentStreamFrame | None:
-        handler = self.op_handlers.get(name)
+        handler = self.operator_overrides.get(name) or self.internal_default_handlers.get(name)
         return handler(operands, depth) if handler is not None else None
 
     def get_decoder(self) -> FontDecoder:
@@ -176,34 +173,39 @@ class RecoveringTextState(ContentInterpreter):
             data = text.encode("latin-1", "replace")
             self.append_decoded_text(text, data, decoder.decode_glyphs(data), decoder)
 
-    def resolve_color_space(self, name_obj: Any) -> tuple[str, ImageColorSpec | None]:
-        """Resolve a cs/CS resource once for both its name and conversion spec."""
+    def resolve_color_space(self, name_obj: Any) -> ColorSpace:
         name = self.resolver.resolve_name(name_obj)
         if name is None:
-            return "DeviceGray", None
+            return DEVICE_GRAY
         value = (
             name
             if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
             else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
         )
         if value is None:
-            # An inline device space (`/DeviceRGB cs`) names no resource.
             value = name
-        base = value[0] if isinstance(value, (list, tuple)) and value else value
-        color_space = normalize_pdf_name(base) or name
         try:
-            spec = color_spec_from_value(value)
+            return parse_color_space(value)
         except (ValueError, TypeError) as error:
             self.handle_operand_error(error, "color-space")
-            spec = None
-        return color_space, spec
+            base = value[0] if isinstance(value, (list, tuple)) and value else value
+            return ColorSpace(recover_pdf_name(base) or name, ())
+
+    def prepare_color_components(
+        self, space: ColorSpace, operands: ContentOperands, *, allow_special: bool
+    ) -> tuple[float, ...] | None:
+        if allow_special and space.kind == "Pattern":
+            if not operands:
+                return None
+            if space.base is None:
+                return ()
+            return self.normalize_color_components(space.base, operands[:-1])
+        return self.normalize_color_components(space, operands)
 
     def resolve_pattern_color(
-        self, operands: tuple[Any, ...], *, color_spec: ImageColorSpec | None = None
+        self, pattern_name: object, *, space: ColorSpace, base_components: tuple[float, ...]
     ) -> PatternPaint | None:
-        if not operands:
-            return None
-        resource = self.resolve_pattern_resource(operands[-1])
+        resource = self.resolve_pattern_resource(pattern_name)
         if resource is None:
             return None
         pattern, pattern_dict = resource
@@ -220,16 +222,8 @@ class RecoveringTextState(ContentInterpreter):
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"), 1)
         if paint_type not in {1, 2}:
             return None
-        base_color = None
-        base_spec = color_spec.pattern_base if color_spec is not None else None
-        if paint_type == 2:
-            base_color = (
-                self.normalize_color_components(base_spec, operands[:-1])
-                if base_spec is not None
-                else self.normalize_color_operands(operands[:-1])
-            )
-            if base_color is None:
-                return None
+        base_spec = space.base
+        base_color = base_components if paint_type == 2 else None
         bbox = self.resolver.resolve_box(pattern_dict.get("BBox"))
         if bbox is None:
             return None
@@ -388,7 +382,9 @@ class RecoveringTextState(ContentInterpreter):
             self.sink.end_marked_content(self, self.marked_content_stack.pop())
             self.sink.text_boundary(self, "marked")
 
-    def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
+    def recover_color_components(
+        self, components: typing.Sequence[object]
+    ) -> tuple[float, ...] | None:
         values: list[float] = []
         for component in components:
             try:
@@ -401,26 +397,19 @@ class RecoveringTextState(ContentInterpreter):
         return tuple(values)
 
     def normalize_color_components(
-        self, spec: ImageColorSpec, components: typing.Sequence[object]
+        self, spec: ColorSpace, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
         try:
             values = tuple(self.as_float(value) for value in components)
-            if spec.kind == "Lab":
-                limits = spec.params.get("Range")
-                if isinstance(limits, (list, tuple)) and len(limits) == 4:
-                    spec = replace(
-                        spec,
-                        params={**spec.params, "Range": [self.as_float(value) for value in limits]},
-                    )
             return super().normalize_color_components(spec, values)
         except (PdfParseError, TypeError, ValueError) as error:
             self.handle_operand_error(error, "color-components")
             if spec.kind in {"Indexed", "Lab"}:
                 return None
-            return self.normalize_color_operands(components)
+            return self.recover_color_components(components)
 
     def initial_color_components(
-        self, spec: ImageColorSpec, *, stroke: bool
+        self, spec: ColorSpace, *, stroke: bool
     ) -> tuple[float, ...] | None:
         try:
             return super().initial_color_components(spec, stroke=stroke)

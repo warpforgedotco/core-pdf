@@ -11,6 +11,7 @@ from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.graphics.color_spec import parse_color_space
 from core_pdf.impl._impl.render.commands import append_captured_program, internal_append_glyph_paint
 from core_pdf.impl._impl.render.display import DisplayList
 from core_pdf_spec.s_07_content.inline_images import InlineImage
@@ -18,7 +19,7 @@ from core_pdf_spec.s_07_content.model import MarkedContentEntry, TilingPattern
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.types import PdfName, PdfReference
 
@@ -64,7 +65,7 @@ def test_reader_color_selection_inherits_reserved_names_and_initialization() -> 
     state = internal_state()
     state.resources = {"ColorSpace": {"DeviceRGB": PdfName.of("DeviceGray")}}
     internal_execute(state, b"1 0 0 rg /DeviceRGB cs")
-    assert state.graphics.fill_color_space == "DeviceRGB"
+    assert state.graphics.fill_space.kind == "DeviceRGB"
     assert state.graphics.fill_color == (0, 0, 0)
     internal_execute(state, b"/DeviceCMYK cs")
     assert state.graphics.fill_color == (0, 0, 0, 1)
@@ -75,13 +76,12 @@ def test_reader_color_selection_inherits_reserved_names_and_initialization() -> 
 
 def test_reader_still_tolerates_special_space_sc_and_wrong_component_counts() -> None:
     state = internal_state()
-    state.graphics.fill_color_space = "Separation"
-    state.graphics.fill_color_spec = ImageColorSpec("Separation", {})
+    state.graphics.fill_space = ColorSpace("Separation", ((0.0, 1.0),) * 1)
     internal_execute(state, b"0.5 sc")
     assert state.graphics.fill_color == (0.5,)
     internal_execute(state, b"/DeviceRGB cs 0.5 sc /Unknown cs")
     assert state.graphics.fill_color == (0.5,)
-    assert state.graphics.fill_color_space == "Unknown"
+    assert state.graphics.fill_space.kind == "Unknown"
 
 
 def test_reader_pattern_keeps_missing_painttype_and_matrix_fallbacks() -> None:
@@ -161,15 +161,24 @@ def test_reader_glyph_origins_preserve_spacing_at_zero_font_size() -> None:
     ("spec", "values", "expected"),
     [
         (
-            ImageColorSpec("Lab", {"Range": ["-100", "100", "-100", "100"]}),
+            parse_color_space(
+                [
+                    "Lab",
+                    {"WhitePoint": [0.9505, 1, 1.089], **{"Range": ["-100", "100", "-100", "100"]}},
+                ]
+            ),
             ("50", "20", "-20"),
             (50, 20, -20),
         ),
-        (ImageColorSpec("Indexed", {}, hival=3), ("2.5",), (3,)),
+        (
+            ColorSpace("Indexed", ((0.0, float(3)),), base=parse_color_space("DeviceRGB"), hival=3),
+            ("2.5",),
+            (3,),
+        ),
     ],
 )
 def test_reader_coerces_components_before_applying_color_ranges(
-    spec: ImageColorSpec, values: tuple[str, ...], expected: tuple[int, ...]
+    spec: ColorSpace, values: tuple[str, ...], expected: tuple[int, ...]
 ) -> None:
     state = internal_state()
     assert state.normalize_color_components(spec, values) == expected
@@ -272,7 +281,7 @@ def test_text_clip_restores_before_paint_outside_its_scope(scope: str, hidden: b
                 "Resources": resources,
             },
         )
-        state.consume_stream(
+        state.stream_executor.consume(
             PdfStream(raw_data=b"/F Do"), {"XObject": {"F": form}}, IDENTITY_MATRIX, 0
         )
     state.marked_content_stack.clear()

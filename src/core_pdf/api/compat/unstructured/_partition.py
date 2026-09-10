@@ -10,8 +10,8 @@ from typing import Any, cast
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer._extract import extract_pages
 from core_pdf.api.compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 from ._classification import (
     internal_BULLET,
@@ -61,7 +61,7 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
                 font = document.resolver.resolve(raw_font)
                 if (
                     isinstance(font, dict)
-                    and normalize_pdf_name(font.get("Subtype")) == "Type0"
+                    and recover_pdf_name(font.get("Subtype")) == "Type0"
                     and font.get("DescendantFonts") is None
                 ):
                     return True

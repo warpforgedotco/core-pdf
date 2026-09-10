@@ -7,10 +7,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import cast
 
+from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_number_array
 from core_pdf_spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
     compile_pdf_function,
-    internal_number_array,
 )
 
 
@@ -36,10 +36,12 @@ def parse_shading(
     shading_type = dictionary.get("ShadingType")
     if type(shading_type) is not int or shading_type not in {2, 3}:
         raise ValueError("unsupported shading type")
-    coords = internal_number_array(dictionary.get("Coords"))
+    coords = require_pdf_number_array(dictionary.get("Coords"), "invalid shading coordinates")
     if len(coords) != (4 if shading_type == 2 else 6):
         raise ValueError("invalid shading coordinates")
-    domain = internal_number_array(dictionary.get("Domain", (0.0, 1.0)))
+    domain = require_pdf_number_array(
+        dictionary.get("Domain", (0.0, 1.0)), "invalid shading domain"
+    )
     if len(domain) != 2:
         raise ValueError("invalid shading domain")
     extend = dictionary.get("Extend", (False, False))
@@ -52,7 +54,10 @@ def parse_shading(
     color_space = dictionary.get("ColorSpace")
     if color_space is None:
         raise ValueError("missing shading color space")
-    bbox_values = internal_number_array(dictionary.get("BBox"))
+    bbox_obj = dictionary.get("BBox")
+    bbox_values = (
+        () if bbox_obj is None else require_pdf_number_array(bbox_obj, "invalid shading bbox")
+    )
     if dictionary.get("BBox") is not None and len(bbox_values) != 4:
         raise ValueError("invalid shading bbox")
     bbox = (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3]) if bbox_values else None

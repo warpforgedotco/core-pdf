@@ -11,12 +11,12 @@ from defusedxml.ElementTree import fromstring as defused_fromstring
 
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl._impl.model.pdf_values import coerce_value
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 MetadataScalar: TypeAlias = (
     str
@@ -80,7 +80,7 @@ def resolve_info_metadata(
         if info is None:
             return {}
         return {
-            str(normalize_pdf_name(key) or key): cast(
+            str(recover_pdf_name(key) or key): cast(
                 MetadataValue, coerce_value(value, decode_pdf_text_string)
             )
             for key, value in info.items()

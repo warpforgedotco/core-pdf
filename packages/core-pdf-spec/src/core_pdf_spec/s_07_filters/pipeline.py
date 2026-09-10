@@ -16,8 +16,8 @@ from core_pdf_spec.s_07_filters.decode_spec import (
     StreamDecodeSpec,
     normalize_stream_decode_spec,
 )
-from core_pdf_spec.s_07_filters.decoders import decode_jbig2
-from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.errors import FilterUnsupportedError
+from core_pdf_spec.s_07_filters.jbig2.codec import decode_jbig2
 from core_pdf_spec.s_07_filters.predictors import apply_predictor
 from core_pdf_spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME, PREDICTOR_FILTERS
 
@@ -47,10 +47,9 @@ def decode_stream_data(
         if isinstance(dictionary, StreamDecodeSpec)
         else normalize_stream_decode_spec(dictionary)
     )
-    if spec.params and len(spec.params) != len(spec.filters):
-        raise FilterParseError("invalid stream decode parameters")
     decoders = INTERNAL_DECODERS if filter_decoders is None else filter_decoders
-    for index, name in enumerate(spec.filters):
+    for step in spec.steps:
+        name = step.name
         descriptor = FILTER_DESCRIPTOR_BY_NAME.get(name)
         decoder = (
             decoders.get(descriptor.decoder)
@@ -59,7 +58,7 @@ def decode_stream_data(
         )
         if decoder is None:
             raise FilterUnsupportedError(f"stream filter {name} is not implemented")
-        params = spec.params[index] if spec.params else None
+        params = step.params
         context = (
             parent_dictionary
             if descriptor is not None

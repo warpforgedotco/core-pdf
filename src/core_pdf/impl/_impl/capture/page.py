@@ -179,7 +179,7 @@ def capture_annotation_appearances(
             line_start = len(state.lines)
             state.capture_source = "annotation_appearance"
             try:
-                state.consume_stream(
+                state.stream_executor.consume(
                     document.resolver.resolve_stream(stream),
                     resources,
                     nested_ctm,

@@ -13,7 +13,7 @@ from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.color_spec import parse_color_space
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
@@ -129,7 +129,9 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
     assert selected[1] is dictionary
     assert calls == [("Pattern", "P")]
     calls.clear()
-    pattern = state.resolve_pattern_color((PdfName.of("P"),))
+    pattern = state.resolve_pattern_color(
+        PdfName.of("P"), space=parse_color_space("Pattern"), base_components=()
+    )
     assert calls == [("Pattern", "P")]
     if stream:
         assert isinstance(pattern, TilingPattern)
@@ -146,7 +148,9 @@ def test_pattern_selection_rejects_resources_without_a_dictionary(resource: obje
     state.resources = {"Pattern": {"P": resource}}
     assert state.resolve_pattern_resource(PdfName.of("P")) is None
     with pytest.raises(PdfParseError, match="invalid pattern resource"):
-        state.resolve_pattern_color((PdfName.of("P"),))
+        state.resolve_pattern_color(
+            PdfName.of("P"), space=parse_color_space("Pattern"), base_components=()
+        )
 
 
 def test_pattern_selection_still_requires_painttype_and_matching_color_space() -> None:
@@ -154,8 +158,12 @@ def test_pattern_selection_still_requires_painttype_and_matching_color_space() -
     dictionary: PdfDict = {"PatternType": 1, "BBox": [0, 0, 1, 1], "XStep": 1, "YStep": 1}
     state.resources = {"Pattern": {"P": PdfStream(dictionary=dictionary)}}
     with pytest.raises(PdfParseError, match="invalid pattern"):
-        state.resolve_pattern_color((PdfName.of("P"),))
+        state.resolve_pattern_color(
+            PdfName.of("P"), space=parse_color_space("Pattern"), base_components=()
+        )
     dictionary["PaintType"] = 1
-    stencil_space = ImageColorSpec("Pattern", {}, pattern_base=ImageColorSpec("DeviceRGB", {}))
+    stencil_space = parse_color_space(["Pattern", "DeviceRGB"])
     with pytest.raises(PdfParseError, match="PaintType"):
-        state.resolve_pattern_color((0.1, 0.2, 0.3, PdfName.of("P")), color_spec=stencil_space)
+        state.resolve_pattern_color(
+            PdfName.of("P"), space=stencil_space, base_components=(0.1, 0.2, 0.3)
+        )

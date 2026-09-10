@@ -4,11 +4,10 @@ import zlib
 
 import pytest
 
-from core_pdf_spec.s_07_filters.decode_spec import FilterParams
+from core_pdf_spec.s_07_filters.decode_spec import FilterParams, normalize_stream_decode_spec
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
-from core_pdf_spec.s_07_filters.registry import declared_filter_names
-from core_pdf_spec.s_08_graphics.color_spec import color_spec_from_value
+from core_pdf_spec.s_08_graphics.color_spec import parse_color_space
 from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
@@ -30,9 +29,8 @@ def test_filter_columns_require_a_positive_pdf_integer(value: object) -> None:
 
 def test_filter_pipeline_decodes_valid_data_and_rejects_bad_names() -> None:
     assert decode_stream_data(zlib.compress(b"PDF"), {"Filter": "FlateDecode"}) == b"PDF"
-    assert declared_filter_names(None) == []
-    with pytest.raises(FilterParseError, match="invalid stream filter name"):
-        declared_filter_names(["FlateDecode", 42])
+    with pytest.raises(FilterParseError, match="invalid stream decode filter"):
+        normalize_stream_decode_spec({"Filter": ["FlateDecode", 42]})
     with pytest.raises(FilterUnsupportedError, match="not implemented"):
         decode_stream_data(b"PDF", {"Filter": "MadeUpDecode"})
 
@@ -41,7 +39,7 @@ def test_filter_pipeline_decodes_valid_data_and_rejects_bad_names() -> None:
 def test_indexed_color_requires_a_pdf_integer(hival: object) -> None:
     # ISO 32000-1, 8.6.6.3: hival is an integer in the range 0..255.
     with pytest.raises(ValueError, match="invalid hival"):
-        color_spec_from_value(["Indexed", "DeviceRGB", hival, b"\x00" * 6])
+        parse_color_space(["Indexed", "DeviceRGB", hival, b"\x00" * 6])
 
 
 def test_function_numeric_tokens_are_not_dictionary_numbers() -> None:

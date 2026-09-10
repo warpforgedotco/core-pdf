@@ -3,14 +3,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
 from core_pdf.impl._impl.fonts.cmap_widths import (
     MAX_CID,
     MIN_CID,
-    FontWidthMap,
-    SparseFontWidthMap,
     internal_clipped_cid_bounds,
     parse_cid_widths,
 )
@@ -32,7 +31,7 @@ def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
 
 
 def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
-    widths: FontWidthMap = SparseFontWidthMap()
+    widths: Mapping[int, float] = {}
     missing_width = font.get("MissingWidth")
     if missing_width is None:
         # Not the Table 122 default of 0: a font that omits MissingWidth and
@@ -44,7 +43,6 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
     else:
         default_width = parse_float(missing_width, 1000.0)
         default_width_explicit = True
-    is_vertical = False
     default_vertical_displacement_y = -1000.0
     default_vertical_origin_y = 880.0
     vertical_metrics: dict[int, tuple[float, float, float]] = {}
@@ -97,16 +95,6 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
                             except ValueError:
                                 pass
                         index += 5
-            wmode = descendant.get("WMode")
-            if wmode is None:
-                wmode = font.get("WMode")
-            if wmode is None:
-                wmode = 0
-            try:
-                wmode_int = parse_int_strict(wmode, "invalid font WMode")
-            except ValueError:
-                wmode_int = 0
-            is_vertical = wmode_int == 1
             widths = parse_cid_widths(descendant.get("W"))
             descriptor = descendant.get("FontDescriptor")
 
@@ -125,7 +113,6 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
             widths=widths,
             default_width=default_width,
             default_width_explicit=default_width_explicit,
-            is_vertical=is_vertical,
             default_vertical_displacement_y=default_vertical_displacement_y,
             default_vertical_origin_y=default_vertical_origin_y,
             vertical_metrics=vertical_metrics,
@@ -154,14 +141,13 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
             if last_char is not None and code > last_char:
                 break
             sparse_widths[code] = parse_float(width, default_width)
-        widths = SparseFontWidthMap(sparse_widths)
+        widths = sparse_widths
     elif font_widths is not None:
         raise ValueError("invalid font widths array")
     return FontMetrics(
         widths=widths,
         default_width=default_width,
         default_width_explicit=default_width_explicit,
-        is_vertical=is_vertical,
         default_vertical_displacement_y=default_vertical_displacement_y,
         default_vertical_origin_y=default_vertical_origin_y,
         vertical_metrics=vertical_metrics,
@@ -177,15 +163,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     except (ValueError, TypeError, IndexError):
         return internal_recover_font_widths(font, subtype)
     if subtype == "Type0":
-        descendant = get_descendant(font)
-        wmode = descendant.get("WMode") if descendant is not None else None
-        if wmode is None:
-            wmode = font.get("WMode", 0)
-        try:
-            vertical = parse_int_strict(wmode, "invalid font WMode") == 1
-        except ValueError:
-            vertical = False
-        return replace(metrics, is_vertical=vertical)
+        return metrics
     if not metrics.default_width_explicit:
         return replace(metrics, default_width=1000.0)
     return metrics

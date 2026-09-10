@@ -124,7 +124,7 @@ def test_reader_restores_deferred_path_clip_before_painting_outside_scope(
         )
         content = b"/Child Do 30 30 5 5 re f"
         resources = {"XObject": {"Child": child}}
-    state.consume_stream(PdfStream(raw_data=content), resources, IDENTITY_MATRIX, 0)
+    state.stream_executor.consume(PdfStream(raw_data=content), resources, IDENTITY_MATRIX, 0)
     assert paint_clips == [(0.0, 0.0, 10.0, 10.0), original_clip]
     assert [drawing.kind for drawing in state.drawings] == [
         "state-push",
@@ -197,7 +197,7 @@ def test_reader_recovers_only_form_parse_errors_and_unwinds_all_frames(
         def handler(operands: ContentOperands, depth: int) -> None:
             fail()
 
-        state.op_handlers["FAIL"] = handler
+        state.operator_overrides["FAIL"] = handler
     else:
         boundary = state.text_boundary
 
@@ -210,7 +210,7 @@ def test_reader_recovers_only_form_parse_errors_and_unwinds_all_frames(
 
     source = PdfStream(raw_data=b"0.25 g /Child Do 30 40 5 6 re f") if is_form else failing
     if is_form and error_type is PdfParseError:
-        state.consume_stream(source, {"XObject": {"Child": failing}}, IDENTITY_MATRIX, 0)
+        state.stream_executor.consume(source, {"XObject": {"Child": failing}}, IDENTITY_MATRIX, 0)
         assert len(state.drawings) == 1
         drawing = state.drawings[0]
         assert drawing.kind == "fill"
@@ -219,7 +219,9 @@ def test_reader_recovers_only_form_parse_errors_and_unwinds_all_frames(
         assert drawing.path.bbox() == (30.0, 40.0, 35.0, 46.0)
     else:
         with pytest.raises(error_type) as raised:
-            state.consume_stream(source, {"XObject": {"Child": failing}}, IDENTITY_MATRIX, 0)
+            state.stream_executor.consume(
+                source, {"XObject": {"Child": failing}}, IDENTITY_MATRIX, 0
+            )
         assert raised.value is error
         assert not state.drawings
     assert triggered == [stage]
@@ -234,12 +236,12 @@ def test_reader_discards_unfinished_child_clip_before_parent_path(failure: bool)
     def fail(operands: ContentOperands, depth: int) -> None:
         raise PdfParseError("unfinished child path")
 
-    state.op_handlers["FAIL"] = fail
+    state.operator_overrides["FAIL"] = fail
     child = PdfStream(
         raw_data=b"0 0 10 10 re W" + (b" FAIL" if failure else b""),
         dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 50, 50]},
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"/Child Do 20 20 5 5 re f"),
         {"XObject": {"Child": child}},
         IDENTITY_MATRIX,

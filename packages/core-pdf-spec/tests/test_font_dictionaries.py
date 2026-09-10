@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pickle
-
 import pytest
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_09_fonts import dictionaries, widths
+from core_pdf_spec.s_09_fonts import dictionaries
 from core_pdf_spec.s_09_fonts.dictionaries import prepare_font_program_inputs
 from core_pdf_spec.s_09_fonts.widths import parse_font_widths
 
@@ -63,7 +61,10 @@ def test_font_program_stream_selection_remains_lazy_and_uses_its_own_descriptor(
 
 
 def test_program_validation_checks_original_stream_before_descendant_descriptor() -> None:
-    font = {"FontDescriptor": {"FontFile": 42}, "DescendantFonts": [{"FontDescriptor": 42}]}
+    font: dict[str, object] = {
+        "FontDescriptor": {"FontFile": 42},
+        "DescendantFonts": [{"FontDescriptor": 42}],
+    }
     with pytest.raises(ValueError, match="stream: FontFile"):
         prepare_font_program_inputs(font)
     font["FontDescriptor"] = None
@@ -71,15 +72,19 @@ def test_program_validation_checks_original_stream_before_descendant_descriptor(
         prepare_font_program_inputs(font)
 
 
-def test_descendant_export_keeps_the_old_import_and_pickle_path() -> None:
-    assert widths.get_descendant is dictionaries.get_descendant
-    assert "get_descendant" in widths.__all__
+def test_descendant_selection_keeps_dictionary_identity() -> None:
     assert "get_descendant" in dictionaries.__all__
-    assert pickle.loads(pickle.dumps(dictionaries.get_descendant)) is dictionaries.get_descendant
-    # Protocol 0 GLOBAL reference emitted by the former defining module.
-    assert (
-        pickle.loads(b"ccore_pdf_spec.s_09_fonts.widths\nget_descendant\n.")
-        is dictionaries.get_descendant
-    )
     descendant: dict[str, object] = {"Subtype": "CIDFontType2"}
     assert dictionaries.get_descendant({"DescendantFonts": [descendant]}) is descendant
+
+
+def test_font_program_inputs_preserve_decoded_slashes_in_subtype_names() -> None:
+    from core_pdf_spec.types import PdfName
+
+    inputs = prepare_font_program_inputs(
+        {
+            "Subtype": PdfName.of("/Type0"),
+            "DescendantFonts": [{"Subtype": PdfName.of("/CIDFontType2")}],
+        }
+    )
+    assert (inputs.original_subtype, inputs.subtype) == ("/Type0", "/CIDFontType2")

@@ -12,6 +12,7 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl._impl.document.recovery.scanning import matches_keyword_with_one_substitution
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfByteBuffer
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
@@ -27,7 +28,6 @@ from core_pdf_spec.s_07_syntax.xref import (
 )
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
     parse_int_strict,
 )
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
@@ -143,7 +143,7 @@ class XRefScanner(SyntaxXRefScanner):
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary
-            type_name = normalize_pdf_name(dictionary.get("Type"))
+            type_name = recover_pdf_name(dictionary.get("Type"))
             if type_name != "ObjStm" and (
                 dictionary.get("N") is None or dictionary.get("First") is None
             ):
@@ -311,7 +311,7 @@ class XRefScanner(SyntaxXRefScanner):
             dict_obj = lexer.parse_dictionary()
         except PdfParseError:
             return None
-        if normalize_pdf_name(dict_obj.get("Type")) != "XRef":
+        if recover_pdf_name(dict_obj.get("Type")) != "XRef":
             return None
 
         lexer.skip_ignored()
@@ -340,7 +340,7 @@ class XRefScanner(SyntaxXRefScanner):
                 return None
             raw_data = data[data_start:endstream]
         decoded_data = None
-        filter_name = normalize_pdf_name(dict_obj.get("Filter"))
+        filter_name = recover_pdf_name(dict_obj.get("Filter"))
         if filter_name == "FlateDecode":
             try:
                 decoded_data = zlib.decompress(raw_data)
@@ -362,7 +362,10 @@ class XRefScanner(SyntaxXRefScanner):
                 if len(decoded_data) != row_size * row_count:
                     decoded_data = None
         return PdfStream(
-            dict_obj, raw_data, None, decoded_data=decoded_data, decoder=decode_stream_data
+            dict_obj,
+            raw_data if decoded_data is None else decoded_data,
+            None,
+            decoder=decode_stream_data,
         )
 
     @staticmethod
@@ -697,7 +700,7 @@ class XRefScanner(SyntaxXRefScanner):
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDict]:
         dict_obj = stream.dictionary
         type_value = dict_obj.get("Type")
-        type_name = normalize_pdf_name(type_value)
+        type_name = recover_pdf_name(type_value)
         if type_name is not None and type_name != "XRef":
             raise PdfParseError("invalid xref stream type")
         size = dict_obj.get("Size")

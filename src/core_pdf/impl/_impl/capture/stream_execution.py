@@ -59,7 +59,10 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         for name, operands in iter_content_operations(
             frame.lexer,
             recovery=state.recovery,
-            is_operator=lambda word: word.decode("latin-1") in state.op_handlers,
+            is_operator=lambda word: (
+                word.decode("latin-1") in state.internal_default_handlers
+                or word.decode("latin-1") in state.operator_overrides
+            ),
         ):
             child = state.execute_operation(name, operands, frame.depth)
             if child is not None:

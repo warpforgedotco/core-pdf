@@ -21,8 +21,8 @@ from core_pdf.impl._impl.model.geometry import (
 )
 from core_pdf.impl._impl.output.model import Table as StructuredTable
 from core_pdf.impl._impl.output.model import TableCell
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 from .._shared import ClosingMixin, encode_png, png_chunk
 from .exceptions import PdfminerException
@@ -195,19 +195,16 @@ class EnginePageAdapter:
                 if key in active:
                     raise ValueError("cyclic indirect object while resolving page geometry")
                 resolved = page.document.resolver.resolve(value)
-                if (
-                    isinstance(resolved, dict)
-                    and normalize_pdf_name(resolved.get("Type")) == "Page"
-                ):
+                if isinstance(resolved, dict) and recover_pdf_name(resolved.get("Type")) == "Page":
                     return value
                 return resolve_all(resolved, active | {key})
             if isinstance(value, (list, tuple)):
                 return type(value)(resolve_all(item, active) for item in value)
             if isinstance(value, dict):
-                is_annotation = normalize_pdf_name(value.get("Type")) == "Annot"
+                is_annotation = recover_pdf_name(value.get("Type")) == "Annot"
                 return {
                     key: item
-                    if is_annotation and normalize_pdf_name(key) == "Parent"
+                    if is_annotation and recover_pdf_name(key) == "Parent"
                     else resolve_all(item, active)
                     for key, item in value.items()
                 }

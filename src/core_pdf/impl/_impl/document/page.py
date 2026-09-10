@@ -257,8 +257,8 @@ class PdfPage:
         if len(content_streams) > 1:
             try:
                 data = b"\n".join(stream.data for stream in content_streams)
-                state.consume_stream(
-                    PdfStream(raw_data=data, decoded_data=data), resources, state.graphics.ctm, 0
+                state.stream_executor.consume(
+                    PdfStream(raw_data=data, spec=None), resources, state.graphics.ctm, 0
                 )
                 return
             except PdfParseError:
@@ -267,7 +267,7 @@ class PdfPage:
 
         for stream in content_streams:
             try:
-                state.consume_stream(stream, resources, state.graphics.ctm, 0)
+                state.stream_executor.consume(stream, resources, state.graphics.ctm, 0)
             except PdfParseError:
                 if can_skip_bad_stream:
                     continue

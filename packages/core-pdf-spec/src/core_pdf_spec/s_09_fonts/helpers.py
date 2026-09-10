@@ -10,17 +10,13 @@ from core_pdf_spec._vendor.font_data.encoding_names import (
     STANDARD_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_GLYPH_NAMES,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 
 BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
     "StandardEncoding": STANDARD_ENCODING_GLYPH_NAMES,
     "WinAnsiEncoding": WIN_ANSI_ENCODING_GLYPH_NAMES,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_GLYPH_NAMES,
 }
-
-
-def base_encoding_glyph_names(key: str) -> tuple[str, ...]:
-    return BASE_ENCODING_GLYPH_NAMES[key]
 
 
 def strip_subset_tag(font_name: str) -> str:
@@ -45,7 +41,7 @@ def parse_differences(
                 raise ValueError("encoding difference code outside simple-font range")
             code = item
             continue
-        name = (resolve_name or normalize_pdf_name)(item)
+        name = (resolve_name or decoded_name)(item)
         if name is None or code is None or code > 255:
             raise ValueError("invalid encoding difference")
         result[code] = name
@@ -69,7 +65,7 @@ def build_simple_encoding_glyph_names(
     names = (
         [".notdef"] * 256
         if authoritative_builtin
-        else list(base_encoding_glyph_names(base_encoding or "StandardEncoding"))
+        else list(BASE_ENCODING_GLYPH_NAMES[base_encoding or "StandardEncoding"])
     )
     for mapping in (builtin_encoding, differences):
         for code, name in mapping.items():
@@ -81,7 +77,6 @@ def build_simple_encoding_glyph_names(
 
 __all__ = [
     "BASE_ENCODING_GLYPH_NAMES",
-    "base_encoding_glyph_names",
     "strip_subset_tag",
     "parse_differences",
     "build_simple_encoding_glyph_names",

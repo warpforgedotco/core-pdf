@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -64,8 +64,8 @@ def prepare_font_program_inputs(font: dict[str, Any]) -> FontProgramInputs:
         else original_descriptor
     )
     return FontProgramInputs(
-        subtype=normalize_pdf_name(font_dict.get("Subtype")),
-        original_subtype=normalize_pdf_name(font.get("Subtype")),
+        subtype=decoded_name(font_dict.get("Subtype")),
+        original_subtype=decoded_name(font.get("Subtype")),
         descendant=descendant,
         font_file=font_file,
         font_file2=internal_font_file(descriptor, "FontFile2"),

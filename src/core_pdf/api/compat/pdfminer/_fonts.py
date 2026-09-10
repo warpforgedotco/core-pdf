@@ -11,8 +11,8 @@ from core_pdf._vendor.fontTools.agl import toUnicode
 from core_pdf.impl._impl.fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA
 from core_pdf.impl._impl.model.geometry import bbox_union
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -479,7 +479,7 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
     builtin_width = _pdfminer_builtin_width(glyph)
     if builtin_width is not None:
         width = builtin_width * 0.001
-    base_font = normalize_pdf_name(_font_value(glyph.font_decoder.font, "BaseFont"))
+    base_font = recover_pdf_name(_font_value(glyph.font_decoder.font, "BaseFont"))
     glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(glyph.char_code)
     if base_font in {"Symbol", "ZapfDingbats"} and glyph_name and not toUnicode(glyph_name):
         return 0.0

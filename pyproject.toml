@@ -16,7 +16,7 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.2.0,<0.3.0",
+    "core-pdf-spec>=0.3.0,<0.4.0",
 ]
 
 [project.scripts]

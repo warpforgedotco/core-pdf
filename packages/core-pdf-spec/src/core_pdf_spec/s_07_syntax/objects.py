@@ -12,7 +12,7 @@ from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import ObjectCache
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
+    decoded_name,
     parse_int,
 )
 from core_pdf_spec.s_07_syntax_primitives.scanning import skip_pdf_ignored
@@ -45,7 +45,7 @@ class PdfObjectStream:
 
     def read_header(self, stream: PdfStream) -> tuple[int, list[tuple[int, int]]]:
         """Validate the dictionary and return First plus all header pairs."""
-        if normalize_pdf_name(stream.dictionary.get("Type")) != "ObjStm":
+        if decoded_name(stream.dictionary.get("Type")) != "ObjStm":
             raise PdfParseError("stream is not an object stream")
         n = stream.dictionary.get("N")
         first = stream.dictionary.get("First")

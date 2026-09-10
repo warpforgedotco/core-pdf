@@ -7,7 +7,7 @@ from collections.abc import Callable
 from enum import StrEnum
 
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name, parse_text_string
+from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, parse_text_string
 
 ResolveFn = Callable[[object], object]
 
@@ -54,7 +54,7 @@ def format_page_label(
 
 
 def normalize_page_label_style(value: object) -> PageLabelStyle | None:
-    style = normalize_pdf_name(value)
+    style = decoded_name(value)
     try:
         return PageLabelStyle(style) if style is not None else None
     except ValueError as error:

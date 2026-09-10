@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Final, NamedTuple
+from typing import Final, NamedTuple
 
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
+from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_number_array
 
 
 class Matrix(NamedTuple):
@@ -18,55 +18,37 @@ class Matrix(NamedTuple):
     f: float
 
     @classmethod
-    def from_operand(cls, operands: Any) -> Matrix:
-        if not isinstance(operands, (list, tuple)) or len(operands) != 6:
+    def from_operand(cls, operands: object) -> Matrix:
+        values = require_pdf_number_array(operands, "invalid matrix operand")
+        if len(values) != 6:
             raise ValueError("invalid matrix operand")
-        a0, a1, a2, a3, a4, a5 = (
-            operands[0],
-            operands[1],
-            operands[2],
-            operands[3],
-            operands[4],
-            operands[5],
-        )
-        if not all(type(v) in (int, float) for v in (a0, a1, a2, a3, a4, a5)):
-            raise ValueError("invalid matrix operand")
-        return cls(*(parse_float_strict(value, "invalid matrix operand") for value in operands))
+        return cls(*values)
 
     def multiply(self, right: Matrix) -> Matrix:
         if right == IDENTITY_MATRIX:
             return self
         if self == IDENTITY_MATRIX:
             return right
-        a2, b2, c2, d2, e2, f2 = right
-        return Matrix(
-            self.a * a2 + self.b * c2,
-            self.a * b2 + self.b * d2,
-            self.c * a2 + self.d * c2,
-            self.c * b2 + self.d * d2,
-            self.e * a2 + self.f * c2 + e2,
-            self.e * b2 + self.f * d2 + f2,
-        )
+        return multiply_affine(self, right)
 
 
 IDENTITY_MATRIX: Final = Matrix(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
-def multiply_affine(left: Sequence[float], right: Sequence[float]) -> list[float]:
-    """Affine product in the flat six-element list form.
+def multiply_affine(left: Sequence[float], right: Sequence[float]) -> Matrix:
+    """Evaluate the six affine product expressions, including identity products.
 
-    ``Matrix.multiply`` is the canonical native form.  Compatibility facades
-    model the CTM as a mutable list to match the interfaces they emulate, so
-    they need the same product without boxing a ``Matrix`` per operator.
+    Callers that emulate mutable matrices can convert the result to a list.
+    Matrix.multiply adds identity shortcuts for native callers.
     """
-    return [
+    return Matrix(
         left[0] * right[0] + left[1] * right[2],
         left[0] * right[1] + left[1] * right[3],
         left[2] * right[0] + left[3] * right[2],
         left[2] * right[1] + left[3] * right[3],
         left[4] * right[0] + left[5] * right[2] + right[4],
         left[4] * right[1] + left[5] * right[3] + right[5],
-    ]
+    )
 
 
 __all__ = (

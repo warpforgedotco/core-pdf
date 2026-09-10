@@ -141,13 +141,16 @@ class CMapDecoder(PdfCMapDecoder):
     ) -> PdfCMapDecoder | None:
         if name in {"OneByteIdentityH", "OneByteIdentityV"}:
             return CMapDecoder.identity(byte_width=1, wmode=int(name.endswith("V")))
+        if name in ancestor_names:
+            return None
         if usecmap_resolver is not None:
             resolved = usecmap_resolver(name)
-            if isinstance(resolved, PdfCMapDecoder):
-                return resolved
             if resolved is not None:
                 return CMapDecoder(
-                    resolved, usecmap_resolver=usecmap_resolver, inheritance_depth=depth
+                    resolved,
+                    usecmap_resolver=usecmap_resolver,
+                    inheritance_depth=depth,
+                    ancestor_names=(*ancestor_names, name),
                 )
         if name in {"Identity-H", "Identity-V"}:
             return CMapDecoder.identity(byte_width=2, wmode=int(name.endswith("-V")))

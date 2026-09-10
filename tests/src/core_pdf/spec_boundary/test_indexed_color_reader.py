@@ -9,7 +9,7 @@ from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf_spec.s_08_graphics.color import indexed_color_components
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 from core_pdf_spec.types import PdfName
 
 
@@ -31,5 +31,7 @@ def test_reader_capture_preserves_indexed_quantization(value: float, index: int)
     finally:
         lexer.close()
     assert state.graphics.fill_color == (float(index),)
-    spec = ImageColorSpec("Indexed", {}, hival=3, lookup=palette)
-    assert state.drawings[-1].fill == indexed_color_components(spec, value, 3)
+    spec = ColorSpace(
+        "Indexed", ((0.0, float(3)),), base=parse_color_space("DeviceRGB"), hival=3, lookup=palette
+    )
+    assert state.drawings[-1].fill == indexed_color_components(spec, value)

@@ -42,7 +42,6 @@ from core_pdf.impl._impl.capture.text_runs import (
 from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState
 from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
-from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
 from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
     GlyphCluster,
@@ -50,6 +49,7 @@ from core_pdf.impl._impl.model.glyphs import (
 )
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.model.text import normalize_extracted_text
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,
@@ -65,10 +65,6 @@ from core_pdf_spec.s_07_content.streams import (
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
-from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
-)
-from core_pdf_spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
@@ -356,7 +352,7 @@ class RecordingMethods(RecoveringTextState):
         rise = self.graphics.rise
 
         font_scale = fs / 1000.0
-        metrics_decoder = self.graphics.current_decoder
+        metrics_decoder = cast(FontDecoder | None, self.graphics.current_decoder)
         ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
         descent = metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
         advance_scale = fs * self.graphics.horizontal_scale / 100000.0
@@ -617,7 +613,7 @@ class RecordingMethods(RecoveringTextState):
             if dictionary.get("ImageMask") is True and self.internal_initial_pattern(stroke=False):
                 return
             data = getattr(image, "data", b"")
-            color_name = normalize_pdf_name(dictionary.get("ColorSpace"))
+            color_name = recover_pdf_name(dictionary.get("ColorSpace"))
             if color_name is not None:
                 color_resource = self.resolver.deep_resolve(
                     self.lookup_page_resource("ColorSpace", color_name)
@@ -769,9 +765,9 @@ class RecordingMethods(RecoveringTextState):
             self.sequence += 1
 
     def internal_initial_pattern(self, *, stroke: bool) -> bool:
-        space = self.graphics.stroke_color_space if stroke else self.graphics.fill_color_space
+        space = self.graphics.stroke_space if stroke else self.graphics.fill_space
         pattern = self.graphics.stroke_pattern if stroke else self.graphics.fill_pattern
-        return space == "Pattern" and pattern is None
+        return space.kind == "Pattern" and pattern is None
 
     def internal_text_paint_mode(self) -> int:
         """Remove unselected Pattern contributions without changing text clipping."""
@@ -786,7 +782,7 @@ class RecordingMethods(RecoveringTextState):
     def capture_color(self, *, stroke: bool) -> tuple[float, ...] | None:
         """Project PDF color components only when creating output records."""
         color = self.graphics.stroke_color if stroke else self.graphics.fill_color
-        spec = self.graphics.stroke_color_spec if stroke else self.graphics.fill_color_spec
+        spec = self.graphics.stroke_space if stroke else self.graphics.fill_space
         if (
             color is not None
             and spec is not None
@@ -796,9 +792,6 @@ class RecordingMethods(RecoveringTextState):
             if converted is not None:
                 return converted
         return color
-
-    def parse_color_space(self, value: object) -> ImageColorSpec:
-        return color_spec_from_value(value)
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
         if pattern is None:
@@ -814,7 +807,7 @@ class RecordingMethods(RecoveringTextState):
 
             nested = TextState(self.document, hidden_layers=self.hidden_layers)
             try:
-                nested.consume_stream(pattern.stream, pattern.resources, pattern.matrix, 0)
+                nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
             except Exception:
                 self.capture_patterns[key] = (pattern, None)
                 return None

@@ -13,8 +13,8 @@ from core_pdf_spec.s_07_filters.decode_spec import (
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    decoded_name,
     is_pdf_null,
-    normalize_pdf_name,
 )
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
@@ -47,13 +47,13 @@ INLINE_IMAGE_COLOR_SPACE_MAP = {
 
 
 def internal_normalize_inline_color_space(value: PdfObject) -> PdfObject:
-    name = normalize_pdf_name(value)
+    name = decoded_name(value)
     if name in INLINE_IMAGE_COLOR_SPACE_MAP:
         return PdfName.of(INLINE_IMAGE_COLOR_SPACE_MAP[name])
     if isinstance(value, list) and value:
         values = list(value)
         values[0] = internal_normalize_inline_color_space(values[0])
-        if normalize_pdf_name(values[0]) == "Indexed" and len(values) > 1:
+        if decoded_name(values[0]) == "Indexed" and len(values) > 1:
             values[1] = internal_normalize_inline_color_space(values[1])
         return values
     return value
@@ -82,7 +82,7 @@ class InlineImageDataLengthError(PdfParseError):
 def normalize_inline_image_dictionary(dictionary: PdfDict) -> PdfDict:
     normalized: PdfDict = {}
     for key, value in dictionary.items():
-        key_name = normalize_pdf_name(key)
+        key_name = decoded_name(key)
         if key_name is None:
             raise PdfParseError("inline image keys must be names")
         mapped_key = INLINE_IMAGE_KEY_MAP.get(key_name, key_name)
@@ -109,7 +109,7 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
     else:
         if type(bits) is not int or bits <= 0:
             return None
-        color_space = normalize_pdf_name(dictionary.get("ColorSpace"))
+        color_space = decoded_name(dictionary.get("ColorSpace"))
         if color_space in {None, "G", "DeviceGray"}:
             colors = 1
         elif color_space in {"RGB", "DeviceRGB"}:
@@ -137,11 +137,11 @@ def filtered_inline_image_data_end(
     data: bytes,
     start: int,
 ) -> int | None:
-    filters = normalize_stream_decode_spec(dictionary).filters
+    filters = normalize_stream_decode_spec(dictionary).steps
     if not filters:
         return None
 
-    first_filter = filters[0]
+    first_filter = filters[0].name
 
     if first_filter in {"ASCII85Decode", "A85"}:
         marker = data.find(b"~>", start)

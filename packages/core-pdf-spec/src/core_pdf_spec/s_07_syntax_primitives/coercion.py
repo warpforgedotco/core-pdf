@@ -20,14 +20,43 @@ def is_pdf_number(value: object) -> TypeGuard[int | float]:
     return type(value) is int or type(value) is float
 
 
-def parse_name(value: object, default: str | None = None) -> str | None:
+def decoded_name(value: object, default: str | None = None) -> str | None:
+    """Read a decoded name without interpreting its characters as PDF syntax."""
     if type(value) is PdfName:
-        return str(value)
+        return value.str_value
     if type(value) is str:
         return value
     if type(value) is bytes:
         return value.decode("latin-1")
     return default
+
+
+def require_pdf_number(value: object, message: str = "expected PDF number") -> float:
+    """Require a finite PDF numeric object, rather than a numeric token."""
+    if not is_pdf_number(value):
+        raise ValueError(message)
+    try:
+        result = float(value)
+    except OverflowError as error:
+        raise ValueError(message) from error
+    if not math.isfinite(result):
+        raise ValueError(message)
+    return result
+
+
+def require_pdf_integer(value: object, message: str = "expected PDF integer") -> int:
+    """Require a PDF integer object, excluding booleans and numeric text."""
+    if type(value) is not int:
+        raise ValueError(message)
+    return value
+
+
+def require_pdf_number_array(
+    value: object, message: str = "expected PDF number array"
+) -> tuple[float, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(message)
+    return tuple(require_pdf_number(item, message) for item in value)
 
 
 def internal_scalar_text(value: object) -> str | None:
@@ -130,28 +159,13 @@ def parse_box(value: object) -> tuple[float, float, float, float] | None:
         return None
     try:
         return (
-            parse_float_strict(value[0]),
-            parse_float_strict(value[1]),
-            parse_float_strict(value[2]),
-            parse_float_strict(value[3]),
+            require_pdf_number(value[0]),
+            require_pdf_number(value[1]),
+            require_pdf_number(value[2]),
+            require_pdf_number(value[3]),
         )
     except ValueError:
         return None
-
-
-def normalize_pdf_name(value: object, default: str | None = None) -> str | None:
-    # A PdfName already holds the decoded string, so read it directly rather
-    # than paying for the parse_name frame and the __str__ dunder dispatch.
-    # str is inlined for the same reason: these two cover nearly every caller.
-    if type(value) is PdfName:
-        name: str | None = value.str_value or ""
-    elif type(value) is str:
-        name = value
-    else:
-        name = parse_name(value, default)
-    if name is not None and name.startswith("/"):
-        return name[1:]
-    return name
 
 
 def parse_text_string(value: object) -> str | None:
@@ -181,12 +195,14 @@ __all__ = (
     "coerce_to_bytes",
     "is_pdf_number",
     "is_pdf_null",
-    "normalize_pdf_name",
+    "decoded_name",
     "parse_box",
     "parse_float",
     "parse_float_strict",
     "parse_int",
     "parse_int_strict",
-    "parse_name",
+    "require_pdf_integer",
+    "require_pdf_number",
+    "require_pdf_number_array",
     "parse_text_string",
 )

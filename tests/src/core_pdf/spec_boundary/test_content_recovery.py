@@ -123,7 +123,9 @@ def test_reader_skips_unknown_operators_and_stray_delimiters(delimiter: bytes) -
 @pytest.mark.parametrize("content", [b"EX BX extension", b"q BX Q extension EX EX"])
 def test_reader_keeps_tolerant_compatibility_scope_execution(content: bytes) -> None:
     state = new_state()
-    state.consume_stream(PdfStream(raw_data=content + b" 0 0 10 10 re f"), {}, IDENTITY_MATRIX, 0)
+    state.stream_executor.consume(
+        PdfStream(raw_data=content + b" 0 0 10 10 re f"), {}, IDENTITY_MATRIX, 0
+    )
     assert len(state.drawings) == 1
     assert not state.stack
     assert state.compatibility_depth == 0
@@ -149,7 +151,7 @@ def test_reader_child_scope_failure_does_not_change_parent_recovery() -> None:
         raw_data=b"EX BX extension",
         dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"BX /Child Do extension EX 0 0 10 10 re f"),
         {"XObject": {"Child": child}},
         IDENTITY_MATRIX,
@@ -181,7 +183,7 @@ def test_failed_form_unwinds_local_saves_and_resumes_parent() -> None:
         raw_data=b"Q q 0.75 g BI /W 1 /H 1 ID",
         dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"0.25 g /Child Do 0 0 10 10 re f", dictionary={}),
         {"XObject": {"Child": child}},
         IDENTITY_MATRIX,
@@ -233,7 +235,7 @@ def test_reader_applies_form_depth_limit() -> None:
             dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
             raw_data=b"0 0 10 10 re f " + following,
         )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"/Child0 Do"), {"XObject": objects}, IDENTITY_MATRIX, 0
     )
     assert len(state.drawings) == 10
@@ -250,7 +252,7 @@ def test_reader_recovers_oversized_form_matrix() -> None:
             "Matrix": [1, 0, 0, 1, 20, 0, 99],
         },
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"/Child Do"), {"XObject": {"Child": child}}, IDENTITY_MATRIX, 0
     )
     path = state.drawings[-1].path

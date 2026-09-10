@@ -201,8 +201,6 @@ class CMapDecoder:
         resolved = usecmap_resolver(name)
         if resolved is None:
             raise ValueError(f"unresolved CMap usecmap: {name}")
-        if isinstance(resolved, CMapDecoder):
-            return resolved
         return CMapDecoder(
             resolved,
             usecmap_resolver=usecmap_resolver,
@@ -489,7 +487,7 @@ class CMapDecoder:
         return None
 
 
-CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | CMapDecoder | None]
+CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | None]
 
 
 def index_ranges_by_length(ranges: list[CodeRangeT]) -> dict[int, tuple[CodeRangeT, ...]]:

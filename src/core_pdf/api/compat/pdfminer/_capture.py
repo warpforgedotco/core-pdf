@@ -11,13 +11,13 @@ from core_pdf.impl._impl.capture.program import CapturedProgram
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_content.operations import ContentOperands
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 from ._fonts import (
     internal_pdfminer_embedded_cmap_is_unusable,
@@ -184,7 +184,7 @@ def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
             font = page.document.resolver.resolve(font_value)
             if not isinstance(font, dict):
                 continue
-            if normalize_pdf_name(font.get("Subtype")) == "Type0":
+            if recover_pdf_name(font.get("Subtype")) == "Type0":
                 descendants = page.document.resolver.resolve(font.get("DescendantFonts"))
                 if not isinstance(descendants, list) or not descendants:
                     raise PdfError("Type0 font is missing /DescendantFonts")
@@ -196,7 +196,7 @@ def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
         color_space = page.document.resolver.resolve(color_space_value)
         if not isinstance(color_space, list) or len(color_space) < 2:
             continue
-        if normalize_pdf_name(color_space[0]) != "ICCBased":
+        if recover_pdf_name(color_space[0]) != "ICCBased":
             continue
         profile = page.document.resolver.resolve(color_space[1])
         dictionary = getattr(profile, "dictionary", profile)

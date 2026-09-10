@@ -27,13 +27,12 @@ from core_pdf_spec.s_07_security.ciphers import (
     internal_aes_gcm_decrypt,
     internal_rc4_crypt,
 )
-from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
+    decoded_name,
     is_pdf_null,
-    normalize_pdf_name,
-    parse_int,
-    parse_int_strict,
+    require_pdf_integer,
 )
 from core_pdf_spec.types import MISSING
 
@@ -120,7 +119,7 @@ class StandardSecurityHandler:
 
         default_stream_filter = config.stream_filter
         if attrs is not None:
-            object_type = normalize_pdf_name(attrs.get("Type"))
+            object_type = decoded_name(attrs.get("Type"))
             if not config.encrypt_metadata and object_type == "Metadata":
                 return data
             # ISO 32000-1:2008, Table 20; Adobe Supplement to ISO 32000,
@@ -178,22 +177,13 @@ class StandardSecurityHandler:
         return md5(seed).digest()[: min(len(seed), 16)]
 
 
-def create_standard_decipher(
-    document_id: Sequence[object],
-    params: PdfDict,
-    password: str = "",
-) -> Decipher:
-    """Validate a Standard Security dictionary and return its object decipher."""
-    return create_standard_security_handler(document_id, params, password).decrypt
-
-
 def create_standard_security_handler(
     document_id: Sequence[object],
     params: PdfDict,
     password: str = "",
 ) -> StandardSecurityHandler:
     """Authenticate a Standard Security dictionary and retain its file key."""
-    filter_name = normalize_pdf_name(params.get("Filter"))
+    filter_name = decoded_name(params.get("Filter"))
     if filter_name is None:
         raise PdfUnsupportedError("Invalid encryption dictionary")
     if filter_name in {"Adobe.PubSec", "PubSec"}:
@@ -201,9 +191,10 @@ def create_standard_security_handler(
     if filter_name != "Standard":
         raise PdfUnsupportedError(f"Unsupported encryption filter: {filter_name}")
 
-    version = parse_int(params.get("V"), None)
-    if version is None:
-        raise PdfUnsupportedError("Invalid encryption dictionary")
+    try:
+        version = require_pdf_integer(params.get("V"))
+    except ValueError as exc:
+        raise PdfUnsupportedError("Invalid encryption dictionary") from exc
     supported_revisions = internal_supported_revisions(version)
     if supported_revisions is None:
         raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={version}")
@@ -488,15 +479,13 @@ def internal_parse_crypt_filters(
 
 def internal_stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> str:
     spec = normalize_stream_decode_spec(attrs)
-    crypt_indexes = [
-        index for index, filter_name in enumerate(spec.filters) if filter_name == "Crypt"
-    ]
+    crypt_indexes = [index for index, step in enumerate(spec.steps) if step.name == "Crypt"]
     if not crypt_indexes:
         return default_filter
     if len(crypt_indexes) != 1 or crypt_indexes[0] != 0:
         raise PdfParseError("Crypt must be the first and only Crypt stream filter")
 
-    params = spec.params[crypt_indexes[0]]
+    params = spec.steps[crypt_indexes[0]].params
     if is_pdf_null(params):
         return "Identity"
     if not isinstance(params, dict):
@@ -504,7 +493,7 @@ def internal_stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> st
     raw_name = params.get("Name")
     if is_pdf_null(raw_name):
         return "Identity"
-    filter_name = normalize_pdf_name(raw_name)
+    filter_name = decoded_name(raw_name)
     if filter_name is None:
         raise PdfParseError("invalid Crypt filter name")
     return filter_name
@@ -813,16 +802,15 @@ def internal_required_bytes(params: PdfDict, key: str, length: int) -> bytes:
 
 
 def internal_parse_int(value: object, field_name: str) -> int:
-    return parse_int_strict(value, f"invalid encryption dictionary value {field_name}")
+    return require_pdf_integer(value, f"invalid encryption dictionary value {field_name}")
 
 
 def internal_name(value: object) -> str:
-    return normalize_pdf_name(value, "") or ""
+    return decoded_name(value, "") or ""
 
 
 __all__ = (
     "StandardSecurityHandler",
     "StandardSecurityConfig",
-    "create_standard_decipher",
     "create_standard_security_handler",
 )

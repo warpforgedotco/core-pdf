@@ -4,16 +4,13 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Mapping
 from typing import Any
 
-from core_pdf.impl._impl.fonts.cmap_widths import (
-    FontWidthMap,
-)
 from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA, internal_METRIC_RECORD_NAMES
 from core_pdf.impl._impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl._impl.fonts.widths import get_descendant
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
-from core_pdf_spec.s_09_fonts.cmap_widths import scale_font_widths
 from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
@@ -21,7 +18,7 @@ LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.it
 
 def standard_14_widths(
     base_font_name: str | None, decode_table: tuple[str, ...] | None
-) -> FontWidthMap | None:
+) -> Mapping[int, float] | None:
     literal = (
         tuple(LIGATURE_TEXT_TO_CHAR.get(text, text) for text in decode_table)
         if decode_table is not None
@@ -37,7 +34,7 @@ def parse_font_metrics(
     font_dict: dict[str, Any],
     subtype: str | None,
     base_font_name: str | None,
-    widths: FontWidthMap,
+    widths: Mapping[int, float],
 ) -> tuple[float, float]:
     ascent, descent = 800.0, -200.0
     descriptor = font_dict.get("FontDescriptor")
@@ -91,7 +88,9 @@ def parse_font_metrics(
     return ascent, descent
 
 
-def adjust_type3_widths(font_dict: dict[str, Any], widths: FontWidthMap) -> FontWidthMap:
+def adjust_type3_widths(
+    font_dict: dict[str, Any], widths: Mapping[int, float]
+) -> Mapping[int, float]:
     font_matrix = font_dict.get("FontMatrix")
     if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:
         try:
@@ -102,5 +101,5 @@ def adjust_type3_widths(font_dict: dict[str, Any], widths: FontWidthMap) -> Font
         fm_a = 0.001
     width_scale = fm_a * 1000.0
     if abs(width_scale - 1.0) > 1e-6:
-        return scale_font_widths(widths, width_scale)
+        return {code: width * width_scale for code, width in widths.items()}
     return widths

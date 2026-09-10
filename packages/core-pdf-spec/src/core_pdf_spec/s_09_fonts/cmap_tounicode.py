@@ -119,14 +119,8 @@ class ToUnicodeCMap:
         *,
         usecmap_resolver: Callable[[str], bytes | None] | None = None,
         inheritance_depth: int = 0,
-        empty: bool = False,
         ancestor_names: tuple[str, ...] = (),
     ) -> None:
-        self.code_space_ranges = []
-        self.mappings = {}
-        if empty:
-            self.decode_lengths = ()
-            return
         source = data if type(data) is bytes else bytes(data)
         parsed = self.parse_program(source)
         parent: ToUnicodeCMap | None = None

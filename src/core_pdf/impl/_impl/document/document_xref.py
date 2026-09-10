@@ -15,6 +15,7 @@ from core_pdf.impl._impl.document.page_tree import (
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner, iter_indirect_object_headers
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.types import PdfByteBuffer, PdfReference
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -25,7 +26,6 @@ from core_pdf_spec.s_07_syntax.types import (
     ResolvedObjectCache,
 )
 from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
 
@@ -235,7 +235,7 @@ class DocumentXRefMixin:
             root = resolver.resolve(root_ref)
             if not isinstance(root, dict):
                 return False
-            if normalize_pdf_name(root.get("Type")) != "Catalog":
+            if recover_pdf_name(root.get("Type")) != "Catalog":
                 return False
             pages = resolver.resolve(root.get("Pages"))
             if not isinstance(pages, dict):
@@ -306,7 +306,7 @@ class DocumentXRefMixin:
             if marker in seen:
                 return -100
             seen.add(marker)
-            node_type = normalize_pdf_name(resolve_for_inference(node.get("Type"), depth + 1))
+            node_type = recover_pdf_name(resolve_for_inference(node.get("Type"), depth + 1))
             if node_type is None:
                 node_type = infer_page_tree_node_type(cast(PdfDict, node))
             if node_type == "Page":
@@ -334,7 +334,7 @@ class DocumentXRefMixin:
         def catalog_score(obj: object) -> int:
             if not isinstance(obj, dict):
                 return -1000
-            type_name = normalize_pdf_name(obj.get("Type"))
+            type_name = recover_pdf_name(obj.get("Type"))
             pages = obj.get("Pages")
             score = 0
             if type_name == "Catalog":
@@ -481,7 +481,7 @@ class DocumentXRefMixin:
                 if not isinstance(obj, PdfStream):
                     continue
                 dictionary = obj.dictionary
-                if normalize_pdf_name(dictionary.get("Type")) == "XRef" or (
+                if recover_pdf_name(dictionary.get("Type")) == "XRef" or (
                     dictionary.get("W") is not None and dictionary.get("Size") is not None
                 ):
                     yield cast(PdfDict, dictionary)

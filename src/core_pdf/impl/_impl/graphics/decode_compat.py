@@ -4,21 +4,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeAlias, cast
+from typing import cast
 
 from core_pdf.impl._impl.graphics.filter_registry import (
     CCITT_FILTERS,
     FILTER_NAME_ALIASES,
 )
 from core_pdf.impl._impl.model.pdf_values import is_pdf_null
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl._impl.runtime.scalars import parse_int
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
-from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
+from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError
-from core_pdf_spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-
-DecodeParam: TypeAlias = object
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,20 +114,20 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     names: list[str] = []
     kept_filter_indexes: list[int] = []
     for filter_index, item in enumerate(filters):
-        if is_pdf_null(item) or normalize_pdf_name(item) == "null":
+        if is_pdf_null(item) or recover_pdf_name(item) == "null":
             continue
-        name = normalize_pdf_name(item)
+        name = recover_pdf_name(item)
         if name is None:
             raise FilterParseError("invalid stream decode filter")
         name = FILTER_NAME_ALIASES.get(name.lower(), name)
         names.append(name)
         kept_filter_indexes.append(filter_index)
 
-    if is_pdf_null(parms_raw) or normalize_pdf_name(parms_raw) == "null":
+    if is_pdf_null(parms_raw) or recover_pdf_name(parms_raw) == "null":
         decode_parms: list[object] = []
     elif raw_param_items is not None:
         decode_parms = [
-            None if is_pdf_null(item) or normalize_pdf_name(item) == "null" else item
+            None if is_pdf_null(item) or recover_pdf_name(item) == "null" else item
             for item in raw_param_items
         ]
         if len(decode_parms) >= len(filters):
@@ -156,7 +154,7 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if len(decode_parms) == 1 and len(names) > 1:
         raise FilterParseError("invalid stream decode parameters")
 
-    params: list[DecodeParam] = []
+    steps: list[FilterStep] = []
     for index, filter_name in enumerate(names):
         if len(decode_parms) == 1:
             parms = decode_parms[0]
@@ -166,5 +164,5 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
             parms = None
         if filter_name in CCITT_FILTERS:
             parms = with_ccitt_image_rows(parms, dictionary)
-        params.append(parms)
-    return StreamDecodeSpec(filters=tuple(names), params=tuple(params))
+        steps.append(FilterStep(filter_name, parms))
+    return StreamDecodeSpec(tuple(steps))

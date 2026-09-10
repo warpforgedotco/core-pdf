@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 import pytest
 
+from core_pdf.impl._impl.document.fields import collect_field_records
 from core_pdf.impl._impl.document.metadata import resolve_metadata_stream
 from core_pdf.impl._impl.document.page_tree import collect_inherited_values, iter_page_nodes
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
@@ -19,14 +20,88 @@ from core_pdf.impl._impl.document.recovery.trees import (
     iter_number_tree_items,
 )
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as StrictLexer
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as StrictObjectStream
+from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as StrictResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as StrictXRefScanner
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
+
+
+@pytest.mark.parametrize("value", ["12", b"12", bytearray(b"12"), memoryview(b"12")])
+def test_reader_keeps_numeric_token_coercion(value: object) -> None:
+    strict = StrictResolver(b"", {}, {})
+    reader = ObjectResolver(b"", {}, {})
+    try:
+        with pytest.raises(ValueError):
+            strict.resolve_int(value)
+        with pytest.raises(ValueError):
+            strict.resolve_float(value)
+        assert reader.resolve_int(value) == 12
+        assert reader.resolve_float(value) == 12.0
+        assert reader.resolve_box([0, 0, value, 100]) == (0.0, 0.0, 12.0, 100.0)
+    finally:
+        strict.close()
+        reader.close()
+
+
+def test_reader_recovers_textual_names_without_corrupting_decoded_names() -> None:
+    reader = ObjectResolver(b"", {}, {})
+    try:
+        assert reader.resolve_name("/Foo") == "Foo"
+        assert reader.resolve_name(b"/Foo") == "Foo"
+        literal_slash = PdfName.of("/Foo")
+        reader.objects[key_for(1)] = literal_slash
+        assert reader.resolve_name(literal_slash) == "/Foo"
+        assert reader.resolve_name(PdfReference(1)) == "/Foo"
+        assert recover_pdf_name(literal_slash) == "/Foo"
+        assert recover_pdf_name("/Foo") == "Foo"
+    finally:
+        reader.close()
+
+
+def test_reader_page_traversal_leaves_shadowed_resources_unresolved() -> None:
+    def resolve(value: object) -> object:
+        if isinstance(value, PdfReference):
+            raise AssertionError("unused ancestor resource was resolved")
+        return value
+
+    leaf = {"Type": PdfName.of("Page"), "Resources": {}}
+    root = {"Type": PdfName.of("Pages"), "Resources": PdfReference(99), "Kids": [leaf]}
+    page = next(iter_page_nodes(root, resolve))
+    assert page.inherited_values["Resources"] is leaf["Resources"]
+
+
+@pytest.mark.parametrize("value", [None, PdfReference(1), PdfReference(999)])
+def test_reader_inherits_field_and_page_values_through_null_references(value: PdfObject) -> None:
+    reader = ObjectResolver(b"", {}, {})
+    reader.objects[key_for(1)] = None
+    parent_value = PdfString(b"inherited")
+    parent_box = [0, 0, 100, 100]
+    try:
+        parent = {
+            "T": PdfString(b"parent"),
+            "FT": PdfName.of("Tx"),
+            "V": parent_value,
+            "Kids": [{"T": PdfString(b"child"), "V": value}],
+        }
+        records = collect_field_records(reader, parent, recover=True)
+        assert records[-1].name == "parent.child"
+        assert records[-1].value is parent_value
+        assert (
+            collect_inherited_values(
+                {"MediaBox": value, "Parent": {"MediaBox": parent_box}},
+                ("MediaBox",),
+                reader.resolve,
+            )["MediaBox"]
+            is parent_box
+        )
+    finally:
+        reader.close()
 
 
 @pytest.mark.parametrize(

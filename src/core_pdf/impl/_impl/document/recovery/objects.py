@@ -8,6 +8,7 @@ if typing.TYPE_CHECKING:
     from typing import Any
 
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as SyntaxObjectStream
 from core_pdf_spec.s_07_syntax.objects import (
@@ -16,7 +17,6 @@ from core_pdf_spec.s_07_syntax.objects import (
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import ObjectCache
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
     parse_int_strict,
 )
 
@@ -52,7 +52,7 @@ class PdfObjectStream(SyntaxObjectStream):
             return self.handle_object_error(offset)
 
     def read_header(self, stream: PdfStream) -> tuple[int, list[tuple[int, int]]]:
-        type_name = normalize_pdf_name(stream.dictionary.get("Type"))
+        type_name = recover_pdf_name(stream.dictionary.get("Type"))
         if type_name is not None and type_name != "ObjStm":
             raise PdfParseError("stream is not an object stream")
         n = parse_int_strict(stream.dictionary.get("N"))

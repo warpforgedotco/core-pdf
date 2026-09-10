@@ -45,18 +45,12 @@ class EventSink:
 class EmptyTextFont:
     is_type3 = False
     is_vertical = False
-    ascent = 800.0
-    descent = -200.0
-    fast_widths = (500.0,) * 256
 
     def decode_glyphs(self, data: bytes) -> tuple[DecodedFontGlyph, ...]:
         return tuple(DecodedFontGlyph(bytes([code]), code, code, code, "", code) for code in data)
 
     def text_advance_vector(self, data: Any, **kwargs: Any) -> tuple[float, float]:
         return (5.0 * len(data), 0.0)
-
-    def glyph_width(self, code: int) -> float:
-        return 500.0
 
 
 def state_with_sink() -> tuple[ContentInterpreter, EventSink]:
@@ -144,7 +138,7 @@ def test_tj_rejects_non_pdf_entries_after_prior_text(
 def test_invalid_content_rejected(content: bytes) -> None:
     state, _ = state_with_sink()
     with pytest.raises(PdfParseError):
-        state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
+        state.stream_executor.consume(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
 
 
 def test_compatibility_section_ignores_unknown_operators() -> None:
@@ -186,7 +180,7 @@ def test_failed_child_stream_restores_parent_graphics_state() -> None:
     resources: PdfDict = {"XObject": {"Child": child}}
     initial = state.capture_stream_state()
     with pytest.raises(PdfParseError, match="unknown content"):
-        state.consume_stream(
+        state.stream_executor.consume(
             PdfStream(raw_data=b"0.25 g /Child Do", dictionary={}), resources, IDENTITY_MATRIX, 0
         )
     assert state.capture_stream_state() == initial
@@ -199,7 +193,7 @@ def test_compatibility_scope_survives_nested_stream_suspension() -> None:
     child = PdfStream(
         raw_data=b"", dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]}
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"BX /Child Do extension EX", dictionary={}),
         {"XObject": {"Child": child}},
         IDENTITY_MATRIX,
@@ -215,7 +209,7 @@ def test_compatibility_sections_are_independent_of_graphics_saves(content: bytes
     list(iter_content_operations(PdfLexer(content)))
     state, sink = state_with_sink()
     original = state.capture_stream_state()
-    state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
+    state.stream_executor.consume(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
     assert state.capture_stream_state() == original
     assert sink.saved == 0
 
@@ -225,7 +219,7 @@ def test_invalid_compatibility_sections_fail_and_restore_state(content: bytes) -
     state, sink = state_with_sink()
     original = state.capture_stream_state()
     with pytest.raises(PdfParseError):
-        state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
+        state.stream_executor.consume(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
     assert state.capture_stream_state() == original
     assert sink.saved == 0
 
@@ -239,7 +233,7 @@ def test_child_compatibility_scope_cannot_use_or_leak_into_parent(child_content:
         dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
     )
     with pytest.raises(PdfParseError):
-        state.consume_stream(
+        state.stream_executor.consume(
             PdfStream(raw_data=b"BX /Child Do extension EX"),
             {"XObject": {"Child": child}},
             IDENTITY_MATRIX,
@@ -253,14 +247,14 @@ def test_child_compatibility_scope_cannot_use_or_leak_into_parent(child_content:
 def test_parent_scope_survives_child_suspension() -> None:
     state, _ = state_with_sink()
     scopes: list[tuple[ContentOperands, int, int]] = []
-    state.op_handlers["w"] = lambda operands, depth: scopes.append(
+    state.operator_overrides["w"] = lambda operands, depth: scopes.append(
         (operands, depth, state.compatibility_depth)
     )
     child = PdfStream(
         raw_data=b"3 w BX 4 w extension EX 5 w",
         dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
     )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"BX 1 w /Child Do 2 w extension EX"),
         {"XObject": {"Child": child}},
         IDENTITY_MATRIX,
@@ -276,11 +270,15 @@ def test_reentrant_stream_execution_restores_parent_scope() -> None:
     def execute(operands: ContentOperands, depth: int) -> None:
         scopes.append((depth, state.compatibility_depth))
         if operands == (1,):
-            state.consume_stream(PdfStream(raw_data=b"2 w BX extension EX"), {}, IDENTITY_MATRIX, 1)
+            state.stream_executor.consume(
+                PdfStream(raw_data=b"2 w BX extension EX"), {}, IDENTITY_MATRIX, 1
+            )
             scopes.append((depth, state.compatibility_depth))
 
-    state.op_handlers["w"] = execute
-    state.consume_stream(PdfStream(raw_data=b"BX 1 w extension EX"), {}, IDENTITY_MATRIX, 0)
+    state.operator_overrides["w"] = execute
+    state.stream_executor.consume(
+        PdfStream(raw_data=b"BX 1 w extension EX"), {}, IDENTITY_MATRIX, 0
+    )
     assert scopes == [(0, 1), (1, 0), (0, 1)]
 
 
@@ -291,8 +289,8 @@ def test_custom_scope_callbacks_observe_scope_without_owning_it() -> None:
     def callback(operands: ContentOperands, depth: int) -> None:
         depths.append(state.compatibility_depth)
 
-    state.op_handlers.update(BX=callback, EX=callback)
-    state.consume_stream(PdfStream(raw_data=b"BX extension EX"), {}, IDENTITY_MATRIX, 0)
+    state.operator_overrides.update(BX=callback, EX=callback)
+    state.stream_executor.consume(PdfStream(raw_data=b"BX extension EX"), {}, IDENTITY_MATRIX, 0)
     assert depths == [1, 0]
 
 
@@ -323,7 +321,9 @@ def test_normal_execution_validates_each_fixed_signature_once(
 
     monkeypatch.setattr(interpreter, "validate_content_operands", record)
     state, _ = state_with_sink()
-    state.consume_stream(PdfStream(raw_data=b"q BX 3 w extension EX Q"), {}, IDENTITY_MATRIX, 0)
+    state.stream_executor.consume(
+        PdfStream(raw_data=b"q BX 3 w extension EX Q"), {}, IDENTITY_MATRIX, 0
+    )
     assert checked == ["q", "BX", "w", "EX", "Q"]
 
 
@@ -355,7 +355,7 @@ def test_resource_operator_looks_up_and_resolves_once(
     monkeypatch.setattr(state, "lookup_page_resource", lookup)
     monkeypatch.setattr(sink, "paint_shading", lambda state, shading: paints.append(shading))
     if entry_point == "stream":
-        state.consume_stream(
+        state.stream_executor.consume(
             PdfStream(raw_data=f"/Resource {name}".encode()), {}, IDENTITY_MATRIX, 0
         )
     else:
@@ -496,7 +496,7 @@ def test_spec_has_no_reader_form_depth_limit() -> None:
             dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 10, 10]},
             raw_data=b"0 0 10 10 re f " + following,
         )
-    state.consume_stream(
+    state.stream_executor.consume(
         PdfStream(raw_data=b"/Child0 Do"), {"XObject": objects}, IDENTITY_MATRIX, 0
     )
     assert len(sink.colors) == 12
@@ -506,7 +506,7 @@ def test_spec_has_no_reader_form_depth_limit() -> None:
 def test_unbalanced_scopes_are_rejected_and_restored(content: bytes) -> None:
     state, sink = state_with_sink()
     with pytest.raises(PdfParseError, match="unbalanced"):
-        state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
+        state.stream_executor.consume(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
     assert not state.stack
     assert not state.marked_content_stack
     assert sink.saved == 0
@@ -517,7 +517,7 @@ def test_uncolored_type3_glyph_ignores_color_setting() -> None:
     state.type3_uncolored = True
     execute_content(state, b"1 0 0 rg /DeviceRGB cs", 0)
     assert state.graphics.fill_color == (0.0,)
-    assert state.graphics.fill_color_space == "DeviceGray"
+    assert state.graphics.fill_space.kind == "DeviceGray"
 
 
 @pytest.mark.parametrize(
@@ -541,7 +541,7 @@ def test_lab_components_use_numeric_pdf_ranges() -> None:
     execute_content(state, b"/Test cs 150 4 -4 sc", 0)
     assert state.graphics.fill_color == (100.0, 2.0, -3.0)
     params["Range"] = [PdfString(b"-2"), 2, -3, 3]
-    with pytest.raises(PdfParseError, match="PDF number"):
+    with pytest.raises(PdfParseError, match="Range"):
         execute_content(state, b"/Test cs", 0)
 
 

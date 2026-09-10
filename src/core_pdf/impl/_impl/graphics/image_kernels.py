@@ -6,7 +6,6 @@ from __future__ import annotations
 import imagecodecs
 import numpy
 
-from core_pdf.impl._impl.graphics.color_spec import ImageColorSpec
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl._impl.runtime.scalars import parse_int
 
@@ -42,18 +41,6 @@ def image_dimension(image_dict: ImageDict, key: str) -> int:
     if type(value) is bool:
         return 0
     return parse_int(value, 0) or 0
-
-
-def image_component_count(spec: ImageColorSpec) -> int:
-    if spec.kind in {"DeviceGray", "CalGray", "Indexed", "Separation"}:
-        return 1
-    if spec.kind in {"DeviceRGB", "Lab", "CalRGB"}:
-        return 3
-    if spec.kind == "DeviceCMYK":
-        return 4
-    if spec.kind in {"ICCBased", "DeviceN"}:
-        return max(1, spec.channels)
-    return 1
 
 
 def unpack_subbyte_image_samples(

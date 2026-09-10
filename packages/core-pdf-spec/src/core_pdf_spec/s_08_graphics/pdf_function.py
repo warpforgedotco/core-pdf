@@ -8,23 +8,13 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_float
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    require_pdf_integer,
+    require_pdf_number,
+    require_pdf_number_array,
+)
 
 PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
-
-
-def internal_number_array(value: Any) -> tuple[float, ...]:
-    if not isinstance(value, (list, tuple)):
-        return ()
-    output: list[float] = []
-    for item in value:
-        if not is_pdf_number(item):
-            return ()
-        parsed = parse_float(item, None)
-        if parsed is None:
-            return ()
-        output.append(parsed)
-    return tuple(output)
 
 
 def with_pdf_function_range(
@@ -42,7 +32,7 @@ def with_pdf_function_range(
     """
     if range_values is None:
         return evaluate
-    values = internal_number_array(range_values)
+    values = require_pdf_number_array(range_values, "invalid PDF function range")
     if not values or len(values) % 2:
         raise ValueError("invalid PDF function range")
     ranges = tuple(zip(values[::2], values[1::2], strict=True))
@@ -68,7 +58,7 @@ def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     domain_obj = dictionary.get("Domain")
     if domain_obj is None:
         raise ValueError("missing PDF function domain")
-    domain = internal_number_array(domain_obj)
+    domain = require_pdf_number_array(domain_obj, "invalid PDF function domain")
     if len(domain) != 2 or domain[1] < domain[0]:
         raise ValueError("invalid PDF function domain")
     return (domain[0], domain[1])
@@ -93,14 +83,14 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")
     # ISO 32000-1, Tables 38/39: dimensions determine exact array lengths.
-    domain_values = internal_number_array(domain_obj)
+    domain_values = require_pdf_number_array(domain_obj, "invalid PDF function domain")
     if len(domain_values) != len(sizes) * 2:
         raise ValueError("invalid sampled function domain")
     domains = tuple(zip(domain_values[::2], domain_values[1::2], strict=True))
     if any(upper <= lower for lower, upper in domains):
         raise ValueError("invalid sampled function domain")
 
-    range_values = internal_number_array(range_obj)
+    range_values = require_pdf_number_array(range_obj, "invalid sampled function range")
     if not range_values or len(range_values) % 2:
         raise ValueError("invalid sampled function range")
     ranges = tuple(zip(range_values[::2], range_values[1::2], strict=True))
@@ -120,7 +110,7 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
     if decode_obj is None:
         decodes = tuple(ranges)
     else:
-        decode_values = internal_number_array(decode_obj)
+        decode_values = require_pdf_number_array(decode_obj, "invalid sampled function decode")
         if len(decode_values) != len(ranges) * 2:
             raise ValueError("invalid sampled function decode")
         decodes = tuple(
@@ -128,7 +118,11 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
         )
 
     encode_obj = dictionary.get("Encode")
-    encode_values = internal_number_array(encode_obj) if encode_obj is not None else ()
+    encode_values = (
+        require_pdf_number_array(encode_obj, "invalid sampled function encode")
+        if encode_obj is not None
+        else ()
+    )
     if encode_obj is not None and len(encode_values) != len(sizes) * 2:
         raise ValueError("invalid sampled function encode")
     encodes: list[tuple[float, float]] = []
@@ -200,10 +194,7 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
 
 
 def internal_function_type(dictionary: dict[Any, Any]) -> int:
-    value = dictionary.get("FunctionType")
-    if type(value) is not int:
-        raise ValueError("invalid PDF function type")
-    return value
+    return require_pdf_integer(dictionary.get("FunctionType"), "invalid PDF function type")
 
 
 def compile_pdf_function(
@@ -239,14 +230,18 @@ def compile_pdf_function(
         raise ValueError("invalid PDF function")
 
     if function_type == 2:
-        if not is_pdf_number(dictionary.get("N")):
-            raise ValueError("invalid exponential PDF function")
-        exponent = parse_float(dictionary.get("N"), None)
-        if exponent is None:
-            raise ValueError("invalid exponential PDF function")
+        exponent = require_pdf_number(dictionary.get("N"), "invalid exponential PDF function")
         domain_min, domain_max = internal_scalar_domain(dictionary)
-        c0 = list(internal_number_array(dictionary.get("C0", (0.0,))))
-        c1 = list(internal_number_array(dictionary.get("C1", (1.0,))))
+        c0 = list(
+            require_pdf_number_array(
+                dictionary.get("C0", (0.0,)), "invalid exponential function components"
+            )
+        )
+        c1 = list(
+            require_pdf_number_array(
+                dictionary.get("C1", (1.0,)), "invalid exponential function components"
+            )
+        )
         if not c0 or not c1:
             raise ValueError("invalid exponential function components")
         if len(c0) != len(c1):
@@ -277,14 +272,12 @@ def compile_pdf_function(
         bounds_obj = dictionary.get("Bounds")
         if not isinstance(bounds_obj, (list, tuple)):
             raise ValueError("invalid stitching function bounds")
-        bounds = internal_number_array(bounds_obj)
-        encode = internal_number_array(dictionary.get("Encode"))
+        bounds = require_pdf_number_array(bounds_obj, "invalid stitching function bounds")
+        encode = require_pdf_number_array(
+            dictionary.get("Encode"), "invalid stitching function parameters"
+        )
         parts = tuple(compile_child(entry) for entry in functions)
-        if (
-            len(bounds) != len(bounds_obj)
-            or len(bounds) != len(parts) - 1
-            or len(encode) != len(parts) * 2
-        ):
+        if len(bounds) != len(parts) - 1 or len(encode) != len(parts) * 2:
             raise ValueError("invalid stitching function parameters")
         # ISO 32000-1, 7.10.4: strictly increasing intervals, except that the
         # final bound may equal Domain1 and maps that endpoint to Encode2i.
@@ -313,14 +306,8 @@ def compile_pdf_function(
     raise ValueError(f"unsupported PDF function type: {function_type}")
 
 
-def evaluate_pdf_function(function: Any, *inputs: float) -> tuple[float, ...]:
-    """Evaluate a supported PDF Function without retaining its compiled form."""
-    return compile_pdf_function(function)(*inputs)
-
-
 __all__ = (
     "PdfFunctionEvaluator",
     "with_pdf_function_range",
     "compile_pdf_function",
-    "evaluate_pdf_function",
 )

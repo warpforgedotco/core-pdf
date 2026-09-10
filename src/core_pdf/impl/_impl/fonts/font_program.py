@@ -20,13 +20,12 @@ from core_pdf.impl._impl.fonts.feature_distance_kernel import (
 )
 from core_pdf.impl._impl.fonts.feature_distance_kernel import internal_feature_arrays
 from core_pdf.impl._impl.fonts.raster_kernel import rasterize_contours, transform_contours
+from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_STANDARD_STRING_COUNT,
     DEFAULT_CFF_FONT_MATRIX,
     STANDARD_GLYPH_SIDS,
-    CFFMatrix,
-    compose_cff_matrices,
     cubic_extrema_times,
     cubic_point,
     execute_type2_charstring,
@@ -57,7 +56,7 @@ internal_CUBIC_MAX_DEPTH = 12
 
 def internal_cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
-) -> CFFMatrix | None:
+) -> Matrix | None:
     try:
         return pdf_cff_font_matrix(font_dict)
     except (TypeError, ValueError):
@@ -432,13 +431,13 @@ class CFFFont(PdfCFFFont):
             return self.local_subrs[fd_index]
         return ()
 
-    def font_matrix(self, glyph_id: int) -> CFFMatrix:
+    def font_matrix(self, glyph_id: int) -> Matrix:
         try:
             return super().font_matrix(glyph_id)
         except (IndexError, TypeError, ValueError):
             return self.internal_recover_font_matrix(glyph_id)
 
-    def internal_recover_font_matrix(self, glyph_id: int) -> CFFMatrix:
+    def internal_recover_font_matrix(self, glyph_id: int) -> Matrix:
         """Return the effective font matrix for a glyph."""
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
         top_matrix = internal_cff_font_matrix(self.top_dict)
@@ -448,7 +447,7 @@ class CFFFont(PdfCFFFont):
             return font_dict_matrix or DEFAULT_CFF_FONT_MATRIX
         if font_dict_matrix is None:
             return top_matrix
-        return compose_cff_matrices(top_matrix, font_dict_matrix)
+        return font_dict_matrix.multiply(top_matrix)
 
     def internal_seac_contours(
         self,

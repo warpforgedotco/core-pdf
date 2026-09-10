@@ -195,7 +195,3 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         else dictionary
     )
     return strict.compile_pdf_function(prepared, compile_nested=internal_compile_pdf_function)
-
-
-def internal_evaluate_pdf_function(function: Any, *inputs: float) -> tuple[float, ...]:
-    return internal_compile_pdf_function(function)(*inputs)

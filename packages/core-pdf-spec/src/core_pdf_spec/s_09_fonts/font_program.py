@@ -12,9 +12,7 @@ from core_pdf_spec._vendor.font_data.cff_tables import (
     CFF_STANDARD_STRINGS,
 )
 from core_pdf_spec._vendor.font_data.encoding_names import STANDARD_ENCODING_GLYPH_NAMES
-
-CFFMatrix = tuple[float, float, float, float, float, float]
-
+from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 STANDARD_GLYPH_SIDS = {name: sid for sid, name in enumerate(CFF_STANDARD_STRINGS)}
 
@@ -31,7 +29,7 @@ internal_TYPE2_MAX_STACK = 48
 internal_TYPE2_TRANSIENT_SIZE = 32
 
 
-DEFAULT_CFF_FONT_MATRIX: CFFMatrix = (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+DEFAULT_CFF_FONT_MATRIX = Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
 
 
 CFF_EXPERT_ENCODING_CODES = tuple(
@@ -70,34 +68,16 @@ CFF_EXPERT_ENCODING_CODES = tuple(
 
 def cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
-) -> CFFMatrix | None:
+) -> Matrix | None:
     values = font_dict.get((12, 7))
     if values is None:
         return None
-    if not isinstance(values, list) or len(values) != 6:
+    if not isinstance(values, list):
         raise ValueError("invalid CFF FontMatrix")
     try:
-        a, b, c, d, e, f = (float(value) for value in values)
-    except (TypeError, ValueError) as exc:
+        return Matrix.from_operand(values)
+    except ValueError as exc:
         raise ValueError("invalid CFF FontMatrix") from exc
-    matrix = (a, b, c, d, e, f)
-    if not all(isfinite(value) for value in matrix):
-        raise ValueError("invalid CFF FontMatrix")
-    return matrix
-
-
-def compose_cff_matrices(outer: CFFMatrix, inner: CFFMatrix) -> CFFMatrix:
-    """Compose CFF matrices so that ``inner`` is applied before ``outer``."""
-    oa, ob, oc, od, oe, of = outer
-    ia, ib, ic, id_, ie, if_ = inner
-    return (
-        oa * ia + oc * ib,
-        ob * ia + od * ib,
-        oa * ic + oc * id_,
-        ob * ic + od * id_,
-        oa * ie + oc * if_ + oe,
-        ob * ie + od * if_ + of,
-    )
 
 
 class CFFFont:
@@ -501,7 +481,7 @@ class CFFFont:
             raise ValueError("invalid CFF font dictionary index")
         return self.local_subrs[fd]
 
-    def font_matrix(self, glyph_id: int) -> CFFMatrix:
+    def font_matrix(self, glyph_id: int) -> Matrix:
         if not self.has_glyph_id(glyph_id) or glyph_id >= len(self.fd_select):
             raise ValueError("invalid CFF glyph id")
         top = cff_font_matrix(self.top_dict)
@@ -511,7 +491,7 @@ class CFFFont:
         child = cff_font_matrix(self.font_dicts[fd]) if self.font_dicts else None
         if top is None:
             return child or DEFAULT_CFF_FONT_MATRIX
-        return top if child is None else compose_cff_matrices(top, child)
+        return top if child is None else child.multiply(top)
 
 
 def cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> tuple[float, ...]:
@@ -965,14 +945,12 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
 
 
 __all__ = [
-    "CFFMatrix",
     "STANDARD_GLYPH_SIDS",
     "CFF_STANDARD_STRING_COUNT",
     "TYPE2_MAX_SUBR_DEPTH",
     "DEFAULT_CFF_FONT_MATRIX",
     "CFF_EXPERT_ENCODING_CODES",
     "cff_font_matrix",
-    "compose_cff_matrices",
     "CFFFont",
     "cubic_extrema_times",
     "cubic_point",

@@ -18,7 +18,7 @@ from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
     iter_cmap_tokens,
 )
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf_spec.s_09_fonts.dictionaries import prepare_font_program_inputs
+from core_pdf_spec.s_09_fonts.dictionaries import get_descendant, prepare_font_program_inputs
 from core_pdf_spec.s_09_fonts.font_program import (
     CFFFont,
     execute_type2_charstring,
@@ -29,10 +29,10 @@ from core_pdf_spec.s_09_fonts.font_program_type1 import (
     decode_eexec_payload,
 )
 from core_pdf_spec.s_09_fonts.helpers import (
-    base_encoding_glyph_names,
+    BASE_ENCODING_GLYPH_NAMES,
     build_simple_encoding_glyph_names,
 )
-from core_pdf_spec.s_09_fonts.widths import get_descendant, parse_font_widths
+from core_pdf_spec.s_09_fonts.widths import parse_font_widths
 
 CODESPACE = b"1 begincodespacerange <00> <ff> endcodespacerange\n"
 
@@ -175,9 +175,9 @@ def test_adobe_resources_load_with_parent_inheritance() -> None:
 
 
 def test_static_annex_d_glyph_names_preserve_exact_character_slots() -> None:
-    standard = base_encoding_glyph_names("StandardEncoding")
-    mac = base_encoding_glyph_names("MacRomanEncoding")
-    win = base_encoding_glyph_names("WinAnsiEncoding")
+    standard = BASE_ENCODING_GLYPH_NAMES["StandardEncoding"]
+    mac = BASE_ENCODING_GLYPH_NAMES["MacRomanEncoding"]
+    win = BASE_ENCODING_GLYPH_NAMES["WinAnsiEncoding"]
     assert len(standard) == len(mac) == len(win) == 256
     assert standard[39] == "quoteright"
     assert (mac[0], mac[0xCA], mac[0xDB], mac[0xF0]) == (
@@ -375,10 +375,10 @@ def test_descendant_font_array_must_contain_one_dictionary(descendants: list[obj
 
 
 def test_cid_bounds_are_supported_exports() -> None:
-    from core_pdf_spec.s_09_fonts import cmap_widths
+    from core_pdf_spec.s_09_fonts import widths
 
-    assert (cmap_widths.MIN_CID, cmap_widths.MAX_CID) == (0, 65535)
-    assert {"MIN_CID", "MAX_CID"} <= set(cmap_widths.__all__)
+    assert (widths.MIN_CID, widths.MAX_CID) == (0, 65535)
+    assert {"MIN_CID", "MAX_CID"} <= set(widths.__all__)
 
 
 def test_cff_dict_rejects_unconsumed_operands() -> None:
@@ -394,7 +394,48 @@ def test_explicit_font_widths_require_a_character_range() -> None:
 
 
 def test_cid_widths_reject_nonfinite_numbers_in_compact_array() -> None:
-    from core_pdf_spec.s_09_fonts.cmap_widths import parse_cid_widths
+    from core_pdf_spec.s_09_fonts.widths import parse_cid_widths
 
     with pytest.raises(ValueError, match="CID width"):
         parse_cid_widths([0, [float("nan")]])
+
+
+def test_resource_loader_preserves_cycle_tracking(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core_pdf_spec.s_09_fonts import cmap_resources
+
+    requests: list[str] = []
+
+    def resource(name: str) -> bytes:
+        requests.append(name)
+        return b"/Loop usecmap"
+
+    monkeypatch.setattr(cmap_resources, "resolve_cmap_resource", resource)
+    with pytest.raises(ValueError, match="cyclic"):
+        cmap_resources.resolve_cmap_decoder("Loop")
+    assert requests == ["Loop", "Loop"]
+
+
+def test_resource_loader_keeps_inheritance_and_local_writing_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core_pdf_spec.s_09_fonts import cmap_resources
+
+    resources = {
+        "Grandparent": CODESPACE + b"/WMode 1 def 1 begincidchar <01> 7 endcidchar",
+        "Parent": b"/Grandparent usecmap 1 begincidchar <02> 8 endcidchar",
+        "Child": b"/Parent usecmap /WMode 0 def 1 begincidchar <01> 9 endcidchar",
+    }
+    monkeypatch.setattr(cmap_resources, "resolve_cmap_resource", resources.get)
+    cmap = cmap_resources.resolve_cmap_decoder("Child")
+    assert cmap is not None
+    assert cmap.wmode == 0
+    assert cmap.decode_entries(b"\x01\x02") == [(b"\x01", 9), (b"\x02", 8)]
+
+
+def test_cmap_resource_names_are_already_decoded() -> None:
+    from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_resource
+
+    assert resolve_cmap_decoder("Identity-H") is not None
+    assert resolve_cmap_decoder("/Identity-H") is None
+    assert resolve_cmap_resource("UniJIS-UTF16-H") is not None
+    assert resolve_cmap_resource("/UniJIS-UTF16-H") is None

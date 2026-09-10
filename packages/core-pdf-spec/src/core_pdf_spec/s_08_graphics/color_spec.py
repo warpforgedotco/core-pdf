@@ -1,209 +1,219 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native PDF color-space specification parsing."""
+"""PDF color-space descriptions, independent of sample layout and output devices."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TypeAlias, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
-    normalize_pdf_name,
+    decoded_name,
+    require_pdf_integer,
+    require_pdf_number,
+    require_pdf_number_array,
 )
-from core_pdf_spec.types import MISSING
 
-ColorParams: TypeAlias = dict[str, object]
-
-
-def internal_integer(value: object, message: str) -> int:
-    if type(value) is not int:
-        raise ValueError(message)
-    return value
-
-
-def cs_param(params: object, key: str, default: object = None) -> object:
-    if isinstance(params, dict):
-        return params.get(key, default)
-    return default
+ColorParams: TypeAlias = Mapping[str, object]
+ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class ImageColorSpec:
-    kind: str | None
-    params: ColorParams
-    bits_per_component: int = 8
-    base: str | None = None
+class ColorSpace:
+    kind: str
+    component_ranges: ComponentRanges
+    params: ColorParams = field(default_factory=lambda: MappingProxyType({}))
+    base: ColorSpace | None = None
+    alternate: ColorSpace | None = None
+    colorants: tuple[str, ...] = ()
     hival: int = 0
     lookup: bytes | None = None
-    alt: str | None = None
     tint_fn: object = None
-    channels: int = 1
     icc_profile: bytes | None = field(default=None, repr=False)
-    pattern_base: ImageColorSpec | None = field(default=None, kw_only=True)
 
 
-def normalize_indexed_base_color_space_name(value: object) -> str | None:
-    direct = normalize_pdf_name(value)
-    if direct is not None:
-        return direct
-    if not isinstance(value, (list, tuple)) or not value:
-        return None
-    kind = normalize_pdf_name(value[0])
-    if kind == "ICCBased" and len(value) >= 2 and isinstance(value[1], (dict, PdfStream)):
-        icc_stream = value[1]
-        icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-        alt = normalize_pdf_name(icc_dict.get("Alternate"))
-        if alt is not None:
-            return alt
-        n = cs_param(icc_dict, "N")
-        channels = internal_integer(n, "invalid ICCBased channel count")
-        return (
-            {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels)
-            if channels is not None
-            else None
+DEVICE_GRAY = ColorSpace("DeviceGray", ((0.0, 1.0),))
+DEVICE_RGB = ColorSpace("DeviceRGB", ((0.0, 1.0),) * 3)
+DEVICE_CMYK = ColorSpace("DeviceCMYK", ((0.0, 1.0),) * 4)
+PATTERN = ColorSpace("Pattern", ())
+internal_DEVICE_SPACES = {
+    space.kind: space for space in (DEVICE_GRAY, DEVICE_RGB, DEVICE_CMYK, PATTERN)
+}
+
+
+def internal_array(value: object, size: int, message: str) -> tuple[float, ...]:
+    values = require_pdf_number_array(value, message)
+    if len(values) != size:
+        raise ValueError(message)
+    return values
+
+
+def internal_ranges(value: object, count: int) -> ComponentRanges:
+    values = internal_array(value, 2 * count, "invalid color component Range")
+    ranges = tuple(zip(values[::2], values[1::2], strict=True))
+    if any(low > high for low, high in ranges):
+        raise ValueError("invalid color component Range")
+    return ranges
+
+
+def internal_calibrated_params(kind: str, source: dict) -> ColorParams:
+    params: dict[str, object] = {}
+    white = internal_array(source.get("WhitePoint"), 3, "invalid color WhitePoint")
+    if white[0] <= 0 or white[1] != 1 or white[2] <= 0:
+        raise ValueError("invalid color WhitePoint")
+    params["WhitePoint"] = white
+    black = internal_array(
+        (0, 0, 0) if source.get("BlackPoint") is None else source["BlackPoint"],
+        3,
+        "invalid color BlackPoint",
+    )
+    if any(value < 0 for value in black):
+        raise ValueError("invalid color BlackPoint")
+    params["BlackPoint"] = black
+    if kind == "CalGray":
+        raw = source.get("Gamma")
+        gamma = require_pdf_number(1 if raw is None else raw, "invalid color Gamma")
+        if gamma <= 0:
+            raise ValueError("invalid color Gamma")
+        params["Gamma"] = gamma
+    elif kind == "CalRGB":
+        gammas = internal_array(
+            (1, 1, 1) if source.get("Gamma") is None else source["Gamma"], 3, "invalid color Gamma"
         )
-    return None
+        if any(value <= 0 for value in gammas):
+            raise ValueError("invalid color Gamma")
+        params["Gamma"] = gammas
+        params["Matrix"] = internal_array(
+            (1, 0, 0, 0, 1, 0, 0, 0, 1) if source.get("Matrix") is None else source["Matrix"],
+            9,
+            "invalid color Matrix",
+        )
+    return MappingProxyType(params)
 
 
-def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
-    dictionary = image_dict if isinstance(image_dict, dict) else {}
-    raw_bpc = dictionary.get("BitsPerComponent", MISSING)
-    if raw_bpc is not MISSING:
-        if type(raw_bpc) is bool:
-            raise ValueError("invalid image bits-per-component")
-        bits_per_component = internal_integer(raw_bpc, "invalid image bits-per-component")
-    else:
-        raise ValueError("missing image bits-per-component")
-    if bits_per_component not in {1, 2, 4, 8, 16}:
-        raise ValueError("invalid image bits-per-component")
-    return color_spec_from_value(
-        dictionary.get("ColorSpace"), bits_per_component=bits_per_component
-    )
+def parse_color_space(value: object) -> ColorSpace:
+    """Parse a resolved color-space value without discarding nested spaces.
 
-
-def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -> ImageColorSpec:
-    """Parse a colour-space name or array into its resolved description.
-
-    Split out of ``normalize_image_color_spec`` so the content-stream
-    interpreter can resolve the operand of ``cs``/``CS``. Nothing here is
-    image-specific: ISO 32000-1 8.6 gives one colour-space grammar, used by both
-    an image's /ColorSpace entry and a colour-space resource.
+    ISO 32000-1, 8.6: component ranges belong to the color space; image sample
+    bit depth does not. Parameter arrays are copied into immutable tuples.
     """
+    return internal_parse_color_space(value, set())
 
-    def parse_indexed_hival(value: object) -> int:
-        if type(value) is bool:
-            raise ValueError("invalid hival")
-        parsed = internal_integer(value, "invalid hival")
-        if not 0 <= parsed <= 255:
-            raise ValueError("invalid hival")
-        return parsed
 
-    def parse_channel_count(value: object) -> int:
-        if type(value) is bool:
-            raise ValueError("invalid ICCBased color space")
-        parsed = internal_integer(value, "invalid ICCBased color space")
-        if parsed not in {1, 3, 4}:
-            raise ValueError("invalid ICCBased color space")
-        return parsed
-
-    if isinstance(color_space, (list, tuple)) and color_space:
-        kind = normalize_pdf_name(color_space[0])
-        if kind == "Pattern":
-            if len(color_space) not in {1, 2}:
-                raise ValueError("invalid Pattern color space")
-            base = (
-                color_spec_from_value(color_space[1], bits_per_component=bits_per_component)
-                if len(color_space) == 2
-                else None
-            )
-            if base is not None and base.kind == "Pattern":
+def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
+    name = decoded_name(value)
+    if name in internal_DEVICE_SPACES:
+        return internal_DEVICE_SPACES[name]
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError("invalid color space")
+    marker = id(value)
+    if marker in active:
+        raise ValueError("color space cycle detected")
+    active.add(marker)
+    try:
+        kind = decoded_name(value[0])
+        if kind in internal_DEVICE_SPACES and len(value) == 1:
+            return internal_DEVICE_SPACES[kind]
+        if kind == "Pattern" and len(value) == 2:
+            base = internal_parse_color_space(value[1], active)
+            if base.kind == "Pattern":
                 raise ValueError("Pattern cannot be its own underlying color space")
-            return ImageColorSpec(
-                kind="Pattern", params={}, bits_per_component=bits_per_component, pattern_base=base
+            return ColorSpace(kind, base.component_ranges, base=base)
+        if kind == "Indexed" and len(value) == 4:
+            base = internal_parse_color_space(value[1], active)
+            if base.kind in {"Indexed", "Pattern"}:
+                raise ValueError("invalid Indexed base color space")
+            hival = require_pdf_integer(value[2], "invalid hival")
+            if not 0 <= hival <= 255:
+                raise ValueError("invalid hival")
+            lookup = value[3].data if isinstance(value[3], PdfStream) else coerce_to_bytes(value[3])
+            if len(lookup) != (hival + 1) * len(base.component_ranges):
+                raise ValueError("invalid Indexed color lookup")
+            return ColorSpace(kind, ((0.0, float(hival)),), base=base, hival=hival, lookup=lookup)
+        if kind in {"Lab", "CalGray", "CalRGB"} and len(value) == 2 and isinstance(value[1], dict):
+            source = cast(dict[object, object], value[1])
+            params = internal_calibrated_params(kind, source)
+            ranges = (
+                (
+                    (0.0, 100.0),
+                    *internal_ranges(
+                        (-100, 100, -100, 100) if source.get("Range") is None else source["Range"],
+                        2,
+                    ),
+                )
+                if kind == "Lab"
+                else ((0.0, 1.0),) * (1 if kind == "CalGray" else 3)
             )
-        if kind == "Indexed" and len(color_space) >= 4:
-            lookup = color_space[3]
-            lookup_bytes: bytes | None
-            if isinstance(lookup, PdfStream):
-                lookup_bytes = lookup.data
-            else:
-                lookup_bytes = coerce_to_bytes(lookup)
-            return ImageColorSpec(
-                kind="Indexed",
-                params={},
-                bits_per_component=bits_per_component,
-                base=normalize_indexed_base_color_space_name(color_space[1]),
-                hival=parse_indexed_hival(color_space[2]),
-                lookup=lookup_bytes,
+            return ColorSpace(kind, ranges, params)
+        if kind == "ICCBased" and len(value) == 2 and isinstance(value[1], PdfStream):
+            stream = value[1]
+            source = stream.dictionary
+            count = require_pdf_integer(source.get("N"), "invalid ICCBased channel count")
+            if count not in {1, 3, 4}:
+                raise ValueError("invalid ICCBased channel count")
+            ranges = internal_ranges(
+                (0, 1) * count if source.get("Range") is None else source["Range"], count
             )
-        if kind == "Indexed":
-            raise ValueError("invalid Indexed color space")
-        if (
-            kind == "ICCBased"
-            and len(color_space) >= 2
-            and isinstance(color_space[1], (dict, PdfStream))
+            raw_alt = source.get("Alternate")
+            alternate = (
+                {1: DEVICE_GRAY, 3: DEVICE_RGB, 4: DEVICE_CMYK}[count]
+                if raw_alt is None
+                else internal_parse_color_space(raw_alt, active)
+            )
+            if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN", "ICCBased"}:
+                raise ValueError("invalid ICCBased alternate color space")
+            if len(alternate.component_ranges) != count:
+                raise ValueError("invalid ICCBased alternate component count")
+            params = MappingProxyType(
+                {
+                    str(key): item
+                    for key, item in source.items()
+                    if key not in {"N", "Range", "Alternate"}
+                }
+            )
+            return ColorSpace(kind, ranges, params, alternate=alternate, icc_profile=stream.data)
+        if kind in {"Separation", "DeviceN"} and len(value) in (
+            {4} if kind == "Separation" else {4, 5}
         ):
-            icc_stream = color_space[1]
-            icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-            alt = normalize_pdf_name(icc_dict.get("Alternate"))
-            n = cs_param(icc_dict, "N")
-            channels = parse_channel_count(n)
-            # PdfStream.data re-runs the filter pipeline on every access, so a
-            # compressed profile is decoded once while parsing this spec.
-            icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
-            return ImageColorSpec(
-                kind="ICCBased",
-                params=cast(ColorParams, icc_dict),
-                bits_per_component=bits_per_component,
-                alt=alt,
-                channels=channels,
-                icc_profile=icc_profile,
+            names = [value[1]] if kind == "Separation" else value[1]
+            if not isinstance(names, (list, tuple)) or not names:
+                raise ValueError("invalid colorant names")
+            colorants = tuple(decoded_name(item) for item in names)
+            if any(item is None for item in colorants):
+                raise ValueError("invalid colorant name")
+            alternate = internal_parse_color_space(value[2], active)
+            if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN"}:
+                raise ValueError("invalid alternate color space")
+            if value[3] is None:
+                raise ValueError("missing tint transform")
+            params = {}
+            if len(value) == 5:
+                if not isinstance(value[4], dict):
+                    raise ValueError("invalid DeviceN attributes")
+                params["Attributes"] = MappingProxyType(dict(value[4]))
+            return ColorSpace(
+                kind,
+                ((0.0, 1.0),) * len(colorants),
+                MappingProxyType(params),
+                alternate=alternate,
+                colorants=tuple(item for item in colorants if item is not None),
+                tint_fn=value[3],
             )
-        if kind == "ICCBased":
-            raise ValueError("invalid ICCBased color space")
-        if (
-            kind in {"Lab", "CalGray", "CalRGB"}
-            and len(color_space) >= 2
-            and isinstance(color_space[1], dict)
-        ):
-            return ImageColorSpec(
-                kind=kind,
-                params=cast(ColorParams, color_space[1]),
-                bits_per_component=bits_per_component,
-            )
-        if kind in {"Lab", "CalGray", "CalRGB"}:
-            raise ValueError(f"invalid {kind} color space")
-        if kind in {"Separation", "DeviceN"}:
-            if len(color_space) < 4:
-                raise ValueError(f"invalid {kind} color space")
-            names = color_space[1] if isinstance(color_space[1], (list, tuple)) else None
-            if kind == "DeviceN" and names is None:
-                raise ValueError("invalid DeviceN color space")
-            alt = normalize_pdf_name(color_space[2])
-            return ImageColorSpec(
-                kind=kind,
-                params={},
-                bits_per_component=bits_per_component,
-                alt=alt,
-                tint_fn=color_space[3],
-                channels=len(names)
-                if kind == "DeviceN" and isinstance(names, (list, tuple))
-                else 1,
-            )
-        return ImageColorSpec(kind=kind, params={}, bits_per_component=bits_per_component)
-    return ImageColorSpec(
-        kind=normalize_pdf_name(color_space),
-        params={},
-        bits_per_component=bits_per_component,
-    )
+        raise ValueError(f"invalid {kind or ''} color space")
+    finally:
+        active.remove(marker)
 
 
 __all__ = (
     "ColorParams",
-    "cs_param",
-    "ImageColorSpec",
-    "normalize_indexed_base_color_space_name",
-    "normalize_image_color_spec",
-    "color_spec_from_value",
+    "ComponentRanges",
+    "ColorSpace",
+    "DEVICE_GRAY",
+    "DEVICE_RGB",
+    "DEVICE_CMYK",
+    "PATTERN",
+    "parse_color_space",
 )

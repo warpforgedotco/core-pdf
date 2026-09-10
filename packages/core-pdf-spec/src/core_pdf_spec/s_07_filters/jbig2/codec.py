@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """JBIG2 parsing and decoding codec."""
 
 from __future__ import annotations
@@ -6,13 +7,15 @@ from dataclasses import dataclass
 
 import numpy
 
+from core_pdf_spec.s_07_filters.decode_spec import FilterParams
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf_spec.s_07_filters.jbig2.bitmap_kernels import (
     compose_packed_bitmap_data,
     internal_uint8_view,
     uint8_matrix_view,
 )
+from core_pdf_spec.s_07_syntax_primitives.coercion import coerce_to_bytes, is_pdf_null
 
-JBIG2_FILE_HEADER = b"\x97JB2\r\n\x1a\n"
 JBIG2_PAGE_INFO = 48
 JBIG2_END_OF_FILE = 51
 JBIG2_IMMEDIATE_GENERIC_REGION = 38
@@ -117,8 +120,8 @@ class JBIG2PageInfo:
     flags: int
 
 
-@dataclass(slots=True)
-class JBIG2TextRegion:
+@dataclass(frozen=True, slots=True)
+class JBIG2Region:
     width: int
     height: int
     x: int
@@ -127,14 +130,14 @@ class JBIG2TextRegion:
     raw: bytes
 
 
-@dataclass(slots=True)
-class JBIG2GenericRegion:
-    width: int
-    height: int
-    x: int
-    y: int
-    flags: int
-    raw: bytes
+@dataclass(frozen=True, slots=True)
+class JBIG2GenericRegionHeader:
+    region: JBIG2Region
+    mmr: bool
+    template: int
+    prediction: bool
+    adaptive_pixels: tuple[tuple[int, int], ...]
+    bitmap_start: int
 
 
 @dataclass(slots=True)
@@ -242,33 +245,22 @@ def parse_page_info(data: bytes) -> JBIG2PageInfo:
     )
 
 
-def internal_region_fields(data: bytes, kind: str) -> tuple[int, int, int, int, int]:
-    """Read the region segment information field shared by every region type."""
+def parse_region(data: bytes, kind: str) -> JBIG2Region:
+    """Read the information field shared by every JBIG2 region type."""
     if len(data) < 17:
         raise Jbig2ParseError(f"truncated JBIG2 {kind} region")
-    return (
-        read_be_u32(data, 0),
-        read_be_u32(data, 4),
-        read_be_i32(data, 8),
-        read_be_i32(data, 12),
-        data[16],
+    return JBIG2Region(
+        width=read_be_u32(data, 0),
+        height=read_be_u32(data, 4),
+        x=read_be_i32(data, 8),
+        y=read_be_i32(data, 12),
+        flags=data[16],
+        raw=data,
     )
 
 
-def parse_text_region(data: bytes) -> JBIG2TextRegion:
-    width, height, x, y, flags = internal_region_fields(data, "text")
-    return JBIG2TextRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
-
-
-def parse_generic_region(data: bytes) -> JBIG2GenericRegion:
-    width, height, x, y, flags = internal_region_fields(data, "generic")
-    return JBIG2GenericRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
-
-
-def parse_generic_region_header(
-    data: bytes,
-) -> tuple[JBIG2GenericRegion, bool, int, bool, tuple[tuple[int, int], ...], int]:
-    region = parse_generic_region(data)
+def parse_generic_region_header(region: JBIG2Region) -> JBIG2GenericRegionHeader:
+    data = region.raw
     if len(data) < 18:
         raise Jbig2ParseError("truncated JBIG2 generic region")
     flags = data[17]
@@ -286,7 +278,7 @@ def parse_generic_region_header(
             y = read_be_i8(data, pos + 1)
             at.append((x, y))
             pos += 2
-    return region, mmr, template, prediction, tuple(at), pos
+    return JBIG2GenericRegionHeader(region, mmr, template, prediction, tuple(at), pos)
 
 
 def read_u8(data: bytes, pos: int) -> tuple[int, int]:
@@ -364,16 +356,9 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
     )
 
 
-def parse_jbig2_file(data: bytes) -> list[JBIG2Segment]:
-    if data.startswith(JBIG2_FILE_HEADER):
-        pos = len(JBIG2_FILE_HEADER)
-        if pos >= len(data):
-            return []
-        pos += 1
-        ignored, pos = read_u32(data, pos)
-    else:
-        pos = 0
-
+def parse_embedded_segments(data: bytes) -> list[JBIG2Segment]:
+    """Read the headerless segment organization used by PDF (T.88 Annex D.3)."""
+    pos = 0
     segments: list[JBIG2Segment] = []
     while pos + 11 <= len(data):
         header, pos = parse_segment_header(data, pos)
@@ -397,62 +382,108 @@ def parse_jbig2_file(data: bytes) -> list[JBIG2Segment]:
     return segments
 
 
-def decode_jbig2_segments(segments: list[JBIG2Segment]) -> bytes:
-    page_info: JBIG2PageInfo | None = None
-    image: JBIG2Image | None = None
-    max_x = 0
-    max_y = 0
-    inferred_width = 0
-    inferred_height = 0
+class JBIG2PageDecoder:
+    """Own one page canvas and the supported T.88 segment decoding procedures.
 
-    def ensure_image(width: int, height: int) -> None:
-        nonlocal image, inferred_width, inferred_height
+    Reader implementations may override ``decode_segment``, ``decode_text_region``
+    and ``decode_generic_region`` to own recovery. Region methods receive metadata
+    parsed once, after the canvas includes the region's extent.
+    """
+
+    def __init__(self) -> None:
+        self.page_info: JBIG2PageInfo | None = None
+        self.image: JBIG2Image | None = None
+        self.max_x = 0
+        self.max_y = 0
+
+    def ensure_image(self, width: int, height: int) -> None:
         if width <= 0 or height <= 0:
             return
+        image = self.image
         if image is None:
-            image = JBIG2Image.create(width, height)
-            inferred_width = width
-            inferred_height = height
+            self.image = JBIG2Image.create(width, height)
             return
-        if width <= inferred_width and height <= inferred_height:
+        if width <= image.width and height <= image.height:
             return
-        new_width = max(width, inferred_width)
-        new_height = max(height, inferred_height)
-        new_image = JBIG2Image.create(new_width, new_height)
+        new_image = JBIG2Image.create(max(width, image.width), max(height, image.height))
         source = uint8_matrix_view(image.data, image.height, image.stride)
         destination = uint8_matrix_view(new_image.data, new_image.height, new_image.stride)
         destination[: image.height, : image.stride] = source
-        image = new_image
-        inferred_width = new_width
-        inferred_height = new_height
+        self.image = new_image
 
-    for segment in segments:
-        if segment.segment_type == JBIG2_PAGE_INFO:
-            page_info = parse_page_info(segment.data)
-            image = JBIG2Image.create(page_info.width, page_info.height)
-            image.fill(jbig2_page_default_pixel(page_info))
-            inferred_width = page_info.width
-            inferred_height = page_info.height
-        elif segment.segment_type == 6:
-            text_region = parse_text_region(segment.data)
-            max_x = max(max_x, text_region.x + text_region.width)
-            max_y = max(max_y, text_region.y + text_region.height)
-            ensure_image(max_x, max_y)
-            if image is not None:
-                decode_text_region(segment.data, image)
-        elif segment.segment_type in {
-            JBIG2_IMMEDIATE_GENERIC_REGION,
-            JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
-        }:
-            generic_region = parse_generic_region(segment.data)
-            max_x = max(max_x, generic_region.x + generic_region.width)
-            max_y = max(max_y, generic_region.y + generic_region.height)
-            ensure_image(max_x, max_y)
-            if image is not None:
-                decode_generic_region(segment.data, image, page_info)
-    if image is None:
-        raise Jbig2UnsupportedError("JBIG2Decode produced no image")
-    return jbig2_bitmap_to_pdf_image(image.data)
+    def include_region(self, region: JBIG2Region) -> None:
+        self.max_x = max(self.max_x, region.x + region.width)
+        self.max_y = max(self.max_y, region.y + region.height)
+        self.ensure_image(self.max_x, self.max_y)
+
+    def decode_segment(self, segment: JBIG2Segment) -> None:
+        kind = segment.segment_type
+        if kind == JBIG2_PAGE_INFO:
+            self.page_info = parse_page_info(segment.data)
+            self.image = JBIG2Image.create(self.page_info.width, self.page_info.height)
+            self.image.fill(jbig2_page_default_pixel(self.page_info))
+        elif kind in (4, 6, 7):
+            region = parse_region(segment.data, "text")
+            self.include_region(region)
+            self.decode_text_region(region)
+        elif kind in (JBIG2_IMMEDIATE_GENERIC_REGION, JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION):
+            region = parse_region(segment.data, "generic")
+            self.include_region(region)
+            if self.image is not None:
+                self.decode_generic_region(parse_generic_region_header(region))
+        elif kind in (49, JBIG2_END_OF_FILE):
+            # T.88, 7.4.9 and 7.4.11: these markers have no associated data.
+            if segment.data:
+                raise Jbig2ParseError("JBIG2 end marker has segment data")
+        elif kind == 52:
+            # T.88, 7.4.12: profile declarations do not contribute image pixels.
+            if len(segment.data) < 4:
+                raise Jbig2ParseError("truncated JBIG2 profiles segment")
+            count = read_be_u32(segment.data, 0)
+            if len(segment.data) != 4 + count * 4:
+                raise Jbig2ParseError("invalid JBIG2 profiles segment length")
+        elif kind == 62:
+            # T.88, 7.4.14: an unknown necessary extension prevents decoding.
+            if len(segment.data) < 4:
+                raise Jbig2ParseError("truncated JBIG2 extension segment")
+            extension = read_be_u32(segment.data, 0)
+            if extension & (1 << 31):
+                if not extension & (1 << 29):
+                    raise Jbig2ParseError("necessary JBIG2 extension requires reserved bit 29")
+                raise Jbig2UnsupportedError("unsupported necessary JBIG2 extension")
+        elif kind in (0, 16, 20, 22, 23, 36, 40, 42, 43, 50, 53):
+            raise Jbig2UnsupportedError(f"unsupported JBIG2 segment type {kind}")
+        else:
+            raise Jbig2ParseError(f"reserved JBIG2 segment type {kind}")
+
+    def decode_text_region(self, region: JBIG2Region) -> None:
+        # T.88, 6.4: text regions require symbol-instance decoding.
+        if len(region.raw) < 20:
+            raise Jbig2ParseError("truncated JBIG2 text region")
+        raise Jbig2UnsupportedError("JBIG2 text region decoding is not implemented")
+
+    def decode_generic_region(self, header: JBIG2GenericRegionHeader) -> None:
+        # T.88, 6.2.6 requires T.6 decoding for an MMR region, not raw pixels.
+        if header.mmr:
+            raise Jbig2UnsupportedError("JBIG2 MMR region decoding is not implemented")
+        region = header.region
+        if region.width <= 0 or region.height <= 0:
+            return
+        bitmap = decode_arithmetic_generic_bitmap(
+            region.raw[header.bitmap_start :],
+            region.width,
+            region.height,
+            header.template,
+            header.prediction,
+            header.adaptive_pixels,
+        )
+        if self.image is not None:
+            compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
+
+    def finish(self) -> bytes:
+        if self.image is None:
+            raise Jbig2UnsupportedError("JBIG2Decode produced no image")
+        return jbig2_bitmap_to_pdf_image(bytes(self.image.data))
 
 
 def jbig2_page_default_pixel(page_info: JBIG2PageInfo) -> int:
@@ -477,48 +508,6 @@ def jbig2_bitmap_to_pdf_image(data: bytes | bytearray) -> bytes:
     if len(data) < 4096:
         return bytes(byte ^ 0xFF for byte in data)
     return numpy.bitwise_xor(internal_uint8_view(data), 0xFF).tobytes()
-
-
-def decode_text_region(data: bytes, image: JBIG2Image) -> None:
-    # Symbol-dictionary-based text regions are not implemented: the region's
-    # trailing bytes are composited as a raw packed bitmap.
-    region = parse_text_region(data)
-    if len(region.raw) < 20:
-        raise Jbig2ParseError("truncated JBIG2 text region")
-    x = region.x
-    y = region.y
-    width = region.width
-    height = region.height
-    bitmap = region.raw[20:]
-    row_bytes = max(1, (width + 7) // 8)
-    compose_packed_bitmap_data(
-        bitmap,
-        min(height, len(bitmap) // row_bytes),
-        width,
-        x,
-        y,
-        image.width,
-        image.height,
-        image.stride,
-        image.data,
-        0,
-    )
-
-
-def decode_generic_region(
-    data: bytes, image: JBIG2Image, page_info: JBIG2PageInfo | None = None
-) -> None:
-    region, mmr, template, prediction, at, bitmap_start = parse_generic_region_header(data)
-    if region.width <= 0 or region.height <= 0:
-        return
-    if mmr:
-        packed_bitmap = region.raw[bitmap_start:]
-        compose_packed_bitmap_region(region, packed_bitmap, image, page_info)
-        return
-    packed_bitmap = decode_arithmetic_generic_bitmap(
-        region.raw[bitmap_start:], region.width, region.height, template, prediction, at
-    )
-    compose_packed_bitmap_region(region, packed_bitmap, image, page_info)
 
 
 def decode_arithmetic_generic_bitmap(
@@ -652,7 +641,7 @@ def decode_arithmetic_generic_template0(data: bytes, width: int, height: int) ->
 
 
 def compose_packed_bitmap_region(
-    region: JBIG2GenericRegion,
+    region: JBIG2Region,
     packed_bitmap: bytes | bytearray,
     image: JBIG2Image,
     page_info: JBIG2PageInfo | None,
@@ -675,26 +664,63 @@ def compose_packed_bitmap_region(
     )
 
 
-def region_operator(region: JBIG2GenericRegion, page_info: JBIG2PageInfo | None) -> int:
+def region_operator(region: JBIG2Region, page_info: JBIG2PageInfo | None) -> int:
     if jbig2_page_allows_region_operator(page_info):
         return region.flags & 7
     return jbig2_page_combination_operator(page_info)
 
 
-def assemble_embedded_jbig2(globals_data: bytes, page_data: bytes) -> bytes:
-    parts = [JBIG2_FILE_HEADER, b"\x01", (1).to_bytes(4, "big")]
-    if globals_data:
-        parts.append(globals_data)
-    parts.append(page_data)
-    return b"".join(parts)
+def decode_jbig2(
+    data: bytes,
+    parms: object,
+    *,
+    decoder_type: type[JBIG2PageDecoder] = JBIG2PageDecoder,
+) -> bytes:
+    """Decode a PDF JBIG2 stream with strict defaults and a fresh page decoder."""
+    if isinstance(parms, FilterParams):
+        params = parms
+    else:
+        try:
+            params = FilterParams.from_parms(parms)
+        except ValueError as exc:
+            raise FilterParseError("invalid JBIG2 parameters") from exc
 
+    globals_obj = params.jbig2_globals
 
-def decode_embedded_jbig2(data: bytes) -> bytes:
-    return decode_jbig2_segments(parse_jbig2_file(data))
+    if is_pdf_null(globals_obj):
+        globals_data = b""
+    else:
+        # ISO 32000-1 Table 12 types JBIG2Globals as a *stream* -- "Global
+        # segments shall be placed in this stream" -- so once DecodeParms is
+        # resolved this is a stream object, not bytes. s_07_filters sits below
+        # s_07_syntax in the layer contract and so cannot name PdfStream;
+        # unwrap the decoded bytes structurally instead.
+        stream_data = getattr(globals_obj, "data", None)
+        if isinstance(stream_data, (bytes, bytearray, memoryview)):
+            globals_obj = stream_data
+        try:
+            globals_data = coerce_to_bytes(globals_obj)
+        except TypeError as exc:
+            raise FilterParseError("invalid JBIG2 globals") from exc
+
+    try:
+        decoder = decoder_type()
+        for segment in parse_embedded_segments(globals_data + data):
+            decoder.decode_segment(segment)
+        return decoder.finish()
+    except Jbig2UnsupportedError as exc:
+        raise FilterUnsupportedError(str(exc)) from exc
+    except Jbig2ParseError as exc:
+        raise FilterParseError(str(exc)) from exc
 
 
 __all__ = (
-    "JBIG2_FILE_HEADER",
+    "JBIG2Region",
+    "JBIG2GenericRegionHeader",
+    "JBIG2PageDecoder",
+    "parse_region",
+    "parse_embedded_segments",
+    "decode_jbig2",
     "JBIG2_PAGE_INFO",
     "JBIG2_END_OF_FILE",
     "JBIG2_IMMEDIATE_GENERIC_REGION",
@@ -709,8 +735,6 @@ __all__ = (
     "MQ_SWITCH",
     "JBIG2Segment",
     "JBIG2PageInfo",
-    "JBIG2TextRegion",
-    "JBIG2GenericRegion",
     "JBIG2SegmentHeader",
     "JBIG2Image",
     "JBIG2MQDecoder",
@@ -718,8 +742,6 @@ __all__ = (
     "read_be_i32",
     "read_be_i8",
     "parse_page_info",
-    "parse_text_region",
-    "parse_generic_region",
     "parse_generic_region_header",
     "read_u8",
     "read_u32",
@@ -727,18 +749,12 @@ __all__ = (
     "parse_page_association",
     "parse_referred_to_segments",
     "parse_segment_header",
-    "parse_jbig2_file",
-    "decode_jbig2_segments",
     "jbig2_page_default_pixel",
     "jbig2_page_combination_operator",
     "jbig2_page_allows_region_operator",
     "jbig2_bitmap_to_pdf_image",
-    "decode_text_region",
-    "decode_generic_region",
     "decode_arithmetic_generic_bitmap",
     "decode_arithmetic_generic_template0",
     "compose_packed_bitmap_region",
     "region_operator",
-    "assemble_embedded_jbig2",
-    "decode_embedded_jbig2",
 )

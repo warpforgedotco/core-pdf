@@ -17,10 +17,7 @@ from core_pdf.impl._impl.graphics.codec_dispatch import (
     decode_jpeg,
     decode_jpx,
 )
-from core_pdf.impl._impl.graphics.decode_compat import (
-    StreamDecodeSpec,
-    normalize_stream_decode_spec,
-)
+from core_pdf.impl._impl.graphics.decode_compat import normalize_stream_decode_spec
 from core_pdf.impl._impl.graphics.filter_recovery import (
     apply_ascii85,
     apply_ascii_hex,
@@ -35,6 +32,7 @@ from core_pdf.impl._impl.graphics.filter_registry import (
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl._impl.graphics.predictor_backends import apply_predictor
+from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf_spec.s_07_syntax_primitives.scanning import full_source_bytes
 
@@ -112,24 +110,19 @@ def decode_stream_data(
         data = source_bytes if source_bytes is not None else data.tobytes()
     if dictionary is None:
         return data
-    if isinstance(dictionary, StreamDecodeSpec):
-        filters = dictionary.filters
-        normalized_parms = dictionary.params
-    else:
-        spec = normalize_stream_decode_spec(dictionary)
-        filters = spec.filters
-        normalized_parms = spec.params
-    if normalized_parms and len(normalized_parms) != len(filters):
-        raise FilterParseError("invalid stream decode parameters")
+    spec = (
+        dictionary
+        if isinstance(dictionary, StreamDecodeSpec)
+        else normalize_stream_decode_spec(dictionary)
+    )
     result = data
-    for index, flt in enumerate(filters):
-        parms = normalized_parms[index] if index < len(normalized_parms) else None
+    for step in spec.steps:
         result = decode_one_filter(
             result,
-            flt,
-            parms,
+            step.name,
+            step.params,
             dictionary=dictionary,
             parent_dictionary=parent_dictionary,
-            allow_content_stream_passthrough=len(filters) == 1,
+            allow_content_stream_passthrough=len(spec.steps) == 1,
         )
     return result

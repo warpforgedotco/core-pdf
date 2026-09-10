@@ -19,7 +19,7 @@ from core_pdf_spec.types import PdfReference, PdfString
     [
         (42, 42.0),
         (-2.5, -2.5),
-        (b"1.5", 1.5),
+        (b"1.5", None),
         (b"1e2", None),
         (float("inf"), None),
         (float("-inf"), None),
@@ -35,9 +35,13 @@ def test_direct_and_indirect_real_conversion_agree(
     resolver = ObjectResolver(b"", {}, {})
     resolver.objects[key_for(1)] = value
     try:
-        result = default if expected is None else expected
-        assert resolver.resolve_float(value, default) == result
-        assert resolver.resolve_float(PdfReference(1), default) == result
+        for candidate in (value, PdfReference(1)):
+            if value is not None and expected is None:
+                with pytest.raises(ValueError, match="expected PDF number"):
+                    resolver.resolve_float(candidate, default)
+            else:
+                result = default if expected is None else expected
+                assert resolver.resolve_float(candidate, default) == result
     finally:
         resolver.close()
 

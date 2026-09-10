@@ -11,11 +11,31 @@ from core_pdf_spec.s_07_syntax.types import (
     InheritedValueMap,
     PdfDict,
 )
+from core_pdf_spec.types import PdfReference
 
 
-def inherited_dictionary_values(node: PdfDict, keys: tuple[str, ...]) -> InheritedValueMap:
-    """Collect present inheritable entries, retaining reference identity."""
-    return {key: cast(CachedPdfObject, node[key]) for key in keys if node.get(key) is not None}
+def inherited_dictionary_value(
+    node: PdfDict,
+    key: str,
+    parent_value: object,
+    resolve: Callable[[object], object],
+) -> object:
+    """Select a non-null entry while retaining its original reference identity.
+
+    ISO 32000-1, 7.3.9–7.3.10: null dictionary entries and references to
+    nonexistent objects have the same effect as an omitted entry. Inspect
+    only the selected scalar chain; a resource dictionary remains shallow.
+    """
+    value = node.get(key)
+    resolved: object = value
+    seen: set[tuple[int, int]] = set()
+    while isinstance(resolved, PdfReference):
+        marker = (resolved.object_number, resolved.generation_number)
+        if marker in seen:
+            break
+        seen.add(marker)
+        resolved = resolve(resolved)
+    return parent_value if resolved is None else value
 
 
 def collect_inherited_values(
@@ -35,8 +55,12 @@ def collect_inherited_values(
         seen.add(marker)
 
         current_dict = cast("PdfDict", current)
-        for key, value in inherited_dictionary_values(current_dict, keys).items():
-            values.setdefault(key, value)
+        for key in keys:
+            if key in values:
+                continue
+            value = inherited_dictionary_value(current_dict, key, None, resolve_ref)
+            if value is not None:
+                values[key] = cast(CachedPdfObject, value)
 
         parent = current_dict.get("Parent")
         current = resolve_ref(parent) if parent is not None else None
@@ -46,5 +70,5 @@ def collect_inherited_values(
 
 __all__ = (
     "collect_inherited_values",
-    "inherited_dictionary_values",
+    "inherited_dictionary_value",
 )
