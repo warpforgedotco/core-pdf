@@ -88,7 +88,7 @@ class TextState:
 
     blend_mode: str | None
 
-    flatness: int
+    flatness: float
 
     render_intent: str | None
 
@@ -168,7 +168,7 @@ class TextState:
         self.stroke_pattern = None
         self.stroke_opacity = 1.0
         self.blend_mode = None
-        self.flatness = 0
+        self.flatness = 1.0
         self.render_intent = None
         self.fill_color_space = "DeviceGray"
         self.fill_color_spec = None
@@ -184,6 +184,7 @@ class TextState:
         self.current_path = PdfPath()
         self.current_point = None
         self.subpath_start = None
+        self.internal_pending_clip_rule: str | None = None
         self.font_size = 0.0
         self.font_operand = None
         self.font_size_operand = None
@@ -307,6 +308,7 @@ class TextState:
             xobject_depth=self.xobject_depth,
             operation_state=self.operation_state,
             compatibility_depth=self.compatibility_depth,
+            pending_clip_rule=self.internal_pending_clip_rule,
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
@@ -318,6 +320,7 @@ class TextState:
         self.xobject_depth = state.xobject_depth
         self.operation_state = state.operation_state
         self.compatibility_depth = state.compatibility_depth
+        self.internal_pending_clip_rule = state.pending_clip_rule
         while len(self.stack) > state.graphics_stack_len:
             self.pop_graphics_save()
         del self.marked_content_stack[state.marked_content_stack_len :]
@@ -590,7 +593,9 @@ class TextState:
         char_procs = font.get("CharProcs")
         if not isinstance(char_procs, dict):
             return
-        resources = self.resolve_resources(font.get("Resources")) or self.resources
+        resources = self.resolve_resources(font.get("Resources"))
+        if resources is None:
+            resources = self.resources
         font_matrix = decoder.font_matrix
 
         for code in data:
@@ -782,40 +787,42 @@ class TextState:
         self.tm_f = self.lm_f = f
         self.update_combined()
 
+    def resolve_font_name(self, value: object) -> str | None:
+        """Resolve a Tf name; parsing extensions may return None to skip selection."""
+        name = self.document.resolver.resolve_name(value)
+        if name is None:
+            raise PdfParseError("Tf requires a font name")
+        return name
+
+    def parse_font_size(self, value: object) -> float | None:
+        """Parse a Tf size; parsing extensions may return None to skip selection."""
+        try:
+            return self.as_float(value)
+        except (TypeError, ValueError) as error:
+            raise PdfParseError(str(error)) from error
+
     def op_Tf(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:
             raise PdfParseError("Tf requires two operands")
         font_operand = operands[0]
         font_size_operand = operands[1]
-        decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
-        if (
+        decoder_matches_resources = (
             self.current_decoder is not None
-            and decoder_matches_resources
-            and font_operand is self.font_operand
-        ):
-            if font_size_operand is not self.font_size_operand:
-                try:
-                    font_size = self.as_float(font_size_operand)
-                except (TypeError, ValueError) as error:
-                    raise PdfParseError(str(error)) from error
-                if self.font_size != font_size:
-                    self.font_size = font_size
-                    self.update_text_scales()
-                    self.update_font_metrics()
-                self.font_size_operand = font_size_operand
+            and self.current_decoder_resources_id == self.resources_id
+        )
+        same_font_operand = decoder_matches_resources and font_operand is self.font_operand
+        if same_font_operand:
+            if font_size_operand is self.font_size_operand:
+                return
+            font_name = self.current_font
+        else:
+            font_name = self.resolve_font_name(font_operand)
+            if font_name is None:
+                return
+        font_size = self.parse_font_size(font_size_operand)
+        if font_size is None:
             return
-        font_name = self.document.resolver.resolve_name(font_operand)
-        if font_name is None:
-            raise PdfParseError("Tf requires a font name")
-        try:
-            font_size = self.as_float(font_size_operand)
-        except (TypeError, ValueError) as error:
-            raise PdfParseError(str(error)) from error
-        if (
-            self.current_font == font_name
-            and self.current_decoder is not None
-            and decoder_matches_resources
-        ):
+        if decoder_matches_resources and (same_font_operand or self.current_font == font_name):
             if self.font_size != font_size:
                 self.font_size = font_size
                 self.update_text_scales()
@@ -1021,55 +1028,57 @@ class TextState:
         if self.current_point is not None and self.subpath_start is not None:
             self.current_path.close()
 
-    def internal_end_path(self) -> None:
-        """Discard the current point and subpath origin after a painting operator."""
+    def internal_complete_path(
+        self, kind: str | None, fill_rule: str = "nonzero", *, close: bool = False
+    ) -> None:
+        """Paint, install the pending clip, and discard the completed path.
+
+        ISO 32000-1 8.5.4: W/W* affect the clipping path only after the path
+        has been painted. The n operator completes a path without painting it.
+        """
+        if close:
+            self.internal_close_current_subpath()
+        if kind is not None:
+            self.sink.paint_path(self, self.current_path, kind, fill_rule)
+        if self.internal_pending_clip_rule is not None:
+            self.sink.clip_path(self, self.current_path, self.internal_pending_clip_rule)
+        self.current_path = PdfPath()
         self.current_point = None
         self.subpath_start = None
+        self.internal_pending_clip_rule = None
 
     def op_paint_stroke(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("stroke")
-        self.internal_end_path()
 
     def op_paint_close_stroke(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_close_current_subpath()
-        self.flush_drawing("stroke")
-        self.internal_end_path()
+        self.internal_complete_path("stroke", close=True)
 
     def op_paint_fill(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fill", "nonzero")
-        self.internal_end_path()
 
     def op_paint_fill_evenodd(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fill", "evenodd")
-        self.internal_end_path()
 
     def op_paint_fillstroke(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fillstroke", "nonzero")
-        self.internal_end_path()
 
     def op_paint_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
         self.flush_drawing("fillstroke", "evenodd")
-        self.internal_end_path()
 
     def op_paint_close_fillstroke(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_close_current_subpath()
-        self.flush_drawing("fillstroke", "nonzero")
-        self.internal_end_path()
+        self.internal_complete_path("fillstroke", "nonzero", close=True)
 
     def op_paint_close_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_close_current_subpath()
-        self.flush_drawing("fillstroke", "evenodd")
-        self.internal_end_path()
+        self.internal_complete_path("fillstroke", "evenodd", close=True)
 
     def op_paint_clear(self, operands: ContentOperands, depth: int) -> None:
-        self.current_path.clear()
-        self.internal_end_path()
+        self.internal_complete_path(None)
 
     def op_W(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_record_clip("nonzero")
+        self.internal_pending_clip_rule = "nonzero"
 
     def op_W_star(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_record_clip("evenodd")
+        self.internal_pending_clip_rule = "evenodd"
 
     def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
         values: list[float] = []
@@ -1229,7 +1238,7 @@ class TextState:
 
     def op_i(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
-            self.flatness = max(0, min(100, int(values[0])))
+            self.flatness = max(0.0, min(100.0, values[0]))
 
     def op_ri(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
@@ -1369,27 +1378,51 @@ class TextState:
         if extgstate is None:
             raise PdfParseError("missing ExtGState resource")
         try:
-            fill_opacity = extgstate.get("ca")
-            if fill_opacity is not None:
-                self.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
-            stroke_opacity = extgstate.get("CA")
-            if stroke_opacity is not None:
-                self.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
-            blend_mode = extgstate.get("BM")
-            if blend_mode is not None:
-                if isinstance(blend_mode, (list, tuple)):
-                    blend_mode = blend_mode[0] if blend_mode else None
-                if blend_mode is not None:
-                    self.blend_mode = self.named_value(blend_mode)
+            self.apply_extgstate(extgstate)
         except (TypeError, ValueError) as error:
             raise PdfParseError(str(error)) from error
 
-    def flush_drawing(self, kind: str, fill_rule: str = "nonzero") -> None:
-        self.sink.paint_path(self, self.current_path, kind, fill_rule)
-        self.current_path = PdfPath()
+    def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
+        """Apply supported fields in order through the state's coercion hooks.
 
-    def internal_record_clip(self, fill_rule: str) -> None:
-        self.sink.clip_path(self, self.current_path, fill_rule)
+        Earlier changes remain applied if a later field raises. Reader callers
+        own resource recovery and exception handling around this shared step.
+        """
+        fill_opacity = extgstate.get("ca")
+        if fill_opacity is not None:
+            self.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
+        stroke_opacity = extgstate.get("CA")
+        if stroke_opacity is not None:
+            self.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
+        blend_mode = extgstate.get("BM")
+        if blend_mode is not None:
+            if isinstance(blend_mode, (list, tuple)):
+                blend_mode = blend_mode[0] if blend_mode else None
+            if blend_mode is not None:
+                self.blend_mode = self.named_value(blend_mode)
+
+    def flush_drawing(self, kind: str, fill_rule: str = "nonzero") -> None:
+        """Complete a painted path, including any pending clipping operation."""
+        self.internal_complete_path(kind, fill_rule)
+
+    def resolve_pattern_resource(self, name_operand: object) -> tuple[object, PdfDict] | None:
+        """Look up a selected pattern source and its dictionary without decoding it.
+
+        An absent name or dictionary returns None; the selection caller decides
+        whether to reject it. Resolver failures propagate to the caller.
+        """
+        pattern_name = self.document.resolver.resolve_name(name_operand)
+        if not pattern_name:
+            return None
+        pattern = self.document.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
+        pattern_dict: PdfDict | None
+        if isinstance(pattern, PdfStream):
+            pattern_dict = cast(PdfDict, pattern.dictionary)
+        else:
+            pattern_dict = (
+                self.document.resolver.resolve_dict(pattern) if pattern is not None else None
+            )
+        return (pattern, pattern_dict) if isinstance(pattern_dict, dict) else None
 
     def resolve_pattern_color(
         self, operands: tuple[Any, ...], *, color_spec: ImageColorSpec | None = None
@@ -1402,19 +1435,10 @@ class TextState:
         """
         if not operands:
             raise PdfParseError("invalid pattern resource or operands")
-        pattern_name = self.document.resolver.resolve_name(operands[-1])
-        if not pattern_name:
+        resource = self.resolve_pattern_resource(operands[-1])
+        if resource is None:
             raise PdfParseError("invalid pattern resource or operands")
-        pattern = self.document.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
-        pattern_dict: PdfDict | None
-        if isinstance(pattern, PdfStream):
-            pattern_dict = cast(PdfDict, pattern.dictionary)
-        else:
-            pattern_dict = (
-                self.document.resolver.resolve_dict(pattern) if pattern is not None else None
-            )
-        if not isinstance(pattern_dict, dict):
-            raise PdfParseError("invalid pattern resource or operands")
+        pattern, pattern_dict = resource
         pattern_type = self.document.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
             if color_spec is not None and (

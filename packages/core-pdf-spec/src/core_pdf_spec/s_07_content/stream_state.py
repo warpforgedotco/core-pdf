@@ -81,6 +81,8 @@ class StreamState:
         default_factory=ContentOperationState, kw_only=True
     )
     compatibility_depth: int = field(default=0, kw_only=True)
+    # Path construction is outside q/Q, but pending child clips must not leak.
+    pending_clip_rule: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(slots=True)

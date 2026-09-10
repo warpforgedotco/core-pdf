@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 from core_pdf.impl._impl.capture.recovery import dispatch_operations
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.stream_execution import ContentStreamExecutor, NestedStreamRequest
+from core_pdf_spec.s_07_content.stream_execution import ContentStreamExecutor
 from core_pdf_spec.s_07_content.stream_state import ContentStreamFrame, StreamKey
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -54,36 +54,13 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             return False
         return super().enter(frame)
 
-    def consume(
-        self,
-        stream: PdfStream,
-        resources: PdfDict,
-        ctm: Matrix,
-        depth: int,
-        *,
-        clip_bbox: Rectangle | None = None,
-    ) -> None:
+    def dispatch_frame(self, frame: ContentStreamFrame) -> None:
         state = self.state
-        stack = [ContentStreamFrame(stream, resources, ctm, depth, clip_bbox)]
-        try:
-            while stack:
-                frame = stack[-1]
-                try:
-                    if frame.old_state is None and not self.enter(frame):
-                        stack.pop()
-                        continue
-                    assert frame.lexer is not None
-                    dispatch_operations(
-                        frame.lexer, state.op_handlers.get, frame.depth, recovery=state.recovery
-                    )
-                    state.sink.text_boundary(state, "stream-end")
-                except NestedStreamRequest as request:
-                    stack.append(request.frame)
-                    continue
-                except PdfParseError:
-                    if not frame.is_form:
-                        raise
-                self.exit(stack.pop())
-        finally:
-            while stack:
-                self.exit(stack.pop())
+        assert frame.lexer is not None
+        dispatch_operations(
+            frame.lexer, state.op_handlers.get, frame.depth, recovery=state.recovery
+        )
+
+    def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
+        if not frame.is_form:
+            raise error

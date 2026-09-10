@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import typing
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any
 
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
 from core_pdf.impl._impl.document.recovery.resources import (
@@ -205,19 +205,10 @@ class RecoveringTextState(SpecTextState):
     ) -> PatternPaint | None:
         if not operands:
             return None
-        pattern_name = self.document.resolver.resolve_name(operands[-1])
-        if not pattern_name:
+        resource = self.resolve_pattern_resource(operands[-1])
+        if resource is None:
             return None
-        pattern = self.document.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
-        pattern_dict: PdfDict | None
-        if isinstance(pattern, PdfStream):
-            pattern_dict = cast(PdfDict, pattern.dictionary)
-        else:
-            pattern_dict = (
-                self.document.resolver.resolve_dict(pattern) if pattern is not None else None
-            )
-        if not isinstance(pattern_dict, dict):
-            return None
+        pattern, pattern_dict = resource
         pattern_type = self.document.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
             shading: object = pattern_dict.get("Shading")
@@ -354,57 +345,20 @@ class RecoveringTextState(SpecTextState):
         if (values := self.as_floats(operands, 1)) is not None:
             self.miter_limit = max(1.0, values[0])
 
+    def resolve_font_name(self, value: object) -> str | None:
+        return self.document.resolver.resolve_name(value)
+
+    def parse_font_size(self, value: object) -> float | None:
+        try:
+            return self.as_float(value)
+        except (TypeError, ValueError) as error:
+            self.handle_operand_error(error, "font-size")
+            return None
+
     def op_Tf(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 2:
             return
-        font_operand = operands[0]
-        font_size_operand = operands[1]
-        decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
-        if (
-            self.current_decoder is not None
-            and decoder_matches_resources
-            and font_operand is self.font_operand
-        ):
-            if font_size_operand is not self.font_size_operand:
-                try:
-                    font_size = self.as_float(font_size_operand)
-                except (TypeError, ValueError) as error:
-                    self.handle_operand_error(error, "font-size")
-                    return
-                if self.font_size != font_size:
-                    self.font_size = font_size
-                    self.update_text_scales()
-                    self.update_font_metrics()
-                self.font_size_operand = font_size_operand
-            return
-        font_name = self.document.resolver.resolve_name(font_operand)
-        if font_name is None:
-            return
-        try:
-            font_size = self.as_float(font_size_operand)
-        except (TypeError, ValueError) as error:
-            self.handle_operand_error(error, "font-size")
-            return
-        if (
-            self.current_font == font_name
-            and self.current_decoder is not None
-            and decoder_matches_resources
-        ):
-            if self.font_size != font_size:
-                self.font_size = font_size
-                self.update_text_scales()
-                self.update_font_metrics()
-            self.font_operand = font_operand
-            self.font_size_operand = font_size_operand
-            return
-        self.current_font = font_name
-        self.font_size = font_size
-        self.update_text_scales()
-        self.font_operand = font_operand
-        self.font_size_operand = font_size_operand
-        self.current_decoder = None
-        self.current_decoder = self.get_decoder(update_metrics=False)
-        self.update_font_metrics()
+        super().op_Tf(operands[:2], depth)
 
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
@@ -416,18 +370,7 @@ class RecoveringTextState(SpecTextState):
         if not extgstate:
             return
         try:
-            fill_opacity = extgstate.get("ca")
-            if fill_opacity is not None:
-                self.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
-            stroke_opacity = extgstate.get("CA")
-            if stroke_opacity is not None:
-                self.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
-            blend_mode = extgstate.get("BM")
-            if blend_mode is not None:
-                if isinstance(blend_mode, (list, tuple)):
-                    blend_mode = blend_mode[0] if blend_mode else None
-                if blend_mode is not None:
-                    self.blend_mode = self.named_value(blend_mode)
+            self.apply_extgstate(extgstate)
         except (TypeError, ValueError) as error:
             self.handle_operand_error(error, "extended-graphics-state")
             return

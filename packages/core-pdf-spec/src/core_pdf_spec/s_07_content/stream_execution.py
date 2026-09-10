@@ -90,6 +90,7 @@ class ContentStreamExecutor:
         # ISO 32000-1 7.8.2: BX/EX sections are not graphics state. A child
         # stream has its own scope; suspension retains the parent's object.
         state.operation_state = frame.operation_state
+        state.internal_pending_clip_rule = None
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key
         state.sink.enter_stream(state, frame)
@@ -118,6 +119,30 @@ class ContentStreamExecutor:
             frame.old_state = None
         state.sink.exit_stream(state, frame)
 
+    def dispatch_frame(self, frame: ContentStreamFrame) -> None:
+        """Execute the remaining operators and validate the stream's final scopes.
+
+        Readers may override this method to supply their parsing and EOF policy.
+        The driver owns suspension, stream-boundary events, and frame cleanup.
+        """
+        state = self.state
+        assert frame.lexer is not None
+        internal_dispatch_operations(frame.lexer, state.execute_operation, frame.depth)
+        frame.operation_state.finish()
+        if len(state.stack) != state.graphics_stack_floor:
+            raise PdfParseError("content stream ends with unbalanced graphics saves")
+        assert frame.old_state is not None
+        if len(state.marked_content_stack) != frame.old_state.marked_content_stack_len:
+            raise PdfParseError("content stream ends with unbalanced marked content")
+
+    def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
+        """Propagate entry, dispatch, or boundary errors before frame cleanup.
+
+        A reader override may return to discard this frame and resume its parent.
+        Errors raised while exiting a frame are never handled by this hook.
+        """
+        raise error
+
     def consume(
         self,
         stream: PdfStream,
@@ -136,22 +161,13 @@ class ContentStreamExecutor:
                     if frame.old_state is None and not self.enter(frame):
                         stream_stack.pop()
                         continue
-                    assert frame.lexer is not None
-                    internal_dispatch_operations(
-                        frame.lexer,
-                        state.execute_operation,
-                        frame.depth,
-                    )
-                    frame.operation_state.finish()
-                    if len(state.stack) != state.graphics_stack_floor:
-                        raise PdfParseError("content stream ends with unbalanced graphics saves")
-                    assert frame.old_state is not None
-                    if len(state.marked_content_stack) != frame.old_state.marked_content_stack_len:
-                        raise PdfParseError("content stream ends with unbalanced marked content")
+                    self.dispatch_frame(frame)
                     state.sink.text_boundary(state, "stream-end")
                 except NestedStreamRequest as request:
                     stream_stack.append(request.frame)
                     continue
+                except PdfParseError as error:
+                    self.handle_parse_error(frame, error)
                 self.exit(stream_stack.pop())
         finally:
             # A child failure must unwind suspended parents as well. Keeping
