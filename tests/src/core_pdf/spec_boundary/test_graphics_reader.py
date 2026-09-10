@@ -5,10 +5,37 @@ from copy import deepcopy
 import pytest
 
 from core_pdf.impl._impl.graphics.color_spec import color_spec_from_value
+from core_pdf.impl._impl.graphics.decode_compat import FilterParams
 from core_pdf.impl._impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.graphics.shading import prepare_shading
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+
+
+def test_reader_filter_params_factory_preserves_subclass_and_recovery() -> None:
+    class DerivedParams(FilterParams):
+        pass
+
+    dictionary = {
+        "Columns": "2",
+        "Predictor": b"12",
+        "BlackIs1": 1,
+        "DamagedRowsBeforeError": True,
+        "Rows": None,
+    }
+    original = deepcopy(dictionary)
+    params = DerivedParams.from_parms(dictionary)
+    assert type(params) is DerivedParams
+    assert params == DerivedParams(
+        columns=2, predictor=12, black_is_1=True, damaged_rows_before_error=1, has_columns=True
+    )
+    assert dictionary == original
+
+
+@pytest.mark.parametrize("value", [True, 2.0, "invalid", 0])
+def test_reader_filter_params_still_reject_invalid_columns(value: object) -> None:
+    with pytest.raises(ValueError, match="invalid DecodeParms Columns"):
+        FilterParams.from_parms({"Columns": value})
 
 
 def test_reader_preserves_filter_metadata_skipping() -> None:

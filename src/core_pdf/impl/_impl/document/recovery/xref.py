@@ -124,10 +124,6 @@ class XRefScanner(SyntaxXRefScanner):
         return int(token)
 
     @staticmethod
-    def internal_invalid_generation(generation: int) -> None:
-        pass
-
-    @staticmethod
     def recover_object_stream_entries(
         entries: XRefTable,
         parsed_streams: dict[int, tuple[int, PdfStream]],
@@ -530,10 +526,6 @@ class XRefScanner(SyntaxXRefScanner):
         return trailer
 
     @classmethod
-    def internal_missing_trailer_keyword(cls) -> None:
-        pass
-
-    @classmethod
     def parse_table_section(
         cls,
         data: PdfByteBuffer,
@@ -558,7 +550,6 @@ class XRefScanner(SyntaxXRefScanner):
                 pos = trailer_pos
                 break
             if b_line.lstrip().startswith(b"<<"):
-                cls.internal_missing_trailer_keyword()
                 break
             if 11 in b_line:
                 raise PdfParseError("invalid xref table subsection")

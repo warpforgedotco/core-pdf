@@ -61,6 +61,72 @@ def state_with_sink() -> tuple[TextState, EventSink]:
     ), sink
 
 
+def tj_state_with_recording(
+    monkeypatch: pytest.MonkeyPatch, *, vertical: bool = False
+) -> tuple[TextState, list[tuple[bytes, float, float]]]:
+    state, _ = state_with_sink()
+    state.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
+    state.tm_a, state.tm_b, state.tm_c, state.tm_d = 2.0, 3.0, 5.0, 7.0
+    state.tm_e, state.tm_f = 11.0, 13.0
+    state.text_advance_scale = 0.1
+    shown: list[tuple[bytes, float, float]] = []
+
+    def append_text(*, data: bytes, decoder: object) -> None:
+        shown.append((data, state.tm_e, state.tm_f))
+        state.tm_e += 1.0
+        state.tm_f += 2.0
+
+    monkeypatch.setattr(state, "append_text", append_text)
+    return state, shown
+
+
+@pytest.mark.parametrize(
+    ("vertical", "positions", "final"),
+    [
+        (False, [(11, 13), (10, 12), (11.5, 14.75)], (12.5, 16.75)),
+        (True, [(11, 13), (7, 8), (9.25, 11.75)], (10.25, 13.75)),
+    ],
+)
+def test_tj_array_preserves_text_chunks_and_numeric_adjustments(
+    monkeypatch: pytest.MonkeyPatch,
+    vertical: bool,
+    positions: list[tuple[float, float]],
+    final: tuple[float, float],
+) -> None:
+    # ISO 32000-1 Table 109: TJ numbers adjust the current writing direction.
+    state, shown = tj_state_with_recording(monkeypatch, vertical=vertical)
+    state.append_tj_array([PdfString(b"a"), b"b", 10, b"c", -2.5, b"d"])
+    assert [data for data, _, _ in shown] == [b"ab", b"c", b"d"]
+    assert [(x, y) for _, x, y in shown] == positions
+    assert (state.tm_e, state.tm_f) == final
+
+
+@pytest.mark.parametrize("array", [[], ()])
+def test_empty_tj_array_does_not_require_a_font(array: object) -> None:
+    state, _ = state_with_sink()
+    state.append_tj_array(array)
+    assert state.current_decoder is None
+
+
+@pytest.mark.parametrize("array", [None, b"text", "text", 1])
+def test_tj_requires_an_array(array: object) -> None:
+    state, _ = state_with_sink()
+    with pytest.raises(PdfParseError, match="TJ requires an array"):
+        state.append_tj_array(array)
+
+
+@pytest.mark.parametrize("item", ["text", True, None, PdfName.of("Invalid"), bytearray(b"x")])
+def test_tj_rejects_non_pdf_entries_after_prior_text(
+    monkeypatch: pytest.MonkeyPatch, item: object
+) -> None:
+    state, shown = tj_state_with_recording(monkeypatch)
+    with pytest.raises(PdfParseError, match="TJ array entries must be strings or numbers"):
+        state.append_tj_array([b"a", 10, b"b", item])
+    assert shown == [(b"a", 11, 13)]
+    # The pending adjustment and unflushed b have not yet committed their position.
+    assert (state.tm_e, state.tm_f) == (12, 15)
+
+
 @pytest.mark.parametrize(
     "content", [b"unknown", b"]", b">>", b"R", b"1 2 cm", b"(x) w", b"[1 /Bad] TJ", b"1 2", b"EX"]
 )

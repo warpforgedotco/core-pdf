@@ -259,15 +259,17 @@ class EnginePageAdapter:
         )
 
     def text_characters(self) -> Iterator[Any]:
-        from ..pdfminer import (
+        from ..pdfminer._capture import (
+            internal_pdfminer_page_program,
+            internal_pdfminer_validate_page_resources,
+        )
+        from ..pdfminer._fonts import (
             internal_pdfminer_descent,
             internal_pdfminer_embedded_cmap_is_unusable,
             internal_pdfminer_font_name,
             internal_pdfminer_glyph_text,
             internal_pdfminer_ligature_overrides,
             internal_pdfminer_normalized_width,
-            internal_pdfminer_page_program,
-            internal_pdfminer_validate_page_resources,
         )
 
         internal_pdfminer_validate_page_resources(self.page)
@@ -1826,7 +1828,7 @@ class PDF(ClosingMixin):
     def pages(self) -> list[Page]:
         if self._pages is None:
             try:
-                from ..pdfminer import internal_pdfminer_resolvable_pages
+                from ..pdfminer._pages import internal_pdfminer_resolvable_pages
 
                 doctop = 0.0
                 self._pages = []

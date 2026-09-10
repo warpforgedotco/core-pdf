@@ -9,7 +9,6 @@ if typing.TYPE_CHECKING:
 
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as SyntaxObjectStream
 from core_pdf_spec.s_07_syntax.objects import (
     parse_object_stream_pair,
@@ -33,10 +32,8 @@ class PdfObjectStream(SyntaxObjectStream):
         body_len = len(body)
         for obj_num, offset in pairs:
             if obj_num < 0 or offset < 0 or offset >= body_len:
-                self.internal_invalid_header_entry()
                 continue
             if obj_num in index_map:
-                self.internal_invalid_header_entry()
                 continue
             index_map[obj_num] = offset
         if not index_map:
@@ -48,22 +45,11 @@ class PdfObjectStream(SyntaxObjectStream):
         self.lexer = self.create_lexer(body)
         self.lock = threading.RLock()
 
-    def get(self, reference: int | PdfReference, default: Any = None) -> Any:
-        obj_num = reference.object_number if isinstance(reference, PdfReference) else reference
-        if obj_num < 0:
-            raise ValueError("invalid object number")
-        with self.lock:
-            if obj_num in self.objects:
-                return self.objects[obj_num]
-            if obj_num not in self.index:
-                return default
-            rel_offset = self.index[obj_num]
-            try:
-                result = self.lexer.parse_object_at(rel_offset)
-            except PdfParseError:
-                result = self.handle_object_error(rel_offset)
-            self.objects[obj_num] = result
-            return result
+    def parse_object_at(self, offset: int) -> Any:
+        try:
+            return super().parse_object_at(offset)
+        except PdfParseError:
+            return self.handle_object_error(offset)
 
     def read_header(self, stream: PdfStream) -> tuple[int, list[tuple[int, int]]]:
         type_name = normalize_pdf_name(stream.dictionary.get("Type"))
@@ -89,9 +75,6 @@ class PdfObjectStream(SyntaxObjectStream):
         if not pairs:
             raise PdfParseError("object stream header is truncated")
         return first, pairs
-
-    def internal_invalid_header_entry(self) -> None:
-        pass
 
     def validate_header_pairs(self, pairs: list[tuple[int, int]]) -> None:
         pass

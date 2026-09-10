@@ -89,7 +89,11 @@ class PdfObjectStream:
             return result
 
     def parse_object_at(self, offset: int) -> Any:
-        """Parse one object at a body-relative byte offset; errors propagate."""
+        """Parse one object at a decoded-body-relative offset; errors propagate.
+
+        ``get`` calls this extension method while holding the object-stream lock
+        and caches its successful result.
+        """
         return self.lexer.parse_object_at(offset)
 
 

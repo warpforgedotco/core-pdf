@@ -118,6 +118,16 @@ try:
         from core_pdf.api.compat import partition_pdf
     elif mode == "elements":
         from core_pdf.api.compat.unstructured import Element
+    elif mode == "child-elements":
+        importlib.import_module("core_pdf.api.compat.unstructured._elements")
+    elif mode == "retry-elements":
+        try:
+            importlib.import_module("core_pdf.api.compat.unstructured")
+        except ImportError:
+            pass
+        else:
+            raise AssertionError("initial facade import must fail without the model")
+        importlib.import_module("core_pdf.api.compat.unstructured._elements")
     else:
         raise AssertionError(f"unexpected import mode: {mode}")
 except ImportError as error:
@@ -151,11 +161,10 @@ en_core_web_sm.load = counted_load
 
 from core_pdf.api.compat import partition_pdf
 from core_pdf.api.compat import unstructured as facade
+from core_pdf.api.compat.unstructured import _classification as classification
 
 assert len(loads) == 1, "the model must load during facade import"
-pipeline = facade.internal_nlp()
-assert pipeline is facade.internal_nlp()
-assert len(loads) == 1, "the model must load once, during facade import"
+pipeline = classification.internal_NLP
 assert pipeline.meta["version"] == "3.8.0"
 assert {"tagger", "parser"} <= set(pipeline.pipe_names)
 assert partition_pdf is facade.partition_pdf
@@ -167,11 +176,11 @@ for text, category in (
         facade.NarrativeText,
     ),
 ):
-    assert facade.internal_element_class(text, (0, 40, 80, 60), 100) is category
-    first = facade.internal_nlp_features(text)
-    previous_hits = facade.internal_nlp_features.cache_info().hits
-    assert facade.internal_nlp_features(text) is first
-    assert facade.internal_nlp_features.cache_info().hits == previous_hits + 1
+    assert classification.internal_element_class(text, (0, 40, 80, 60), 100) is category
+    first = classification.internal_nlp_features(text)
+    previous_hits = classification.internal_nlp_features.cache_info().hits
+    assert classification.internal_nlp_features(text) is first
+    assert classification.internal_nlp_features.cache_info().hits == previous_hits + 1
 assert len(loads) == 1
 print("Unstructured extra: real model semantics, eager initialization and caches passed")
 """
@@ -228,7 +237,7 @@ def check_unstructured_failures(python: Path, work: Path, *, spacy_installed: bo
         ("missing-model", "load-oserror", "import-error") if spacy_installed else ("missing-model",)
     )
     for failure in failures:
-        for mode in ("direct", "parent", "elements"):
+        for mode in ("direct", "parent", "elements", "child-elements", "retry-elements"):
             run(
                 str(python),
                 "-I",

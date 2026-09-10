@@ -162,44 +162,11 @@ class RecoveringTextState(SpecTextState):
     def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
             return
-        if not array:
-            return
-        pending_bytes = bytearray()
-        scale = self.text_advance_scale
+        super().append_tj_array(array)
 
-        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
-        is_vert = decoder.is_vertical
-
-        te, tf = self.tm_e, self.tm_f
-        ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
-        for item in array:
-            t = type(item)
-            if t is PdfString:
-                pending_bytes.extend(item.data)
-            elif t is bytes:
-                pending_bytes.extend(item)
-            elif t is int or t is float:
-                if pending_bytes:
-                    self.tm_e, self.tm_f = te, tf
-                    self.append_text(data=bytes(pending_bytes), decoder=decoder)
-                    te, tf = self.tm_e, self.tm_f
-                    pending_bytes.clear()
-                adjustment = item * scale
-                if is_vert:
-                    te -= adjustment * tc
-                    tf -= adjustment * td
-                else:
-                    te -= adjustment * ta
-                    tf -= adjustment * tb
-            elif t is str:
-                pending_bytes.extend(item.encode("latin-1"))
-
-        if pending_bytes:
-            self.tm_e, self.tm_f = te, tf
-            self.append_text(data=bytes(pending_bytes), decoder=decoder)
-            te, tf = self.tm_e, self.tm_f
-
-        self.tm_e, self.tm_f = te, tf
+    def tj_array_extra_bytes(self, item: object) -> bytes:
+        """Retain Latin-1 text and skip other unsupported reader entries."""
+        return item.encode("latin-1") if type(item) is str else b""
 
     def op_Tj(self, operands: ContentOperands, depth: int) -> None:
         if not operands:

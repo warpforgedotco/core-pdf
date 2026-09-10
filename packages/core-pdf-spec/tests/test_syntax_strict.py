@@ -59,6 +59,38 @@ def test_pdf_string_defaults_and_odd_hex_padding() -> None:
         lexer.close()
 
 
+@pytest.mark.parametrize("data", [b"[1_000 2]", b"[1.2e3 4]", b"[1_000 % ignored\n2]"])
+def test_numeric_arrays_reject_non_pdf_number_spellings(data: bytes) -> None:
+    # ISO 32000-2:2020, 7.3.3 allows decimal PDF numbers, not Python literals.
+    lexer = PdfLexer(data)
+    try:
+        with pytest.raises(PdfParseError):
+            lexer.parse_object()
+    finally:
+        lexer.close()
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (b"[]", []),
+        (b"[+1 -2 .5 -3.]", [1, -2, 0.5, -3.0]),
+        (b"[1 % ignored\n2]", [1, 2]),
+        (b"[[1] 2 0 R]", [[1], PdfReference(2)]),
+    ],
+)
+def test_numeric_arrays_and_general_arrays_leave_following_token(
+    data: bytes, expected: list[object]
+) -> None:
+    lexer = PdfLexer(data + b" /Next")
+    try:
+        assert lexer.parse_object() == expected
+        assert lexer.pos == len(data)
+        assert lexer.parse_object() == PdfName.of("Next")
+    finally:
+        lexer.close()
+
+
 @pytest.mark.parametrize("type_entry", [b" /Type /Sig", b" /Type /DocTimeStamp", b""])
 def test_signature_contents_remain_unencrypted_when_type_follows(type_entry: bytes) -> None:
     calls: list[bytes] = []

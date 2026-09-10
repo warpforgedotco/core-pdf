@@ -30,12 +30,10 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,
-    WS_TABLE,
 )
 
 PdfName_of = PdfName.of
 HEX_STRING_END_RE = re.compile(b">")
-ARRAY_END_RE = re.compile(b"]")
 
 RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Type",
@@ -130,7 +128,7 @@ class PdfLexer(SyntaxLexer):
             return raw[:-6], end - 6
         return raw, end
 
-    def internal_numeric_array_word(self, raw: bytes | memoryview) -> bool:
+    def is_numeric_array_word(self, raw: bytes | memoryview) -> bool:
         # Retain reader acceptance of Python numeric spellings in array fast paths.
         return True
 
@@ -149,9 +147,6 @@ class PdfLexer(SyntaxLexer):
 
     def handle_empty_indirect_object(self) -> object:
         return None
-
-    def handle_invalid_name_escape(self) -> None:
-        pass
 
     def handle_dictionary_key_error(self) -> bool:
         if not (self.recover_malformed_objects and self.recover_dictionary_structure):
@@ -483,14 +478,12 @@ class PdfLexer(SyntaxLexer):
                 i += 1
                 continue
             if i + 2 >= n:
-                self.handle_invalid_name_escape()
                 out.append(byte)
                 i += 1
                 continue
             hi = HEX_VALUE[data[i + 1]]
             lo = HEX_VALUE[data[i + 2]]
             if hi == 255 or lo == 255:
-                self.handle_invalid_name_escape()
                 out.append(byte)
                 i += 1
                 continue
@@ -599,101 +592,3 @@ class PdfLexer(SyntaxLexer):
             raise PdfParseError("expected keyword 'endobj'")
         self.pos = keyword[1]
         return obj
-
-    def parse_numeric_array(self) -> list[int | float] | None:
-        start_pos = self.pos
-        data = self.raw_data
-        source_buffer = self.source_buffer
-        raw_data = source_buffer if source_buffer is not None else data
-        data_len = self.data_len
-
-        end_array = -1
-        if source_buffer is not None:
-            end_array = source_buffer.find(b"]", start_pos + 1)
-        elif data.c_contiguous:
-            match = ARRAY_END_RE.search(data, start_pos + 1)
-            if match is not None:
-                end_array = match.start()
-        if end_array >= 0:
-            if end_array == start_pos + 1:
-                self.pos = end_array + 1
-                return []
-            payload = (
-                source_buffer[start_pos + 1 : end_array]
-                if source_buffer is not None
-                else data[start_pos + 1 : end_array].tobytes()
-            )
-            if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
-                tokens = payload.split()
-                if tokens and (
-                    tokens[-1] == b"R"
-                    or tokens[0][0] not in (43, 45, 46)
-                    and not 48 <= tokens[0][0] <= 57
-                ):
-                    return None
-                if not all(self.internal_numeric_array_word(token) for token in tokens):
-                    return None
-                try:
-                    values: list[int | float] = list(map(int, tokens))
-                except ValueError:
-                    try:
-                        values = [float(token) if b"." in token else int(token) for token in tokens]
-                    except ValueError:
-                        pass
-                    else:
-                        self.pos = end_array + 1
-                        return values
-                else:
-                    self.pos = end_array + 1
-                    return values
-
-        values = []
-        pos = start_pos + 1
-        ws_table = WS_TABLE
-        sep_table = SEPARATOR_TABLE
-
-        while True:
-            while pos < data_len:
-                byte = raw_data[pos]
-                if ws_table[byte]:
-                    pos += 1
-                    continue
-                if byte == 37:
-                    pos += 1
-                    while pos < data_len and raw_data[pos] not in (10, 13):
-                        pos += 1
-                    continue
-                break
-            if pos >= data_len:
-                self.pos = start_pos
-                return None
-
-            byte = raw_data[pos]
-            if byte == 93:
-                self.pos = pos + 1
-                return values
-            if byte not in (43, 45, 46) and not 48 <= byte <= 57:
-                self.pos = start_pos
-                return None
-
-            has_decimal = byte == 46
-            end = pos + 1
-            while end < data_len:
-                end_byte = raw_data[end]
-                if sep_table[end_byte]:
-                    break
-                if end_byte == 46:
-                    has_decimal = True
-                end += 1
-
-            raw = raw_data[pos:end]
-            if not self.internal_numeric_array_word(raw):
-                self.pos = start_pos
-                return None
-            try:
-                value = float(raw) if has_decimal else int(raw)
-            except ValueError:
-                self.pos = start_pos
-                return None
-            values.append(value)
-            pos = end

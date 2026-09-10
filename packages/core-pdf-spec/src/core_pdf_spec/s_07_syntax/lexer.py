@@ -417,7 +417,7 @@ class PdfLexer:
                     and not 48 <= tokens[0][0] <= 57
                 ):
                     return None
-                if not all(self.internal_numeric_array_word(token) for token in tokens):
+                if not all(self.is_numeric_array_word(token) for token in tokens):
                     return None
                 try:
                     values: list[int | float] = list(map(int, tokens))
@@ -473,7 +473,7 @@ class PdfLexer:
                 end += 1
 
             raw = raw_data[pos:end]
-            if not self.internal_numeric_array_word(raw):
+            if not self.is_numeric_array_word(raw):
                 self.pos = start_pos
                 return None
             try:
@@ -484,7 +484,12 @@ class PdfLexer:
             values.append(value)
             pos = end
 
-    def internal_numeric_array_word(self, raw: bytes | memoryview) -> bool:
+    def is_numeric_array_word(self, raw: bytes | memoryview) -> bool:
+        """Whether a complete token can enter the numeric-array fast path.
+
+        The default accepts PDF number syntax. Overrides must not change parser
+        state; returning False leaves the token to ordinary array parsing.
+        """
         return is_number_word_bytes(raw.tobytes() if isinstance(raw, memoryview) else raw)
 
     def parse_reference_suffix(

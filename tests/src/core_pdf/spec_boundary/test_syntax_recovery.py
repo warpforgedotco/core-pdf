@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from core_pdf.impl._impl.document.metadata import resolve_metadata_stream
@@ -11,7 +13,10 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dict
-from core_pdf.impl._impl.document.recovery.trees import iter_number_tree_items
+from core_pdf.impl._impl.document.recovery.trees import (
+    iter_name_tree_items,
+    iter_number_tree_items,
+)
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as StrictLexer
@@ -20,7 +25,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as StrictXRefScanner
 from core_pdf_spec.s_07_syntax.xref import key_for
-from core_pdf_spec.types import PdfName, PdfString
+from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 
 @pytest.mark.parametrize(
@@ -78,6 +83,44 @@ def test_reader_preserves_legacy_string_line_endings() -> None:
     lexer = PdfLexer(b"(a\n\rb)")
     try:
         assert lexer.parse_object().data == b"a\nb"
+    finally:
+        lexer.close()
+
+
+@pytest.mark.parametrize(
+    "make_buffer",
+    [
+        pytest.param(bytes, id="bytes"),
+        pytest.param(bytearray, id="bytearray"),
+        pytest.param(memoryview, id="memoryview"),
+        pytest.param(lambda data: memoryview(b"xx" + data + b"yy")[2:-2], id="view-slice"),
+        pytest.param(
+            lambda data: memoryview(b"".join(bytes((byte, 0)) for byte in data))[::2],
+            id="strided-view",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (b"[]", []),
+        (b"[+1 -2 .5 -3.]", [1, -2, 0.5, -3.0]),
+        (b"[1_000 2]", [1000, 2]),
+        (b"[1.2e3 4]", [1200.0, 4]),
+        (b"[1_000 % ignored\n2]", [1000, 2]),
+        (b"[[1] 2 0 R]", [[1], PdfReference(2)]),
+    ],
+)
+def test_reader_numeric_arrays_preserve_buffer_and_cursor_behavior(
+    make_buffer: Callable[[bytes], bytes | bytearray | memoryview],
+    data: bytes,
+    expected: list[object],
+) -> None:
+    lexer = PdfLexer(make_buffer(data + b" /Next"))
+    try:
+        assert lexer.parse_object() == expected
+        assert lexer.pos == len(data)
+        assert lexer.parse_object() == PdfName.of("Next")
     finally:
         lexer.close()
 
@@ -175,13 +218,20 @@ def test_reader_preserves_lexical_extensions(data: bytes) -> None:
 
 
 def test_reader_recovers_nearby_object_stream_offset() -> None:
-    stream = PdfStream({"Type": PdfName.of("ObjStm"), "N": 1, "First": 4}, b"1 2 [1]")
+    stream = PdfStream({"Type": PdfName.of("ObjStm"), "N": 1, "First": 4}, b"1 5 [(xy)]")
     strict = StrictObjectStream(stream)
     reader = PdfObjectStream(stream)
     try:
         with pytest.raises(PdfParseError):
             strict.get(1)
-        assert reader.get(1) == 1
+        recovered = reader.get(1)
+        assert isinstance(recovered, PdfString)
+        assert recovered.data == b"xy"
+        assert reader.get(PdfReference(1)) is recovered
+        missing = object()
+        assert reader.get(2, missing) is missing
+        with pytest.raises(ValueError, match="invalid object number"):
+            reader.get(-1)
     finally:
         strict.lexer.close()
         reader.lexer.close()
@@ -217,6 +267,83 @@ def test_reader_does_not_suppress_custom_tree_decoder_failure() -> None:
                 {"Nums": [0, 1]}, lambda value: value, decode_number=fail, recover=True
             )
         )
+
+
+@pytest.mark.parametrize("recover", [False, True])
+@pytest.mark.parametrize("recover_entries", [False, True])
+def test_reader_tree_entry_recovery_does_not_enable_node_recovery(
+    recover: bool, recover_entries: bool
+) -> None:
+    entries = iter_number_tree_items(
+        {"Nums": [0, "first", "invalid", "skip", 1, "second", 2]},
+        lambda value: value,
+        recover=recover,
+        recover_entries=recover_entries,
+    )
+    if recover or recover_entries:
+        assert list(entries) == [(0, "first"), (1, "second")]
+    else:
+        with pytest.raises(ValueError, match="Nums array"):
+            list(entries)
+
+    nodes = iter_number_tree_items(
+        {"Kids": [17, {"Nums": [1, "child"]}]},
+        lambda value: value,
+        recover=recover,
+        recover_entries=recover_entries,
+    )
+    if recover:
+        assert list(nodes) == [(1, "child")]
+    else:
+        with pytest.raises(ValueError, match="tree node"):
+            list(nodes)
+
+
+@pytest.mark.parametrize("recover", [False, True])
+def test_reader_tree_cycles_and_depth_keep_their_recovery_policy(recover: bool) -> None:
+    tree: dict[str, object] = {"Nums": [0, "root"]}
+    tree["Kids"] = [tree, {"Nums": [1, "child"]}]
+    cycle_items = iter_number_tree_items(tree, lambda value: value, recover=recover)
+    if recover:
+        assert list(cycle_items) == [(0, "root"), (1, "child")]
+    else:
+        with pytest.raises(ValueError, match="cycle"):
+            list(cycle_items)
+
+    depth_items = iter_number_tree_items(tree, lambda value: value, recover=recover, max_depth=0)
+    if recover:
+        assert list(depth_items) == [(0, "root")]
+    else:
+        with pytest.raises(ValueError, match="depth"):
+            list(depth_items)
+
+
+def test_reader_name_tree_recovery_keeps_order_and_unresolved_values() -> None:
+    first = PdfReference(1)
+    second = PdfReference(2)
+
+    def resolve(value: object) -> object:
+        if isinstance(value, PdfReference):
+            raise AssertionError("tree values must remain indirect")
+        return value
+
+    assert list(
+        iter_name_tree_items(
+            {"Kids": [{"Names": ["a", first, 17, "skip", "odd"]}, {"Names": ["b", second]}]},
+            resolve,
+            lambda value: value if isinstance(value, str) else None,
+            recover_entries=True,
+            resolve_values=False,
+        )
+    ) == [("a", first), ("b", second)]
+
+
+def test_reader_tree_recovery_does_not_suppress_resolver_failure() -> None:
+    def fail(value: object) -> object:
+        raise ValueError("resolver failure")
+
+    with pytest.raises(ValueError, match="resolver failure"):
+        list(iter_number_tree_items({"Nums": [0, 1]}, fail, recover=True))
 
 
 @pytest.mark.parametrize("recover", [False, True])

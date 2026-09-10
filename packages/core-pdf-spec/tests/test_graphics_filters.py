@@ -4,12 +4,28 @@ import zlib
 
 import pytest
 
+from core_pdf_spec.s_07_filters.decode_spec import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf_spec.s_07_filters.registry import declared_filter_names
 from core_pdf_spec.s_08_graphics.color_spec import color_spec_from_value
 from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 from core_pdf_spec.s_08_graphics.shading import parse_shading
+
+
+def test_filter_params_factory_preserves_subclass_and_spec_defaults() -> None:
+    class DerivedParams(FilterParams):
+        pass
+
+    params = DerivedParams.from_parms({"Columns": 2, "Predictor": 12})
+    assert type(params) is DerivedParams
+    assert params == DerivedParams(columns=2, predictor=12, has_columns=True)
+
+
+@pytest.mark.parametrize("value", ["2", b"2", 2.0, True, 0])
+def test_filter_columns_require_a_positive_pdf_integer(value: object) -> None:
+    with pytest.raises(ValueError, match="invalid DecodeParms Columns"):
+        FilterParams.from_parms({"Columns": value})
 
 
 def test_filter_pipeline_decodes_valid_data_and_rejects_bad_names() -> None:

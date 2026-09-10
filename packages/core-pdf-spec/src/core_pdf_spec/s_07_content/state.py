@@ -623,6 +623,15 @@ class TextState:
                 self.tm_e += advance * self.tm_a
                 self.tm_f += advance * self.tm_b
 
+    def tj_array_extra_bytes(self, item: object) -> bytes:
+        """Reject a TJ entry outside the exact PDF string and number types.
+
+        Parsing extensions may override this method to supply bytes for an
+        otherwise unsupported entry. It is called during array execution,
+        preserving the order of text emission, adjustments, and failures.
+        """
+        raise PdfParseError("TJ array entries must be strings or numbers")
+
     def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
             raise PdfParseError("TJ requires an array")
@@ -656,7 +665,7 @@ class TextState:
                     te -= adjustment * ta
                     tf -= adjustment * tb
             else:
-                raise PdfParseError("TJ array entries must be strings or numbers")
+                pending_bytes.extend(self.tj_array_extra_bytes(item))
 
         if pending_bytes:
             self.tm_e, self.tm_f = te, tf
