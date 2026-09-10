@@ -11,7 +11,7 @@ from core_pdf.impl._impl.document.document import PdfDocument
 from core_pdf.impl._impl.document.recovery import security
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_security.standard import StandardSecurityHandler
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.types import PdfName, PdfString
 
 FIXTURES = Path(__file__).resolve().parents[4] / "tests/fixtures/security_interop"
@@ -36,7 +36,8 @@ def test_reader_accepts_legacy_integer_tokens_without_modifying_sources(
     value = target[key]
     encoded = str(value).encode("ascii")
     replacement = str(value) if representation is str else representation(encoded)
-    target[key] = replacement
+    # Inject a legacy token outside the strict PDF object type for reader recovery.
+    target[key] = cast(PdfObject, replacement)
     handler = security.create_recovered_security_handler(document_id, params, "user-aes128")
     assert handler.config.version == 4
     assert target[key] is replacement
