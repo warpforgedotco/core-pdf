@@ -55,7 +55,7 @@ class EmptyTextFont:
 
 def state_with_sink() -> tuple[ContentInterpreter, EventSink]:
     sink = EventSink()
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     font: Any = EmptyTextFont()
     return ContentInterpreter(resolver, cast(ContentSink, sink), lambda *args: font), sink
 
@@ -334,7 +334,7 @@ def test_resource_operator_looks_up_and_resolves_once(
 ) -> None:
     class Resolver(ObjectResolver):
         def __init__(self) -> None:
-            super().__init__(b"", {}, {})
+            super().__init__(b"", {})
             self.dictionary_calls = 0
 
         def resolve_dict(self, value: object) -> PdfDict | None:

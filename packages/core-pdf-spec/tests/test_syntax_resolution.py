@@ -32,7 +32,7 @@ from core_pdf_spec.types import PdfReference, PdfString
 def test_direct_and_indirect_real_conversion_agree(
     value: CachedPdfObject, expected: float | None, default: float | None
 ) -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     resolver.objects[key_for(1)] = value
     try:
         for candidate in (value, PdfReference(1)):
@@ -47,7 +47,7 @@ def test_direct_and_indirect_real_conversion_agree(
 
 
 def test_reference_chains_preserve_cycles_and_shared_containers() -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     text = PdfString(b"text")
     first, second = PdfReference(1), PdfReference(2)
     cycle_first, cycle_second = PdfReference(3), PdfReference(4)
@@ -87,7 +87,7 @@ def test_resolver_caches_undefined_reference_as_null() -> None:
             self.calls += 1
             return None
 
-    resolver = Resolver(b"", {}, {})
+    resolver = Resolver(b"", {})
     try:
         assert resolver.resolve(PdfReference(1)) is None
         assert resolver.resolve(PdfReference(1)) is None
@@ -105,7 +105,7 @@ def test_concurrent_resolution_returns_one_cached_object_identity() -> None:
             barrier.wait()
             return value
 
-    resolver = Resolver(b"", {key_for(1): PdfXRefEntry(0)}, {})
+    resolver = Resolver(b"", {key_for(1): PdfXRefEntry(0)})
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
             values = list(executor.map(resolver.resolve, [PdfReference(1), PdfReference(1)]))

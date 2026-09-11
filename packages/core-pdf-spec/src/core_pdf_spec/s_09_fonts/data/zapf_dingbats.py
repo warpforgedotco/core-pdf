@@ -9,7 +9,7 @@ character a code denotes -- cannot be reached either.
 
 The order is Adobe's rather than Unicode's, so the sequence has gaps and
 reversals: a3 is U+2704 because U+2703 is a202, and U+2707 to U+2709 are
-a119, a118 and a117. ``test_zapf_dingbats.py`` pins those.
+a119, a118 and a117.
 """
 
 from __future__ import annotations

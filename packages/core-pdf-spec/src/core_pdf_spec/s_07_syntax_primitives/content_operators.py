@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """The content-stream operator vocabulary.
 
-The single table of PDF 7.8.2 operators. It lives at the spec floor because two
-layers need it and neither may import the other: `s_07_filters` recognizes
-content streams before parsing them, and `s_07_content` binds each operator to
-the interpreter method that implements it. Add operators here and implement
-their handlers in `s_07_content/state.py`.
+The shared table of PDF 7.8.2 operators lives in the syntax primitives so
+consumers can use the vocabulary independently of the content interpreter.
+Reader filter recovery uses it to recognize content streams, and `s_07_content`
+binds each operator to the interpreter method that implements it. Add operators
+here and implement their handlers in `s_07_content/interpreter.py`.
 """
 
 from __future__ import annotations
 
-# Operator -> (TextState method, fixed operand categories), following
+# Operator -> (ContentInterpreter method, fixed operand categories), following
 # ISO 32000-1 Tables 51 and 57–59 and Annex A. None explicitly identifies
 # variable-length color operands checked against the selected color space.
 internal_CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
@@ -87,7 +87,7 @@ internal_CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
     "n": ("op_paint_clear", ""),
 }
 
-#: Operator name -> the `TextState` method that implements it.
+#: Operator name -> the `ContentInterpreter` method that implements it.
 CONTENT_OPERATOR_HANDLERS = {
     name: handler for name, (handler, _) in internal_CONTENT_OPERATORS.items()
 }

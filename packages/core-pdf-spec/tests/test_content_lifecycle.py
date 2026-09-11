@@ -54,7 +54,7 @@ class EventSink:
 def new_state() -> tuple[ContentInterpreter, EventSink]:
     sink = EventSink()
     state = ContentInterpreter(
-        ObjectResolver(b"", {}, {}),
+        ObjectResolver(b"", {}),
         cast(ContentSink, sink),
         cast(Any, lambda *args: None),
     )

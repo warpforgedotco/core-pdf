@@ -55,28 +55,10 @@ internal_SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
     stringprep.in_table_a1,
 )
 
-# Adobe PDF Reference 1.7, sixth edition (November 2006), Table 3.20, and
-# ISO 32000-2:2020, Table 22 define these reserved positions explicitly.
-# ISO 32000-1:2008, 7.6.3.2 states the reserved bits as requirements on the
-# *writer*, and then binds readers the other way: "Conforming readers shall
-# ignore all flags other than those at bit positions 3, 4, 5, 6, 9, 10, 11,
-# and 12." ISO 32000-2:2020, 7.6.4.2 repeats it verbatim. These tuples record
-# what Table 22 documents -- test_specification_evidence.py checks them against
-# the published table -- but they are deliberately NOT enforced when parsing:
-# refusing a document over a bit the reader is told to ignore denied every page
-# of files real producers emit (Distiller writes P = -9, clearing bits 1 and 2).
-internal_RESERVED_ZERO_PERMISSION_BITS = (1, 2)
-internal_RESERVED_ONE_PERMISSION_BITS = (7, 8, *range(13, 33))
 internal_SUPPORTED_RC4_KEY_BITS = (40, 56, 64, 80, 128)
 internal_REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
 internal_PDF_MAC_PERMISSION_BIT = 13
 internal_PDF_MAC_PERMISSION_MASK = 1 << (internal_PDF_MAC_PERMISSION_BIT - 1)
-internal_RESERVED_ZERO_PERMISSION_MASK = sum(
-    1 << (bit_position - 1) for bit_position in internal_RESERVED_ZERO_PERMISSION_BITS
-)
-internal_RESERVED_ONE_PERMISSION_MASK = sum(
-    1 << (bit_position - 1) for bit_position in internal_RESERVED_ONE_PERMISSION_BITS
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +215,9 @@ def internal_parse_config(
     if permissions < 0:
         permissions += 1 << 32
 
+    # ISO 32000-1:2008, 7.6.3.2 and ISO 32000-2:2020, 7.6.4.2 require
+    # readers to ignore reserved permission flags. Their prescribed values
+    # constrain writers, so they are deliberately not enforced here.
     # ISO 32000-2:2020, Table 22 reserves bit 13 as one. ISO/TS 32004:2024,
     # 5.1.2 and Table 3 supersede that rule for V >= 5: zero means that every
     # revision requires a PDF MAC token located through the trailer AuthCode
@@ -286,8 +271,8 @@ def internal_parse_config(
         length_bits = internal_parse_int(raw_length, "Length")
 
     # ISO 32000-1:2008, Table 20 fixes V=1 at 40 bits and permits V=2
-    # lengths from 40 through 128 bits. This backend deliberately implements
-    # the interoperable 40- and 128-bit RC4 forms only. ISO 32000-1:2008,
+    # lengths from 40 through 128 bits. The cryptography backend supports
+    # the 40-, 56-, 64-, 80-, and 128-bit RC4 forms. ISO 32000-1:2008,
     # 7.6.3.1 fixes the revision-4 Standard handler at 128 bits; the Adobe
     # ExtensionLevel 3 supplement, 3.5 and Algorithm 3.1a, and
     # ISO 32000-2:2020, 7.6.3.3 fix V=5 at 256 bits. ISO/TS 32003:2023,

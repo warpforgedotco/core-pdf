@@ -9,7 +9,7 @@ The root package, `src/core_pdf`, owns PDF parsing, native extraction, rendering
 output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recognition. The companion pins the exact core release because it reuses internal extraction stages.
 `packages/core-pdf-spec/src/core_pdf_spec` owns strict PDF and referenced-standard algorithms.
 All three distributions share the uv workspace. Spec releases independently: core currently
-accepts `core-pdf-spec>=0.1.0,<0.2.0`. Spec never imports core or OCR, including for typing.
+accepts `core-pdf-spec>=0.4.0,<0.5.0`. Spec never imports core or OCR, including for typing.
 
 The `core-pdf[unstructured]` extra supplies spaCy and the pinned English model required by the
 Unstructured facade. That facade loads its model at import time and fails if it cannot load;
@@ -97,7 +97,7 @@ packages/core-pdf-ocr/
 
 ```text
 packages/core-pdf-spec/
-  pyproject.toml          independent distribution, initially 0.1.0
+  pyproject.toml          independently versioned distribution, currently 0.4.0
   src/core_pdf_spec/
     types.py             shared PDF object identities and byte/geometry types
     exceptions.py        base, parse, unsupported, and decryption errors

@@ -10,8 +10,7 @@ These tables are close to, but not the same as, the cp1252 and Mac OS Roman
 code pages, and decoding a PDF with the code pages instead is wrong in ways
 that reach ordinary documents -- WinAnsi 0255 is a hyphen rather than a soft
 hyphen, and MacRoman 0333 stayed `currency` when Mac OS 8.5 moved the code to
-the euro sign. ``test_base_encodings.py`` pins every one of those divergences
-against the same sources this table was built from.
+the euro sign.
 """
 
 from __future__ import annotations

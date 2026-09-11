@@ -19,7 +19,7 @@ from core_pdf_spec.types import PdfName, PdfReference
 
 
 def internal_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}, {}), cast(Any, None), cast(Any, None))
+    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
 
 
 @pytest.mark.parametrize("entry_point", ["operator", "application"])

@@ -164,7 +164,7 @@ def test_mask_and_jpx_bit_depth_rules() -> None:
 
 def internal_state() -> ContentInterpreter:
     sink = SimpleNamespace()
-    return ContentInterpreter(ObjectResolver(b"", {}, {}), cast(Any, sink), cast(Any, None))
+    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None))
 
 
 def test_custom_color_handler_receives_raw_operands_after_validation() -> None:

@@ -18,7 +18,7 @@ from core_pdf_spec.types import PdfName
     [(-10, 0), (0.49, 0), (0.5, 1), (0.51, 1), (1.5, 2), (2.49, 2), (2.5, 3), (10, 3)],
 )
 def test_reader_capture_preserves_indexed_quantization(value: float, index: int) -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     state = TextState(SimpleNamespace(resolver=resolver, resolve=resolver.resolve))
     palette = bytes([0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255])
     state.resources = {

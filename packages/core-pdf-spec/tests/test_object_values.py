@@ -35,7 +35,7 @@ from core_pdf_spec.types import PdfName, PdfReference
 
 @pytest.fixture
 def resolver() -> Iterator[ObjectResolver]:
-    instance = ObjectResolver(b"", {}, {})
+    instance = ObjectResolver(b"", {})
     try:
         yield instance
     finally:

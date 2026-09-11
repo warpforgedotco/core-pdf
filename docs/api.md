@@ -156,7 +156,7 @@ findings = inspect_xray("document.pdf")
 primitives, standard data, and semantic service protocols. It has no `PdfDocument` facade
 or command-line entry point; applications compose those operations or use `core_pdf`.
 
-Core currently supports `core-pdf-spec>=0.1.0,<0.2.0`. Supported module exports are listed in
+Core currently supports `core-pdf-spec>=0.4.0,<0.5.0`. Supported module exports are listed in
 `__all__`; names beginning with `internal_` remain private. Parser extension methods used by
 core are documented alongside their strict implementations. Spec reports errors rather than
 repairing malformed input, except where a referenced standard prescribes a fallback or default.

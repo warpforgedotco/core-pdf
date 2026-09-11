@@ -34,10 +34,18 @@ There is no document facade, CLI, or complete conformance-validator claim. Core 
 not dependencies and are never discovered or imported. Runtime dependencies are NumPy,
 cryptography, and asn1crypto; bundled font data retains its original notices.
 
-Spec releases independently, starting at `0.1.0`. During `0.x`, breaking changes to supported
-interfaces require a new minor version. Core initially accepts `>=0.1.0,<0.2.0`; changes to
-that range require core integration and differential validation. Release the spec wheel before
-a core release requiring a spec version that is not yet published.
+The current spec version is `0.4.0`, released independently of core. During `0.x`, breaking
+changes to supported interfaces require a new minor version. Core currently accepts
+`>=0.4.0,<0.5.0`; changes to that range require core integration and differential validation.
+Release the spec wheel before a core release requiring a spec version that is not yet published.
+
+When migrating to `0.4.0`:
+
+- Construct `ObjectResolver(data, xref, decipher=...)` without the removed `trailer` argument;
+  retain the trailer in the calling application instead of accessing `resolver.trailer`.
+- Remove access to `JBIG2MQDecoder.ctx`, an unused attribute that has been removed.
+- Use `CMapDecoder.decode_entries(bytes(data))` and extract the CIDs from the returned
+  `(code_bytes, cid)` pairs in place of the removed `decode_cids_array` method.
 
 From the workspace, run the standalone tests with:
 

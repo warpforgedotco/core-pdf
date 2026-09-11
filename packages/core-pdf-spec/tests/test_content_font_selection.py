@@ -36,7 +36,7 @@ class RecordingState(ContentInterpreter):
                 font=font,
             )
 
-        super().__init__(ObjectResolver(b"", {}, {}), cast(Any, Sink()), provide)
+        super().__init__(ObjectResolver(b"", {}), cast(Any, Sink()), provide)
         self.resources = {"Font": {"F": {}, "Other": {"BaseFont": PdfName.of("Other")}}}
 
     def resolve_font_name(self, value: object) -> str | None:

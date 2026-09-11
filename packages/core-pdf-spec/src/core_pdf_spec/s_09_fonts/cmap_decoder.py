@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import Self, TypeVar
 
 from core_pdf_spec.s_09_fonts.cmap_ranges import (
     CIDRange,
@@ -22,10 +22,6 @@ from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
     cmap_metadata,
     decode_cmap_hex_token,
 )
-
-if TYPE_CHECKING:
-    # numpy is imported lazily at each call site to keep module import cheap.
-    import numpy
 
 CodeRangeT = TypeVar("CodeRangeT", CIDRange, NotdefRange)
 internal_MIN_CID = 0
@@ -446,45 +442,6 @@ class CMapDecoder:
                     best_partial = matched_bytes
                     chosen = length
         return chosen if best_partial else shortest
-
-    def decode_cids_array(
-        self, data: bytes | bytearray | memoryview
-    ) -> numpy.ndarray[Any, Any] | None:
-        """Decode uniform identity CMaps without allocating code-byte tuples.
-
-        ``None`` signals that the CMap requires the general object-oriented
-        decoder.  The numeric path is intentionally conservative: callers can
-        use it for width/advance calculations while retaining exact fallback
-        semantics for arbitrary CMaps.
-        """
-        if not data:
-            import numpy
-
-            return numpy.empty(0, dtype=numpy.int64)
-        if (
-            not self.default_to_identity
-            or self.cid_mappings
-            or self.cid_ranges
-            or self.notdef_mappings
-            or self.notdef_ranges
-            or len(self.code_space_ranges) != 1
-        ):
-            return None
-        start, end = self.code_space_ranges[0]
-        import numpy
-
-        if start == b"\x00" and end == b"\xff" and self.decode_lengths == (1,):
-            return numpy.frombuffer(bytes(data), dtype=numpy.uint8).astype(numpy.int64, copy=False)
-        if start == b"\x00\x00" and end == b"\xff\xff" and self.decode_lengths == (2,):
-            raw = bytes(data)
-            limit = len(raw) - (len(raw) & 1)
-            values = numpy.frombuffer(raw, dtype=">u2", count=limit // 2).astype(
-                numpy.int64, copy=False
-            )
-            if limit == len(raw):
-                return values
-            return numpy.concatenate((values, numpy.array([0], dtype=numpy.int64)))
-        return None
 
 
 CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | None]

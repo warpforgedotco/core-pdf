@@ -15,7 +15,7 @@ from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 
 def internal_state() -> TextState:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     state = TextState(SimpleNamespace(resolver=resolver, resolve=resolver.resolve))
     state.resources = {"Font": {"F": {}, "Other": {}}}
     return state

@@ -66,7 +66,7 @@ def test_operator_aliases_keep_overridden_handler_bindings() -> None:
         def op_double_quote(self, operands: ContentOperands, depth: int) -> None:
             calls.append(("double_quote", operands, depth))
 
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     state = State(resolver, cast(ContentSink, object()), cast(Any, None))
     try:
         for name, operands in iter_content_operations(PdfLexer(b"f F (one) ' 1 2 (two) \"")):

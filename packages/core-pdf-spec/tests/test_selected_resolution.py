@@ -18,7 +18,7 @@ def test_metadata_resolves_only_selected_objects_and_preserves_stream(
 ) -> None:
     class Resolver(ObjectResolver):
         def __init__(self) -> None:
-            super().__init__(b"", {}, {})
+            super().__init__(b"", {})
             self.references: list[PdfReference] = []
 
         def resolve(self, ref: object) -> object:

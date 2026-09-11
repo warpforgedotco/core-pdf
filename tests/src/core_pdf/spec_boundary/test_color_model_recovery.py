@@ -64,7 +64,7 @@ def test_retained_calibrated_base_does_not_require_a_new_output_backend() -> Non
 
 
 def test_unknown_space_retains_generic_component_recovery() -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     state = TextState(SimpleNamespace(resolver=resolver, resolve=resolver.resolve))
     state.graphics.fill_space = parse_color_space(["Lab", {"Range": [-20, 20, -40, 40]}])
     state.op_cs((PdfName.of("Unknown"),), 0)
@@ -100,7 +100,7 @@ def test_recursive_color_recovery_keeps_unsupported_base_fallback() -> None:
 
 
 def test_reader_invalid_icc_count_retains_color_and_generic_operand_recovery() -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     state = TextState(SimpleNamespace(resolver=resolver, resolve=resolver.resolve))
     state.op_rg((1, 0, 0), 0)
     state.resources = {"ColorSpace": {"I": [PdfName.of("ICCBased"), {"N": 2}]}}

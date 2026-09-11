@@ -11,7 +11,6 @@ from core_pdf.impl._impl.document.recovery.resources import (
     resolve_resource_dict as recover_resources,
 )
 from core_pdf.impl._impl.graphics.color_spec import parse_color_space
-from core_pdf.impl._impl.model.geometry import transform_bbox
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -99,50 +98,13 @@ class RecoveringTextState(ContentInterpreter):
             return None
         if subtype != "Form":
             return None
-        group_alpha = None
-        group = xobj_dict.get("Group")
-        if group is not None:
-            group_dict = self.resolver.resolve_dict(group)
-            if (
-                isinstance(group_dict, dict)
-                and self.resolver.resolve_name(group_dict.get("S")) == "Transparency"
-            ):
-                # PDF 32000-1 Table 147: a transparency group dictionary holds
-                # S/CS/I/K and nothing else. The constant alpha and blend mode
-                # that composite the finished group into its backdrop come from
-                # the graphics state in effect at the `Do` (11.6.6), so reading
-                # a /ca off the group dictionary found nothing and dropped the
-                # group entirely -- the contents then painted straight onto the
-                # page at full opacity in Normal mode, losing the blend.
-                #
-                # An explicitly isolated group has its own transparent backdrop,
-                # even at full opacity: a child's blend must not see the page.
-                blend = self.graphics.blend_mode
-                isolated = self.resolver.resolve(group_dict.get("I")) is True
-                if (
-                    isolated
-                    or self.graphics.fill_opacity < 1.0
-                    or (blend is not None and blend != "Normal")
-                ):
-                    group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
-        resources = self.resolve_resources(xobj_dict.get("Resources")) or self.resources
-        xobj_matrix = xobj_dict.get("Matrix")
-        nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
-        raw_form_bbox = xobj_dict.get("BBox")
-        form_bbox = self.resolver.resolve_box(raw_form_bbox)
-        transformed_form_bbox = (
-            transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
-        )
-        return self.stream_executor.queue(
-            xobj,
-            resources,
-            nested_ctm,
-            depth + 1,
-            clip_bbox=transformed_form_bbox,
-            form_bbox_operand=raw_form_bbox,
-            group_alpha=group_alpha,
-            stream_key=stream_key,
-        )
+        return self.append_form_xobject(xobj, depth, stream_key=stream_key)
+
+    def resolve_form_resources(self, value: object) -> PdfDict:
+        return self.resolve_resources(value) or self.resources
+
+    def resolve_form_bbox(self, value: object) -> tuple[float, float, float, float] | None:
+        return self.resolver.resolve_box(value)
 
     def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):

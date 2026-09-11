@@ -169,7 +169,7 @@ def test_object_stream_parses_exact_offsets() -> None:
 def test_xref_unknown_type_is_null_and_missing_reference_resolves_null() -> None:
     entries = decode_xref_rows(bytes([7, 0, 0]), [1, 1, 1], [1, 1], 2)
     assert not entries[key_for(1)].in_use
-    resolver = ObjectResolver(b"", entries, {})
+    resolver = ObjectResolver(b"", entries)
     try:
         assert resolver.resolve(PdfReference(1)) is None
         assert resolver.resolve(PdfReference(2)) is None
@@ -197,7 +197,7 @@ def test_inheritance_resource_and_page_tree_damage_is_rejected() -> None:
         collect_inherited_values(
             {"MediaBox": [0, 0, 10, 10], "Parent": 7}, ("MediaBox",), lambda value: value
         )
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     try:
         with pytest.raises(PdfParseError):
             resolve_resource_dict(17, resolver)
@@ -231,7 +231,7 @@ def test_strict_lexical_grammar_rejects_reader_extensions(data: bytes) -> None:
 
 
 def test_metadata_rejects_malformed_catalog_but_preserves_null_and_absence() -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     try:
         with pytest.raises(ValueError, match="Root"):
             metadata_stream(resolver, {"Root": 17})

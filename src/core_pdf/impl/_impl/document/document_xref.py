@@ -229,7 +229,6 @@ class DocumentXRefMixin:
         resolver = ObjectResolver(
             self.raw_data,
             self.xref,
-            self.trailer_dict,
         )
         try:
             root = resolver.resolve(root_ref)
@@ -258,7 +257,6 @@ class DocumentXRefMixin:
         resolver = ObjectResolver(
             self.raw_data,
             self.xref,
-            self.trailer_dict,
         )
         lexer = PdfLexer(data)
         entries_by_ref = {

@@ -200,7 +200,7 @@ class PdfDocument(
             self.raw_data = self.load_data(source)
             self.scan_xref()
 
-            self.resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
+            self.resolver = ObjectResolver(self.raw_data, self.xref)
             self.init_security(password)
             self.resolver.decipher = self.decipher
         except BaseException:
