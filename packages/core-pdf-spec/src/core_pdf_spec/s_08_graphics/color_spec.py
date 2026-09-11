@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TypeAlias, cast
 
+from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
@@ -16,6 +17,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number,
     require_pdf_number_array,
 )
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 ColorParams: TypeAlias = Mapping[str, object]
 ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
@@ -94,16 +96,26 @@ def internal_calibrated_params(kind: str, source: dict) -> ColorParams:
     return MappingProxyType(params)
 
 
-def parse_color_space(value: object) -> ColorSpace:
+def parse_color_space(value: object, *, context: SemanticContext | None = None) -> ColorSpace:
     """Parse a resolved color-space value without discarding nested spaces.
 
     ISO 32000-1, 8.6: component ranges belong to the color space; image sample
     bit depth does not. Parameter arrays are copied into immutable tuples.
+
+    An explicit context enforces the version-dependent Indexed base constraint
+    in Adobe PDF Reference 1.3, 4.5.5 (pp. 181-182). Omitting context preserves
+    the historical all-version API. This does not validate feature availability
+    for every kind of color space.
     """
-    return internal_parse_color_space(value, set())
+    if context is not None and (context.version is None or not context.version.recognized):
+        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
+    version = context.version if context is not None else None
+    return internal_parse_color_space(value, set(), version)
 
 
-def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
+def internal_parse_color_space(
+    value: object, active: set[int], version: PdfVersion | None
+) -> ColorSpace:
     name = decoded_name(value)
     if name in internal_DEVICE_SPACES:
         return internal_DEVICE_SPACES[name]
@@ -118,14 +130,23 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
         if kind in internal_DEVICE_SPACES and len(value) == 1:
             return internal_DEVICE_SPACES[kind]
         if kind == "Pattern" and len(value) == 2:
-            base = internal_parse_color_space(value[1], active)
+            base = internal_parse_color_space(value[1], active, version)
             if base.kind == "Pattern":
                 raise ValueError("Pattern cannot be its own underlying color space")
             return ColorSpace(kind, base.component_ranges, base=base)
         if kind == "Indexed" and len(value) == 4:
-            base = internal_parse_color_space(value[1], active)
+            base = internal_parse_color_space(value[1], active, version)
             if base.kind in {"Indexed", "Pattern"}:
                 raise ValueError("invalid Indexed base color space")
+            # Adobe PDF Reference 1.3, 4.5.5 explicitly requires an error for
+            # these bases in PDF 1.2; ISO 32000-2:2020, 8.6.6.3 retains 1.3
+            # as the introduction of the broader Indexed base constraint.
+            if (
+                base.kind in {"Separation", "DeviceN"}
+                and version is not None
+                and version < PdfVersion(1, 3)
+            ):
+                raise ValueError("Indexed Separation and DeviceN bases require PDF 1.3")
             hival = require_pdf_integer(value[2], "invalid hival")
             if not 0 <= hival <= 255:
                 raise ValueError("invalid hival")
@@ -161,7 +182,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
             alternate = (
                 {1: DEVICE_GRAY, 3: DEVICE_RGB, 4: DEVICE_CMYK}[count]
                 if raw_alt is None
-                else internal_parse_color_space(raw_alt, active)
+                else internal_parse_color_space(raw_alt, active, version)
             )
             if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN", "ICCBased"}:
                 raise ValueError("invalid ICCBased alternate color space")
@@ -184,7 +205,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
             colorants = tuple(decoded_name(item) for item in names)
             if any(item is None for item in colorants):
                 raise ValueError("invalid colorant name")
-            alternate = internal_parse_color_space(value[2], active)
+            alternate = internal_parse_color_space(value[2], active, version)
             if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN"}:
                 raise ValueError("invalid alternate color space")
             if value[3] is None:

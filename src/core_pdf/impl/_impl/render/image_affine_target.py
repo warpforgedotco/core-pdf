@@ -343,6 +343,7 @@ class internal_ImageAffineTargetMixin:
                     destination[:, 2],
                     destination[:, 3],
                     blend_resolved_mode,
+                    semantic_context=self.semantic_context,
                 )
                 target[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(
                     numpy.uint8

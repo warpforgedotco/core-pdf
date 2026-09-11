@@ -30,7 +30,10 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,
+    LexicalRules,
+    lexical_rules,
 )
+from core_pdf_spec.standards import SemanticContext
 
 PdfName_of = PdfName.of
 HEX_STRING_END_RE = re.compile(b">")
@@ -58,6 +61,7 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 }
 
 SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
+internal_LEGACY_READER_RULES = LexicalRules(WHITESPACE, name_escapes=False)
 
 
 def internal_drop_unknown_escape(byte: int) -> bytes:
@@ -80,15 +84,25 @@ class PdfLexer(SyntaxLexer):
         recover_malformed_objects: bool = True,
         recover_dictionary_structure: bool = True,
         stream_decoder: StreamDecoder | None = None,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
         super().__init__(
             data,
             reference_resolver=reference_resolver,
             decipher=decipher,
             stream_decoder=decode_stream_data if stream_decoder is None else stream_decoder,
+            semantic_context=semantic_context,
         )
         self.recover_malformed_objects = recover_malformed_objects
         self.recover_dictionary_structure = recover_dictionary_structure
+
+    def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
+        # Preserve reader acceptance of NUL whitespace and unknown versions.
+        # Valid legacy names still retain a literal # instead of changing identity.
+        if context is not None and (context.version is None or not context.version.recognized):
+            context = None
+        rules = lexical_rules(context)
+        return lexical_rules() if rules.name_escapes else internal_LEGACY_READER_RULES
 
     def read_string(
         self,
@@ -469,7 +483,7 @@ class PdfLexer(SyntaxLexer):
         start = self.pos
         self.pos = end
         raw = self.raw_data[start:end]
-        if 35 not in raw:
+        if not self.lexical_rules.name_escapes or 35 not in raw:
             return raw
         data = raw.tobytes()
         out = bytearray()

@@ -33,7 +33,7 @@ this extra. Workspace uv commands resolve the model from the configured source:
 
 ```sh
 uv sync --all-packages --all-groups --extra unstructured
-uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 ## License
@@ -52,3 +52,8 @@ package (`core_pdf_spec`). It contains strict PDF and referenced-standard semant
 `core-pdf` composes these with reader recovery, font backends, extraction, and rendering.
 See [the architecture](docs/architecture.md) for the package boundary and
 [the spec package](packages/core-pdf-spec/README.md) for low-level usage.
+
+`PdfDocument.standards` exposes document versions, extensions, and unverified profile
+claims. The optional [`core-pdf-validate`](packages/core-pdf-validate/README.md) companion
+checks original PDF bytes with a configured external validator. See
+[PDF versions and standards validation](docs/standards.md) for supported interfaces and coverage.

@@ -100,8 +100,16 @@ class IccTransform:
                 return internal_transform(self, distinct)[inverse]
         return internal_transform(self, samples)
 
+    def apply_uint16(self, samples: numpy.ndarray[Any, Any]) -> ByteSamples:
+        """Convert native-endian 16-bit device samples without an 8-bit input stage."""
+        if samples.dtype != numpy.dtype(numpy.uint16):
+            raise IccSampleError("samples must have uint16 dtype")
+        if samples.ndim != 2 or samples.shape[1] != self.input_channels:
+            raise IccSampleError(f"samples must have shape (count, {self.input_channels})")
+        return internal_transform(self, samples)
 
-def internal_transform(transform: IccTransform, samples: ByteSamples) -> ByteSamples:
+
+def internal_transform(transform: IccTransform, samples: numpy.ndarray[Any, Any]) -> ByteSamples:
     """Run one batch through lcms, as an (n, 1, channels) single-column image.
 
     Whole batches go in one call: lcms streams sample by sample in C, and

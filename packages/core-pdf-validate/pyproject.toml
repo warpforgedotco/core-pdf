@@ -1,0 +1,31 @@
+[project]
+name = "core-pdf-validate"
+version = "0.1.0"
+description = "Optional external PDF standards validation"
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+authors = [
+    { name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "core-pdf>=0.0.7,<0.1.0",
+    "defusedxml>=0.7.1",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+core-pdf = { workspace = true }
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core_pdf_validate = ["py.typed"]

@@ -6,7 +6,45 @@ import pytest
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_filters.predictors import apply_tiff_predictor, tiff_predict_bits
-from core_pdf_spec.s_08_graphics.color_kernels import unpack_subbyte_image_samples
+from core_pdf_spec.s_08_graphics.color_kernels import (
+    color_key_alpha,
+    unpack_image_samples,
+    unpack_subbyte_image_samples,
+)
+
+
+def test_color_key_requires_all_original_components_in_inclusive_ranges() -> None:
+    values = numpy.asarray([[32768, 1], [32769, 1], [32768, 2]], dtype=numpy.uint16)
+    assert color_key_alpha(values, (32768, 32768, 0, 1), 65535).tolist() == [0, 255, 255]
+
+
+@pytest.mark.parametrize("mask", [(0, 65536), (2, 1), (0, 1 << 100), (False, 1), (0,)])
+def test_color_key_rejects_invalid_source_ranges(mask: tuple[int, ...]) -> None:
+    with pytest.raises(ValueError, match="color key"):
+        color_key_alpha(numpy.asarray([[1]], dtype=numpy.uint16), mask, 65535)
+
+
+@pytest.mark.parametrize("buffer_kind", ["bytes", "memoryview", "ndarray"])
+def test_sixteen_bit_words_keep_byte_order_low_bits_and_interleaved_rows(buffer_kind: str) -> None:
+    # ISO 32000-1 8.9.3 prescribes MSB first for both bytes and 16-bit units.
+    packed = b"\x00\x00\x00\xff\x01\x00\x7f\xff\x80\x00\xff\xff"
+    data = (
+        memoryview(packed)
+        if buffer_kind == "memoryview"
+        else numpy.frombuffer(packed, dtype=numpy.uint8)
+        if buffer_kind == "ndarray"
+        else packed
+    )
+    values = unpack_image_samples(data, 16, 1, 2, 3)
+    assert values.dtype == numpy.uint16
+    assert values.tolist() == [0, 255, 256, 32767, 32768, 65535]
+
+
+def test_word_unpacker_rejects_partial_last_word_and_ignores_trailing_bytes() -> None:
+    with pytest.raises(ValueError, match="invalid image sample data"):
+        unpack_image_samples(b"\xff\xff\x00", 16, 2, 1, 1)
+    assert unpack_image_samples(b"\x12\x34\xff", 16, 1, 1, 1).tolist() == [0x1234]
+    assert unpack_image_samples(b"\x12\xff", 8, 1, 1, 1).tolist() == [0x12]
 
 
 @pytest.mark.parametrize("buffer_kind", ["bytes", "memoryview", "ndarray"])

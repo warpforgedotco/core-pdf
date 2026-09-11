@@ -23,7 +23,6 @@ from core_pdf_spec.s_07_syntax_primitives.content_operators import (
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     is_number_word_bytes,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
 from core_pdf_spec.types import PdfName, PdfString
 
 if TYPE_CHECKING:
@@ -51,7 +50,7 @@ def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
     if start >= lexer.data_len:
         return None
     byte = lexer.raw_data[start]
-    if not SEPARATOR_TABLE[byte]:
+    if not lexer.lexical_rules.separator_table[byte]:
         scanned = lexer.scan_word_at(start, skip_ignored=False)
         assert scanned is not None
         word, lexer.pos = scanned

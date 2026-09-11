@@ -14,7 +14,8 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     decoded_name,
     parse_int,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import WS_TABLE
+from core_pdf_spec.s_07_syntax_primitives.tokens import lexical_rules
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfByteBuffer
 
 
@@ -76,31 +77,43 @@ def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
 
 class XRefScanner:
     @staticmethod
-    def find_startxref(data: PdfByteBuffer) -> int | None:
-        eof = find_eof_marker(data)
+    def find_startxref(
+        data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None
+    ) -> int | None:
+        rules = lexical_rules(semantic_context)
+        eof = find_eof_marker(data, semantic_context=semantic_context)
         if eof < 0:
             return None
         marker = data.rfind(b"startxref", 0, eof)
-        if marker < 0 or (marker > 0 and not WS_TABLE[data[marker - 1]]):
+        if marker < 0 or (marker > 0 and not rules.whitespace_table[data[marker - 1]]):
             return None
-        raw = bytes(data[marker + 9 : eof]).strip(bytes((0, 9, 10, 12, 13, 32)))
+        raw = bytes(data[marker + 9 : eof]).strip(rules.whitespace)
         if not raw.isdigit():
             raise PdfParseError("invalid startxref offset")
         return int(raw)
 
     @staticmethod
-    def skip_ws(data: PdfByteBuffer, pos: int) -> int:
-        ws = WS_TABLE
+    def skip_ws(
+        data: PdfByteBuffer, pos: int, *, semantic_context: SemanticContext | None = None
+    ) -> int:
+        ws = lexical_rules(semantic_context).whitespace_table
         n = len(data)
         while pos < n and ws[data[pos]]:
             pos += 1
         return pos
 
     @staticmethod
-    def skip_ignored(data: PdfByteBuffer, pos: int, stop: int | None = None) -> int:
+    def skip_ignored(
+        data: PdfByteBuffer,
+        pos: int,
+        stop: int | None = None,
+        *,
+        semantic_context: SemanticContext | None = None,
+    ) -> int:
+        ws = lexical_rules(semantic_context).whitespace_table
         n = len(data)
         while pos < n:
-            while pos < n and WS_TABLE[data[pos]]:
+            while pos < n and ws[data[pos]]:
                 pos += 1
             if pos == stop:
                 return pos
@@ -148,12 +161,17 @@ class XRefScanner:
         start_pos: int,
         *,
         lexer: PdfLexer | None = None,
+        semantic_context: SemanticContext | None = None,
     ) -> tuple[XRefTable, PdfDict, int | None, int | None]:
-        pos = cls.skip_ws(data, start_pos)
+        rules = lexical_rules(semantic_context)
+        options = {"semantic_context": semantic_context} if semantic_context is not None else {}
+        # Omit new arguments on the historical no-context path so existing
+        # subclass overrides of the parsing extension methods remain callable.
+        pos = cls.skip_ws(data, start_pos, **options)
         if data[pos : pos + 4] != b"xref":
             raise PdfParseError("expected xref table")
         pos += 4
-        pos = cls.skip_ws(data, pos)
+        pos = cls.skip_ws(data, pos, **options)
 
         entries: XRefTable = {}
         max_object_number = -1
@@ -164,11 +182,14 @@ class XRefScanner:
                 trailer_pos = pos + b_line.find(b"trailer") + len(b"trailer")
                 pos = trailer_pos
                 break
-            if b_line.lstrip().startswith(b"<<"):
+            if b_line.lstrip(rules.whitespace).startswith(b"<<"):
                 raise PdfParseError("expected trailer keyword")
             if 11 in b_line:
                 raise PdfParseError("invalid xref table subsection")
-            parts = b_line.strip().split()
+            normalized = b_line.translate(
+                bytes.maketrans(rules.whitespace, b" " * len(rules.whitespace))
+            )
+            parts = [part for part in normalized.split(b" ") if part]
             if not parts:
                 pos = next_pos
                 continue
@@ -190,8 +211,10 @@ class XRefScanner:
             else:
                 raise PdfParseError("invalid xref table subsection")
 
-        lexer = PdfLexer(data) if lexer is None else lexer
-        lexer.pos = cls.skip_ws(data, pos)
+        lexer = PdfLexer(data, semantic_context=semantic_context) if lexer is None else lexer
+        if semantic_context is not None:
+            lexer.semantic_context = semantic_context
+        lexer.pos = cls.skip_ws(data, pos, **options)
         try:
             trailer_dict = lexer.parse_dictionary()
         finally:
@@ -229,13 +252,19 @@ class XRefScanner:
 
     @classmethod
     def parse_section_at(
-        cls, data: PdfByteBuffer, start: int
+        cls,
+        data: PdfByteBuffer,
+        start: int,
+        *,
+        semantic_context: SemanticContext | None = None,
     ) -> tuple[XRefTable, PdfDict, int | None, int | None]:
         if start < 0 or start >= len(data):
             raise PdfParseError("invalid xref section")
         if data[start : start + 4] == b"xref":
-            return cls.parse_table_section(data, start)
-        lexer = PdfLexer(data)
+            if semantic_context is None:
+                return cls.parse_table_section(data, start)
+            return cls.parse_table_section(data, start, semantic_context=semantic_context)
+        lexer = PdfLexer(data, semantic_context=semantic_context)
         try:
             lexer.rewind(start)
             obj = lexer.parse_indirect_object()
@@ -255,7 +284,10 @@ class XRefScanner:
         data: PdfByteBuffer,
         start: int,
         seen: set[int],
+        *,
+        semantic_context: SemanticContext | None = None,
     ) -> tuple[XRefTable, PdfDict]:
+        options = {"semantic_context": semantic_context} if semantic_context is not None else {}
         section_start = start
         sections: list[XRefTable] = []
         trailer: PdfDict | None = None
@@ -265,7 +297,9 @@ class XRefScanner:
                 raise PdfParseError("xref section loop detected")
             seen.add(section_start)
 
-            entries, current_trailer, prev, xrefstm = cls.parse_section_at(data, section_start)
+            entries, current_trailer, prev, xrefstm = cls.parse_section_at(
+                data, section_start, **options
+            )
             if trailer is None:
                 trailer = current_trailer
             if prev is not None and prev < 0:
@@ -278,6 +312,7 @@ class XRefScanner:
                     data,
                     xrefstm,
                     seen,
+                    **options,
                 )
                 # ISO 32000-1 7.5.8.4: "if an entry is not found in any given
                 # standard cross-reference section, the search shall proceed to
@@ -396,9 +431,10 @@ def internal_decode_xref_rows(
     return entries
 
 
-def find_eof_marker(data: PdfByteBuffer) -> int:
+def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None) -> int:
+    ws = lexical_rules(semantic_context).whitespace_table
     end = len(data)
-    while end > 0 and WS_TABLE[data[end - 1]]:
+    while end > 0 and ws[data[end - 1]]:
         end -= 1
     marker = end - 5
     if (
@@ -411,13 +447,17 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
 
 
 def parse_object_marker_prefix(
-    data: PdfByteBuffer | memoryview, marker: int
+    data: PdfByteBuffer | memoryview,
+    marker: int,
+    *,
+    semantic_context: SemanticContext | None = None,
 ) -> tuple[int, int, int] | None:
     """Return ``(offset, object number, generation)`` for the header at ``marker``."""
-    if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
+    ws = lexical_rules(semantic_context).whitespace_table
+    if marker + 3 < len(data) and not ws[data[marker + 3]]:
         return None
     pos = marker - 1
-    while pos >= 0 and WS_TABLE[data[pos]]:
+    while pos >= 0 and ws[data[pos]]:
         pos -= 1
     gen_end = pos + 1
     while pos >= 0 and 48 <= data[pos] <= 57:
@@ -425,7 +465,7 @@ def parse_object_marker_prefix(
     gen_start = pos + 1
     if gen_start == gen_end:
         return None
-    while pos >= 0 and WS_TABLE[data[pos]]:
+    while pos >= 0 and ws[data[pos]]:
         pos -= 1
     obj_end = pos + 1
     while pos >= 0 and 48 <= data[pos] <= 57:
@@ -433,7 +473,7 @@ def parse_object_marker_prefix(
     obj_start = pos + 1
     if obj_start == obj_end:
         return None
-    if pos >= 0 and not WS_TABLE[data[pos]]:
+    if pos >= 0 and not ws[data[pos]]:
         return None
     try:
         object_number = int(data[obj_start:obj_end])

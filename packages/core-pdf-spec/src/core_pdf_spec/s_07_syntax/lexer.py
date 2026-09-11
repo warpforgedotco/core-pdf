@@ -26,11 +26,10 @@ from core_pdf_spec.s_07_syntax_primitives.scanning import (
     skip_pdf_ignored,
 )
 from core_pdf_spec.s_07_syntax_primitives.tokens import (
-    DELIMITERS,
-    SEPARATOR_TABLE,
-    WHITESPACE,
-    WS_TABLE,
+    LexicalRules,
+    lexical_rules,
 )
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import (
     PdfName,
     PdfReference,
@@ -38,7 +37,6 @@ from core_pdf_spec.types import (
 )
 
 PdfName_of = PdfName.of
-SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
 ARRAY_END_RE = re.compile(b"]")
 
@@ -54,6 +52,8 @@ class PdfLexer:
         "current_obj_num",
         "current_gen_num",
         "stream_decoder",
+        "internal_semantic_context",
+        "lexical_rules",
     )
 
     raw_data: memoryview
@@ -73,8 +73,9 @@ class PdfLexer:
         reference_resolver: Callable[[PdfReference], object] | None = None,
         decipher: Decipher | None = None,
         stream_decoder: StreamDecoder | None = None,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
-
+        self.semantic_context = semantic_context
         if type(data) is memoryview:
             self.raw_data = (
                 memoryview(data)
@@ -91,6 +92,24 @@ class PdfLexer:
         self.current_obj_num = None
         self.current_gen_num = None
         self.stream_decoder = stream_decoder
+
+    @property
+    def semantic_context(self) -> SemanticContext | None:
+        return self.internal_semantic_context
+
+    @semantic_context.setter
+    def semantic_context(self, context: SemanticContext | None) -> None:
+        self.lexical_rules = self.select_lexical_rules(context)
+        self.internal_semantic_context = context
+
+    def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
+        """Select token rules; readers may override explicit recovery policy.
+
+        Context changes affect subsequent parsing, including dictionary names,
+        hexadecimal strings, and numeric-array fast paths. Existing values are
+        not rewritten. Calls without context retain the modern grammar.
+        """
+        return lexical_rules(context)
 
     def close(self) -> None:
         self.source_buffer = None
@@ -124,29 +143,30 @@ class PdfLexer:
         if position >= data_len:
             return position
         data = self.raw_data
+        ws_table = self.lexical_rules.whitespace_table
         pos = position
         byte = data[pos]
-        if not WS_TABLE[byte] and byte != 37:
+        if not ws_table[byte] and byte != 37:
             return pos
-        if WS_TABLE[byte]:
+        if ws_table[byte]:
             pos += 1
             if pos >= data_len:
                 return pos
             byte = data[pos]
-            if not WS_TABLE[byte] and byte != 37:
+            if not ws_table[byte] and byte != 37:
                 return pos
         short_end = min(data_len, pos + 8)
-        while pos < short_end and WS_TABLE[data[pos]]:
+        while pos < short_end and ws_table[data[pos]]:
             pos += 1
         if pos >= data_len:
             return pos
         byte = data[pos]
-        if byte != 37 and not WS_TABLE[byte]:
+        if byte != 37 and not ws_table[byte]:
             return pos
         # Only whitespace was consumed reaching `pos`, which skip_pdf_ignored
         # would skip again anyway -- resume there rather than making it redo
         # the peek above from `position`.
-        return skip_pdf_ignored(data, pos, data_len)
+        return skip_pdf_ignored(data, pos, data_len, rules=self.lexical_rules)
 
     def scan_word_at(self, position: int, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         data = self.raw_data
@@ -157,7 +177,7 @@ class PdfLexer:
         byte = data[pos]
         source_buffer = self.source_buffer
 
-        if SEPARATOR_TABLE[byte]:
+        if self.lexical_rules.separator_table[byte]:
             token = (
                 source_buffer[pos : pos + 1]
                 if source_buffer is not None
@@ -166,7 +186,7 @@ class PdfLexer:
             return token, pos + 1
 
         start = pos
-        match = SEPARATOR_RE.search(data, start)
+        match = self.lexical_rules.separator_re.search(data, start)
         pos = self.data_len if match is None else match.start()
 
         token = source_buffer[start:pos] if source_buffer is not None else bytes(data[start:pos])
@@ -229,7 +249,7 @@ class PdfLexer:
             except binascii.Error:
                 pass
 
-        filtered = raw.translate(EMPTY_TRANSLATE_TABLE, WHITESPACE)
+        filtered = raw.translate(EMPTY_TRANSLATE_TABLE, self.lexical_rules.whitespace)
         if len(filtered) & 1:
             filtered += b"0"
         try:
@@ -239,13 +259,13 @@ class PdfLexer:
 
     def read_name(self) -> memoryview:
         self.advance(1)
-        match = SEPARATOR_RE.search(self.raw_data, self.pos)
+        match = self.lexical_rules.separator_re.search(self.raw_data, self.pos)
         end = self.data_len if match is None else match.start()
 
         start = self.pos
         self.pos = end
         raw = self.raw_data[start:end]
-        if 35 not in raw:
+        if not self.lexical_rules.name_escapes or 35 not in raw:
             return raw
         data = raw.tobytes()
         out = bytearray()
@@ -439,8 +459,8 @@ class PdfLexer:
 
         values = []
         pos = start_pos + 1
-        ws_table = WS_TABLE
-        sep_table = SEPARATOR_TABLE
+        ws_table = self.lexical_rules.whitespace_table
+        sep_table = self.lexical_rules.separator_table
 
         while True:
             while pos < data_len:

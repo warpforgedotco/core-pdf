@@ -40,11 +40,14 @@ from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf_spec.s_09_fonts.glyphs import glyph_name_to_unicode
+from core_pdf_spec.standards import PdfVersion
 
 for module in pkgutil.walk_packages(core_pdf_spec.__path__, core_pdf_spec.__name__ + "."):
     importlib.import_module(module.name)
 assert importlib.util.find_spec("core_pdf") is None
 assert importlib.util.find_spec("core_pdf_ocr") is None
+assert importlib.util.find_spec("core_pdf_validate") is None
+assert PdfVersion.parse("2.0").recognized
 assert importlib.util.find_spec("fontTools") is None
 assert importlib.util.find_spec("imagecodecs") is None
 lexer = PdfLexer(b"<< /Type /Page >>")
@@ -76,8 +79,10 @@ assert core_pdf.PdfError is errors.PdfError
 assert core_pdf.PdfParseError is errors.PdfParseError
 with PdfDocument(Path(sys.argv[1])) as document:
     assert document.page_count() > 0
+    assert document.standards.effective_version is not None
 assert len(PdfReader(sys.argv[1]).pages) > 0
 assert not any(name == "core_pdf_ocr" or name.startswith("core_pdf_ocr.") for name in sys.modules)
+assert not any(name.startswith("core_pdf_validate") for name in sys.modules)
 print("Core wheel: native and pypdf APIs work without NLP dependencies")
 """
 
@@ -194,6 +199,25 @@ assert issubclass(core_pdf_ocr.PdfPage, core_pdf.PdfPage)
 print("OCR wheel: document/page integration passed")
 """
 
+VALIDATION_SMOKE = """
+import sys
+from importlib import resources
+from core_pdf_validate import validate, VeraPdfBackend
+
+assert not any(name == "core_pdf" or name.startswith("core_pdf.") for name in sys.modules)
+report = validate(
+    b"not a readable PDF",
+    profiles=("pdfa-1b", "pdfx-4"),
+    backend=VeraPdfBackend(executable="/nonexistent/core-pdf-validator"),
+)
+assert report.results[0].execution_status == "engine_unavailable"
+assert report.results[1].execution_status == "unsupported_profile"
+assert all(result.conformance == "not_checked" for result in report.results)
+assert not any(name == "core_pdf" or name.startswith("core_pdf.") for name in sys.modules)
+assert resources.files("core_pdf_validate").joinpath("py.typed").is_file()
+print("Validation wheel: optional imports, explicit targets, and unavailable engine passed")
+"""
+
 
 def run(*arguments: str, cwd: Path) -> None:
     subprocess.run(arguments, cwd=cwd, check=True)
@@ -253,12 +277,12 @@ def check_unstructured_failures(python: Path, work: Path, *, spacy_installed: bo
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path, help="Directory containing the three built wheels")
+    parser.add_argument("directory", type=Path, help="Directory containing the four built wheels")
     parser.add_argument("--fixture", type=Path, required=True, help="A valid one-page PDF")
     args = parser.parse_args()
     wheel_dir = args.directory.resolve()
     wheels: dict[str, Path] = {}
-    for name in ("core_pdf_spec", "core_pdf", "core_pdf_ocr"):
+    for name in ("core_pdf_spec", "core_pdf", "core_pdf_ocr", "core_pdf_validate"):
         matches = sorted(wheel_dir.glob(f"{name}-[0-9]*.whl"))
         if len(matches) != 1:
             parser.error(f"expected one {name} wheel in {wheel_dir}; found {len(matches)}")
@@ -282,6 +306,8 @@ def main() -> None:
         check_unstructured_failures(python, work, spacy_installed=False)
         run(*install, str(wheels["core_pdf_ocr"]), cwd=work)
         run(str(python), "-I", "-c", OCR_SMOKE, cwd=work)
+        run(*install, str(wheels["core_pdf_validate"]), cwd=work)
+        run(str(python), "-I", "-c", VALIDATION_SMOKE, cwd=work)
         run(*install, spacy_requirement, cwd=work)
         check_unstructured_failures(python, work, spacy_installed=True)
         run(*install, f"{wheels['core_pdf']}[unstructured]", MODEL_WHEEL_URL, cwd=work)

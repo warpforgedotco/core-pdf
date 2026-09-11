@@ -1,0 +1,2 @@
+# PDF byte offsets and validation-fixture hashes require verbatim storage.
+*.pdf binary

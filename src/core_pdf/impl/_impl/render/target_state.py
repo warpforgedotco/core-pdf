@@ -18,10 +18,12 @@ from core_pdf.impl._impl.graphics.shading import PreparedShading
 from core_pdf.impl._impl.render.clipping import internal_ClipState
 from core_pdf.impl._impl.render.model import DisplayItem, ImagePaintItem, PathPaintItem
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, UInt8Array
+from core_pdf_spec.standards import SemanticContext
 
 
 class internal_RasterState(Protocol):
     pixels: bytearray
+    semantic_context: SemanticContext
     clip: internal_ClipState
     width: int
     height: int

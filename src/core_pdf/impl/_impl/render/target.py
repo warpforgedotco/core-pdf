@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
+    internal_blend_context,
     internal_blend_normal_solid_array_numpy,
     internal_color_rgba,
     internal_composite_blended_group_numpy,
@@ -31,6 +32,8 @@ from core_pdf.impl._impl.render.path_stroke_target import internal_PathStrokeTar
 from core_pdf.impl._impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_image_view
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
+from core_pdf_spec.standards import SemanticContext
 
 
 class internal_RasterTarget(
@@ -54,6 +57,7 @@ class internal_RasterTarget(
 
     __slots__ = (
         "pixels",
+        "semantic_context",
         "buffer_stack",
         "clip",
         "width",
@@ -83,8 +87,10 @@ class internal_RasterTarget(
         crop_y0: float,
         crop_y1: float,
         page_view: UInt8Array,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
         self.pixels = pixels
+        self.semantic_context = internal_blend_context(semantic_context)
         self.buffer_stack = [internal_RasterGroup(pixels)]
         self.clip = clip
         self.width = width
@@ -255,6 +261,17 @@ class internal_RasterTarget(
             src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dst_r))
             src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dst_g))
             src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - dst_b))
+        elif mode in {"colordodge", "colorburn"}:
+            component_mode: BlendMode = "ColorDodge" if mode == "colordodge" else "ColorBurn"
+            src_r = src_r * (1.0 - dst_a) + dst_a * blend_component(
+                dst_r, src_r, component_mode, context=self.semantic_context
+            )
+            src_g = src_g * (1.0 - dst_a) + dst_a * blend_component(
+                dst_g, src_g, component_mode, context=self.semantic_context
+            )
+            src_b = src_b * (1.0 - dst_a) + dst_a * blend_component(
+                dst_b, src_b, component_mode, context=self.semantic_context
+            )
         out_a = src_a + dst_a * (1.0 - src_a)
         if out_a <= 0:
             pixels[idx] = 0
@@ -373,6 +390,7 @@ class internal_RasterTarget(
             float(group_alpha) if is_pdf_number(group_alpha) else None,
             None,
             group_blend_mode,
+            semantic_context=self.semantic_context,
         )
 
     def paint_typed_path(self, item: PathPaintItem) -> None:

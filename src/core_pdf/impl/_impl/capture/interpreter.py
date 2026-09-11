@@ -57,6 +57,7 @@ class TextState(RecordingMethods):
             sink=self,
             font_provider=font_provider,
             lexer_factory=PdfLexer,
+            semantic_context=getattr(document.resolver, "semantic_context", None),
         )
 
         self.recovery = CaptureRecovery()

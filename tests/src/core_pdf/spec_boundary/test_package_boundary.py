@@ -26,7 +26,14 @@ def test_core_reexports_spec_object_identities() -> None:
 
 def test_spec_has_no_core_or_backend_imports_even_for_typing() -> None:
     violations = []
-    forbidden = {"core_pdf", "core_pdf_ocr", "fontTools", "imagecodecs", "tesserocr"}
+    forbidden = {
+        "core_pdf",
+        "core_pdf_ocr",
+        "core_pdf_validate",
+        "fontTools",
+        "imagecodecs",
+        "tesserocr",
+    }
     for path in SPEC_ROOT.rglob("*.py"):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
@@ -45,7 +52,11 @@ def test_spec_has_no_core_or_backend_imports_even_for_typing() -> None:
 
 def test_consumers_use_supported_spec_exports() -> None:
     violations = []
-    roots = (ROOT / "src/core_pdf", ROOT / "packages/core-pdf-ocr/src/core_pdf_ocr")
+    roots = (
+        ROOT / "src/core_pdf",
+        ROOT / "packages/core-pdf-ocr/src/core_pdf_ocr",
+        ROOT / "packages/core-pdf-validate/src/core_pdf_validate",
+    )
     for root in roots:
         for path in root.rglob("*.py"):
             if "_vendor" in path.parts:
@@ -61,3 +72,35 @@ def test_consumers_use_supported_spec_exports() -> None:
                     if alias.name.startswith("internal_") or alias.name not in exports:
                         violations.append(f"{path.relative_to(ROOT)}: {node.module}.{alias.name}")
     assert not violations, "\n".join(violations)
+
+
+def test_validation_stays_opt_in_including_type_only_imports() -> None:
+    roots = (
+        ROOT / "src/core_pdf",
+        ROOT / "packages/core-pdf-ocr/src/core_pdf_ocr",
+    )
+    violations = []
+    for root in roots:
+        for path in root.rglob("*.py"):
+            if "_vendor" in path.parts:
+                continue
+            for node in ast.walk(ast.parse(path.read_text())):
+                names: list[str] = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module]
+                for name in names:
+                    if name.split(".")[0] == "core_pdf_validate":
+                        violations.append(f"{path.relative_to(ROOT)}: {name}")
+    assert not violations, "\n".join(violations)
+
+
+def test_validation_capabilities_agree_with_spec_profile_editions() -> None:
+    from core_pdf_spec.standards import get_standard_profile
+    from core_pdf_validate import VeraPdfBackend
+
+    for capability in VeraPdfBackend.supported_profiles:
+        profile = get_standard_profile(capability.identifier)
+        assert profile is not None
+        assert profile.edition == capability.edition

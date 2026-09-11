@@ -8,8 +8,9 @@ dependency direction.
 The root package, `src/core_pdf`, owns PDF parsing, native extraction, rendering, and structured
 output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recognition. The companion pins the exact core release because it reuses internal extraction stages.
 `packages/core-pdf-spec/src/core_pdf_spec` owns strict PDF and referenced-standard algorithms.
-All three distributions share the uv workspace. Spec releases independently: core currently
-accepts `core-pdf-spec>=0.4.0,<0.5.0`. Spec never imports core or OCR, including for typing.
+`packages/core-pdf-validate` owns optional external-validator execution and report normalization.
+All four distributions share the uv workspace. Spec releases independently: core currently
+accepts `core-pdf-spec>=0.4.1,<0.5.0`. Spec never imports core or either companion, including for typing.
 
 The `core-pdf[unstructured]` extra supplies spaCy and the pinned English model required by the
 Unstructured facade. That facade loads its model at import time and fails if it cannot load;
@@ -97,14 +98,25 @@ packages/core-pdf-ocr/
 
 ```text
 packages/core-pdf-spec/
-  pyproject.toml          independently versioned distribution, currently 0.4.0
+  pyproject.toml          independently versioned distribution, currently 0.4.1
   src/core_pdf_spec/
     types.py             shared PDF object identities and byte/geometry types
+    standards.py         neutral versions, extensions, profile identities, and provenance
     exceptions.py        base, parse, unsupported, and decryption errors
     s_NN_*/              strict chapter algorithms and semantic service protocols
     _vendor/font_data/   attributed inert standard font tables; no font backend
   tests/                 standalone strict semantics and resource tests
 ```
+
+`packages/core-pdf-validate/src/core_pdf_validate` provides `validate`, immutable reports,
+the public backend protocol, and a veraPDF adapter. It depends on public core APIs only
+for optional declaration discovery; explicit validation operates on original bytes without
+opening a core document. Its tests include recorded engine reports and process-failure cases.
+
+Core never imports or discovers the validation companion. `PdfDocument.standards` identifies
+versions and claims without invoking a validator. Shared chapter algorithms receive immutable
+semantic context where versions differ; recovery stays in core. See
+[PDF versions and standards validation](standards.md) for selection rules and coverage.
 
 ### The `core_pdf_spec.s_NN_*` scheme
 
@@ -146,6 +158,7 @@ Subpackages under `core_pdf_spec` mirror chapters of the PDF specification:
 | `s_07_security` | 7 — encryption handlers |
 | `s_08_graphics` | 8 — color-space/image semantics, functions, shading geometry, matrices |
 | `s_09_fonts` | 9 — font formats, CMaps, encodings, widths, and semantic font services |
+| `s_11_transparency` | 11 — version-sensitive blend equations and image Matte semantics |
 | `s_14_structure` | 14 — logical structure tree |
 
 ---
@@ -198,7 +211,7 @@ uv sync --all-packages --all-groups --extra unstructured
 Run the differential suite and source checks with:
 
 ```sh
-uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 uv run --all-packages --group lint ruff check .
 uv run --all-packages --group lint mypy
 uv run --all-packages --group lint --group test --group vendor-test ty check
@@ -210,7 +223,7 @@ cross-corpus redaction cases for x-ray. To run every facade against every PDF fi
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+  uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 ## Rendering constraints

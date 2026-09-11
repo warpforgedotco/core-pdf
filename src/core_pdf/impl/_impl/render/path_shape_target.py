@@ -118,7 +118,12 @@ class internal_PathShapeTargetMixin:
                 # The whole ix0:ix1/iy0:iy1 box is visible with no gaps (same
                 # invariant the opaque/Normal fast paths above rely on), so
                 # one array-wide blend replaces a numpy call per row.
-                internal_blend_solid_array_numpy(blend_target[iy0:iy1, ix0:ix1], rgba, blend_mode)
+                internal_blend_solid_array_numpy(
+                    blend_target[iy0:iy1, ix0:ix1],
+                    rgba,
+                    blend_mode,
+                    semantic_context=self.semantic_context,
+                )
                 return
         for y in range(iy0, iy1):
             row = y * width * 4
@@ -137,7 +142,12 @@ class internal_PathShapeTargetMixin:
                         for x in range(start, end):
                             blend_normal_pixel(row + x * 4, *rgba)
                 elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
-                    internal_blend_solid_array_numpy(blend_target[y, start:end], rgba, blend_mode)
+                    internal_blend_solid_array_numpy(
+                        blend_target[y, start:end],
+                        rgba,
+                        blend_mode,
+                        semantic_context=self.semantic_context,
+                    )
                 else:
                     for x in range(start, end):
                         blend_px(row + x * 4, rgba, blend_resolved_mode)

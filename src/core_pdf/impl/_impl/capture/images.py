@@ -14,7 +14,9 @@ from core_pdf_spec.s_08_graphics.image_spec import (
 def image_source_from_stream(
     stream: PdfStream, resolver: PdfValueResolver
 ) -> tuple[ImageSource, float | None]:
-    source = resolve_image_source(stream, resolver)
+    source = resolve_image_source(
+        stream, resolver, semantic_context=getattr(resolver, "semantic_context", None)
+    )
     mask_alpha = None
     mask = source.soft_mask
     if mask is not None:

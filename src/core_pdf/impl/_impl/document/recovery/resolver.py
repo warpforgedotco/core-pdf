@@ -23,6 +23,7 @@ from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
+from core_pdf_spec.standards import SemanticContext
 
 
 class ObjectResolver(SyntaxResolver):
@@ -35,8 +36,9 @@ class ObjectResolver(SyntaxResolver):
         *,
         decipher: Decipher | None = None,
         recover_missing: bool = False,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
-        super().__init__(data, xref, decipher=decipher)
+        super().__init__(data, xref, decipher=decipher, semantic_context=semantic_context)
         self.recover_missing = recover_missing
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
@@ -55,7 +57,7 @@ class ObjectResolver(SyntaxResolver):
             self.release_lexer(lexer)
 
     def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
-        return PdfObjectStream(stream)
+        return PdfObjectStream(stream, semantic_context=self.semantic_context)
 
     def load_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
         try:
@@ -78,6 +80,7 @@ class ObjectResolver(SyntaxResolver):
             self.data,
             reference_resolver=self.resolve,
             decipher=self.decipher,
+            semantic_context=self.semantic_context,
         )
 
     def internal_recovery_offsets(self, lexer: SyntaxLexer) -> dict[int, tuple[int, ...]]:
@@ -135,7 +138,7 @@ class ObjectResolver(SyntaxResolver):
         if name is not None:
             return name
         if type(val) is PdfString:
-            return decode_pdf_text_string(val.data)
+            return self.decode_text(val.data)
         return None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
@@ -165,4 +168,4 @@ class ObjectResolver(SyntaxResolver):
         return box
 
     def decode_text(self, data: bytes) -> str:
-        return decode_pdf_text_string(data)
+        return decode_pdf_text_string(data, context=self.semantic_context)

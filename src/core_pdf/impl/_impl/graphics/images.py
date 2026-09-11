@@ -12,15 +12,32 @@ from core_pdf.impl._impl.graphics.color import (
     internal_convert_cmyk,
     internal_convert_image_data,
 )
+from core_pdf.impl._impl.graphics.color_spec import parse_color_space
 from core_pdf.impl._impl.graphics.image_filters import decode_stream_image_data
 from core_pdf.impl._impl.graphics.image_models import DecodedImage
+from core_pdf.impl._impl.graphics.image_samples import convert_16bit_image, convert_integer_samples
 from core_pdf.impl._impl.graphics.stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl._impl.runtime.array_views import readonly
 from core_pdf.impl._impl.runtime.scalars import parse_int
 from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
+from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values, unpack_image_samples
+from core_pdf_spec.s_08_graphics.image_spec import (
+    ImageSource,
+    SoftMask,
+    image_decode_array_applies,
+    image_smask_in_data,
+)
+from core_pdf_spec.standards import SemanticContext
+
+
+def internal_decode_array_applies(
+    dictionary: dict[Any, Any], context: SemanticContext | None
+) -> bool:
+    # Reader recovery retains the historical interpretation for unknown versions.
+    known = context if context and context.version and context.version.recognized else None
+    return image_decode_array_applies(dictionary, context=known)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,10 +107,31 @@ class internal_ImagePreparation(ImageSource):
     def prepare(self) -> PreparedImage | None:
         """Decode and return an immutable prepared image."""
         is_stencil = self.dictionary.get("ImageMask") is True
+        dictionary = self.dictionary
+        matte = None
+        alpha = None
+        if self.soft_mask is not None:
+            dictionary = dict(dictionary)
+            dictionary.pop("Mask", None)
+            filters = dictionary.get("Filter", ())
+            filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+            if self.soft_mask.dictionary.get("Matte") is not None and (
+                parse_int(dictionary.get("BitsPerComponent"), 8) == 16 or "JPXDecode" in filters
+            ):
+                try:
+                    matte, alpha = self.internal_decode_matte()
+                except (TypeError, ValueError):
+                    return None
         decoded = (
             self.internal_decode_mask()
             if is_stencil
-            else decode_pdf_image(self.raw, self.dictionary)
+            else decode_pdf_image(
+                self.raw,
+                dictionary,
+                matte=matte,
+                alpha=alpha,
+                semantic_context=self.semantic_context,
+            )
         )
         if decoded is None:
             return None
@@ -167,13 +205,52 @@ class internal_ImagePreparation(ImageSource):
         mask_dictionary = dict(soft_mask.dictionary)
         mask_dictionary.setdefault("ColorSpace", "DeviceGray")
         mask_dictionary.setdefault("BitsPerComponent", 8)
-        prepared = internal_ImagePreparation(soft_mask.raw, mask_dictionary).prepare()
+        prepared = internal_ImagePreparation(
+            soft_mask.raw, mask_dictionary, semantic_context=self.semantic_context
+        ).prepare()
         if prepared is None:
             return None
         mask = prepared.raster
         if mask.color_model == "gray" and not mask.has_alpha:
             return mask
         return ImageRaster(mask.array[:, :, :1], "gray")
+
+    def internal_decode_matte(self) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
+        soft_mask = self.soft_mask
+        if soft_mask is None:
+            raise ValueError("missing image soft mask")
+        dictionary = soft_mask.dictionary
+        width = parse_int(dictionary.get("Width"), 0)
+        height = parse_int(dictionary.get("Height"), 0)
+        if (width, height) != (
+            parse_int(self.dictionary.get("Width"), 0),
+            parse_int(self.dictionary.get("Height"), 0),
+        ):
+            # ISO 32000-1/2 11.6.5.2 requires matching dimensions with Matte.
+            raise ValueError("image matte requires matching soft mask dimensions")
+        decoded = internal_decode_image_samples(soft_mask.raw, dictionary)
+        decode = dictionary.get("Decode", (0, 1))
+        if isinstance(decoded, DecodedImage):
+            if decoded.channels != 1:
+                raise ValueError("invalid image soft mask channels")
+            integers = decoded.array.reshape(-1)
+            maximum = 65535 if integers.dtype == numpy.uint16 else 255
+            if decoded.source == "jpx" and not internal_decode_array_applies(
+                dictionary, self.semantic_context
+            ):
+                decode = (0, 1)
+        elif decoded is not None:
+            bits = parse_int(dictionary.get("BitsPerComponent"), 8)
+            integers = unpack_image_samples(decoded, bits, width, height, 1)
+            maximum = (1 << bits) - 1
+        else:
+            raise ValueError("invalid image soft mask samples")
+        if len(decode) != 2:
+            raise ValueError("invalid image soft mask Decode")
+        pairs = ((float(decode[0]), float(decode[1])),)
+        alpha = numpy.clip(decode_sample_values(integers, pairs, maximum).reshape(-1), 0, 1)
+        matte = tuple(float(value) for value in dictionary["Matte"])
+        return matte, alpha
 
     def internal_apply_soft_mask(self, raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
         mask_array = mask.array[:, :, 0]
@@ -186,17 +263,88 @@ class internal_ImagePreparation(ImageSource):
             (numpy.arange(raster.width) * mask.width) // raster.width,
         )
         alpha = mask_array[y[:, None], x[None, :]]
-        array = numpy.empty((raster.height, raster.width, raster.channels + 1), dtype=numpy.uint8)
-        array[:, :, : raster.channels] = raster.array
-        array[:, :, raster.channels] = alpha
+        channels = raster.channels - int(raster.has_alpha)
+        array = numpy.empty((raster.height, raster.width, channels + 1), dtype=numpy.uint8)
+        array[:, :, :channels] = raster.array[:, :, :channels]
+        array[:, :, channels] = alpha
         return ImageRaster(array, raster.color_model, has_alpha=True)
 
 
 def internal_canonical_image_array(
     samples: DecodedImage,
     dictionary: dict[Any, Any],
+    *,
+    matte: tuple[float, ...] | None = None,
+    alpha: numpy.ndarray[Any, Any] | None = None,
+    semantic_context: SemanticContext | None = None,
 ) -> tuple[numpy.ndarray[Any, Any], int] | None:
     """Normalize a decoded image to a contiguous grayscale/RGB sample array."""
+    explicit_jpx_decode = (
+        samples.source == "jpx"
+        and dictionary.get("Decode") is not None
+        and internal_decode_array_applies(dictionary, semantic_context)
+    )
+    encoded_alpha = None
+    sample_array = samples.array
+    high_depth_dictionary = dict(dictionary)
+    if samples.source == "jpx":
+        try:
+            selector = image_smask_in_data(dictionary)
+        except ValueError:
+            selector = 0
+        active_alpha = selector in {1, 2}
+        ordinary_channels = samples.channels - int(active_alpha)
+        inferred_space = {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(ordinary_channels)
+        high_depth_dictionary.setdefault("ColorSpace", inferred_space)
+        try:
+            space = parse_color_space(high_depth_dictionary.get("ColorSpace"))
+        except ValueError:
+            return None
+        count = len(space.component_ranges)
+        if samples.channels == count + 1:
+            # ISO 32000-1/2 Table 89/87: selector 0 ignores an opacity channel;
+            # 1 uses straight colours; 2 first undoes opacity premultiplication.
+            words = samples.array.reshape(-1, samples.channels)
+            sample_array = words[:, :count]
+            if active_alpha:
+                maximum = 65535 if samples.array.dtype == numpy.uint16 else 255
+                encoded_alpha = words[:, count].astype(numpy.float64) / maximum
+                high_depth_dictionary.pop("Mask", None)
+                if selector == 2:
+                    matte_space = space.base if space.kind == "Indexed" else space
+                    if matte_space is None:
+                        return None
+                    matte = (0.0,) * len(matte_space.component_ranges)
+                    alpha = encoded_alpha
+        elif samples.channels != count or active_alpha:
+            return None
+    if (
+        samples.array.dtype == numpy.uint16
+        or explicit_jpx_decode
+        or sample_array is not samples.array
+    ):
+        if samples.source == "jpx" and not explicit_jpx_decode:
+            high_depth_dictionary.pop("Decode", None)
+        high_depth_dictionary.setdefault(
+            "ColorSpace", "DeviceGray" if samples.channels == 1 else "DeviceRGB"
+        )
+        try:
+            converted_words = convert_integer_samples(
+                sample_array,
+                high_depth_dictionary,
+                bits_per_component=16 if samples.array.dtype == numpy.uint16 else 8,
+                matte=matte,
+                alpha=alpha,
+            )
+        except (TypeError, ValueError):
+            return None
+        if converted_words.shape[0] != samples.width * samples.height:
+            return None
+        if encoded_alpha is not None:
+            converted_words = numpy.column_stack(
+                (converted_words, numpy.rint(encoded_alpha * 255).astype(numpy.uint8))
+            )
+        return converted_words.reshape(-1), int(converted_words.shape[1])
     array = numpy.asarray(samples.array, dtype=numpy.uint8)
     if array.ndim == 2:
         channels = 1
@@ -232,6 +380,13 @@ def internal_decode_image_samples(
     if native is not None and native.width == width and native.height == height:
         return native
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
+    if bits_per_component == 16:
+        # Validate the complete word layout after filters/predictors. Byte-length
+        # heuristics for 8-bit recovery must not reinterpret compressed words.
+        try:
+            return decode_stream_data(raw, dictionary)
+        except Exception:
+            return None
     expected_gray = width * height
     expected_rgb = expected_gray * 3
     if len(raw) in {expected_gray, expected_rgb}:
@@ -249,7 +404,14 @@ def internal_decode_image_samples(
     return None
 
 
-def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> DecodedRaster | None:
+def decode_pdf_image(
+    raw: bytes | memoryview,
+    dictionary: dict[Any, Any],
+    *,
+    matte: tuple[float, ...] | None = None,
+    alpha: numpy.ndarray[Any, Any] | None = None,
+    semantic_context: SemanticContext | None = None,
+) -> DecodedRaster | None:
     width = parse_int(dictionary.get("Width"), 0)
     height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
@@ -258,11 +420,19 @@ def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> Dec
     if samples is None:
         return None
     if isinstance(samples, DecodedImage):
-        canonical = internal_canonical_image_array(samples, dictionary)
+        canonical = internal_canonical_image_array(
+            samples, dictionary, matte=matte, alpha=alpha, semantic_context=semantic_context
+        )
         if canonical is None:
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
+    if parse_int(dictionary.get("BitsPerComponent"), 8) == 16:
+        try:
+            converted_words = convert_16bit_image(samples, dictionary, matte=matte, alpha=alpha)
+        except (TypeError, ValueError):
+            return None
+        return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])
     try:
         converted = internal_convert_image_data(samples, dictionary)
     except ValueError:
@@ -303,7 +473,10 @@ __all__ = (
 def prepare_image(source: ImageSource) -> PreparedImage | None:
     """Prepare a PDF image using the configured device and recovery behavior."""
     return internal_ImagePreparation(
-        source.raw, source.dictionary, soft_mask=source.soft_mask
+        source.raw,
+        source.dictionary,
+        soft_mask=source.soft_mask,
+        semantic_context=source.semantic_context,
     ).prepare()
 
 

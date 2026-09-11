@@ -4,10 +4,9 @@ from __future__ import annotations
 import re
 from typing import Any, Protocol, cast
 
-from core_pdf_spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
+from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules, lexical_rules
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
-PDF_IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 EMPTY_TRANSLATE_TABLE = bytes.maketrans(b"", b"")
 
 STRING_ESCAPE: dict[int, bytes] = {
@@ -73,7 +72,16 @@ def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer |
     return None
 
 
-def skip_pdf_ignored(data: bytes | memoryview, position: int, data_len: int) -> int:
+def skip_pdf_ignored(
+    data: bytes | memoryview,
+    position: int,
+    data_len: int,
+    *,
+    rules: LexicalRules | None = None,
+) -> int:
+    """Skip comments and whitespace under the caller's selected lexical rules."""
+    rules = lexical_rules() if rules is None else rules
+    ws_table = rules.whitespace_table
     pos = position
     if pos >= data_len:
         return pos
@@ -81,21 +89,21 @@ def skip_pdf_ignored(data: bytes | memoryview, position: int, data_len: int) -> 
         start = pos
         if data[pos] != 37:
             short_end = min(data_len, pos + 8)
-            while pos < short_end and WS_TABLE[data[pos]]:
+            while pos < short_end and ws_table[data[pos]]:
                 pos += 1
             if pos >= data_len:
                 return pos
             byte = data[pos]
-            if byte != 37 and not WS_TABLE[byte]:
+            if byte != 37 and not ws_table[byte]:
                 return pos
             if byte != 37:
                 pos = start
-        match = PDF_IGNORED_RE.match(data, pos)
+        match = rules.ignored_re.match(data, pos, data_len)
         if match is not None:
             return match.end()
     while pos < data_len:
         byte = data[pos]
-        if WS_TABLE[byte]:
+        if ws_table[byte]:
             pos += 1
             continue
         if byte != 37:
@@ -114,25 +122,29 @@ def skip_pdf_ignored(data: bytes | memoryview, position: int, data_len: int) -> 
     return pos
 
 
-def looks_like_indirect_object_header(data: memoryview, position: int, data_len: int) -> bool:
+def looks_like_indirect_object_header(
+    data: memoryview, position: int, data_len: int, *, rules: LexicalRules | None = None
+) -> bool:
+    """Recognize an object header using the same whitespace as its parser."""
+    ws_table = (lexical_rules() if rules is None else rules).whitespace_table
     pos = position
     if pos >= data_len or not (48 <= data[pos] <= 57):
         return False
 
     while pos < data_len and 48 <= data[pos] <= 57:
         pos += 1
-    if pos >= data_len or not WS_TABLE[data[pos]]:
+    if pos >= data_len or not ws_table[data[pos]]:
         return False
-    while pos < data_len and WS_TABLE[data[pos]]:
+    while pos < data_len and ws_table[data[pos]]:
         pos += 1
 
     if pos >= data_len or not (48 <= data[pos] <= 57):
         return False
     while pos < data_len and 48 <= data[pos] <= 57:
         pos += 1
-    if pos >= data_len or not WS_TABLE[data[pos]]:
+    if pos >= data_len or not ws_table[data[pos]]:
         return False
-    while pos < data_len and WS_TABLE[data[pos]]:
+    while pos < data_len and ws_table[data[pos]]:
         pos += 1
 
     return pos + 3 <= data_len and data[pos : pos + 3] == b"obj"
@@ -339,9 +351,13 @@ def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
     return pos
 
 
-def skip_name(data: bytes | memoryview, pos: int, data_len: int) -> int:
+def skip_name(
+    data: bytes | memoryview, pos: int, data_len: int, *, rules: LexicalRules | None = None
+) -> int:
+    """Skip a name using the caller's selected token boundaries."""
+    separators = (lexical_rules() if rules is None else rules).separator_table
     pos += 1
-    while pos < data_len and not SEPARATOR_TABLE[data[pos]]:
+    while pos < data_len and not separators[data[pos]]:
         pos += 1
     return pos
 

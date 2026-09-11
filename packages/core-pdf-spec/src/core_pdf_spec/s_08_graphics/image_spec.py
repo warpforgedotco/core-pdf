@@ -6,10 +6,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, require_pdf_integer
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Width",
@@ -18,6 +20,9 @@ internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Decode",
     "ColorSpace",
     "ImageMask",
+    "Mask",
+    "Matte",
+    "SMaskInData",
 }
 
 
@@ -41,6 +46,7 @@ class ImageSource:
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
     soft_mask: SoftMask | None = field(default=None, kw_only=True)
+    semantic_context: SemanticContext | None = field(default=None, kw_only=True)
 
 
 def internal_resolve_image_dictionary(
@@ -56,7 +62,12 @@ def internal_resolve_image_dictionary(
     }
 
 
-def image_source_from_stream(stream: PdfStream, resolver: PdfValueResolver) -> ImageSource:
+def image_source_from_stream(
+    stream: PdfStream,
+    resolver: PdfValueResolver,
+    *,
+    semantic_context: SemanticContext | None = None,
+) -> ImageSource:
     """Resolve the image's samples, colour space and optional soft mask.
 
     The returned descriptor contains inputs only; it performs no image preparation.
@@ -70,7 +81,43 @@ def image_source_from_stream(stream: PdfStream, resolver: PdfValueResolver) -> I
         soft_mask = SoftMask(data, dictionary)
 
     source_dictionary = internal_resolve_image_dictionary(stream.dictionary, resolver)
-    return ImageSource(stream.raw_data, source_dictionary, soft_mask=soft_mask)
+    return ImageSource(
+        stream.raw_data, source_dictionary, soft_mask=soft_mask, semantic_context=semantic_context
+    )
+
+
+def image_decode_array_applies(
+    dictionary: dict[object, object], *, context: SemanticContext | None = None
+) -> bool:
+    """Whether an image's Decode array applies to its decoded samples.
+
+    ISO 32000-1 7.4.9 and Table 89 ignore JPX Decode except for stencils.
+    ISO 32000-2:2020 7.4.9 and Table 87 apply it when ColorSpace is present.
+    Without document context, preserve the ISO 32000-1 interpretation.
+    """
+    filters = dictionary.get("Filter")
+    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+    if not any(decoded_name(value) == "JPXDecode" for value in filters):
+        return True
+    if dictionary.get("ImageMask") is True:
+        return True
+    if context is None:
+        return False
+    if context.version is None or not context.version.recognized:
+        raise PdfUnsupportedError("JPX Decode interpretation requires a recognized PDF version")
+    return context.version >= PdfVersion(2, 0) and dictionary.get("ColorSpace") is not None
+
+
+def image_smask_in_data(dictionary: dict[object, object]) -> int:
+    """Table 89/87: JPX opacity selector; the entry is meaningless for other filters."""
+    filters = dictionary.get("Filter")
+    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+    if not any(decoded_name(value) == "JPXDecode" for value in filters):
+        return 0
+    selector = require_pdf_integer(dictionary.get("SMaskInData", 0), "invalid image SMaskInData")
+    if selector not in {0, 1, 2}:
+        raise ValueError("invalid image SMaskInData")
+    return selector
 
 
 def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
@@ -95,6 +142,8 @@ def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
 
 
 __all__ = (
+    "image_smask_in_data",
+    "image_decode_array_applies",
     "image_bits_per_component",
     "SoftMask",
     "ImageSource",

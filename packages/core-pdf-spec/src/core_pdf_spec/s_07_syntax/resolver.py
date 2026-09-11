@@ -29,6 +29,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number,
 )
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import MISSING, PdfName, PdfReference, PdfString
 
 STREAM_DECODE_KEYS = frozenset(
@@ -54,6 +55,7 @@ class ObjectResolver:
         "object_streams",
         "lock",
         "thread_state",
+        "internal_semantic_context",
     )
 
     def __init__(
@@ -62,6 +64,7 @@ class ObjectResolver:
         xref: dict[int, PdfXRefEntry],
         *,
         decipher: Decipher | None = None,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
         # Keep an owned view.  Reusing the caller's memoryview lets a temporary
         # resolver.close() release the document's source buffer underneath
@@ -69,16 +72,39 @@ class ObjectResolver:
         self.data = memoryview(data)
         self.xref = xref
         self.decipher = decipher
+        self.internal_semantic_context = semantic_context
         self.objects: ObjectCache = {}
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.lock = threading.RLock()
         self.thread_state = threading.local()
+
+    @property
+    def semantic_context(self) -> SemanticContext | None:
+        return self.internal_semantic_context
+
+    @semantic_context.setter
+    def semantic_context(self, context: SemanticContext | None) -> None:
+        """Select semantics before parsing or after bootstrap, clearing parsed caches.
+
+        Names and dictionary keys depend on the version as well as text strings.
+        Previously returned objects retain their values; subsequent resolutions
+        use the new context. Callers must finish active parsing before changing it.
+        """
+        with self.lock:
+            if context == self.internal_semantic_context:
+                return
+            self.objects.clear()
+            for stream in self.object_streams.values():
+                stream.lexer.close()
+            self.object_streams.clear()
+            self.internal_semantic_context = context
 
     def get_lexer(self) -> PdfLexer:
         return PdfLexer(
             self.data,
             reference_resolver=self.resolve,
             decipher=self.decipher,
+            semantic_context=self.semantic_context,
         )
 
     def release_lexer(self, lexer: PdfLexer) -> None:
@@ -321,7 +347,7 @@ class ObjectResolver:
 
     def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
         """Create an object-stream parser; malformed stream errors propagate."""
-        return PdfObjectStream(stream)
+        return PdfObjectStream(stream, semantic_context=self.semantic_context)
 
     def load_indirect_object(self, lexer: PdfLexer, offset: int) -> object:
         """Read at the supplied offset; errors retain the parser's failure cursor."""
@@ -329,8 +355,8 @@ class ObjectResolver:
         return lexer.parse_indirect_object()
 
     def decode_text(self, data: bytes) -> str:
-        """Decode a PDF text string according to its encoding marker."""
-        return decode_pdf_text_string(data)
+        """Decode under semantic_context; applications may override reader recovery."""
+        return decode_pdf_text_string(data, context=self.semantic_context)
 
 
 __all__ = ("ObjectResolver",)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "core-pdf-ocr"
-version = "0.0.6"
+version = "0.0.7"
 description = "OCR and vector text recognition for core-pdf"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
@@ -13,7 +13,7 @@ license-files = ["LICENSE.txt"]
 requires-python = ">=3.13"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
-    "core-pdf==0.0.6",
+    "core-pdf==0.0.7",
     "numpy>=2.5.1",
     "tesserocr>=2.10.0",
 ]

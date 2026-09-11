@@ -19,12 +19,16 @@ from core_pdf_spec.s_07_syntax.types import ObjectCache
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
+from core_pdf_spec.standards import SemanticContext
 
 
 class PdfObjectStream(SyntaxObjectStream):
     __slots__ = ()
 
-    def __init__(self, stream: PdfStream) -> None:
+    def __init__(
+        self, stream: PdfStream, *, semantic_context: SemanticContext | None = None
+    ) -> None:
+        self.semantic_context = semantic_context
         first, pairs = self.read_header(stream)
         self.validate_header_pairs(pairs)
         index_map: dict[int, int] = {}
@@ -80,7 +84,7 @@ class PdfObjectStream(SyntaxObjectStream):
         pass
 
     def create_lexer(self, body: bytes) -> PdfLexer:
-        return PdfLexer(body)
+        return PdfLexer(body, semantic_context=self.semantic_context)
 
     def handle_object_error(self, rel_offset: int) -> Any:
         body = self.raw_body

@@ -150,6 +150,7 @@ class internal_PathFillTargetMixin:
                             blend_target[py, visible_start:visible_end],
                             rgba,
                             blend_mode,
+                            semantic_context=self.semantic_context,
                         )
                         continue
                     for px in range(visible_start, visible_end):

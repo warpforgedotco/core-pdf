@@ -15,14 +15,17 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     decoded_name,
     parse_int,
 )
-from core_pdf_spec.s_07_syntax_primitives.scanning import skip_pdf_ignored
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfReference
 
 
 class PdfObjectStream:
-    __slots__ = ("stream", "objects", "raw_body", "index", "lexer", "lock")
+    __slots__ = ("stream", "objects", "raw_body", "index", "lexer", "lock", "semantic_context")
 
-    def __init__(self, stream: PdfStream) -> None:
+    def __init__(
+        self, stream: PdfStream, *, semantic_context: SemanticContext | None = None
+    ) -> None:
+        self.semantic_context = semantic_context
         first, pairs = self.read_header(stream)
         self.validate_header_pairs(pairs)
         index_map: dict[int, int] = {}
@@ -57,7 +60,7 @@ class PdfObjectStream:
             or first > len(stream.data)
         ):
             raise PdfParseError("invalid object stream dictionary")
-        pairs = parse_object_stream_header(stream.data, first, n)
+        pairs = parse_object_stream_header(stream.data, first, n, context=self.semantic_context)
         if len(pairs) != n:
             raise PdfParseError("object stream header is truncated")
         return first, pairs
@@ -72,7 +75,7 @@ class PdfObjectStream:
 
     def create_lexer(self, body: bytes) -> PdfLexer:
         """Create the parser for decrypted, decoded object-stream body bytes."""
-        return PdfLexer(body)
+        return PdfLexer(body, semantic_context=self.semantic_context)
 
     def get(self, reference: int | PdfReference, default: Any = None) -> Any:
         obj_num = reference.object_number if isinstance(reference, PdfReference) else reference
@@ -111,15 +114,16 @@ def parse_object_stream_pair(lexer: PdfLexer) -> tuple[int, int]:
 
 
 def parse_object_stream_header(
-    data: bytes | memoryview, first: int, n: int
+    data: bytes | memoryview, first: int, n: int, *, context: SemanticContext | None = None
 ) -> list[tuple[int, int]]:
     if n < 0 or not 0 <= first <= len(data):
         raise PdfParseError("invalid object stream dictionary")
     header = data[:first]
-    lexer = PdfLexer(header)
+    lexer = PdfLexer(header, semantic_context=context)
     try:
         pairs = [parse_object_stream_pair(lexer) for _ in range(n)]
-        if skip_pdf_ignored(header, lexer.pos, len(header)) != len(header):
+        lexer.skip_ignored()
+        if lexer.pos != len(header):
             raise PdfParseError("unexpected data after object stream header")
         return pairs
     finally:

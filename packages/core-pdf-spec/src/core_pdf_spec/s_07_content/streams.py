@@ -107,7 +107,7 @@ class ContentStreamExecutor:
             raise PdfParseError("recursive content stream")
         # Decode before changing interpreter state or emitting group markers.
         # A failed stream entry must leave its parent exactly as it was.
-        frame.lexer = state.lexer_factory(frame.stream.data)
+        frame.lexer = state.create_lexer(frame.stream.data)
         frame.old_state = state.capture_stream_state()
         # The implicit Form save also owns clips made without an explicit q.
         # Its floor prevents malformed child Q operators from consuming any

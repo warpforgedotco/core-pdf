@@ -52,6 +52,7 @@ from core_pdf_spec.s_08_graphics.geometry import transform_bbox
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.metrics import text_adjustment_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 if TYPE_CHECKING:
@@ -67,11 +68,14 @@ class ContentInterpreter:
         sink: ContentSink,
         font_provider: FontProvider,
         lexer_factory: Callable[[bytes | memoryview], PdfLexer] = PdfLexer,
+        *,
+        semantic_context: SemanticContext | None = None,
     ):
         self.resolver = resolver
         self.sink = sink
         self.font_provider = font_provider
         self.lexer_factory = lexer_factory
+        self.semantic_context = semantic_context
         self.graphics = GraphicsState()
         self.text_matrix = IDENTITY_MATRIX
         self.line_matrix = IDENTITY_MATRIX
@@ -91,6 +95,21 @@ class ContentInterpreter:
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
         }
         self.stream_executor = ContentStreamExecutor(self)
+
+    def create_lexer(self, data: bytes | memoryview) -> PdfLexer:
+        """Create a content parser carrying the selected document semantics.
+
+        A supplied context applies to every nested stream. Without one, retain
+        any context explicitly supplied by a custom lexer factory.
+        """
+        lexer = self.lexer_factory(data)
+        if self.semantic_context is not None:
+            try:
+                lexer.semantic_context = self.semantic_context
+            except BaseException:
+                lexer.close()
+                raise
+        return lexer
 
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float

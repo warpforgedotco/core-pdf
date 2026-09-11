@@ -38,6 +38,7 @@ from core_pdf.impl.types import (
     PdfSource,
 )
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+from core_pdf_spec.standards import DocumentStandards
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.document.records import RawFormField
@@ -191,6 +192,7 @@ class PdfPage(EnginePdfPage):
             page_program=self.get_page_program(fields=fields, annotations=annotations or None),
             fields=fields,
             annotations=annotations,
+            semantic_context=self.document.resolver.semantic_context,
         )
 
 
@@ -248,6 +250,12 @@ class PdfDocument(EnginePdfDocument["PdfPage"]):
         """Return the document metadata in the canonical high-level shape."""
         value = self.get_metadata()
         return dict(value) if isinstance(value, dict) else {}
+
+    @property
+    def standards(self) -> DocumentStandards:
+        """Return declared PDF versions, extensions, and unvalidated profile claims."""
+        with self.acquire_operation():
+            return self.get_standards()
 
     @property
     def outlines(self) -> tuple[Any, ...]:

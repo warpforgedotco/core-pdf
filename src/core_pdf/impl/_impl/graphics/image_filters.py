@@ -28,7 +28,7 @@ from core_pdf.impl._impl.graphics.filter_registry import (
     FilterDecoder,
 )
 from core_pdf.impl._impl.graphics.image_models import DecodedImage
-from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
+from core_pdf.impl._impl.graphics.stream_decoding import decode_one_filter, decode_stream_data
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 
 # Decoders whose native path is exactly "preallocate a shape, hand it the buffer".
@@ -58,7 +58,7 @@ def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePla
     step = stream_spec.steps[0]
     descriptor = FILTER_DESCRIPTOR_BY_NAME.get(step.name)
     decoder = descriptor.decoder if descriptor is not None else None
-    if decoder is None or not image_decode_is_identity(dictionary):
+    if decoder is None or (decoder != "jpx" and not image_decode_is_identity(dictionary)):
         return None
     spec = NATIVE_IMAGE_SPECS.get(decoder)
     if spec is None:
@@ -96,6 +96,24 @@ def decode_stream_image_data(
     image consumers that can preserve array-backed samples through rendering.
     """
 
+    stream_spec = normalize_stream_decode_spec(dictionary)
+    if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
+        try:
+            compressed = bytes(data)
+            for step in stream_spec.steps[:-1]:
+                compressed = decode_one_filter(
+                    compressed,
+                    step.name,
+                    step.params,
+                    dictionary=dictionary,
+                    parent_dictionary=None,
+                )
+            array = decode_jpx_image(compressed, preserve_precision=True)
+            color_space = dictionary.get("ColorSpace") if isinstance(dictionary, dict) else None
+            if array.dtype == numpy.uint16 or not isinstance(color_space, (list, tuple, dict)):
+                return DecodedImage(array, "jpx")
+        except Exception:
+            return None
     plan = internal_prepare_native_image(dictionary)
     if plan is None:
         return None
@@ -105,6 +123,8 @@ def decode_stream_image_data(
     source = data
     try:
         array_decoder = internal_NATIVE_ARRAY_DECODERS.get(decoder)
+        if decoder == "jpx":
+            return DecodedImage(decode_jpx_image(source, preserve_precision=True), decoder)
         if array_decoder is not None:
             output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
             return DecodedImage(array_decoder(source, out=output), decoder)

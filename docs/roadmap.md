@@ -33,13 +33,23 @@ writing, and inspecting PDF documents.
 
 ### 4. Compliance and accessibility depth
 
+The version/extension foundation and optional veraPDF companion are implemented.
+The [chapter coverage audit](version-coverage.md) tracks supported differences and
+known gaps; recognizing a version or profile does not establish full support.
+Historical lexical rules, namespace-aware transitive structure roles, 16-bit image
+processing, and version-sensitive ColorDodge/ColorBurn now use that foundation.
+Real veraPDF positive and negative fixtures cover all 15 advertised targets.
+
 - Validate PDF/UA table headers, row/column semantics, reading order, artifacts, and
   annotation appearance states beyond the current high-level checks.
 - Add deterministic tagged-structure repair for table semantics, reading order, and
   artifact marking, followed by reopen-and-validate verification.
-- Complete PDF/A conformance for embedded fonts, ICC output intents, XMP metadata,
-  transparency, associated files, and profile-specific restrictions.
-- Add profile-aware validation for PDF/A-1, PDF/A-2, PDF/A-3, and PDF/UA variants.
+- Connect external validation findings to inspection and repair workflows while
+  retaining the original bytes as validation evidence.
+- Continue the remaining chapter audits, including historical font mapping,
+  PDFDocEncoding, page UserUnit, and DeviceN NChannel semantics.
+- Add a verified PDF/X backend when an executable and usable license are available;
+  this integration is currently deferred.
 
 ### 5. PDF-native inspection and editing
 

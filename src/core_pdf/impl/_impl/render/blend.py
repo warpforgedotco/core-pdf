@@ -8,8 +8,18 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
+from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
+internal_FALLBACK_BLEND_CONTEXT = SemanticContext(PdfVersion(2, 0))
+
+
+def internal_blend_context(context: SemanticContext | None) -> SemanticContext:
+    """Use the current equations when reader declarations are absent or unknown."""
+    if context is None or context.version is None or not context.version.recognized:
+        return internal_FALLBACK_BLEND_CONTEXT
+    return context
 
 
 def internal_blend_normal_solid_array_numpy(
@@ -82,8 +92,10 @@ def internal_blend_channels_f64(
     db: numpy.ndarray,
     da: numpy.ndarray,
     mode: str | None,
+    *,
+    semantic_context: SemanticContext | None = None,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    """Multiply/screen/normal source-over in float64, shared by the solid and group paths.
+    """Source-over in float64, shared by solid, image and group paths.
 
     Inputs are unit-scaled source channels (scalar or array) and 0-255 float64
     destination channels; the result is rounded 0-255 channels with fully
@@ -100,6 +112,18 @@ def internal_blend_channels_f64(
         src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dr / 255.0))
         src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dg / 255.0))
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - db / 255.0))
+    elif mode in {"colordodge", "colorburn"}:
+        component_mode: BlendMode = "ColorDodge" if mode == "colordodge" else "ColorBurn"
+        context = internal_blend_context(semantic_context)
+        src_r = src_r * (1.0 - dst_a) + dst_a * blend_components(
+            dr / 255.0, src_r, component_mode, context=context
+        )
+        src_g = src_g * (1.0 - dst_a) + dst_a * blend_components(
+            dg / 255.0, src_g, component_mode, context=context
+        )
+        src_b = src_b * (1.0 - dst_a) + dst_a * blend_components(
+            db / 255.0, src_b, component_mode, context=context
+        )
     out_a = src_a + dst_a * one_minus_src_a
     safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
     out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
@@ -118,6 +142,8 @@ def internal_blend_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
     blend_mode: str | None,
+    *,
+    semantic_context: SemanticContext | None = None,
 ) -> None:
     """Blend a solid source into an RGBA view, replicating ``blend_px``'s
     per-pixel math (Multiply/Screen premultiply, generic alpha compositing)
@@ -151,7 +177,16 @@ def internal_blend_solid_array_numpy(
     db = target[..., 2].astype(numpy.float64)
     da = target[..., 3].astype(numpy.float64)
     out_r, out_g, out_b, out_a_i = internal_blend_channels_f64(
-        sr / 255.0, sg / 255.0, sb / 255.0, sa / 255.0, dr, dg, db, da, mode
+        sr / 255.0,
+        sg / 255.0,
+        sb / 255.0,
+        sa / 255.0,
+        dr,
+        dg,
+        db,
+        da,
+        mode,
+        semantic_context=semantic_context,
     )
     target[..., 0] = numpy.clip(out_r, 0.0, 255.0).astype(numpy.uint8)
     target[..., 1] = numpy.clip(out_g, 0.0, 255.0).astype(numpy.uint8)
@@ -165,6 +200,8 @@ def internal_composite_blended_group_numpy(
     source_alpha_scale: float | None,
     target_alpha_scale: float | None,
     blend_mode: str | None,
+    *,
+    semantic_context: SemanticContext | None = None,
 ) -> None:
     """Composite a straight-alpha group that carries a blend mode, in one pass.
 
@@ -216,6 +253,7 @@ def internal_composite_blended_group_numpy(
         db,
         da,
         mode,
+        semantic_context=semantic_context,
     )
     for channel, values in ((0, out_r), (1, out_g), (2, out_b), (3, out_a_i)):
         # `destination[..., channel]` is a basic-indexing view, so the masked

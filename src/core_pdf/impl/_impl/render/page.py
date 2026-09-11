@@ -33,6 +33,7 @@ from core_pdf.impl._impl.runtime.array_views import (
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.standards import SemanticContext
 
 
 class internal_RenderablePage(Protocol):
@@ -56,6 +57,7 @@ class RenderedPage:
     rotate: int
     display_list: DisplayList
     metadata: dict[str, Any] = field(default_factory=dict)
+    semantic_context: SemanticContext | None = field(default=None, kw_only=True)
 
     def internal_render_items(
         self,
@@ -182,6 +184,7 @@ class RenderedPage:
             crop_y0=crop_y0,
             crop_y1=crop_y1,
             page_view=page_pixels,
+            semantic_context=self.semantic_context,
         )
         rotate = self.rotate % 360
         raster_target.paint_items(self.internal_render_items(crop, scale=scale))
@@ -250,6 +253,7 @@ def compose_page(
     page_program: PageProgram | None = None,
     fields: Iterable[Any] | None = None,
     annotations: Iterable[Any] | None = None,
+    semantic_context: SemanticContext | None = None,
 ) -> RenderedPage:
     options = options or RenderOptions()
     fields = tuple(fields) if fields is not None else None
@@ -335,6 +339,7 @@ def compose_page(
                 appearance_rendered=id(annot.dict) in rendered_appearances,
             )
     return RenderedPage(
+        semantic_context=semantic_context,
         page_number=getattr(page, "page_number", 0),
         width=width,
         height=height,
