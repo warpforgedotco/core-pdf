@@ -26,6 +26,7 @@ from core_pdf_spec.s_07_content.operations import (
 from core_pdf_spec.s_07_content.streams import (
     ContentStreamExecutor,
     ContentStreamFrame,
+    StreamKey,
     StreamState,
 )
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -242,6 +243,30 @@ class ContentInterpreter:
             return None
         if subtype != "Form":
             raise PdfParseError("unsupported XObject subtype")
+        return self.append_form_xobject(xobj, depth, stream_key=stream_key)
+
+    def resolve_form_resources(self, value: object) -> PdfDict:
+        """Resolve Form resources, inheriting only an absent dictionary."""
+        resources = self.resolve_resources(value)
+        return self.resources if resources is None else resources
+
+    def resolve_form_bbox(self, value: object) -> tuple[float, float, float, float] | None:
+        """Require a Form BBox; readers may return None for a missing box."""
+        bbox = self.resolver.resolve_box(value)
+        if bbox is None:
+            raise PdfParseError("Form XObject requires a BBox")
+        return bbox
+
+    def append_form_xobject(
+        self, xobj: PdfStream, depth: int, *, stream_key: StreamKey | None = None
+    ) -> ContentStreamFrame | None:
+        """Queue a Form using its transparency, resources, matrix, and bounds.
+
+        Callers select the Form stream and retain its source reference key.
+        Reader extensions own resource and BBox recovery through the resolution
+        methods; the state transition and frame construction remain shared.
+        """
+        xobj_dict = xobj.dictionary
         group_alpha = None
         group = xobj_dict.get("Group")
         if group is not None:
@@ -250,16 +275,9 @@ class ContentInterpreter:
                 isinstance(group_dict, dict)
                 and self.resolver.resolve_name(group_dict.get("S")) == "Transparency"
             ):
-                # PDF 32000-1 Table 147: a transparency group dictionary holds
-                # S/CS/I/K and nothing else. The constant alpha and blend mode
-                # that composite the finished group into its backdrop come from
-                # the graphics state in effect at the `Do` (11.6.6), so reading
-                # a /ca off the group dictionary found nothing and dropped the
-                # group entirely -- the contents then painted straight onto the
-                # page at full opacity in Normal mode, losing the blend.
-                #
-                # An explicitly isolated group has its own transparent backdrop,
-                # even at full opacity: a child's blend must not see the page.
+                # ISO 32000-1 Table 147 and 11.6.6: the invoking graphics state
+                # supplies group alpha and blend mode. An isolated group has a
+                # transparent backdrop even at full opacity.
                 blend = self.graphics.blend_mode
                 isolated = self.resolver.resolve(group_dict.get("I")) is True
                 if (
@@ -268,15 +286,11 @@ class ContentInterpreter:
                     or (blend is not None and blend != "Normal")
                 ):
                     group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
-        resources = self.resolve_resources(xobj_dict.get("Resources"))
-        if resources is None:
-            resources = self.resources
+        resources = self.resolve_form_resources(xobj_dict.get("Resources"))
         xobj_matrix = xobj_dict.get("Matrix")
         nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
-        form_bbox = self.resolver.resolve_box(raw_form_bbox)
-        if form_bbox is None:
-            raise PdfParseError("Form XObject requires a BBox")
+        form_bbox = self.resolve_form_bbox(raw_form_bbox)
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )

@@ -34,8 +34,8 @@ from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 @pytest.mark.parametrize("value", ["12", b"12", bytearray(b"12"), memoryview(b"12")])
 def test_reader_keeps_numeric_token_coercion(value: object) -> None:
-    strict = StrictResolver(b"", {}, {})
-    reader = ObjectResolver(b"", {}, {})
+    strict = StrictResolver(b"", {})
+    reader = ObjectResolver(b"", {})
     try:
         with pytest.raises(ValueError):
             strict.resolve_int(value)
@@ -50,7 +50,7 @@ def test_reader_keeps_numeric_token_coercion(value: object) -> None:
 
 
 def test_reader_recovers_textual_names_without_corrupting_decoded_names() -> None:
-    reader = ObjectResolver(b"", {}, {})
+    reader = ObjectResolver(b"", {})
     try:
         assert reader.resolve_name("/Foo") == "Foo"
         assert reader.resolve_name(b"/Foo") == "Foo"
@@ -78,7 +78,7 @@ def test_reader_page_traversal_leaves_shadowed_resources_unresolved() -> None:
 
 @pytest.mark.parametrize("value", [None, PdfReference(1), PdfReference(999)])
 def test_reader_inherits_field_and_page_values_through_null_references(value: PdfObject) -> None:
-    reader = ObjectResolver(b"", {}, {})
+    reader = ObjectResolver(b"", {})
     reader.objects[key_for(1)] = None
     parent_value = PdfString(b"inherited")
     parent_box = [0, 0, 100, 100]
@@ -178,7 +178,7 @@ def test_reader_keeps_real_overflow_acceptance(prefix: bytes, suffix: bytes) -> 
 
 
 def test_reader_keeps_direct_nonfinite_float_resolution() -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     try:
         assert resolver.resolve_float(math.inf, default=None) == math.inf
         value = resolver.resolve_float(math.nan)
@@ -265,7 +265,7 @@ def test_reader_preserves_partial_tree_entries_inheritance_and_resources() -> No
     assert collect_inherited_values(
         {"MediaBox": [0, 0, 10, 10], "Parent": 7}, ("MediaBox",), lambda value: value
     ) == {"MediaBox": [0, 0, 10, 10]}
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     try:
         assert resolve_resource_dict(17, resolver) is None
     finally:
@@ -347,8 +347,8 @@ def test_reader_recovers_nearby_indirect_object_offset() -> None:
 
     data = b"1 0 obj (value) endobj"
     entries = {key_for(1): PdfXRefEntry(3)}
-    strict = StrictResolver(data, entries, {})
-    reader = ObjectResolver(data, entries, {})
+    strict = StrictResolver(data, entries)
+    reader = ObjectResolver(data, entries)
     try:
         with pytest.raises(PdfParseError):
             strict.resolve(PdfReference(1))
@@ -451,7 +451,7 @@ def test_reader_tree_recovery_does_not_suppress_resolver_failure() -> None:
 
 @pytest.mark.parametrize("recover", [False, True])
 def test_reader_preserves_missing_metadata_for_malformed_catalog(recover: bool) -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     try:
         assert resolve_metadata_stream(resolver, {"Root": 17}, recover=recover) is None
         assert resolve_metadata_stream(resolver, {}, recover=recover) is None
@@ -464,7 +464,7 @@ def test_reader_preserves_missing_metadata_for_malformed_catalog(recover: bool) 
 
 
 def test_reader_preserves_metadata_error_policy() -> None:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     try:
         with pytest.raises(ValueError, match="Metadata"):
             resolve_metadata_stream(resolver, {"Root": {"Metadata": 17}})

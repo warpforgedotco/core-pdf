@@ -49,7 +49,6 @@ class ObjectResolver:
     __slots__ = (
         "data",
         "xref",
-        "trailer",
         "decipher",
         "objects",
         "object_streams",
@@ -61,7 +60,7 @@ class ObjectResolver:
         self,
         data: bytes | bytearray | memoryview | mmap.mmap,
         xref: dict[int, PdfXRefEntry],
-        trailer: PdfDict,
+        *,
         decipher: Decipher | None = None,
     ) -> None:
         # Keep an owned view.  Reusing the caller's memoryview lets a temporary
@@ -69,7 +68,6 @@ class ObjectResolver:
         # concurrent readers.
         self.data = memoryview(data)
         self.xref = xref
-        self.trailer = trailer
         self.decipher = decipher
         self.objects: ObjectCache = {}
         self.object_streams: dict[int, PdfObjectStream] = {}

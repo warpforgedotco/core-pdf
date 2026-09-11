@@ -28,7 +28,7 @@ class Sink:
 
 
 def internal_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}, {}), cast(Any, Sink()), cast(Any, None))
+    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, Sink()), cast(Any, None))
 
 
 def internal_pattern(paint_type: int = 1, **entries: Any) -> PdfStream:
@@ -91,6 +91,77 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
     assert state.matrix_operand(None, "form") == IDENTITY_MATRIX
     resolver.objects[key_for(3, 0)] = None
     assert state.matrix_operand(PdfReference(3, 0), "pattern") == IDENTITY_MATRIX
+
+
+@pytest.mark.parametrize("indirect", [False, True])
+@pytest.mark.parametrize(
+    ("isolated", "opacity", "blend", "expected"),
+    [
+        (False, 1.0, None, None),
+        (False, 1.0, "Normal", None),
+        (True, 1.0, None, 1.0),
+        (False, 0.4, None, 0.4),
+        (False, 1.0, "Multiply", 1.0),
+    ],
+)
+def test_form_retains_transparency_transform_and_source_identity(
+    indirect: bool, isolated: bool, opacity: float, blend: str | None, expected: float | None
+) -> None:
+    # ISO 32000-1 Table 147 and 11.6.6: the invoking state supplies group alpha.
+    state = internal_state()
+    bbox = [0, 0, 2, 3]
+    form = PdfStream(
+        raw_data=b"",
+        dictionary={
+            "Subtype": PdfName.of("Form"),
+            "BBox": bbox,
+            "Matrix": [1, 0, 0, 1, 5, 6],
+            "Group": {"S": PdfName.of("Transparency"), "I": isolated, "ca": 0.1},
+        },
+    )
+    cast(ObjectResolver, state.resolver).objects[key_for(7, 2)] = form
+    state.resources = {"XObject": {"F": PdfReference(7, 2) if indirect else form}}
+    state.graphics.ctm = Matrix(2, 0, 0, 3, 7, 11)
+    state.graphics.fill_opacity = opacity
+    state.graphics.blend_mode = blend
+    frame = state.append_xobject(PdfName.of("F"), 2)
+    assert frame is not None
+    assert frame.stream is form
+    assert frame.source_key == (("ref", 7, 2) if indirect else None)
+    assert frame.form_bbox_operand is bbox
+    assert frame.ctm == Matrix(2, 0, 0, 3, 17, 29)
+    assert frame.clip_bbox == (17, 29, 21, 38)
+    assert frame.depth == 3
+    assert frame.group_alpha == expected
+
+
+@pytest.mark.parametrize("resources", [None, {}, {"Font": {}}])
+def test_form_inherits_resources_only_when_absent(resources: dict | None) -> None:
+    # ISO 32000-1 Table 95: an explicit empty Resources dictionary is still local.
+    state = internal_state()
+    form = PdfStream(dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1]})
+    if resources is not None:
+        form.dictionary["Resources"] = resources
+    state.resources = {"XObject": {"F": form}}
+    frame = state.append_xobject(PdfName.of("F"), 0)
+    assert frame is not None
+    assert frame.resources is (state.resources if resources is None else resources)
+
+
+@pytest.mark.parametrize(
+    ("dictionary", "message"),
+    [
+        ({"Subtype": PdfName.of("Form")}, "requires a BBox"),
+        ({"Subtype": PdfName.of("Unknown")}, "unsupported XObject subtype"),
+        ({"BBox": [0, 0, 1, 1]}, "unsupported XObject subtype"),
+    ],
+)
+def test_form_rejects_missing_bbox_and_invalid_subtypes(dictionary: dict, message: str) -> None:
+    state = internal_state()
+    state.resources = {"XObject": {"F": PdfStream(dictionary=dictionary)}}
+    with pytest.raises(PdfParseError, match=message):
+        state.append_xobject(PdfName.of("F"), 0)
+    assert not state.stream_executor.active_streams
 
 
 @pytest.mark.parametrize(("vertical", "expected"), [(False, (-2, 0)), (True, (0, -1))])

@@ -25,7 +25,7 @@ from core_pdf_spec.types import PdfName, PdfReference
 
 
 def internal_state() -> TextState:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     return TextState(SimpleNamespace(resolver=resolver, resolve=resolver.resolve))
 
 
@@ -48,6 +48,80 @@ def test_reader_matrix_resolution_retains_truncation_and_default_policies() -> N
     assert state.matrix_operand([1], "pattern") == IDENTITY_MATRIX
     with pytest.raises(ValueError, match="matrix"):
         state.matrix_operand([1], "form")
+
+
+@pytest.mark.parametrize("indirect", [False, True])
+@pytest.mark.parametrize(
+    ("isolated", "opacity", "blend", "grouped"),
+    [
+        (False, 1.0, None, False),
+        (False, 1.0, "Normal", False),
+        (True, 1.0, None, True),
+        (False, 0.4, None, True),
+        (False, 1.0, "Multiply", True),
+    ],
+)
+def test_reader_form_preserves_group_capture_and_source_identity(
+    indirect: bool, isolated: bool, opacity: float, blend: str | None, grouped: bool
+) -> None:
+    state = internal_state()
+    form = PdfStream(
+        raw_data=b"0 0 1 1 re f",
+        dictionary={
+            "Subtype": PdfName.of("Form"),
+            "BBox": [0, 0, 2, 3],
+            "Group": {"S": PdfName.of("Transparency"), "I": isolated, "ca": 0.1},
+        },
+    )
+    cast(ObjectResolver, state.resolver).objects[key_for(7, 2)] = form
+    state.resources = {"XObject": {"F": PdfReference(7, 2) if indirect else form}}
+    state.graphics.fill_opacity = opacity
+    state.graphics.blend_mode = blend
+    frame = state.append_xobject(PdfName.of("F"), 0)
+    assert frame is not None
+    assert frame.source_key == (("ref", 7, 2) if indirect else None)
+    state.stream_executor.consume(PdfStream(raw_data=b"/F Do"), state.resources, IDENTITY_MATRIX, 0)
+    assert [drawing.kind for drawing in state.drawings] == (
+        ["group-begin", "fill", "group-end"] if grouped else ["fill"]
+    )
+    if grouped:
+        begin, paint, end = state.drawings
+        assert begin.fill_opacity == end.fill_opacity == opacity
+        assert begin.blend_mode == end.blend_mode == blend
+        assert paint.fill_opacity == 1.0
+        assert paint.blend_mode is None
+    assert state.graphics.fill_opacity == opacity
+    assert state.graphics.blend_mode == blend
+    assert not state.stream_executor.active_streams
+
+
+@pytest.mark.parametrize("resources", [None, {}, {"Font": {}}])
+def test_reader_form_keeps_empty_resource_fallback_and_missing_bbox(resources: dict | None) -> None:
+    state = internal_state()
+    form = PdfStream(dictionary={"Subtype": PdfName.of("Form")})
+    if resources is not None:
+        form.dictionary["Resources"] = resources
+    state.resources = {"XObject": {"F": form}}
+    frame = state.append_xobject(PdfName.of("F"), 0)
+    assert frame is not None
+    assert frame.resources is (resources or state.resources)
+    assert frame.clip_bbox is None
+
+
+@pytest.mark.parametrize(
+    "dictionary",
+    [
+        {"Subtype": PdfName.of("Unknown")},
+        {"BBox": [0, 0, 1, 1]},
+        {"Subtype": PdfName.of("Form"), "Type": PdfName.of("ObjStm")},
+    ],
+)
+def test_reader_skips_invalid_xobject_subtypes_and_object_streams(dictionary: dict) -> None:
+    state = internal_state()
+    state.resources = {"XObject": {"F": PdfStream(dictionary=dictionary)}}
+    assert state.append_xobject(PdfName.of("F"), 0) is None
+    assert not state.drawings
+    assert not state.stream_executor.active_streams
 
 
 @pytest.mark.parametrize(

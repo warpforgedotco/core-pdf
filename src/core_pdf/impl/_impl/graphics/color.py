@@ -41,7 +41,7 @@ from core_pdf.impl._impl.graphics.image_kernels import (
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl._impl.runtime.scalars import parse_float
 from core_pdf_spec.s_08_graphics.color import indexed_color_components
-from core_pdf_spec.s_08_graphics.color_math import lab_to_xyz
+from core_pdf_spec.s_08_graphics.color_math import lab_components_to_xyz
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
@@ -467,10 +467,10 @@ def internal_convert_lab(raw: ImageBuffer, space: ColorSpace) -> ImageBuffer:
     samples = uint8_view(raw).reshape(-1, 3)
     a_span = range_a[1] - range_a[0]
     lab = samples.astype(numpy.float32)
-    lab[:, 0] /= 255.0
-    lab[:, 1] = (lab[:, 1] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
-    lab[:, 2] = (lab[:, 2] / 255.0 * (range_b[1] - range_b[0]) + range_b[0] + 128.0) / 255.0
-    xyz = lab_to_xyz(lab, (white_point[0], white_point[1], white_point[2]))
+    lab[:, 0] = lab[:, 0] / 255.0 * 100.0
+    lab[:, 1] = lab[:, 1] / 255.0 * a_span + range_a[0]
+    lab[:, 2] = lab[:, 2] / 255.0 * (range_b[1] - range_b[0]) + range_b[0]
+    xyz = lab_components_to_xyz(lab, (white_point[0], white_point[1], white_point[2]))
     rgb = d50_xyz_to_srgb(xyz)
     return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 

@@ -22,7 +22,7 @@ from core_pdf_spec.types import PdfName, Rectangle
 
 
 def internal_state() -> TextState:
-    resolver = ObjectResolver(b"", {}, {})
+    resolver = ObjectResolver(b"", {})
     return TextState(SimpleNamespace(resolver=resolver, resolve=resolver.resolve))
 
 

@@ -85,7 +85,7 @@ def test_explicit_null_security_integer_is_not_a_default(field: str) -> None:
 
 def test_handler_factory_runs_after_id_validation() -> None:
     trailer: PdfDict = {"Encrypt": security_dictionary(), "ID": []}
-    resolver = ObjectResolver(b"", {}, trailer)
+    resolver = ObjectResolver(b"", {})
 
     def unexpected_factory(*args: object) -> StandardSecurityHandler:
         raise AssertionError("authentication preceded ID validation")
@@ -101,7 +101,7 @@ def test_mac_failure_after_factory_never_installs_the_decipher(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trailer: PdfDict = {"Encrypt": security_dictionary(), "ID": [b"core-pdf-security"]}
-    resolver = ObjectResolver(b"", {}, trailer)
+    resolver = ObjectResolver(b"", {})
     events: list[str] = []
 
     def factory(document_id: object, params: PdfDict, password: str) -> StandardSecurityHandler:

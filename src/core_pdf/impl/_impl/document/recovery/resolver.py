@@ -18,10 +18,7 @@ from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spe
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import (
-    Decipher,
-    PdfDict,
-)
+from core_pdf_spec.s_07_syntax.types import Decipher
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
@@ -35,12 +32,11 @@ class ObjectResolver(SyntaxResolver):
         self,
         data: bytes | bytearray | memoryview | mmap.mmap,
         xref: dict[int, PdfXRefEntry],
-        trailer: PdfDict,
-        decipher: Decipher | None = None,
         *,
+        decipher: Decipher | None = None,
         recover_missing: bool = False,
     ) -> None:
-        super().__init__(data, xref, trailer, decipher)
+        super().__init__(data, xref, decipher=decipher)
         self.recover_missing = recover_missing
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:

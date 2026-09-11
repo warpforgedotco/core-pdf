@@ -25,7 +25,7 @@ class SelectedImageResolver(ObjectResolver):
 def test_main_and_soft_mask_share_selected_resolution(
     indirect_mask: bool, filter_key: str, params_key: str
 ) -> None:
-    resolver = SelectedImageResolver(b"", {}, {})
+    resolver = SelectedImageResolver(b"", {})
     resolver.objects.update(
         {
             key_for(1): 2,
@@ -111,7 +111,7 @@ def test_main_and_soft_mask_share_selected_resolution(
 
 @pytest.mark.parametrize("soft_mask", [False, True])
 def test_selected_image_input_resolution_preserves_errors(soft_mask: bool) -> None:
-    resolver = SelectedImageResolver(b"", {}, {})
+    resolver = SelectedImageResolver(b"", {})
     image = PdfStream({"Width": PdfReference(99)}, raw_data=b"sample")
     source = PdfStream({"SMask": image}) if soft_mask else image
     try:
@@ -123,7 +123,7 @@ def test_selected_image_input_resolution_preserves_errors(soft_mask: bool) -> No
 
 @pytest.mark.parametrize("mask", [None, PdfName.of("None"), {}])
 def test_nonstream_soft_mask_remains_absent(mask: object) -> None:
-    resolver = SelectedImageResolver(b"", {}, {})
+    resolver = SelectedImageResolver(b"", {})
     source = PdfStream({"SMask": mask, "Metadata": PdfReference(99)}, raw_data=b"sample")
     try:
         captured = image_source_from_stream(source, resolver)

@@ -172,7 +172,7 @@ class JBIG2Image:
 
 
 class JBIG2MQDecoder:
-    __slots__ = ("data", "bp", "data_end", "a", "chigh", "clow", "ct", "ctx")
+    __slots__ = ("data", "bp", "data_end", "a", "chigh", "clow", "ct")
 
     def __init__(self, data: bytes) -> None:
         self.data = data
@@ -181,7 +181,6 @@ class JBIG2MQDecoder:
         self.chigh = data[0] if data else 0xFF
         self.clow = 0
         self.ct = 0
-        self.ctx: dict[int, int] = {}
         self.byte_in()
         self.chigh = ((self.chigh << 7) & 0xFFFF) | ((self.clow >> 9) & 0x7F)
         self.clow = (self.clow << 7) & 0xFFFF

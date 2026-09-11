@@ -24,7 +24,7 @@ def test_reader_prepares_selected_mask_inputs_and_keeps_raw_alpha_policy(
         def missing_object(self, ref: PdfReference) -> object:
             pytest.fail(f"unrelated image object resolved: {ref}")
 
-    resolver = Resolver(b"", {}, {})
+    resolver = Resolver(b"", {})
     resolver.objects.update(
         {
             key_for(1): "2" if numeric_strings else 2,
