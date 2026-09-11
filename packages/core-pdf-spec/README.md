@@ -34,6 +34,11 @@ There is no document facade, CLI, or complete conformance-validator claim. Core 
 not dependencies and are never discovered or imported. Runtime dependencies are NumPy,
 cryptography, and asn1crypto; bundled font data retains its original notices.
 
+For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accepts
+NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
+Image sample decoding and range enforcement belong to the caller. The existing
+`lab_to_xyz` function retains its normalized input convention as a compatibility wrapper.
+
 The current spec version is `0.4.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
 `>=0.4.0,<0.5.0`; changes to that range require core integration and differential validation.
