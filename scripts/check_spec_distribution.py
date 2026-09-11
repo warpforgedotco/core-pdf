@@ -38,7 +38,8 @@ from importlib import resources
 import core_pdf_spec
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_08_graphics.color_spec import parse_device_n_attributes
+from core_pdf_spec.s_08_graphics.color import color_space_paints
+from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, parse_device_n_attributes
 from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf_spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf_spec.standards import PdfVersion
@@ -72,6 +73,8 @@ attributes = parse_device_n_attributes(
 assert attributes.process is not None
 assert attributes.process.color_space.kind == "DeviceCMYK"
 assert attributes.process.component_indices == (None, 1, None, 0)
+assert not color_space_paints(ColorSpace("DeviceN", ((0, 1),) * 2, colorants=("None", "None")))
+assert color_space_paints(ColorSpace("DeviceN", ((0, 1),) * 2, colorants=("None", "Ink")))
 assert resources.files("core_pdf_spec").joinpath("py.typed").is_file()
 data = resources.files("core_pdf_spec._vendor.font_data")
 assert data.joinpath("LICENSE.txt").is_file()

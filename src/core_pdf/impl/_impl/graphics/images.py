@@ -13,7 +13,7 @@ from core_pdf.impl._impl.graphics.color import (
     internal_convert_cmyk,
     internal_convert_image_data,
 )
-from core_pdf.impl._impl.graphics.color_spec import parse_color_space
+from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints, parse_color_space
 from core_pdf.impl._impl.graphics.image_filters import decode_stream_image_data
 from core_pdf.impl._impl.graphics.image_models import DecodedImage
 from core_pdf.impl._impl.graphics.image_samples import convert_16bit_image, convert_integer_samples
@@ -41,6 +41,13 @@ def internal_decode_array_applies(
     # Reader recovery retains the historical interpretation for unknown versions.
     known = context if context and context.version and context.version.recognized else None
     return image_decode_array_applies(dictionary, context=known)
+
+
+def internal_image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
+    """Recognize discarded colourants before decoding samples or associated masks."""
+    if dictionary.get("ImageMask") is True:
+        return True
+    return internal_color_space_paints(dictionary.get("ColorSpace"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +116,8 @@ class PreparedImage:
 class internal_ImagePreparation(ImageSource):
     def prepare(self) -> PreparedImage | None:
         """Decode and return an immutable prepared image."""
+        if not internal_image_color_space_paints(self.dictionary):
+            return None
         is_stencil = self.dictionary.get("ImageMask") is True
         dictionary = self.dictionary
         try:
@@ -431,6 +440,8 @@ def decode_pdf_image(
     semantic_context: SemanticContext | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> DecodedRaster | None:
+    if not internal_image_color_space_paints(dictionary):
+        return None
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
     width = parse_int(dictionary.get("Width"), 0)

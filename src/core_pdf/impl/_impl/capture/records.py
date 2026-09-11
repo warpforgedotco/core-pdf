@@ -45,6 +45,7 @@ class CapturedInlineImage:
     stream_order: int = 0
     fill: tuple[float, ...] | None = None
     fill_opacity: float | None = None
+    paints: bool = True
 
 
 class CapturedSubpath:
@@ -232,6 +233,9 @@ class CapturedDrawing:
     stream_order: int = 0
     xobject_depth: int = 0
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    paints: bool = True
+    fill_paints: bool = True
+    stroke_paints: bool = True
 
     def __post_init__(self) -> None:
         if not self.items:

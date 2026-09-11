@@ -8,6 +8,8 @@ from typing import Any
 
 import core_pdf_spec.s_08_graphics.pdf_function as strict
 from core_pdf.impl._impl.runtime.scalars import parse_float, parse_int
+from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float as parse_pdf_float
 from core_pdf_spec.s_08_graphics.pdf_function import (
@@ -194,4 +196,21 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         if isinstance(function, PdfStream)
         else dictionary
     )
+    if kind == 0 and isinstance(prepared, PdfStream):
+        # The strict sampled compiler wraps evaluation setup errors as ValueError.
+        # Decode first so authentication failures and unexpected decoder defects
+        # cannot become a recoverable numeric error. Keep existing recovery for
+        # known malformed or unsupported stream data, and never decode it twice.
+        try:
+            decoded = prepared.data
+        except (
+            TypeError,
+            ValueError,
+            ArithmeticError,
+            FilterError,
+            PdfParseError,
+            PdfUnsupportedError,
+        ) as error:
+            raise ValueError("invalid sampled PDF function") from error
+        prepared = prepared.replace(raw_data=decoded, spec=None, decoder=None)
     return strict.compile_pdf_function(prepared, compile_nested=internal_compile_pdf_function)

@@ -132,6 +132,9 @@ The original attributes remain in `ColorSpace.params["Attributes"]`; optional mi
 hints remain opaque and are not compiled or fully validated. This API parses metadata
 without choosing a blending algorithm. Ordinary DeviceN `Colorants` metadata was already
 defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availability gate.
+`s_08_graphics.color.color_space_paints` identifies Separation `/None` and all-`/None`
+DeviceN spaces that discard output, including through Indexed and uncolored Pattern
+bases. Mixed DeviceN spaces retain every input component for their alternate tint transform.
 
 When migrating to `0.4.0`:
 

@@ -17,9 +17,11 @@ from core_pdf.impl._impl.runtime.scalars import parse_float, parse_int
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_spec import (
     ColorParams,
     ColorSpace,
+    DeviceNAttributes,
     DeviceNProcess,
     parse_device_n_attributes,
 )
@@ -98,14 +100,53 @@ def parse_color_space(value: object) -> ColorSpace:
     return internal_parse_color_space(value, set())
 
 
+def internal_color_space_paints(value: object) -> bool:
+    """Probe resolved colourant names without decoding profiles, palettes or tints.
+
+    This is only an early no-paint decision. Unknown or malformed descriptions
+    retain their normal parsing and recovery path when preparation needs them.
+    """
+    seen: set[int] = set()
+    while isinstance(value, (list, tuple)) and value:
+        marker = id(value)
+        if marker in seen:
+            return True
+        seen.add(marker)
+        kind = recover_pdf_name(value[0])
+        if kind == "Indexed" and len(value) == 4 or kind == "Pattern" and len(value) == 2:
+            value = value[1]
+            continue
+        if kind == "Separation" and len(value) == 4:
+            names: tuple[str | None, ...] = (recover_pdf_name(value[1]),)
+        elif kind == "DeviceN" and len(value) in {4, 5}:
+            raw_names = value[1]
+            if not isinstance(raw_names, (list, tuple)) or not raw_names:
+                return True
+            names = tuple(recover_pdf_name(name) for name in raw_names)
+        else:
+            return True
+        if any(name is None for name in names):
+            return True
+        return color_space_paints(ColorSpace(kind, (), colorants=cast(tuple[str, ...], names)))
+    return True
+
+
+def internal_nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
+    """Return validated metadata for the reader's NChannel conversion policies."""
+    attributes = space.devicen_attributes
+    if space.kind != "DeviceN" or attributes is None or attributes.subtype != "NChannel":
+        return None
+    return attributes
+
+
 def internal_nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
     """Select the supported process-only NChannel output policy.
 
-    Mixed spot/process spaces retain their global alternate and tint transform.
+    Mixed spot/process spaces use the separate mixing policy or global fallback.
     Extra unused Colorants definitions do not make a process-only space mixed.
     """
-    attributes = space.devicen_attributes
-    if space.kind != "DeviceN" or attributes is None or attributes.subtype != "NChannel":
+    attributes = internal_nchannel_attributes(space)
+    if attributes is None:
         return None
     process = attributes.process
     if process is None:

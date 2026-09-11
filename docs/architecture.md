@@ -269,11 +269,33 @@ process space before conversion: RGB values retain their additive meaning, and m
 components contribute no ink. ICC profiles, rendering intent, and compensation follow the
 same conversion path as directly selected process spaces. This applies to scalar paint colors
 and image samples, including Indexed bases. Ordinary DeviceN, mixed spot/process NChannel,
-and malformed attribute dictionaries retain the global alternate-space tint transform.
-Individual spot-ink mixing, mixing hints, and separation-aware overprinting remain future work.
-The existing scalar Indexed-to-ordinary-DeviceN path does not apply the base tint transform;
-that limitation also remains for mixed NChannel bases. Process-only NChannel Indexed bases
-use the new component-conversion path.
+and malformed attribute dictionaries have a global alternate-space tint transform available.
+Indexed palettes with Separation or DeviceN bases now use recursive conversion for both scalar
+colors and every supported image sample depth; lookup, Decode, tint evaluation, and alternate
+conversion retain that order.
+
+For mixed or all-spot NChannel, core provides a selected screen approximation: convert the
+process components and each spot's Separation appearance to sRGB, then multiply the appearances
+over the process result (or white when there are no process components). Component conversion
+retains ICC profiles and rendering settings; mixing does not apply object opacity. The policy
+requires empty/absent `MixingHints` and spot zero-tint endpoints that convert to white at the
+8-bit output precision. Nonempty hints, other paper endpoints, or unusable individual functions
+use the whole global tint transform. This approximation does not model spectral inks,
+separation-aware overprinting, or plate interactions with a transparent backdrop.
+
+`s_08_graphics.color.color_space_paints` identifies Separation `None` and all-`None` DeviceN,
+including Indexed and uncolored Pattern bases. Capture retains their extraction records while
+explicit paint flags suppress raster output and unnecessary image/function decoding. Text
+advances and clipping remain active, and fill/stroke suppression is independent. A DeviceN
+space containing both `None` and real colorants still passes every component to its tint function.
+The early image/shading probe reads only names; general color-space selection still parses
+alternate ICC profiles eagerly, including an unused alternate in a malformed no-paint space.
+
+Tiling patterns whose captured contents use only Normal blending render all tiles into one
+buffer, then apply the outer opacity, scalar soft mask, and blend mode once. This uses the
+isolated optimization permitted by ISO 32000-2 §11.6.7. Patterns with internal non-Normal
+blends retain the existing backdrop-dependent path; complete outer transparency for those
+patterns requires non-isolated group support.
 
 Transparency groups still composite in the renderer's RGB space. Converting through arbitrary
 group `/CS` blending spaces requires additional work.

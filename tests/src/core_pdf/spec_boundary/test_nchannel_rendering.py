@@ -240,7 +240,9 @@ def test_initial_nchannel_rgb_components_are_one_and_not_process_defaults() -> N
     assert nchannel[1] == direct[1] == (255, 0, 0)
 
 
-@pytest.mark.parametrize("paint", ["path", "image8", "image16", "indexed-path", "shading"])
+@pytest.mark.parametrize(
+    "paint", ["path", "image8", "image16", "indexed-path", "indexed-image", "shading"]
+)
 @pytest.mark.parametrize("mixed_spot", [False, True], ids=["ordinary-devicen", "mixed-nchannel"])
 def test_global_tint_fallback_remains_for_ordinary_devicen_and_mixed_spots(
     paint: str, mixed_spot: bool
@@ -249,12 +251,8 @@ def test_global_tint_fallback_remains_for_ordinary_devicen_and_mixed_spots(
     space = internal_nchannel(case, "NChannel" if mixed_spot else "DeviceN", spot=mixed_spot)
     values = (*case.values, 0.5) if mixed_spot else case.values
     expected = (0, 0, 255)
-    if paint == "indexed-path":
-        # Legacy scalar Indexed/DeviceN does not evaluate the global tint.
-        # Process-only support must preserve this existing fallback behavior.
-        names = (*case.colorants, "Spot") if mixed_spot else case.colorants
-        baseline = b"[/DeviceN " + internal_names(names) + b" /DeviceRGB 8 0 R]"
-        expected = internal_pixels(internal_document(baseline, values, paint))[0]
+    # The constant-yellow spot's zero endpoint is not white, so mixed NChannel
+    # retains its whole-space tint fallback. Indexed paints now evaluate it too.
     assert internal_pixels(internal_document(space, values, paint))[0] == expected
 
 

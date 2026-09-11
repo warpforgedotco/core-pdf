@@ -178,8 +178,21 @@ class DisplayList:
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
         """Append a captured drawing without rebuilding its keyword-data mapping."""
+        if not drawing.paints:
+            return
         paint_kind = PATH_PAINT_KINDS.get(drawing.kind)
         if paint_kind is not None:
+            fills = paint_kind is not PathPaintKind.STROKE and drawing.fill_paints
+            strokes = paint_kind is not PathPaintKind.FILL and drawing.stroke_paints
+            if not fills and not strokes:
+                return
+            paint_kind = (
+                PathPaintKind.FILL_STROKE
+                if fills and strokes
+                else PathPaintKind.FILL
+                if fills
+                else PathPaintKind.STROKE
+            )
             path = drawing.path
             previous = self.items[-1] if self.items else None
             if (

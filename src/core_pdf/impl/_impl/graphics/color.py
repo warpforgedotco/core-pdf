@@ -17,7 +17,7 @@ from core_pdf.impl._impl.graphics.color_spec import (
     ColorParams,
     ColorSpace,
     cs_param_floats,
-    internal_nchannel_process,
+    internal_nchannel_attributes,
     parse_color_space,
     recover_image_bits_per_component,
 )
@@ -59,7 +59,10 @@ ImageBuffer: TypeAlias = ByteBuffer
 def internal_requires_component_conversion(space: ColorSpace) -> bool:
     return (
         space.kind in {"ICCBased", "CalGray", "CalRGB", "Lab"}
-        or internal_nchannel_process(space) is not None
+        or internal_nchannel_attributes(space) is not None
+        or space.kind == "Indexed"
+        and space.base is not None
+        and space.base.kind in {"Separation", "DeviceN"}
         or space.base is not None
         and internal_requires_component_conversion(space.base)
         or space.alternate is not None

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
-from core_pdf.impl._impl.graphics.color_spec import parse_color_space
+from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints, parse_color_space
 from core_pdf.impl._impl.graphics.functions import (
     internal_compile_pdf_function,
     internal_number_array,
@@ -41,6 +41,8 @@ def prepare_shading(
 ) -> PreparedShading | None:
     """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
+        return None
+    if not internal_color_space_paints(dictionary.get("ColorSpace")):
         return None
     shading_type = parse_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:

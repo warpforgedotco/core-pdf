@@ -21,6 +21,7 @@ from core_pdf.impl._impl.graphics.icc_profiles import (
     IccSampleError,
     parse_icc_transform,
 )
+from core_pdf.impl._impl.graphics.nchannel import internal_mix_nchannel
 from core_pdf.impl._impl.runtime.scalars import parse_float
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
@@ -51,6 +52,8 @@ def internal_convert_components(
         raise ValueError("invalid image color space")
     if values.ndim != 2 or values.shape[1] != len(space.component_ranges):
         raise ValueError("invalid color component count")
+    if space.kind == "Indexed" and not numpy.isfinite(values).all():
+        raise ValueError("invalid Indexed color component")
     if matte is not None and space.kind != "Indexed":
         if alpha is None:
             raise ValueError("missing image matte opacity")
@@ -69,6 +72,16 @@ def internal_convert_components(
         return internal_convert_components(
             mapped, process.color_space, depth + 1, rendering=rendering
         )
+    if kind == "DeviceN":
+        mixed = internal_mix_nchannel(
+            values,
+            space,
+            lambda components, target: internal_convert_components(
+                components, target, depth + 1, rendering=rendering
+            ),
+        )
+        if mixed is not None:
+            return mixed
     if kind in {"DeviceGray", "DeviceRGB"}:
         return internal_quantize(values)
     if kind in {"DeviceCMYK", "ICCBased"}:

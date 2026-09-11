@@ -66,6 +66,8 @@ def internal_append_glyph_paint(
     if glyph.visible is False and not glyph.clip_glyph:
         return True
     mode = int(glyph.text_render_mode)
+    if mode == 3:
+        return True
     if not include_paint and mode < 4:
         return True
     path = internal_glyph_outline_path(glyph)
@@ -179,6 +181,8 @@ def append_captured_program(
             inline_image = command
             bbox, quad = unit_square_placement(inline_image.ctm)
             flush_text_clip(inline_image.seqno)
+            if not inline_image.paints:
+                continue
             display_list.append(
                 "inline-image",
                 inline_image.seqno,

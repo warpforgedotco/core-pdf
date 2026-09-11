@@ -43,6 +43,7 @@ from core_pdf.impl._impl.capture.text_runs import (
 from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState
 from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
+from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints
 from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
     GlyphCluster,
@@ -66,6 +67,7 @@ from core_pdf_spec.s_07_content.streams import (
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
@@ -152,7 +154,9 @@ class RecordingMethods(RecoveringTextState):
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
-        if self.internal_text_paint_mode() in NON_PAINTING_RENDER_MODES:
+        # Colourant suppression changes raster paint, not the text evidence
+        # available to extraction (including the existing visibility policy).
+        if self.internal_text_paint_mode(check_colorants=False) in NON_PAINTING_RENDER_MODES:
             return False
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
@@ -505,6 +509,8 @@ class RecordingMethods(RecoveringTextState):
         if not fills and not strokes:
             return
         kind = "fillstroke" if fills and strokes else "fill" if fills else "stroke"
+        fill_paints = color_space_paints(self.graphics.fill_space)
+        stroke_paints = color_space_paints(self.graphics.stroke_space)
 
         captured_path = flatten_path(source)
         if self.graphics.ctm == IDENTITY_MATRIX:
@@ -523,10 +529,14 @@ class RecordingMethods(RecoveringTextState):
                 CapturedDrawing(
                     seqno=self.sequence,
                     fill=self.capture_color(stroke=False),
-                    fill_pattern=self.capture_pattern(self.graphics.fill_pattern),
+                    fill_pattern=self.capture_pattern(self.graphics.fill_pattern)
+                    if fill_paints and fills
+                    else None,
                     fill_opacity=self.graphics.fill_opacity,
                     stroke_color=self.capture_color(stroke=True),
-                    stroke_pattern=self.capture_pattern(self.graphics.stroke_pattern),
+                    stroke_pattern=self.capture_pattern(self.graphics.stroke_pattern)
+                    if stroke_paints and strokes
+                    else None,
                     stroke_opacity=self.graphics.stroke_opacity,
                     line_width=line_width,
                     line_cap=self.graphics.line_cap,
@@ -536,6 +546,8 @@ class RecordingMethods(RecoveringTextState):
                     blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     kind=kind,
+                    fill_paints=fill_paints,
+                    stroke_paints=stroke_paints,
                     path=path,
                     stream_order=self.stream_order,
                     xobject_depth=self.xobject_depth,
@@ -589,6 +601,11 @@ class RecordingMethods(RecoveringTextState):
             source, smask_alpha = image_source_from_stream(
                 xobj, self.resolver, color_rendering=self.graphics.color_rendering
             )
+            paints = (
+                color_space_paints(self.graphics.fill_space)
+                if image_is_stencil
+                else internal_color_space_paints(source.dictionary.get("ColorSpace"))
+            )
             # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
             # set bits in the current fill colour. Every other image ignores
             # the fill, so recording it is only meaningful for the mask case,
@@ -602,6 +619,7 @@ class RecordingMethods(RecoveringTextState):
                     dash_pattern=self.transformed_dash_pattern(),
                     soft_mask_alpha=smask_alpha,
                     kind="image",
+                    paints=paints,
                     image_source=source,
                     raw_data=xobj.raw_data,
                     dictionary=dict(xobj_dict),
@@ -632,6 +650,11 @@ class RecordingMethods(RecoveringTextState):
                 self.resolver,
                 color_rendering=self.graphics.color_rendering,
             )
+            paints = (
+                color_space_paints(self.graphics.fill_space)
+                if dictionary.get("ImageMask") is True
+                else internal_color_space_paints(source.dictionary.get("ColorSpace"))
+            )
             self.inline_images.append(
                 CapturedInlineImage(
                     seqno=self.sequence,
@@ -648,6 +671,7 @@ class RecordingMethods(RecoveringTextState):
                     if dictionary.get("ImageMask") is True
                     else None,
                     fill_opacity=self.graphics.fill_opacity,
+                    paints=paints,
                 )
             )
             self.sequence += 1
@@ -655,6 +679,7 @@ class RecordingMethods(RecoveringTextState):
     def paint_shading(self, state: object, shading: PdfDict) -> None:
         if not self.is_graphics_visible():
             return
+        dictionary = self.capture_shading_dictionary(shading)
         self.drawings.append(
             CapturedDrawing(
                 seqno=self.sequence,
@@ -669,9 +694,10 @@ class RecordingMethods(RecoveringTextState):
                 blend_mode=self.graphics.blend_mode,
                 soft_mask_alpha=self.group_alpha,
                 kind="shading",
+                paints=internal_color_space_paints(dictionary.get("ColorSpace")),
                 color_rendering=self.graphics.color_rendering,
                 items=[],
-                dictionary=self.capture_shading_dictionary(shading),
+                dictionary=dictionary,
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
             )
@@ -779,13 +805,16 @@ class RecordingMethods(RecoveringTextState):
         pattern = self.graphics.stroke_pattern if stroke else self.graphics.fill_pattern
         return space.kind == "Pattern" and pattern is None
 
-    def internal_text_paint_mode(self) -> int:
-        """Remove unselected Pattern contributions without changing text clipping."""
+    def internal_text_paint_mode(self, *, check_colorants: bool = True) -> int:
+        """Remove nonpainting colour contributions without changing text clipping."""
         mode = self.graphics.render_mode
         if mode not in range(8):
             return mode
         fills = mode in {0, 2, 4, 6} and not self.internal_initial_pattern(stroke=False)
         strokes = mode in {1, 2, 5, 6} and not self.internal_initial_pattern(stroke=True)
+        if check_colorants:
+            fills = fills and color_space_paints(self.graphics.fill_space)
+            strokes = strokes and color_space_paints(self.graphics.stroke_space)
         paint = 2 if fills and strokes else 0 if fills else 1 if strokes else 3
         return paint + (4 if mode >= 4 else 0)
 
@@ -794,6 +823,8 @@ class RecordingMethods(RecoveringTextState):
         color = self.graphics.stroke_color if stroke else self.graphics.fill_color
         spec = self.graphics.stroke_space if stroke else self.graphics.fill_space
         if color is not None and spec is not None:
+            if not color_space_paints(spec):
+                return color
             key = (id(spec), color, self.graphics.color_rendering)
             previous = self.capture_colors.get(key)
             if previous is not None:

@@ -90,6 +90,33 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
 
 
+def internal_tiling_pattern_uses_normal_blends(
+    pattern: TilingPattern, active: set[int] | None = None
+) -> bool:
+    """Conservatively identify the isolated optimization allowed by 11.6.7."""
+    if active is None:
+        active = set()
+    identity = id(pattern)
+    if identity in active:
+        return False
+    active.add(identity)
+    try:
+        modes = [drawing.blend_mode for drawing in pattern.drawings]
+        modes.extend(glyph.blend_mode for glyph in pattern.glyphs)
+        modes.extend(image.blend_mode for image in pattern.inline_images)
+        if any(mode is not None and mode.casefold() != "normal" for mode in modes):
+            return False
+        for drawing in pattern.drawings:
+            for nested in (drawing.fill_pattern, drawing.stroke_pattern):
+                if isinstance(
+                    nested, TilingPattern
+                ) and not internal_tiling_pattern_uses_normal_blends(nested, active):
+                    return False
+        return True
+    finally:
+        active.remove(identity)
+
+
 class internal_PatternTargetMixin:
     """Stateful gradient and tiling-pattern painting operations."""
 
@@ -259,21 +286,35 @@ class internal_PatternTargetMixin:
         start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
         cells = 0
         y = start_y
-        while y < y1 + y_step and cells < 10000:
-            x = start_x
-            while x < x1 + x_step and cells < 10000:
-                tx = x - cell_x0
-                ty = y - cell_y0
-                if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
-                    self.paint_items(
-                        display.items,
-                        translation=(tx, ty),
-                        parent_blend_mode=blend_mode,
-                        clip_path=cell_clip,
-                    )
-                cells += 1
-                x += x_step
-            y += y_step
+        grouped = internal_tiling_pattern_uses_normal_blends(pattern)
+        if grouped:
+            # ISO 32000-2 11.6.7 Notes 1-2: Normal-only cells may use an
+            # isolated buffer, and all tiles share one group to avoid seams.
+            # Object transparency belongs to the complete pattern result.
+            opacity = target_data.fill_opacity
+            alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
+            if is_pdf_number(target_data.soft_mask_alpha):
+                alpha *= internal_clamp01(target_data.soft_mask_alpha)
+            self.push_group(bytearray(len(self.pixels)), alpha, blend_mode)
+        try:
+            while y < y1 + y_step and cells < 10000:
+                x = start_x
+                while x < x1 + x_step and cells < 10000:
+                    tx = x - cell_x0
+                    ty = y - cell_y0
+                    if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
+                        self.paint_items(
+                            display.items,
+                            translation=(tx, ty),
+                            parent_blend_mode=None if grouped else blend_mode,
+                            clip_path=cell_clip,
+                        )
+                    cells += 1
+                    x += x_step
+                y += y_step
+        finally:
+            if grouped:
+                self.composite_group(self.pop_group())
         return True
 
     def paint_fill_pattern(

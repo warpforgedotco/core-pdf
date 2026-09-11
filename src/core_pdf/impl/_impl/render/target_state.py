@@ -16,7 +16,12 @@ from core_pdf.impl._impl.capture.records import CapturedPath, TilingPattern
 from core_pdf.impl._impl.graphics.images import PreparedImage
 from core_pdf.impl._impl.graphics.shading import PreparedShading
 from core_pdf.impl._impl.render.clipping import internal_ClipState
-from core_pdf.impl._impl.render.model import DisplayItem, ImagePaintItem, PathPaintItem
+from core_pdf.impl._impl.render.model import (
+    DisplayItem,
+    ImagePaintItem,
+    PathPaintItem,
+    internal_RasterGroup,
+)
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, UInt8Array
 from core_pdf_spec.standards import SemanticContext
 
@@ -154,6 +159,14 @@ class internal_RasterState(Protocol):
     ) -> None: ...
 
     def internal_resolved_blend(self, blend_mode: str | None) -> str | None: ...
+
+    def push_group(
+        self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
+    ) -> None: ...
+
+    def pop_group(self) -> internal_RasterGroup: ...
+
+    def composite_group(self, group: internal_RasterGroup) -> None: ...
 
     def paint_items(
         self,
