@@ -236,6 +236,7 @@ class CapturedDrawing:
     paints: bool = True
     fill_paints: bool = True
     stroke_paints: bool = True
+    group_isolated: bool = True
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -290,6 +291,8 @@ def marker_drawing(
     *,
     fill_opacity: float | None = None,
     blend_mode: str | None = None,
+    soft_mask_alpha: float | None = None,
+    group_isolated: bool = True,
 ) -> CapturedDrawing:
     """A zero-geometry drawing that only marks a scope boundary in page order.
 
@@ -301,6 +304,8 @@ def marker_drawing(
         fill=None,
         fill_opacity=fill_opacity,
         blend_mode=blend_mode,
+        soft_mask_alpha=soft_mask_alpha,
+        group_isolated=group_isolated,
         kind=kind,
     )
 

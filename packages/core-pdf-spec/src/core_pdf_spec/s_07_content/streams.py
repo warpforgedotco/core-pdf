@@ -48,6 +48,8 @@ class ContentStreamFrame:
     depth: int
     clip_bbox: Rectangle | None
     group_alpha: float | None = None
+    # Legacy explicitly queued groups are isolated; Form dictionaries supply /I.
+    group_isolated: bool = field(default=True, kw_only=True)
     form_bbox_operand: object = field(default=None, kw_only=True)
     is_form: bool = field(default=False, kw_only=True)
     source_key: StreamKey | None = field(default=None, kw_only=True)

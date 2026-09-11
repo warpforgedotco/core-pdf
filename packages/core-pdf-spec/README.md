@@ -100,6 +100,13 @@ selects PDF 2.0. Source image helpers preserve 16-bit samples, and
 `s_11_transparency.images` supplies strict Matte unblending. Codec selection and
 output raster conversion stay in core.
 
+`s_11_transparency.groups.remove_group_backdrop` removes a transparency group's initial
+backdrop using independently accumulated source alpha. It returns unquantized, unclipped
+source components and alpha; callers own compositing state, raster storage, and output gamut
+clipping. `ContentStreamFrame.group_isolated` preserves Form isolation for semantic sinks.
+Actual transparency Forms default to non-isolated; legacy explicit `group_alpha` frames
+retain their isolated default, and executor override signatures are unchanged.
+
 `s_07_document.page.page_user_unit` supplies strict page-local unit parsing with the
 prescribed default; applications own physical geometry and raster-size limits.
 `s_09_fonts.helpers.get_base_encoding_glyph_names` and

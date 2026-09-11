@@ -75,11 +75,15 @@ class internal_PathShapeTargetMixin:
             y_coverage = numpy.clip(
                 numpy.minimum(rows + 1.0, bottom) - numpy.maximum(rows, top), 0.0, 1.0
             )
+            alpha_plane = numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(
+                numpy.uint8
+            )
             internal_blend_normal_alpha_array_numpy(
                 self.pixel_view(pixels)[iy0:iy1, ix0:ix1],
                 rgba,
-                numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(numpy.uint8),
+                alpha_plane,
             )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
             return
         if rgba[3] == 255 and blend_mode is None and rectangular_clip:
             span = ix1 - ix0
@@ -87,12 +91,14 @@ class internal_PathShapeTargetMixin:
                 return
             if pixels is self.page_buffer:
                 self.page_pixels[iy0:iy1, ix0:ix1] = rgba
+                self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
                 return
             target_pixels = self.pixel_view(pixels)
             internal_blend_normal_solid_array_numpy(
                 target_pixels[iy0:iy1, ix0:ix1],
                 rgba,
             )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
             return
         pixel_view = self.pixel_view
         normal_fast = blend_mode is None
@@ -103,6 +109,7 @@ class internal_PathShapeTargetMixin:
                 target_pixels[iy0:iy1, ix0:ix1],
                 rgba,
             )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
             return
         # Only non-Normal blending and nonrectangular clips reach this path.
         width = self.width
@@ -124,6 +131,7 @@ class internal_PathShapeTargetMixin:
                     blend_mode,
                     semantic_context=self.semantic_context,
                 )
+                self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
                 return
         for y in range(iy0, iy1):
             row = y * width * 4
@@ -138,6 +146,7 @@ class internal_PathShapeTargetMixin:
                 if normal_target is not None:
                     if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
                         internal_blend_normal_solid_array_numpy(normal_target[y, start:end], rgba)
+                        self.record_source_alpha(y, slice(start, end), rgba[3])
                     else:
                         for x in range(start, end):
                             blend_normal_pixel(row + x * 4, *rgba)
@@ -148,6 +157,7 @@ class internal_PathShapeTargetMixin:
                         blend_mode,
                         semantic_context=self.semantic_context,
                     )
+                    self.record_source_alpha(y, slice(start, end), rgba[3])
                 else:
                     for x in range(start, end):
                         blend_px(row + x * 4, rgba, blend_resolved_mode)
@@ -228,6 +238,9 @@ class internal_PathShapeTargetMixin:
                 target_pixels = page_pixels if pixels is page_buffer else pixel_view(pixels)
                 target_region = target_pixels[iy0:iy1, ix0:ix1]
                 target_region[expanded] = rgba
+                self.record_source_alpha(
+                    slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=expanded
+                )
                 return
         for row_index, row in enumerate(rows):
             cell_y1 = y1 - row_index * cell_h
@@ -307,6 +320,7 @@ class internal_PathShapeTargetMixin:
                     circle_page_ys[:, None] - cy
                 ) ** 2 <= radius2
                 self.pixel_view(pixels)[iy0:iy1, ix0:ix1][inside] = rgba
+                self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=inside)
                 return
             red, green, blue, internal_alpha = rgba
             for py in range(iy0, iy1):
@@ -323,6 +337,7 @@ class internal_PathShapeTargetMixin:
                     pixels[index + 1] = green
                     pixels[index + 2] = blue
                     pixels[index + 3] = 255
+                    self.record_source_alpha(py, px, 255)
             return
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale

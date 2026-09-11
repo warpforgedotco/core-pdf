@@ -139,7 +139,7 @@ class internal_PathStrokeTargetMixin:
         ):
             x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
             y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
-            rasterize_unclipped_line_normal(
+            alpha_plane = rasterize_unclipped_line_normal(
                 pixels,
                 width,
                 crop_x0,
@@ -156,7 +156,10 @@ class internal_PathStrokeTargetMixin:
                 target_pixels=self.pixel_view(pixels),
                 x_coords=x_coords,
                 y_coords=y_coords,
+                return_source_alpha=self.group_source_alpha is not None,
             )
+            if alpha_plane is not None:
+                self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
             return
         for py in range(iy0, iy1):
             row = py * width * 4

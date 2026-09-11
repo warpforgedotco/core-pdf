@@ -10,7 +10,7 @@ import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl._impl.model.geometry import RectBox
-from core_pdf.impl._impl.runtime.array_views import uint8_view
+from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_view
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
 # NumPy's coordinate mask remains cheaper than Python pixel loops for modest
@@ -124,19 +124,21 @@ def rasterize_unclipped_line_normal(
     target_pixels: numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]] | None = None,
     x_coords: numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]] | None = None,
     y_coords: numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]] | None = None,
-) -> None:
+    return_source_alpha: bool = False,
+) -> UInt8Array | None:
     """Rasterize one antialiased line into an unclipped normal RGBA bitmap.
 
     This intentionally mirrors the renderer's general diagonal-line path.  Keeping the
     kernel free of renderer state makes it suitable for isolated performance testing
     while preserving
     the existing renderer for clipped, dashed, and non-normal blend-mode paths.
+    A caller tracking group opacity may request the effective source alpha plane.
     """
     x_delta = x1 - x0
     y_delta = y1 - y0
     segment_length_squared = x_delta * x_delta + y_delta * y_delta
     if segment_length_squared <= 1e-12:
-        return
+        return None
 
     segment_length = segment_length_squared**0.5
     half = max(0.5 / scale, line_width * 0.5)
@@ -153,7 +155,7 @@ def rasterize_unclipped_line_normal(
     if y_coords is None:
         y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
     if x_coords.size == 0 or y_coords.size == 0:
-        return
+        return None
 
     covered = numpy.zeros((y_coords.size, x_coords.size), dtype=numpy.int16)
     if line_cap == 0:
@@ -209,13 +211,13 @@ def rasterize_unclipped_line_normal(
                 covered += inside
 
     if not numpy.any(covered):
-        return
+        return None
 
     alpha = numpy.rint(source_alpha * covered / sample_total).astype(numpy.int16)
     alpha = numpy.clip(alpha, 0, 255)
     mask = alpha > 0
     if not numpy.any(mask):
-        return
+        return None
 
     if target_pixels is None:
         target_pixels = uint8_view(pixels).reshape(-1, width, 4)
@@ -254,6 +256,7 @@ def rasterize_unclipped_line_normal(
         destination[:, 2] = numpy.clip(numpy.rint(output_blue), 0, 255)
         destination[:, 3] = numpy.clip(numpy.rint(output_alpha * 255.0), 0, 255)
         target[partial] = destination.astype(numpy.uint8)
+    return alpha.astype(numpy.uint8) if return_source_alpha else None
 
 
 def internal_group_offsets(

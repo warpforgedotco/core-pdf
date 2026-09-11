@@ -160,7 +160,7 @@ Subpackages under `core_pdf_spec` mirror chapters of the PDF specification:
 | `s_07_security` | 7 — encryption handlers |
 | `s_08_graphics` | 8 — color-space/image semantics, functions, shading geometry, matrices |
 | `s_09_fonts` | 9 — font formats, CMaps, encodings, widths, and semantic font services |
-| `s_11_transparency` | 11 — version-sensitive blend equations and image Matte semantics |
+| `s_11_transparency` | 11 — version-sensitive blend equations, group backdrop removal, image Matte semantics |
 | `s_14_structure` | 14 — logical structure tree |
 
 ---
@@ -235,8 +235,12 @@ parent frame's state, and leaving a stream unwinds its local clipping even after
 content. Resource lookup resolves dictionaries on demand while retaining indirect references,
 so equivalent direct and indirect resource dictionaries preserve Form identity.
 
-Raster paint state separates object opacity from isolated-group compositing opacity. A group's
-opacity is applied once when it is composited into its parent. Stroke dash phase advances across
+Raster paint state separates object opacity from group compositing opacity. Form group isolation
+survives interpretation and capture; an omitted `/I` means non-isolated. Non-isolated groups
+start with their parent's current RGB backdrop and track their own paint alpha separately.
+Backdrop removal precedes outer blending, opacity, and the existing scalar soft-mask factor,
+so the background and group opacity each contribute once. Nested groups contribute only their
+completed output alpha to the enclosing group. Stroke dash phase advances across
 the segments of one subpath, and a zero-width stroke retains its device-pixel hairline semantics.
 
 Images, soft masks, and stencils sample through the original image placement. Page crops and
@@ -291,11 +295,14 @@ space containing both `None` and real colorants still passes every component to 
 The early image/shading probe reads only names; general color-space selection still parses
 alternate ICC profiles eagerly, including an unused alternate in a malformed no-paint space.
 
-Tiling patterns whose captured contents use only Normal blending render all tiles into one
-buffer, then apply the outer opacity, scalar soft mask, and blend mode once. This uses the
-isolated optimization permitted by ISO 32000-2 §11.6.7. Patterns with internal non-Normal
-blends retain the existing backdrop-dependent path; complete outer transparency for those
-patterns requires non-isolated group support.
+Tiling patterns render all tiles into one group, then apply the outer opacity, scalar soft
+mask, and blend mode once. Non-Normal contents see the initial backdrop through a non-isolated
+group. Patterns whose captured contents use only Normal blending retain the isolated
+optimization permitted by ISO 32000-2 §11.6.7. Group alpha follows the same effective coverage
+and mask samples as image, path, text, and shading paint, including vectorized raster paths.
 
-Transparency groups still composite in the renderer's RGB space. Converting through arbitrary
-group `/CS` blending spaces requires additional work.
+Transparency groups composite in the renderer's RGB space with its existing supported blend
+modes and byte quantization. Knockout groups, arbitrary group `/CS` blending spaces, and full
+transparency soft-mask groups require additional work.
+Form `/BBox` currently constrains capture metadata and image placement; enforcing that bound
+as a raster clip for paths and shading remains a separate geometry limitation.

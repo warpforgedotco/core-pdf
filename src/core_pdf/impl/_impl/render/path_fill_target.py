@@ -129,6 +129,7 @@ class internal_PathFillTargetMixin:
                             page_pixels[py, visible_start:visible_end] = rgba
                         else:
                             pixel_view(pixels)[py, visible_start:visible_end] = rgba
+                        self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if rectangular_clip and normal_fast:
                         blend_normal_solid_span(row, visible_start, visible_end, rgba)
@@ -141,6 +142,7 @@ class internal_PathFillTargetMixin:
                             normal_target[py, visible_start:visible_end],
                             rgba,
                         )
+                        self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if (
                         blend_target is not None
@@ -152,6 +154,7 @@ class internal_PathFillTargetMixin:
                             blend_mode,
                             semantic_context=self.semantic_context,
                         )
+                        self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     for px in range(visible_start, visible_end):
                         if normal_fast:
@@ -303,11 +306,13 @@ class internal_PathFillTargetMixin:
             device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
             device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
             coverage = internal_signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
+            alpha_plane = numpy.rint(coverage * rgba[3]).astype(numpy.uint8)
             internal_blend_normal_alpha_array_numpy(
                 pixel_view(pixels)[iy0:iy1, ix0:ix1],
                 rgba,
-                numpy.rint(coverage * rgba[3]).astype(numpy.uint8),
+                alpha_plane,
             )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
             return
         edge_segments = [
             (
@@ -389,13 +394,15 @@ class internal_PathFillTargetMixin:
                         numpy.uint8
                     )
                     target = pixel_view(pixels)[py, ix0:ix1]
+                    alpha_plane = numpy.rint(
+                        coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
+                    ).astype(numpy.uint8)
                     internal_blend_normal_alpha_array_numpy(
                         target,
                         rgba,
-                        numpy.rint(
-                            coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
-                        ).astype(numpy.uint8),
+                        alpha_plane,
                     )
+                    self.record_source_alpha(py, slice(ix0, ix1), alpha_plane)
                 continue
             for px in range(ix0, ix1):
                 covered = 0

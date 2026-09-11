@@ -52,17 +52,17 @@ def test_reader_matrix_resolution_retains_truncation_and_default_policies() -> N
 
 @pytest.mark.parametrize("indirect", [False, True])
 @pytest.mark.parametrize(
-    ("isolated", "opacity", "blend", "grouped"),
+    ("isolated", "opacity", "blend"),
     [
-        (False, 1.0, None, False),
-        (False, 1.0, "Normal", False),
-        (True, 1.0, None, True),
-        (False, 0.4, None, True),
-        (False, 1.0, "Multiply", True),
+        (False, 1.0, None),
+        (False, 1.0, "Normal"),
+        (True, 1.0, None),
+        (False, 0.4, None),
+        (False, 1.0, "Multiply"),
     ],
 )
 def test_reader_form_preserves_group_capture_and_source_identity(
-    indirect: bool, isolated: bool, opacity: float, blend: str | None, grouped: bool
+    indirect: bool, isolated: bool, opacity: float, blend: str | None
 ) -> None:
     state = internal_state()
     form = PdfStream(
@@ -81,15 +81,13 @@ def test_reader_form_preserves_group_capture_and_source_identity(
     assert frame is not None
     assert frame.source_key == (("ref", 7, 2) if indirect else None)
     state.stream_executor.consume(PdfStream(raw_data=b"/F Do"), state.resources, IDENTITY_MATRIX, 0)
-    assert [drawing.kind for drawing in state.drawings] == (
-        ["group-begin", "fill", "group-end"] if grouped else ["fill"]
-    )
-    if grouped:
-        begin, paint, end = state.drawings
-        assert begin.fill_opacity == end.fill_opacity == opacity
-        assert begin.blend_mode == end.blend_mode == blend
-        assert paint.fill_opacity == 1.0
-        assert paint.blend_mode is None
+    assert [drawing.kind for drawing in state.drawings] == ["group-begin", "fill", "group-end"]
+    begin, paint, end = state.drawings
+    assert begin.fill_opacity == end.fill_opacity == opacity
+    assert begin.blend_mode == end.blend_mode == blend
+    assert begin.group_isolated == end.group_isolated == isolated
+    assert paint.fill_opacity == 1.0
+    assert paint.blend_mode is None
     assert state.graphics.fill_opacity == opacity
     assert state.graphics.blend_mode == blend
     assert not state.stream_executor.active_streams

@@ -271,6 +271,7 @@ class DisplayList:
             fill_rule=drawing.fill_rule,
             blend_mode=drawing.blend_mode,
             soft_mask_alpha=drawing.soft_mask_alpha,
+            group_isolated=drawing.group_isolated,
             raw_data=drawing.raw_data,
             dictionary=drawing.dictionary,
             image_source=drawing.image_source,

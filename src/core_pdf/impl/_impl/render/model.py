@@ -159,6 +159,12 @@ class internal_RasterGroup:
     pixels: bytearray
     composite_alpha: float | None = None
     blend_mode: str | None = None
+    # A non-isolated group paints over its suspended parent's pixels. Its own
+    # alpha must remain separate from the alpha already present in that backdrop.
+    backdrop: bytearray | None = field(default=None, kw_only=True)
+    source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
+        default=None, kw_only=True
+    )
 
 
 @dataclass(frozen=True, slots=True)

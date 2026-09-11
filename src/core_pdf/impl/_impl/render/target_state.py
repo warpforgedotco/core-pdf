@@ -38,6 +38,16 @@ class internal_RasterState(Protocol):
     crop_y1: float
     page_pixels: UInt8Array
     page_buffer: bytearray
+    group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+
+    def record_source_alpha(
+        self,
+        rows: int | slice,
+        columns: int | slice,
+        alpha: int | UInt8Array,
+        *,
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
+    ) -> None: ...
 
     def blend_normal_pixel(self, idx: int, sr: int, sg: int, sb: int, sa: int) -> None: ...
 
@@ -82,6 +92,7 @@ class internal_RasterState(Protocol):
         comps: int,
         *,
         transposed: bool = False,
+        target_origin: tuple[int, int] = (0, 0),
     ) -> None: ...
 
     def can_blend_normal_fast(self, blend_mode: str | None) -> bool: ...
@@ -161,7 +172,12 @@ class internal_RasterState(Protocol):
     def internal_resolved_blend(self, blend_mode: str | None) -> str | None: ...
 
     def push_group(
-        self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
+        self,
+        buffer: bytearray,
+        group_alpha: float | None,
+        blend_mode: str | None,
+        *,
+        isolated: bool = True,
     ) -> None: ...
 
     def pop_group(self) -> internal_RasterGroup: ...

@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
+
+import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.blend import (
@@ -17,6 +20,7 @@ from core_pdf.impl._impl.render.blend import (
 )
 from core_pdf.impl._impl.render.clipping import internal_ClipState
 from core_pdf.impl._impl.render.commands import translated_command
+from core_pdf.impl._impl.render.groups import internal_composite_nonisolated_group
 from core_pdf.impl._impl.render.image_affine_target import internal_ImageAffineTargetMixin
 from core_pdf.impl._impl.render.image_axis_target import internal_ImageAxisTargetMixin
 from core_pdf.impl._impl.render.model import (
@@ -59,6 +63,7 @@ class internal_RasterTarget(
         "pixels",
         "semantic_context",
         "buffer_stack",
+        "group_source_alpha",
         "clip",
         "width",
         "height",
@@ -92,6 +97,7 @@ class internal_RasterTarget(
         self.pixels = pixels
         self.semantic_context = internal_blend_context(semantic_context)
         self.buffer_stack = [internal_RasterGroup(pixels)]
+        self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
         self.clip = clip
         self.width = width
         self.height = height
@@ -186,10 +192,15 @@ class internal_RasterTarget(
             if isinstance(path, CapturedPath) and path.has_segments():
                 self.clip.push(path, data.get("fill_rule") or "nonzero")
         elif item.kind == "group-begin":
+            opacity = data.get("fill_opacity")
+            mask = data.get("soft_mask_alpha")
+            if is_pdf_number(mask):
+                opacity = (float(opacity) if is_pdf_number(opacity) else 1.0) * float(mask)
             self.push_group(
                 bytearray(self.width * self.height * 4),
-                data.get("fill_opacity"),
+                opacity,
                 data.get("blend_mode"),
+                isolated=data.get("group_isolated", True),
             )
         elif item.kind == "group-end" and len(self.buffer_stack) > self.group_floor:
             self.composite_group(self.pop_group())
@@ -206,15 +217,50 @@ class internal_RasterTarget(
             self.paint_shading(data, blend_mode)
 
     def push_group(
-        self, buffer: bytearray, group_alpha: float | None, blend_mode: str | None
+        self,
+        buffer: bytearray,
+        group_alpha: float | None,
+        blend_mode: str | None,
+        *,
+        isolated: bool = True,
     ) -> None:
-        self.buffer_stack.append(internal_RasterGroup(buffer, group_alpha, blend_mode))
+        backdrop = None if isolated else self.pixels
+        source_alpha = None
+        if backdrop is not None:
+            buffer[:] = backdrop
+            source_alpha = numpy.zeros((self.height, self.width), dtype=numpy.float32)
+        self.buffer_stack.append(
+            internal_RasterGroup(
+                buffer, group_alpha, blend_mode, backdrop=backdrop, source_alpha=source_alpha
+            )
+        )
         self.pixels = buffer
+        self.group_source_alpha = source_alpha
 
     def pop_group(self) -> internal_RasterGroup:
         child = self.buffer_stack.pop()
         self.pixels = self.buffer_stack[-1].pixels
+        self.group_source_alpha = self.buffer_stack[-1].source_alpha
         return child
+
+    def record_source_alpha(
+        self,
+        rows: int | slice,
+        columns: int | slice,
+        alpha: int | UInt8Array,
+        *,
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
+    ) -> None:
+        """Accumulate only paint alpha, excluding the group's initial backdrop."""
+        plane = self.group_source_alpha
+        if plane is None:
+            return
+        previous = plane[rows, columns]
+        source = alpha / 255.0
+        updated = previous + (1.0 - previous) * source
+        plane[rows, columns] = (
+            updated if visible is None else numpy.where(visible, updated, previous)
+        )
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
         """Return an array view for an RGBA byte buffer."""
@@ -235,6 +281,9 @@ class internal_RasterTarget(
         sr, sg, sb, sa = rgba
         if sa <= 0:
             return
+        if self.group_source_alpha is not None:
+            row, column = divmod(idx // 4, self.width)
+            self.record_source_alpha(row, column, sa)
         if sa >= 255 and mode is None:
             pixels[idx] = sr
             pixels[idx + 1] = sg
@@ -294,6 +343,9 @@ class internal_RasterTarget(
     def blend_normal_pixel(self, idx: int, sr: int, sg: int, sb: int, sa: int) -> None:
         if sa <= 0:
             return
+        if self.group_source_alpha is not None:
+            row, column = divmod(idx // 4, self.width)
+            self.record_source_alpha(row, column, sa)
         pixels = self.pixels
         if sa >= 255:
             pixels[idx] = sr
@@ -329,6 +381,7 @@ class internal_RasterTarget(
         sr, sg, sb, sa = rgba
         if sa <= 0 or end <= start:
             return
+        self.record_source_alpha(row // (self.width * 4), slice(start, end), sa)
         pixels = self.pixels
         width = self.width
         if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
@@ -373,10 +426,28 @@ class internal_RasterTarget(
         normalized_blend_mode = (
             group_blend_mode.casefold() if isinstance(group_blend_mode, str) else None
         )
+        source_scale = float(group_alpha) if is_pdf_number(group_alpha) else 1.0
+        if group.source_alpha is not None:
+            effective_alpha = internal_composite_nonisolated_group(
+                self.pixel_view(self.pixels),
+                self.pixel_view(child),
+                group.source_alpha,
+                source_scale,
+                group_blend_mode,
+                semantic_context=self.semantic_context,
+            )
+            self.record_source_alpha(slice(None), slice(None), effective_alpha)
+            return
+        if self.group_source_alpha is not None:
+            effective_alpha = numpy.clip(
+                numpy.rint(self.pixel_view(child)[..., 3].astype(numpy.float64) * source_scale),
+                0.0,
+                255.0,
+            ).astype(numpy.uint8)
+            self.record_source_alpha(slice(None), slice(None), effective_alpha)
         if normalized_blend_mode in {None, "normal"} and len(child) >= 4_096:
             source_pixels = self.pixel_view(child)
             target_pixels = self.pixel_view(self.pixels)
-            source_scale = float(group_alpha) if is_pdf_number(group_alpha) else 1.0
             internal_composite_normal_group_numpy(
                 target_pixels,
                 source_pixels,

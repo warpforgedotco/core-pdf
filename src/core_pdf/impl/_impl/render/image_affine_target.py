@@ -30,7 +30,7 @@ class internal_ImageAffineTargetMixin:
     __slots__ = ()
 
     def blit_opaque_sampled_tiles(
-        self,
+        self: internal_RasterState,
         source_pixels: numpy.ndarray[Any, Any],
         target_region: numpy.ndarray[Any, Any],
         source_y: numpy.ndarray[Any, Any],
@@ -40,7 +40,9 @@ class internal_ImageAffineTargetMixin:
         comps: int,
         *,
         transposed: bool = False,
+        target_origin: tuple[int, int] = (0, 0),
     ) -> None:
+        target_x, target_y = target_origin
         row_count = len(valid_rows)
         column_count = len(valid_columns)
         all_valid = bool(valid_rows.all() and valid_columns.all())
@@ -82,6 +84,11 @@ class internal_ImageAffineTargetMixin:
                 if all_valid:
                     target_tile[:, :, 0:3] = sampled
                     target_tile[:, :, 3] = 255
+                    self.record_source_alpha(
+                        slice(target_y + row_start, target_y + row_end),
+                        slice(target_x + column_start, target_x + column_end),
+                        255,
+                    )
                     del sampled
                     continue
                 visible = (
@@ -90,6 +97,12 @@ class internal_ImageAffineTargetMixin:
                 )
                 numpy.copyto(target_tile[:, :, 0:3], sampled, where=visible[:, :, None])
                 numpy.copyto(target_tile[:, :, 3], 255, where=visible)
+                self.record_source_alpha(
+                    slice(target_y + row_start, target_y + row_end),
+                    slice(target_x + column_start, target_x + column_end),
+                    255,
+                    visible=visible,
+                )
                 # Release this tile before allocating the next one.
                 del sampled, visible
 
@@ -206,6 +219,7 @@ class internal_ImageAffineTargetMixin:
                 valid_y,
                 valid_x,
                 comps,
+                target_origin=(ix0, iy0),
             )
             return True
         u_from_x = abs(uy) <= rect_tolerance and abs(ux) > rect_tolerance
@@ -271,6 +285,7 @@ class internal_ImageAffineTargetMixin:
                 valid_x,
                 comps,
                 transposed=not u_from_x,
+                target_origin=(ix0, iy0),
             )
             return True
         source_pixels = uint8_view(converted)[: width_px * height_px * comps].reshape(
@@ -313,6 +328,12 @@ class internal_ImageAffineTargetMixin:
                 if can_write_opaque:
                     numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
                     numpy.copyto(target[:, :, 3], 255, where=visible)
+                    self.record_source_alpha(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        255,
+                        visible=visible,
+                    )
                     continue
                 alpha_grid = (
                     internal_sample_image_plane(source_alpha, source_u, source_v)
@@ -347,5 +368,11 @@ class internal_ImageAffineTargetMixin:
                 )
                 target[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(
                     numpy.uint8
+                )
+                self.record_source_alpha(
+                    slice(row_start, row_end),
+                    slice(column_start, column_end),
+                    alpha_grid,
+                    visible=visible,
                 )
         return True

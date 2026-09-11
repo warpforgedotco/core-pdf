@@ -286,16 +286,19 @@ class internal_PatternTargetMixin:
         start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
         cells = 0
         y = start_y
-        grouped = internal_tiling_pattern_uses_normal_blends(pattern)
-        if grouped:
-            # ISO 32000-2 11.6.7 Notes 1-2: Normal-only cells may use an
-            # isolated buffer, and all tiles share one group to avoid seams.
-            # Object transparency belongs to the complete pattern result.
-            opacity = target_data.fill_opacity
-            alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
-            if is_pdf_number(target_data.soft_mask_alpha):
-                alpha *= internal_clamp01(target_data.soft_mask_alpha)
-            self.push_group(bytearray(len(self.pixels)), alpha, blend_mode)
+        # ISO 32000-2 11.6.7: all tiles form one non-isolated group. Notes
+        # 1-2 permit a transparent backdrop when every internal blend is Normal.
+        # Object transparency belongs to the complete pattern result.
+        opacity = target_data.fill_opacity
+        alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
+        if is_pdf_number(target_data.soft_mask_alpha):
+            alpha *= internal_clamp01(target_data.soft_mask_alpha)
+        self.push_group(
+            bytearray(len(self.pixels)),
+            alpha,
+            blend_mode,
+            isolated=internal_tiling_pattern_uses_normal_blends(pattern),
+        )
         try:
             while y < y1 + y_step and cells < 10000:
                 x = start_x
@@ -306,15 +309,14 @@ class internal_PatternTargetMixin:
                         self.paint_items(
                             display.items,
                             translation=(tx, ty),
-                            parent_blend_mode=None if grouped else blend_mode,
+                            parent_blend_mode=None,
                             clip_path=cell_clip,
                         )
                     cells += 1
                     x += x_step
                 y += y_step
         finally:
-            if grouped:
-                self.composite_group(self.pop_group())
+            self.composite_group(self.pop_group())
         return True
 
     def paint_fill_pattern(

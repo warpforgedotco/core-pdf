@@ -755,6 +755,8 @@ class RecordingMethods(RecoveringTextState):
                     self.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=self.graphics.blend_mode,
+                    soft_mask_alpha=self.group_alpha,
+                    group_isolated=frame.group_isolated,
                 )
             )
             self.sequence += 1
@@ -796,6 +798,8 @@ class RecordingMethods(RecoveringTextState):
                     self.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=self.graphics.blend_mode,
+                    soft_mask_alpha=self.group_alpha,
+                    group_isolated=frame.group_isolated,
                 )
             )
             self.sequence += 1
