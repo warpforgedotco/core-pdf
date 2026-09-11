@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.spec.s_07_syntax_primitives.text_string import (
+from core_pdf.impl.types import PdfString
+from core_pdf_spec.s_07_syntax_primitives.text_string import (
     decode_pdf_text_string as decode_spec_text_string,
 )
-from core_pdf.impl.types import PdfString
 
 
 def decode_pdf_text_string(data: bytes | memoryview) -> str:

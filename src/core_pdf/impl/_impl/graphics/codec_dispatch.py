@@ -9,10 +9,11 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.graphics.decode_compat import FilterParams
+from core_pdf.impl._impl.graphics.jbig2_recovery import RecoveryJBIG2PageDecoder
 from core_pdf.impl._impl.model.pdf_values import is_pdf_null
 from core_pdf.impl._impl.runtime import codec_backends
-from core_pdf.impl.spec.s_07_filters import decoders as strict
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.jbig2.codec import decode_jbig2 as decode_strict_jbig2
 
 
 def internal_decode(
@@ -84,4 +85,4 @@ def decode_crypt(data: bytes, parms: object) -> bytes:
 
 def decode_jbig2(data: bytes, parms: object) -> bytes:
     params = parms if isinstance(parms, FilterParams) else FilterParams.from_parms(parms)
-    return strict.decode_jbig2(data, params)
+    return decode_strict_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)

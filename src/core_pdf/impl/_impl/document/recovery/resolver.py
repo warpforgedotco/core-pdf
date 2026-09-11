@@ -10,22 +10,22 @@ from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl._impl.document.recovery.xref import iter_indirect_object_headers
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl._impl.runtime.scalars import parse_box, parse_float, parse_int
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
-from core_pdf.impl.spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
-from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
+from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
+from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
     Decipher,
     PdfDict,
 )
-from core_pdf.impl.spec.s_07_syntax.xref import (
+from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.types import PdfReference, PdfString
 
 
 class ObjectResolver(SyntaxResolver):
@@ -43,13 +43,13 @@ class ObjectResolver(SyntaxResolver):
         super().__init__(data, xref, trailer, decipher)
         self.recover_missing = recover_missing
 
-    def internal_xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
-        entry = super().internal_xref_entry(ref)
+    def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
+        entry = super().xref_entry(ref)
         if entry is None and ref.generation_number != 0:
             entry = self.xref.get(key_for(ref.object_number, 0))
         return entry
 
-    def internal_missing_object(self, ref: PdfReference) -> object:
+    def missing_object(self, ref: PdfReference) -> object:
         if not self.recover_missing:
             return None
         lexer = self.get_lexer()
@@ -58,12 +58,12 @@ class ObjectResolver(SyntaxResolver):
         finally:
             self.release_lexer(lexer)
 
-    def internal_object_stream(self, stream: PdfStream) -> PdfObjectStream:
+    def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
         return PdfObjectStream(stream)
 
-    def internal_load_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
+    def load_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
         try:
-            return super().internal_load_indirect_object(lexer, offset)
+            return super().load_indirect_object(lexer, offset)
         except (PdfDecryptionError, PdfUnsupportedError):
             raise
         except Exception:
@@ -135,7 +135,7 @@ class ObjectResolver(SyntaxResolver):
 
     def resolve_name_like_value(self, resolved: object) -> str | None:
         val = self.resolve(resolved)
-        name = normalize_pdf_name(val)
+        name = recover_pdf_name(val)
         if name is not None:
             return name
         if type(val) is PdfString:
@@ -151,6 +151,9 @@ class ObjectResolver(SyntaxResolver):
             return default
         return parse_float(self.resolve(value), default=default)
 
+    def resolve_name(self, value: object) -> str | None:
+        return recover_pdf_name(self.internal_resolve_chain(value))
+
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         if type(value) is int:
             return value
@@ -165,5 +168,5 @@ class ObjectResolver(SyntaxResolver):
             raise ValueError("invalid box value")
         return box
 
-    def internal_decode_text(self, data: bytes) -> str:
+    def decode_text(self, data: bytes) -> str:
         return decode_pdf_text_string(data)

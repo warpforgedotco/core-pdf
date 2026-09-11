@@ -3,19 +3,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
-from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf_spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
+from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.spec.s_09_fonts.helpers import (
-    BASE_ENCODING_GLYPH_NAMES,
-    STANDARD_ENCODING_GLYPH_NAMES,
+from core_pdf_spec.s_09_fonts.helpers import (
+    build_simple_encoding_glyph_names as spec_simple_encoding_glyph_names,
 )
 
 
@@ -63,10 +63,6 @@ WIN_ANSI_ENCODING_TABLE = internal_resolve_base_encoding(WIN_ANSI_ENCODING)
 MAC_ROMAN_ENCODING_TABLE = internal_resolve_base_encoding(MAC_ROMAN_ENCODING)
 
 
-def base_encoding_glyph_names(key: str | None) -> tuple[str, ...]:
-    return BASE_ENCODING_GLYPH_NAMES.get(key or "StandardEncoding", STANDARD_ENCODING_GLYPH_NAMES)
-
-
 def build_decode_table(
     key: str,
     differences: dict[int, str] | tuple[tuple[int, str], ...] | None = None,
@@ -112,7 +108,7 @@ def parse_differences(
         if resolve_name is not None:
             glyph_name = resolve_name(item)
         else:
-            glyph_name = normalize_pdf_name(item)
+            glyph_name = recover_pdf_name(item)
         if glyph_name is None:
             continue
         if code < 0 or code > 255:
@@ -137,3 +133,23 @@ ENCODING_FALLBACKS: dict[str, tuple[str, ...]] = {
     "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE,
 }
+
+
+def build_simple_encoding_glyph_names(
+    base_encoding: str | None,
+    builtin_encoding: Mapping[int, str],
+    differences: Mapping[int, str],
+    *,
+    authoritative_builtin: bool,
+) -> tuple[str, ...]:
+    """Keep the reader's out-of-range skipping and empty-name substitution."""
+    return spec_simple_encoding_glyph_names(
+        base_encoding,
+        {
+            int(code): name or ".notdef"
+            for code, name in builtin_encoding.items()
+            if 0 <= code < 256
+        },
+        {int(code): name or ".notdef" for code, name in differences.items() if 0 <= code < 256},
+        authoritative_builtin=authoritative_builtin,
+    )

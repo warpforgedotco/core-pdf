@@ -1,7 +1,7 @@
 """Application aliases for the fourteen PDF standard font metric records."""
 
-from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA as PDF_FONT_DATA
-from core_pdf.impl.spec.s_09_fonts.data.core14 import Core14FontMetrics
+from core_pdf_spec.s_09_fonts.data.core14 import FONT_DATA as PDF_FONT_DATA
+from core_pdf_spec.s_09_fonts.data.core14 import Core14FontMetrics
 
 # Every base font name that resolves to a Standard-14 metric record. Arial,
 # CourierNew and TimesNewRoman are metric clones of Helvetica, Courier and

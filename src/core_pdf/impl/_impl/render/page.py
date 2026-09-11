@@ -32,7 +32,7 @@ from core_pdf.impl._impl.runtime.array_views import (
     uint8_image_view,
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 
 class internal_RenderablePage(Protocol):

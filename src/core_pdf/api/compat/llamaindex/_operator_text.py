@@ -17,22 +17,22 @@ from core_pdf.api.compat._text_state import (
 )
 from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
-from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
+from core_pdf.impl._impl.fonts.cmap_tokenizer import (
     cmap_tokens,
     decode_cmap_hex_token,
     iter_blocks,
 )
-from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
+from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl._impl.fonts.decoder import FontDecoder
+from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf.impl.types import PdfName, PdfString
+from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_08_graphics.matrix import multiply_affine
+from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
-from core_pdf.impl.types import PdfName, PdfString
 
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
@@ -206,7 +206,7 @@ class OperatorTextProjection:
             if not isinstance(font, dict):
                 continue
             self.internal_validate_font_files(font)
-            subtype = normalize_pdf_name(font.get("Subtype"))
+            subtype = recover_pdf_name(font.get("Subtype"))
             if subtype not in {"Type1", "MMType1", "TrueType", "Type3"} and not isinstance(
                 self.resolver.resolve(font.get("DescendantFonts")),
                 (list, tuple),
@@ -354,7 +354,7 @@ class OperatorTextProjection:
         if not isinstance(char_procs, dict):
             return True
         return all(
-            (glyph_name := normalize_pdf_name(name)) is not None
+            (glyph_name := recover_pdf_name(name)) is not None
             and bool(mapped := internal_glyph_name_to_unicode(glyph_name))
             and mapped != glyph_name
             for name in char_procs
@@ -507,7 +507,7 @@ class OperatorTextProjection:
             if not widths:
                 widths.update(
                     (code, width)
-                    for code, width in decoder.widths.iter_explicit_widths()
+                    for code, width in decoder.widths.items()
                     if 0 <= code < 256 and width > 0
                 )
         return widths, default_width
@@ -519,7 +519,7 @@ class OperatorTextProjection:
         to_unicode: ToUnicodeCMap | None,
     ) -> tuple[str, ...] | str:
         raw_encoding = self.resolver.resolve(font.get("Encoding"))
-        encoding_name = normalize_pdf_name(raw_encoding)
+        encoding_name = recover_pdf_name(raw_encoding)
         if raw_encoding is None:
             return "charmap"
         elif encoding_name is not None:
@@ -535,7 +535,7 @@ class OperatorTextProjection:
                 else STANDARD_ENCODING
             )
         elif isinstance(raw_encoding, dict):
-            base = normalize_pdf_name(raw_encoding.get("BaseEncoding"))
+            base = recover_pdf_name(raw_encoding.get("BaseEncoding"))
             table = list(
                 internal_WIN_ANSI_ENCODING
                 if base == "WinAnsiEncoding"
@@ -593,7 +593,9 @@ class OperatorTextProjection:
                 # streams remain independently usable and must still be projected.
                 continue
         content = b"\n".join(decoded_streams)
-        for operator, raw_operands in iter_content_operations(PdfLexer(content)):
+        # Preserve complete parsing before mutating the projection's text state.
+        parsed = list(iter_content_operations(PdfLexer(content)))
+        for operator, raw_operands in parsed:
             operands = list(raw_operands)
             if operator == "BT":
                 state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
@@ -614,7 +616,7 @@ class OperatorTextProjection:
                 except (TypeError, ValueError):
                     matrix = []
                 state.cm = (
-                    multiply_affine(matrix, state.cm)
+                    list(multiply_affine(matrix, state.cm))
                     if len(matrix) == 6
                     else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 )

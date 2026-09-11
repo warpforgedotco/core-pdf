@@ -20,8 +20,8 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.output.model import Document
 from core_pdf.impl._impl.output.model import Page as StructuredPage
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.types import PdfName, PdfReference
+from core_pdf_spec.s_07_syntax.types import PdfDict
 
 from .._strict_page_tree import internal_has_malformed_shadowed_definition
 

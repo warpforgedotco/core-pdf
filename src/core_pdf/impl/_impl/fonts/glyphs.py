@@ -8,9 +8,9 @@ import unicodedata
 from core_pdf.impl._impl.fonts.data.glyph_aliases import (
     MODIFIER_NAMES,
 )
-from core_pdf.impl.spec.s_09_fonts.data.core14 import GLYPH_DATA
-from core_pdf.impl.spec.s_09_fonts.data.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
-from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_component_to_unicode
+from core_pdf_spec.s_09_fonts.data.core14 import GLYPH_DATA
+from core_pdf_spec.s_09_fonts.data.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
+from core_pdf_spec.s_09_fonts.glyphs import glyph_component_to_unicode
 
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 # The Adobe glyph list places the Symbol font's bracket, brace and parenthesis

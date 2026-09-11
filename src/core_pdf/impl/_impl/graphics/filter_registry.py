@@ -6,17 +6,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from core_pdf.impl.spec.s_07_filters.registry import (
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf_spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS as PDF_FILTER_DESCRIPTORS,
 )
-from core_pdf.impl.spec.s_07_filters.registry import (
+from core_pdf_spec.s_07_filters.registry import (
     FilterDecoder as FilterDecoder,
 )
-from core_pdf.impl.spec.s_07_filters.registry import (
+from core_pdf_spec.s_07_filters.registry import (
     FilterDescriptor,
-)
-from core_pdf.impl.spec.s_07_filters.registry import (
-    declared_filter_names as declared_filter_names,
 )
 
 FILTER_DESCRIPTORS = (
@@ -77,3 +75,9 @@ NATIVE_IMAGE_SPECS: Mapping[str, NativeImageSpec] = {
     "flate": internal_RAW_SAMPLE_IMAGE,
     "lzw": internal_RAW_SAMPLE_IMAGE,
 }
+
+
+def declared_filter_names(value: object) -> list[str]:
+    """Retain reader metadata recovery by omitting malformed filter entries."""
+    values = value if isinstance(value, (list, tuple)) else (value,)
+    return [name for item in values if (name := recover_pdf_name(item))]

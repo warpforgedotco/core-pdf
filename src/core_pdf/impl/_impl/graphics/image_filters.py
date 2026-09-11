@@ -29,7 +29,7 @@ from core_pdf.impl._impl.graphics.filter_registry import (
 )
 from core_pdf.impl._impl.graphics.image_models import DecodedImage
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 
 # Decoders whose native path is exactly "preallocate a shape, hand it the buffer".
 # CCITT (needs FilterParams) and flate/lzw (decode then reshape) stay explicit below.
@@ -53,9 +53,10 @@ def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePla
     headers and CCITT uses DecodeParms. Raw flate/lzw still require a shape.
     """
     stream_spec = normalize_stream_decode_spec(dictionary)
-    if len(stream_spec.filters) != 1 or (stream_spec.params and len(stream_spec.params) != 1):
+    if len(stream_spec.steps) != 1:
         return None
-    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(stream_spec.filters[0])
+    step = stream_spec.steps[0]
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(step.name)
     decoder = descriptor.decoder if descriptor is not None else None
     if decoder is None or not image_decode_is_identity(dictionary):
         return None
@@ -66,7 +67,7 @@ def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePla
     color_space = image_dictionary.get("ColorSpace")
     if isinstance(color_space, (list, tuple, dict)):
         return None
-    color_name = normalize_pdf_name(color_space) if color_space is not None else None
+    color_name = recover_pdf_name(color_space) if color_space is not None else None
     bits = image_dictionary.get("BitsPerComponent")
     if color_name not in spec.color_names or (spec.bits is not None and bits not in spec.bits):
         return None
@@ -82,9 +83,7 @@ def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePla
         and components is not None
     ):
         shape = (height, width) if components == 1 else (height, width, components)
-    return internal_NativeImagePlan(
-        decoder, stream_spec.params[0] if stream_spec.params else None, shape
-    )
+    return internal_NativeImagePlan(decoder, step.params, shape)
 
 
 def decode_stream_image_data(

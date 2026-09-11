@@ -23,16 +23,16 @@ from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dic
 from core_pdf.impl._impl.document.structure import PageStructure
 from core_pdf.impl._impl.model.geometry import rotate_page_runs
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_document.page import page_clip, page_rotation
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
+from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_document.page import page_clip, page_rotation
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
     CachedPdfObject,
     InheritedValueMap,
     PdfDict,
     PdfObject,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
-from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -257,8 +257,8 @@ class PdfPage:
         if len(content_streams) > 1:
             try:
                 data = b"\n".join(stream.data for stream in content_streams)
-                state.consume_stream(
-                    PdfStream(raw_data=data, decoded_data=data), resources, state.ctm, 0
+                state.stream_executor.consume(
+                    PdfStream(raw_data=data, spec=None), resources, state.graphics.ctm, 0
                 )
                 return
             except PdfParseError:
@@ -267,7 +267,7 @@ class PdfPage:
 
         for stream in content_streams:
             try:
-                state.consume_stream(stream, resources, state.ctm, 0)
+                state.stream_executor.consume(stream, resources, state.graphics.ctm, 0)
             except PdfParseError:
                 if can_skip_bad_stream:
                     continue

@@ -12,28 +12,29 @@ from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl._impl.document.recovery.scanning import matches_keyword_with_one_substitution
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax.xref import (
+from core_pdf.impl.types import PdfByteBuffer
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefTable,
-    decode_xref_rows,
+    decode_xref_row,
     key_for,
+    merge_xref_sections,
     parse_object_marker_prefix,
 )
-from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    normalize_pdf_name,
+from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+from core_pdf_spec.s_07_syntax_primitives.scanning import (
     FindableSizedBuffer,
     full_source_buffer,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE
-from core_pdf.impl.types import PdfByteBuffer
+from core_pdf_spec.s_07_syntax_primitives.tokens import WS_TABLE
 
 
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
@@ -119,12 +120,8 @@ class XRefScanner(SyntaxXRefScanner):
         return line, next_pos
 
     @staticmethod
-    def internal_subsection_integer(token: bytes) -> int:
+    def parse_subsection_integer(token: bytes) -> int:
         return int(token)
-
-    @staticmethod
-    def internal_invalid_generation(generation: int) -> None:
-        pass
 
     @staticmethod
     def recover_object_stream_entries(
@@ -146,7 +143,7 @@ class XRefScanner(SyntaxXRefScanner):
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary
-            type_name = normalize_pdf_name(dictionary.get("Type"))
+            type_name = recover_pdf_name(dictionary.get("Type"))
             if type_name != "ObjStm" and (
                 dictionary.get("N") is None or dictionary.get("First") is None
             ):
@@ -314,7 +311,7 @@ class XRefScanner(SyntaxXRefScanner):
             dict_obj = lexer.parse_dictionary()
         except PdfParseError:
             return None
-        if normalize_pdf_name(dict_obj.get("Type")) != "XRef":
+        if recover_pdf_name(dict_obj.get("Type")) != "XRef":
             return None
 
         lexer.skip_ignored()
@@ -343,7 +340,7 @@ class XRefScanner(SyntaxXRefScanner):
                 return None
             raw_data = data[data_start:endstream]
         decoded_data = None
-        filter_name = normalize_pdf_name(dict_obj.get("Filter"))
+        filter_name = recover_pdf_name(dict_obj.get("Filter"))
         if filter_name == "FlateDecode":
             try:
                 decoded_data = zlib.decompress(raw_data)
@@ -365,7 +362,10 @@ class XRefScanner(SyntaxXRefScanner):
                 if len(decoded_data) != row_size * row_count:
                     decoded_data = None
         return PdfStream(
-            dict_obj, raw_data, None, decoded_data=decoded_data, decoder=decode_stream_data
+            dict_obj,
+            raw_data if decoded_data is None else decoded_data,
+            None,
+            decoder=decode_stream_data,
         )
 
     @staticmethod
@@ -487,7 +487,7 @@ class XRefScanner(SyntaxXRefScanner):
         return entries
 
     @classmethod
-    def internal_read_subsection(
+    def read_subsection(
         cls, data: PdfByteBuffer, pos: int, start_obj: int, num_objs: int
     ) -> tuple[XRefTable, int, int]:
         entries: XRefTable = {}
@@ -521,16 +521,12 @@ class XRefScanner(SyntaxXRefScanner):
         return entries, pos, max_object_number
 
     @classmethod
-    def internal_trailer_size(cls, trailer: PdfDict, maximum: int) -> PdfDict:
+    def validate_trailer_size(cls, trailer: PdfDict, maximum: int) -> PdfDict:
         size = trailer.get("Size")
         if type(size) is not int or size <= maximum or size <= 0:
             trailer = dict(trailer)
             trailer["Size"] = max(maximum + 1, 1)
         return trailer
-
-    @classmethod
-    def internal_missing_trailer_keyword(cls) -> None:
-        pass
 
     @classmethod
     def parse_table_section(
@@ -541,12 +537,69 @@ class XRefScanner(SyntaxXRefScanner):
         recover_malformed_objects: bool = True,
         lexer: SyntaxLexer | None = None,
     ) -> tuple[XRefTable, PdfDict, int | None, int | None]:
-        return super().parse_table_section(
-            data,
-            start_pos,
-            lexer=PdfLexer(data, recover_malformed_objects=recover_malformed_objects)
+        pos = cls.skip_ws(data, start_pos)
+        if data[pos : pos + 4] != b"xref":
+            raise PdfParseError("expected xref table")
+        pos += 4
+        pos = cls.skip_ws(data, pos)
+
+        entries: XRefTable = {}
+        max_object_number = -1
+        while pos < len(data):
+            line, next_pos = cls.read_line(data, pos)
+            b_line = line
+            if b_line.startswith(b"trailer"):
+                trailer_pos = pos + b_line.find(b"trailer") + len(b"trailer")
+                pos = trailer_pos
+                break
+            if b_line.lstrip().startswith(b"<<"):
+                break
+            if 11 in b_line:
+                raise PdfParseError("invalid xref table subsection")
+            parts = b_line.strip().split()
+            if not parts:
+                pos = next_pos
+                continue
+            if len(parts) == 2:
+                try:
+                    start_obj = cls.parse_subsection_integer(parts[0])
+                    num_objs = cls.parse_subsection_integer(parts[1])
+                except ValueError as error:
+                    raise PdfParseError("invalid xref table subsection") from error
+                if start_obj < 0 or num_objs < 0:
+                    raise PdfParseError("invalid xref table subsection")
+                pos = next_pos
+                if num_objs > 0:
+                    max_object_number = max(max_object_number, start_obj + num_objs - 1)
+                subsection, pos, maximum = cls.read_subsection(data, pos, start_obj, num_objs)
+                entries.update(subsection)
+                max_object_number = max(max_object_number, maximum)
+
+            else:
+                raise PdfParseError("invalid xref table subsection")
+
+        lexer = (
+            PdfLexer(data, recover_malformed_objects=recover_malformed_objects)
             if lexer is None
-            else lexer,
+            else lexer
+        )
+        lexer.pos = cls.skip_ws(data, pos)
+        try:
+            trailer_dict = lexer.parse_dictionary()
+        finally:
+            lexer.close()
+        trailer_dict = cls.validate_trailer_size(trailer_dict, max_object_number)
+        prev = trailer_dict.get("Prev")
+        xrefstm = trailer_dict.get("XRefStm")
+        if prev is not None and type(prev) is not int:
+            raise PdfParseError("invalid xref table trailer /Prev")
+        if xrefstm is not None and type(xrefstm) is not int:
+            raise PdfParseError("invalid xref table trailer /XRefStm")
+        return (
+            entries,
+            trailer_dict,
+            prev,
+            xrefstm,
         )
 
     @classmethod
@@ -561,9 +614,7 @@ class XRefScanner(SyntaxXRefScanner):
         | None = None,
     ) -> tuple[XRefTable, PdfDict]:
         if read_section is not None:
-            return SyntaxXRefScanner.load_section_chain(
-                data, start, seen, read_section=read_section
-            )
+            return cls.internal_load_section_chain(data, start, seen, read_section=read_section)
 
         def internal_read_section(
             section_start: int,
@@ -586,15 +637,70 @@ class XRefScanner(SyntaxXRefScanner):
                     return result
                 raise original_error
 
-        return SyntaxXRefScanner.load_section_chain(
+        return cls.internal_load_section_chain(
             data, start, seen, read_section=internal_read_section
         )
+
+    @classmethod
+    def internal_load_section_chain(
+        cls,
+        data: PdfByteBuffer,
+        start: int,
+        seen: set[int],
+        *,
+        read_section: Callable[[int], tuple[XRefTable, PdfDict, int | None, int | None]]
+        | None = None,
+    ) -> tuple[XRefTable, PdfDict]:
+        reader = (
+            (lambda offset: cls.parse_section_at(data, offset))
+            if read_section is None
+            else read_section
+        )
+        section_start = start
+        sections: list[XRefTable] = []
+        trailer: PdfDict | None = None
+
+        while True:
+            if section_start in seen:
+                raise PdfParseError("xref section loop detected")
+            seen.add(section_start)
+
+            entries, current_trailer, prev, xrefstm = reader(section_start)
+            if trailer is None:
+                trailer = current_trailer
+            if prev is not None and prev < 0:
+                raise PdfParseError("invalid xref section")
+            if xrefstm is not None and xrefstm < 0:
+                raise PdfParseError("invalid xref section")
+
+            if xrefstm is not None:
+                s_entries, ignored = cls.internal_load_section_chain(
+                    data,
+                    xrefstm,
+                    seen,
+                    read_section=reader,
+                )
+                # ISO 32000-1 7.5.8.4: "if an entry is not found in any given
+                # standard cross-reference section, the search shall proceed to
+                # a cross-reference stream specified by the XRefStm entry before
+                # looking in the previous cross-reference section". The stream
+                # is the fallback, so the classic section overlays it.
+                combined = dict(s_entries)
+                combined.update(entries)
+                entries = combined
+            sections.append(entries)
+
+            if prev is None:
+                break
+            section_start = prev
+
+        return merge_xref_sections(sections), trailer if trailer is not None else {}
 
     @staticmethod
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDict]:
         dict_obj = stream.dictionary
         type_value = dict_obj.get("Type")
-        type_name = normalize_pdf_name(type_value)
+        type_name = recover_pdf_name(type_value)
         if type_name is not None and type_name != "XRef":
             raise PdfParseError("invalid xref stream type")
         size = dict_obj.get("Size")
@@ -641,13 +747,22 @@ class XRefScanner(SyntaxXRefScanner):
             count = min(count, remaining)
             available_index.extend((start_obj, count))
             remaining -= count
-        entries = decode_xref_rows(
-            data,
-            w,
-            available_index,
-            effective_size,
-            on_invalid_generation=XRefScanner.internal_invalid_generation,
-        )
+        entries: XRefTable = {}
+        pos = 0
+        for i in range(0, len(available_index), 2):
+            start, count = available_index[i : i + 2]
+            for object_number in range(start, start + count):
+                row_pos = pos
+                pos += row_size
+                if object_number >= effective_size:
+                    continue
+                try:
+                    key, entry, _ = decode_xref_row(data, row_pos, w, object_number)
+                except PdfParseError:
+                    # The stream shape and available rows were validated above;
+                    # a row failure here is an invalid generation number.
+                    continue
+                entries[key] = entry
         return entries, typing.cast(PdfDict, dict_obj)
 
 

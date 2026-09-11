@@ -6,8 +6,9 @@ from __future__ import annotations
 import re
 import typing
 import unicodedata
+from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from typing import Iterable
 
@@ -21,7 +22,6 @@ from core_pdf.impl._impl.fonts.cmap_resources import (
     resolve_cmap_resource,
 )
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl._impl.fonts.cmap_widths import FontWidthMap
 from core_pdf.impl._impl.fonts.fallback import fallback_glyph_outline
 from core_pdf.impl._impl.fonts.font_program import (
     LEGITIMATE_MULTI_CHAR_GLYPHS,
@@ -36,6 +36,7 @@ from core_pdf.impl._impl.fonts.font_program_truetype import (
 )
 from core_pdf.impl._impl.fonts.font_program_type1 import (
     Type1FontProgram,
+    parse_type1_font_program_encoding,
 )
 from core_pdf.impl._impl.fonts.glyph_decode import (
     build_glyph_decode_table,
@@ -47,6 +48,7 @@ from core_pdf.impl._impl.fonts.glyph_decode import (
 from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl._impl.fonts.helpers import (
     build_decode_table,
+    build_simple_encoding_glyph_names,
     parse_differences,
     unicode_for_glyph_name,
 )
@@ -60,25 +62,24 @@ from core_pdf.impl._impl.fonts.widths import (
     parse_font_widths,
 )
 from core_pdf.impl._impl.model.glyphs import UnicodeSource
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.s_09_fonts.cmap_ranges import (
+from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
+from core_pdf_spec.s_08_graphics.matrix import Matrix
+from core_pdf_spec.s_09_fonts.cmap_ranges import (
     code_in_ranges,
 )
-from core_pdf.impl.spec.s_09_fonts.dictionaries import (
-    internal_FontProgramInputs,
-    internal_prepare_font_program_inputs,
+from core_pdf_spec.s_09_fonts.dictionaries import (
+    FontProgramInputs,
+    prepare_font_program_inputs,
 )
-from core_pdf.impl.spec.s_09_fonts.font_program_type1 import parse_type1_font_program_encoding
-from core_pdf.impl.spec.s_09_fonts.helpers import (
+from core_pdf_spec.s_09_fonts.helpers import (
     BASE_ENCODING_GLYPH_NAMES,
-    build_simple_encoding_glyph_names,
 )
-from core_pdf.impl.spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
-from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph
-from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
+from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -106,17 +107,17 @@ def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | Non
             descriptor = descendant_descriptor or descriptor
     if not isinstance(descriptor, dict):
         return None
-    return normalize_pdf_name(descriptor.get("FontName"))
+    return recover_pdf_name(descriptor.get("FontName"))
 
 
 def resolve_base_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
-    base_font_name = normalize_pdf_name(font.get("BaseFont"))
+    base_font_name = recover_pdf_name(font.get("BaseFont"))
     if base_font_name is not None:
         return base_font_name
     return descriptor_font_name(font, subtype)
 
 
-def internal_tt_font(inputs: internal_FontProgramInputs) -> TrueTypeFontProgram | None:
+def internal_tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
     if inputs.subtype not in {"CIDFontType2", "TrueType"}:
         return None
     font_file = inputs.font_file2
@@ -151,7 +152,7 @@ def single_code_mapping(
     return mapping
 
 
-def internal_cff_font(inputs: internal_FontProgramInputs) -> CFFFont | None:
+def internal_cff_font(inputs: FontProgramInputs) -> CFFFont | None:
     if inputs.descendant is not None:
         if inputs.subtype != "CIDFontType0":
             return None
@@ -160,7 +161,7 @@ def internal_cff_font(inputs: internal_FontProgramInputs) -> CFFFont | None:
     font_file = inputs.font_file3
     if font_file is None:
         return None
-    subtype = normalize_pdf_name(font_file.dictionary.get("Subtype"))
+    subtype = recover_pdf_name(font_file.dictionary.get("Subtype"))
     if inputs.descendant is None and subtype not in {"Type1C", "OpenType"}:
         return None
     font_data: bytes | None = font_file.data
@@ -187,7 +188,7 @@ def build_cff_unicode_repair_index(
     descendant = get_descendant(font)
     if descendant is None:
         return None
-    if normalize_pdf_name(descendant.get("Subtype")) != "CIDFontType0":
+    if recover_pdf_name(descendant.get("Subtype")) != "CIDFontType0":
         return None
     descriptor = descendant.get("FontDescriptor")
     if not isinstance(descriptor, dict):
@@ -219,7 +220,7 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
                 font.close()
 
 
-def internal_type1_font(inputs: internal_FontProgramInputs) -> Type1FontProgram | None:
+def internal_type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
     if inputs.original_subtype not in {"Type1", "MMType1"}:
         return None
     font_file = inputs.font_file
@@ -233,11 +234,11 @@ def internal_type1_font(inputs: internal_FontProgramInputs) -> Type1FontProgram 
         return None
 
 
-def internal_opentype_font(inputs: internal_FontProgramInputs) -> OpenTypeFontProgram | None:
+def internal_opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | None:
     font_file = inputs.font_file3
     if font_file is None:
         return None
-    if normalize_pdf_name(font_file.dictionary.get("Subtype")) != "OpenType":
+    if recover_pdf_name(font_file.dictionary.get("Subtype")) != "OpenType":
         return None
     try:
         return OpenTypeFontProgram(font_file.data)
@@ -247,7 +248,35 @@ def internal_opentype_font(inputs: internal_FontProgramInputs) -> OpenTypeFontPr
 
 def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     """Select one embedded outline implementation in format-preference order."""
-    inputs = internal_prepare_font_program_inputs(font)
+    try:
+        inputs = prepare_font_program_inputs(font)
+    except ValueError:
+        descendant = get_descendant(font)
+        font_dict = descendant if descendant is not None else font
+        descriptor = font_dict.get("FontDescriptor")
+        original_descriptor = font.get("FontDescriptor")
+        streams = (
+            original_descriptor.get("FontFile") if isinstance(original_descriptor, dict) else None,
+            descriptor.get("FontFile2") if isinstance(descriptor, dict) else None,
+            descriptor.get("FontFile3") if isinstance(descriptor, dict) else None,
+        )
+        first, second, third = (
+            value if isinstance(value, PdfStream) else None for value in streams
+        )
+        inputs = FontProgramInputs(
+            recover_pdf_name(font_dict.get("Subtype")),
+            recover_pdf_name(font.get("Subtype")),
+            descendant,
+            first,
+            second,
+            third,
+        )
+    else:
+        font_dict = inputs.descendant if inputs.descendant is not None else font
+        subtype = recover_pdf_name(font_dict.get("Subtype"))
+        original_subtype = recover_pdf_name(font.get("Subtype"))
+        if (subtype, original_subtype) != (inputs.subtype, inputs.original_subtype):
+            inputs = replace(inputs, subtype=subtype, original_subtype=original_subtype)
     for resolver in (
         internal_cff_font,
         internal_tt_font,
@@ -310,6 +339,33 @@ def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> l
     return chunks
 
 
+def internal_font_is_vertical(
+    font: dict[str, Any],
+    subtype: str | None,
+    base_encoding: str | None,
+    base_font_name: str | None,
+    cmap: CMapDecoder | None,
+) -> bool:
+    """Combine CMap writing mode with historical font-dictionary/name recovery."""
+    if (
+        base_encoding == "V"
+        or (base_encoding and base_encoding.endswith("-V"))
+        or (base_font_name and base_font_name.endswith("-V"))
+        or (cmap is not None and cmap.wmode == 1)
+    ):
+        return True
+    descendant = get_descendant(font) if subtype == "Type0" else None
+    if descendant is None:
+        return False
+    wmode = descendant.get("WMode")
+    if wmode is None:
+        wmode = font.get("WMode", 0)
+    try:
+        return parse_int_strict(wmode, "invalid font WMode") == 1
+    except ValueError:
+        return False
+
+
 @dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
 class FontDecoder:
     font: dict[str, Any]
@@ -326,7 +382,7 @@ class FontDecoder:
     is_cid_font: bool
     is_type3: bool
     byte_decode_table: tuple[str, ...] | None
-    widths: FontWidthMap
+    widths: Mapping[int, float]
     default_width: float
     internal_width_fallback: float
     internal_space_width_fallback: float
@@ -361,7 +417,7 @@ class FontDecoder:
         font = self.font
         subtype = font.get("Subtype")
         if subtype is not None:
-            subtype = normalize_pdf_name(subtype)
+            subtype = recover_pdf_name(subtype)
 
         # The embedded program's built-in encoding participates in simple-font
         # decoding, so select the one canonical backend before normalizing the
@@ -390,17 +446,10 @@ class FontDecoder:
         widths = font_metrics.widths
         default_width = font_metrics.default_width
         default_width_explicit = font_metrics.default_width_explicit
-        is_vertical = font_metrics.is_vertical
         is_cid_font = subtype == "Type0" and get_descendant(font) is not None
 
         base_font_name = resolve_base_font_name(font, subtype)
-        if (
-            base_encoding == "V"
-            or (base_encoding and base_encoding.endswith("-V"))
-            or (base_font_name and base_font_name.endswith("-V"))
-            or (cmap is not None and getattr(cmap, "wmode", 0) == 1)
-        ):
-            is_vertical = True
+        is_vertical = internal_font_is_vertical(font, subtype, base_encoding, base_font_name, cmap)
 
         ascent, descent = parse_font_metrics(font, subtype, base_font_name, widths)
 
@@ -487,7 +536,7 @@ class FontDecoder:
     def internal_cid_system_info_string(value: object) -> str | None:
         if isinstance(value, PdfString):
             return value.data.decode("latin-1")
-        normalized = normalize_pdf_name(value)
+        normalized = recover_pdf_name(value)
         if normalized is not None:
             return normalized
         if isinstance(value, bytes):
@@ -509,12 +558,6 @@ class FontDecoder:
         ordering = cls.internal_cid_system_info_string(system_info.get("Ordering"))
         return registry, ordering
 
-    @property
-    def fast_widths(self) -> tuple[float, ...]:
-        return self.widths.fast_256(
-            self.internal_width_fallback, self.internal_space_width_fallback
-        )
-
     def parse_encoding(
         self, font: dict[str, Any]
     ) -> tuple[CMapDecoder | None, str | None, dict[int, str], dict[int, str], bool]:
@@ -522,23 +565,23 @@ class FontDecoder:
         base_encoding = None
         base_encoding_explicit = False
         differences: dict[int, str] = {}
-        subtype = normalize_pdf_name(font.get("Subtype"))
+        subtype = recover_pdf_name(font.get("Subtype"))
         encoding_obj = font.get("Encoding")
         match encoding_obj:
             case str():
-                base_encoding = normalize_pdf_name(encoding_obj)
+                base_encoding = recover_pdf_name(encoding_obj)
                 base_encoding_explicit = base_encoding is not None
                 cmap = self.internal_named_cmap(base_encoding)
             case PdfStream():
                 try:
                     cmap = CMapDecoder(
                         encoding_obj.data,
-                        usecmap_resolver=resolve_cmap_decoder,
+                        usecmap_resolver=resolve_cmap_resource,
                     )
                 except (PdfParseError, ValueError):
                     cmap = None
             case dict():
-                base_encoding = normalize_pdf_name(encoding_obj.get("BaseEncoding"))
+                base_encoding = recover_pdf_name(encoding_obj.get("BaseEncoding"))
                 if base_encoding is None:
                     base_encoding = (
                         "WinAnsiEncoding" if subtype == "TrueType" else "StandardEncoding"
@@ -552,10 +595,10 @@ class FontDecoder:
                     list(differences_obj)
                     if isinstance(differences_obj, tuple)
                     else differences_obj,
-                    normalize_pdf_name,
+                    recover_pdf_name,
                 )
             case _:
-                base_encoding = normalize_pdf_name(encoding_obj)
+                base_encoding = recover_pdf_name(encoding_obj)
                 base_encoding_explicit = base_encoding is not None
                 cmap = self.internal_named_cmap(base_encoding)
         if base_encoding is None and subtype == "Type3":
@@ -1008,7 +1051,7 @@ class FontDecoder:
         fallback = (
             self.internal_space_width_fallback if code == 32 else self.internal_width_fallback
         )
-        return self.widths.width_for(code, fallback)
+        return self.widths.get(code, fallback)
 
     def glyph_advance_vector(
         self,
@@ -1066,7 +1109,7 @@ class FontDecoder:
         total_x = 0.0
         width_fallback = self.internal_width_fallback
         space_fallback = self.internal_space_width_fallback
-        width_for = self.widths.width_for
+        width_for = self.widths.get
         for glyph in glyphs:
             code = glyph.width_code
             fallback = space_fallback if code == 32 else width_fallback

@@ -7,17 +7,17 @@ from collections.abc import Callable
 from typing import cast
 
 from core_pdf.impl._impl.document.recovery.text_strings import parse_text_string
-from core_pdf.impl.spec.s_07_document.document_labels import PageLabelStyle
-from core_pdf.impl.spec.s_07_document.document_labels import (
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
+from core_pdf_spec.s_07_document.document_labels import (
     format_page_label as format_spec_page_label,
 )
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 
 
 def format_page_label(spec: PdfDict, page_offset: int, resolve: Callable[[object], object]) -> str:
-    style = normalize_pdf_name(resolve(spec.get("S")))
+    style = recover_pdf_name(resolve(spec.get("S")))
     prefix = parse_text_string(resolve(spec.get("P"))) or ""
     start = resolve(spec.get("St"))
     normalized: PdfDict = {

@@ -18,6 +18,7 @@ from core_pdf.impl._impl.document.page_labels import format_page_label
 from core_pdf.impl._impl.document.page_tree import (
     MAX_PAGE_TREE_DEPTH,
     collect_inherited_values,
+    iter_page_nodes,
     resolve_page_tree_node_type,
 )
 from core_pdf.impl._impl.document.records import (
@@ -27,29 +28,17 @@ from core_pdf.impl._impl.document.records import (
     RawOutlineItem,
 )
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
+from core_pdf.impl._impl.document.recovery.security import create_recovered_security_handler
 from core_pdf.impl._impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
 from core_pdf.impl._impl.document.structure import StructureTree
 from core_pdf.impl._impl.fonts.fallback import internal_RasterFontRepository
 from core_pdf.impl._impl.model.page_selection import PageSelection, resolve_page_selection
+from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
     PdfParseError,
     PdfSourceError,
 )
-from core_pdf.impl.spec.s_07_document.page import PageNode as internal_PageNode
-from core_pdf.impl.spec.s_07_document.page import iter_page_nodes
-from core_pdf.impl.spec.s_07_security.document import initialize_document_security
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
-    CachedPdfObject,
-    Decipher,
-    InheritedValueMap,
-    PdfArray,
-    PdfDict,
-    PdfObject,
-)
-from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.types import (
     PathSource,
     PdfByteBuffer,
@@ -57,6 +46,18 @@ from core_pdf.impl.types import (
     PdfSource,
     SeekableBinaryReader,
 )
+from core_pdf_spec.s_07_document.page import PageNode as internal_PageNode
+from core_pdf_spec.s_07_security.document import initialize_document_security
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
+    CachedPdfObject,
+    Decipher,
+    InheritedValueMap,
+    PdfArray,
+    PdfDict,
+    PdfObject,
+)
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.fonts.fallback import (
@@ -391,7 +392,11 @@ class PdfDocument(
             trailer = dict(trailer)
             trailer["ID"] = [b""]
         self.decipher = initialize_document_security(
-            self.raw_data, trailer, self.resolver, password
+            self.raw_data,
+            trailer,
+            self.resolver,
+            password,
+            handler_factory=create_recovered_security_handler,
         )
 
     # Page tree and page labels
@@ -450,7 +455,7 @@ class PdfDocument(
         # A recovered leaf without an explicit /Type needs page content or an
         # annotation to distinguish it from outline destinations and other
         # dictionaries that happen to carry /Parent, /MediaBox, or /Resources.
-        explicit_type = normalize_pdf_name(obj.get("Type"))
+        explicit_type = recover_pdf_name(obj.get("Type"))
         if explicit_type != "Page" and obj.get("Contents") is None and obj.get("Annots") is None:
             return -100
 

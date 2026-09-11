@@ -13,7 +13,7 @@ from core_pdf.impl._impl.model.geometry import points_bbox, rect_tuple
 from core_pdf.impl._impl.render.blend import internal_color_rgba
 from core_pdf.impl._impl.render.kernels import internal_box_downsample
 from core_pdf.impl._impl.render.model import ImagePaintItem
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState

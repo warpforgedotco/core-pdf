@@ -7,13 +7,13 @@ from typing import Literal, Protocol, TypeAlias, cast
 
 from core_pdf.impl._impl.document.records import RawFormField
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
-from core_pdf.impl.spec.s_07_document.fields import (
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_document.fields import (
     field_children,
-    inherited_field_value,
     qualified_field_name,
 )
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_value
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 
 
 class FieldResolver(PdfValueResolver, Protocol):
@@ -70,7 +70,7 @@ def internal_field_record(
     title = resolver.resolve_str(node.get("T"))
     name = qualified_field_name(parent_name, title)
     field_type = resolver.resolve_name_or_text(node.get("FT"), name_like=True) or parent_type
-    value = inherited_field_value(node, "V", cast(PdfObject, parent_value))
+    value = cast(PdfObject, inherited_dictionary_value(node, "V", parent_value, resolver.resolve))
     value_text = field_value_text(resolver, value)
     try:
         kids = field_children(None if terminal_widget else node.get("Kids"))

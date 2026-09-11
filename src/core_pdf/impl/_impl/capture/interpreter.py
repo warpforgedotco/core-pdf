@@ -5,6 +5,7 @@ from typing import Any
 
 from core_pdf.impl._impl.capture.recording import RecordingMethods
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
+from core_pdf.impl._impl.capture.stream_execution import CaptureStreamExecutor
 from core_pdf.impl._impl.capture.text_runs import RunAccumulator
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
@@ -20,6 +21,7 @@ class TextState(RecordingMethods):
         hidden_layers: frozenset[str] = frozenset(),
         page_clip: Rectangle | None = None,
     ):
+        self.document = document
         self.runs = []
         self.glyphs = []
         self.glyph_clusters = []
@@ -51,17 +53,19 @@ class TextState(RecordingMethods):
             )
 
         super().__init__(
-            document,
+            document.resolver,
             sink=self,
             font_provider=font_provider,
-            recovery=CaptureRecovery(),
             lexer_factory=PdfLexer,
         )
 
+        self.recovery = CaptureRecovery()
+        self.stream_executor = CaptureStreamExecutor(self)
+
         # Preserve the reader's historical unset-font and diagnostic color defaults.
-        self.font_size = 12.0
-        self.fill_color = (0.0, 0.0, 0.0)
-        self.update_text_scales()
+        self.graphics.font_size = 12.0
+        self.graphics.fill_color = (0.0, 0.0, 0.0)
+        self.graphics.stroke_color = (0.0, 0.0, 0.0)
 
     @staticmethod
     def as_float(value: Any) -> float:

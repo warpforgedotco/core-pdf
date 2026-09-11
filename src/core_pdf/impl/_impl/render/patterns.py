@@ -24,7 +24,7 @@ from core_pdf.impl._impl.render.commands import append_captured_program
 from core_pdf.impl._impl.render.display import DisplayList
 from core_pdf.impl._impl.render.model import PathPaintItem
 from core_pdf.impl._impl.render.paths import internal_intersect_box
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 
 def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:

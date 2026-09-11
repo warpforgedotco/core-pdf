@@ -9,8 +9,8 @@ from core_pdf.impl._impl.document.recovery.text_strings import (
     decode_pdf_text_string,
     parse_text_string,
 )
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 
 
 def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:

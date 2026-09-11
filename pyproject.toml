@@ -15,9 +15,8 @@ classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
-    "cryptography>=50.0.0",
-    "asn1crypto>=1.5.1",
     "defusedxml>=0.7.1",
+    "core-pdf-spec>=0.3.0,<0.4.0",
 ]
 
 [project.scripts]
@@ -27,7 +26,14 @@ core-pdf = "core_pdf.cli:main"
 python-preference = "system"
 
 [tool.uv.workspace]
-members = ["packages/core-pdf-ocr"]
+members = [
+    "packages/core-pdf-ocr",
+    "packages/core-pdf-spec",
+]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+core-pdf-spec = { workspace = true }
 
 # [tool.uv.sources]
 # nuitka = { path = "../Nuitka", editable = true }
@@ -39,6 +45,12 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Commercial license terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-COMMERCIAL.txt"
 "Evaluation license terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-EVALUATION.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
+
+[project.optional-dependencies]
+unstructured = [
+    "en-core-web-sm==3.8.0",
+    "spacy>=3.8.15,<3.9.0",
+]
 
 [dependency-groups]
 dev = [
@@ -77,7 +89,12 @@ vendor-test = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/src/core_pdf/api/compat/differential"]
+testpaths = [
+    "tests/src/core_pdf/api/compat/differential",
+    "tests/src/core_pdf/spec_boundary",
+    "packages/core-pdf-spec/tests",
+]
+addopts = "--import-mode=importlib"
 norecursedirs = ["tests/fixtures"]
 pythonpath = ["."]
 markers = [
@@ -85,7 +102,7 @@ markers = [
 ]
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
@@ -94,12 +111,6 @@ line-length = 100
 
 [tool.ruff.lint.per-file-ignores]
 "src/core_pdf/__main__.py" = ["E501"]
-# C901 exemptions. Each of these files holds a function above the complexity gate
-# that is either a deliberate optimization pinned by docs/architecture.md or known
-# debt. Shrink this list rather than raising max-complexity.
-#   operations.py  dispatch_operations (162) — protected: hand-unrolled dispatch loop
-"src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
-
 [tool.ruff.lint.mccabe]
 max-complexity = 60
 
@@ -142,8 +153,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.13"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr"]
-mypy_path = ["src", "packages/core-pdf-ocr/src"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-spec/src/core_pdf_spec"]
+mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -152,7 +163,7 @@ disallow_incomplete_defs = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src"]
 
 [tool.ty.src]
 exclude = [
@@ -179,11 +190,10 @@ core_pdf = ["py.typed"]
     "*.md",
     "LICENSE*",
 ]
-"core_pdf.impl.spec.s_09_fonts" = ["data/cmaps/**"]
 "core_pdf.impl._impl.fonts" = ["data/raster_fonts/**"]
 
 [tool.importlinter]
-root_packages = ["core_pdf", "core_pdf_ocr"]
+root_packages = ["core_pdf", "core_pdf_ocr", "core_pdf_spec"]
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
@@ -222,26 +232,25 @@ forbidden_modules = [
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.render",
     "core_pdf.impl._impl.runtime",
-    "core_pdf.impl.spec",
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_filters",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_07_syntax",
+    "core_pdf_spec.s_07_syntax_primitives",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_14_structure",
     "core_pdf.api",
 ]
 
 
 
 [[tool.importlinter.contracts]]
-name = "Spec is independent of reader policy and derived output"
+name = "Spec never depends on core or OCR"
 type = "forbidden"
-source_modules = ["core_pdf.impl.spec"]
-forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.render",
-]
+source_modules = ["core_pdf_spec"]
+forbidden_modules = ["core_pdf", "core_pdf_ocr"]
 
 [[tool.importlinter.contracts]]
 name = "impl/_impl/runtime is the floor"
@@ -257,7 +266,7 @@ forbidden_modules = [
     "core_pdf.impl._impl.model",
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.render",
-    "core_pdf.impl.spec",
+    "core_pdf_spec",
     "core_pdf.api",
 ]
 
@@ -274,25 +283,33 @@ forbidden_modules = [
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.render",
-    "core_pdf.impl.spec",
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_filters",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_07_syntax",
+    "core_pdf_spec.s_07_syntax_primitives",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_14_structure",
     "core_pdf.api",
 ]
 
 [[tool.importlinter.contracts]]
 name = "The COS layer depends only on filters, syntax primitives, and base modules"
 type = "forbidden"
-source_modules = ["core_pdf.impl.spec.s_07_syntax"]
+source_modules = ["core_pdf_spec.s_07_syntax"]
 forbidden_modules = [
     "core_pdf.impl._impl.document",
     "core_pdf.impl._impl.capture",
     "core_pdf.impl._impl.fonts",
     "core_pdf.impl._impl.graphics",
-    "core_pdf.impl.spec.s_07_content",
-    "core_pdf.impl.spec.s_07_document",
-    "core_pdf.impl.spec.s_07_security",
-    "core_pdf.impl.spec.s_08_graphics",
-    "core_pdf.impl.spec.s_09_fonts",
-    "core_pdf.impl.spec.s_14_structure",
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_14_structure",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.model",
@@ -303,20 +320,20 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Syntax primitives are the spec floor"
 type = "forbidden"
-source_modules = ["core_pdf.impl.spec.s_07_syntax_primitives"]
+source_modules = ["core_pdf_spec.s_07_syntax_primitives"]
 forbidden_modules = [
     "core_pdf.impl._impl.document",
     "core_pdf.impl._impl.capture",
     "core_pdf.impl._impl.fonts",
     "core_pdf.impl._impl.graphics",
-    "core_pdf.impl.spec.s_07_content",
-    "core_pdf.impl.spec.s_07_document",
-    "core_pdf.impl.spec.s_07_filters",
-    "core_pdf.impl.spec.s_07_security",
-    "core_pdf.impl.spec.s_07_syntax",
-    "core_pdf.impl.spec.s_08_graphics",
-    "core_pdf.impl.spec.s_09_fonts",
-    "core_pdf.impl.spec.s_14_structure",
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_filters",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_07_syntax",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_14_structure",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
     "core_pdf.impl._impl.model",
@@ -353,7 +370,15 @@ forbidden_modules = [
     "core_pdf.impl._impl.model",
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.render",
-    "core_pdf.impl.spec",
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_filters",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_07_syntax",
+    "core_pdf_spec.s_07_syntax_primitives",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_14_structure",
 ]
 
 
@@ -399,4 +424,21 @@ forbidden_modules = [
     "core_pdf.impl._impl.render",
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.layout",
+]
+
+
+[[tool.importlinter.contracts]]
+name = "Spec identities stay beneath chapter algorithms"
+type = "forbidden"
+source_modules = ["core_pdf_spec.types", "core_pdf_spec.exceptions"]
+forbidden_modules = [
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_filters",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_07_syntax",
+    "core_pdf_spec.s_07_syntax_primitives",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_14_structure",
 ]

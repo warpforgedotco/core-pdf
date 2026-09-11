@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl.spec.s_09_fonts.cmap_resources import normalized_cmap_name, resolve_cmap_resource
+from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_resource
 
-RESOURCE_PACKAGE = "core_pdf.impl.spec.s_09_fonts.data"
+RESOURCE_PACKAGE = "core_pdf_spec.s_09_fonts.data"
 CMapUnicodeSource = tuple[str, str, int]
 CID_COLLECTION_UNICODE_SOURCES: dict[tuple[str, str], dict[bool, tuple[CMapUnicodeSource, ...]]] = {
     ("Adobe", "GB1"): {
@@ -239,18 +239,17 @@ PREDEFINED_CMAP_UNICODE_CODECS: dict[str, str] = {
 
 
 def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
-    normalized_name = normalized_cmap_name(name)
-    if normalized_name in {"Identity-H", "Identity-V"}:
-        return CMapDecoder.identity(byte_width=2, wmode=int(normalized_name.endswith("-V")))
-    if normalized_name in {"OneByteIdentityH", "OneByteIdentityV"}:
-        return CMapDecoder.identity(byte_width=1, wmode=int(normalized_name.endswith("V")))
-    cmap_data = resolve_cmap_resource(normalized_name)
+    if name in {"Identity-H", "Identity-V"}:
+        return CMapDecoder.identity(byte_width=2, wmode=int(name.endswith("-V")))
+    if name in {"OneByteIdentityH", "OneByteIdentityV"}:
+        return CMapDecoder.identity(byte_width=1, wmode=int(name.endswith("V")))
+    cmap_data = resolve_cmap_resource(name)
     if cmap_data is None:
         return None
     try:
         return CMapDecoder(
             cmap_data,
-            usecmap_resolver=resolve_cmap_decoder,
+            usecmap_resolver=resolve_cmap_resource,
         )
     except ValueError:
         return None
@@ -288,16 +287,15 @@ def unicode_scalar_from_cmap_code(code: bytes, codec: str) -> str | None:
 def predefined_cmap_unicode(name: str | None, code: bytes) -> str | None:
     if name is None:
         return None
-    normalized_name = normalized_cmap_name(name)
-    codec = PREDEFINED_CMAP_UNICODE_CODECS.get(normalized_name)
-    if codec is None and normalized_name.startswith(
+    codec = PREDEFINED_CMAP_UNICODE_CODECS.get(name)
+    if codec is None and name.startswith(
         ("UniAKR", "UniCNS", "UniGB", "UniHojo", "UniJIS", "UniKS", "UniManga")
     ):
-        if "-UTF8-" in normalized_name:
+        if "-UTF8-" in name:
             codec = "utf-8"
-        elif "-UTF16-" in normalized_name or "-UCS2-" in normalized_name:
+        elif "-UTF16-" in name or "-UCS2-" in name:
             codec = "utf-16-be"
-        elif "-UTF32-" in normalized_name:
+        elif "-UTF32-" in name:
             codec = "utf-32-be"
     if codec is None:
         return None
@@ -334,7 +332,6 @@ def unicode_candidate_preference(text: str) -> tuple[int, int, int, int, int]:
 
 
 __all__ = (
-    "normalized_cmap_name",
     "predefined_cmap_unicode",
     "resolve_cmap_decoder",
     "resolve_cmap_resource",

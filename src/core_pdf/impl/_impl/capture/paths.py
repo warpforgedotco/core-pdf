@@ -4,7 +4,7 @@
 from math import ceil, hypot
 
 from core_pdf.impl._impl.capture.records import CapturedPath
-from core_pdf.impl.spec.s_07_content.paths import PdfPath
+from core_pdf_spec.s_07_content.model import PdfPath
 
 
 def flatten_path(source: PdfPath) -> CapturedPath:
