@@ -14,10 +14,14 @@ from core_pdf.impl._impl.graphics.icc_profiles import (
 from core_pdf.impl._impl.model.pdf_values import coerce_to_bytes
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl._impl.runtime.scalars import parse_float, parse_int
+from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_spec import (
     ColorParams,
     ColorSpace,
+    DeviceNProcess,
+    parse_device_n_attributes,
 )
 from core_pdf_spec.s_08_graphics.color_spec import (
     parse_color_space as parse_pdf_color_space,
@@ -92,6 +96,22 @@ def recover_image_bits_per_component(image_dict: object) -> int:
 def parse_color_space(value: object) -> ColorSpace:
     """Preserve reader coercion and selected ICC policy around strict descriptions."""
     return internal_parse_color_space(value, set())
+
+
+def internal_nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
+    """Select the supported process-only NChannel output policy.
+
+    Mixed spot/process spaces retain their global alternate and tint transform.
+    Extra unused Colorants definitions do not make a process-only space mixed.
+    """
+    attributes = space.devicen_attributes
+    if space.kind != "DeviceN" or attributes is None or attributes.subtype != "NChannel":
+        return None
+    process = attributes.process
+    if process is None:
+        return None
+    mapped = {index for index in process.component_indices if index is not None}
+    return process if mapped == set(range(len(space.colorants))) else None
 
 
 def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
@@ -201,12 +221,27 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                 if not isinstance(raw_names, (list, tuple)):
                     raise ValueError("invalid DeviceN color space")
                 names = tuple(recover_pdf_name(item) or "" for item in raw_names)
+                attributes = None
+                devicen_params: dict[str, object] = {}
+                if kind == "DeviceN" and len(value) >= 5:
+                    raw_attributes = value[4]
+                    devicen_params["Attributes"] = (
+                        MappingProxyType(dict(raw_attributes))
+                        if isinstance(raw_attributes, dict)
+                        else raw_attributes
+                    )
+                    with suppress(
+                        TypeError, ValueError, FilterError, PdfParseError, PdfUnsupportedError
+                    ):
+                        attributes = parse_device_n_attributes(raw_attributes, names)
                 return ColorSpace(
                     kind,
                     ((0.0, 1.0),) * len(names),
+                    MappingProxyType(devicen_params),
                     alternate=internal_parse_color_space(value[2], active),
                     colorants=names,
                     tint_fn=value[3],
+                    devicen_attributes=attributes,
                 )
         try:
             return parse_pdf_color_space(value)

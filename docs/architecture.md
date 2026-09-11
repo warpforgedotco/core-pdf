@@ -262,5 +262,18 @@ relative colorimetric conversion with compensation, while calibrated spaces reta
 existing XYZ output path for the initial RelativeColorimetric/Default combination. Explicit
 calibrated controls use the CMS path and the dictionary's diffuse black endpoint. Spec owns
 the neutral state and mathematical helpers; core owns the chosen sRGB destination and CMS.
+
+DeviceN attributes retain a typed process-space mapping alongside the original dictionary.
+For NChannel spaces containing only process colors, core maps the components into that
+process space before conversion: RGB values retain their additive meaning, and missing CMYK
+components contribute no ink. ICC profiles, rendering intent, and compensation follow the
+same conversion path as directly selected process spaces. This applies to scalar paint colors
+and image samples, including Indexed bases. Ordinary DeviceN, mixed spot/process NChannel,
+and malformed attribute dictionaries retain the global alternate-space tint transform.
+Individual spot-ink mixing, mixing hints, and separation-aware overprinting remain future work.
+The existing scalar Indexed-to-ordinary-DeviceN path does not apply the base tint transform;
+that limitation also remains for mixed NChannel bases. Process-only NChannel Indexed bases
+use the new component-conversion path.
+
 Transparency groups still composite in the renderer's RGB space. Converting through arbitrary
 group `/CS` blending spaces requires additional work.

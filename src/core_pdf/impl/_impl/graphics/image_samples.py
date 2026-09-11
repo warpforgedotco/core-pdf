@@ -8,7 +8,12 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.graphics.calibrated_colors import calibrated_xyz_to_srgb
-from core_pdf.impl._impl.graphics.color_spec import ColorSpace, cs_param_floats, parse_color_space
+from core_pdf.impl._impl.graphics.color_spec import (
+    ColorSpace,
+    cs_param_floats,
+    internal_nchannel_process,
+    parse_color_space,
+)
 from core_pdf.impl._impl.graphics.device_profiles import default_cmyk_transform
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.graphics.icc_profiles import (
@@ -44,6 +49,8 @@ def internal_convert_components(
 ) -> numpy.ndarray:
     if depth > 8 or not space.component_ranges:
         raise ValueError("invalid image color space")
+    if values.ndim != 2 or values.shape[1] != len(space.component_ranges):
+        raise ValueError("invalid color component count")
     if matte is not None and space.kind != "Indexed":
         if alpha is None:
             raise ValueError("missing image matte opacity")
@@ -51,6 +58,17 @@ def internal_convert_components(
     low, high = numpy.asarray(space.component_ranges, dtype=numpy.float64).T
     values = numpy.clip(values, low, high)
     kind = space.kind
+    process = internal_nchannel_process(space)
+    if process is not None:
+        # PDF 8.6.6.5: process components use their natural values. Missing
+        # CMYK components are unpainted inks, not copied from adjacent channels.
+        mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
+        for destination, source in enumerate(process.component_indices):
+            if source is not None:
+                mapped[:, destination] = values[:, source]
+        return internal_convert_components(
+            mapped, process.color_space, depth + 1, rendering=rendering
+        )
     if kind in {"DeviceGray", "DeviceRGB"}:
         return internal_quantize(values)
     if kind in {"DeviceCMYK", "ICCBased"}:

@@ -38,6 +38,7 @@ from importlib import resources
 import core_pdf_spec
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_08_graphics.color_spec import parse_device_n_attributes
 from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf_spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf_spec.standards import PdfVersion
@@ -58,11 +59,24 @@ finally:
 assert decode_stream_data(zlib.compress(b"PDF"), {"Filter": "FlateDecode"}) == b"PDF"
 assert resolve_cmap_decoder("UniJIS-UTF16-V") is not None
 assert glyph_name_to_unicode("uni00410042") == "AB"
+attributes = parse_device_n_attributes(
+    {
+        "Subtype": "NChannel",
+        "Process": {
+            "ColorSpace": "DeviceCMYK",
+            "Components": ["Cyan", "Magenta", "Yellow", "Black"],
+        },
+    },
+    ("Black", "Magenta"),
+)
+assert attributes.process is not None
+assert attributes.process.color_space.kind == "DeviceCMYK"
+assert attributes.process.component_indices == (None, 1, None, 0)
 assert resources.files("core_pdf_spec").joinpath("py.typed").is_file()
 data = resources.files("core_pdf_spec._vendor.font_data")
 assert data.joinpath("LICENSE.txt").is_file()
 assert data.joinpath("LICENSE.external.txt").is_file()
-print("Standalone spec wheel: imports, parsing, decoding, CMaps and notices passed")
+print("Standalone spec wheel: imports, parsing, NChannel, decoding, CMaps and notices passed")
 """
 
 CORE_SMOKE = """

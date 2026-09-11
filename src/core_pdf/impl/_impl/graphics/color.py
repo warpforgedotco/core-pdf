@@ -17,6 +17,7 @@ from core_pdf.impl._impl.graphics.color_spec import (
     ColorParams,
     ColorSpace,
     cs_param_floats,
+    internal_nchannel_process,
     parse_color_space,
     recover_image_bits_per_component,
 )
@@ -55,13 +56,14 @@ ColorComponents: TypeAlias = list[float]
 ImageBuffer: TypeAlias = ByteBuffer
 
 
-def internal_has_cie_space(space: ColorSpace) -> bool:
+def internal_requires_component_conversion(space: ColorSpace) -> bool:
     return (
         space.kind in {"ICCBased", "CalGray", "CalRGB", "Lab"}
+        or internal_nchannel_process(space) is not None
         or space.base is not None
-        and internal_has_cie_space(space.base)
+        and internal_requires_component_conversion(space.base)
         or space.alternate is not None
-        and internal_has_cie_space(space.alternate)
+        and internal_requires_component_conversion(space.alternate)
     )
 
 
@@ -84,7 +86,7 @@ def color_operands_to_srgb(
     1.0 is the darkest") and an index painted black or white.
     """
     kind = spec.kind
-    if internal_has_cie_space(spec) or (
+    if internal_requires_component_conversion(spec) or (
         rendering != DEFAULT_COLOR_RENDERING and kind not in {"DeviceGray", "DeviceRGB", "Pattern"}
     ):
         if kind == "DeviceCMYK":
@@ -211,7 +213,8 @@ def internal_convert_image_data(
         return None
 
     if rendering != DEFAULT_COLOR_RENDERING or (
-        spec.kind in {"Indexed", "Separation", "DeviceN"} and internal_has_cie_space(spec)
+        spec.kind in {"Indexed", "Separation", "DeviceN"}
+        and internal_requires_component_conversion(spec)
     ):
         source_samples = unpack_image_samples(
             memoryview(raw).cast("B"),

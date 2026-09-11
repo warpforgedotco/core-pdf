@@ -50,7 +50,7 @@ Real veraPDF positive and negative fixtures cover all 15 advertised targets.
   artifact marking, followed by reopen-and-validate verification.
 - Connect external validation findings to inspection and repair workflows while
   retaining the original bytes as validation evidence.
-- Continue the remaining chapter work, including DeviceN NChannel semantics,
+- Continue the remaining chapter work, including NChannel spot-ink mixing and overprinting,
   halftones, transparency-group blending spaces, and Type 3 glyph programs.
 - Add a verified PDF/X backend when an executable and usable license are available;
   this integration is currently deferred.

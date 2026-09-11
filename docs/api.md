@@ -29,9 +29,9 @@ JSON page records include the scale so raw geometry remains interpretable after 
 with PdfDocument("document.pdf") as document:
     page = document.pages[0]
     print(page.width, page.height, page.user_unit)  # raw dimensions and scale
-    print(page.width_points, page.height_points)   # physical dimensions
+    print(page.width_points, page.height_points)  # physical dimensions
     rendered = page.render()
-    raster = rendered.rasterize(scale=2)           # 144 pixels per physical inch
+    raster = rendered.rasterize(scale=2)  # 144 pixels per physical inch
 ```
 
 Rendered-page dimensions are physical points. The renderer applies `user_unit`

@@ -102,6 +102,11 @@ points for reader adapters.
 `s_08_graphics.color_spec.parse_color_space(..., context=...)` also applies the
 PDF 1.3 change permitting Separation and DeviceN Indexed bases, including nested
 color spaces. It does not validate the availability of every color-space feature.
+DeviceN parsing also validates NChannel attributes and exposes a typed mapping from
+DeviceN inputs to process-space components. Core uses that mapping for process-only
+NChannel conversion and retains the global tint fallback for mixed spot/process spaces
+or malformed attributes. These object-selected semantics do not require a different
+document parser for each PDF version.
 The [chapter coverage audit](version-coverage.md) lists implemented differences,
 shared algorithms, evidence, and remaining gaps.
 

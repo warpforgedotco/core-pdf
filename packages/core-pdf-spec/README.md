@@ -120,6 +120,19 @@ nested spaces. It does not enforce every feature's introduction version. The rep
 [version coverage audit](../../docs/version-coverage.md) distinguishes implemented rules,
 shared algorithms, and remaining historical or feature gaps.
 
+`ColorSpace.devicen_attributes` retains typed `DeviceNAttributes` and `DeviceNProcess`
+metadata from ISO 32000-2:2020, 8.6.6.5 and Tables 70-71. The public
+`color_spec.parse_device_n_attributes(attributes, colorants, *, context=None)` helper
+checks this metadata independently of the outer alternate space and tint transform.
+Process `component_indices` map process-space order to DeviceN input positions;
+omitted CMYK channels have `None` indices. NChannel requires complete, contiguous,
+naturally ordered non-CMYK process components and matching Separation definitions for
+all spot components. Process definitions take precedence over `Colorants` entries.
+The original attributes remain in `ColorSpace.params["Attributes"]`; optional mixing
+hints remain opaque and are not compiled or fully validated. This API parses metadata
+without choosing a blending algorithm. Ordinary DeviceN `Colorants` metadata was already
+defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availability gate.
+
 When migrating to `0.4.0`:
 
 - Construct `ObjectResolver(data, xref, decipher=...)` without the removed `trailer` argument;
