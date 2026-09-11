@@ -81,6 +81,7 @@ def internal_page_image_regions(
         raster = internal_decoded_image_raster(
             image,
             display_area,
+            user_unit=float(getattr(capture.page, "user_unit", 1.0)),
             max_pixels=max_pixels,
             upscale=upscale,
         )

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,9 +24,11 @@ from core_pdf.impl._impl.runtime.array_views import readonly
 from core_pdf.impl._impl.runtime.scalars import parse_int
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values, unpack_image_samples
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import (
     ImageSource,
     SoftMask,
+    image_color_rendering,
     image_decode_array_applies,
     image_smask_in_data,
 )
@@ -108,6 +111,10 @@ class internal_ImagePreparation(ImageSource):
         """Decode and return an immutable prepared image."""
         is_stencil = self.dictionary.get("ImageMask") is True
         dictionary = self.dictionary
+        try:
+            rendering = image_color_rendering(dictionary, self.color_rendering)
+        except ValueError:
+            rendering = self.color_rendering
         matte = None
         alpha = None
         if self.soft_mask is not None:
@@ -131,6 +138,7 @@ class internal_ImagePreparation(ImageSource):
                 matte=matte,
                 alpha=alpha,
                 semantic_context=self.semantic_context,
+                rendering=rendering,
             )
         )
         if decoded is None:
@@ -277,6 +285,7 @@ def internal_canonical_image_array(
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     semantic_context: SemanticContext | None = None,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[numpy.ndarray[Any, Any], int] | None:
     """Normalize a decoded image to a contiguous grayscale/RGB sample array."""
     explicit_jpx_decode = (
@@ -322,6 +331,7 @@ def internal_canonical_image_array(
         samples.array.dtype == numpy.uint16
         or explicit_jpx_decode
         or sample_array is not samples.array
+        or rendering != DEFAULT_COLOR_RENDERING
     ):
         if samples.source == "jpx" and not explicit_jpx_decode:
             high_depth_dictionary.pop("Decode", None)
@@ -335,6 +345,7 @@ def internal_canonical_image_array(
                 bits_per_component=16 if samples.array.dtype == numpy.uint16 else 8,
                 matte=matte,
                 alpha=alpha,
+                rendering=rendering,
             )
         except (TypeError, ValueError):
             return None
@@ -389,13 +400,20 @@ def internal_decode_image_samples(
             return None
     expected_gray = width * height
     expected_rgb = expected_gray * 3
+    expected_source = 0
+    with suppress(ValueError):
+        expected_source = expected_gray * len(
+            parse_color_space(dictionary.get("ColorSpace")).component_ranges
+        )
+    if bits_per_component == 8 and dictionary.get("Filter") is None and len(raw) == expected_source:
+        return raw
     if len(raw) in {expected_gray, expected_rgb}:
         return raw
     try:
         decoded = decode_stream_data(raw, dictionary)
     except Exception:
         return None
-    if len(decoded) in {expected_gray, expected_rgb}:
+    if len(decoded) in {expected_gray, expected_rgb, expected_source}:
         return decoded
     if bits_per_component in {1, 2, 4}:
         row_bytes = (width * bits_per_component + 7) // 8
@@ -411,7 +429,10 @@ def decode_pdf_image(
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     semantic_context: SemanticContext | None = None,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> DecodedRaster | None:
+    with suppress(ValueError):
+        rendering = image_color_rendering(dictionary, rendering)
     width = parse_int(dictionary.get("Width"), 0)
     height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
@@ -421,7 +442,12 @@ def decode_pdf_image(
         return None
     if isinstance(samples, DecodedImage):
         canonical = internal_canonical_image_array(
-            samples, dictionary, matte=matte, alpha=alpha, semantic_context=semantic_context
+            samples,
+            dictionary,
+            matte=matte,
+            alpha=alpha,
+            semantic_context=semantic_context,
+            rendering=rendering,
         )
         if canonical is None:
             return None
@@ -429,12 +455,14 @@ def decode_pdf_image(
         return DecodedRaster(array, width, height, channels)
     if parse_int(dictionary.get("BitsPerComponent"), 8) == 16:
         try:
-            converted_words = convert_16bit_image(samples, dictionary, matte=matte, alpha=alpha)
+            converted_words = convert_16bit_image(
+                samples, dictionary, matte=matte, alpha=alpha, rendering=rendering
+            )
         except (TypeError, ValueError):
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])
     try:
-        converted = internal_convert_image_data(samples, dictionary)
+        converted = internal_convert_image_data(samples, dictionary, rendering=rendering)
     except ValueError:
         # Broken PDFs sometimes retain an unresolved or malformed ICCBased
         # reference even though the decoded stream contains ordinary device
@@ -453,7 +481,7 @@ def decode_pdf_image(
         converted = bytes(converted)
     pixels = width * height
     channels = len(converted) // pixels
-    if channels not in {1, 3} or len(converted) != pixels * channels:
+    if channels not in {1, 2, 3, 4} or len(converted) != pixels * channels:
         return None
     return DecodedRaster(converted, width, height, channels)
 
@@ -477,6 +505,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
         source.dictionary,
         soft_mask=source.soft_mask,
         semantic_context=source.semantic_context,
+        color_rendering=source.color_rendering,
     ).prepare()
 
 

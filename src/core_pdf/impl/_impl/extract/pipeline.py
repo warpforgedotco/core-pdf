@@ -239,6 +239,7 @@ class internal_PageExtraction:
             links=links,
             form_fields=field_records,
             cropbox=cropbox,
+            user_unit=self.page.user_unit,
         )
         return assembled
 

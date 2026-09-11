@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.graphics.color_math import d50_xyz_to_srgb
+from core_pdf.impl._impl.graphics.calibrated_colors import calibrated_xyz_to_srgb
 from core_pdf.impl._impl.graphics.color_spec import ColorSpace, cs_param_floats, parse_color_space
 from core_pdf.impl._impl.graphics.device_profiles import default_cmyk_transform
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
@@ -23,6 +23,7 @@ from core_pdf_spec.s_08_graphics.color_kernels import (
     unpack_image_samples,
 )
 from core_pdf_spec.s_08_graphics.color_math import lab_components_to_xyz
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_11_transparency.images import unblend_matte_components
 
 
@@ -39,6 +40,7 @@ def internal_convert_components(
     *,
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> numpy.ndarray:
     if depth > 8 or not space.component_ranges:
         raise ValueError("invalid image color space")
@@ -61,13 +63,15 @@ def internal_convert_components(
                 else None
             )
             if transform is not None and transform.input_channels == values.shape[1]:
-                return transform.apply_uint16(internal_quantize(values, 65535))
+                return transform.apply_uint16(internal_quantize(values, 65535), rendering=rendering)
         except (IccProfileError, IccSampleError):
             pass
         if kind == "DeviceCMYK":
             return internal_quantize((1 - values[:, :3]) * (1 - values[:, 3:]))
         if space.alternate is not None:
-            return internal_convert_components(values, space.alternate, depth + 1)
+            return internal_convert_components(
+                values, space.alternate, depth + 1, rendering=rendering
+            )
     if kind == "Indexed" and space.base is not None and space.lookup is not None:
         count = len(space.base.component_ranges)
         entries = numpy.frombuffer(space.lookup, dtype=numpy.uint8)
@@ -76,14 +80,18 @@ def internal_convert_components(
         table = entries[: (space.hival + 1) * count].reshape(-1, count)
         indices = numpy.floor(values[:, 0] + 0.5).astype(numpy.intp)
         base = decode_sample_values(table[indices], space.base.component_ranges, 255)
-        return internal_convert_components(base, space.base, depth + 1, matte=matte, alpha=alpha)
+        return internal_convert_components(
+            base, space.base, depth + 1, matte=matte, alpha=alpha, rendering=rendering
+        )
     if kind in {"Separation", "DeviceN"} and space.alternate is not None:
         function = internal_compile_pdf_function(space.tint_fn)
         distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
         tinted = numpy.asarray([function(*row) for row in distinct], dtype=numpy.float64)
         if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
             raise ValueError("invalid tint transform output count")
-        return internal_convert_components(tinted, space.alternate, depth + 1)[inverse]
+        return internal_convert_components(tinted, space.alternate, depth + 1, rendering=rendering)[
+            inverse
+        ]
     if kind in {"Lab", "CalGray", "CalRGB"}:
         white = cs_param_floats(space.params, "WhitePoint", 3, [0.9642, 1, 0.8249])
         if kind == "Lab":
@@ -102,7 +110,10 @@ def internal_convert_components(
             xyz = ((values ** numpy.asarray(gamma)) @ numpy.asarray(matrix).reshape(3, 3)).astype(
                 numpy.float32
             )
-        return internal_quantize(d50_xyz_to_srgb(xyz))
+        black = cs_param_floats(space.params, "BlackPoint", 3, [0, 0, 0])
+        return calibrated_xyz_to_srgb(
+            xyz, (white[0], white[1], white[2]), (black[0], black[1], black[2]), rendering
+        )
     raise ValueError("unsupported image color space")
 
 
@@ -113,6 +124,7 @@ def convert_integer_samples(
     bits_per_component: int = 16,
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> numpy.ndarray:
     """Decode native unsigned words, then convert colours and source-sample masks.
 
@@ -134,7 +146,9 @@ def convert_integer_samples(
             raise ValueError("invalid image Decode array")
         pairs = tuple((float(low), float(high)) for low, high in numbers.reshape(-1, 2))
     values = decode_sample_values(integers, pairs, maximum)
-    output = internal_convert_components(values, space, matte=matte, alpha=alpha)
+    output = internal_convert_components(
+        values, space, matte=matte, alpha=alpha, rendering=rendering
+    )
     mask = dictionary.get("Mask")
     # An SMask takes precedence over the colour key mask (Table 89).
     if isinstance(mask, (list, tuple)) and dictionary.get("SMask") is None:
@@ -148,9 +162,12 @@ def convert_16bit_image(
     *,
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> numpy.ndarray:
     space = parse_color_space(dictionary.get("ColorSpace"))
     samples = unpack_image_samples(
         data, 16, int(dictionary["Width"]), int(dictionary["Height"]), len(space.component_ranges)
     )
-    return convert_integer_samples(samples, dictionary, matte=matte, alpha=alpha)
+    return convert_integer_samples(
+        samples, dictionary, matte=matte, alpha=alpha, rendering=rendering
+    )

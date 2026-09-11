@@ -16,6 +16,8 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 @dataclass(slots=True)
 class RenderOptions:
+    """Page composition options; crop uses unrotated default PDF user space."""
+
     page_number: int | None = None
     rotate: int = 0
     crop: tuple[float, float, float, float] | None = None

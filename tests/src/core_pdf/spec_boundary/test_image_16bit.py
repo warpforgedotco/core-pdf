@@ -14,6 +14,7 @@ from core_pdf.impl._impl.graphics.icc_profiles import IccTransform, parse_icc_tr
 from core_pdf.impl._impl.graphics.images import decode_pdf_image, prepare_image
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_math import lab_components_to_xyz
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
@@ -99,9 +100,14 @@ def test_embedded_icc_receives_uint16_samples(monkeypatch: pytest.MonkeyPatch) -
     actual: list[numpy.ndarray] = []
     original = IccTransform.apply_uint16
 
-    def record(self: IccTransform, samples: numpy.ndarray) -> numpy.ndarray:
+    def record(
+        self: IccTransform,
+        samples: numpy.ndarray,
+        *,
+        rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    ) -> numpy.ndarray:
         actual.append(samples.copy())
-        return original(self, samples)
+        return original(self, samples, rendering=rendering)
 
     monkeypatch.setattr(IccTransform, "apply_uint16", record)
     values = [1000, 33000, 65000, 1001, 33001, 65001]

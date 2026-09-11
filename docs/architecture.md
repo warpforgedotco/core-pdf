@@ -141,8 +141,10 @@ offsets, skipped malformed entries, and partial results live in `_impl/document/
 Content retry/skip control and stream limits likewise live in core capture. Strict parsing
 propagates failures; specification-defined defaults and prescribed fallback rules stay in spec.
 
-Interpreter color state retains PDF components and color spaces. Core capture applies selected
-output conversions when creating its records. Vendored fontTools parsing, outline backends,
+Interpreter color state retains PDF components, color spaces, rendering intent, and black-point
+compensation. Core capture applies the settings at paint time when creating its records;
+deferred image, shading, and pattern inputs retain an immutable `ColorRendering` value.
+Profile and converter choices stay in core. Vendored fontTools parsing, outline backends,
 repairs, and rasterization stay in core; spec provides handwritten CFF/Type 2 algorithms,
 audited Type 1 byte helpers, CMaps, widths, standard tables, and font-service protocols.
 
@@ -248,3 +250,17 @@ PDF leaves DeviceCMYK conversion undefined. `_impl/graphics/device_profiles.py` 
 the press profile in `_vendor/icc/` and uses the uncalibrated ink formula only when the profile is
 unavailable. The ICC implementation documents its rendering intent, black-point compensation, and
 optimized byte path alongside the code.
+
+`ri` and ExtGState `RI` select rendering intent; `UseBlackPtComp` controls compensation for
+supported CIE-based conversions. Image `Intent` overrides only that image's intent; stencil
+images ignore it. Saved and nested graphics state preserve these settings, and conversion
+caches include the settings that affect their output. Absolute colorimetric conversion ignores
+compensation without changing the stored graphics-state value.
+
+Core preserves its existing default converters: ICC and selected DeviceCMYK profiles use
+relative colorimetric conversion with compensation, while calibrated spaces retain their
+existing XYZ output path for the initial RelativeColorimetric/Default combination. Explicit
+calibrated controls use the CMS path and the dictionary's diffuse black endpoint. Spec owns
+the neutral state and mathematical helpers; core owns the chosen sRGB destination and CMS.
+Transparency groups still composite in the renderer's RGB space. Converting through arbitrary
+group `/CS` blending spaces requires additional work.

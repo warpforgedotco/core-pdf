@@ -10,13 +10,41 @@ from core_pdf_spec._vendor.font_data.encoding_names import (
     STANDARD_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_GLYPH_NAMES,
 )
+from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
     "StandardEncoding": STANDARD_ENCODING_GLYPH_NAMES,
     "WinAnsiEncoding": WIN_ANSI_ENCODING_GLYPH_NAMES,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_GLYPH_NAMES,
 }
+
+
+def get_base_encoding_glyph_names(
+    base_encoding: str, *, context: SemanticContext | None = None
+) -> tuple[str, ...]:
+    """Select a predefined font encoding, retaining modern tables without context.
+
+    Adobe PDF 1.3, Annex D.1 notes 1–3 assigns Euro, Zcaron and zcaron to
+    WinAnsi codes 80, 8E and 9E (hexadecimal). Before PDF 1.3 these unused
+    WinAnsi slots select bullet, as specified in PDF 1.2, Annex C.1. PDF's
+    MacRomanEncoding keeps currency at DB despite the Mac OS encoding change.
+    """
+    if context is not None and (context.version is None or not context.version.recognized):
+        raise PdfUnsupportedError("font-encoding semantics require a recognized PDF version")
+    names = BASE_ENCODING_GLYPH_NAMES[base_encoding]
+    if (
+        base_encoding == "WinAnsiEncoding"
+        and context is not None
+        and context.version is not None
+        and context.version < PdfVersion(1, 3)
+    ):
+        historical = list(names)
+        for code in (0x80, 0x8E, 0x9E):
+            historical[code] = "bullet"
+        return tuple(historical)
+    return names
 
 
 def strip_subset_tag(font_name: str) -> str:
@@ -55,6 +83,7 @@ def build_simple_encoding_glyph_names(
     differences: Mapping[int, str],
     *,
     authoritative_builtin: bool,
+    context: SemanticContext | None = None,
 ) -> tuple[str, ...]:
     """Layer one complete simple-font code-to-glyph-name encoding.
 
@@ -62,11 +91,13 @@ def build_simple_encoding_glyph_names(
     absent code denotes ``.notdef`` rather than falling through to
     StandardEncoding. Explicit PDF /Differences are always the final layer.
     """
-    names = (
-        [".notdef"] * 256
-        if authoritative_builtin
-        else list(BASE_ENCODING_GLYPH_NAMES[base_encoding or "StandardEncoding"])
+    # Validate an explicit context even when an authoritative program encoding
+    # means that no predefined table participates.
+    base_names = get_base_encoding_glyph_names(
+        "StandardEncoding" if authoritative_builtin else base_encoding or "StandardEncoding",
+        context=context,
     )
+    names = [".notdef"] * 256 if authoritative_builtin else list(base_names)
     for mapping in (builtin_encoding, differences):
         for code, name in mapping.items():
             if type(code) is not int or not 0 <= code < 256 or not name:
@@ -77,6 +108,7 @@ def build_simple_encoding_glyph_names(
 
 __all__ = [
     "BASE_ENCODING_GLYPH_NAMES",
+    "get_base_encoding_glyph_names",
     "strip_subset_tag",
     "parse_differences",
     "build_simple_encoding_glyph_names",

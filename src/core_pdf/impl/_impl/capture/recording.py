@@ -6,6 +6,7 @@ Holds the graphics and text state, the operator handlers, and glyph emission.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from math import hypot
 from typing import TYPE_CHECKING, Any, cast
 
@@ -65,6 +66,7 @@ from core_pdf_spec.s_07_content.streams import (
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
@@ -142,7 +144,10 @@ class RecordingMethods(RecoveringTextState):
     capture_graphics_stack: list[CaptureGraphicsSave]
     capture_marked_entries: dict[int, MarkedContentEntry]
     capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool]]
-    capture_patterns: dict[int, tuple[object, PatternPaint | None]]
+    capture_patterns: dict[tuple[int, ColorRendering], tuple[object, PatternPaint | None]]
+    capture_colors: dict[
+        tuple[int, tuple[float, ...], ColorRendering], tuple[object, tuple[float, ...] | None]
+    ]
 
     def is_text_visible(self, text: str) -> bool:
         if not text:
@@ -581,7 +586,9 @@ class RecordingMethods(RecoveringTextState):
             if width > 0 and height > 0:
                 bounds, quad = unit_square_placement(self.graphics.ctm)
                 bbox = RectBox(*bounds)
-            source, smask_alpha = image_source_from_stream(xobj, self.resolver)
+            source, smask_alpha = image_source_from_stream(
+                xobj, self.resolver, color_rendering=self.graphics.color_rendering
+            )
             # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
             # set bits in the current fill colour. Every other image ignores
             # the fill, so recording it is only meaningful for the mask case,
@@ -621,7 +628,9 @@ class RecordingMethods(RecoveringTextState):
                 if color_resource is not None:
                     dictionary[PdfName.of("ColorSpace")] = cast(PdfObject, color_resource)
             source, _ = image_source_from_stream(
-                PdfStream(raw_data=data, dictionary=dictionary), self.resolver
+                PdfStream(raw_data=data, dictionary=dictionary),
+                self.resolver,
+                color_rendering=self.graphics.color_rendering,
             )
             self.inline_images.append(
                 CapturedInlineImage(
@@ -660,8 +669,9 @@ class RecordingMethods(RecoveringTextState):
                 blend_mode=self.graphics.blend_mode,
                 soft_mask_alpha=self.group_alpha,
                 kind="shading",
+                color_rendering=self.graphics.color_rendering,
                 items=[],
-                dictionary=dict(shading),
+                dictionary=self.capture_shading_dictionary(shading),
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
             )
@@ -783,29 +793,55 @@ class RecordingMethods(RecoveringTextState):
         """Project PDF color components only when creating output records."""
         color = self.graphics.stroke_color if stroke else self.graphics.fill_color
         spec = self.graphics.stroke_space if stroke else self.graphics.fill_space
-        if (
-            color is not None
-            and spec is not None
-            and spec.kind in {"Indexed", "Separation", "DeviceN"}
-        ):
-            converted = color_operands_to_srgb(spec, list(color))
-            if converted is not None:
-                return converted
+        if color is not None and spec is not None:
+            key = (id(spec), color, self.graphics.color_rendering)
+            previous = self.capture_colors.get(key)
+            if previous is not None:
+                return previous[1]
+            converted = color_operands_to_srgb(
+                spec, list(color), rendering=self.graphics.color_rendering
+            )
+            result = converted if converted is not None else color
+            if len(self.capture_colors) >= 4096:
+                self.capture_colors.clear()
+            self.capture_colors[key] = (spec, result)
+            return result
         return color
+
+    def capture_shading_dictionary(self, dictionary: dict) -> dict:
+        return {
+            key: self.resolver.deep_resolve(value)
+            if str(key) in {"ColorSpace", "Function", "Coords", "Domain", "Extend", "BBox"}
+            else value
+            for key, value in dictionary.items()
+        }
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
         if pattern is None:
             return None
-        key = id(pattern)
+        rendering = self.graphics.color_rendering
+        key = (id(pattern), rendering)
         if key in self.capture_patterns:
             return self.capture_patterns[key][1]
         result: PatternPaint | None = None
         if isinstance(pattern, PdfShadingPattern):
-            result = ShadingPattern(dict(pattern.dictionary))
+            if pattern.extgstate is not None:
+                values = {
+                    str(key): self.resolver.resolve(value)
+                    for key, value in pattern.extgstate.items()
+                    if str(key) in {"RI", "UseBlackPtComp"}
+                }
+                with suppress(ValueError):
+                    rendering = override_color_rendering(values, rendering)
+            result = ShadingPattern(
+                self.capture_shading_dictionary(pattern.dictionary), color_rendering=rendering
+            )
         elif isinstance(pattern, PdfTilingPattern):
             from core_pdf.impl._impl.capture.interpreter import TextState
 
             nested = TextState(self.document, hidden_layers=self.hidden_layers)
+            nested.graphics.render_intent = self.graphics.render_intent
+            nested.graphics.black_point_compensation = self.graphics.black_point_compensation
             try:
                 nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
             except Exception:
@@ -814,7 +850,9 @@ class RecordingMethods(RecoveringTextState):
             if pattern.paint_type == 2:
                 base_color = pattern.base_color
                 if base_color is not None and pattern.base_color_spec is not None:
-                    converted = color_operands_to_srgb(pattern.base_color_spec, base_color)
+                    converted = color_operands_to_srgb(
+                        pattern.base_color_spec, base_color, rendering=rendering
+                    )
                     if converted is not None:
                         base_color = converted
                 for drawing in nested.drawings:

@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    BlackPointCompensation,
+    ColorRendering,
+    parse_rendering_intent,
+)
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
@@ -52,6 +57,7 @@ class PdfPath:
 @dataclass(frozen=True, slots=True)
 class ShadingPattern:
     dictionary: PdfDict
+    extgstate: PdfDict | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +99,7 @@ class GraphicsState:
     blend_mode: str | None = None
     flatness: float = 1.0
     render_intent: str | None = None
+    black_point_compensation: BlackPointCompensation = "Default"
     line_width: float = 1.0
     line_cap: int = 0
     line_join: int = 0
@@ -108,6 +115,13 @@ class GraphicsState:
     current_font: str | None = None
     current_decoder: FontService | None = None
     decoder_resources: PdfDict | None = None
+
+    @property
+    def color_rendering(self) -> ColorRendering:
+        return ColorRendering(
+            parse_rendering_intent(self.render_intent or "RelativeColorimetric"),
+            self.black_point_compensation,
+        )
 
 
 class ContentSink(Protocol):

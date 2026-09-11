@@ -76,6 +76,16 @@ interpretation, not lexical string parsing. Algorithms receive context only wher
 their semantics differ. Existing calls omitting context retain their earlier behavior.
 Core owns best-effort recovery for under-declared encodings and unknown versions.
 
+PDFDocEncoding's `A0` slot was undefined before PDF 1.3. An explicit older context
+rejects it in a PDFDocEncoding string; Unicode strings and no-context decoding keep
+their established behavior. Core can recover under-declared Euro text explicitly.
+Font WinAnsi slots `80`, `8E`, and `9E` likewise changed in PDF 1.3, from the prescribed
+bullet fallback to Euro, Zcaron, and zcaron. `s_09_fonts.helpers.get_base_encoding_glyph_names`
+and `build_simple_encoding_glyph_names` accept `context=` for these assignments.
+Native font selection and extraction use the document context; explicit font-program
+encodings, Differences, and ToUnicode retain their established roles. Compatibility
+facades retain their reference libraries' encoding and positioning conventions.
+
 `PdfLexer`, `ObjectResolver`, `ObjectStream`, `XRefScanner` parsing methods, and
 `ContentInterpreter` accept `semantic_context=`. Names retain literal `#` through
 PDF 1.1; hexadecimal name escapes apply from PDF 1.2. Strict parsing recognizes
@@ -94,6 +104,21 @@ PDF 1.3 change permitting Separation and DeviceN Indexed bases, including nested
 color spaces. It does not validate the availability of every color-space feature.
 The [chapter coverage audit](version-coverage.md) lists implemented differences,
 shared algorithms, evidence, and remaining gaps.
+
+`s_07_document.page.page_user_unit` validates the resolved leaf-page `UserUnit` entry.
+The value defaults to 1, is not inherited, and scales default user space into physical
+points. This is an object-level scale, not an alternative page parser selected by
+the header. Core keeps raw geometry alongside the scale and applies it during
+rasterization; see [page coordinate units](api.md#page-coordinates-and-physical-size).
+
+`s_08_graphics.color_rendering.ColorRendering` retains rendering intent and PDF 2.0
+black-point compensation as immutable values. Strict parsers enforce the three
+compensation names; an unrecognized rendering-intent name selects RelativeColorimetric,
+as prescribed by the standard. Absent or null ExtGState entries preserve current state.
+`image_color_rendering` applies an image's own intent while preserving compensation;
+stencils ignore image intent. These APIs describe PDF state, without choosing an output
+profile. Core applies the state during its supported color conversions; its selected
+defaults and transparency limits are described in [the architecture](architecture.md#device-colour).
 
 `s_14_structure.roles.resolve_structure_role` follows transitive root and namespace
 role maps and returns the terminal name, namespace, status, and path. It reports

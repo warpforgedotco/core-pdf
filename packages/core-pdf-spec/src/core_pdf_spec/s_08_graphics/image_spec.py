@@ -11,6 +11,11 @@ from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, require_pdf_integer
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    DEFAULT_COLOR_RENDERING,
+    ColorRendering,
+    parse_rendering_intent,
+)
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
@@ -23,6 +28,7 @@ internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Mask",
     "Matte",
     "SMaskInData",
+    "Intent",
 }
 
 
@@ -47,6 +53,7 @@ class ImageSource:
     dictionary: dict[Any, Any]
     soft_mask: SoftMask | None = field(default=None, kw_only=True)
     semantic_context: SemanticContext | None = field(default=None, kw_only=True)
+    color_rendering: ColorRendering = field(default=DEFAULT_COLOR_RENDERING, kw_only=True)
 
 
 def internal_resolve_image_dictionary(
@@ -67,6 +74,7 @@ def image_source_from_stream(
     resolver: PdfValueResolver,
     *,
     semantic_context: SemanticContext | None = None,
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> ImageSource:
     """Resolve the image's samples, colour space and optional soft mask.
 
@@ -82,7 +90,25 @@ def image_source_from_stream(
 
     source_dictionary = internal_resolve_image_dictionary(stream.dictionary, resolver)
     return ImageSource(
-        stream.raw_data, source_dictionary, soft_mask=soft_mask, semantic_context=semantic_context
+        stream.raw_data,
+        source_dictionary,
+        soft_mask=soft_mask,
+        semantic_context=semantic_context,
+        color_rendering=color_rendering,
+    )
+
+
+def image_color_rendering(
+    dictionary: dict[object, object], rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+) -> ColorRendering:
+    """ISO 32000-1 Table 89 / ISO 32000-2 Table 87: image Intent overrides state."""
+    if dictionary.get("ImageMask") is True:
+        return rendering
+    intent = dictionary.get("Intent")
+    return (
+        rendering
+        if intent is None
+        else ColorRendering(parse_rendering_intent(intent), rendering.black_point_compensation)
     )
 
 
@@ -142,6 +168,7 @@ def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
 
 
 __all__ = (
+    "image_color_rendering",
     "image_smask_in_data",
     "image_decode_array_applies",
     "image_bits_per_component",

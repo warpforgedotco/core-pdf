@@ -451,6 +451,17 @@ class Page:
     footer: str = ""
     diagnostics: tuple[Diagnostic, ...] = ()
     cropbox: Rectangle | None = None
+    user_unit: float = field(default=1.0, kw_only=True)
+
+    @property
+    def width_points(self) -> float:
+        """Unrotated width in points; stored geometry uses default user space."""
+        return self.width * self.user_unit
+
+    @property
+    def height_points(self) -> float:
+        """Unrotated height in points; stored geometry uses default user space."""
+        return self.height * self.user_unit
 
     @property
     def elements(self) -> tuple[PageElement, ...]:

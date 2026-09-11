@@ -11,6 +11,7 @@ from core_pdf.impl._impl.model.geometry import RectBox, bbox_union, points_bbox
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
@@ -230,6 +231,7 @@ class CapturedDrawing:
     bbox: RectBox | None = None
     stream_order: int = 0
     xobject_depth: int = 0
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -304,6 +306,7 @@ class ShadingPattern:
     """A PatternType 2 paint: the resolved /Shading dictionary."""
 
     dictionary: dict[Any, Any]
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
 
 @dataclass(frozen=True, slots=True)

@@ -178,7 +178,10 @@ class RecoveringTextState(ContentInterpreter):
             shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 return None
-            return ShadingPattern(dict(shading_dict))
+            return ShadingPattern(
+                dict(shading_dict),
+                extgstate=self.resolver.resolve_dict(pattern_dict.get("ExtGState")),
+            )
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"), 1)

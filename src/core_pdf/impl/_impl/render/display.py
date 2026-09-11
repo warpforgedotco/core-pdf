@@ -262,6 +262,7 @@ class DisplayList:
             dictionary=drawing.dictionary,
             image_source=drawing.image_source,
             image_clip=drawing.image_clip,
+            color_rendering=drawing.color_rendering,
             path=drawing.path,
             items=drawing.items,
         )

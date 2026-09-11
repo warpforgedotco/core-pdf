@@ -41,6 +41,10 @@ from core_pdf_spec.s_08_graphics.color import (
     initial_color_components,
     normalize_color_components,
 )
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    parse_black_point_compensation,
+    parse_rendering_intent,
+)
 from core_pdf_spec.s_08_graphics.color_spec import (
     DEVICE_CMYK,
     DEVICE_GRAY,
@@ -951,9 +955,10 @@ class ContentInterpreter:
     def op_ri(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
-        value = self.named_value(operands[0])
-        if isinstance(value, str):
-            self.graphics.render_intent = value
+        try:
+            self.graphics.render_intent = parse_rendering_intent(self.named_value(operands[0]))
+        except ValueError as error:
+            raise PdfParseError(str(error)) from error
 
     def op_MP(self, operands: ContentOperands, depth: int) -> None:
         # A marked-content point is not a scope. Only BMC/BDC push and EMC pops.
@@ -1096,6 +1101,16 @@ class ContentInterpreter:
         Earlier changes remain applied if a later field raises. Reader callers
         own resource recovery and exception handling around this shared step.
         """
+        # Absent keys preserve state (8.4.5; Table 57 errata removes a
+        # misleading per-dictionary Default for UseBlackPtComp).
+        intent = self.resolver.resolve(extgstate.get("RI"))
+        if intent is not None:
+            self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
+        black_point = self.resolver.resolve(extgstate.get("UseBlackPtComp"))
+        if black_point is not None:
+            self.graphics.black_point_compensation = parse_black_point_compensation(
+                self.named_value(black_point)
+            )
         fill_opacity = extgstate.get("ca")
         if fill_opacity is not None:
             self.graphics.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
@@ -1142,7 +1157,8 @@ class ContentInterpreter:
             shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 raise PdfParseError("invalid pattern resource or operands")
-            return ShadingPattern(dict(shading_dict))
+            extgstate = self.resolver.resolve_dict(pattern_dict.get("ExtGState"))
+            return ShadingPattern(dict(shading_dict), extgstate=extgstate)
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             raise PdfParseError("invalid pattern resource or operands")
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))

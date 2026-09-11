@@ -15,6 +15,7 @@ from core_pdf.impl._impl.graphics.icc_profiles import (
     IccTransform,
     parse_icc_transform,
 )
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 INTERNAL_DEFAULT_CMYK_PROFILE = "SWOP2006_Coated5v2.icc"
 
@@ -50,12 +51,14 @@ def default_cmyk_transform() -> IccTransform | None:
     return transform
 
 
-def cmyk_bytes_to_srgb(samples: ByteSamples) -> ByteSamples:
+def cmyk_bytes_to_srgb(
+    samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+) -> ByteSamples:
     """Convert an (n, 4) block of 8-bit DeviceCMYK samples to (n, 3) sRGB."""
     transform = default_cmyk_transform()
     if transform is not None:
         try:
-            return transform.apply_uint8(samples)
+            return transform.apply_uint8(samples, rendering=rendering)
         except (IccProfileError, IccSampleError):
             pass
     # Keep the uncalibrated ink formula as a direct fallback for a damaged or
@@ -70,6 +73,8 @@ def cmyk_floats_to_srgb(
     magenta: float,
     yellow: float,
     black: float,
+    *,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int]:
     """Convert one DeviceCMYK colour given as four floats in [0, 1] to sRGB."""
     return internal_cmyk_bytes_to_srgb(
@@ -77,6 +82,7 @@ def cmyk_floats_to_srgb(
         internal_component_byte(magenta),
         internal_component_byte(yellow),
         internal_component_byte(black),
+        rendering,
     )
 
 
@@ -91,9 +97,10 @@ def internal_cmyk_bytes_to_srgb(
     magenta: int,
     yellow: int,
     black: int,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int]:
     sample = numpy.asarray([[cyan, magenta, yellow, black]], dtype=numpy.uint8)
-    red, green, blue = cmyk_bytes_to_srgb(sample)[0]
+    red, green, blue = cmyk_bytes_to_srgb(sample, rendering=rendering)[0]
     return int(red), int(green), int(blue)
 
 

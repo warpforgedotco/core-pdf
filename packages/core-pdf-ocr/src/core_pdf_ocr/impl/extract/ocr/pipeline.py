@@ -208,8 +208,6 @@ def internal_recognize_page_with_reserved_raster(
     *,
     stroked_profile: StrokedTextProfile | None,
 ) -> ObservationBatch:
-    page = capture.page
-    page_box = (0.0, 0.0, float(page.width), float(page.height))
     compact_image: bool | str = True
     if capture.evidence.full_page_image:
         image_filters = capture.evidence.image_filters
@@ -222,6 +220,7 @@ def internal_recognize_page_with_reserved_raster(
         context,
         stroked_profile,
     )
+    page_box = session.page_box
     pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
 

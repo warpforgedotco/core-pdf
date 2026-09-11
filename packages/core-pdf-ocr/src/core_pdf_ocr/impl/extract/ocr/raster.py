@@ -292,6 +292,7 @@ def internal_decoded_image_raster(
     image: CapturedDrawing,
     display_area: float,
     *,
+    user_unit: float = 1.0,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
 ) -> internal_Raster | None:
@@ -326,8 +327,12 @@ def internal_decoded_image_raster(
         decoded_width = decoded.width
         decoded_height = decoded.height
         decoded_channels = decoded.channels
-    pixels_per_point = math.sqrt(decoded_width * decoded_height / max(1.0, display_area))
-    resolution = max(70, min(600, int(round(72.0 * pixels_per_point))))
+    # Placement area is raw user space; resolution describes physical inches.
+    # Divide after the square root to avoid overflowing UserUnit squared.
+    pixels_per_point = (
+        math.sqrt(decoded_width * decoded_height / max(1.0, display_area)) / user_unit
+    )
+    resolution = int(round(max(70.0, min(600.0, 72.0 * pixels_per_point))))
     width = decoded_width
     height = decoded_height
     channels = decoded_channels
@@ -496,8 +501,14 @@ def internal_rendered_page_raster(
         raster_area = max(1.0, float(page.width) * float(page.height))
     else:
         raster_area = max(1.0, (crop[2] - crop[0]) * (crop[3] - crop[1]))
-    safe_scale = math.sqrt(max_pixels / raster_area) * 0.999
+    user_unit = float(getattr(page, "user_unit", 1.0))
+    safe_scale = math.sqrt(max_pixels / raster_area) * 0.999 / user_unit
     scale = min(requested_scale, safe_scale)
+    # Integer pixel rounding can still exceed the area estimate on small crops.
+    width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    while width * height > max_pixels:
+        scale *= min(max(1, width - 1) / width, max(1, height - 1) / height)
+        width, height = rendered.unrotated_raster_size(scale, crop=crop)
     try:
         data = rendered.rasterize(
             background=(255, 255, 255, 255),

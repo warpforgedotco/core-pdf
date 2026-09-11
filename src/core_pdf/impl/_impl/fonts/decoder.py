@@ -80,6 +80,7 @@ from core_pdf_spec.s_09_fonts.helpers import (
 )
 from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
+from core_pdf_spec.standards import SemanticContext
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -369,6 +370,7 @@ def internal_font_is_vertical(
 @dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
 class FontDecoder:
     font: dict[str, Any]
+    semantic_context: SemanticContext | None
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
@@ -406,8 +408,11 @@ class FontDecoder:
         font: dict[str, Any],
         ligature_overrides: dict[int, str] | None = None,
         raster_font_provider: RasterFontProviderLike | None = None,
+        *,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
         self.font = font
+        self.semantic_context = semantic_context
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
         self.type3_glyph_names = None
@@ -462,6 +467,7 @@ class FontDecoder:
             builtin_encoding,
             differences,
             authoritative_builtin=builtin_encoding_authoritative,
+            context=self.semantic_context,
         )
         if builtin_encoding_authoritative:
             encoding_decode_table = tuple(
@@ -469,7 +475,9 @@ class FontDecoder:
             )
         else:
             key = base_encoding or ("Type3" if is_type3 else "")
-            encoding_decode_table = build_decode_table(key, differences)
+            encoding_decode_table = build_decode_table(
+                key, differences, context=self.semantic_context
+            )
 
         byte_decode_table: tuple[str, ...] | None = None
         if to_unicode is None and not is_cid_font:

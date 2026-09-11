@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any, Protocol, cast
 
 from core_pdf.impl._impl.capture.program import PageProgram
@@ -49,8 +50,26 @@ class internal_RenderablePage(Protocol):
     def media_box(self) -> tuple[float, float, float, float] | None: ...
 
 
+def internal_raster_scale(value: float) -> float:
+    scale = float(value)
+    if not isfinite(scale) or scale <= 0.0:
+        raise ValueError("raster scale must be a positive finite number")
+    return scale
+
+
+def internal_pixel_dimension(length: float, scale: float) -> int:
+    pixels = length * scale
+    if not isfinite(pixels):
+        raise PdfRasterTooLargeError(
+            "PDF page raster dimensions exceed the supported numeric range"
+        )
+    return max(1, int(round(pixels)))
+
+
 @dataclass(slots=True)
 class RenderedPage:
+    """A physical page in points with display-list and crop coordinates in PDF units."""
+
     page_number: int
     width: float
     height: float
@@ -58,6 +77,7 @@ class RenderedPage:
     display_list: DisplayList
     metadata: dict[str, Any] = field(default_factory=dict)
     semantic_context: SemanticContext | None = field(default=None, kw_only=True)
+    user_unit: float = field(default=1.0, kw_only=True)
 
     def internal_render_items(
         self,
@@ -87,6 +107,8 @@ class RenderedPage:
         crop: tuple[float, float, float, float] | None = None,
     ) -> tuple[float, float, float, float] | None:
         value: object = crop if crop is not None else self.metadata.get("crop")
+        if value is None:
+            value = self.metadata.get("media_box")
         parsed = rect_tuple(value)
         if parsed is not None:
             x0, y0, x1, y1 = parsed
@@ -100,16 +122,17 @@ class RenderedPage:
         *,
         crop: tuple[float, float, float, float] | None = None,
     ) -> tuple[int, int]:
-        """Return the raster size before applying the page rotation."""
-        scale = max(0.01, float(scale))
+        """Return the unrotated pixel size; crop uses raw default user space."""
+        scale = internal_raster_scale(scale)
         effective_crop = self.internal_effective_crop(crop)
         if effective_crop is not None:
-            width = max(1, int(round((effective_crop[2] - effective_crop[0]) * scale)))
-            height = max(1, int(round((effective_crop[3] - effective_crop[1]) * scale)))
+            device_scale = scale * self.user_unit
+            width = internal_pixel_dimension(effective_crop[2] - effective_crop[0], device_scale)
+            height = internal_pixel_dimension(effective_crop[3] - effective_crop[1], device_scale)
             return width, height
         return (
-            max(1, int(round(self.width * scale))),
-            max(1, int(round(self.height * scale))),
+            internal_pixel_dimension(self.width, scale),
+            internal_pixel_dimension(self.height, scale),
         )
 
     def raster_size(
@@ -149,7 +172,8 @@ class RenderedPage:
         max_pixels: int | None = None,
         crop: tuple[float, float, float, float] | None = None,
     ) -> RasterImage:
-        scale = max(0.01, float(scale))
+        """Rasterize at ``72 * scale`` DPI; crop coordinates are raw PDF units."""
+        scale = internal_raster_scale(scale)
         self.validate_raster_size(scale, max_pixels, crop=crop)
         crop = self.internal_effective_crop(crop)
         if crop is not None:
@@ -157,8 +181,9 @@ class RenderedPage:
         else:
             crop_x0 = 0.0
             crop_y0 = 0.0
-            crop_y1 = self.height
+            crop_y1 = self.height / self.user_unit
         width, height = self.unrotated_raster_size(scale, crop=crop)
+        device_scale = scale * self.user_unit
         background_bytes = bytes(background)
         pixels = bytearray(background_bytes * (width * height))
         page_pixels = uint8_image_view(pixels, (height, width, 4))
@@ -169,7 +194,7 @@ class RenderedPage:
         clip_state = internal_ClipState(
             crop_x0=crop_x0,
             crop_y1=crop_y1,
-            scale=scale,
+            scale=device_scale,
             width=width,
             height=height,
         )
@@ -179,7 +204,7 @@ class RenderedPage:
             clip=clip_state,
             width=width,
             height=height,
-            scale=scale,
+            scale=device_scale,
             crop_x0=crop_x0,
             crop_y0=crop_y0,
             crop_y1=crop_y1,
@@ -187,7 +212,7 @@ class RenderedPage:
             semantic_context=self.semantic_context,
         )
         rotate = self.rotate % 360
-        raster_target.paint_items(self.internal_render_items(crop, scale=scale))
+        raster_target.paint_items(self.internal_render_items(crop, scale=device_scale))
         while len(raster_target.buffer_stack) > 1:
             raster_target.composite_group(raster_target.pop_group())
         if rotate in {90, 180, 270}:
@@ -226,6 +251,7 @@ class RenderedPage:
             "page_number": self.page_number,
             "width": self.width,
             "height": self.height,
+            "user_unit": self.user_unit,
             "rotate": self.rotate,
             "display_list": [
                 {
@@ -263,6 +289,7 @@ def compose_page(
     x0, y0, x1, y1 = media_box
     width = max(0.0, x1 - x0)
     height = max(0.0, y1 - y0)
+    user_unit = float(getattr(page, "user_unit", 1.0))
     display_list = DisplayList(width=width, height=height)
 
     if page_program is None and hasattr(internal_page, "get_page_program"):
@@ -341,12 +368,14 @@ def compose_page(
     return RenderedPage(
         semantic_context=semantic_context,
         page_number=getattr(page, "page_number", 0),
-        width=width,
-        height=height,
+        width=width * user_unit,
+        height=height * user_unit,
+        user_unit=user_unit,
         rotate=(getattr(page, "rotation", 0) + options.rotate) % 360,
         display_list=display_list,
         metadata={
             "crop": options.crop,
+            "media_box": media_box,
             "group_alpha": (
                 internal_page.resolve_transparency_group_alpha()
                 if hasattr(internal_page, "resolve_transparency_group_alpha")

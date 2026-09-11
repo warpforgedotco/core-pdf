@@ -178,6 +178,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
                 "page_label": page.page_label,
                 "width": page.width,
                 "height": page.height,
+                "user_unit": page.user_unit,
                 "rotation": page.rotation,
                 "cropbox": bbox_to_json(page.cropbox),
                 "page_class": page.page_class,

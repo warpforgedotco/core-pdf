@@ -20,13 +20,16 @@ def decode_pdf_text_string(
             return data[2:].decode("utf-16-le")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-16LE data") from exc
-    # Readers have historically accepted under-declared Unicode text strings.
+    # Readers have historically accepted under-declared Unicode and Euro text strings.
     # Keep that policy explicit while strict spec callers use the selected version.
     if context is not None and (
         context.version is None
         or not context.version.recognized
         or (context.version < PdfVersion(2, 0) and data.startswith(b"\xef\xbb\xbf"))
         or (context.version < PdfVersion(1, 2) and data.startswith(b"\xfe\xff"))
+        or (
+            context.version < PdfVersion(1, 3) and not data.startswith(b"\xfe\xff") and 0xA0 in data
+        )
     ):
         context = None
     return decode_spec_text_string(data, context=context)

@@ -402,7 +402,12 @@ class EnginePageAdapter:
             )
 
     def render(self, *, dpi: float) -> Any:
-        raster = self.page.render().rasterize(scale=max(0.01, dpi / 72.0))
+        # PDFium, used by pdfplumber's image API, leaves UserUnit unapplied.
+        rendered = self.page.render()
+        rendered.width = rendered.display_list.width
+        rendered.height = rendered.display_list.height
+        rendered.user_unit = 1.0
+        raster = rendered.rasterize(scale=max(0.01, dpi / 72.0))
         return SimpleNamespace(
             data=raster.pixels,
             width=raster.width,

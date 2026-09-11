@@ -25,6 +25,7 @@ from core_pdf.impl._impl.render.display import DisplayList
 from core_pdf.impl._impl.render.model import PathPaintItem
 from core_pdf.impl._impl.render.paths import internal_intersect_box
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 
 def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
@@ -68,6 +69,7 @@ def internal_shading_color_rgba(
     color_model: str,
     components: list[float] | tuple[float, ...],
     opacity: Any,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int, int]:
     alpha = internal_color_component(opacity, 255) if type(opacity) in {int, float} else 255
     name = color_model or "DeviceRGB"
@@ -76,7 +78,7 @@ def internal_shading_color_rgba(
         return gray, gray, gray, alpha
     if name.endswith("DeviceCMYK") and len(components) >= 4:
         c, m, y, k = (internal_clamp01(v) for v in components[:4])
-        red, green, blue = cmyk_floats_to_srgb(c, m, y, k)
+        red, green, blue = cmyk_floats_to_srgb(c, m, y, k, rendering=rendering)
         return red, green, blue, alpha
     rgb = [internal_color_component(c) for c in components[:3]]
     while len(rgb) < 3:
@@ -125,7 +127,9 @@ class internal_PatternTargetMixin:
         scale = self.scale
         shading_box = self.shading_box
         width = self.width
-        shading = prepare_shading(data.get("dictionary"))
+        shading = prepare_shading(
+            data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
+        )
         if shading is None:
             return
         shading_type = shading.shading_type
@@ -178,6 +182,7 @@ class internal_PatternTargetMixin:
                         shading.color_model,
                         shading.evaluate(value),
                         fill_opacity,
+                        shading.color_rendering,
                     )
                     if shading_alpha is not None:
                         rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
@@ -293,6 +298,7 @@ class internal_PatternTargetMixin:
                     "bbox": data.bbox or clip_state.path_bbox(path),
                     "fill_opacity": data.fill_opacity,
                     "soft_mask_alpha": data.soft_mask_alpha,
+                    "color_rendering": pattern.color_rendering,
                 }
                 self.paint_shading(shading_data, blend_mode)
                 return True

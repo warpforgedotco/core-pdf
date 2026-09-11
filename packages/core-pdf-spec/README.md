@@ -100,6 +100,20 @@ selects PDF 2.0. Source image helpers preserve 16-bit samples, and
 `s_11_transparency.images` supplies strict Matte unblending. Codec selection and
 output raster conversion stay in core.
 
+`s_07_document.page.page_user_unit` supplies strict page-local unit parsing with the
+prescribed default; applications own physical geometry and raster-size limits.
+`s_09_fonts.helpers.get_base_encoding_glyph_names` and
+`build_simple_encoding_glyph_names` accept `context=` for historical WinAnsi assignments.
+Explicit pre-1.3 PDFDocEncoding rejects its undefined `A0` slot instead of assigning
+a later character. Omitting context preserves existing low-level behavior.
+
+`s_08_graphics.color_rendering` defines immutable `ColorRendering` state and strict
+rendering-intent/black-point-compensation helpers. The content interpreter carries this
+state through saved and nested scopes; `ImageSource` retains it for deferred conversion.
+`color_math` exposes XYZ/Lab conversion and the black-point endpoint scaling equation.
+Output profiles, black-point detection, CMS selection, and raster conversion belong to
+applications, without adding a color-management backend dependency to spec.
+
 `s_08_graphics.color_spec.parse_color_space(..., context=...)` enforces the PDF 1.3
 change permitting Separation/DeviceN bases in Indexed color spaces, recursively through
 nested spaces. It does not enforce every feature's introduction version. The repository's

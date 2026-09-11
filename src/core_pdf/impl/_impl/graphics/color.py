@@ -38,19 +38,38 @@ from core_pdf.impl._impl.graphics.image_kernels import (
     image_dimension,
     unpack_subbyte_image_samples,
 )
-from core_pdf.impl._impl.graphics.image_samples import convert_16bit_image
+from core_pdf.impl._impl.graphics.image_samples import (
+    convert_16bit_image,
+    convert_integer_samples,
+    internal_convert_components,
+)
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl._impl.runtime.scalars import parse_float
 from core_pdf_spec.s_08_graphics.color import indexed_color_components
+from core_pdf_spec.s_08_graphics.color_kernels import unpack_image_samples
 from core_pdf_spec.s_08_graphics.color_math import lab_components_to_xyz
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
 ImageBuffer: TypeAlias = ByteBuffer
 
 
+def internal_has_cie_space(space: ColorSpace) -> bool:
+    return (
+        space.kind in {"ICCBased", "CalGray", "CalRGB", "Lab"}
+        or space.base is not None
+        and internal_has_cie_space(space.base)
+        or space.alternate is not None
+        and internal_has_cie_space(space.alternate)
+    )
+
+
 def color_operands_to_srgb(
-    spec: ColorSpace, components: Sequence[float]
+    spec: ColorSpace,
+    components: Sequence[float],
+    *,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[float, float, float] | None:
     """Convert one colour's `sc`/`scn` operands, in ``spec``'s space, to sRGB.
 
@@ -65,6 +84,25 @@ def color_operands_to_srgb(
     1.0 is the darkest") and an index painted black or white.
     """
     kind = spec.kind
+    if internal_has_cie_space(spec) or (
+        rendering != DEFAULT_COLOR_RENDERING and kind not in {"DeviceGray", "DeviceRGB", "Pattern"}
+    ):
+        if kind == "DeviceCMYK":
+            from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
+
+            if len(components) != 4:
+                return None
+            red, green, blue = cmyk_floats_to_srgb(*components, rendering=rendering)
+            return red / 255.0, green / 255.0, blue / 255.0
+        try:
+            converted = internal_convert_components(
+                numpy.asarray([components], dtype=numpy.float64), spec, rendering=rendering
+            )[0]
+            if len(converted) == 1:
+                converted = numpy.repeat(converted, 3)
+            return float(converted[0]) / 255, float(converted[1]) / 255, float(converted[2]) / 255
+        except (TypeError, ValueError):
+            return None
     if kind == "Indexed":
         return internal_indexed_operand_to_srgb(spec, components)
     if kind in {"Separation", "DeviceN"}:
@@ -156,14 +194,35 @@ def internal_separation_rgb_lut(
     return table
 
 
-def internal_convert_image_data(raw: ImageBuffer, image_dict: ImageDict) -> ImageBuffer | None:
+def internal_convert_image_data(
+    raw: ImageBuffer,
+    image_dict: ImageDict,
+    *,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+) -> ImageBuffer | None:
     """Convert encoded PDF image samples to grayscale or sRGB bytes."""
     spec = parse_color_space(image_dict.get("ColorSpace"))
     bits_per_component = recover_image_bits_per_component(image_dict)
     if bits_per_component == 16:
-        return convert_16bit_image(memoryview(raw).cast("B"), image_dict).reshape(-1)
+        return convert_16bit_image(
+            memoryview(raw).cast("B"), image_dict, rendering=rendering
+        ).reshape(-1)
     if bits_per_component not in {1, 2, 4, 8} or not spec.component_ranges:
         return None
+
+    if rendering != DEFAULT_COLOR_RENDERING or (
+        spec.kind in {"Indexed", "Separation", "DeviceN"} and internal_has_cie_space(spec)
+    ):
+        source_samples = unpack_image_samples(
+            memoryview(raw).cast("B"),
+            bits_per_component,
+            image_dimension(image_dict, "Width"),
+            image_dimension(image_dict, "Height"),
+            len(spec.component_ranges),
+        )
+        return convert_integer_samples(
+            source_samples, image_dict, bits_per_component=bits_per_component, rendering=rendering
+        ).reshape(-1)
 
     fast = internal_simple_device_color_fast_path(raw, spec, image_dict, bits_per_component)
     if fast is not None:

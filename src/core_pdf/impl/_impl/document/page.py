@@ -24,7 +24,7 @@ from core_pdf.impl._impl.document.structure import PageStructure
 from core_pdf.impl._impl.model.geometry import rotate_page_runs
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.s_07_document.page import page_clip, page_rotation
+from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import (
     CachedPdfObject,
@@ -206,6 +206,16 @@ class PdfPage:
         return self.resolve_rotation()
 
     @property
+    def user_unit(self) -> float:
+        """Size of one default user-space unit in points; never inherited."""
+        try:
+            return page_user_unit(self.document.resolver.resolve(self.page_dict.get("UserUnit")))
+        except (ValueError, PdfParseError):
+            if not self.document.recovery_enabled:
+                raise
+            return 1.0
+
+    @property
     def label(self) -> str | None:
         return self.document.page_label(self.page_number - 1)
 
@@ -365,6 +375,16 @@ class PdfPage:
         if mb is not None:
             return mb[3] - mb[1]
         return 0.0
+
+    @property
+    def width_points(self) -> float:
+        """Unrotated media width in points (1/72 inch)."""
+        return self.width * self.user_unit
+
+    @property
+    def height_points(self) -> float:
+        """Unrotated media height in points (1/72 inch)."""
+        return self.height * self.user_unit
 
     @property
     def chars(self) -> list[TextRun]:

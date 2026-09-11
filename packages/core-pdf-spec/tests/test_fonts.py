@@ -370,8 +370,15 @@ def test_simple_encoding_rejects_malformed_explicit_entries(entry: dict[int, str
 
 @pytest.mark.parametrize("descendants", [[], [{}, {}], [42]])
 def test_descendant_font_array_must_contain_one_dictionary(descendants: list[object]) -> None:
+    # PDF 1.3 Table 5.16 explicitly covers every earlier version too; the
+    # generalized PDF 1.2 Table 7.9 wording does not permit multiple descendants.
     with pytest.raises(ValueError, match="DescendantFonts"):
         get_descendant({"DescendantFonts": descendants})
+
+
+def test_descendant_font_single_dictionary_is_the_shared_valid_case() -> None:
+    descendant = {"Subtype": "CIDFontType2"}
+    assert get_descendant({"DescendantFonts": [descendant]}) is descendant
 
 
 def test_cid_bounds_are_supported_exports() -> None:

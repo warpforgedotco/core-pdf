@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from math import isfinite
 from typing import cast
 
 from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_value
@@ -37,6 +38,26 @@ def page_rotation(value: object) -> int:
     if type(value) is not int or value % 90:
         raise ValueError("invalid page Rotate value")
     return value % 360
+
+
+def page_user_unit(value: object) -> float:
+    """Decode the page-local unit size in points (PDF 1.6; ISO 32000-2, Table 31).
+
+    UserUnit is not inheritable. The caller resolves the leaf page's entry;
+    absent or null entries use one point. The standard does not impose Acrobat's
+    implementation-specific upper limit on other processors.
+    """
+    if value is None:
+        return 1.0
+    if type(value) not in (int, float):
+        raise ValueError("invalid page UserUnit value")
+    try:
+        unit = float(cast(int | float, value))
+    except OverflowError as error:
+        raise ValueError("invalid page UserUnit value") from error
+    if not isfinite(unit) or unit <= 0.0:
+        raise ValueError("invalid page UserUnit value")
+    return unit
 
 
 def page_inherited_values(
@@ -95,4 +116,5 @@ __all__ = (
     "page_clip",
     "page_inherited_values",
     "page_rotation",
+    "page_user_unit",
 )

@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass, replace
 from typing import Any
 
+from core_pdf.impl._impl.model.geometry import rect_tuple
 from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
@@ -187,7 +188,12 @@ class internal_OcrSession:
     @property
     def page_box(self) -> internal_PageBox:
         page = self.capture.page
-        return 0.0, 0.0, float(page.width), float(page.height)
+        return rect_tuple(getattr(page, "media_box", None)) or (
+            0.0,
+            0.0,
+            float(page.width),
+            float(page.height),
+        )
 
     def internal_adapt_pass(
         self,

@@ -48,3 +48,43 @@ def test_resolver_applies_the_selected_utf16_semantics() -> None:
         assert resolver.resolve_str(value) == "H"
     finally:
         resolver.close()
+
+
+@pytest.mark.parametrize("version", [PdfVersion(1, n) for n in range(3)])
+def test_pdfdocencoding_euro_slot_is_undefined_before_pdf_1_3(version: PdfVersion) -> None:
+    # Adobe PDF 1.3, Annex D.1 note 1 (printed p.554): the previously unused
+    # octal240/hexA0 slot acquired Euro in PDF 1.3. No earlier glyph is assigned.
+    # https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.3.pdf
+    with pytest.raises(ValueError, match="undefined PDFDocEncoding byte 0xA0"):
+        decode_pdf_text_string(memoryview(b"price \xa0"), context=SemanticContext(version))
+    assert decode_pdf_text_string(b"\x99\x9e", context=SemanticContext(version)) == "Žž"
+
+
+@pytest.mark.parametrize("version", [*[PdfVersion(1, n) for n in range(3, 8)], PdfVersion(2, 0)])
+def test_pdfdocencoding_euro_since_pdf_1_3(version: PdfVersion) -> None:
+    assert decode_pdf_text_string(b"price \xa0", context=SemanticContext(version)) == "price €"
+
+
+def test_pdfdocencoding_euro_without_context_preserves_existing_api() -> None:
+    assert decode_pdf_text_string(b"price \xa0") == "price €"
+
+
+def test_pdfdocencoding_undefined_slot_does_not_restrict_unicode_bytes() -> None:
+    # UTF-16BE in PDF 1.2 may contain A0 as either part of a Unicode code unit.
+    assert (
+        decode_pdf_text_string(
+            b"\xfe\xff\x00\xa0\xa0\x00", context=SemanticContext(PdfVersion(1, 2))
+        )
+        == "\u00a0\ua000"
+    )
+
+
+def test_resolver_uses_the_pdfdocencoding_euro_boundary() -> None:
+    resolver = ObjectResolver(b"", {}, semantic_context=SemanticContext(PdfVersion(1, 2)))
+    try:
+        with pytest.raises(ValueError, match="undefined PDFDocEncoding"):
+            resolver.resolve_str(PdfString(b"\xa0"))
+        resolver.semantic_context = SemanticContext(PdfVersion(1, 3))
+        assert resolver.resolve_str(PdfString(b"\xa0")) == "€"
+    finally:
+        resolver.close()

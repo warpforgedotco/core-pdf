@@ -38,6 +38,10 @@ The [chapter coverage audit](version-coverage.md) tracks supported differences a
 known gaps; recognizing a version or profile does not establish full support.
 Historical lexical rules, namespace-aware transitive structure roles, 16-bit image
 processing, and version-sensitive ColorDodge/ColorBurn now use that foundation.
+Page UserUnit now reaches physical rendering and OCR sizing while retaining raw native
+geometry. Historical PDFDocEncoding/WinAnsi assignments select verified earlier rules;
+the font audit records where the sources do not justify a version branch. Rendering
+intent and PDF 2.0 black-point controls reach the current color-conversion pipeline.
 Real veraPDF positive and negative fixtures cover all 15 advertised targets.
 
 - Validate PDF/UA table headers, row/column semantics, reading order, artifacts, and
@@ -46,8 +50,8 @@ Real veraPDF positive and negative fixtures cover all 15 advertised targets.
   artifact marking, followed by reopen-and-validate verification.
 - Connect external validation findings to inspection and repair workflows while
   retaining the original bytes as validation evidence.
-- Continue the remaining chapter audits, including historical font mapping,
-  PDFDocEncoding, page UserUnit, and DeviceN NChannel semantics.
+- Continue the remaining chapter work, including DeviceN NChannel semantics,
+  halftones, transparency-group blending spaces, and Type 3 glyph programs.
 - Add a verified PDF/X backend when an executable and usable license are available;
   this integration is currently deferred.
 

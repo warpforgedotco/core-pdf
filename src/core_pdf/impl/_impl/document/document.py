@@ -330,6 +330,11 @@ class PdfDocument(
             self.close()
             raise
 
+    @property
+    def internal_font_semantic_context(self) -> SemanticContext | None:
+        """Select font semantics independently of parsing and graphics semantics."""
+        return self.resolver.semantic_context
+
     @classmethod
     def open(
         cls,

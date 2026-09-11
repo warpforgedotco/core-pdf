@@ -15,8 +15,13 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
     WIN_ANSI_ENCODING,
 )
 from core_pdf_spec.s_09_fonts.helpers import (
+    BASE_ENCODING_GLYPH_NAMES,
+    get_base_encoding_glyph_names,
+)
+from core_pdf_spec.s_09_fonts.helpers import (
     build_simple_encoding_glyph_names as spec_simple_encoding_glyph_names,
 )
+from core_pdf_spec.standards import SemanticContext
 
 
 def strip_subset_tag(font_name: str) -> str:
@@ -66,8 +71,20 @@ MAC_ROMAN_ENCODING_TABLE = internal_resolve_base_encoding(MAC_ROMAN_ENCODING)
 def build_decode_table(
     key: str,
     differences: dict[int, str] | tuple[tuple[int, str], ...] | None = None,
+    *,
+    context: SemanticContext | None = None,
 ) -> tuple[str, ...]:
     base = ENCODING_FALLBACKS.get(key, internal_PDFDOC_FALLBACK_TABLE)
+    if context is not None and key in BASE_ENCODING_GLYPH_NAMES:
+        names = get_base_encoding_glyph_names(key, context=internal_encoding_context(context))
+        modern_names = BASE_ENCODING_GLYPH_NAMES[key]
+        if names is not modern_names:
+            # Only the version-dependent assignments replace the reader's
+            # existing Unicode normalization and undefined-code recovery.
+            base = tuple(
+                (unicode_for_glyph_name(name) or "") if name != modern_names[code] else base[code]
+                for code, name in enumerate(names)
+            )
     if not differences:
         return base
     table = list(base)
@@ -141,6 +158,7 @@ def build_simple_encoding_glyph_names(
     differences: Mapping[int, str],
     *,
     authoritative_builtin: bool,
+    context: SemanticContext | None = None,
 ) -> tuple[str, ...]:
     """Keep the reader's out-of-range skipping and empty-name substitution."""
     return spec_simple_encoding_glyph_names(
@@ -152,4 +170,12 @@ def build_simple_encoding_glyph_names(
         },
         {int(code): name or ".notdef" for code, name in differences.items() if 0 <= code < 256},
         authoritative_builtin=authoritative_builtin,
+        context=internal_encoding_context(context),
     )
+
+
+def internal_encoding_context(context: SemanticContext | None) -> SemanticContext | None:
+    """Keep modern font recovery for documents without a recognized version."""
+    if context is not None and (context.version is None or not context.version.recognized):
+        return None
+    return context

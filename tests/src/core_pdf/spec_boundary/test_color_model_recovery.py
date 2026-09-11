@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import imagecodecs
 import numpy
 import pytest
 
@@ -91,11 +92,26 @@ def test_reader_preserves_inert_profile_bytes_and_short_palette_recovery() -> No
     assert color_operands_to_srgb(space, (1,)) is None
 
 
-def test_retained_calibrated_base_does_not_require_a_new_output_backend() -> None:
+def test_indexed_lab_default_decodes_retained_ranges_without_a_cms_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_cms(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Default calibrated conversion must retain the manual XYZ path")
+
+    monkeypatch.setattr(imagecodecs, "cms_transform", unexpected_cms)
     space = parse_color_space(["Indexed", ["Lab", {"Range": [-20, 20, -40, 40]}], 0, b"\xff\0\xff"])
     assert space.base is not None
     assert space.base.kind == "Lab"
-    assert color_operands_to_srgb(space, (0,)) is None
+    assert space.base.component_ranges == ((0.0, 100.0), (-20.0, 20.0), (-40.0, 40.0))
+    # Palette bytes ff/00/ff select L*=100, a*=-20, b*=40. Compute the
+    # expected output from that decoded triple independently of palette logic.
+    xyz = lab_components_to_xyz(
+        numpy.array([[100.0, -20.0, 40.0]], dtype=numpy.float32), (0.9642, 1.0, 0.8249)
+    )
+    expected = numpy.rint(numpy.clip(d50_xyz_to_srgb(xyz), 0, 1) * 255).astype(numpy.uint8)
+    converted = color_operands_to_srgb(space, (0,))
+    assert converted is not None
+    numpy.testing.assert_array_equal(numpy.rint(numpy.asarray(converted) * 255), expected[0])
 
 
 def test_unknown_space_retains_generic_component_recovery() -> None:

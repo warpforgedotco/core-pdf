@@ -209,6 +209,8 @@ class LegacyTextExtractor:
             ):
                 raise ValueError("font descriptor contains more than one font program")
             try:
+                # pypdf applies modern encoding tables even to pre-1.3 headers;
+                # leave font context unset for this compatibility projection.
                 decoder = FontDecoder(self.document.resolver.resolve_font_dict(font))
             except (TypeError, ValueError):
                 continue

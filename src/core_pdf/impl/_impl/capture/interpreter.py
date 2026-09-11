@@ -44,12 +44,18 @@ class TextState(RecordingMethods):
         self.capture_marked_entries = {}
         self.capture_frames = {}
         self.capture_patterns = {}
+        self.capture_colors = {}
 
         def font_provider(font: dict[str, Any], resources: dict[str, Any]) -> FontDecoder:
             return FontDecoder(
                 font,
                 ligature_overrides=detect_ligature_overrides(document, resources, font),
                 raster_font_provider=getattr(document, "raster_font_provider", None),
+                semantic_context=getattr(
+                    document,
+                    "internal_font_semantic_context",
+                    getattr(document.resolver, "semantic_context", None),
+                ),
             )
 
         super().__init__(

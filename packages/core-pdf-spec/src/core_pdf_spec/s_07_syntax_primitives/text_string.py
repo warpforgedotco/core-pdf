@@ -64,6 +64,10 @@ def decode_pdf_text_string(
     adds UTF-8 BOM encoding to PDF 2.0. Before each introduction the same bytes
     are ordinary PDFDocEncoding. Omitting context retains the historical
     all-encodings API; applications own best-effort recovery.
+
+    Adobe PDF 1.3, Annex D.1 note 1 assigns the previously unused PDFDocEncoding
+    byte A0 to Euro. With an earlier explicit version that byte has no assigned
+    character, so decoding it as PDFDocEncoding raises ``ValueError``.
     """
     if context is not None and (context.version is None or not context.version.recognized):
         raise PdfUnsupportedError("text-string semantics require a recognized PDF version")
@@ -82,6 +86,8 @@ def decode_pdf_text_string(
             return data[3:].decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-8 data") from exc
+    if version is not None and version < PdfVersion(1, 3) and 0xA0 in data:
+        raise ValueError("undefined PDFDocEncoding byte 0xA0 before PDF 1.3")
     return "".join(PDFDOC_ENCODING_TABLE[b] for b in data)
 
 
