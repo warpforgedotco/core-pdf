@@ -106,6 +106,10 @@ source components and alpha; callers own compositing state, raster storage, and 
 clipping. `ContentStreamFrame.group_isolated` preserves Form isolation for semantic sinks.
 Actual transparency Forms default to non-isolated; legacy explicit `group_alpha` frames
 retain their isolated default, and executor override signatures are unchanged.
+`ContentStreamFrame.form_bbox` retains normalized, resolved local Form bounds for sinks that
+need the transformed clipping quadrilateral. `clip_bbox` remains the enclosing transformed
+rectangle, while `form_bbox_operand` preserves the original operand. The new field defaults
+to `None` for legacy frames and does not change resolver or executor override signatures.
 
 `s_07_document.page.page_user_unit` supplies strict page-local unit parsing with the
 prescribed default; applications own physical geometry and raster-size limits.

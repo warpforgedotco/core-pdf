@@ -314,7 +314,10 @@ def internal_uncovered_vector_area(
     """
     if not drawings or not len(observations):
         return None
-    if len(drawings) < 180:
+    if (
+        len(drawings) < 180
+        or sum(drawing.kind not in {"scope-begin", "scope-end"} for drawing in drawings) < 180
+    ):
         return None
     native = observations.bbox
     rectangles: list[tuple[float, float, float, float, float]] = []

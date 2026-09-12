@@ -30,6 +30,8 @@ from core_pdf.impl._impl.capture.records import (
     CapturedDrawing,
     CapturedInlineImage,
     CapturedLine,
+    CapturedPath,
+    CapturedSubpath,
     LayoutFormId,
     PatternPaint,
     ShadingPattern,
@@ -748,6 +750,30 @@ class RecordingMethods(RecoveringTextState):
             self.layout_form_id,
             self.pending_line_break,
         )
+        if frame.form_bbox is not None:
+            # ISO 32000-1/2 8.10.1-2: the Form's BBox clips in Form space.
+            # Keep its transformed quadrilateral, not just the enclosing box,
+            # so rotated/sheared Forms do not paint into the envelope's corners.
+            x0, y0, x1, y1 = frame.form_bbox
+            clip_path = CapturedPath()
+            if x1 > x0 and y1 > y0:
+                # Preserve finite endpoints even when their difference would
+                # overflow (a valid box may span almost the full float range).
+                clip_path.subpaths.append(
+                    CapturedSubpath([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], closed=True)
+                )
+                clip_path = clip_path.transformed(frame.ctm)
+            self.drawings.append(
+                CapturedDrawing(
+                    kind="scope-begin",
+                    seqno=self.sequence,
+                    path=clip_path,
+                    fill=None,
+                    fill_opacity=None,
+                    line_width=0.0,
+                )
+            )
+            self.sequence += 1
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -802,6 +828,9 @@ class RecordingMethods(RecoveringTextState):
                     group_isolated=frame.group_isolated,
                 )
             )
+            self.sequence += 1
+        if old is not None and frame.form_bbox is not None:
+            self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
 
     def internal_initial_pattern(self, *, stroke: bool) -> bool:

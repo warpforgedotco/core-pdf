@@ -157,7 +157,7 @@ def test_reader_child_scope_failure_does_not_change_parent_recovery() -> None:
         IDENTITY_MATRIX,
         0,
     )
-    assert len(state.drawings) == 1
+    assert [drawing.kind for drawing in state.drawings] == ["scope-begin", "scope-end", "fill"]
     assert state.compatibility_depth == 0
     assert not state.capture_frames
 
@@ -238,7 +238,9 @@ def test_reader_applies_form_depth_limit() -> None:
     state.stream_executor.consume(
         PdfStream(raw_data=b"/Child0 Do"), {"XObject": objects}, IDENTITY_MATRIX, 0
     )
-    assert len(state.drawings) == 10
+    assert [drawing.kind for drawing in state.drawings] == ["scope-begin", "fill"] * 10 + [
+        "scope-end"
+    ] * 10
     assert not state.capture_graphics_stack
 
 
@@ -255,7 +257,9 @@ def test_reader_recovers_oversized_form_matrix() -> None:
     state.stream_executor.consume(
         PdfStream(raw_data=b"/Child Do"), {"XObject": {"Child": child}}, IDENTITY_MATRIX, 0
     )
-    path = state.drawings[-1].path
+    begin, paint, end = state.drawings
+    assert [begin.kind, paint.kind, end.kind] == ["scope-begin", "fill", "scope-end"]
+    path = paint.path
     assert path is not None
     bbox = path.bbox()
     assert bbox is not None

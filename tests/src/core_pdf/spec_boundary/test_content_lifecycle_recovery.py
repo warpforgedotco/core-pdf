@@ -43,6 +43,14 @@ def internal_assert_clean(state: TextState) -> None:
     assert state.group_alpha is None
     assert state.internal_pending_clip_rule is None
     assert state.graphics.ctm == IDENTITY_MATRIX
+    scope_depth = 0
+    for drawing in state.drawings:
+        if drawing.kind == "scope-begin":
+            scope_depth += 1
+        elif drawing.kind == "scope-end":
+            scope_depth -= 1
+            assert scope_depth >= 0
+    assert scope_depth == 0
 
 
 @pytest.mark.parametrize(("clip_operator", "clip_rule"), [(b"W", "nonzero"), (b"W*", "evenodd")])
@@ -126,13 +134,15 @@ def test_reader_restores_deferred_path_clip_before_painting_outside_scope(
         resources = {"XObject": {"Child": child}}
     state.stream_executor.consume(PdfStream(raw_data=content), resources, IDENTITY_MATRIX, 0)
     assert paint_clips == [(0.0, 0.0, 10.0, 10.0), original_clip]
-    assert [drawing.kind for drawing in state.drawings] == [
+    scoped_kinds = [
         "state-push",
         "clip",
         "fill",
         "state-pop",
-        "fill",
     ]
+    if scope == "form":
+        scoped_kinds = ["scope-begin", *scoped_kinds, "scope-end"]
+    assert [drawing.kind for drawing in state.drawings] == [*scoped_kinds, "fill"]
     assert state.clip_bbox == original_clip
     internal_assert_clean(state)
 
@@ -209,10 +219,11 @@ def test_reader_recovers_only_form_parse_errors_and_unwinds_all_frames(
         monkeypatch.setattr(state, "text_boundary", text_boundary)
 
     source = PdfStream(raw_data=b"0.25 g /Child Do 30 40 5 6 re f") if is_form else failing
+    scope_kinds = ["scope-begin", "scope-end"] if is_form and stage != "decode" else []
     if is_form and error_type is PdfParseError:
         state.stream_executor.consume(source, {"XObject": {"Child": failing}}, IDENTITY_MATRIX, 0)
-        assert len(state.drawings) == 1
-        drawing = state.drawings[0]
+        assert [drawing.kind for drawing in state.drawings] == [*scope_kinds, "fill"]
+        drawing = state.drawings[-1]
         assert drawing.kind == "fill"
         assert drawing.fill == (0.25,)
         assert drawing.path is not None
@@ -223,7 +234,7 @@ def test_reader_recovers_only_form_parse_errors_and_unwinds_all_frames(
                 source, {"XObject": {"Child": failing}}, IDENTITY_MATRIX, 0
             )
         assert raised.value is error
-        assert not state.drawings
+        assert [drawing.kind for drawing in state.drawings] == scope_kinds
     assert triggered == [stage]
     assert state.clip_bbox is None
     internal_assert_clean(state)
@@ -247,6 +258,6 @@ def test_reader_discards_unfinished_child_clip_before_parent_path(failure: bool)
         IDENTITY_MATRIX,
         0,
     )
-    assert [drawing.kind for drawing in state.drawings] == ["fill"]
+    assert [drawing.kind for drawing in state.drawings] == ["scope-begin", "scope-end", "fill"]
     assert state.clip_bbox is None
     internal_assert_clean(state)

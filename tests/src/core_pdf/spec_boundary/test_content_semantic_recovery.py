@@ -81,8 +81,17 @@ def test_reader_form_preserves_group_capture_and_source_identity(
     assert frame is not None
     assert frame.source_key == (("ref", 7, 2) if indirect else None)
     state.stream_executor.consume(PdfStream(raw_data=b"/F Do"), state.resources, IDENTITY_MATRIX, 0)
-    assert [drawing.kind for drawing in state.drawings] == ["group-begin", "fill", "group-end"]
-    begin, paint, end = state.drawings
+    assert [drawing.kind for drawing in state.drawings] == [
+        "scope-begin",
+        "group-begin",
+        "fill",
+        "group-end",
+        "scope-end",
+    ]
+    scope_begin, begin, paint, end, scope_end = state.drawings
+    assert scope_begin.path is not None
+    assert scope_begin.path.axis_aligned_rect() == (0, 0, 2, 3)
+    assert scope_end.path is None
     assert begin.fill_opacity == end.fill_opacity == opacity
     assert begin.blend_mode == end.blend_mode == blend
     assert begin.group_isolated == end.group_isolated == isolated

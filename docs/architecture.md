@@ -235,6 +235,14 @@ parent frame's state, and leaving a stream unwinds its local clipping even after
 content. Resource lookup resolves dictionaries on demand while retaining indirect references,
 so equivalent direct and indirect resource dictionaries preserve Form identity.
 
+Resolved Form `/BBox` coordinates remain separate from their enclosing page-space bounds.
+Capture transforms the local rectangle into a quadrilateral and brackets the Form's paint
+and transparency group with a raster clip scope. Rotation and shear therefore retain the
+actual Form boundary; zero-area bounds produce an empty clip. Leaving the Form restores its
+parent clip, including after recovered child errors. Image placement and the existing raw
+drawing/text geometry remain unchanged. Scope markers stay internal to rendering and do not
+become public drawing records, PDFMiner layout delimiters, or OCR routing evidence.
+
 Raster paint state separates object opacity from group compositing opacity. Form group isolation
 survives interpretation and capture; an omitted `/I` means non-isolated. Non-isolated groups
 start with their parent's current RGB backdrop and track their own paint alpha separately.
@@ -304,5 +312,3 @@ and mask samples as image, path, text, and shading paint, including vectorized r
 Transparency groups composite in the renderer's RGB space with its existing supported blend
 modes and byte quantization. Knockout groups, arbitrary group `/CS` blending spaces, and full
 transparency soft-mask groups require additional work.
-Form `/BBox` currently constrains capture metadata and image placement; enforcing that bound
-as a raster clip for paths and shading remains a separate geometry limitation.

@@ -106,6 +106,7 @@ class PdfPage(EnginePdfPage):
                 rect=rect_tuple(drawing.rect),
             )
             for drawing in drawings
+            if drawing.kind not in {"scope-begin", "scope-end"}
         )
 
     def get_drawings(self) -> tuple[DrawingRecord, ...]:

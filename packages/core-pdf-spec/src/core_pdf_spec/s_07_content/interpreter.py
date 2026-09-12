@@ -309,6 +309,9 @@ class ContentInterpreter:
         nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
         form_bbox = self.resolve_form_bbox(raw_form_bbox)
+        if form_bbox is not None:
+            x0, y0, x1, y1 = form_bbox
+            form_bbox = (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
@@ -322,9 +325,11 @@ class ContentInterpreter:
             group_alpha=group_alpha,
             stream_key=stream_key,
         )
-        if frame is not None and group_alpha is not None:
+        if frame is not None:
             # Assign after queueing to retain existing reader queue overrides.
-            frame.group_isolated = group_isolated
+            frame.form_bbox = form_bbox
+            if group_alpha is not None:
+                frame.group_isolated = group_isolated
         return frame
 
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:

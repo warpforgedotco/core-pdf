@@ -472,6 +472,8 @@ def internal_project_page(
             "clip",
             "group-begin",
             "group-end",
+            "scope-begin",
+            "scope-end",
             "state-push",
             "state-pop",
         }:

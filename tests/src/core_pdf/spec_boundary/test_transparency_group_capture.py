@@ -43,7 +43,17 @@ def test_group_capture_resets_inner_scalar_mask_and_forwards_outer_composite_sta
     state.graphics.blend_mode = "Multiply"
     state.group_alpha = 0.7
     state.stream_executor.consume(PdfStream(raw_data=b"/F Do"), state.resources, IDENTITY_MATRIX, 0)
-    begin, paint, end = state.drawings
+    assert [drawing.kind for drawing in state.drawings] == [
+        "scope-begin",
+        "group-begin",
+        "fillstroke",
+        "group-end",
+        "scope-end",
+    ]
+    scope_begin, begin, paint, end, scope_end = state.drawings
+    assert scope_begin.path is not None
+    assert scope_begin.path.axis_aligned_rect() == (0, 0, 1, 1)
+    assert scope_end.path is None
     assert begin.kind == "group-begin"
     assert end.kind == "group-end"
     assert begin.group_isolated is end.group_isolated is (isolated is True)
@@ -60,7 +70,8 @@ def test_group_capture_resets_inner_scalar_mask_and_forwards_outer_composite_sta
     display = DisplayList(1, 1)
     for drawing in state.drawings:
         display.append_captured_drawing(drawing)
-    for item in (display.items[0], display.items[-1]):
+    assert [item.kind for item in display.items] == [drawing.kind for drawing in state.drawings]
+    for item in (display.items[1], display.items[-2]):
         assert isinstance(item, DisplayListItem)
         assert item.data["group_isolated"] is (isolated is True)
         assert item.data["fill_opacity"] == 0.3
@@ -82,7 +93,34 @@ def test_nested_groups_capture_independent_isolation_and_restore_outer_state() -
     state.graphics.blend_mode = "Multiply"
     state.group_alpha = 0.7
     state.stream_executor.consume(PdfStream(raw_data=b"/F Do"), state.resources, IDENTITY_MATRIX, 0)
-    outer_begin, inner_begin, inner_paint, inner_end, outer_paint, outer_end = state.drawings
+    assert [drawing.kind for drawing in state.drawings] == [
+        "scope-begin",
+        "group-begin",
+        "scope-begin",
+        "group-begin",
+        "fillstroke",
+        "group-end",
+        "scope-end",
+        "fill",
+        "group-end",
+        "scope-end",
+    ]
+    (
+        outer_scope_begin,
+        outer_begin,
+        inner_scope_begin,
+        inner_begin,
+        inner_paint,
+        inner_end,
+        inner_scope_end,
+        outer_paint,
+        outer_end,
+        outer_scope_end,
+    ) = state.drawings
+    for scope in (outer_scope_begin, inner_scope_begin):
+        assert scope.path is not None
+        assert scope.path.axis_aligned_rect() == (0, 0, 1, 1)
+    assert inner_scope_end.path is outer_scope_end.path is None
     assert outer_begin.group_isolated is outer_end.group_isolated is False
     assert inner_begin.group_isolated is inner_end.group_isolated is True
     assert outer_begin.fill_opacity == outer_end.fill_opacity == 0.3
@@ -104,7 +142,15 @@ def test_ordinary_form_keeps_inherited_mask_alpha_and_blend_without_group_marker
     state.graphics.blend_mode = "Multiply"
     state.group_alpha = 0.7
     state.stream_executor.consume(PdfStream(raw_data=b"/F Do"), state.resources, IDENTITY_MATRIX, 0)
-    (paint,) = state.drawings
+    assert [drawing.kind for drawing in state.drawings] == [
+        "scope-begin",
+        "fillstroke",
+        "scope-end",
+    ]
+    scope_begin, paint, scope_end = state.drawings
+    assert scope_begin.path is not None
+    assert scope_begin.path.axis_aligned_rect() == (0, 0, 1, 1)
+    assert scope_end.path is None
     assert paint.kind == "fillstroke"
     assert paint.fill_opacity == 0.3
     assert paint.stroke_opacity == 0.6
