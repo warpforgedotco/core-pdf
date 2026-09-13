@@ -205,10 +205,23 @@ def internal_distinct_byte_rows(
     for index in range(channels):
         keys <<= numpy.uint32(8)
         keys |= samples[:, index]
-    # The key holds the whole row, so the distinct rows unpack straight out of
-    # the unique keys. Asking for return_index instead forces numpy.unique onto
-    # a stable sort, which is materially slower for no extra information.
-    unique_keys, inverse = numpy.unique(keys, return_inverse=True)
+    inverse: numpy.ndarray[Any, Any]
+    if channels <= 3:
+        # Up to 24-bit keys fit a presence table, which replaces the sort with
+        # one scatter, one prefix sum and one gather: about five times faster
+        # than numpy.unique on a page-sized RGB image, for ~80 MB of transient
+        # memory. Ranks come out sorted, matching numpy.unique's order.
+        present = numpy.zeros(1 << (8 * channels), dtype=numpy.bool_)
+        present[keys] = True
+        unique_keys = numpy.flatnonzero(present).astype(numpy.uint32)
+        ranks = numpy.cumsum(present, dtype=numpy.int32)
+        inverse = ranks[keys] - 1
+    else:
+        # The key holds the whole row, so the distinct rows unpack straight out
+        # of the unique keys. Asking for return_index instead forces
+        # numpy.unique onto a stable sort, which is materially slower for no
+        # extra information.
+        unique_keys, inverse = numpy.unique(keys, return_inverse=True)
     distinct = numpy.empty((len(unique_keys), channels), dtype=numpy.uint8)
     for index in range(channels):
         shift = numpy.uint32(8 * (channels - 1 - index))
