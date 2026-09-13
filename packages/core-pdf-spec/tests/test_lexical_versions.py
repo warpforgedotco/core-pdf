@@ -179,7 +179,7 @@ def test_decoded_object_stream_body_keeps_the_supplied_context(version: str, exp
     try:
         assert parser.get(2) == PdfName.of(expected)
     finally:
-        parser.lexer.close()
+        parser.close()
 
 
 def test_object_stream_header_uses_selected_whitespace() -> None:
