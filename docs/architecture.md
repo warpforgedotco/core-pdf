@@ -197,8 +197,8 @@ The extraction/render/layout/output layering remains enforced separately.
 
 ## Workspace validation
 
-The authored test suite contains strict standalone tests in `packages/core-pdf-spec/tests`,
-core/spec integration tests in `tests/src/core_pdf/spec_boundary`, and differential comparisons
+The authored test suite contains strict standalone tests in `packages/core-pdf-spec/tests`
+and `packages/core-pdf-validate/tests`, and differential comparisons
 in `tests/src/core_pdf/api/compat/differential`. Each case runs a compatibility facade and
 its reference implementation against the same PDF. Reference corpora remain under
 `tests/fixtures`.

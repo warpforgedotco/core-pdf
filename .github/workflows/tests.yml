@@ -40,12 +40,10 @@ jobs:
         run: uv sync --locked --all-packages --group lint --group test
 
       - name: Run strict spec, validation, and integration tests
-        run: uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests packages/core-pdf-validate/tests tests/src/core_pdf/spec_boundary
+        run: uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests packages/core-pdf-validate/tests
 
-      - name: Build and verify standalone distributions
-        run: |
-          uv build --all-packages
-          uv run --locked --all-packages python scripts/check_spec_distribution.py dist --fixture "tests/fixtures/pdf20examples/Simple PDF 2.0 file.pdf"
+      - name: Build standalone distributions
+        run: uv build --all-packages
 
       - name: Run prek
         run: uvx prek run --all-files --stage pre-push

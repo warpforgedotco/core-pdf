@@ -34,10 +34,9 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 The authored test suite includes differential comparisons under
-`tests/src/core_pdf/api/compat/differential`, strict package tests under
-`packages/core-pdf-spec/tests`, and core/spec integration tests under
-`tests/src/core_pdf/spec_boundary`. Reference corpora remain in
-`tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and
+`tests/src/core_pdf/api/compat/differential` and strict package tests under
+`packages/core-pdf-spec/tests` and `packages/core-pdf-validate/tests`.
+Reference corpora remain in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and
 licensing material; maintenance scripts are in `scripts/`.
 
 Start with `docs/architecture.md` — it describes the pipeline and how the source tree is organized.
@@ -110,8 +109,7 @@ Tests use pytest and pytest-xdist, and are named `test_*.py`, with test function
 named `test_<behavior>`. Facade tests in
 `tests/src/core_pdf/api/compat/differential` compare a facade with its reference
 implementation over the same PDF. Strict tests in `packages/core-pdf-spec/tests` must
-run without core or OCR installed; integration tests in `tests/src/core_pdf/spec_boundary`
-verify preserved core recovery, shared object identities, and dependency direction.
+run without core or OCR installed.
 Use spec citations for non-obvious mandated behavior and positive controls for valid defaults.
 Preserve reference fixture contents and distinguish compatibility differences from failures
 on both sides. Validate with `uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto`.
