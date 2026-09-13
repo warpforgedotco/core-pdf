@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -26,6 +26,15 @@ from core_pdf.impl._impl.render.paths import (
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
+
+
+def internal_edge_tuples(
+    edge_array: numpy.ndarray[Any, Any] | None,
+) -> list[tuple[float, float, float, float]]:
+    """Materialize a precomputed edge array as the tuples the scanline paths take."""
+    if edge_array is None:
+        return []
+    return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
 
 
 class internal_PathFillTargetMixin:
@@ -235,7 +244,11 @@ class internal_PathFillTargetMixin:
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
         fill_rule: str = "nonzero",
+        *,
+        bbox: tuple[float, float, float, float] | None = None,
+        edge_array: numpy.ndarray[Any, Any] | None = None,
     ) -> None:
+        """Fill ``path``; ``bbox`` and ``edge_array`` are the path's own, precomputed."""
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
@@ -259,10 +272,17 @@ class internal_PathFillTargetMixin:
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
             return
-        edges = path.fill_edges()
-        if not edges:
-            return
-        bbox = clip.path_bbox(path)
+        edges: list[tuple[float, float, float, float]] | None
+        if edge_array is None:
+            edges = path.fill_edges()
+            if not edges:
+                return
+        else:
+            edges = None
+            if len(edge_array) == 0:
+                return
+        if bbox is None:
+            bbox = clip.path_bbox(path)
         if bbox is None:
             return
         fast_bbox: tuple[float, float, float, float] | None = bbox
@@ -282,9 +302,11 @@ class internal_PathFillTargetMixin:
             and self.group_source_shape is None
             and fast_bbox is not None
             and fill_rule == "nonzero"
-            and fast_fill_path(edges, fast_bbox)
         ):
-            return
+            if edges is None:
+                edges = internal_edge_tuples(edge_array)
+            if fast_fill_path(edges, fast_bbox):
+                return
         clipped_box = clipped_pixel_box(bbox)
         if clipped_box is None:
             return
@@ -299,7 +321,9 @@ class internal_PathFillTargetMixin:
             # result is exact rather than quantized to a 4x4 sample grid. This
             # runs first because it needs neither the y-extent columns nor the
             # sample-path array built below, and it takes ~99% of fills.
-            source = numpy.asarray(edges, dtype=numpy.float64)
+            source = (
+                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
+            )
             sloped = source[:, 1] != source[:, 3]
             if not sloped.any():
                 return
@@ -322,6 +346,8 @@ class internal_PathFillTargetMixin:
                     slice(iy0, iy1), slice(ix0, ix1), numpy.rint(coverage * 255).astype(numpy.uint8)
                 )
             return
+        if edges is None:
+            edges = internal_edge_tuples(edge_array)
         edge_segments = [
             (
                 ex0,

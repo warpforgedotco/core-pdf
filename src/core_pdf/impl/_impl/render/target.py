@@ -841,7 +841,15 @@ class internal_RasterTarget(
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
             self.set_shape_alpha(rgba[3] / 255.0)
             if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
-                self.fill_path(path, rgba, blend_mode, item.fill_rule)
+                edge_array = item.edge_array
+                self.fill_path(
+                    path,
+                    rgba,
+                    blend_mode,
+                    item.fill_rule,
+                    bbox=item.bbox if edge_array is not None else None,
+                    edge_array=edge_array,
+                )
         if paint_kind is not PathPaintKind.FILL:
             stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if is_pdf_number(soft_mask_alpha):

@@ -194,6 +194,9 @@ class internal_RasterState(Protocol):
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
         fill_rule: str = "nonzero",
+        *,
+        bbox: tuple[float, float, float, float] | None = None,
+        edge_array: numpy.ndarray[Any, Any] | None = None,
     ) -> None: ...
 
     def fill_rect(

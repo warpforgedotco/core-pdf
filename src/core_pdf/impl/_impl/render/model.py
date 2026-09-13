@@ -86,6 +86,9 @@ class PathPaintItem:
     stroke_pattern: PatternPaint | None = None
     alpha_is_shape: bool = False
     graphics_soft_mask: CapturedSoftMask | None = None
+    # Optional (n, 4) float64 page-space edges in ``CapturedPath.fill_edges``
+    # order, precomputed by producers that already hold the path as arrays.
+    edge_array: Any = None
 
     @property
     def kind(self) -> str:

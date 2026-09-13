@@ -201,6 +201,7 @@ class DisplayList:
                     graphics_soft_mask=graphics_mask,
                     fill_pattern=data.get("fill_pattern"),
                     stroke_pattern=data.get("stroke_pattern"),
+                    edge_array=data.get("edge_array"),
                 )
             )
             return
@@ -257,6 +258,7 @@ class DisplayList:
                 else:
                     previous.path = CapturedPath([*previous.path.subpaths, *path.subpaths])
                     previous.coalesced_path = True
+                previous.edge_array = None
                 previous.bbox = (
                     (
                         min(previous_box[0], drawing_box[0]),

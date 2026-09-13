@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+import numpy
+
 from core_pdf.impl._impl.capture.program import CapturedProgram
 from core_pdf.impl._impl.capture.records import (
     CapturedDrawing,
@@ -33,8 +35,12 @@ from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
 def internal_glyph_outline_path(
     glyph: GlyphObservation,
-) -> tuple[CapturedPath, Rectangle | None] | None:
-    """Resolve and transform one captured embedded-font outline, with its bounds."""
+) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
+    """Resolve and transform one captured embedded-font outline.
+
+    Returns the path, its bounds, and, when the outline came as coordinate
+    columns, its fill edges as an (n, 4) array in ``fill_edges`` order.
+    """
     if not glyph.paint_glyph:
         return None
     transform = glyph.glyph_transform
@@ -71,34 +77,48 @@ def internal_glyph_outline_path(
     if not subpaths:
         return None
     path = CapturedPath(subpaths)
-    return path, path.bbox()
+    return path, path.bbox(), None
 
 
 def internal_transformed_outline(
     arrays: GlyphOutlineArrays, transform: Matrix6
-) -> tuple[CapturedPath, Rectangle | None] | None:
+) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
     # Elementwise operations in the same order as the scalar
     # ``x * a + y * c + e`` keep every transformed coordinate bit-identical.
     a, b, c, d, e, f = transform
     linear_x, linear_y = arrays.linear_columns(a, b, c, d)
-    tx = (linear_x + e).tolist()
-    ty = (linear_y + f).tolist()
+    column_x = linear_x + e
+    column_y = linear_y + f
+    tx = column_x.tolist()
+    ty = column_y.tolist()
     subpaths: list[CapturedSubpath] = []
+    edge_blocks: list[numpy.ndarray[Any, Any]] = []
     dropped = False
     for start, end in arrays.spans:
         points = list(zip(tx[start:end], ty[start:end], strict=True))
         if points[0] == points[-1]:
             points.pop()
+            end -= 1
         if len(points) >= 2:
             subpaths.append(CapturedSubpath(points, closed=True))
+            # The same edges ``fill_edges`` would produce: consecutive pairs,
+            # then the closing edge unless the contour already ends at its start.
+            xs = column_x[start:end]
+            ys = column_y[start:end]
+            edge_blocks.append(numpy.column_stack((xs[:-1], ys[:-1], xs[1:], ys[1:])))
+            if points[0] != points[-1]:
+                edge_blocks.append(
+                    numpy.array([[xs[-1], ys[-1], xs[0], ys[0]]], dtype=numpy.float64)
+                )
         else:
             dropped = True
     if not subpaths:
         return None
     path = CapturedPath(subpaths)
+    edges = edge_blocks[0] if len(edge_blocks) == 1 else numpy.concatenate(edge_blocks)
     if dropped:
-        return path, path.bbox()
-    return path, (min(tx), min(ty), max(tx), max(ty))
+        return path, path.bbox(), edges
+    return path, (min(tx), min(ty), max(tx), max(ty)), edges
 
 
 def internal_append_glyph_paint(
@@ -118,7 +138,7 @@ def internal_append_glyph_paint(
     outline = internal_glyph_outline_path(glyph)
     if outline is None:
         return False
-    path, bbox = outline
+    path, bbox, edge_array = outline
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
     if not include_paint or mode in NON_PAINTING_RENDER_MODES or glyph.visible is False:
@@ -129,6 +149,7 @@ def internal_append_glyph_paint(
         glyph.seqno,
         bbox=bbox,
         path=path,
+        edge_array=edge_array,
         fill=glyph.fill,
         fill_opacity=glyph.fill_opacity,
         stroke_color=glyph.stroke_color,
