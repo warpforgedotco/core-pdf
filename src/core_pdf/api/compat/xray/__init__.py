@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
+from core_pdf.impl._impl.capture.program import PageProgram
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.model.geometry import (
@@ -18,6 +19,7 @@ from core_pdf.impl._impl.model.geometry import (
     overlap_ratio_of,
 )
 from core_pdf.impl._impl.model.text import collapse_ws
+from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -104,17 +106,22 @@ def _path_rectangles(
 
 
 class _PageRaster:
-    """Compose a page's display list once; each rectangle only rasterizes its crop."""
+    """Compose the inspection's page program once, then rasterize rectangle crops."""
 
-    __slots__ = ("page", "rendered")
+    __slots__ = ("page", "program", "rendered")
 
-    def __init__(self, page: Any) -> None:
+    def __init__(self, page: Any, program: PageProgram) -> None:
         self.page = page
+        self.program = program
         self.rendered: Any = None
 
     def rasterize(self, box: tuple[float, float, float, float]) -> Any:
         if self.rendered is None:
-            self.rendered = self.page.render()
+            self.rendered = compose_page(
+                self.page,
+                page_program=self.program,
+                semantic_context=self.page.document.resolver.semantic_context,
+            )
         return self.rendered.rasterize(scale=1.0, crop=box)
 
 
@@ -274,7 +281,7 @@ def _page_redactions(
         override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
     operand_overrides = override_cache["overrides"]
     glyphs = program.glyphs
-    raster_page = _PageRaster(page)
+    raster_page = _PageRaster(page, program)
     sequence_codes: dict[int, bytes] = {}
     for glyph in glyphs:
         sequence_codes[glyph.seqno] = sequence_codes.get(glyph.seqno, b"") + glyph.code_bytes

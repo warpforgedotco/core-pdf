@@ -53,7 +53,6 @@ from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints
 from core_pdf.impl._impl.graphics.soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
-    GlyphCluster,
     GlyphObservation,
 )
 from core_pdf.impl._impl.model.runs import TextRun
@@ -135,12 +134,14 @@ class RecordingMethods(RecoveringTextState):
     document: Any
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
-    glyph_clusters: list[GlyphCluster]
+    glyph_cluster_count: int
     lines: list[CapturedLine]
     drawings: list[CapturedDrawing]
     inline_images: list[CapturedInlineImage]
     hidden_layers: frozenset[str]
     page_clip: Rectangle | None
+    capture_ink_bounds: bool
+    capture_text_runs: bool
     clip_bbox: Rectangle | None
     layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
@@ -249,6 +250,27 @@ class RecordingMethods(RecoveringTextState):
         if not self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
             self.run_accumulator.append(new_run)
 
+    def internal_glyph_paint(self, fill_color: tuple[float, ...] | None) -> GlyphPaint:
+        """Snapshot the graphics state shared by glyphs in a text-show operation."""
+        return GlyphPaint(
+            clip_bbox=self.clip_bbox,
+            page_clip=self.page_clip,
+            fill=fill_color,
+            render_mode=self.internal_text_paint_mode(),
+            fill_opacity=self.graphics.fill_opacity,
+            stroke_color=self.capture_color(stroke=True),
+            stroke_opacity=self.graphics.stroke_opacity,
+            line_width=self.transformed_line_width(),
+            line_cap=self.graphics.line_cap,
+            line_join=self.graphics.line_join,
+            dash_pattern=self.transformed_dash_pattern(),
+            blend_mode=self.graphics.blend_mode,
+            group_alpha=self.group_alpha,
+            alpha_is_shape=self.graphics.alpha_is_shape,
+            graphics_soft_mask=capture_graphics_soft_mask(self),
+            clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
+        )
+
     def record_glyph_observations(
         self,
         text: str,
@@ -256,6 +278,8 @@ class RecordingMethods(RecoveringTextState):
         rotation_angle: int,
         visible: bool,
         *,
+        fill_color: tuple[float, ...] | None,
+        paint: GlyphPaint | None = None,
         glyphs: tuple[DecodedGlyph, ...],
         text_basis: TextBasis,
         effective_font_size: float,
@@ -281,25 +305,8 @@ class RecordingMethods(RecoveringTextState):
             effective_font_size=effective_font_size,
             effective_font_height=effective_font_height,
         )
-        paint = GlyphPaint(
-            visible=visible,
-            clip_bbox=self.clip_bbox,
-            page_clip=self.page_clip,
-            fill=self.capture_color(stroke=False),
-            render_mode=self.internal_text_paint_mode(),
-            fill_opacity=self.graphics.fill_opacity,
-            stroke_color=self.capture_color(stroke=True),
-            stroke_opacity=self.graphics.stroke_opacity,
-            line_width=self.transformed_line_width(),
-            line_cap=self.graphics.line_cap,
-            line_join=self.graphics.line_join,
-            dash_pattern=self.transformed_dash_pattern(),
-            blend_mode=self.graphics.blend_mode,
-            group_alpha=self.group_alpha,
-            alpha_is_shape=self.graphics.alpha_is_shape,
-            graphics_soft_mask=capture_graphics_soft_mask(self),
-            clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
-        )
+        if paint is None:
+            paint = self.internal_glyph_paint(fill_color)
         provenance = (
             ("source", self.capture_source),
             ("stream_order", self.stream_order),
@@ -320,11 +327,14 @@ class RecordingMethods(RecoveringTextState):
             decoder,
             geometry=geometry,
             paint=paint,
+            visible=visible,
             font_name=self.graphics.current_font,
             provenance=provenance,
             seqno=self.sequence,
             text_object_id=self.text_object_id,
-            cluster_start=len(self.glyph_clusters),
+            cluster_start=self.glyph_cluster_count,
+            capture_ink_bounds=self.capture_ink_bounds,
+            capture_run_details=self.capture_text_runs,
         )
 
     def emit_actual_text_span(self, entry: MarkedContentEntry) -> None:
@@ -376,6 +386,8 @@ class RecordingMethods(RecoveringTextState):
         decoder: FontService,
         adv_x: float,
         adv_y: float,
+        *,
+        glyph_paint: GlyphPaint | None = None,
     ) -> None:
         decoder = cast(FontDecoder, decoder)
         glyphs = cast(tuple[DecodedGlyph, ...], glyphs)
@@ -391,9 +403,6 @@ class RecordingMethods(RecoveringTextState):
         ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
         descent = metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
         advance_scale = fs * self.graphics.horizontal_scale / 100000.0
-        space_width = (
-            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
-        )
 
         text_matrix = self.text_matrix
         combined = text_matrix.multiply(self.graphics.ctm)
@@ -402,6 +411,43 @@ class RecordingMethods(RecoveringTextState):
         te, tf = text_matrix.e, text_matrix.f
         E = te * ca + tf * cc + ce
         F = te * cb + tf * cd + cf
+
+        rot = detect_rotation_from_linear(A, B, C, D)
+        seqno = self.sequence
+        scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
+        effective_font_size = fs * scale_factor
+        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
+        fill_color = self.capture_color(stroke=False) if glyph_paint is None else glyph_paint.fill
+        actual_text_span = self.current_capture_actual_text_span()
+        captured: GlyphCapture | None = None
+        if actual_text_span is None:
+            captured = self.record_glyph_observations(
+                text,
+                decoder,
+                rot,
+                visible,
+                fill_color=fill_color,
+                paint=glyph_paint,
+                glyphs=glyphs,
+                text_basis=(E, F, A, B, C, D),
+                effective_font_size=effective_font_size,
+                effective_font_height=effective_font_height,
+                font_scale=font_scale,
+                font_ascent=ascent,
+                font_descent=descent,
+                advance_scale=advance_scale,
+            )
+            self.glyphs.extend(captured.glyphs)
+            self.glyph_cluster_count += captured.cluster_count
+            if not self.capture_text_runs:
+                # Glyph-only consumers already have geometry and provenance.
+                # ActualText still needs a temporary run to assemble its span.
+                self.sequence = seqno + 1
+                return
+
+        space_width = (
+            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
+        )
 
         if decoder.is_vertical:
             c0_x = descent * A + rise * C + E
@@ -433,11 +479,6 @@ class RecordingMethods(RecoveringTextState):
         x1 = max(c0_x, c1_x, c2_x, c3_x)
         y1 = max(c0_y, c1_y, c2_y, c3_y)
 
-        rot = detect_rotation_from_linear(A, B, C, D)
-        seqno = self.sequence
-        scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
-        effective_font_size = fs * scale_factor
-        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
         effective_space_width = space_width * scale_factor
         baseline = (
             E,
@@ -483,14 +524,13 @@ class RecordingMethods(RecoveringTextState):
             visible=visible,
             line_break_before=self.pending_line_break,
             seqno=seqno,
-            fill_color=self.capture_color(stroke=False),
+            fill_color=fill_color,
             advance_bbox=advance_bbox,
             ink_bbox=advance_bbox,
             baseline=baseline,
             provenance=provenance,
             confidence=None,
         )
-        actual_text_span = self.current_capture_actual_text_span()
         if actual_text_span is not None:
             new_run.confidence = 1.0
             actual_text_span.add_run(
@@ -499,22 +539,7 @@ class RecordingMethods(RecoveringTextState):
                 effective_font_height=effective_font_height,
             )
         else:
-            captured = self.record_glyph_observations(
-                text,
-                decoder,
-                rot,
-                visible,
-                glyphs=glyphs,
-                text_basis=(E, F, A, B, C, D),
-                effective_font_size=effective_font_size,
-                effective_font_height=effective_font_height,
-                font_scale=font_scale,
-                font_ascent=ascent,
-                font_descent=descent,
-                advance_scale=advance_scale,
-            )
-            self.glyphs.extend(captured.glyphs)
-            self.glyph_clusters.extend(captured.clusters)
+            assert captured is not None
             new_run.glyph_clusters = tuple(captured.clusters)
             geometry = captured.geometry
             if geometry.started:
@@ -957,7 +982,12 @@ class RecordingMethods(RecoveringTextState):
         """A fresh interpreter sharing this capture's mask caches and recursion guards."""
         from core_pdf.impl._impl.capture.interpreter import TextState
 
-        nested = TextState(self.document, hidden_layers=self.hidden_layers)
+        nested = TextState(
+            self.document,
+            hidden_layers=self.hidden_layers,
+            capture_ink_bounds=self.capture_ink_bounds,
+            capture_text_runs=self.capture_text_runs,
+        )
         nested.capture_soft_masks = self.capture_soft_masks
         nested.capture_mask_resources = self.capture_mask_resources
         nested.capture_active_mask_groups = self.capture_active_mask_groups

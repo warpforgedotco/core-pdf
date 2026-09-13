@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable, Iterator
 from functools import lru_cache
 from importlib import import_module
 from typing import Any
@@ -33,7 +34,10 @@ def internal_load_nlp() -> Any:
     """Load the required English pipeline without installing dependencies at runtime."""
     try:
         model = import_module("en_core_web_sm")
-        return model.load()
+        # Classification consumes token tags and parser sentence boundaries.
+        # Downstream entities, lemmas and morphological attributes are unused.
+        # Preserve the attribute ruler's sole TAG rewrite in feature projection.
+        return model.load(exclude=["attribute_ruler", "lemmatizer", "ner"])
     except (ImportError, OSError) as error:
         raise ImportError(
             "The Unstructured compatibility facade requires spaCy and en_core_web_sm. "
@@ -66,23 +70,39 @@ def internal_nlp_features(
 ) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
     nlp = internal_NLP
     document = nlp(text[: nlp.max_length])
-    tokens = tuple((token.text, token.tag_) for token in document)
+    return internal_document_features(document)
+
+
+def internal_document_features(
+    document: Any,
+) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
+    # The pinned English model's only tag rewrite marks whitespace as _SP.
+    tokens = tuple((token.text, "_SP" if token.is_space else token.tag_) for token in document)
     sentences = tuple(sentence.text for sentence in document.sents)
     return tokens, sentences
 
 
 def internal_sentence_count(sentences: tuple[str, ...], minimum_words: int) -> int:
-    return sum(
-        len(
-            "".join(
-                character
-                for character in sentence
-                if not unicodedata.category(character).startswith("P")
-            ).split()
-        )
-        >= minimum_words
-        for sentence in sentences
-    )
+    if minimum_words <= 0:
+        return len(sentences)
+    count = 0
+    for sentence in sentences:
+        words = 0
+        in_word = False
+        for character in sentence:
+            # Match punctuation deletion followed by str.split(): punctuation
+            # joins adjacent text, while whitespace separates words.
+            if unicodedata.category(character).startswith("P"):
+                continue
+            if character.isspace():
+                in_word = False
+            elif not in_word:
+                words += 1
+                if words >= minimum_words:
+                    count += 1
+                    break
+                in_word = True
+    return count
 
 
 def internal_element_class(
@@ -90,6 +110,37 @@ def internal_element_class(
     bbox: tuple[float, float, float, float],
     page_height: float,
 ) -> type[Element]:
+    simple_class = internal_simple_element_class(text, bbox, page_height)
+    if simple_class is not None:
+        return simple_class
+    return internal_text_element_class(text, *internal_nlp_features(text))
+
+
+def internal_element_classes(
+    regions: Iterable[tuple[str, tuple[float, float, float, float]]],
+    page_height: float,
+) -> Iterator[type[Element]]:
+    """Classify a page in source order using bounded batches of NLP inference."""
+    classified = [
+        (text, internal_simple_element_class(text, bbox, page_height)) for text, bbox in regions
+    ]
+    nlp = internal_NLP
+    documents = nlp.pipe(
+        (text[: nlp.max_length] for text, element_class in classified if element_class is None),
+        batch_size=32,
+    )
+    for text, element_class in classified:
+        if element_class is not None:
+            yield element_class
+        else:
+            yield internal_text_element_class(text, *internal_document_features(next(documents)))
+
+
+def internal_simple_element_class(
+    text: str,
+    bbox: tuple[float, float, float, float],
+    page_height: float,
+) -> type[Element] | None:
     height_percentage = 1.0 - (bbox[1] + bbox[3]) / (2.0 * page_height) if page_height else 0.5
     if height_percentage < 0.07:
         return Header
@@ -101,31 +152,40 @@ def internal_element_class(
         return EmailAddress
     if internal_ADDRESS.search(text):
         return Address
+    if not internal_has_classifiable_text(text):
+        return UncategorizedText
+    return None
+
+
+def internal_has_classifiable_text(text: str) -> bool:
+    """Whether either NLP-dependent category can accept this text."""
     alphabetic = sum(character.isalpha() for character in text)
     non_space = sum(not character.isspace() for character in text)
-    alpha_ratio = alphabetic / max(non_space, 1)
-    tagged_tokens, sentences = internal_nlp_features(text)
+    return alphabetic / max(non_space, 1) >= 0.5 and not text.isnumeric()
+
+
+def internal_text_element_class(
+    text: str,
+    tagged_tokens: tuple[tuple[str, str], ...],
+    sentences: tuple[str, ...],
+) -> type[Element]:
+    if not internal_has_classifiable_text(text):
+        return UncategorizedText
+    long_sentence_count = internal_sentence_count(sentences, 3)
+    if long_sentence_count > 1:
+        return NarrativeText
     word_tokens = [token for token, _tag in tagged_tokens if token.isalpha()]
     capitalized = sum(word.istitle() or word.isupper() for word in word_tokens)
-    long_sentence_count = internal_sentence_count(sentences, 3)
-    exceeds_cap_ratio = long_sentence_count <= 1 and (
-        text.isupper() or not word_tokens or capitalized / len(word_tokens) > 0.5
-    )
+    exceeds_cap_ratio = text.isupper() or not word_tokens or capitalized / len(word_tokens) > 0.5
     has_verb = any(tag in internal_POS_VERB_TAGS for _token, tag in tagged_tokens)
-    if (
-        alpha_ratio >= 0.5
-        and not text.isnumeric()
-        and (long_sentence_count > 1 or not exceeds_cap_ratio)
-        and (has_verb or long_sentence_count >= 2)
-    ):
+    if not exceeds_cap_ratio and has_verb:
         return NarrativeText
+    # At most one three-word sentence also implies at most one five-word
+    # sentence, so the Title sentence-count rule is already satisfied.
     if (
         len(text.split(" ")) <= 12
-        and alpha_ratio >= 0.5
-        and not text.isnumeric()
         and not text.endswith(",")
         and not (text.isupper() and re.search(r"[^\w\s]$", text))
-        and internal_sentence_count(sentences, 5) <= 1
     ):
         return Title
     return UncategorizedText

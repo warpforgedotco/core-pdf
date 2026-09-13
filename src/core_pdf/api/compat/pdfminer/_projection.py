@@ -34,8 +34,7 @@ from ._layout import (
 )
 
 
-def _pdfminer_form_glyph_is_clipped(glyph: Any) -> bool:
-    provenance = dict(glyph.provenance) if glyph.provenance else {}
+def _pdfminer_form_glyph_is_clipped(provenance: dict[str, Any]) -> bool:
     if int(provenance.get("xobject_depth", 0) or 0) <= 0:
         return False
     clip = provenance.get("clip_bbox")
@@ -144,7 +143,8 @@ def internal_project_page(
     for glyph_index, glyph in enumerate(projected_glyphs):
         if not unstructured_mode and internal_pdfminer_embedded_cmap_is_unusable(glyph):
             continue
-        if _pdfminer_form_glyph_is_clipped(glyph):
+        glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
+        if _pdfminer_form_glyph_is_clipped(glyph_provenance):
             continue
         run_index = bisect_right(run_sequences, glyph.seqno) - 1
         if id(glyph) in skipped_ligature_parts:
@@ -221,7 +221,6 @@ def internal_project_page(
                 # width unless /Widths explicitly supplies one.
                 normalized_width = 0.0
         orientation = glyph.rotation_angle % 360
-        glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
         text_matrix = glyph_provenance.get("text_matrix")
         if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6:
             resolved_text_matrix = text_matrix
@@ -345,18 +344,20 @@ def internal_project_page(
                 page_width,
                 page_height,
             )
-            corners = tuple(
-                (
-                    along * matrix_a + vertical * matrix_c + layout_origin_x,
-                    along * matrix_b + vertical * matrix_d + layout_origin_y,
-                )
-                for along in (0.0, advance)
-                for vertical in (descent, top)
-            )
-            x0 = min(point[0] for point in corners)
-            y0 = min(point[1] for point in corners)
-            x1 = max(point[0] for point in corners)
-            y1 = max(point[1] for point in corners)
+            # Compute the four corners directly, preserving evaluation order
+            # and zero products while avoiding temporary tuples and generators.
+            bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
+            bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
+            top_left_x = 0.0 * matrix_a + top * matrix_c + layout_origin_x
+            top_left_y = 0.0 * matrix_b + top * matrix_d + layout_origin_y
+            bottom_right_x = advance * matrix_a + descent * matrix_c + layout_origin_x
+            bottom_right_y = advance * matrix_b + descent * matrix_d + layout_origin_y
+            top_right_x = advance * matrix_a + top * matrix_c + layout_origin_x
+            top_right_y = advance * matrix_b + top * matrix_d + layout_origin_y
+            x0 = min(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
+            y0 = min(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
+            x1 = max(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
+            y1 = max(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
             effective_font_height = x1 - x0 if orientation % 180 else y1 - y0
             coordinates_in_layout_space = True
         elif orientation == 0:
@@ -393,7 +394,7 @@ def internal_project_page(
             effective_font_height,
         )
         provenance = (
-            dict(glyph.provenance)
+            glyph_provenance
             if glyph.provenance
             else (dict(runs[run_index].provenance) if run_index >= 0 else {})
         )

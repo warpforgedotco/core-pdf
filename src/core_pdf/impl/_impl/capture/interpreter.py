@@ -20,16 +20,21 @@ class TextState(RecordingMethods):
         document: Any,
         hidden_layers: frozenset[str] = frozenset(),
         page_clip: Rectangle | None = None,
+        *,
+        capture_ink_bounds: bool = True,
+        capture_text_runs: bool = True,
     ):
         self.document = document
         self.runs = []
         self.glyphs = []
-        self.glyph_clusters = []
+        self.glyph_cluster_count = 0
         self.lines = []
         self.drawings = []
         self.inline_images = []
         self.hidden_layers = hidden_layers
         self.page_clip = page_clip
+        self.capture_ink_bounds = capture_ink_bounds
+        self.capture_text_runs = capture_text_runs
         self.clip_bbox = None
         self.layout_form_bbox = None
         self.layout_form_id = None
