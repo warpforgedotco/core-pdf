@@ -22,15 +22,13 @@ from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.fonts.glyphs import (
-    TEX_GLYPH_ALIASES,
-    ensure_glyph_map,
-)
+from core_pdf.impl._impl.fonts.glyphs import TEX_GLYPH_ALIASES
 from core_pdf.impl._impl.fonts.widths import parse_font_widths
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
+from core_pdf_spec.s_09_fonts.data.core14 import GLYPH_DATA
 
 Matrix = list[float]
 
@@ -432,7 +430,7 @@ class LegacyTextExtractor:
             code = int(name[1:])
             if 0 <= code <= 255:
                 return chr(code)
-        mapped = ensure_glyph_map().get(name)
+        mapped = GLYPH_DATA.get(name)
         if mapped is None:
             mapped = TEX_GLYPH_ALIASES.get(name)
         if mapped is not None:

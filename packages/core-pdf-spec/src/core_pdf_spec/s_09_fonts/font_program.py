@@ -496,6 +496,11 @@ class CFFFont:
 
 def cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> tuple[float, ...]:
     """Return the interior extrema parameters of one cubic coordinate."""
+    # The derivative's Bernstein coefficients are the adjacent control-point
+    # differences. If they have one sign, the coordinate is monotone and no
+    # quadratic root solving is needed (including constant coordinates).
+    if p0 <= p1 <= p2 <= p3 or p0 >= p1 >= p2 >= p3:
+        return ()
     a = -p0 + 3.0 * p1 - 3.0 * p2 + p3
     b = 2.0 * (p0 - 2.0 * p1 + p2)
     c = p1 - p0

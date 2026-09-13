@@ -489,9 +489,9 @@ class CFFFont(PdfCFFFont):
     ]:
         """Return the glyph's outline points and their bounds.
 
-        With ``bounds_only`` the outline keeps just each curve's endpoints and
-        coordinate extrema, which fix the bounds exactly under an axis-aligned
-        font matrix; a skewed or rotated matrix needs the flattened outline.
+        With ``bounds_only`` the default font matrix needs no stored outline.
+        Other axis-aligned matrices retain endpoints and coordinate extrema
+        for transformation; a skewed or rotated matrix needs the flattened outline.
         """
         try:
             charstring = self.charstrings[glyph_id]
@@ -504,6 +504,7 @@ class CFFFont(PdfCFFFont):
             global_subrs=self.global_subrs,
             seac_resolver=self.internal_seac_contours,
             flatten=not bounds_only or matrix[1] != 0.0 or matrix[2] != 0.0,
+            retain_contours=not bounds_only or matrix != DEFAULT_CFF_FONT_MATRIX,
         )
         if matrix == DEFAULT_CFF_FONT_MATRIX:
             # The interpreter tracked the bounds of exactly these points.
@@ -672,12 +673,17 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         | None
     ) = None,
     flatten: bool = True,
+    retain_contours: bool = True,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
     """Execute a charstring into contours and their bounds.
 
     Flattening samples every curve adaptively for rasterization. Without it a
     curve contributes only its endpoints and coordinate extrema, the points that
     determine its bounds.
+
+    Bounds-only consumers can omit contour storage when they do not need to
+    transform the points. Contour completion and malformed-program recovery
+    still determine which bounds are committed.
     """
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
@@ -719,7 +725,8 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y, bbox_has_points
         if not points:
             return
-        contours.append(list(points))
+        if retain_contours:
+            contours.append(list(points))
         bbox_min_x = min(bbox_min_x, *(point[0] for point in points))
         bbox_min_y = min(bbox_min_y, *(point[1] for point in points))
         bbox_max_x = max(bbox_max_x, *(point[0] for point in points))
@@ -729,7 +736,8 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
     def record_point(px: float, py: float) -> None:
         nonlocal current_min_x, current_min_y, current_max_x, current_max_y
         nonlocal current_has_points
-        current.append((px, py))
+        if retain_contours:
+            current.append((px, py))
         current_min_x = min(current_min_x, px)
         current_min_y = min(current_min_y, py)
         current_max_x = max(current_max_x, px)
