@@ -468,7 +468,7 @@ def internal_xref_pointer(trailer: PdfDict, name: str) -> int | None:
     value = trailer.get(name)
     if value is not None and (type(value) is not int or value < 0):
         raise PdfParseError(f"invalid xref section /{name}")
-    return cast(int | None, value)
+    return value
 
 
 def iter_xref_revisions(start: int, read_section: XRefSectionReader) -> Iterator[XRefRevision]:
