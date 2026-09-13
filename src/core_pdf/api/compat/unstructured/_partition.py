@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.api.compat.pdfminer._extract import extract_pages
+from core_pdf.api.compat.pdfminer._extract import internal_extract_document_pages
 from core_pdf.api.compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
@@ -105,18 +105,15 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             return []
         raise
     result: list[Element] = []
-    pages = extract_pages(
-        cast(Any, filename),
-        password=password,
-        laparams=LAParams(word_margin=word_margin),
-        _unstructured_mode=True,
-    )
     document = PdfDocument.open(
         cast(Any, filename),
         password=password,
         recovery_scan_all_revisions=False,
     )
     try:
+        pages = internal_extract_document_pages(
+            document, LAParams(word_margin=word_margin), unstructured_mode=True
+        )
         source_pages = iter(document.pages)
         for page in pages:
             source_page = next(source_pages, None)

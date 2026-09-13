@@ -20,16 +20,21 @@ class TextState(RecordingMethods):
         document: Any,
         hidden_layers: frozenset[str] = frozenset(),
         page_clip: Rectangle | None = None,
+        *,
+        capture_ink_bounds: bool = True,
+        capture_text_runs: bool = True,
     ):
         self.document = document
         self.runs = []
         self.glyphs = []
-        self.glyph_clusters = []
+        self.glyph_cluster_count = 0
         self.lines = []
         self.drawings = []
         self.inline_images = []
         self.hidden_layers = hidden_layers
         self.page_clip = page_clip
+        self.capture_ink_bounds = capture_ink_bounds
+        self.capture_text_runs = capture_text_runs
         self.clip_bbox = None
         self.layout_form_bbox = None
         self.layout_form_id = None
@@ -37,6 +42,9 @@ class TextState(RecordingMethods):
         self.stream_order = -1
         self.sequence = 0
         self.text_object_id = 0
+        self.text_boundaries = []
+        self.capture_text_open = False
+        self.capture_text_frames = {}
         self.pending_line_break = False
         self.group_alpha = None
         self.run_accumulator = RunAccumulator(self.runs)
@@ -44,12 +52,22 @@ class TextState(RecordingMethods):
         self.capture_marked_entries = {}
         self.capture_frames = {}
         self.capture_patterns = {}
+        self.capture_colors = {}
+        self.capture_soft_masks = {}
+        self.capture_mask_resources = {}
+        self.capture_active_mask_groups = set()
+        self.capture_font_decoders = {}
 
         def font_provider(font: dict[str, Any], resources: dict[str, Any]) -> FontDecoder:
             return FontDecoder(
                 font,
                 ligature_overrides=detect_ligature_overrides(document, resources, font),
                 raster_font_provider=getattr(document, "raster_font_provider", None),
+                semantic_context=getattr(
+                    document,
+                    "internal_font_semantic_context",
+                    getattr(document.resolver, "semantic_context", None),
+                ),
             )
 
         super().__init__(
@@ -57,6 +75,7 @@ class TextState(RecordingMethods):
             sink=self,
             font_provider=font_provider,
             lexer_factory=PdfLexer,
+            semantic_context=getattr(document.resolver, "semantic_context", None),
         )
 
         self.recovery = CaptureRecovery()

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import cache
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl._impl.fonts.cmap_resources import (
@@ -54,7 +55,14 @@ def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
     )
 
 
+@cache
 def compact_cmap(name: str) -> CompactCMap | None:
+    """Invert one predefined CMap once per process.
+
+    The domain is the fixed set of packaged CMap names, and the product is
+    immutable, so every CID lookup against a collection shares one inversion
+    instead of re-parsing the resource per glyph.
+    """
     if resolve_cmap_resource(name) is None:
         return None
     decoder = resolve_cmap_decoder(name)

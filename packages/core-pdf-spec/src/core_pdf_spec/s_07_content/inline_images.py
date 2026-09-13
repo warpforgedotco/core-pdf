@@ -23,7 +23,8 @@ from core_pdf_spec.s_07_syntax_primitives.scanning import (
     skip_literal_string,
     skip_name,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WHITESPACE
+from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName
 
 INLINE_IMAGE_KEY_MAP = {
@@ -123,7 +124,10 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
 
 
 def skip_inline_image_separator(lexer: PdfLexer) -> bool:
-    if lexer.pos >= lexer.data_len or lexer.raw_data[lexer.pos] not in WHITESPACE:
+    if (
+        lexer.pos >= lexer.data_len
+        or lexer.raw_data[lexer.pos] not in lexer.lexical_rules.whitespace
+    ):
         return False
     if lexer.raw_data[lexer.pos : lexer.pos + 2] == b"\r\n":
         lexer.advance(2)
@@ -190,12 +194,15 @@ def parse_inline_image(lexer: PdfLexer) -> InlineImage:
     exact_length = inline_image_unfiltered_data_length(normalized)
     if exact_length is not None and start + exact_length <= lexer.data_len:
         marker = start + exact_length
-        while marker < lexer.data_len and raw_data[marker] in WHITESPACE:
+        while marker < lexer.data_len and raw_data[marker] in lexer.lexical_rules.whitespace:
             marker += 1
         if (
             marker > start + exact_length
             and raw_data[marker : marker + 2] == b"EI"
-            and (marker + 2 == lexer.data_len or SEPARATOR_TABLE[raw_data[marker + 2]])
+            and (
+                marker + 2 == lexer.data_len
+                or lexer.lexical_rules.separator_table[raw_data[marker + 2]]
+            )
         ):
             image_data = (
                 source_bytes[start : start + exact_length]
@@ -231,8 +238,10 @@ def scan_inline_image_data(lexer: PdfLexer, dictionary: PdfDict, start: int) -> 
         if marker < 0:
             raise PdfParseError("unterminated inline image data")
         after = marker + 2
-        prev_ok = marker == data_start or search_data[marker - 1] in WHITESPACE
-        next_ok = after >= len(search_data) or SEPARATOR_TABLE[search_data[after]]
+        prev_ok = marker == data_start or search_data[marker - 1] in lexer.lexical_rules.whitespace
+        next_ok = (
+            after >= len(search_data) or lexer.lexical_rules.separator_table[search_data[after]]
+        )
         if prev_ok and next_ok:
             # Only the delimiter belongs to EI. Binary samples can themselves
             # end in NUL, tab, newline, or space, especially when a named colour
@@ -251,6 +260,7 @@ def internal_next_inline_image(
     raw_bytes: bytes,
     pos: int,
     data_len: int,
+    rules: LexicalRules,
 ) -> int | None:
     """Find a top-level BI token, ignoring names, strings and containers."""
     container_depth = 0
@@ -286,12 +296,12 @@ def internal_next_inline_image(
             pos = marker + 1
             continue
         if token == b"/":
-            pos = skip_name(raw_bytes, marker, data_len)
+            pos = skip_name(raw_bytes, marker, data_len, rules=rules)
             continue
         after = match.end()
         delimited = bool(
-            (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]])
-            and (after == data_len or SEPARATOR_TABLE[raw_bytes[after]])
+            (marker == 0 or rules.separator_table[raw_bytes[marker - 1]])
+            and (after == data_len or rules.separator_table[raw_bytes[after]])
         )
         if not container_depth and delimited:
             return after
@@ -299,18 +309,25 @@ def internal_next_inline_image(
     return None
 
 
-def validate_inline_images(data: bytes | memoryview) -> None:
+def validate_inline_images(
+    data: bytes | memoryview, *, context: SemanticContext | None = None
+) -> None:
     """Validate inline-image boundaries without executing content operators."""
     raw_bytes = full_source_bytes(data)
     if raw_bytes is None:
         raw_bytes = bytes(data)
     data_len = len(raw_bytes)
     pos = 0
-    lexer = PdfLexer(raw_bytes)
-    while (after := internal_next_inline_image(raw_bytes, pos, data_len)) is not None:
-        lexer.pos = after
-        parse_inline_image(lexer)
-        pos = lexer.pos
+    lexer = PdfLexer(raw_bytes, semantic_context=context)
+    try:
+        while (
+            after := internal_next_inline_image(raw_bytes, pos, data_len, lexer.lexical_rules)
+        ) is not None:
+            lexer.pos = after
+            parse_inline_image(lexer)
+            pos = lexer.pos
+    finally:
+        lexer.close()
 
 
 __all__ = (

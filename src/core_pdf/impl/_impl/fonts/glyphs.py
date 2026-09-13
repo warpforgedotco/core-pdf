@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import unicodedata
+from collections.abc import Mapping
 
 from core_pdf.impl._impl.fonts.data.glyph_aliases import (
     MODIFIER_NAMES,
@@ -161,15 +162,11 @@ TEX_GLYPH_ALIASES = {
 }
 
 
-def ensure_glyph_map() -> dict[str, str]:
-    return dict(GLYPH_DATA)
-
-
 def glyph_name_to_unicode(name: str) -> str:
     if not name or name.startswith("."):
         return ""
 
-    full = ensure_glyph_map()
+    full = GLYPH_DATA
     original_name = name
     name = name.split(".", 1)[0]
     alias = TEX_GLYPH_ALIASES.get(name)
@@ -193,7 +190,7 @@ def glyph_name_to_unicode(name: str) -> str:
 
 
 def glyph_name_part_to_unicode(
-    name: str, full: dict[str, str], *, unknown_name: str | None = None
+    name: str, full: Mapping[str, str], *, unknown_name: str | None = None
 ) -> str:
     result = ADOBE_PUA_GLYPH_ALIASES.get(name)
     if result is not None:

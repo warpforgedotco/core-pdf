@@ -115,14 +115,18 @@ def iter_content_operations(
     operands: list[ContentOperand] = []
     recovery = recovery if recovery is not None else CaptureRecovery()
     while True:
-        lexer.skip_ignored()
-        start = lexer.pos
+        # Token parsing skips ignored bytes itself; the token's start position
+        # is only needed for recovery, so recompute it from the same cursor
+        # instead of scanning the gap twice for every token.
+        cursor = lexer.pos
         try:
             try:
                 token = parse_content_token(lexer)
             except InlineImageDataLengthError as error:
+                start = lexer.skip_ignored_at(cursor)
                 token = ContentToken(start, recover_inline_image_data(lexer, error))
         except PdfParseError as error:
+            start = lexer.skip_ignored_at(cursor)
             prefix = bytes(lexer.raw_data[start : start + 2])
             if str(error) == "unexpected delimiter in content stream":
                 # The reader historically skips all standalone delimiters,

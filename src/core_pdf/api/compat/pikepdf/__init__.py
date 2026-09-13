@@ -184,12 +184,9 @@ def _raw_indirect_object(pdf: PdfDocument, reference: PdfReference) -> bytes:
         return data[start : end if end >= 0 else len(data)]
     pdf.resolver.resolve(reference)
     container = pdf.resolver.object_streams.get(entry.object_stream)
-    if container is None or reference.object_number not in container.index:
+    if container is None:
         return b""
-    start = container.index[reference.object_number]
-    following = sorted(offset for offset in container.index.values() if offset > start)
-    end = following[0] if following else len(container.raw_body)
-    return bytes(container.raw_body[start:end])
+    return container.object_bytes(reference.object_number) or b""
 
 
 def _raw_media_box(

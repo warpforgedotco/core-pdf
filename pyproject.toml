@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "core-pdf"
-version = "0.0.6"
+version = "0.0.7"
 description = "High-Performance PDF Engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
@@ -16,7 +16,7 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.4.0,<0.5.0",
+    "core-pdf-spec>=0.4.1,<0.5.0",
 ]
 
 [project.scripts]
@@ -29,6 +29,7 @@ python-preference = "system"
 members = [
     "packages/core-pdf-ocr",
     "packages/core-pdf-spec",
+    "packages/core-pdf-validate",
 ]
 
 [tool.uv.sources]
@@ -91,8 +92,8 @@ vendor-test = [
 [tool.pytest.ini_options]
 testpaths = [
     "tests/src/core_pdf/api/compat/differential",
-    "tests/src/core_pdf/spec_boundary",
     "packages/core-pdf-spec/tests",
+    "packages/core-pdf-validate/tests",
 ]
 addopts = "--import-mode=importlib"
 norecursedirs = ["tests/fixtures"]
@@ -102,7 +103,7 @@ markers = [
 ]
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
@@ -153,8 +154,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.13"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-spec/src/core_pdf_spec"]
-mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate"]
+mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -163,7 +164,7 @@ disallow_incomplete_defs = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src"]
 
 [tool.ty.src]
 exclude = [
@@ -193,7 +194,7 @@ core_pdf = ["py.typed"]
 "core_pdf.impl._impl.fonts" = ["data/raster_fonts/**"]
 
 [tool.importlinter]
-root_packages = ["core_pdf", "core_pdf_ocr", "core_pdf_spec"]
+root_packages = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate"]
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
@@ -201,6 +202,36 @@ name = "Core never depends on OCR"
 type = "forbidden"
 source_modules = ["core_pdf"]
 forbidden_modules = ["core_pdf_ocr"]
+
+[[tool.importlinter.contracts]]
+name = "Validation is an opt-in companion"
+type = "forbidden"
+source_modules = ["core_pdf", "core_pdf_spec", "core_pdf_ocr"]
+forbidden_modules = ["core_pdf_validate"]
+
+[[tool.importlinter.contracts]]
+name = "Validation uses only public core interfaces"
+type = "forbidden"
+source_modules = ["core_pdf_validate"]
+forbidden_modules = ["core_pdf.impl", "core_pdf_ocr"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Standards records stay below chapter algorithms"
+type = "forbidden"
+source_modules = ["core_pdf_spec.standards"]
+forbidden_modules = [
+    "core_pdf_spec.s_07_content",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_filters",
+    "core_pdf_spec.s_07_security",
+    "core_pdf_spec.s_07_syntax",
+    "core_pdf_spec.s_07_syntax_primitives",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
+    "core_pdf_spec.s_14_structure",
+]
 
 [[tool.importlinter.contracts]]
 name = "OCR implementation stays below public APIs"
@@ -240,6 +271,7 @@ forbidden_modules = [
     "core_pdf_spec.s_07_syntax_primitives",
     "core_pdf_spec.s_08_graphics",
     "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
     "core_pdf.api",
 ]
@@ -291,6 +323,7 @@ forbidden_modules = [
     "core_pdf_spec.s_07_syntax_primitives",
     "core_pdf_spec.s_08_graphics",
     "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
     "core_pdf.api",
 ]
@@ -309,6 +342,7 @@ forbidden_modules = [
     "core_pdf_spec.s_07_security",
     "core_pdf_spec.s_08_graphics",
     "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
@@ -333,6 +367,7 @@ forbidden_modules = [
     "core_pdf_spec.s_07_syntax",
     "core_pdf_spec.s_08_graphics",
     "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
     "core_pdf.impl._impl.extract",
     "core_pdf.impl._impl.layout",
@@ -378,6 +413,7 @@ forbidden_modules = [
     "core_pdf_spec.s_07_syntax_primitives",
     "core_pdf_spec.s_08_graphics",
     "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
 ]
 
@@ -440,5 +476,6 @@ forbidden_modules = [
     "core_pdf_spec.s_07_syntax_primitives",
     "core_pdf_spec.s_08_graphics",
     "core_pdf_spec.s_09_fonts",
+    "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
 ]

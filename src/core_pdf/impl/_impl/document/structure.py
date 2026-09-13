@@ -10,12 +10,14 @@ from core_pdf.impl._impl.document.recovery.trees import iter_number_tree_items
 from core_pdf.impl._impl.model.pdf_values import coerce_value
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import MISSING, PdfReference
+from core_pdf_spec.exceptions import PdfError
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 from core_pdf_spec.s_14_structure.dictionaries import (
     attribute_entries,
     marked_content_id,
     parse_role_map,
 )
+from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_role
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.document.document import PdfDocument, internal_PageLookup
@@ -124,6 +126,8 @@ class StructureElement:
         "parent_value",
         "props",
         "role_value",
+        "role_resolution_value",
+        "role_error_value",
         "title_value",
         "type_value",
     )
@@ -139,6 +143,8 @@ class StructureElement:
         self.internal_lookup = internal_lookup
         self.props = props if isinstance(props, dict) else {}
         self.role_value: str | None = None
+        self.role_resolution_value: StructureRole | None | object = MISSING
+        self.role_error_value: str | None = None
         self.type_value: Any = MISSING
         self.kids_value: Any = MISSING
         self.title_value: Any = MISSING
@@ -159,10 +165,49 @@ class StructureElement:
     def role(self) -> str:
         if self.role_value is not None:
             return self.role_value
-        tree = self.document.structure
-        if tree is None:
-            return self.type or ""
-        return tree.role_map.get(self.type or "", self.type or "")
+        result = self.role_resolution
+        return result.name if result is not None else self.type or ""
+
+    @property
+    def role_namespace(self) -> str | None:
+        """Namespace of the resolved role; None when malformed data prevented resolution."""
+        result = self.role_resolution
+        return result.namespace if result is not None else None
+
+    @property
+    def role_error(self) -> str | None:
+        """Reader recovery diagnostic for malformed role or namespace declarations."""
+        return self.role_error_value if self.role_resolution is None else None
+
+    @property
+    def role_resolution(self) -> StructureRole | None:
+        """Resolve transitive roles while retaining namespace identity and cycle status."""
+        if self.role_resolution_value is not MISSING:
+            return cast(StructureRole | None, self.role_resolution_value)
+        resolver = self.document.resolver
+        context = resolver.semantic_context
+        # Unknown headers and under-declared namespaces do not prevent readers
+        # from interpreting otherwise usable, explicitly identified role maps.
+        if context is not None and (context.version is None or not context.version.recognized):
+            context = None
+        try:
+            tree = self.document.structure
+            result = resolve_structure_role(
+                self.props.get("S"),
+                namespace=self.props.get("NS"),
+                role_map=tree.props.get("RoleMap") if tree is not None else None,
+                resolve=resolver.resolve,
+                resolve_name=resolver.resolve_name_or_text,
+                decode_text=resolver.decode_text,
+                context=context,
+            )
+        except (PdfError, ValueError, RecursionError) as exc:
+            # Preserve the original type for extraction, retaining the error
+            # instead of inventing a namespace or treating recovery as conformance.
+            self.role_error_value = str(exc)
+            result = None
+        self.role_resolution_value = result
+        return result
 
     @property
     def page_index(self) -> int | None:

@@ -20,11 +20,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-        with:
-          lfs: "false"
-
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -39,13 +34,20 @@ jobs:
       - name: Install workspace packages and quality tools
         run: uv sync --locked --all-packages --group lint --group test
 
-      - name: Run strict spec and integration tests
-        run: uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests tests/src/core_pdf/spec_boundary
+      - name: Run strict spec and validation tests
+        run: uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests packages/core-pdf-validate/tests
 
-      - name: Build and verify standalone distributions
-        run: |
-          uv build --all-packages
-          uv run --locked --all-packages python scripts/check_spec_distribution.py dist --fixture "tests/fixtures/pdf20examples/Simple PDF 2.0 file.pdf"
+      - name: Build standalone distributions
+        run: uv build --all-packages
+
+      # setup-uv caches uv's own store, not prek's clones of the remote hook
+      # repositories. Their revisions are pinned in prek.toml, so its hash is
+      # an exact key.
+      - name: Restore prek hook repositories
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('prek.toml') }}
 
       - name: Run prek
         run: uvx prek run --all-files --stage pre-push
@@ -54,9 +56,57 @@ jobs:
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
+  verapdf:
+    name: veraPDF 1.30.2 / Java 17
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      # The integration tests validate one PDF/A file and one PDF 2.0 file.
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
+        with:
+          lfs: "false"
+          paths: tests/fixtures/pypdf tests/fixtures/pdf20examples
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Java 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install validation companion and tests
+        run: uv sync --locked --package core-pdf --package core-pdf-validate --group test
+
+      - name: Install checksum-pinned veraPDF in temporary storage
+        run: uv run --locked --no-sync python scripts/install_verapdf_ci.py "$RUNNER_TEMP/verapdf"
+
+      - name: Check real passes and failures for every advertised profile
+        env:
+          CORE_PDF_VERAPDF: ${{ runner.temp }}/verapdf/verapdf
+          CORE_PDF_REQUIRE_VERAPDF: "1"
+          JAVA_TOOL_OPTIONS: -Duser.home=${{ runner.temp }}/verapdf
+        run: >-
+          uv run --locked --no-sync pytest
+          packages/core-pdf-validate/tests/test_verapdf_integration.py -ra
+
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
   differential:
     name: Differential / Python 3.13
-    needs: quality
     runs-on: ubuntu-latest
 
     steps:

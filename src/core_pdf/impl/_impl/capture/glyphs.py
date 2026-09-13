@@ -228,9 +228,8 @@ class TextGeometry:
 
 @dataclass(frozen=True, slots=True)
 class GlyphPaint:
-    """Resolved paint and visibility; stroke measurements are in device space."""
+    """Resolved graphics paint; stroke measurements are in device space."""
 
-    visible: bool
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
     fill: tuple[float, ...] | None
@@ -245,6 +244,8 @@ class GlyphPaint:
     blend_mode: str | None
     group_alpha: float | None
     clip_glyph: bool = False
+    alpha_is_shape: bool = False
+    graphics_soft_mask: object | None = None
 
 
 @dataclass(slots=True)
@@ -253,6 +254,7 @@ class GlyphCapture:
 
     glyphs: list[GlyphObservation] = field(default_factory=list)
     clusters: list[GlyphCluster] = field(default_factory=list)
+    cluster_count: int = 0
     geometry: RunGeometry = field(default_factory=RunGeometry)
 
 
@@ -263,16 +265,23 @@ def capture_glyphs(
     *,
     geometry: TextGeometry,
     paint: GlyphPaint,
+    visible: bool,
     font_name: str | None,
     provenance: tuple[tuple[str, object], ...],
     seqno: int,
     text_object_id: int,
     cluster_start: int,
+    capture_ink_bounds: bool = True,
+    capture_run_details: bool = True,
 ) -> GlyphCapture:
     """Build observations without changing interpreter state or decoding again.
 
     A decoded source glyph owns one cluster, even when its Unicode expands
     into multiple observations. Each cluster paints its source outline once.
+    Metric-only consumers can omit outline bounds; observations then use their
+    advance rectangles without executing embedded glyph programs for bounds.
+    Consumers without text runs can omit cluster objects and aggregate geometry;
+    cluster_count still advances so observation identities stay unchanged.
     """
     result = GlyphCapture()
     if not glyphs:
@@ -330,7 +339,7 @@ def capture_glyphs(
             offset += advance
             continue
 
-        cluster_id = cluster_start + len(result.clusters)
+        cluster_id = cluster_start + result.cluster_count
         cluster_provenance_id = (seqno, cluster_id)
         if is_vertical:
             glyph_vertical_position = vertical_position(
@@ -396,7 +405,7 @@ def capture_glyphs(
                 )
                 advance_bbox = internal_text_basis_rect(*text_box, text_basis)
                 baseline = transformed_text_line(*baseline_text, text_basis)
-        observation_visible = paint.visible
+        observation_visible = visible
         if observation_visible:
             box_x0, box_y0, box_x1, box_y1 = advance_bbox
             if (
@@ -417,7 +426,7 @@ def capture_glyphs(
                 )
             ):
                 observation_visible = False
-        if is_vertical:
+        if is_vertical or not capture_ink_bounds:
             glyph_bbox = None
         else:
             glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code)
@@ -514,7 +523,7 @@ def capture_glyphs(
                 provenance=provenance,
                 glyph_transform=outline_transform,
                 text_render_mode=paint.render_mode,
-                clip_glyph=paint.clip_glyph,
+                clip_glyph=paint.clip_glyph and not decoder.is_type3,
                 fill_opacity=paint.fill_opacity,
                 stroke_color=paint.stroke_color,
                 stroke_opacity=paint.stroke_opacity,
@@ -524,17 +533,25 @@ def capture_glyphs(
                 dash_pattern=paint.dash_pattern,
                 blend_mode=paint.blend_mode,
                 soft_mask_alpha=paint.group_alpha,
+                alpha_is_shape=paint.alpha_is_shape,
+                graphics_soft_mask=paint.graphics_soft_mask,
                 paint_glyph=index == 0,
+                paint_from_program=decoder.is_type3,
                 text_object_id=text_object_id,
                 cluster_key=cluster_provenance_id,
             )
-            cluster_observations.append(observation)
             result.glyphs.append(observation)
-            add_run_geometry(advance_rect, ink, confidence)
-        cluster = glyph_cluster_from_observations(
-            cluster_id, chunk_text, tuple(cluster_observations)
-        )
-        if cluster is not None:
-            result.clusters.append(cluster)
+            if capture_run_details:
+                cluster_observations.append(observation)
+                add_run_geometry(advance_rect, ink, confidence)
+        # Every nonempty decoded glyph emits at least one observation. Its
+        # identity does not require retaining a cluster object or run geometry.
+        result.cluster_count += 1
+        if capture_run_details:
+            cluster = glyph_cluster_from_observations(
+                cluster_id, chunk_text, tuple(cluster_observations)
+            )
+            if cluster is not None:
+                result.clusters.append(cluster)
         offset += advance
     return result

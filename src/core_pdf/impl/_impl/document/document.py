@@ -27,9 +27,17 @@ from core_pdf.impl._impl.document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
+from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl._impl.document.recovery.security import create_recovered_security_handler
 from core_pdf.impl._impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
+from core_pdf.impl._impl.document.standards import (
+    bootstrap_security_context,
+    discover_document_standards,
+    discover_header_standards,
+    discover_profile_claims,
+    preserve_historical_version,
+)
 from core_pdf.impl._impl.document.structure import StructureTree
 from core_pdf.impl._impl.fonts.fallback import internal_RasterFontRepository
 from core_pdf.impl._impl.model.page_selection import PageSelection, resolve_page_selection
@@ -38,10 +46,12 @@ from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
     PdfParseError,
     PdfSourceError,
+    PdfUnsupportedError,
 )
 from core_pdf.impl.types import (
     PathSource,
     PdfByteBuffer,
+    PdfName,
     PdfReference,
     PdfSource,
     SeekableBinaryReader,
@@ -57,7 +67,8 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfDict,
     PdfObject,
 )
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticContext
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.fonts.fallback import (
@@ -136,6 +147,52 @@ def internal_unresolved_destination(name: str) -> RawNamedDestination:
     return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
 
 
+def internal_legacy_name_context(context: SemanticContext | None) -> bool:
+    return context is not None and context.version in {PdfVersion(1, 0), PdfVersion(1, 1)}
+
+
+def internal_check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
+    """Reject ambiguous security dictionaries when upgrading legacy name syntax.
+
+    PDF dictionaries require unique keys (7.3.7). An escaped private name in the
+    initial legacy view must not erase a literal authentication signal when the
+    bootstrap chooses modern parsing, including its unreadable-catalog fallback.
+    """
+    pending: list[tuple[dict, bool]] = [(trailer, True)]
+    seen: set[int] = set()
+    while pending:
+        dictionary, top = pending.pop()
+        if id(dictionary) in seen:
+            continue
+        seen.add(id(dictionary))
+        names: set[bytes] = set()
+        for key, value in dictionary.items():
+            raw_name = key.value if isinstance(key, PdfName) else key
+            lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
+            try:
+                name = bytes(lexer.read_name())
+            finally:
+                lexer.close()
+            if top and name not in {b"Encrypt", b"AuthCode", b"ID"}:
+                continue
+            if name in names:
+                raise PdfUnsupportedError("Ambiguous security dictionary name aliases")
+            names.add(name)
+            if top and name in {b"Encrypt", b"AuthCode"}:
+                # Also inspect a future modern /Encr#79pt reference. Security
+                # strings remain unencrypted even if a previous view installed
+                # a decipher before requiring a final lexical transition.
+                security_resolver = ObjectResolver(
+                    resolver.data, resolver.xref, semantic_context=resolver.semantic_context
+                )
+                try:
+                    value = security_resolver.resolve(value)
+                finally:
+                    security_resolver.close()
+            if isinstance(value, dict):
+                pending.append((value, False))
+
+
 class PdfDocument(
     DocumentXRefMixin,
     Generic[internal_PageT],
@@ -158,6 +215,9 @@ class PdfDocument(
         "raster_font_provider",
         "page_tree_was_recovered",
         "internal_closed",
+        "internal_standards",
+        "internal_standards_complete",
+        "internal_font_decoders",
     )
 
     source: PdfSource
@@ -174,6 +234,11 @@ class PdfDocument(
     raster_font_provider: RasterFontProviderLike | internal_RasterFontRepository | None
     page_tree_was_recovered: bool
     internal_closed: bool
+    internal_standards: DocumentStandards
+    internal_standards_complete: bool
+    # Font decoders shared by every page that selects the same font from the
+    # same font resources; keyed by the capture interpreter, cleared on close.
+    internal_font_decoders: dict[object, object]
 
     def __init__(
         self,
@@ -196,16 +261,84 @@ class PdfDocument(
         self.recovery_scan_all_revisions = recovery_scan_all_revisions
         self.raster_font_provider = internal_RasterFontRepository(raster_font_provider)
         self.page_tree_was_recovered = False
+        self.internal_standards = DocumentStandards()
+        self.internal_standards_complete = False
+        self.internal_font_decoders = {}
         try:
             self.raw_data = self.load_data(source)
+            self.internal_standards = discover_header_standards(self.raw_data)
+            header = self.internal_standards
+            # Names in security dictionaries obey the same historical grammar
+            # as trailer names. Start old headers literally, before any alias
+            # can overwrite Encrypt/AuthCode or their authentication parameters.
+            context = header.context if internal_legacy_name_context(header.context) else None
+            self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=context)
             self.scan_xref()
+            self.resolver.xref = self.xref
+            if internal_legacy_name_context(context):
+                selected = bootstrap_security_context(
+                    header, self.raw_data, self.xref, self.trailer_dict
+                )
+                if not internal_legacy_name_context(selected):
+                    internal_check_security_aliases(self.trailer_dict, self.resolver)
+                    self.resolver.semantic_context = selected
+                    self.scan_xref()
+                    self.resolver.xref = self.xref
 
-            self.resolver = ObjectResolver(self.raw_data, self.xref)
-            self.init_security(password)
-            self.resolver.decipher = self.decipher
+            for attempt in range(2):
+                self.init_security(password)
+                self.resolver.decipher = self.decipher
+                # Full catalog/extension discovery follows password and MAC
+                # authentication. The earlier probe used only unencrypted names.
+                self.internal_standards = discover_document_standards(
+                    header, self.resolver, self.trailer_dict
+                )
+                self.internal_standards = preserve_historical_version(
+                    self.internal_standards,
+                    self.raw_data,
+                    self.trailer_dict,
+                    self.decipher,
+                    recovered=self.xref_was_recovered,
+                    trailer_context=self.resolver.semantic_context,
+                )
+                selected = self.internal_standards.context
+                if internal_legacy_name_context(selected) == internal_legacy_name_context(
+                    self.resolver.semantic_context
+                ):
+                    # Encrypt strings are unencrypted (7.6.2). Keep this
+                    # authenticated object when other parsed caches reset;
+                    # re-reading it with the installed decipher is incorrect.
+                    encrypt_ref = self.trailer_dict.get("Encrypt")
+                    encrypt_object = (
+                        self.resolver.resolve(encrypt_ref)
+                        if self.decipher is not None and isinstance(encrypt_ref, PdfReference)
+                        else None
+                    )
+                    self.resolver.semantic_context = selected
+                    if encrypt_object is not None and isinstance(encrypt_ref, PdfReference):
+                        self.resolver.objects[
+                            key_for(encrypt_ref.object_number, encrypt_ref.generation_number)
+                        ] = cast(CachedPdfObject, encrypt_object)
+                    break
+                if attempt:
+                    raise PdfUnsupportedError("Unstable security dictionary name semantics")
+                # An inconclusive preflight can become conclusive after auth.
+                # Reparse AND authenticate the final view before returning it.
+                if not internal_legacy_name_context(selected):
+                    internal_check_security_aliases(self.trailer_dict, self.resolver)
+                self.resolver.close()
+                self.decipher = None
+                self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
+                self.scan_xref()
+                self.resolver.xref = self.xref
         except BaseException:
             self.close()
             raise
+
+    @property
+    def internal_font_semantic_context(self) -> SemanticContext | None:
+        """Select font semantics independently of parsing and graphics semantics."""
+        return self.resolver.semantic_context
 
     @classmethod
     def open(
@@ -244,6 +377,7 @@ class PdfDocument(
         if self.internal_closed:
             return
         self.internal_closed = True
+        self.internal_font_decoders.clear()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -282,6 +416,16 @@ class PdfDocument(
             self.trailer_dict,
             recover=self.recovery_enabled,
         )
+
+    def get_standards(self) -> DocumentStandards:
+        """Return the immutable standards snapshot, discovering profile claims once."""
+        with self.resolver.lock:
+            if not self.internal_standards_complete:
+                self.internal_standards = discover_profile_claims(
+                    self.internal_standards, self.resolver, self.trailer_dict
+                )
+                self.internal_standards_complete = True
+            return self.internal_standards
 
     def internal_catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
         """A catalog entry that must be a dictionary when it is present at all.

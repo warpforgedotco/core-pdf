@@ -482,22 +482,30 @@ class CFFFont(PdfCFFFont):
         return tuple(contours)
 
     def internal_glyph_geometry_for_gid(
-        self, glyph_id: int
+        self, glyph_id: int, *, bounds_only: bool = False
     ) -> tuple[
         tuple[tuple[tuple[float, float], ...], ...],
         tuple[float, float, float, float] | None,
     ]:
+        """Return the glyph's outline points and their bounds.
+
+        With ``bounds_only`` the default font matrix needs no stored outline.
+        Other axis-aligned matrices retain endpoints and coordinate extrema
+        for transformation; a skewed or rotated matrix needs the flattened outline.
+        """
         try:
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return ((), None)
+        matrix = self.font_matrix(glyph_id)
         contours, raw_bbox = internal_type2_glyph_geometry_impl(
             charstring,
             local_subrs=self.local_subrs_for_glyph(glyph_id),
             global_subrs=self.global_subrs,
             seac_resolver=self.internal_seac_contours,
+            flatten=not bounds_only or matrix[1] != 0.0 or matrix[2] != 0.0,
+            retain_contours=not bounds_only or matrix != DEFAULT_CFF_FONT_MATRIX,
         )
-        matrix = self.font_matrix(glyph_id)
         if matrix == DEFAULT_CFF_FONT_MATRIX:
             # The interpreter tracked the bounds of exactly these points.
             return (tuple(tuple(contour) for contour in contours), raw_bbox)
@@ -521,7 +529,7 @@ class CFFFont(PdfCFFFont):
         return rasterize_contours(contours, width=width, height=height)
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
+        geometry = self.internal_glyph_geometry_for_gid(glyph_id, bounds_only=True)
         return geometry[1]
 
     def glyph_contours_for_gid(self, glyph_id: int) -> tuple[tuple[tuple[float, float], ...], ...]:
@@ -664,7 +672,19 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         ]
         | None
     ) = None,
+    flatten: bool = True,
+    retain_contours: bool = True,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
+    """Execute a charstring into contours and their bounds.
+
+    Flattening samples every curve adaptively for rasterization. Without it a
+    curve contributes only its endpoints and coordinate extrema, the points that
+    determine its bounds.
+
+    Bounds-only consumers can omit contour storage when they do not need to
+    transform the points. Contour completion and malformed-program recovery
+    still determine which bounds are committed.
+    """
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
     current_min_x = inf
@@ -705,7 +725,8 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y, bbox_has_points
         if not points:
             return
-        contours.append(list(points))
+        if retain_contours:
+            contours.append(list(points))
         bbox_min_x = min(bbox_min_x, *(point[0] for point in points))
         bbox_min_y = min(bbox_min_y, *(point[1] for point in points))
         bbox_max_x = max(bbox_max_x, *(point[0] for point in points))
@@ -715,7 +736,8 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
     def record_point(px: float, py: float) -> None:
         nonlocal current_min_x, current_min_y, current_max_x, current_max_y
         nonlocal current_has_points
-        current.append((px, py))
+        if retain_contours:
+            current.append((px, py))
         current_min_x = min(current_min_x, px)
         current_min_y = min(current_min_y, py)
         current_max_x = max(current_max_x, px)
@@ -741,8 +763,15 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         point1 = (x + dx1, y + dy1)
         point2 = (point1[0] + dx2, point1[1] + dy2)
         point3 = (point2[0] + dx3, point2[1] + dy3)
-        for t in internal_cubic_sample_times(point0, point1, point2, point3):
-            record_point(*cubic_point(point0, point1, point2, point3, t))
+        if flatten:
+            for t in internal_cubic_sample_times(point0, point1, point2, point3):
+                record_point(*cubic_point(point0, point1, point2, point3, t))
+        else:
+            for t in cubic_extrema_times(point0[0], point1[0], point2[0], point3[0]):
+                record_point(*cubic_point(point0, point1, point2, point3, t))
+            for t in cubic_extrema_times(point0[1], point1[1], point2[1], point3[1]):
+                record_point(*cubic_point(point0, point1, point2, point3, t))
+            record_point(*point3)
         x, y = point3
 
     def has_current_point() -> bool:

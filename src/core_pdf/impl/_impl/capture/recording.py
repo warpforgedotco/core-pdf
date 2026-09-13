@@ -6,12 +6,14 @@ Holds the graphics and text state, the operator handlers, and glyph emission.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from math import hypot
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl._impl.capture.paths import flatten_path
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.capture.interpreter import TextState
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
 from dataclasses import dataclass
@@ -29,12 +31,17 @@ from core_pdf.impl._impl.capture.records import (
     CapturedDrawing,
     CapturedInlineImage,
     CapturedLine,
+    CapturedPath,
+    CapturedSoftMask,
+    CapturedSubpath,
+    CapturedTextBoundary,
     LayoutFormId,
     PatternPaint,
     ShadingPattern,
     TilingPattern,
     marker_drawing,
 )
+from core_pdf.impl._impl.capture.soft_masks import capture_graphics_soft_mask
 from core_pdf.impl._impl.capture.text_runs import (
     RunAccumulator,
     is_garbage_text,
@@ -42,9 +49,10 @@ from core_pdf.impl._impl.capture.text_runs import (
 from core_pdf.impl._impl.capture.tolerant_state import RecoveringTextState
 from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
+from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints
+from core_pdf.impl._impl.graphics.soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
-    GlyphCluster,
     GlyphObservation,
 )
 from core_pdf.impl._impl.model.runs import TextRun
@@ -54,7 +62,7 @@ from core_pdf.impl.types import (
     PdfName,
     Rectangle,
 )
-from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, PdfPath
+from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
 from core_pdf_spec.s_07_content.model import (
     MarkedContentEntry as SemanticMarkedContentEntry,
 )
@@ -65,9 +73,12 @@ from core_pdf_spec.s_07_content.streams import (
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf_spec.s_08_graphics.color import color_space_paints
+from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
+from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
 
 @dataclass(slots=True)
@@ -123,12 +134,14 @@ class RecordingMethods(RecoveringTextState):
     document: Any
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
-    glyph_clusters: list[GlyphCluster]
+    glyph_cluster_count: int
     lines: list[CapturedLine]
     drawings: list[CapturedDrawing]
     inline_images: list[CapturedInlineImage]
     hidden_layers: frozenset[str]
     page_clip: Rectangle | None
+    capture_ink_bounds: bool
+    capture_text_runs: bool
     clip_bbox: Rectangle | None
     layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
@@ -136,18 +149,39 @@ class RecordingMethods(RecoveringTextState):
     stream_order: int
     sequence: int
     text_object_id: int
+    text_boundaries: list[CapturedTextBoundary]
+    capture_text_open: bool
+    capture_text_frames: dict[int, tuple[bool, bool]]
     pending_line_break: bool
     group_alpha: float | None
     run_accumulator: RunAccumulator
     capture_graphics_stack: list[CaptureGraphicsSave]
     capture_marked_entries: dict[int, MarkedContentEntry]
     capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool]]
-    capture_patterns: dict[int, tuple[object, PatternPaint | None]]
+    capture_patterns: dict[
+        tuple[int, ColorRendering, bool, bool], tuple[object, PatternPaint | None]
+    ]
+    capture_colors: dict[
+        tuple[int, tuple[float, ...], ColorRendering], tuple[object, tuple[float, ...] | None]
+    ]
+    capture_soft_masks: dict[
+        tuple[int, tuple[object, ...]], tuple[PdfSoftMask, GraphicsState, CapturedSoftMask | None]
+    ]
+    capture_mask_resources: dict[int, tuple[PdfSoftMask, PdfDict]]
+    capture_active_mask_groups: set[int]
+
+    def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
+        mask = super().resolve_soft_mask(value)
+        if mask is not None:
+            self.capture_mask_resources[id(mask)] = (mask, self.resources)
+        return mask
 
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
-        if self.internal_text_paint_mode() in NON_PAINTING_RENDER_MODES:
+        # Colourant suppression changes raster paint, not the text evidence
+        # available to extraction (including the existing visibility policy).
+        if self.internal_text_paint_mode(check_colorants=False) in NON_PAINTING_RENDER_MODES:
             return False
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
@@ -216,6 +250,27 @@ class RecordingMethods(RecoveringTextState):
         if not self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
             self.run_accumulator.append(new_run)
 
+    def internal_glyph_paint(self, fill_color: tuple[float, ...] | None) -> GlyphPaint:
+        """Snapshot the graphics state shared by glyphs in a text-show operation."""
+        return GlyphPaint(
+            clip_bbox=self.clip_bbox,
+            page_clip=self.page_clip,
+            fill=fill_color,
+            render_mode=self.internal_text_paint_mode(),
+            fill_opacity=self.graphics.fill_opacity,
+            stroke_color=self.capture_color(stroke=True),
+            stroke_opacity=self.graphics.stroke_opacity,
+            line_width=self.transformed_line_width(),
+            line_cap=self.graphics.line_cap,
+            line_join=self.graphics.line_join,
+            dash_pattern=self.transformed_dash_pattern(),
+            blend_mode=self.graphics.blend_mode,
+            group_alpha=self.group_alpha,
+            alpha_is_shape=self.graphics.alpha_is_shape,
+            graphics_soft_mask=capture_graphics_soft_mask(self),
+            clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
+        )
+
     def record_glyph_observations(
         self,
         text: str,
@@ -223,6 +278,8 @@ class RecordingMethods(RecoveringTextState):
         rotation_angle: int,
         visible: bool,
         *,
+        fill_color: tuple[float, ...] | None,
+        paint: GlyphPaint | None = None,
         glyphs: tuple[DecodedGlyph, ...],
         text_basis: TextBasis,
         effective_font_size: float,
@@ -248,23 +305,8 @@ class RecordingMethods(RecoveringTextState):
             effective_font_size=effective_font_size,
             effective_font_height=effective_font_height,
         )
-        paint = GlyphPaint(
-            visible=visible,
-            clip_bbox=self.clip_bbox,
-            page_clip=self.page_clip,
-            fill=self.capture_color(stroke=False),
-            render_mode=self.internal_text_paint_mode(),
-            fill_opacity=self.graphics.fill_opacity,
-            stroke_color=self.capture_color(stroke=True),
-            stroke_opacity=self.graphics.stroke_opacity,
-            line_width=self.transformed_line_width(),
-            line_cap=self.graphics.line_cap,
-            line_join=self.graphics.line_join,
-            dash_pattern=self.transformed_dash_pattern(),
-            blend_mode=self.graphics.blend_mode,
-            group_alpha=self.group_alpha,
-            clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
-        )
+        if paint is None:
+            paint = self.internal_glyph_paint(fill_color)
         provenance = (
             ("source", self.capture_source),
             ("stream_order", self.stream_order),
@@ -285,11 +327,14 @@ class RecordingMethods(RecoveringTextState):
             decoder,
             geometry=geometry,
             paint=paint,
+            visible=visible,
             font_name=self.graphics.current_font,
             provenance=provenance,
             seqno=self.sequence,
             text_object_id=self.text_object_id,
-            cluster_start=len(self.glyph_clusters),
+            cluster_start=self.glyph_cluster_count,
+            capture_ink_bounds=self.capture_ink_bounds,
+            capture_run_details=self.capture_text_runs,
         )
 
     def emit_actual_text_span(self, entry: MarkedContentEntry) -> None:
@@ -341,6 +386,8 @@ class RecordingMethods(RecoveringTextState):
         decoder: FontService,
         adv_x: float,
         adv_y: float,
+        *,
+        glyph_paint: GlyphPaint | None = None,
     ) -> None:
         decoder = cast(FontDecoder, decoder)
         glyphs = cast(tuple[DecodedGlyph, ...], glyphs)
@@ -356,9 +403,6 @@ class RecordingMethods(RecoveringTextState):
         ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
         descent = metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
         advance_scale = fs * self.graphics.horizontal_scale / 100000.0
-        space_width = (
-            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
-        )
 
         text_matrix = self.text_matrix
         combined = text_matrix.multiply(self.graphics.ctm)
@@ -367,6 +411,43 @@ class RecordingMethods(RecoveringTextState):
         te, tf = text_matrix.e, text_matrix.f
         E = te * ca + tf * cc + ce
         F = te * cb + tf * cd + cf
+
+        rot = detect_rotation_from_linear(A, B, C, D)
+        seqno = self.sequence
+        scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
+        effective_font_size = fs * scale_factor
+        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
+        fill_color = self.capture_color(stroke=False) if glyph_paint is None else glyph_paint.fill
+        actual_text_span = self.current_capture_actual_text_span()
+        captured: GlyphCapture | None = None
+        if actual_text_span is None:
+            captured = self.record_glyph_observations(
+                text,
+                decoder,
+                rot,
+                visible,
+                fill_color=fill_color,
+                paint=glyph_paint,
+                glyphs=glyphs,
+                text_basis=(E, F, A, B, C, D),
+                effective_font_size=effective_font_size,
+                effective_font_height=effective_font_height,
+                font_scale=font_scale,
+                font_ascent=ascent,
+                font_descent=descent,
+                advance_scale=advance_scale,
+            )
+            self.glyphs.extend(captured.glyphs)
+            self.glyph_cluster_count += captured.cluster_count
+            if not self.capture_text_runs:
+                # Glyph-only consumers already have geometry and provenance.
+                # ActualText still needs a temporary run to assemble its span.
+                self.sequence = seqno + 1
+                return
+
+        space_width = (
+            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
+        )
 
         if decoder.is_vertical:
             c0_x = descent * A + rise * C + E
@@ -398,11 +479,6 @@ class RecordingMethods(RecoveringTextState):
         x1 = max(c0_x, c1_x, c2_x, c3_x)
         y1 = max(c0_y, c1_y, c2_y, c3_y)
 
-        rot = detect_rotation_from_linear(A, B, C, D)
-        seqno = self.sequence
-        scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
-        effective_font_size = fs * scale_factor
-        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
         effective_space_width = space_width * scale_factor
         baseline = (
             E,
@@ -448,14 +524,13 @@ class RecordingMethods(RecoveringTextState):
             visible=visible,
             line_break_before=self.pending_line_break,
             seqno=seqno,
-            fill_color=self.capture_color(stroke=False),
+            fill_color=fill_color,
             advance_bbox=advance_bbox,
             ink_bbox=advance_bbox,
             baseline=baseline,
             provenance=provenance,
             confidence=None,
         )
-        actual_text_span = self.current_capture_actual_text_span()
         if actual_text_span is not None:
             new_run.confidence = 1.0
             actual_text_span.add_run(
@@ -464,22 +539,7 @@ class RecordingMethods(RecoveringTextState):
                 effective_font_height=effective_font_height,
             )
         else:
-            captured = self.record_glyph_observations(
-                text,
-                decoder,
-                rot,
-                visible,
-                glyphs=glyphs,
-                text_basis=(E, F, A, B, C, D),
-                effective_font_size=effective_font_size,
-                effective_font_height=effective_font_height,
-                font_scale=font_scale,
-                font_ascent=ascent,
-                font_descent=descent,
-                advance_scale=advance_scale,
-            )
-            self.glyphs.extend(captured.glyphs)
-            self.glyph_clusters.extend(captured.clusters)
+            assert captured is not None
             new_run.glyph_clusters = tuple(captured.clusters)
             geometry = captured.geometry
             if geometry.started:
@@ -500,6 +560,8 @@ class RecordingMethods(RecoveringTextState):
         if not fills and not strokes:
             return
         kind = "fillstroke" if fills and strokes else "fill" if fills else "stroke"
+        fill_paints = color_space_paints(self.graphics.fill_space)
+        stroke_paints = color_space_paints(self.graphics.stroke_space)
 
         captured_path = flatten_path(source)
         if self.graphics.ctm == IDENTITY_MATRIX:
@@ -518,10 +580,14 @@ class RecordingMethods(RecoveringTextState):
                 CapturedDrawing(
                     seqno=self.sequence,
                     fill=self.capture_color(stroke=False),
-                    fill_pattern=self.capture_pattern(self.graphics.fill_pattern),
+                    fill_pattern=self.capture_pattern(self.graphics.fill_pattern)
+                    if fill_paints and fills
+                    else None,
                     fill_opacity=self.graphics.fill_opacity,
                     stroke_color=self.capture_color(stroke=True),
-                    stroke_pattern=self.capture_pattern(self.graphics.stroke_pattern),
+                    stroke_pattern=self.capture_pattern(self.graphics.stroke_pattern)
+                    if stroke_paints and strokes
+                    else None,
                     stroke_opacity=self.graphics.stroke_opacity,
                     line_width=line_width,
                     line_cap=self.graphics.line_cap,
@@ -530,7 +596,11 @@ class RecordingMethods(RecoveringTextState):
                     fill_rule=fill_rule,
                     blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
+                    alpha_is_shape=self.graphics.alpha_is_shape,
                     kind=kind,
+                    graphics_soft_mask=capture_graphics_soft_mask(self),
+                    fill_paints=fill_paints,
+                    stroke_paints=stroke_paints,
                     path=path,
                     stream_order=self.stream_order,
                     xobject_depth=self.xobject_depth,
@@ -557,6 +627,7 @@ class RecordingMethods(RecoveringTextState):
                     fill_opacity=None,
                     blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
+                    alpha_is_shape=self.graphics.alpha_is_shape,
                     line_width=0.0,
                     line_cap=self.graphics.line_cap,
                     line_join=self.graphics.line_join,
@@ -581,7 +652,14 @@ class RecordingMethods(RecoveringTextState):
             if width > 0 and height > 0:
                 bounds, quad = unit_square_placement(self.graphics.ctm)
                 bbox = RectBox(*bounds)
-            source, smask_alpha = image_source_from_stream(xobj, self.resolver)
+            source, smask_alpha = image_source_from_stream(
+                xobj, self.resolver, color_rendering=self.graphics.color_rendering
+            )
+            paints = (
+                color_space_paints(self.graphics.fill_space)
+                if image_is_stencil
+                else internal_color_space_paints(source.dictionary.get("ColorSpace"))
+            )
             # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
             # set bits in the current fill colour. Every other image ignores
             # the fill, so recording it is only meaningful for the mask case,
@@ -594,7 +672,12 @@ class RecordingMethods(RecoveringTextState):
                     blend_mode=self.graphics.blend_mode,
                     dash_pattern=self.transformed_dash_pattern(),
                     soft_mask_alpha=smask_alpha,
+                    alpha_is_shape=self.graphics.alpha_is_shape,
                     kind="image",
+                    graphics_soft_mask=None
+                    if image_overrides_graphics_soft_mask(source)
+                    else capture_graphics_soft_mask(self),
+                    paints=paints,
                     image_source=source,
                     raw_data=xobj.raw_data,
                     dictionary=dict(xobj_dict),
@@ -621,7 +704,14 @@ class RecordingMethods(RecoveringTextState):
                 if color_resource is not None:
                     dictionary[PdfName.of("ColorSpace")] = cast(PdfObject, color_resource)
             source, _ = image_source_from_stream(
-                PdfStream(raw_data=data, dictionary=dictionary), self.resolver
+                PdfStream(raw_data=data, dictionary=dictionary),
+                self.resolver,
+                color_rendering=self.graphics.color_rendering,
+            )
+            paints = (
+                color_space_paints(self.graphics.fill_space)
+                if dictionary.get("ImageMask") is True
+                else internal_color_space_paints(source.dictionary.get("ColorSpace"))
             )
             self.inline_images.append(
                 CapturedInlineImage(
@@ -631,14 +721,19 @@ class RecordingMethods(RecoveringTextState):
                     image_source=source,
                     image_clip=self.clip_bbox,
                     ctm=self.graphics.ctm,
+                    graphics_soft_mask=None
+                    if image_overrides_graphics_soft_mask(source)
+                    else capture_graphics_soft_mask(self),
                     xobject_depth=self.xobject_depth,
                     blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
+                    alpha_is_shape=self.graphics.alpha_is_shape,
                     stream_order=self.stream_order,
                     fill=self.capture_color(stroke=False)
                     if dictionary.get("ImageMask") is True
                     else None,
                     fill_opacity=self.graphics.fill_opacity,
+                    paints=paints,
                 )
             )
             self.sequence += 1
@@ -646,6 +741,7 @@ class RecordingMethods(RecoveringTextState):
     def paint_shading(self, state: object, shading: PdfDict) -> None:
         if not self.is_graphics_visible():
             return
+        dictionary = self.capture_shading_dictionary(shading)
         self.drawings.append(
             CapturedDrawing(
                 seqno=self.sequence,
@@ -659,9 +755,13 @@ class RecordingMethods(RecoveringTextState):
                 dash_pattern=self.transformed_dash_pattern(),
                 blend_mode=self.graphics.blend_mode,
                 soft_mask_alpha=self.group_alpha,
+                alpha_is_shape=self.graphics.alpha_is_shape,
                 kind="shading",
+                graphics_soft_mask=capture_graphics_soft_mask(self),
+                paints=internal_color_space_paints(dictionary.get("ColorSpace")),
+                color_rendering=self.graphics.color_rendering,
                 items=[],
-                dictionary=dict(shading),
+                dictionary=dictionary,
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
             )
@@ -669,8 +769,26 @@ class RecordingMethods(RecoveringTextState):
         self.sequence += 1
 
     def text_boundary(self, state: object, kind: str) -> None:
+        if kind in {"type3-glyph-begin", "type3-glyph-end"}:
+            self.text_boundaries.append(
+                CapturedTextBoundary(
+                    self.sequence, "glyph-begin" if kind == "type3-glyph-begin" else "glyph-end"
+                )
+            )
+            return
         if kind == "begin":
+            if self.capture_text_open:
+                self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
+            self.text_boundaries.append(
+                CapturedTextBoundary(self.sequence, "begin", self.graphics.text_knockout)
+            )
+            self.capture_text_open = True
             self.text_object_id += 1
+            self.run_accumulator.flush()
+        elif kind == "end":
+            if self.capture_text_open:
+                self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
+            self.capture_text_open = False
             self.run_accumulator.flush()
         elif kind == "shown":
             self.pending_line_break = False
@@ -707,11 +825,37 @@ class RecordingMethods(RecoveringTextState):
             self.sequence += 1
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        self.capture_text_frames[id(frame)] = (self.capture_text_open, False)
+        self.capture_text_open = False
         self.capture_frames[id(frame)] = (
             self.layout_form_bbox,
             self.layout_form_id,
             self.pending_line_break,
         )
+        if frame.form_bbox is not None:
+            # ISO 32000-1/2 8.10.1-2: the Form's BBox clips in Form space.
+            # Keep its transformed quadrilateral, not just the enclosing box,
+            # so rotated/sheared Forms do not paint into the envelope's corners.
+            x0, y0, x1, y1 = frame.form_bbox
+            clip_path = CapturedPath()
+            if x1 > x0 and y1 > y0:
+                # Preserve finite endpoints even when their difference would
+                # overflow (a valid box may span almost the full float range).
+                clip_path.subpaths.append(
+                    CapturedSubpath([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], closed=True)
+                )
+                clip_path = clip_path.transformed(frame.ctm)
+            self.drawings.append(
+                CapturedDrawing(
+                    kind="scope-begin",
+                    seqno=self.sequence,
+                    path=clip_path,
+                    fill=None,
+                    fill_opacity=None,
+                    line_width=0.0,
+                )
+            )
+            self.sequence += 1
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -719,10 +863,18 @@ class RecordingMethods(RecoveringTextState):
                     self.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=self.graphics.blend_mode,
+                    soft_mask_alpha=self.group_alpha,
+                    group_isolated=frame.group_isolated,
+                    group_knockout=frame.group_knockout,
+                    alpha_is_shape=self.graphics.alpha_is_shape,
+                    graphics_soft_mask=capture_graphics_soft_mask(self),
                 )
             )
             self.sequence += 1
             self.group_alpha = None
+        self.text_boundaries.append(CapturedTextBoundary(self.sequence, "stream-begin"))
+        previous_text_open, _ = self.capture_text_frames[id(frame)]
+        self.capture_text_frames[id(frame)] = (previous_text_open, True)
         layout_bbox = None
         raw_bbox = frame.form_bbox_operand
         if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
@@ -744,6 +896,14 @@ class RecordingMethods(RecoveringTextState):
         self.stream_order += 1
 
     def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        if id(frame) in self.capture_text_frames:
+            previous_text_open, started = self.capture_text_frames.pop(id(frame))
+            if started and self.capture_text_open:
+                # Reader EOF recovery closes only the child's unfinished text.
+                self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
+            if started:
+                self.text_boundaries.append(CapturedTextBoundary(self.sequence, "stream-end"))
+            self.capture_text_open = previous_text_open
         old = self.capture_frames.pop(id(frame), None)
         if old is not None:
             self.layout_form_bbox, self.layout_form_id, self.pending_line_break = old
@@ -760,8 +920,15 @@ class RecordingMethods(RecoveringTextState):
                     self.sequence,
                     fill_opacity=frame.group_alpha,
                     blend_mode=self.graphics.blend_mode,
+                    soft_mask_alpha=self.group_alpha,
+                    group_isolated=frame.group_isolated,
+                    group_knockout=frame.group_knockout,
+                    alpha_is_shape=self.graphics.alpha_is_shape,
                 )
             )
+            self.sequence += 1
+        if old is not None and frame.form_bbox is not None:
+            self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
 
     def internal_initial_pattern(self, *, stroke: bool) -> bool:
@@ -769,13 +936,16 @@ class RecordingMethods(RecoveringTextState):
         pattern = self.graphics.stroke_pattern if stroke else self.graphics.fill_pattern
         return space.kind == "Pattern" and pattern is None
 
-    def internal_text_paint_mode(self) -> int:
-        """Remove unselected Pattern contributions without changing text clipping."""
+    def internal_text_paint_mode(self, *, check_colorants: bool = True) -> int:
+        """Remove nonpainting colour contributions without changing text clipping."""
         mode = self.graphics.render_mode
         if mode not in range(8):
             return mode
         fills = mode in {0, 2, 4, 6} and not self.internal_initial_pattern(stroke=False)
         strokes = mode in {1, 2, 5, 6} and not self.internal_initial_pattern(stroke=True)
+        if check_colorants:
+            fills = fills and color_space_paints(self.graphics.fill_space)
+            strokes = strokes and color_space_paints(self.graphics.stroke_space)
         paint = 2 if fills and strokes else 0 if fills else 1 if strokes else 3
         return paint + (4 if mode >= 4 else 0)
 
@@ -783,29 +953,80 @@ class RecordingMethods(RecoveringTextState):
         """Project PDF color components only when creating output records."""
         color = self.graphics.stroke_color if stroke else self.graphics.fill_color
         spec = self.graphics.stroke_space if stroke else self.graphics.fill_space
-        if (
-            color is not None
-            and spec is not None
-            and spec.kind in {"Indexed", "Separation", "DeviceN"}
-        ):
-            converted = color_operands_to_srgb(spec, list(color))
-            if converted is not None:
-                return converted
+        if color is not None and spec is not None:
+            if not color_space_paints(spec):
+                return color
+            key = (id(spec), color, self.graphics.color_rendering)
+            previous = self.capture_colors.get(key)
+            if previous is not None:
+                return previous[1]
+            converted = color_operands_to_srgb(
+                spec, list(color), rendering=self.graphics.color_rendering
+            )
+            result = converted if converted is not None else color
+            if len(self.capture_colors) >= 4096:
+                self.capture_colors.clear()
+            self.capture_colors[key] = (spec, result)
+            return result
         return color
+
+    def capture_shading_dictionary(self, dictionary: dict) -> dict:
+        return {
+            key: self.resolver.deep_resolve(value)
+            if str(key) in {"ColorSpace", "Function", "Coords", "Domain", "Extend", "BBox"}
+            else value
+            for key, value in dictionary.items()
+        }
+
+    def nested_capture_state(self) -> TextState:
+        """A fresh interpreter sharing this capture's mask caches and recursion guards."""
+        from core_pdf.impl._impl.capture.interpreter import TextState
+
+        nested = TextState(
+            self.document,
+            hidden_layers=self.hidden_layers,
+            capture_ink_bounds=self.capture_ink_bounds,
+            capture_text_runs=self.capture_text_runs,
+        )
+        nested.capture_soft_masks = self.capture_soft_masks
+        nested.capture_mask_resources = self.capture_mask_resources
+        nested.capture_active_mask_groups = self.capture_active_mask_groups
+        return nested
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
         if pattern is None:
             return None
-        key = id(pattern)
+        rendering = self.graphics.color_rendering
+        initial_alpha_is_shape = (
+            pattern.alpha_is_shape if isinstance(pattern, PdfTilingPattern) else False
+        )
+        initial_text_knockout = (
+            pattern.text_knockout if isinstance(pattern, PdfTilingPattern) else True
+        )
+        key = (id(pattern), rendering, initial_alpha_is_shape, initial_text_knockout)
         if key in self.capture_patterns:
             return self.capture_patterns[key][1]
         result: PatternPaint | None = None
         if isinstance(pattern, PdfShadingPattern):
-            result = ShadingPattern(dict(pattern.dictionary))
+            if pattern.extgstate is not None:
+                values = {
+                    str(key): self.resolver.resolve(value)
+                    for key, value in pattern.extgstate.items()
+                    if str(key) in {"RI", "UseBlackPtComp"}
+                }
+                with suppress(ValueError):
+                    rendering = override_color_rendering(values, rendering)
+            result = ShadingPattern(
+                self.capture_shading_dictionary(pattern.dictionary), color_rendering=rendering
+            )
         elif isinstance(pattern, PdfTilingPattern):
-            from core_pdf.impl._impl.capture.interpreter import TextState
-
-            nested = TextState(self.document, hidden_layers=self.hidden_layers)
+            nested = self.nested_capture_state()
+            nested.graphics.render_intent = self.graphics.render_intent
+            nested.graphics.black_point_compensation = self.graphics.black_point_compensation
+            # ISO 32000-2 11.6.7: AIS comes from the defining stream's initial
+            # graphics state; the caller's current AIS only affects outer paint.
+            nested.graphics.alpha_is_shape = initial_alpha_is_shape
+            nested.graphics.text_knockout = initial_text_knockout
             try:
                 nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
             except Exception:
@@ -814,7 +1035,9 @@ class RecordingMethods(RecoveringTextState):
             if pattern.paint_type == 2:
                 base_color = pattern.base_color
                 if base_color is not None and pattern.base_color_spec is not None:
-                    converted = color_operands_to_srgb(pattern.base_color_spec, base_color)
+                    converted = color_operands_to_srgb(
+                        pattern.base_color_spec, base_color, rendering=rendering
+                    )
                     if converted is not None:
                         base_color = converted
                 for drawing in nested.drawings:
@@ -832,6 +1055,7 @@ class RecordingMethods(RecoveringTextState):
                 nested.drawings,
                 [glyph for glyph in nested.glyphs if glyph.has_paint],
                 nested.inline_images,
+                text_boundaries=nested.text_boundaries,
             )
         self.capture_patterns[key] = (pattern, result)
         return result

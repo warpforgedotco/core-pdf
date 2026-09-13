@@ -10,7 +10,9 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from io import BytesIO
-from typing import Iterable
+from typing import Any, Iterable
+
+import numpy
 
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl._impl.fonts.cid_unicode import resolve_cid_unicode_map
@@ -33,6 +35,7 @@ from core_pdf.impl._impl.fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl._impl.fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     TrueTypeFontProgram,
+    cached_truetype_program,
 )
 from core_pdf.impl._impl.fonts.font_program_type1 import (
     Type1FontProgram,
@@ -80,10 +83,9 @@ from core_pdf_spec.s_09_fonts.helpers import (
 )
 from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
+from core_pdf_spec.standards import SemanticContext
 
 if typing.TYPE_CHECKING:
-    from typing import Any
-
     from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
 
 
@@ -129,7 +131,9 @@ def internal_tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:
-        return TrueTypeFontProgram(font_file.data, cid_to_gid, use_cmap=inputs.descendant is None)
+        return cached_truetype_program(
+            font_file.data, cid_to_gid, use_cmap=inputs.descendant is None
+        )
     except ValueError:
         return None
 
@@ -366,9 +370,75 @@ def internal_font_is_vertical(
         return False
 
 
+class GlyphOutlineArrays:
+    """One glyph's paintable contours as coordinate columns.
+
+    ``spans`` holds the ``[start, end)`` slice of each contour with at least
+    two points, so a renderer transforms every point of the glyph in one
+    vectorized pass and slices the result back into subpaths. Text shows the
+    same glyph at the same scale many times, so the linear part of each
+    transform is kept per ``(a, b, c, d)``; an occurrence only adds its offset.
+    """
+
+    __slots__ = ("linear", "spans", "xs", "ys")
+
+    def __init__(
+        self,
+        xs: numpy.ndarray[Any, Any],
+        ys: numpy.ndarray[Any, Any],
+        spans: tuple[tuple[int, int], ...],
+    ) -> None:
+        self.xs = xs
+        self.ys = ys
+        self.spans = spans
+        self.linear: dict[
+            tuple[float, float, float, float],
+            tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]],
+        ] = {}
+
+    def linear_columns(
+        self, a: float, b: float, c: float, d: float
+    ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
+        """``x * a + y * c`` and ``x * b + y * d`` for every point, in that float order."""
+        key = (a, b, c, d)
+        columns = self.linear.get(key)
+        if columns is None:
+            if len(self.linear) >= internal_LINEAR_CACHE_LIMIT:
+                self.linear.clear()
+            xs = self.xs
+            ys = self.ys
+            columns = self.linear[key] = (xs * a + ys * c, xs * b + ys * d)
+        return columns
+
+
+internal_LINEAR_CACHE_LIMIT = 256
+
+
+def internal_outline_arrays(
+    contours: tuple[tuple[tuple[float, float], ...], ...],
+) -> GlyphOutlineArrays | None:
+    xs: list[float] = []
+    ys: list[float] = []
+    spans: list[tuple[int, int]] = []
+    for contour in contours:
+        if len(contour) < 2:
+            continue
+        start = len(xs)
+        for x, y in contour:
+            xs.append(x)
+            ys.append(y)
+        spans.append((start, len(xs)))
+    if not spans:
+        return None
+    return GlyphOutlineArrays(
+        numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64), tuple(spans)
+    )
+
+
 @dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
 class FontDecoder:
     font: dict[str, Any]
+    semantic_context: SemanticContext | None
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
@@ -400,20 +470,33 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
+    # Per-decoder memos. A page shows the same glyph many times; the
+    # embedded program's geometry for a code never changes after initialization.
+    internal_glyph_bbox_cache: dict[int, Rectangle | None]
+    internal_glyph_outline_cache: dict[
+        tuple[int, int | None, str], tuple[tuple[tuple[float, float], ...], ...]
+    ]
+    internal_glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
 
     def __init__(
         self,
         font: dict[str, Any],
         ligature_overrides: dict[int, str] | None = None,
         raster_font_provider: RasterFontProviderLike | None = None,
+        *,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
         self.font = font
+        self.semantic_context = semantic_context
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
         self.type3_glyph_names = None
         self.internal_initialize()
 
     def internal_initialize(self) -> None:
+        self.internal_glyph_bbox_cache = {}
+        self.internal_glyph_outline_cache = {}
+        self.internal_glyph_outline_array_cache = {}
         font = self.font
         subtype = font.get("Subtype")
         if subtype is not None:
@@ -462,6 +545,7 @@ class FontDecoder:
             builtin_encoding,
             differences,
             authoritative_builtin=builtin_encoding_authoritative,
+            context=self.semantic_context,
         )
         if builtin_encoding_authoritative:
             encoding_decode_table = tuple(
@@ -469,7 +553,9 @@ class FontDecoder:
             )
         else:
             key = base_encoding or ("Type3" if is_type3 else "")
-            encoding_decode_table = build_decode_table(key, differences)
+            encoding_decode_table = build_decode_table(
+                key, differences, context=self.semantic_context
+            )
 
         byte_decode_table: tuple[str, ...] | None = None
         if to_unicode is None and not is_cid_font:
@@ -984,6 +1070,14 @@ class FontDecoder:
         return ".notdef"
 
     def glyph_bbox(self, code: int) -> Rectangle | None:
+        cache = self.internal_glyph_bbox_cache
+        try:
+            return cache[code]
+        except KeyError:
+            box = cache[code] = self.internal_glyph_bbox_uncached(code)
+            return box
+
+    def internal_glyph_bbox_uncached(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
         program = self.font_program
@@ -1031,6 +1125,30 @@ class FontDecoder:
         """
         if code < 0:
             return ()
+        cache = self.internal_glyph_outline_cache
+        key = (code, gid, text)
+        contours = cache.get(key)
+        if contours is None:
+            contours = cache[key] = self.internal_glyph_outline_uncached(code, gid, text)
+        return contours
+
+    def glyph_outline_arrays(
+        self, code: int, gid: int | None = None, text: str = ""
+    ) -> GlyphOutlineArrays | None:
+        """Column form of ``glyph_outline`` for batched transforms; None paints nothing."""
+        if code < 0:
+            return None
+        cache = self.internal_glyph_outline_array_cache
+        key = (code, gid, text)
+        try:
+            return cache[key]
+        except KeyError:
+            arrays = cache[key] = internal_outline_arrays(self.glyph_outline(code, gid, text))
+            return arrays
+
+    def internal_glyph_outline_uncached(
+        self, code: int, gid: int | None, text: str
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
         glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
         if glyph_id is None:
             return ()

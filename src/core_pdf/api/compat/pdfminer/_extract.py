@@ -26,7 +26,7 @@ from ._projection import (
 PdfInput: TypeAlias = Any
 
 
-def extract_pages(  # noqa: C901
+def extract_pages(
     pdf_file: PdfInput,
     password: str = "",
     page_numbers: Iterable[int] | None = None,
@@ -48,28 +48,42 @@ def extract_pages(  # noqa: C901
         recovery_scan_all_revisions=False,
     )
     try:
-        yielded = 0
-        page_source: Iterable[tuple[int, PdfPage]]
-        if _unstructured_mode:
-            try:
-                page_source = tuple(internal_pdfminer_resolvable_pages(document))
-            except PdfError:
-                # Unstructured's fast path inherits pdfminer's object-scan
-                # recovery for documents without a usable catalog.  Prefer
-                # the declared tree when it exists so stale incremental
-                # revisions do not appear as duplicate pages.
-                page_source = tuple(enumerate(document.pages))
-        else:
-            page_source = internal_pdfminer_resolvable_pages(document)
-        for page_index, page in page_source:
-            if selected is not None and page_index not in selected:
-                continue
-            if maxpages and yielded >= maxpages:
-                break
-            yield internal_project_page(page, params, unstructured_mode=_unstructured_mode)
-            yielded += 1
+        yield from internal_extract_document_pages(
+            document, params, selected, maxpages, unstructured_mode=_unstructured_mode
+        )
     finally:
         document.close()
+
+
+def internal_extract_document_pages(
+    document: PdfDocument,
+    params: LAParams,
+    selected: set[int] | None = None,
+    maxpages: int = 0,
+    *,
+    unstructured_mode: bool = False,
+) -> Iterator[LTPage]:
+    """Project a borrowed document; its caller retains ownership and closes it."""
+    yielded = 0
+    page_source: Iterable[tuple[int, PdfPage]]
+    if unstructured_mode:
+        try:
+            page_source = tuple(internal_pdfminer_resolvable_pages(document))
+        except PdfError:
+            # Unstructured's fast path inherits pdfminer's object-scan
+            # recovery for documents without a usable catalog.  Prefer
+            # the declared tree when it exists so stale incremental
+            # revisions do not appear as duplicate pages.
+            page_source = tuple(enumerate(document.pages))
+    else:
+        page_source = internal_pdfminer_resolvable_pages(document)
+    for page_index, page in page_source:
+        if selected is not None and page_index not in selected:
+            continue
+        if maxpages and yielded >= maxpages:
+            break
+        yield internal_project_page(page, params, unstructured_mode=unstructured_mode)
+        yielded += 1
 
 
 def extract_text(

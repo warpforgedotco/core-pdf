@@ -38,8 +38,10 @@ from core_pdf.impl.types import (
     PdfSource,
 )
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+from core_pdf_spec.standards import DocumentStandards
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.capture.program import PageProgram
     from core_pdf.impl._impl.document.records import RawFormField
     from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
 
@@ -105,6 +107,7 @@ class PdfPage(EnginePdfPage):
                 rect=rect_tuple(drawing.rect),
             )
             for drawing in drawings
+            if drawing.kind not in {"scope-begin", "scope-end"}
         )
 
     def get_drawings(self) -> tuple[DrawingRecord, ...]:
@@ -118,7 +121,20 @@ class PdfPage(EnginePdfPage):
     ) -> tuple[ImageRecord, ...]:
         if not include_inline and not include_xobjects:
             return ()
-        program = self.get_page_program()
+        return self.internal_extract_program_images(
+            self.get_page_program(),
+            include_inline=include_inline,
+            include_xobjects=include_xobjects,
+        )
+
+    def internal_extract_program_images(
+        self,
+        program: PageProgram,
+        *,
+        include_inline: bool = True,
+        include_xobjects: bool = True,
+    ) -> tuple[ImageRecord, ...]:
+        """Decode the image records of an already captured page program."""
         images: list[ImageRecord] = []
         if include_xobjects:
             images.extend(
@@ -191,6 +207,7 @@ class PdfPage(EnginePdfPage):
             page_program=self.get_page_program(fields=fields, annotations=annotations or None),
             fields=fields,
             annotations=annotations,
+            semantic_context=self.document.resolver.semantic_context,
         )
 
 
@@ -248,6 +265,12 @@ class PdfDocument(EnginePdfDocument["PdfPage"]):
         """Return the document metadata in the canonical high-level shape."""
         value = self.get_metadata()
         return dict(value) if isinstance(value, dict) else {}
+
+    @property
+    def standards(self) -> DocumentStandards:
+        """Return declared PDF versions, extensions, and unvalidated profile claims."""
+        with self.acquire_operation():
+            return self.get_standards()
 
     @property
     def outlines(self) -> tuple[Any, ...]:

@@ -16,6 +16,7 @@ from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsup
 from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
+from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import Decipher
@@ -23,6 +24,7 @@ from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
+from core_pdf_spec.standards import SemanticContext
 
 
 class ObjectResolver(SyntaxResolver):
@@ -35,8 +37,9 @@ class ObjectResolver(SyntaxResolver):
         *,
         decipher: Decipher | None = None,
         recover_missing: bool = False,
+        semantic_context: SemanticContext | None = None,
     ) -> None:
-        super().__init__(data, xref, decipher=decipher)
+        super().__init__(data, xref, decipher=decipher, semantic_context=semantic_context)
         self.recover_missing = recover_missing
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
@@ -55,15 +58,30 @@ class ObjectResolver(SyntaxResolver):
             self.release_lexer(lexer)
 
     def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
-        return PdfObjectStream(stream)
+        return PdfObjectStream(stream, semantic_context=self.semantic_context)
 
-    def load_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
+    def load_indirect_object(
+        self, lexer: SyntaxLexer, offset: int, *, expected_reference: PdfReference
+    ) -> object:
         try:
-            return super().load_indirect_object(lexer, offset)
+            # Reader xref recovery deliberately accepts the actual header at
+            # the selected offset, including a generation-zero substitute.
+            # Rejecting that identity before parsing would redirect a usable
+            # object into nearby-offset recovery and could select its neighbor.
+            lexer.rewind(offset)
+            return lexer.parse_indirect_object()
         except (PdfDecryptionError, PdfUnsupportedError):
             raise
         except Exception:
             return self.recover_indirect_object(lexer, offset)
+
+    def load_compressed_object(self, ref: PdfReference, entry: PdfXRefEntry) -> object:
+        """Retain demanded-number recovery for damaged compressed-entry ordinals."""
+        stream_number = entry.object_stream
+        if stream_number is None:
+            return None
+        container = self.get_object_stream(stream_number)
+        return None if container is None else container.get(ref.object_number)
 
     def resolve_stream(self, stream: PdfStream) -> PdfStream:
         stream = super().resolve_stream(stream)
@@ -78,6 +96,7 @@ class ObjectResolver(SyntaxResolver):
             self.data,
             reference_resolver=self.resolve,
             decipher=self.decipher,
+            semantic_context=self.semantic_context,
         )
 
     def internal_recovery_offsets(self, lexer: SyntaxLexer) -> dict[int, tuple[int, ...]]:
@@ -135,7 +154,7 @@ class ObjectResolver(SyntaxResolver):
         if name is not None:
             return name
         if type(val) is PdfString:
-            return decode_pdf_text_string(val.data)
+            return self.decode_text(val.data)
         return None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
@@ -148,7 +167,7 @@ class ObjectResolver(SyntaxResolver):
         return parse_float(self.resolve(value), default=default)
 
     def resolve_name(self, value: object) -> str | None:
-        return recover_pdf_name(self.internal_resolve_chain(value))
+        return recover_pdf_name(resolve_reference_chain(value, self.resolve))
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         if type(value) is int:
@@ -165,4 +184,4 @@ class ObjectResolver(SyntaxResolver):
         return box
 
     def decode_text(self, data: bytes) -> str:
-        return decode_pdf_text_string(data)
+        return decode_pdf_text_string(data, context=self.semantic_context)

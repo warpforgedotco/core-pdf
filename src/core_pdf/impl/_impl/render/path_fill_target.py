@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -26,6 +26,15 @@ from core_pdf.impl._impl.render.paths import (
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
+
+
+def internal_edge_tuples(
+    edge_array: numpy.ndarray[Any, Any] | None,
+) -> list[tuple[float, float, float, float]]:
+    """Materialize a precomputed edge array as the tuples the scanline paths take."""
+    if edge_array is None:
+        return []
+    return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
 
 
 class internal_PathFillTargetMixin:
@@ -129,6 +138,7 @@ class internal_PathFillTargetMixin:
                             page_pixels[py, visible_start:visible_end] = rgba
                         else:
                             pixel_view(pixels)[py, visible_start:visible_end] = rgba
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if rectangular_clip and normal_fast:
                         blend_normal_solid_span(row, visible_start, visible_end, rgba)
@@ -141,6 +151,7 @@ class internal_PathFillTargetMixin:
                             normal_target[py, visible_start:visible_end],
                             rgba,
                         )
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if (
                         blend_target is not None
@@ -150,7 +161,9 @@ class internal_PathFillTargetMixin:
                             blend_target[py, visible_start:visible_end],
                             rgba,
                             blend_mode,
+                            semantic_context=self.semantic_context,
                         )
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     for px in range(visible_start, visible_end):
                         if normal_fast:
@@ -231,7 +244,11 @@ class internal_PathFillTargetMixin:
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
         fill_rule: str = "nonzero",
+        *,
+        bbox: tuple[float, float, float, float] | None = None,
+        edge_array: numpy.ndarray[Any, Any] | None = None,
     ) -> None:
+        """Fill ``path``; ``bbox`` and ``edge_array`` are the path's own, precomputed."""
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
@@ -255,10 +272,17 @@ class internal_PathFillTargetMixin:
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
             return
-        edges = path.fill_edges()
-        if not edges:
-            return
-        bbox = clip.path_bbox(path)
+        edges: list[tuple[float, float, float, float]] | None
+        if edge_array is None:
+            edges = path.fill_edges()
+            if not edges:
+                return
+        else:
+            edges = None
+            if len(edge_array) == 0:
+                return
+        if bbox is None:
+            bbox = clip.path_bbox(path)
         if bbox is None:
             return
         fast_bbox: tuple[float, float, float, float] | None = bbox
@@ -272,11 +296,17 @@ class internal_PathFillTargetMixin:
         if (
             rgba == (0, 0, 0, 255)
             and blend_mode is None
+            # This shortcut uses a different scanline approximation from the
+            # general fill. Tracked shape must not change with paint opacity
+            # or color, including a zero-opacity knockout element.
+            and self.group_source_shape is None
             and fast_bbox is not None
             and fill_rule == "nonzero"
-            and fast_fill_path(edges, fast_bbox)
         ):
-            return
+            if edges is None:
+                edges = internal_edge_tuples(edge_array)
+            if fast_fill_path(edges, fast_bbox):
+                return
         clipped_box = clipped_pixel_box(bbox)
         if clipped_box is None:
             return
@@ -291,7 +321,9 @@ class internal_PathFillTargetMixin:
             # result is exact rather than quantized to a 4x4 sample grid. This
             # runs first because it needs neither the y-extent columns nor the
             # sample-path array built below, and it takes ~99% of fills.
-            source = numpy.asarray(edges, dtype=numpy.float64)
+            source = (
+                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
+            )
             sloped = source[:, 1] != source[:, 3]
             if not sloped.any():
                 return
@@ -302,12 +334,20 @@ class internal_PathFillTargetMixin:
             device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
             device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
             coverage = internal_signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
+            alpha_plane = numpy.rint(coverage * rgba[3]).astype(numpy.uint8)
             internal_blend_normal_alpha_array_numpy(
                 pixel_view(pixels)[iy0:iy1, ix0:ix1],
                 rgba,
-                numpy.rint(coverage * rgba[3]).astype(numpy.uint8),
+                alpha_plane,
             )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
+            if self.group_source_shape is not None:
+                self.record_source_shape(
+                    slice(iy0, iy1), slice(ix0, ix1), numpy.rint(coverage * 255).astype(numpy.uint8)
+                )
             return
+        if edges is None:
+            edges = internal_edge_tuples(edge_array)
         edge_segments = [
             (
                 ex0,
@@ -329,6 +369,7 @@ class internal_PathFillTargetMixin:
             fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
             return
         samples = 4
+        track_shape = self.group_source_shape is not None
         # Sample every scanline of the box up front. Called per pixel row this
         # handed the kernel four y values at a time, so the numpy work was pure
         # call overhead; one call per fill amortizes it over the whole box.
@@ -388,13 +429,23 @@ class internal_PathFillTargetMixin:
                         numpy.uint8
                     )
                     target = pixel_view(pixels)[py, ix0:ix1]
+                    alpha_plane = numpy.rint(
+                        coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
+                    ).astype(numpy.uint8)
                     internal_blend_normal_alpha_array_numpy(
                         target,
                         rgba,
-                        numpy.rint(
-                            coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
-                        ).astype(numpy.uint8),
+                        alpha_plane,
                     )
+                    self.record_source_alpha(py, slice(ix0, ix1), alpha_plane)
+                    if self.group_source_shape is not None:
+                        self.record_source_shape(
+                            py,
+                            slice(ix0, ix1),
+                            numpy.rint(
+                                coverage.astype(numpy.float32) * 255 / (samples * samples)
+                            ).astype(numpy.uint8),
+                        )
                 continue
             for px in range(ix0, ix1):
                 covered = 0
@@ -413,14 +464,18 @@ class internal_PathFillTargetMixin:
                     if not rectangular_clip and not pixel_in_clip(px, py):
                         continue
                     alpha = max(
-                        1,
+                        0,
                         min(255, round(rgba[3] * covered / (samples * samples))),
                     )
+                    shape = round(255 * covered / (samples * samples)) if track_shape else 255
                     if normal_fast:
-                        blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], alpha)
+                        blend_normal_pixel(
+                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
+                        )
                     else:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
                             blend_resolved_mode,
+                            shape=shape,
                         )

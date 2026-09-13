@@ -34,9 +34,14 @@ def decode_jpeg_image(
 
 
 def decode_jpx_image(
-    data: bytes | memoryview, *, out: numpy.ndarray[Any, Any] | None = None
+    data: bytes | memoryview,
+    *,
+    out: numpy.ndarray[Any, Any] | None = None,
+    preserve_precision: bool = False,
 ) -> numpy.ndarray[Any, Any]:
-    return internal_decode(codec_backends.decode_jpx_image, data, out=out)
+    return internal_decode(
+        codec_backends.decode_jpx_image, data, out=out, preserve_precision=preserve_precision
+    )
 
 
 def decode_jpeg(data: bytes, parms: object) -> bytes:

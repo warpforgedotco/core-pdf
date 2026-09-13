@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Iterator
+from functools import partial
 from typing import cast
 
 from core_pdf.impl._impl.document.page_tree import (
@@ -25,9 +26,10 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfObject,
     ResolvedObjectCache,
 )
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, iter_xref_revisions, merge_xref_sections
+from core_pdf_spec.standards import SemanticContext
 
-TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
+TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 
 
 class DocumentXRefMixin:
@@ -38,18 +40,28 @@ class DocumentXRefMixin:
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
 
+    @property
+    def internal_xref_context(self) -> SemanticContext | None:
+        """Use selected semantics after declaration discovery has completed."""
+        resolver: ObjectResolver | None = getattr(self, "resolver", None)
+        return None if resolver is None else resolver.semantic_context
+
     def strict_xref_validation_error(self) -> str | None:
         """Return the syntax error hidden by native xref/object recovery, if any."""
-        start = XRefScanner.find_startxref(self.raw_data)
+        start = XRefScanner.find_startxref(
+            self.raw_data, semantic_context=self.internal_xref_context
+        )
         if start is None:
             return None
         try:
-            XRefScanner.load_section_chain(
+            read_section = partial(
+                XRefScanner.recover_section_at,
                 self.raw_data,
-                start,
-                set(),
                 recover_malformed_objects=False,
+                semantic_context=self.internal_xref_context,
             )
+            for _revision in iter_xref_revisions(start, read_section):
+                pass
         except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
             return str(error)
         return None
@@ -58,12 +70,13 @@ class DocumentXRefMixin:
         return XRefScanner.brute_force_scan(
             self.raw_data,
             stop_at_first_trailer=not self.recovery_scan_all_revisions,
+            semantic_context=self.internal_xref_context,
         )
 
     def scan_xref(self) -> None:
         data = self.raw_data
         try:
-            start = XRefScanner.find_startxref(data)
+            start = XRefScanner.find_startxref(data, semantic_context=self.internal_xref_context)
         except ValueError as exc:
             raise PdfParseError("invalid xref section") from exc
         if start is None and b"startxref" in data:
@@ -74,7 +87,14 @@ class DocumentXRefMixin:
         recovery_reason = None
         if start is not None:
             try:
-                self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
+                read_section = partial(
+                    XRefScanner.recover_section_at,
+                    data,
+                    semantic_context=self.internal_xref_context,
+                )
+                revisions = list(iter_xref_revisions(start, read_section))
+                self.xref = merge_xref_sections(revision.entries for revision in revisions)
+                self.trailer_dict = revisions[0].trailer
                 self.repair_stale_xref_offsets()
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
                 root_ref = self.trailer_dict.get("Root")
@@ -166,7 +186,11 @@ class DocumentXRefMixin:
         search_start = max(0, offset - 1024)
         search_end = min(len(data), offset + 1024)
         for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
-            data, search_start, search_end, allow_prefix_before_start=True
+            data,
+            search_start,
+            search_end,
+            allow_prefix_before_start=True,
+            semantic_context=self.internal_xref_context,
         ):
             if (
                 object_number == expected_object_number
@@ -216,7 +240,11 @@ class DocumentXRefMixin:
 
         search_end = min(data_len, offset + 64)
         for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
-            data, offset, search_end, allow_prefix_before_start=True
+            data,
+            offset,
+            search_end,
+            allow_prefix_before_start=True,
+            semantic_context=self.internal_xref_context,
         ):
             return (
                 parsed_offset == offset
@@ -229,6 +257,7 @@ class DocumentXRefMixin:
         resolver = ObjectResolver(
             self.raw_data,
             self.xref,
+            semantic_context=self.internal_xref_context,
         )
         try:
             root = resolver.resolve(root_ref)
@@ -257,8 +286,9 @@ class DocumentXRefMixin:
         resolver = ObjectResolver(
             self.raw_data,
             self.xref,
+            semantic_context=self.internal_xref_context,
         )
-        lexer = PdfLexer(data)
+        lexer = PdfLexer(data, semantic_context=self.internal_xref_context)
         entries_by_ref = {
             (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
         }
@@ -426,7 +456,9 @@ class DocumentXRefMixin:
 
         for candidate in self.iter_literal_trailer_dictionaries():
             for key in TRAILER_METADATA_KEYS:
-                value = candidate.get(key)
+                if key not in candidate:
+                    continue
+                value = candidate[key]
                 if self.is_valid_trailer_metadata_value(key, value):
                     metadata[key] = value
 
@@ -438,14 +470,16 @@ class DocumentXRefMixin:
 
         for candidate in self.iter_recoverable_xref_stream_dictionaries():
             for key in missing_keys:
-                value = candidate.get(key)
+                if key not in candidate:
+                    continue
+                value = candidate[key]
                 if self.is_valid_trailer_metadata_value(key, value):
                     metadata[key] = value
         return metadata
 
     def iter_literal_trailer_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data
-        lexer = PdfLexer(data)
+        lexer = PdfLexer(data, semantic_context=self.internal_xref_context)
         try:
             search_from = 0
             while True:
@@ -466,7 +500,7 @@ class DocumentXRefMixin:
             lexer.close()
 
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
-        lexer = PdfLexer(self.raw_data)
+        lexer = PdfLexer(self.raw_data, semantic_context=self.internal_xref_context)
         try:
             for key, entry in sorted(self.xref.items()):
                 if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
@@ -492,8 +526,10 @@ class DocumentXRefMixin:
         if key == "ID":
             return isinstance(value, (list, tuple)) and len(value) > 0
         if key == "Encrypt":
-            return isinstance(value, (PdfReference, dict))
-        return False
+            # Malformed security declarations must reach initialization and
+            # fail there, rather than disappear during xref recovery.
+            return value is not None
+        return key == "AuthCode"
 
 
 __all__ = ("DocumentXRefMixin", "MAX_PAGE_TREE_DEPTH", "TRAILER_METADATA_KEYS")

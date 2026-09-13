@@ -7,8 +7,10 @@ import pytest
 
 from core_pdf_spec.s_08_graphics.color_math import (
     ColorSamples,
+    compensate_black_point_xyz,
     lab_components_to_xyz,
     lab_to_xyz,
+    xyz_to_lab_components,
 )
 
 
@@ -67,6 +69,8 @@ def test_normalized_lab_wrapper_preserves_original_float32_results() -> None:
     )
     # Captured from the public function before adding the components interface.
     # Bit patterns pin its normalization and arithmetic order, including negatives.
+    # The cubes go through numpy's float32 power, whose SIMD variants round
+    # differently across CPU generations, so allow the resulting ULP or two.
     expected_bits = numpy.array(
         [
             [3103783820, 0, 968314105],
@@ -77,7 +81,8 @@ def test_normalized_lab_wrapper_preserves_original_float32_results() -> None:
         dtype=numpy.uint32,
     )
     result = lab_to_xyz(values, (0.9505, 1.0, 1.089))
-    numpy.testing.assert_array_equal(result.view(numpy.uint32), expected_bits)
+    assert result.dtype == numpy.float32
+    numpy.testing.assert_array_max_ulp(result, expected_bits.view(numpy.float32), maxulp=2)
 
 
 @pytest.mark.parametrize("convert", [lab_components_to_xyz, lab_to_xyz])
@@ -103,3 +108,59 @@ def test_lab_conversion_retains_shape_and_leaves_readonly_inputs_untouched(
     numpy.testing.assert_array_equal(values, original)
     numpy.testing.assert_array_equal(backing, backing_original)
     numpy.testing.assert_array_equal(result, convert(original, (0.9505, 1.0, 1.089)))
+
+
+def test_xyz_inverse_matches_independent_lab_vectors_across_piecewise_transition() -> None:
+    # CIE 1976 equations: these XYZ values exercise both the linear and cube-root
+    # branches, with unequal channels to detect transposition and sign errors.
+    xyz = numpy.array([[0, 0, 0], [108, 216, 343]], dtype=numpy.float64) / 24389
+    numpy.testing.assert_allclose(
+        xyz_to_lab_components(xyz, (1, 1, 1)),
+        [[0, 0, 0], [8, -500 / 29, -200 / 29]],
+        atol=1e-12,
+    )
+    xyz = numpy.array([[0.125, 0.216, 0.343], [0.343, 0.125, 0.027]])
+    white = (0.9505, 1.0, 1.089)
+    numpy.testing.assert_allclose(
+        xyz_to_lab_components(xyz * white, white), [[53.6, -50, -20], [42, 100, 40]], atol=1e-12
+    )
+
+
+def test_black_point_compensation_maps_endpoints_and_preserves_white() -> None:
+    # ISO 18619's endpoint stage fixes white and maps source black to destination
+    # black. Endpoint detection and adaptation are the caller's responsibility.
+    white = (0.9642, 1.0, 0.8249)
+    source = (0.04, 0.03, 0.02)
+    destination = (0.01, 0.02, 0.03)
+    values = numpy.array([source, white, numpy.mean([source, white], axis=0)])
+    values.flags.writeable = False
+    result = compensate_black_point_xyz(values, white, source, destination)
+    numpy.testing.assert_allclose(result[0], destination, atol=1e-15)
+    numpy.testing.assert_allclose(result[1], white, atol=1e-15)
+    numpy.testing.assert_allclose(result[2], numpy.mean([destination, white], axis=0), atol=1e-15)
+    numpy.testing.assert_allclose(
+        compensate_black_point_xyz(result, white, destination, source), values, atol=1e-15
+    )
+    numpy.testing.assert_array_equal(values[0], source)
+
+
+@pytest.mark.parametrize("endpoint", [(float("nan"), 0, 0), (-1, 0, 0), (1, 0, 0)])
+def test_black_point_compensation_rejects_invalid_endpoints(
+    endpoint: tuple[float, float, float],
+) -> None:
+    with pytest.raises(ValueError, match="endpoints"):
+        compensate_black_point_xyz(numpy.zeros((1, 3)), (1, 1, 1), endpoint, (0, 0, 0))
+
+
+def test_color_equations_accept_empty_sample_batches() -> None:
+    values = numpy.empty((0, 3))
+    assert xyz_to_lab_components(values, (1, 1, 1)).shape == (0, 3)
+    assert compensate_black_point_xyz(values, (1, 1, 1), (0, 0, 0), (0, 0, 0)).shape == (0, 3)
+
+
+def test_color_equations_reject_nonfinite_xyz() -> None:
+    values = numpy.array([[numpy.nan, 0, 0]])
+    with pytest.raises(ValueError, match="XYZ"):
+        xyz_to_lab_components(values, (1, 1, 1))
+    with pytest.raises(ValueError, match="XYZ"):
+        compensate_black_point_xyz(values, (1, 1, 1), (0, 0, 0), (0, 0, 0))

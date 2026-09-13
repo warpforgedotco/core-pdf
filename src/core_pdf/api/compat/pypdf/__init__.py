@@ -227,6 +227,7 @@ class PdfPageObject:
             crop_box = source_page.crop_box or media_box
             self.mediabox = Rectangle(*media_box)
             self.cropbox = Rectangle(*crop_box)
+            self.user_unit = source_page.user_unit
             raw_rotation = source_page.inherited_values.get("Rotate")
             self.rotation = (
                 int(raw_rotation)
@@ -236,6 +237,7 @@ class PdfPageObject:
         else:
             self.mediabox = Rectangle(0, 0, page.width, page.height)
             self.cropbox = Rectangle(*(page.cropbox or self.mediabox))
+            self.user_unit = page.user_unit
             self.rotation = page.rotation
 
     def _capability_view(self) -> Any:

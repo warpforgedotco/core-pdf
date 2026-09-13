@@ -177,6 +177,7 @@ def capture_annotation_appearances(
             drawing_start = len(state.drawings)
             image_start = len(state.inline_images)
             line_start = len(state.lines)
+            text_boundary_start = len(state.text_boundaries)
             state.capture_source = "annotation_appearance"
             try:
                 state.stream_executor.consume(
@@ -204,6 +205,7 @@ def capture_annotation_appearances(
                             drawings=tuple(state.drawings[drawing_start:]),
                             inline_images=tuple(state.inline_images[image_start:]),
                             lines=tuple(state.lines[line_start:]),
+                            text_boundaries=tuple(state.text_boundaries[text_boundary_start:]),
                         ),
                     )
                 )
@@ -235,6 +237,7 @@ def capture_page_program(
         drawings=tuple(state.drawings),
         inline_images=tuple(state.inline_images),
         lines=tuple(state.lines),
+        text_boundaries=tuple(state.text_boundaries),
     )
     return PageProgram(
         body=body,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import heapq
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from math import ceil
 
 from core_pdf.impl._impl.model.geometry import bbox_union
 
@@ -326,6 +327,52 @@ class _LayoutPlane:
                 yield item
 
 
+class internal_SparseLayoutPlane(_LayoutPlane):
+    """Preserve virtual-grid query order without allocating coordinate-sized grids."""
+
+    __slots__ = ()
+
+    def add(self, item: LTComponent | _TextGroup) -> None:
+        self.sequence.append(item)
+        self.objects[id(item)] = item
+
+    def remove(self, item: LTComponent | _TextGroup) -> None:
+        self.objects.pop(id(item), None)
+
+    def internal_grid_bounds(
+        self, bbox: tuple[float, float, float, float]
+    ) -> tuple[int, int, int, int]:
+        x0, y0, x1, y1 = bbox
+        left, bottom, right, top = self.bbox
+        if x1 <= left or right <= x0 or y1 <= bottom or top <= y0:
+            return 0, 0, 0, 0
+        return (
+            int(max(left, x0)) // self.gridsize,
+            int(max(bottom, y0)) // self.gridsize,
+            int(min(right, x1) + self.gridsize) // self.gridsize,
+            int(min(top, y1) + self.gridsize) // self.gridsize,
+        )
+
+    def find(self, bbox: tuple[float, float, float, float]) -> Iterator[LTComponent | _TextGroup]:
+        x0, y0, x1, y1 = bbox
+        left, bottom, right, top = self.internal_grid_bounds(bbox)
+        if left >= right or bottom >= top:
+            return
+        candidates: list[tuple[int, int, LTComponent | _TextGroup]] = []
+        for item in self.objects.values():
+            ix0, iy0, ix1, iy1 = item.bbox
+            if ix1 <= x0 or x1 <= ix0 or iy1 <= y0 or y1 <= iy0:
+                continue
+            il, ib, ir, it = self.internal_grid_bounds(item.bbox)
+            first_x, first_y = max(left, il), max(bottom, ib)
+            if first_x < min(right, ir) and first_y < min(top, it):
+                candidates.append((first_y, first_x, item))
+        # The ordinary plane visits cells row-first, then objects in insertion
+        # order. Stable sorting by the first shared cell reproduces that order.
+        candidates.sort(key=lambda candidate: candidate[:2])
+        yield from (candidate[2] for candidate in candidates)
+
+
 def _group_lines(
     lines: list[LTTextLine],
     margin: float,
@@ -334,7 +381,12 @@ def _group_lines(
     if not lines:
         return []
     plane_bbox = page_bbox or bbox_union(line.bbox for line in lines) or lines[0].bbox
-    plane = _LayoutPlane(plane_bbox)
+    # Use sparse queries only when estimated grid insertion work exceeds both
+    # a small-grid budget and the cost of scanning all lines for every query.
+    # Large pages containing many short lines therefore keep the normal index.
+    grid_entries = sum((line.width / 50 + 1) * (line.height / 50 + 1) for line in lines)
+    sparse_queries = grid_entries > max(65536, len(lines) ** 2)
+    plane = internal_SparseLayoutPlane(plane_bbox) if sparse_queries else _LayoutPlane(plane_bbox)
     for line in lines:
         plane.add(line)
     groups_by_line: dict[int, list[LTTextLine]] = {}
@@ -346,6 +398,7 @@ def _group_lines(
             else (line.x0, line.y0 - tolerance, line.x1, line.y1 + tolerance)
         )
         members: list[LTTextLine] = [line]
+        merged_groups: set[int] = set()
         for candidate in plane.find(query):
             if not isinstance(candidate, LTTextLine) or not _lines_are_neighbors(
                 line, candidate, margin
@@ -353,7 +406,11 @@ def _group_lines(
                 continue
             members.append(candidate)
             previous = groups_by_line.pop(id(candidate), None)
-            if previous is not None:
+            if previous is not None and id(previous) not in merged_groups:
+                # Neighboring lines can all refer to the same group. Expanding
+                # it once preserves first-occurrence order without copying the
+                # full group again for each of its neighboring members.
+                merged_groups.add(id(previous))
                 members.extend(previous)
         unique_members = list({id(member): member for member in members}.values())
         for member in unique_members:
@@ -406,7 +463,13 @@ def _reading_order(
         return boxes
 
     active: dict[int, LTTextBox | _TextGroup] = {id(box): box for box in boxes}
-    plane_order = list(active)
+    plane_bbox = page_bbox or bbox_union(box.bbox for box in boxes) or boxes[0].bbox
+    # Merged groups can span the whole page. Bound the number of grid cells
+    # even when a document uses unusually large coordinates or page dimensions.
+    gridsize = max(50, ceil(max(plane_bbox[2] - plane_bbox[0], plane_bbox[3] - plane_bbox[1]) / 64))
+    plane = _LayoutPlane(plane_bbox, gridsize=gridsize)
+    for box in boxes:
+        plane.add(box)
     # Heap entries use object identity like pdfminer itself. Keep merged groups
     # alive until ordering completes so CPython cannot recycle an id while a
     # stale entry for the former object is still queued.
@@ -427,6 +490,7 @@ def _reading_order(
         for second in boxes[first_index + 1 :]:
             second_id = id(second)
             heapq.heappush(queue, (False, area_gap(first, second), first_id, second_id))
+    compact_at = len(active) // 2
     while queue:
         skip_between, _distance, first_id, second_id = heapq.heappop(queue)
         if first_id not in active or second_id not in active:
@@ -442,27 +506,16 @@ def _reading_order(
                 min(query[2], page_bbox[2]),
                 min(query[3], page_bbox[3]),
             )
-        between = []
-        if query[0] < query[2] and query[1] < query[3]:
-            for item_id in plane_order:
-                if item_id in {first_id, second_id} or item_id not in active:
-                    continue
-                item = active[item_id]
-                if page_bbox is not None and (
-                    item.bbox[2] <= page_bbox[0]
-                    or page_bbox[2] <= item.bbox[0]
-                    or item.bbox[3] <= page_bbox[1]
-                    or page_bbox[3] <= item.bbox[1]
-                ):
-                    continue
-                if not (
-                    item.bbox[2] <= query[0]
-                    or query[2] <= item.bbox[0]
-                    or item.bbox[3] <= query[1]
-                    or query[3] <= item.bbox[1]
-                ):
-                    between.append(item)
-        if between and not skip_between:
+        # Only existence matters: query local candidates and stop at the
+        # first blocker instead of collecting every intersecting object.
+        if (
+            not skip_between
+            and query[0] < query[2]
+            and query[1] < query[3]
+            and any(
+                item is not active_first and item is not active_second for item in plane.find(query)
+            )
+        ):
             heapq.heappush(queue, (True, _distance, first_id, second_id))
             continue
         vertical = (
@@ -475,19 +528,38 @@ def _reading_order(
         retained_groups.append(group)
         del active[first_id], active[second_id]
         group_id = id(group)
-        for other_id in plane_order:
-            if other_id not in active:
-                continue
-            other = active[other_id]
+        if not active:
+            # Every remaining queued pair refers to a removed object. The
+            # completed root needs neither index updates nor heap draining.
+            active[group_id] = group
+            break
+        plane.remove(active_first)
+        plane.remove(active_second)
+        for other_id, other in active.items():
             heapq.heappush(queue, (False, area_gap(group, other), group_id, other_id))
         active[group_id] = group
-        plane_order.append(group_id)
+        plane.add(group)
+        if len(active) <= compact_at:
+            # There is at most one queued entry per surviving pair. Compact
+            # only when at least half the heap must be obsolete, and inspect
+            # at geometrically decreasing sizes to bound maintenance work.
+            if len(queue) > len(active) * (len(active) - 1):
+                queue = [entry for entry in queue if entry[2] in active and entry[3] in active]
+                heapq.heapify(queue)
+            compact_at = len(active) // 2
 
-    root = next(iter(active.values()))
+    return internal_flatten_text_group(next(iter(active.values())), boxes_flow)
 
-    def flatten(item: LTTextBox | _TextGroup) -> list[LTTextBox]:
+
+def internal_flatten_text_group(root: LTTextBox | _TextGroup, boxes_flow: float) -> list[LTTextBox]:
+    """Visit ordered leaves once without copying subtree results or recursive frames."""
+    result: list[LTTextBox] = []
+    pending: list[LTTextBox | _TextGroup] = [root]
+    while pending:
+        item = pending.pop()
         if isinstance(item, LTTextBox):
-            return [item]
+            result.append(item)
+            continue
         if item.vertical:
             ordered = sorted(
                 item.children,
@@ -504,6 +576,5 @@ def _reading_order(
                     - (1 + boxes_flow) * (child.bbox[1] + child.bbox[3])
                 ),
             )
-        return [box for child in ordered for box in flatten(child)]
-
-    return flatten(root)
+        pending.extend(reversed(ordered))
+    return result

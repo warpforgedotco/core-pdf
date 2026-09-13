@@ -5,13 +5,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 
-from core_pdf.impl._impl.graphics.color_spec import describe_color_space
+from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
+from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints, parse_color_space
 from core_pdf.impl._impl.graphics.functions import (
     internal_compile_pdf_function,
     internal_number_array,
 )
 from core_pdf.impl._impl.runtime.scalars import parse_int
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
 
@@ -27,14 +30,19 @@ class PreparedShading:
     color_model: str
     bbox: tuple[float, float, float, float] | None
     internal_evaluator: Callable[[float], tuple[float, ...]] = field(repr=False, compare=False)
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
     def evaluate(self, value: float) -> tuple[float, ...]:
         return self.internal_evaluator(value)
 
 
-def prepare_shading(dictionary: object) -> PreparedShading | None:
+def prepare_shading(
+    dictionary: object, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+) -> PreparedShading | None:
     """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
+        return None
+    if not internal_color_space_paints(dictionary.get("ColorSpace")):
         return None
     shading_type = parse_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:
@@ -67,17 +75,30 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
         normalized["BBox"] = bbox
     try:
         spec = parse_shading(normalized, compile_function=internal_compile_pdf_function)
+        space = parse_color_space(spec.color_space)
     except ValueError:
         return None
+    evaluator = spec.evaluator
+    color_model = space.kind
+    if space.kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+        color_model = "DeviceRGB"
+
+        @lru_cache(maxsize=8192)
+        def convert(value: float) -> tuple[float, ...]:
+            components = spec.evaluator(value)
+            return color_operands_to_srgb(space, components, rendering=rendering) or components
+
+        evaluator = convert
     return PreparedShading(
         spec.shading_type,
         coords,
         spec.domain,
         spec.extend_start,
         spec.extend_end,
-        describe_color_space(dictionary.get("ColorSpace")) or "DeviceRGB",
+        color_model,
         spec.bbox,
-        spec.evaluator,
+        evaluator,
+        rendering,
     )
 
 

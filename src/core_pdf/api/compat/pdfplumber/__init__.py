@@ -363,8 +363,14 @@ class EnginePageAdapter:
                 sequence=glyph.seqno,
             )
 
-    def drawings(self) -> Iterator[Any]:
-        for drawing in self.page.get_drawings():
+    def page_program(self) -> Any:
+        """Capture the page once; drawings and images are views of that program."""
+        return self.page.get_page_program()
+
+    def drawings(self, program: Any | None = None) -> Iterator[Any]:
+        if program is None:
+            program = self.page_program()
+        for drawing in self.page.internal_drawing_records(program.drawings):
             box = drawing.rect
             yield SimpleNamespace(
                 kind=drawing.kind,
@@ -384,8 +390,10 @@ class EnginePageAdapter:
                 },
             )
 
-    def images(self) -> Iterator[Any]:
-        for image in self.page.extract_images():
+    def images(self, program: Any | None = None) -> Iterator[Any]:
+        if program is None:
+            program = self.page_program()
+        for image in self.page.internal_extract_program_images(program):
             metadata = image.image_metadata
             box = image.rect or image.image_clip
             if metadata is None or box is None:
@@ -402,7 +410,12 @@ class EnginePageAdapter:
             )
 
     def render(self, *, dpi: float) -> Any:
-        raster = self.page.render().rasterize(scale=max(0.01, dpi / 72.0))
+        # PDFium, used by pdfplumber's image API, leaves UserUnit unapplied.
+        rendered = self.page.render()
+        rendered.width = rendered.display_list.width
+        rendered.height = rendered.display_list.height
+        rendered.user_unit = 1.0
+        raster = rendered.rasterize(scale=max(0.01, dpi / 72.0))
         return SimpleNamespace(
             data=raster.pixels,
             width=raster.width,
@@ -611,7 +624,8 @@ class Page:
                     for c in self._adapter.text_characters()
                 ]
             }
-            for drawing in self._adapter.drawings():
+            program = self._adapter.page_program()
+            for drawing in self._adapter.drawings(program):
                 record = _drawing(self._adapter, drawing, self.initial_doctop)
                 if record["object_type"] in {"state-push", "state-pop", "clip", "marked-content"}:
                     continue
@@ -627,7 +641,7 @@ class Page:
                     curve = dict(record)
                     curve["object_type"] = "curve"
                     objects.setdefault("curve", []).append(curve)
-            for image in self._adapter.images():
+            for image in self._adapter.images(program):
                 if image.bbox is None:
                     continue
                 record = _drawing(

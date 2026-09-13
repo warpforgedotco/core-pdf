@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import struct
+import threading
 from io import BytesIO
 from typing import Any
 
@@ -55,6 +56,43 @@ def internal_glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float
         float(glyph.xMax),
         float(glyph.yMax),
     )
+
+
+internal_GLYPH_HEADER = struct.Struct(">hhhhh")
+
+
+def internal_raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
+    """Return the decoded ``loca`` offsets and the undecoded ``glyf`` bytes.
+
+    Only the header of a glyph record is needed for its bounding box, so the
+    glyph table stays as raw bytes; decompiling every glyph record costs time
+    proportional to the whole font for each lookup.
+    """
+    try:
+        locations = font["loca"]
+        reader = font.reader
+        glyph_data = bytes(reader["glyf"]) if reader is not None else b""
+    except FONT_PROGRAM_ERRORS:
+        return (), b""
+    return locations, glyph_data
+
+
+def internal_glyph_header_bbox(
+    locations: Any, glyph_data: bytes, gid: int
+) -> tuple[float, float, float, float] | None:
+    """Read one glyph's stored bounds straight from its ``glyf`` record header."""
+    if gid < 0 or gid + 1 >= len(locations):
+        return None
+    start = locations[gid]
+    end = locations[gid + 1]
+    if end - start < internal_GLYPH_HEADER.size or end > len(glyph_data):
+        # An empty record is a glyph without contours; a truncated one is
+        # unusable, matching a failed record decompile.
+        return None
+    contours, x_min, y_min, x_max, y_max = internal_GLYPH_HEADER.unpack_from(glyph_data, start)
+    if contours == 0:
+        return None
+    return (float(x_min), float(y_min), float(x_max), float(y_max))
 
 
 # fontTools validates malformed tables with bare `assert` as well as by raising,
@@ -142,6 +180,9 @@ class TrueTypeFontProgram:
         "unicode_cmap",
         "glyph_to_unicode",
         "outlines",
+        "glyph_locations",
+        "glyph_table_data",
+        "internal_composite_bbox_cache",
     )
 
     def __init__(
@@ -152,11 +193,15 @@ class TrueTypeFontProgram:
         use_cmap: bool = False,
     ) -> None:
         self.data = data
+        self.internal_composite_bbox_cache: dict[
+            int, tuple[tuple[float, float, float, float] | None, bool]
+        ] = {}
         self.font = internal_tt_font_from_data(data)
         if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
             raise ValueError("invalid TrueType glyph tables")
         internal_ensure_glyph_order(self.font)
         self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
+        self.glyph_locations, self.glyph_table_data = internal_raw_glyph_locations(self.font)
         self.outlines = internal_FontToolsOutlineAccess(self.font)
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = internal_best_unicode_gid_cmap(self.font)
@@ -165,6 +210,18 @@ class TrueTypeFontProgram:
             self.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
         else:
             self.cmap = {}
+
+    def internal_variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
+        """A program over the same parsed tables with a different code mapping."""
+        variant = object.__new__(TrueTypeFontProgram)
+        for name in TrueTypeFontProgram.__slots__:
+            setattr(variant, name, getattr(self, name))
+        variant.cid_to_gid = cid_to_gid
+        if use_cmap:
+            variant.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
+        else:
+            variant.cmap = {}
+        return variant
 
     def glyph_id_for_code(self, code: int) -> int:
         if self.cid_to_gid is not None:
@@ -200,11 +257,7 @@ class TrueTypeFontProgram:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
 
     def glyph_bbox_for_gid(self, gid: int) -> tuple[float, float, float, float] | None:
-        try:
-            glyph_name = self.font.getGlyphName(gid)
-            bbox = internal_glyph_bbox(self.font["glyf"], glyph_name)
-        except FONT_PROGRAM_ERRORS:
-            bbox = None
+        bbox = internal_glyph_header_bbox(self.glyph_locations, self.glyph_table_data, gid)
         if bbox is None:
             return None
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
@@ -227,6 +280,16 @@ class TrueTypeFontProgram:
             return ()
 
     def composite_body_bbox(
+        self, gid: int
+    ) -> tuple[tuple[float, float, float, float] | None, bool]:
+        cache = self.internal_composite_bbox_cache
+        try:
+            return cache[gid]
+        except KeyError:
+            result = cache[gid] = self.internal_composite_body_bbox(gid)
+            return result
+
+    def internal_composite_body_bbox(
         self, gid: int
     ) -> tuple[tuple[float, float, float, float] | None, bool]:
         try:
@@ -252,6 +315,45 @@ class TrueTypeFontProgram:
             return (body_bbox, has_dot)
         except FONT_PROGRAM_ERRORS:
             return (None, False)
+
+
+internal_PROGRAM_CACHE_LIMIT = 64
+internal_program_cache = threading.local()
+
+
+def cached_truetype_program(
+    data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
+) -> TrueTypeFontProgram:
+    """Return a parsed program for these bytes, sharing one per thread.
+
+    Every page builds its own font decoders, and ligature detection parses the
+    same program again to inspect its composites. Parsing is by far the most
+    expensive step of decoder construction, and the program is read-only after
+    construction, so equal inputs within a thread share one instance. The
+    cache is per thread because fontTools loads tables lazily on first use.
+    """
+    programs: dict[object, TrueTypeFontProgram] | None = getattr(
+        internal_program_cache, "programs", None
+    )
+    if programs is None:
+        programs = internal_program_cache.programs = {}
+    key: object = (data, cid_to_gid, use_cmap)
+    program = programs.get(key)
+    if program is None:
+        # Parse each distinct font program once; code mappings are cheap
+        # variants over the same tables.
+        base = programs.get(data)
+        if base is None:
+            if len(programs) >= internal_PROGRAM_CACHE_LIMIT:
+                programs.clear()
+            base = programs[data] = TrueTypeFontProgram(data)
+        program = (
+            base
+            if cid_to_gid is None and not use_cmap
+            else base.internal_variant(cid_to_gid, use_cmap=use_cmap)
+        )
+        programs[key] = program
+    return program
 
 
 def internal_tt_font_from_data(data: bytes) -> TTFont:
@@ -523,5 +625,6 @@ def internal_flatten_cubic(
 __all__ = (
     "Point",
     "TrueTypeFontProgram",
+    "cached_truetype_program",
     "rasterize_contours",
 )

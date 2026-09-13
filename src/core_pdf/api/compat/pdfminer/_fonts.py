@@ -7,7 +7,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, cast
 
-from core_pdf._vendor.fontTools.agl import toUnicode
+from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl._impl.fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl._impl.fonts.data.metrics import FONT_DATA
 from core_pdf.impl._impl.model.geometry import bbox_union
@@ -20,6 +20,14 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
 )
 
 from .._shared import LIGATURES
+
+
+def internal_glyph_name_text(name: str) -> str:
+    """Read literal AGL entries directly; parse compound and generated names otherwise."""
+    codepoints = LEGACY_AGL2UV.get(name)
+    if codepoints is not None:
+        return chr(codepoints[0]) if len(codepoints) == 1 else "".join(map(chr, codepoints))
+    return toUnicode(name)
 
 
 def _mapping_value(mapping: object, name: str) -> object | None:
@@ -167,7 +175,7 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
     glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
     if glyph_name and glyph_name.isdecimal():
         glyph_name = None
-    glyph_name_text = toUnicode(glyph_name) if glyph_name else ""
+    glyph_name_text = internal_glyph_name_text(glyph_name) if glyph_name else ""
     if to_unicode is not None and glyph.code_bytes:
         mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
         if mapped is not None and len(mapped) <= 1:
@@ -304,10 +312,16 @@ def internal_pdfminer_ligature_overrides(
                 cluster_id = glyph.cluster_key
                 cluster = [glyph]
                 if cluster_id is not None:
-                    for item in glyphs[index + 1 :]:
+                    # Inspect only this cluster; copying the remaining page for
+                    # every mapped glyph makes ordinary single-glyph clusters
+                    # quadratic in the page's glyph count.
+                    next_index = index + 1
+                    while next_index < len(glyphs):
+                        item = glyphs[next_index]
                         if item.cluster_key != cluster_id:
                             break
                         cluster.append(item)
+                        next_index += 1
                 box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
                 overrides[id(glyph)] = (mapped, box, glyph.baseline)
                 skipped.update(id(item) for item in cluster[1:])
@@ -315,7 +329,7 @@ def internal_pdfminer_ligature_overrides(
         if glyph.char_code is None:
             continue
         glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
-        glyph_name_text = toUnicode(glyph_name) if glyph_name else ""
+        glyph_name_text = internal_glyph_name_text(glyph_name) if glyph_name else ""
         if len(glyph_name_text) > 1:
             difference_cluster = glyphs[index : index + len(glyph_name_text)]
             if len(difference_cluster) == len(glyph_name_text) and all(
@@ -397,6 +411,7 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     projected_text = internal_pdfminer_glyph_text(glyph)
     font = decoder.font
     projection = _font_projection(font) if isinstance(font, dict) else None
+    values = projection.values if projection is not None else {}
     legacy_widths = projection.legacy_widths if projection is not None else None
     width_index = -1
     if projection is not None and legacy_widths is not None:
@@ -409,8 +424,8 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
         and len(projected_text) == 1
         and ord(projected_text) < 32
         and glyph_name is not None
-        and toUnicode(glyph_name).isspace()
-        and toUnicode(glyph_name) != projected_text
+        and internal_glyph_name_text(glyph_name).isspace()
+        and internal_glyph_name_text(glyph_name) != projected_text
     ):
         # PDFMiner's simple-font decoder can project a Differences entry to a
         # control character while its width lookup remains keyed by the
@@ -422,7 +437,7 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     # PDFType1Font consults FontMetricsDB before the PDF's descriptor and
     # /Widths array. Exact Standard-14 names therefore use AFM metrics even
     # when a producer embeds a contradictory width table.
-    base_font = str(_font_value(font, "BaseFont") or "")
+    base_font = str(values.get("BaseFont") or "")
     entry = FONT_DATA.get(base_font)
     if isinstance(entry, dict):
         widths = entry.get("widths")
@@ -433,12 +448,12 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     if legacy_widths is not None:
         if 0 <= width_index < len(legacy_widths):
             return legacy_widths[width_index]
-        descriptor = _font_value(font, "FontDescriptor")
+        descriptor = values.get("FontDescriptor")
         missing_width = _mapping_value(descriptor, "MissingWidth")
         return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
     if projection is not None and projection.has_widths:
         return None
-    descriptor = _font_value(font, "FontDescriptor")
+    descriptor = values.get("FontDescriptor")
     missing_width = _mapping_value(descriptor, "MissingWidth")
     # PDFSimpleFont constructs a zero-filled width table when /Widths is
     # absent, then falls back to the descriptor's /MissingWidth. Native core
@@ -481,7 +496,11 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
         width = builtin_width * 0.001
     base_font = recover_pdf_name(_font_value(glyph.font_decoder.font, "BaseFont"))
     glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(glyph.char_code)
-    if base_font in {"Symbol", "ZapfDingbats"} and glyph_name and not toUnicode(glyph_name):
+    if (
+        base_font in {"Symbol", "ZapfDingbats"}
+        and glyph_name
+        and not internal_glyph_name_text(glyph_name)
+    ):
         return 0.0
     return width
 

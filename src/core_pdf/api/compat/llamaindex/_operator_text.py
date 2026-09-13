@@ -213,6 +213,8 @@ class OperatorTextProjection:
             ):
                 raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
+            # LlamaIndex's pypdf reader uses modern font encoding tables even
+            # under old PDF headers, so this projection omits font context.
             decoder = FontDecoder(cast(dict[str, object], resolved))
             to_unicode = self.internal_to_unicode(resolved, decoder)
             widths, default_width = self.internal_widths(font, decoder)

@@ -9,13 +9,16 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import PatternPaint
+from core_pdf.impl._impl.capture.records import CapturedSoftMask, PatternPaint
 from core_pdf.impl._impl.runtime.array_views import uint8_image_view
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 
 @dataclass(slots=True)
 class RenderOptions:
+    """Page composition options; crop uses unrotated default PDF user space."""
+
     page_number: int | None = None
     rotate: int = 0
     crop: tuple[float, float, float, float] | None = None
@@ -57,7 +60,9 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
-@dataclass(slots=True)
+# Identity semantics: these records are never compared by value, and a
+# generated field-wise __eq__ over this many fields is dead weight.
+@dataclass(slots=True, eq=False)
 class PathPaintItem:
     """Typed, allocation-light record for the common unpatterned path hot path."""
 
@@ -79,6 +84,11 @@ class PathPaintItem:
     coalesced_path: bool = False
     fill_pattern: PatternPaint | None = None
     stroke_pattern: PatternPaint | None = None
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
+    # Optional (n, 4) float64 page-space edges in ``CapturedPath.fill_edges``
+    # order, precomputed by producers that already hold the path as arrays.
+    edge_array: Any = None
 
     @property
     def kind(self) -> str:
@@ -99,6 +109,8 @@ class PathPaintItem:
             "fill_rule": self.fill_rule,
             "blend_mode": self.blend_mode,
             "soft_mask_alpha": self.soft_mask_alpha,
+            "alpha_is_shape": self.alpha_is_shape,
+            "graphics_soft_mask": self.graphics_soft_mask,
             "fill_pattern": self.fill_pattern,
             "stroke_pattern": self.stroke_pattern,
         }
@@ -121,6 +133,8 @@ class ImagePaintItem:
     source_metadata: dict[str, Any]
     ctm: Any = None
     xobject_depth: Any = None
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
 
     @property
     def kind(self) -> str:
@@ -140,6 +154,8 @@ class ImagePaintItem:
             "fill_opacity": self.fill_opacity,
             "blend_mode": self.blend_mode,
             "soft_mask_alpha": self.soft_mask_alpha,
+            "alpha_is_shape": self.alpha_is_shape,
+            "graphics_soft_mask": self.graphics_soft_mask,
             "image_clip": self.image_clip,
             "source_metadata": self.source_metadata,
             "ctm": self.ctm,
@@ -157,6 +173,45 @@ class internal_RasterGroup:
     pixels: bytearray
     composite_alpha: float | None = None
     blend_mode: str | None = None
+    # A non-isolated group paints over its suspended parent's pixels. Its own
+    # alpha must remain separate from the alpha already present in that backdrop.
+    backdrop: bytearray | None = field(default=None, kw_only=True)
+    source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
+        default=None, kw_only=True
+    )
+    source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
+        default=None, kw_only=True
+    )
+    knockout: bool = field(default=False, kw_only=True)
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
+        default=None, kw_only=True
+    )
+    # Device rows/columns [y0, y1, x0, x1] touched by recorded paint, empty
+    # until the first record. A group with an initial backdrop composites only
+    # this window: its unrecorded pixels still equal that backdrop.
+    paint_window: list[int] = field(default_factory=list, kw_only=True)
+
+    @property
+    def source_scale(self) -> float:
+        """The group's constant alpha, clamped to the unit interval; unset is 1."""
+        return (
+            max(0.0, min(1.0, float(self.composite_alpha)))
+            if is_pdf_number(self.composite_alpha)
+            else 1.0
+        )
+
+    def extend_paint_window(self, y0: int, y1: int, x0: int, x1: int) -> None:
+        window = self.paint_window
+        if window:
+            window[:] = (
+                min(window[0], y0),
+                max(window[1], y1),
+                min(window[2], x0),
+                max(window[3], x1),
+            )
+        else:
+            window[:] = y0, y1, x0, x1
 
 
 @dataclass(frozen=True, slots=True)

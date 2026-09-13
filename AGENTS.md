@@ -13,6 +13,11 @@ spec must never import core or OCR, including type-only imports. Spec exposes lo
 chapter APIs, not a document facade or CLI. Its exported symbols and documented parsing
 extension methods form the cross-distribution compatibility contract.
 
+The optional `core-pdf-validate` workspace member owns external validator adapters and reports.
+Core, spec, and OCR must never import or discover it. Explicit validation uses original source
+bytes; only declaration discovery depends on public core APIs. Validator execution, temporary
+files, and report normalization stay outside spec. See `docs/standards.md`.
+
 The Unstructured compatibility facade requires `core-pdf[unstructured]`, including the pinned
 `en_core_web_sm` model. Its import must fail clearly if the model cannot load; do not add lexical
 fallbacks or runtime model installation. The parent compatibility package stays lazy so native
@@ -29,9 +34,9 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 The authored test suite includes differential comparisons under
-`tests/src/core_pdf/api/compat/differential`, strict package tests under
-`packages/core-pdf-spec/tests`, and core/spec integration tests under
-`tests/src/core_pdf/spec_boundary`. Reference corpora remain in
+`tests/src/core_pdf/api/compat/differential`, strict spec tests under
+`packages/core-pdf-spec/tests`, and validation tests under
+`packages/core-pdf-validate/tests`. Reference corpora remain in
 `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and
 licensing material; maintenance scripts are in `scripts/`.
 
@@ -43,7 +48,7 @@ Use `uv` for environments and locked dependencies:
 
 ```sh
 uv sync --all-packages --all-groups --extra unstructured                 # install development dependencies
-uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto  # differential suite
+uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto  # differential suite
 uv run --all-packages --group lint ruff check .     # lint Python files
 uv run --all-packages --group lint ruff format --check .
 uv run --all-packages --group lint mypy             # static type checking
@@ -59,7 +64,7 @@ cases for x-ray. Run every facade against every fixture explicitly with:
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+  uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 Initialize reference corpora with `git submodule update --init --recursive` before
@@ -72,7 +77,7 @@ A Nuitka module build can leave a `<module>.cpython-*.so` next to its `.py` in
 `src/`. Python's `ExtensionFileLoader` wins over `SourceFileLoader`, so the stale
 binary is imported instead of the source — and it still reports the `.py` path as
 `__file__`, so nothing looks wrong. Edits to that module then silently do nothing.
-Remove any such `.so` from all three source roots before validating source changes.
+Remove any such `.so` from all four source roots before validating source changes.
 
 ### Two type checkers, contradictory advice
 
@@ -105,11 +110,10 @@ Tests use pytest and pytest-xdist, and are named `test_*.py`, with test function
 named `test_<behavior>`. Facade tests in
 `tests/src/core_pdf/api/compat/differential` compare a facade with its reference
 implementation over the same PDF. Strict tests in `packages/core-pdf-spec/tests` must
-run without core or OCR installed; integration tests in `tests/src/core_pdf/spec_boundary`
-verify preserved core recovery, shared object identities, and dependency direction.
+run without core or OCR installed.
 Use spec citations for non-obvious mandated behavior and positive controls for valid defaults.
 Preserve reference fixture contents and distinguish compatibility differences from failures
-on both sides. Validate with `uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto`.
+on both sides. Validate with `uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto`.
 
 ## Commit & Pull Request Guidelines
 
@@ -117,4 +121,4 @@ Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...
 
 ## Local and CI Validation
 
-Local commands may use the installed environment directly. To reproduce CI’s locked dependency validation, use `uv run --locked` with the relevant group, such as `uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto` or `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.
+Local commands may use the installed environment directly. To reproduce CI’s locked dependency validation, use `uv run --locked` with the relevant group, such as `uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto` or `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.

@@ -11,11 +11,17 @@ description: >-
 inputs:
   lfs:
     description: >-
-      Pull SCORE-Bench's LFS-backed corpus documents. The Quality job lints and
-      type-checks only, so it leaves these as pointer files, which is what it
-      got before this action existed.
+      Pull SCORE-Bench's LFS-backed corpus documents. Jobs that never open the
+      SCORE-Bench corpus leave these as pointer files.
     required: false
     default: "true"
+  paths:
+    description: >-
+      Space-separated submodule paths to check out. Empty initialises every
+      submodule. The cache key still covers all of them, so narrowing the
+      checkout shares the same cache entry and only skips working-tree writes.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -47,7 +53,7 @@ runs:
     # evicted cache costs only what the old checkout cost.
     - name: Initialise submodules
       shell: bash
-      run: git submodule update --init --recursive --depth 1
+      run: git submodule update --init --recursive --depth 1 -- ${{ inputs.paths }}
 
     # A no-op when the cache supplied the LFS objects; a real fetch on a miss.
     - name: Fetch LFS-backed corpus documents

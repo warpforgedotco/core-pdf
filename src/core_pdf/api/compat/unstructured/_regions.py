@@ -13,7 +13,7 @@ from core_pdf.impl._impl.model.geometry import flip_rect_vertical
 
 from ._classification import (
     internal_BULLET,
-    internal_element_class,
+    internal_element_classes,
 )
 from ._elements import (
     Element,
@@ -94,17 +94,22 @@ def internal_projection_segments(
 ) -> list[tuple[int, int]]:
     if not len(boxes):
         return []
-    length = int(numpy.max(boxes[:, axis::2]))
-    projection = numpy.zeros(max(0, length), dtype=numpy.int64)
+    length = max(0, int(numpy.max(boxes[:, axis::2])))
+    intervals: list[tuple[int, int]] = []
     for box in boxes:
-        projection[int(box[axis]) : int(box[axis + 2])] += 1
-    occupied = numpy.where(projection > 0)[0]
-    if not len(occupied):
-        return []
-    gaps = numpy.where(occupied[1:] - occupied[:-1] > 1)[0]
-    starts = [int(occupied[0]), *(int(occupied[index + 1]) for index in gaps)]
-    ends = [*(int(occupied[index]) + 1 for index in gaps), int(occupied[-1]) + 1]
-    return list(zip(starts, ends))
+        # Preserve NumPy's slice clipping and negative-index behavior without
+        # allocating one counter per coordinate. Only occupied spans matter.
+        start, end, _step = slice(int(box[axis]), int(box[axis + 2])).indices(length)
+        if start < end:
+            intervals.append((start, end))
+    segments: list[tuple[int, int]] = []
+    for start, end in sorted(intervals):
+        if segments and start <= segments[-1][1]:
+            previous_start, previous_end = segments[-1]
+            segments[-1] = (previous_start, max(previous_end, end))
+        else:
+            segments.append((start, end))
+    return segments
 
 
 def internal_recursive_xy_cut(
@@ -115,10 +120,12 @@ def internal_recursive_xy_cut(
     x_order = boxes[:, 0].argsort()
     x_boxes = boxes[x_order]
     x_indices = indices[x_order]
-    for x0, x1 in internal_projection_segments(x_boxes, 0):
-        x_mask = (x0 <= x_boxes[:, 0]) & (x_boxes[:, 0] < x1)
-        chunk = x_boxes[x_mask]
-        chunk_indices = x_indices[x_mask]
+    x_segments = internal_projection_segments(x_boxes, 0)
+    # Starts are sorted and occupied segments do not overlap. Locate all
+    # ranges together instead of rescanning the full array for each segment.
+    for start, end in numpy.searchsorted(x_boxes[:, 0], x_segments):
+        chunk = x_boxes[start:end]
+        chunk_indices = x_indices[start:end]
         y_order = chunk[:, 1].argsort()
         y_boxes = chunk[y_order]
         y_indices = chunk_indices[y_order]
@@ -126,9 +133,8 @@ def internal_recursive_xy_cut(
         if len(y_segments) == 1:
             result.extend(int(index) for index in y_indices)
             continue
-        for y0, y1 in y_segments:
-            y_mask = (y0 <= y_boxes[:, 1]) & (y_boxes[:, 1] < y1)
-            internal_recursive_xy_cut(y_boxes[y_mask], y_indices[y_mask], result)
+        for start, end in numpy.searchsorted(y_boxes[:, 1], y_segments):
+            internal_recursive_xy_cut(y_boxes[start:end], y_indices[start:end], result)
 
 
 def internal_region_order(
@@ -186,9 +192,11 @@ def internal_combine_list_regions(
     anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
     anchor_position: int | None = None
-    for region in regions:
+    element_classes = internal_element_classes(
+        ((region.text, region.bbox) for region in regions), page_height
+    )
+    for region, element_class in zip(regions, element_classes, strict=True):
         text, bbox = region.text, region.bbox
-        element_class = internal_element_class(text, bbox, page_height)
         if element_class is ListItem:
             anchor_text = internal_BULLET.sub("", text, count=1).strip()
             anchor_bbox = bbox

@@ -54,7 +54,8 @@ def internal_normalize_imagecodecs_array(
     *,
     name: str,
     allow_float: bool = False,
-) -> numpy.ndarray[tuple[int, ...], numpy.dtype[numpy.uint8]]:
+    preserve_uint16: bool = False,
+) -> numpy.ndarray:
     array = numpy.asarray(decoded)
     if array.ndim not in {2, 3}:
         raise CodecUnsupportedError(f"{name} decoder returned an unsupported shape")
@@ -62,6 +63,8 @@ def internal_normalize_imagecodecs_array(
         raise CodecUnsupportedError(f"{name} decoder returned an unsupported dtype")
     if array.ndim == 3 and array.shape[2] <= 0:
         raise CodecUnsupportedError(f"{name} decoder returned zero channels")
+    if preserve_uint16 and array.dtype == numpy.uint16:
+        return numpy.ascontiguousarray(array)
     if array.dtype != numpy.uint8:
         if array.dtype.kind == "f":
             array = numpy.clip(numpy.rint(array), 0, 255).astype(numpy.uint8, copy=False)
@@ -86,7 +89,10 @@ def decode_jpeg_image(
 
 
 def decode_jpx_image(
-    data: bytes | memoryview, *, out: numpy.ndarray | None = None
+    data: bytes | memoryview,
+    *,
+    out: numpy.ndarray | None = None,
+    preserve_precision: bool = False,
 ) -> numpy.ndarray:
     try:
         decoded = imagecodecs.jpeg2k_decode(
@@ -96,7 +102,9 @@ def decode_jpx_image(
         )
     except Exception as exc:  # pragma: no cover - C-extension integration boundary
         internal_raise_codec_error(data, exc, check=imagecodecs.jpeg2k_check, name="JPX")
-    return internal_normalize_imagecodecs_array(decoded, name="JPX", allow_float=True)
+    return internal_normalize_imagecodecs_array(
+        decoded, name="JPX", allow_float=True, preserve_uint16=preserve_precision
+    )
 
 
 def internal_jpx_thread_count() -> int:

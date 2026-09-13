@@ -17,6 +17,7 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfDict,
     PdfValueResolver,
 )
+from core_pdf_spec.types import PdfReference
 
 MAX_PAGE_TREE_DEPTH = 100
 
@@ -61,14 +62,17 @@ def collect_inherited_values(
 ) -> InheritedValueMap:
     values: InheritedValueMap = {}
     current: object = node
-    seen: set[int] = set()
+    # Values pin visited nodes so a freed dictionary's id cannot be reused by
+    # a later resolved parent and read as a cycle.
+    seen: dict[int, PdfDict] = {}
+    references: set[tuple[int, int]] = set()
     while current is not None:
         if not isinstance(current, dict):
             break
         marker = id(current)
         if marker in seen:
             break
-        seen.add(marker)
+        seen[marker] = cast(PdfDict, current)
 
         current_dict = cast("PdfDict", current)
         for key in keys:
@@ -79,6 +83,11 @@ def collect_inherited_values(
                 values[key] = cast(CachedPdfObject, value)
 
         parent = current_dict.get("Parent")
+        if isinstance(parent, PdfReference):
+            reference = (parent.object_number, parent.generation_number)
+            if reference in references:
+                break
+            references.add(reference)
         current = resolve_ref(parent) if parent is not None else None
 
     return values

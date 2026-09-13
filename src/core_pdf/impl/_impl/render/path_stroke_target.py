@@ -132,6 +132,7 @@ class internal_PathStrokeTargetMixin:
         inv_seg_len2 = 1.0 / seg_len2
         extension_t = cap_extension / seg_len
         normal_fast = blend_mode is None
+        track_shape = self.group_source_shape is not None
         if (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
             and normal_fast
@@ -139,7 +140,12 @@ class internal_PathStrokeTargetMixin:
         ):
             x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
             y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
-            rasterize_unclipped_line_normal(
+            shape_plane = (
+                numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
+                if self.group_source_shape is not None
+                else None
+            )
+            alpha_plane = rasterize_unclipped_line_normal(
                 pixels,
                 width,
                 crop_x0,
@@ -156,7 +162,13 @@ class internal_PathStrokeTargetMixin:
                 target_pixels=self.pixel_view(pixels),
                 x_coords=x_coords,
                 y_coords=y_coords,
+                return_source_alpha=self.group_source_alpha is not None,
+                source_shape=shape_plane,
             )
+            if alpha_plane is not None:
+                self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
+            if shape_plane is not None:
+                self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
             return
         for py in range(iy0, iy1):
             row = py * width * 4
@@ -216,14 +228,18 @@ class internal_PathStrokeTargetMixin:
                             if dist_x * dist_x + dist_y * dist_y <= half2:
                                 covered += 1
                 if covered:
-                    alpha = max(1, min(255, round(rgba[3] * covered / sample_total)))
+                    alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
+                    shape = round(255 * covered / sample_total) if track_shape else 255
                     if normal_fast:
-                        blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], alpha)
+                        blend_normal_pixel(
+                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
+                        )
                     else:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
                             blend_resolved_mode,
+                            shape=shape,
                         )
 
     def fill_join(

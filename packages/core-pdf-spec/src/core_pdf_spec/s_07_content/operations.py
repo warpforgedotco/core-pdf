@@ -9,8 +9,7 @@ module and call the primitive again at a selected boundary.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, NamedTuple, TypeAlias, cast
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
@@ -20,10 +19,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, r
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
     CONTENT_OPERATOR_SIGNATURES,
 )
-from core_pdf_spec.s_07_syntax_primitives.scanning import (
-    is_number_word_bytes,
-)
-from core_pdf_spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
+from core_pdf_spec.s_07_syntax_primitives.numbers import is_number_token
 from core_pdf_spec.types import PdfName, PdfString
 
 if TYPE_CHECKING:
@@ -35,9 +31,12 @@ ContentOperation: TypeAlias = tuple[str, ContentOperands]
 OperationHandler: TypeAlias = Callable[[ContentOperands, int], "ContentStreamFrame | None"]
 
 
-@dataclass(frozen=True, slots=True)
-class ContentToken:
-    """An operand or operator, with its exact byte start position."""
+class ContentToken(NamedTuple):
+    """An operand or operator, with its exact byte start position.
+
+    Content streams produce one token per few bytes; a tuple subclass keeps
+    the record immutable at a fraction of a generated ``__init__``'s cost.
+    """
 
     start: int
     value: ContentOperand
@@ -46,17 +45,38 @@ class ContentToken:
 
 def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
     """Consume one token, or return None at EOF; malformed input raises."""
+    match = lexer.lexical_rules.content_token_re.match(lexer.raw_data, lexer.pos)
+    if match is not None:
+        kind = cast(str, match.lastgroup)
+        start = match.start(kind)
+        word = match.group(kind)
+        lexer.pos = match.end()
+        if kind == "num":
+            return ContentToken(
+                start,
+                lexer.parse_real_token(word) if b"." in word else lexer.parse_integer_token(word),
+            )
+        if kind == "name":
+            return ContentToken(start, PdfName.of(word[1:]))
+        if word == b"BI":
+            return ContentToken(start, parse_inline_image(lexer))
+        if word in (b"true", b"false", b"null"):
+            return ContentToken(start, cast(ContentOperand, lexer.parse_keyword(word)))
+        return ContentToken(start, word.decode("latin-1"), is_operator=True)
     lexer.skip_ignored()
     start = lexer.pos
     if start >= lexer.data_len:
         return None
     byte = lexer.raw_data[start]
-    if not SEPARATOR_TABLE[byte]:
+    if not lexer.lexical_rules.separator_table[byte]:
         scanned = lexer.scan_word_at(start, skip_ignored=False)
         assert scanned is not None
         word, lexer.pos = scanned
-        if is_number_word_bytes(word):
-            return ContentToken(start, lexer.parse_real_token(word) if b"." in word else int(word))
+        if is_number_token(word):
+            return ContentToken(
+                start,
+                lexer.parse_real_token(word) if b"." in word else lexer.parse_integer_token(word),
+            )
         if word == b"BI":
             return ContentToken(start, parse_inline_image(lexer))
         if word in (b"true", b"false", b"null"):

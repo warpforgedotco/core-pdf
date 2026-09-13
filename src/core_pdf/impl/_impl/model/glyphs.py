@@ -83,7 +83,9 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-@dataclass(slots=True)
+# Identity semantics: these records are never compared by value, and a
+# generated field-wise __eq__ over this many fields is dead weight.
+@dataclass(slots=True, eq=False)
 class GlyphObservation:
     text: str
     ink_bbox: Rectangle
@@ -129,10 +131,16 @@ class GlyphObservation:
     cluster_key: tuple[int, int] | None = None
     # Text may contribute clipping even when its selected color paints nothing.
     clip_glyph: bool = False
+    alpha_is_shape: bool = False
+    paint_from_program: bool = False
+    # A passive paint resource, like font_decoder; the renderer owns its type.
+    graphics_soft_mask: object | None = None
 
     @property
     def has_paint(self) -> bool:
         """Whether this glyph can contribute paint to a text-inclusive render."""
+        if self.paint_from_program:
+            return False
         return bool(
             self.bitmap
             or (
@@ -160,7 +168,9 @@ class GlyphObservation:
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
 
-@dataclass(slots=True)
+# Identity semantics: these records are never compared by value, and a
+# generated field-wise __eq__ over this many fields is dead weight.
+@dataclass(slots=True, eq=False)
 class GlyphCluster:
     """One decoded source glyph's text and its emitted observations."""
 

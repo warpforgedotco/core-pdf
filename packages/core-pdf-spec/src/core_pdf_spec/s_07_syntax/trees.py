@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import TypeVar
 
+from core_pdf_spec.types import PdfReference
+
 ResolveFn = Callable[[object], object]
 NameDecodeFn = Callable[[object], str | None]
 NumberDecodeFn = Callable[[object], int | None]
@@ -14,7 +16,10 @@ TreeKeyT = TypeVar("TreeKeyT")
 
 def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> dict:
     """Resolve one tree dictionary; malformed nodes raise ValueError."""
-    current = resolve(value)
+    return internal_tree_node(resolve(value), tree_name)
+
+
+def internal_tree_node(current: object, tree_name: str) -> dict:
     if not isinstance(current, dict):
         raise ValueError(f"invalid {tree_name} tree node")
     return current
@@ -49,16 +54,26 @@ def internal_iter_tree_items(
     key_error: str,
     resolve_values: bool = True,
 ) -> Iterator[tuple[TreeKeyT, object]]:
-    if resolve(node) is None:
-        return
-    seen: set[int] = set()
+    seen: dict[int, dict] = {}
+    references: set[tuple[int, int]] = set()
     stack = [node]
+    is_root = True
     while stack:
-        current = tree_node(stack.pop(), resolve, tree_name)
+        raw = stack.pop()
+        if isinstance(raw, PdfReference):
+            reference = (raw.object_number, raw.generation_number)
+            if reference in references:
+                raise ValueError(f"{tree_name} tree cycle detected")
+            references.add(reference)
+        resolved = resolve(raw)
+        if is_root and resolved is None:
+            return
+        is_root = False
+        current = internal_tree_node(resolved, tree_name)
         marker = id(current)
         if marker in seen:
             raise ValueError(f"{tree_name} tree cycle detected")
-        seen.add(marker)
+        seen[marker] = current
         entries = tree_array(current, key_field, resolve, tree_name)
         if entries is not None:
             if len(entries) % 2:

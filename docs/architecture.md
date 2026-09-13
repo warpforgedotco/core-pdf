@@ -8,8 +8,9 @@ dependency direction.
 The root package, `src/core_pdf`, owns PDF parsing, native extraction, rendering, and structured
 output. `packages/core-pdf-ocr/src/core_pdf_ocr` owns OCR and vector text recognition. The companion pins the exact core release because it reuses internal extraction stages.
 `packages/core-pdf-spec/src/core_pdf_spec` owns strict PDF and referenced-standard algorithms.
-All three distributions share the uv workspace. Spec releases independently: core currently
-accepts `core-pdf-spec>=0.4.0,<0.5.0`. Spec never imports core or OCR, including for typing.
+`packages/core-pdf-validate` owns optional external-validator execution and report normalization.
+All four distributions share the uv workspace. Spec releases independently: core currently
+accepts `core-pdf-spec>=0.4.1,<0.5.0`. Spec never imports core or either companion, including for typing.
 
 The `core-pdf[unstructured]` extra supplies spaCy and the pinned English model required by the
 Unstructured facade. That facade loads its model at import time and fails if it cannot load;
@@ -97,14 +98,25 @@ packages/core-pdf-ocr/
 
 ```text
 packages/core-pdf-spec/
-  pyproject.toml          independently versioned distribution, currently 0.4.0
+  pyproject.toml          independently versioned distribution, currently 0.4.1
   src/core_pdf_spec/
     types.py             shared PDF object identities and byte/geometry types
+    standards.py         neutral versions, extensions, profile identities, and provenance
     exceptions.py        base, parse, unsupported, and decryption errors
     s_NN_*/              strict chapter algorithms and semantic service protocols
     _vendor/font_data/   attributed inert standard font tables; no font backend
   tests/                 standalone strict semantics and resource tests
 ```
+
+`packages/core-pdf-validate/src/core_pdf_validate` provides `validate`, immutable reports,
+the public backend protocol, and a veraPDF adapter. It depends on public core APIs only
+for optional declaration discovery; explicit validation operates on original bytes without
+opening a core document. Its tests include recorded engine reports and process-failure cases.
+
+Core never imports or discovers the validation companion. `PdfDocument.standards` identifies
+versions and claims without invoking a validator. Shared chapter algorithms receive immutable
+semantic context where versions differ; recovery stays in core. See
+[PDF versions and standards validation](standards.md) for selection rules and coverage.
 
 ### The `core_pdf_spec.s_NN_*` scheme
 
@@ -129,8 +141,10 @@ offsets, skipped malformed entries, and partial results live in `_impl/document/
 Content retry/skip control and stream limits likewise live in core capture. Strict parsing
 propagates failures; specification-defined defaults and prescribed fallback rules stay in spec.
 
-Interpreter color state retains PDF components and color spaces. Core capture applies selected
-output conversions when creating its records. Vendored fontTools parsing, outline backends,
+Interpreter color state retains PDF components, color spaces, rendering intent, and black-point
+compensation. Core capture applies the settings at paint time when creating its records;
+deferred image, shading, and pattern inputs retain an immutable `ColorRendering` value.
+Profile and converter choices stay in core. Vendored fontTools parsing, outline backends,
 repairs, and rasterization stay in core; spec provides handwritten CFF/Type 2 algorithms,
 audited Type 1 byte helpers, CMaps, widths, standard tables, and font-service protocols.
 
@@ -146,6 +160,7 @@ Subpackages under `core_pdf_spec` mirror chapters of the PDF specification:
 | `s_07_security` | 7 — encryption handlers |
 | `s_08_graphics` | 8 — color-space/image semantics, functions, shading geometry, matrices |
 | `s_09_fonts` | 9 — font formats, CMaps, encodings, widths, and semantic font services |
+| `s_11_transparency` | 11 — version-sensitive blend equations, group backdrop removal and knockout equations, image Matte semantics |
 | `s_14_structure` | 14 — logical structure tree |
 
 ---
@@ -183,9 +198,9 @@ The extraction/render/layout/output layering remains enforced separately.
 ## Workspace validation
 
 The authored test suite contains strict standalone tests in `packages/core-pdf-spec/tests`,
-core/spec integration tests in `tests/src/core_pdf/spec_boundary`, and differential comparisons
-in `tests/src/core_pdf/api/compat/differential`. Each case runs a compatibility facade and
-its reference implementation against the same PDF. Reference corpora remain under
+validation tests in `packages/core-pdf-validate/tests`, and differential comparisons in
+`tests/src/core_pdf/api/compat/differential`, where each case runs a compatibility facade
+and its reference implementation against the same PDF. Reference corpora remain under
 `tests/fixtures`.
 
 Initialize the corpora and install the workspace's development dependencies:
@@ -198,7 +213,7 @@ uv sync --all-packages --all-groups --extra unstructured
 Run the differential suite and source checks with:
 
 ```sh
-uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 uv run --all-packages --group lint ruff check .
 uv run --all-packages --group lint mypy
 uv run --all-packages --group lint --group test --group vendor-test ty check
@@ -210,7 +225,7 @@ cross-corpus redaction cases for x-ray. To run every facade against every PDF fi
 
 ```sh
 CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1 \
-  uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+  uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 ## Rendering constraints
@@ -220,9 +235,73 @@ parent frame's state, and leaving a stream unwinds its local clipping even after
 content. Resource lookup resolves dictionaries on demand while retaining indirect references,
 so equivalent direct and indirect resource dictionaries preserve Form identity.
 
-Raster paint state separates object opacity from isolated-group compositing opacity. A group's
-opacity is applied once when it is composited into its parent. Stroke dash phase advances across
+Resolved Form `/BBox` coordinates remain separate from their enclosing page-space bounds.
+Capture transforms the local rectangle into a quadrilateral and brackets the Form's paint
+and transparency group with a raster clip scope. Rotation and shear therefore retain the
+actual Form boundary; zero-area bounds produce an empty clip. Leaving the Form restores its
+parent clip, including after recovered child errors. Image placement and the existing raw
+drawing/text geometry remain unchanged. Scope markers stay internal to rendering and do not
+become public drawing records, PDFMiner layout delimiters, or OCR routing evidence.
+
+Raster paint state separates object opacity from group compositing opacity. Form group isolation
+survives interpretation and capture; an omitted `/I` means non-isolated. Non-isolated groups
+start with their parent's current RGB backdrop and track their own paint alpha separately.
+Backdrop removal precedes outer blending, opacity, and the selected soft mask,
+so the background and group opacity each contribute once. Nested groups contribute only their
+completed output alpha to the enclosing group. Stroke dash phase advances across
 the segments of one subpath, and a zero-width stroke retains its device-pixel hairline semantics.
+
+Form `/K` selects knockout independently of isolation, with an omitted flag defaulting to false.
+Each element blends against the group's initial backdrop, then replaces earlier contributions
+according to its shape. A non-isolated child of a knockout group inherits that initial backdrop.
+Groups used inside knockout groups retain shape separately from opacity, including antialiased
+edges and zero-opacity paint. Image stencils and color-key masks constrain shape; soft masks
+and alpha constants affect opacity unless `/AIS` selects shape. Pattern group constants apply
+once to the completed pattern, with initial-stream AIS retained separately from paint state.
+Distinct strokes retain their object boundaries inside knockout groups; a stroke's overlapping
+segments and caps contribute its opacity once. Combined fill/stroke paint in these groups uses
+an implicit knockout group to prevent opacity from accumulating at the border.
+
+Text `/TK` defaults to true. Each `BT`/`ET` object then composites as a non-isolated knockout
+group, with each glyph contributing one element; `/TK false` lets overlapping glyphs composite
+normally. Glyphs inherit the current opacity, blend mode, soft mask, and alpha source. The
+completed text group uses Normal blending and unit opacity/mask, so inherited transparency
+applies once. `/TK` changes inside a text object are ignored, while other graphics-state
+changes persist after `ET`. Saved graphics state retains `/TK`; nested streams separately
+save and restore text-object scope and retain initial-stream `/TK` for tiling patterns.
+
+Capture records explicit text, stream, and Type 3 glyph boundaries without advancing existing
+paint sequence numbers. The renderer uses these records to group glyphs across text-showing
+operators and to unwind nested text. A Type 3 `CharProc` executes its graphics program as one
+glyph element, without painting a second substitute outline. Text clipping accumulates until
+`ET`, after text paint completes, and remains active until the surrounding graphics scope
+restores it. Closing the implicit text group does not save, restore, or reset graphics state.
+Type 3 rendering modes 3 and 7 suppress program paint while preserving text advances; Type 3
+glyphs do not add outlines to text clipping. This follows ISO 32000-2 §9.3.6 as a shared
+contemporary correction, without selecting a different rule from the document header.
+
+Graphics-state `/SMask` supports spatial Alpha masks. The CTM and resource scope are retained
+from `gs`; other inherited non-transparency state, such as line width,
+comes from each paint. Mask artwork is captured separately, preserving page extraction and
+paint ordering. The group uses its Form Matrix and bounding-box clip, with alpha constants,
+blend mode, and inherited soft mask reset before its content runs. The completed mask applies
+once to the painted object or transparency group, with `/AIS` selecting shape or opacity.
+
+Alpha masks use group alpha independently of colour and the destination backdrop. Transfer
+functions apply to every resulting sample, including zero outside the group bounding box:
+`TR(0)` can therefore make the outside opaque. `/None` clears the mask; omitted/null entries
+preserve it, and `q`/`Q` restores it. An image's own soft mask, explicit mask, colour-key mask,
+or embedded opacity overrides the graphics-state mask; ordinary images and stencils retain it.
+The strict transfer compiler supports function types 0, 2, 3, and 4 within its function limits.
+Type 4 calculator functions use the shared PDF 1.3+ operator semantics for all 42 operators,
+with PDF numeric syntax, comments, conditional blocks, and exact numeric output arity.
+Inputs are clipped to Domain and results to Range. The evaluator uses finite float64 reals
+and signed 32-bit integers, promoting oversized integer literals and applicable arithmetic
+results to real values. Its implementation limits are 100 operand-stack entries and 255 nested brace
+levels, including the outer braces; blocks cannot be manipulated as procedure objects.
+Compilation is internal to spec and reused by tints, shading, and Alpha-mask transfers without
+an external runtime. Sampled functions remain limited to 8-bit samples and linear interpolation
+(including the prescribed fallback for small cubic tables). Compiler injection remains available.
 
 Images, soft masks, and stencils sample through the original image placement. Page crops and
 captured Form clips restrict the destination without stretching the source; masks retain their
@@ -235,3 +314,57 @@ PDF leaves DeviceCMYK conversion undefined. `_impl/graphics/device_profiles.py` 
 the press profile in `_vendor/icc/` and uses the uncalibrated ink formula only when the profile is
 unavailable. The ICC implementation documents its rendering intent, black-point compensation, and
 optimized byte path alongside the code.
+
+`ri` and ExtGState `RI` select rendering intent; `UseBlackPtComp` controls compensation for
+supported CIE-based conversions. Image `Intent` overrides only that image's intent; stencil
+images ignore it. Saved and nested graphics state preserve these settings, and conversion
+caches include the settings that affect their output. Absolute colorimetric conversion ignores
+compensation without changing the stored graphics-state value.
+
+Core preserves its existing default converters: ICC and selected DeviceCMYK profiles use
+relative colorimetric conversion with compensation, while calibrated spaces retain their
+existing XYZ output path for the initial RelativeColorimetric/Default combination. Explicit
+calibrated controls use the CMS path and the dictionary's diffuse black endpoint. Spec owns
+the neutral state and mathematical helpers; core owns the chosen sRGB destination and CMS.
+
+DeviceN attributes retain a typed process-space mapping alongside the original dictionary.
+For NChannel spaces containing only process colors, core maps the components into that
+process space before conversion: RGB values retain their additive meaning, and missing CMYK
+components contribute no ink. ICC profiles, rendering intent, and compensation follow the
+same conversion path as directly selected process spaces. This applies to scalar paint colors
+and image samples, including Indexed bases. Ordinary DeviceN, mixed spot/process NChannel,
+and malformed attribute dictionaries have a global alternate-space tint transform available.
+Indexed palettes with Separation or DeviceN bases now use recursive conversion for both scalar
+colors and every supported image sample depth; lookup, Decode, tint evaluation, and alternate
+conversion retain that order.
+
+For mixed or all-spot NChannel, core provides a selected screen approximation: convert the
+process components and each spot's Separation appearance to sRGB, then multiply the appearances
+over the process result (or white when there are no process components). Component conversion
+retains ICC profiles and rendering settings; mixing does not apply object opacity. The policy
+requires empty/absent `MixingHints` and spot zero-tint endpoints that convert to white at the
+8-bit output precision. Nonempty hints, other paper endpoints, or unusable individual functions
+use the whole global tint transform. This approximation does not model spectral inks,
+separation-aware overprinting, or plate interactions with a transparent backdrop.
+
+`s_08_graphics.color.color_space_paints` identifies Separation `None` and all-`None` DeviceN,
+including Indexed and uncolored Pattern bases. Capture retains their extraction records while
+explicit paint flags suppress raster output and unnecessary image/function decoding. Text
+advances and clipping remain active, and fill/stroke suppression is independent. A DeviceN
+space containing both `None` and real colorants still passes every component to its tint function.
+The early image/shading probe reads only names; general color-space selection still parses
+alternate ICC profiles eagerly, including an unused alternate in a malformed no-paint space.
+
+Tiling patterns render all tiles into one group, then apply the outer opacity, selected soft
+mask, and blend mode once. Non-Normal contents see the initial backdrop through a non-isolated
+group. Patterns whose captured contents use only Normal blending retain the isolated
+optimization permitted by ISO 32000-2 §11.6.7. Group alpha follows the same effective coverage
+and mask samples as image, path, text, and shading paint, including vectorized raster paths.
+
+Transparency groups composite in the renderer's RGB space with its existing supported blend
+modes and byte quantization. Arbitrary group `/CS` blending spaces, Luminosity soft-mask
+rendering, and plate-aware compositing require additional work. Spec preserves
+Luminosity `/CS` and backdrop metadata; core currently uses its unmasked fallback for that
+unsupported subtype. Alpha mask rasterization uses the renderer's existing byte precision.
+Implicit text and glyph groups currently allocate and process page-sized scratch planes,
+which can make text-heavy rendering expensive. This allocation strategy has not been optimized.

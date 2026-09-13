@@ -11,6 +11,9 @@ RESOURCE_PACKAGE = "core_pdf_spec.s_09_fonts.data"
 
 
 def resolve_cmap_resource(name: str) -> bytes | None:
+    # Resource names are single, already-decoded PDF names, not relative paths.
+    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+        return None
     root = resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
     if not root.is_dir():
         return None
@@ -19,15 +22,18 @@ def resolve_cmap_resource(name: str) -> bytes | None:
     candidates: list[tuple[Traversable, str | None]] = [(root, None)]
     while candidates:
         current, parent_name = candidates.pop()
+        # CMap directories contain the named resources. Probe the requested
+        # file directly instead of enumerating and stat-ing every other CMap.
+        if parent_name == "CMap":
+            child = current.joinpath(name)
+            if child.is_file():
+                if "/deprecated/" not in str(child):
+                    return child.read_bytes()
+                deprecated = child
+            continue
         for child in current.iterdir():
             if child.is_dir():
                 candidates.append((child, child.name))
-                continue
-            if parent_name != "CMap" or child.name != name:
-                continue
-            if "/deprecated/" not in str(child):
-                return child.read_bytes()
-            deprecated = child
     return deprecated.read_bytes() if deprecated is not None else None
 
 

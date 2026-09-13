@@ -3,11 +3,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    BlackPointCompensation,
+    ColorRendering,
+    parse_rendering_intent,
+)
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
@@ -17,6 +23,7 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf_spec.s_07_content.streams import ContentStreamFrame
+    from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
 NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
@@ -52,6 +59,7 @@ class PdfPath:
 @dataclass(frozen=True, slots=True)
 class ShadingPattern:
     dictionary: PdfDict
+    extgstate: PdfDict | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +73,8 @@ class TilingPattern:
     paint_type: int
     base_color: tuple[float, ...] | None
     base_color_spec: ColorSpace | None = field(default=None, kw_only=True)
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    text_knockout: bool = field(default=True, kw_only=True)
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
@@ -93,6 +103,7 @@ class GraphicsState:
     blend_mode: str | None = None
     flatness: float = 1.0
     render_intent: str | None = None
+    black_point_compensation: BlackPointCompensation = "Default"
     line_width: float = 1.0
     line_cap: int = 0
     line_join: int = 0
@@ -108,6 +119,37 @@ class GraphicsState:
     current_font: str | None = None
     current_decoder: FontService | None = None
     decoder_resources: PdfDict | None = None
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    text_knockout: bool = field(default=True, kw_only=True)
+    soft_mask: SoftMask | None = field(default=None, kw_only=True)
+
+    @property
+    def color_rendering(self) -> ColorRendering:
+        return internal_color_rendering(self.render_intent, self.black_point_compensation)
+
+    def __copy__(self) -> GraphicsState:
+        # q saves the full state on every nesting level; copy.copy's generic
+        # reduce protocol costs an order of magnitude more than direct slot
+        # assignment for a record this wide.
+        new = object.__new__(GraphicsState)
+        for name in internal_GRAPHICS_STATE_FIELD_NAMES:
+            setattr(new, name, getattr(self, name))
+        return new
+
+
+internal_GRAPHICS_STATE_FIELD_NAMES = tuple(item.name for item in fields(GraphicsState))
+
+
+@lru_cache(maxsize=64)
+def internal_color_rendering(
+    intent: str | None, black_point: BlackPointCompensation
+) -> ColorRendering:
+    """Share one validated rendering record per distinct (RI, UseBlackPtComp) pair.
+
+    Every paint operation reads the current state's colour rendering; the
+    parameters only change on ``ri`` and ``gs`` operators.
+    """
+    return ColorRendering(parse_rendering_intent(intent or "RelativeColorimetric"), black_point)
 
 
 class ContentSink(Protocol):

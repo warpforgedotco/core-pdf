@@ -10,7 +10,9 @@ from core_pdf.impl._impl.capture.recovery import CaptureRecovery
 from core_pdf.impl._impl.document.recovery.resources import (
     resolve_resource_dict as recover_resources,
 )
+from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl._impl.graphics.color_spec import parse_color_space
+from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -24,7 +26,42 @@ from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
+from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.types import PdfReference, PdfString
+
+
+def internal_font_signature(
+    font_ref: PdfReference,
+    font_obj: object,
+    resources: object,
+    resolve: typing.Callable[[object], object],
+) -> object | None:
+    """Identify a font selection by its reference and its same-named siblings.
+
+    A decoder depends on its font object and on the sibling fonts that
+    ligature detection may pair it with, which share its base name. Only
+    indirect objects have an identity that holds across pages, so any direct
+    sibling disables sharing.
+    """
+    if not isinstance(resources, dict) or not isinstance(font_obj, dict):
+        return None
+    fonts = resolve(resources.get("Font"))
+    if not isinstance(fonts, dict):
+        return None
+    base_name = strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
+    companions: list[tuple[int, int]] = []
+    for value in fonts.values():
+        if type(value) is not PdfReference:
+            return None
+        if not base_name:
+            continue
+        sibling = resolve(value)
+        if isinstance(sibling, dict) and (
+            strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "") == base_name
+        ):
+            companions.append((value.object_number, value.generation_number))
+    companions.sort()
+    return (font_ref.object_number, font_ref.generation_number, tuple(companions))
 
 
 class RecoveringTextState(ContentInterpreter):
@@ -32,11 +69,24 @@ class RecoveringTextState(ContentInterpreter):
 
     recovery: CaptureRecovery
 
+    def resolve_soft_mask(self, value: object) -> SoftMask | None:
+        return parse_soft_mask(
+            value,
+            self.resolver,
+            ctm=self.graphics.ctm,
+            compile_function=internal_compile_pdf_function,
+        )
+
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
     ) -> ContentStreamFrame | None:
         handler = self.operator_overrides.get(name) or self.internal_default_handlers.get(name)
         return handler(operands, depth) if handler is not None else None
+
+    # Decoders owned by this capture, one per (font object, resource scope).
+    # A ``Tf`` selects a font resource; the decoder belongs to that resource,
+    # not to the operator, so re-selecting a font reuses its decoder.
+    capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
 
     def get_decoder(self) -> FontDecoder:
         if self.graphics.current_decoder is not None:
@@ -61,19 +111,54 @@ class RecoveringTextState(ContentInterpreter):
             font_obj = None
         if isinstance(font_obj, PdfStream):
             font_obj = font_obj.dictionary
-        if not isinstance(font_obj, dict):
-            decoder = self.font_provider({}, typing.cast(dict[str, Any], self.resources))
-            self.graphics.current_decoder = decoder
-            self.graphics.decoder_resources = self.resources
-            return decoder
+        resources = self.resources
+        if isinstance(font_obj_ref, PdfReference):
+            font_key: object = (font_obj_ref.object_number, font_obj_ref.generation_number)
+        else:
+            font_key = id(font_obj)
+        owned = self.capture_font_decoders.setdefault(font_key, [])
+        for owner_resources, owner_font, decoder in owned:
+            # The entries pin their font and resources objects, so identity
+            # comparison cannot alias a collected object.
+            if owner_resources is resources and owner_font is font_obj:
+                self.graphics.current_decoder = decoder
+                self.graphics.decoder_resources = resources
+                return decoder
 
-        font_dict = typing.cast(PdfDict, font_obj)
-        resolved_font = self.resolver.resolve_font_dict(font_dict)
-        decoder = self.font_provider(
-            typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], self.resources)
+        # Pages of one document select the same fonts over and over. A decoder
+        # depends only on its font object and on the sibling fonts that
+        # ligature detection may pair it with, so those identify a decoder the
+        # whole document can share once every one of them is an indirect object.
+        document_decoders: dict[object, object] | None = getattr(
+            getattr(self, "document", None), "internal_font_decoders", None
         )
+        signature = None
+        if document_decoders is not None and isinstance(font_obj_ref, PdfReference):
+            signature = internal_font_signature(
+                font_obj_ref, font_obj, resources, self.resolver.resolve
+            )
+        if signature is not None and document_decoders is not None:
+            shared = document_decoders.get(signature)
+            if shared is not None:
+                decoder = typing.cast(FontDecoder, shared)
+                owned.append((resources, font_obj, decoder))
+                self.graphics.current_decoder = decoder
+                self.graphics.decoder_resources = resources
+                return decoder
+
+        if not isinstance(font_obj, dict):
+            decoder = self.font_provider({}, typing.cast(dict[str, Any], resources))
+        else:
+            font_dict = typing.cast(PdfDict, font_obj)
+            resolved_font = self.resolver.resolve_font_dict(font_dict)
+            decoder = self.font_provider(
+                typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], resources)
+            )
+        owned.append((resources, font_obj, decoder))
+        if signature is not None and document_decoders is not None:
+            document_decoders[signature] = decoder
         self.graphics.current_decoder = decoder
-        self.graphics.decoder_resources = self.resources
+        self.graphics.decoder_resources = resources
         return decoder
 
     def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:
@@ -178,7 +263,10 @@ class RecoveringTextState(ContentInterpreter):
             shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 return None
-            return ShadingPattern(dict(shading_dict))
+            return ShadingPattern(
+                dict(shading_dict),
+                extgstate=self.resolver.resolve_dict(pattern_dict.get("ExtGState")),
+            )
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"), 1)
@@ -205,6 +293,8 @@ class RecoveringTextState(ContentInterpreter):
             paint_type=paint_type,
             base_color=base_color,
             base_color_spec=base_spec,
+            alpha_is_shape=self.initial_alpha_is_shape,
+            text_knockout=self.initial_text_knockout,
         )
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:

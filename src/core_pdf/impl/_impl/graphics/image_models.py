@@ -19,8 +19,8 @@ class DecodedImage:
     def __post_init__(self) -> None:
         if self.array.ndim not in {2, 3}:
             raise ValueError("decoded image must have two or three dimensions")
-        if self.array.dtype != numpy.uint8:
-            raise ValueError("decoded image samples must be uint8")
+        if self.array.dtype not in (numpy.uint8, numpy.uint16):
+            raise ValueError("decoded image samples must be uint8 or uint16")
         if not self.array.flags.c_contiguous:
             raise ValueError("decoded image must be C-contiguous")
 

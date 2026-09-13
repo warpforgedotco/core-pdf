@@ -1,0 +1,105 @@
+{
+  "source_repository": "https://github.com/veraPDF/veraPDF-corpus",
+  "source_revision": "377728596647e40edf16003d68d620773ce96ec5",
+  "attribution": "veraPDF Consortium and veraPDF-corpus contributors",
+  "license": "CC-BY-4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "fixtures": [
+    {
+      "filename": "pdfa-1a-unicode.pdf",
+      "source_path": "PDF_A-1a/6.3 Fonts/6.3.8 Unicode character maps/veraPDF test suite 6-3-8-t01-pass-b.pdf",
+      "source_sha256": "1836d5c246a184f23347c0dbff2ebf1e835b0105cd3fd814228455191e5702ce",
+      "sha256": "1836d5c246a184f23347c0dbff2ebf1e835b0105cd3fd814228455191e5702ce",
+      "profiles": [
+        "pdfa-1a",
+        "pdfa-1b"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfa-2a-actualtext.pdf",
+      "source_path": "PDF_A-2a/6.2 Graphics/6.2.11 Fonts/6.2.11.7 Unicode character maps/6.2.11.7.3 Level A conformance/veraPDF test suite 6-2-11-7-3-t01-pass-b.pdf",
+      "source_sha256": "a1adbe18928dbe4fa8677bc1b126221a3773bd26fbdc1e00706aa8e9845f02ef",
+      "sha256": "a1adbe18928dbe4fa8677bc1b126221a3773bd26fbdc1e00706aa8e9845f02ef",
+      "profiles": [
+        "pdfa-2a",
+        "pdfa-2b",
+        "pdfa-2u"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfa-3a-actualtext.pdf",
+      "source_path": "PDF_A-2a/6.2 Graphics/6.2.11 Fonts/6.2.11.7 Unicode character maps/6.2.11.7.3 Level A conformance/veraPDF test suite 6-2-11-7-3-t01-pass-b.pdf",
+      "source_sha256": "a1adbe18928dbe4fa8677bc1b126221a3773bd26fbdc1e00706aa8e9845f02ef",
+      "sha256": "950822878a824d68052b4ba309b18a0fdb076ab0ef5a0a6ea7e86cfc984c77b3",
+      "profiles": [
+        "pdfa-3a",
+        "pdfa-3u"
+      ],
+      "changes": "Only replaced the single XMP attribute pdfaid:part=\"2\" with pdfaid:part=\"3\"; all other bytes including offsets, streams, metadata dates and outlines are unchanged."
+    },
+    {
+      "filename": "pdfa-3b-associated-file.pdf",
+      "source_path": "PDF_A-3b/6.8 Embedded files/veraPDF test suite 6-8-t02-pass-a.pdf",
+      "source_sha256": "5b8fdee7090f0a0fb7266d10dd0f6f1f8a37d286e3c06b1aa82e01d6d4f0a8a4",
+      "sha256": "5b8fdee7090f0a0fb7266d10dd0f6f1f8a37d286e3c06b1aa82e01d6d4f0a8a4",
+      "profiles": [
+        "pdfa-3b"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfa-4-device-color.pdf",
+      "source_path": "PDF_A-4/6.2 Graphics/6.2.4 Colour spaces/6.2.4.3 Uncalibrated -Device colour spaces/veraPDF test suite 6-2-4-3-t01-pass-e.pdf",
+      "source_sha256": "b2b40e60a6a8e2a52cedd2ad520357057a7b48565ed98b566d08bf2d55d8eb46",
+      "sha256": "b2b40e60a6a8e2a52cedd2ad520357057a7b48565ed98b566d08bf2d55d8eb46",
+      "profiles": [
+        "pdfa-4"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfa-4e-optional-content.pdf",
+      "source_path": "PDF_A-4e/6.6 Action/6.6.1 General/veraPDF test suite 6-6-1-t01-pass-a.pdf",
+      "source_sha256": "cb362fff1df06c45f344846fb438393f3bba5a692a9c2c53295ca9b079ff7501",
+      "sha256": "cb362fff1df06c45f344846fb438393f3bba5a692a9c2c53295ca9b079ff7501",
+      "profiles": [
+        "pdfa-4e"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfa-4f-embedded-files.pdf",
+      "source_path": "PDF_A-4f/6.9 Embedded files/veraPDF test suite 6-9-t01-pass-b.pdf",
+      "source_sha256": "5097e4de143e69b751703fa301cb26a188b092fb0cf949237e5f5848b5a2190b",
+      "sha256": "5097e4de143e69b751703fa301cb26a188b092fb0cf949237e5f5848b5a2190b",
+      "profiles": [
+        "pdfa-4f"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfua-1-text.pdf",
+      "source_path": "PDF_UA-1/7.2 Text/7.2-t17-pass-d.pdf",
+      "source_sha256": "8ed02567ae1276a88627565046d60d62bafdc81fe7c2056c907aca81e163747d",
+      "sha256": "8ed02567ae1276a88627565046d60d62bafdc81fe7c2056c907aca81e163747d",
+      "profiles": [
+        "pdfua-1"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    },
+    {
+      "filename": "pdfua-2-wtpdf-unicode.pdf",
+      "source_path": "PDF_UA-2/8.4 Text representation for content/8.4.5 Fonts/8.4.5.8 Unicode character maps/8.4.5.8-t01-pass-a.pdf",
+      "source_sha256": "acf85833e0580624ba647b9ff3c57d9dc8ba3a17911ecdbe3adbe350c43431e9",
+      "sha256": "acf85833e0580624ba647b9ff3c57d9dc8ba3a17911ecdbe3adbe350c43431e9",
+      "profiles": [
+        "pdfua-2",
+        "wtpdf-1.0-reuse",
+        "wtpdf-1.0-accessibility"
+      ],
+      "changes": "None; byte-for-byte upstream copy."
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import numpy
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfValueResolver
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.image_spec import (
     image_source_from_stream as resolve_image_source,
@@ -12,9 +13,17 @@ from core_pdf_spec.s_08_graphics.image_spec import (
 
 
 def image_source_from_stream(
-    stream: PdfStream, resolver: PdfValueResolver
+    stream: PdfStream,
+    resolver: PdfValueResolver,
+    *,
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[ImageSource, float | None]:
-    source = resolve_image_source(stream, resolver)
+    source = resolve_image_source(
+        stream,
+        resolver,
+        semantic_context=getattr(resolver, "semantic_context", None),
+        color_rendering=color_rendering,
+    )
     mask_alpha = None
     mask = source.soft_mask
     if mask is not None:

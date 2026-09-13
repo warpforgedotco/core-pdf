@@ -10,12 +10,15 @@ from core_pdf.impl._impl.capture.records import (
     CapturedDrawing,
     CapturedInlineImage,
     CapturedLine,
+    CapturedTextBoundary,
 )
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.exceptions import PdfContractError
 
-PageCommand: TypeAlias = TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage
+PageCommand: TypeAlias = (
+    TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +35,7 @@ class CapturedProgram:
     drawings: tuple[CapturedDrawing, ...] = ()
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: tuple[CapturedLine, ...] = ()
+    text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
     commands: tuple[PageCommand, ...] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -40,18 +44,22 @@ class CapturedProgram:
         drawings = tuple(self.drawings)
         inline_images = tuple(self.inline_images)
         lines = tuple(self.lines)
+        text_boundaries = tuple(self.text_boundaries)
         validations: tuple[tuple[str, tuple[object, ...], type[object]], ...] = (
             ("text-run", runs, TextRun),
             ("glyph", glyphs, GlyphObservation),
             ("drawing", drawings, CapturedDrawing),
             ("inline-image", inline_images, CapturedInlineImage),
             ("line", lines, CapturedLine),
+            ("text-boundary", text_boundaries, CapturedTextBoundary),
         )
         for name, products, product_type in validations:
             if not all(isinstance(product, product_type) for product in products):
                 raise PdfContractError(f"page program contains an invalid {name} product")
 
-        commands: list[PageCommand] = [*runs]
+        # Boundaries describe the cursor before the next paint; they never
+        # consume extraction sequence numbers. Stable ties retain empty scopes.
+        commands: list[PageCommand] = [*text_boundaries, *runs]
         commands.extend(glyph for glyph in glyphs if glyph.has_paint)
         commands.extend(drawings)
         commands.extend(inline_images)
@@ -62,6 +70,7 @@ class CapturedProgram:
         object.__setattr__(self, "drawings", drawings)
         object.__setattr__(self, "inline_images", inline_images)
         object.__setattr__(self, "lines", lines)
+        object.__setattr__(self, "text_boundaries", text_boundaries)
         object.__setattr__(self, "commands", tuple(commands))
 
 
@@ -91,6 +100,7 @@ class PageProgram:
     drawings: tuple[CapturedDrawing, ...] = field(init=False)
     inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
     lines: tuple[CapturedLine, ...] = field(init=False)
+    text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
     commands: tuple[PageCommand, ...] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -106,7 +116,15 @@ class PageProgram:
             raise PdfContractError("page program contains an invalid appearance")
         object.__setattr__(self, "appearances", appearances)
         programs = (self.body, *(appearance.program for appearance in appearances))
-        for name in ("runs", "glyphs", "drawings", "inline_images", "lines", "commands"):
+        for name in (
+            "runs",
+            "glyphs",
+            "drawings",
+            "inline_images",
+            "lines",
+            "text_boundaries",
+            "commands",
+        ):
             object.__setattr__(
                 self,
                 name,

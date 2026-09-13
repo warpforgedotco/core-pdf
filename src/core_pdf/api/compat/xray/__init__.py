@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
+from core_pdf.impl._impl.capture.program import PageProgram
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.model.geometry import (
@@ -18,6 +19,7 @@ from core_pdf.impl._impl.model.geometry import (
     overlap_ratio_of,
 )
 from core_pdf.impl._impl.model.text import collapse_ws
+from core_pdf.impl._impl.render.page import compose_page
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -30,6 +32,14 @@ _OK_WORDS = re.compile(
     r"redacte|redacted|redacted +and +publicly +filed|",
     re.IGNORECASE | re.MULTILINE,
 )
+
+
+class internal_XrayDocument(PdfDocument):
+    @property
+    def internal_font_semantic_context(self) -> None:
+        # Upstream x-ray uses MuPDF's modern font encodings for old PDF headers.
+        # Keep the document's actual context for names, content and graphics.
+        return None
 
 
 @dataclass(slots=True)
@@ -64,7 +74,9 @@ def _occluded(character: _Character, rectangle: _Rectangle, threshold: float) ->
     return overlap_ratio_of(character.bbox, rectangle.bbox) > threshold
 
 
-def _path_rectangles(drawing: Any, crop_box: tuple[float, float, float, float]) -> list[_Rectangle]:
+def _path_rectangles(
+    drawing: Any, crop_box: tuple[float, float, float, float], user_unit: float = 1.0
+) -> list[_Rectangle]:
     if (
         drawing.kind not in {"fill", "fillstroke"}
         or drawing.fill is None
@@ -82,7 +94,7 @@ def _path_rectangles(drawing: Any, crop_box: tuple[float, float, float, float]) 
         if len(xs) != 2 or len(ys) != 2:
             continue
         bbox = (min(xs), min(ys), max(xs), max(ys))
-        top_box = _fitz_box(bbox, crop_box)
+        top_box = _fitz_box(bbox, crop_box, user_unit)
         if top_box[3] <= 43 or top_box[2] - top_box[0] <= 4 or top_box[3] - top_box[1] <= 4:
             continue
         outside_page = top_box[2] <= 0 or top_box[3] <= 0
@@ -93,8 +105,28 @@ def _path_rectangles(drawing: Any, crop_box: tuple[float, float, float, float]) 
     return output
 
 
-def _uniform(page: Any, box: tuple[float, float, float, float]) -> bool:
-    raster = page.render().rasterize(scale=1.0, crop=box)
+class _PageRaster:
+    """Compose the inspection's page program once, then rasterize rectangle crops."""
+
+    __slots__ = ("page", "program", "rendered")
+
+    def __init__(self, page: Any, program: PageProgram) -> None:
+        self.page = page
+        self.program = program
+        self.rendered: Any = None
+
+    def rasterize(self, box: tuple[float, float, float, float]) -> Any:
+        if self.rendered is None:
+            self.rendered = compose_page(
+                self.page,
+                page_program=self.program,
+                semantic_context=self.page.document.resolver.semantic_context,
+            )
+        return self.rendered.rasterize(scale=1.0, crop=box)
+
+
+def _uniform(raster_page: _PageRaster, box: tuple[float, float, float, float]) -> bool:
+    raster = raster_page.rasterize(box)
     pixels = memoryview(raster.pixels).cast("B")
     if not pixels or raster.channels <= 0:
         return False
@@ -105,14 +137,14 @@ def _uniform(page: Any, box: tuple[float, float, float, float]) -> bool:
 
 
 def _pixmap_crop(
-    box: tuple[float, float, float, float], page_height: float
+    box: tuple[float, float, float, float], page_height: float, user_unit: float = 1.0
 ) -> tuple[float, float, float, float]:
     top_box = flip_rect_vertical(box, page_height)
     pixel_box = (
-        float(floor(top_box[0])) - 1.0,
-        float(floor(top_box[1])) - 1.0,
-        float(ceil(top_box[2])) + 1.0,
-        float(ceil(top_box[3])) + 1.0,
+        (float(floor(top_box[0] * user_unit)) - 1.0) / user_unit,
+        (float(floor(top_box[1] * user_unit)) - 1.0) / user_unit,
+        (float(ceil(top_box[2] * user_unit)) + 1.0) / user_unit,
+        (float(ceil(top_box[3] * user_unit)) + 1.0) / user_unit,
     )
     return flip_rect_vertical(pixel_box, page_height)
 
@@ -120,16 +152,18 @@ def _pixmap_crop(
 def _fitz_box(
     box: tuple[float, float, float, float],
     crop_box: tuple[float, float, float, float],
+    user_unit: float = 1.0,
 ) -> tuple[float, float, float, float]:
     """Convert engine PDF coordinates to PyMuPDF's cropped, top-origin space."""
     crop_x0, _crop_y0, _crop_x1, crop_y1 = crop_box
-    crop_x0 = _fitz_coordinate(crop_x0)
-    crop_y1 = _fitz_coordinate(crop_y1)
+    user_unit = _float32(user_unit)
+    crop_x0 = _float32(_fitz_coordinate(crop_x0) * user_unit)
+    crop_y1 = _float32(_fitz_coordinate(crop_y1) * user_unit)
     return (
-        _float32(_fitz_coordinate(box[0]) - crop_x0),
-        _float32(crop_y1 - _fitz_coordinate(box[3])),
-        _float32(_fitz_coordinate(box[2]) - crop_x0),
-        _float32(crop_y1 - _fitz_coordinate(box[1])),
+        _float32(_float32(_fitz_coordinate(box[0]) * user_unit) - crop_x0),
+        _float32(crop_y1 - _float32(_fitz_coordinate(box[3]) * user_unit)),
+        _float32(_float32(_fitz_coordinate(box[2]) * user_unit) - crop_x0),
+        _float32(crop_y1 - _float32(_fitz_coordinate(box[1]) * user_unit)),
     )
 
 
@@ -218,12 +252,16 @@ def _page_redactions(
     page: Any, override_cache: dict[str, dict[bytes, bytes]]
 ) -> list[dict[str, object]]:
     source_crop_box = page.crop_box or page.media_box
+    user_unit = page.user_unit
     crop_box = cast(
         tuple[float, float, float, float], tuple(float(value) for value in source_crop_box)
     )
-    drawings = tuple(page.get_drawings())
+    program = page.get_page_program()
+    drawings = page.internal_drawing_records(program.drawings)
     rectangles = [
-        rectangle for drawing in drawings for rectangle in _path_rectangles(drawing, crop_box)
+        rectangle
+        for drawing in drawings
+        for rectangle in _path_rectangles(drawing, crop_box, user_unit)
     ]
     if not rectangles:
         return []
@@ -242,7 +280,8 @@ def _page_redactions(
     if "overrides" not in override_cache:
         override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
     operand_overrides = override_cache["overrides"]
-    glyphs = tuple(page.get_page_program().glyphs)
+    glyphs = program.glyphs
+    raster_page = _PageRaster(page, program)
     sequence_codes: dict[int, bytes] = {}
     for glyph in glyphs:
         sequence_codes[glyph.seqno] = sequence_codes.get(glyph.seqno, b"") + glyph.code_bytes
@@ -300,7 +339,9 @@ def _page_redactions(
                     recovered_positions[position_key] = x1
                     glyph_box = (x0, glyph_box[1], x1, glyph_box[3])
         character = _Character(glyph_box, text, glyph.seqno, glyph.fill)
-        matching_rectangles = non_annotation_rectangles if glyph.font_size == 1.0 else rectangles
+        matching_rectangles = (
+            non_annotation_rectangles if glyph.font_size * user_unit == 1.0 else rectangles
+        )
         if any(_occluded(character, rectangle, 0.8) for rectangle in matching_rectangles):
             characters.append(character)
 
@@ -322,7 +363,7 @@ def _page_redactions(
             continue
         if not _OK_WORDS.sub("", collapse_ws(text)):
             continue
-        fitz_box = _fitz_box(rectangle.bbox, crop_box)
+        fitz_box = _fitz_box(rectangle.bbox, crop_box, user_unit)
         if rectangle.bbox in annotation_boxes:
             fitz_box = (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3])
         integer_aligned = all(abs(value * 2 - round(value * 2)) < 0.0001 for value in fitz_box)
@@ -336,17 +377,17 @@ def _page_redactions(
         outside_page = (
             fitz_box[2] <= 0
             or fitz_box[3] <= 0
-            or fitz_box[0] >= crop_box[2] - crop_box[0]
-            or fitz_box[1] >= crop_box[3] - crop_box[1]
+            or fitz_box[0] >= (crop_box[2] - crop_box[0]) * user_unit
+            or fitz_box[1] >= (crop_box[3] - crop_box[1]) * user_unit
         )
         raster_box = (
             rectangle.bbox
             if page.rotation
             or (integer_aligned and not widget_has_later_content)
             or (is_widget and not widget_has_later_content)
-            else _pixmap_crop(rectangle.bbox, float(page.height))
+            else _pixmap_crop(rectangle.bbox, float(page.height), user_unit)
         )
-        if not page.rotation and not outside_page and not _uniform(page, raster_box):
+        if not page.rotation and not outside_page and not _uniform(raster_page, raster_box):
             continue
         center = (
             (rectangle.bbox[0] + rectangle.bbox[2]) * 0.5,
@@ -364,7 +405,7 @@ def _page_redactions(
                 )
             ):
                 continue
-            drawing_rectangles = _path_rectangles(drawing, crop_box)
+            drawing_rectangles = _path_rectangles(drawing, crop_box, user_unit)
             if not any(
                 candidate.bbox[0] <= center[0] <= candidate.bbox[2]
                 and candidate.bbox[1] <= center[1] <= candidate.bbox[3]
@@ -493,7 +534,7 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
             character.text for character in recovered if bbox_intersects(character.bbox, highlight)
         )
         if text.strip():
-            fitz_box = _fitz_box(highlight, crop_box)
+            fitz_box = _fitz_box(highlight, crop_box, page.user_unit)
             output.append(
                 {
                     "bbox": (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3]),
@@ -529,7 +570,7 @@ def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
     """Return x-ray-shaped bad-redaction findings from engine evidence."""
     output: dict[int, list[dict[str, object]]] = {}
     try:
-        document = PdfDocument.open(source)
+        document = internal_XrayDocument.open(source)
     except PdfUnsupportedError:
         raw_data = _source_bytes(source)
         if (

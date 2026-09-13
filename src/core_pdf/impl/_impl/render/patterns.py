@@ -25,6 +25,7 @@ from core_pdf.impl._impl.render.display import DisplayList
 from core_pdf.impl._impl.render.model import PathPaintItem
 from core_pdf.impl._impl.render.paths import internal_intersect_box
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 
 def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
@@ -68,6 +69,7 @@ def internal_shading_color_rgba(
     color_model: str,
     components: list[float] | tuple[float, ...],
     opacity: Any,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int, int]:
     alpha = internal_color_component(opacity, 255) if type(opacity) in {int, float} else 255
     name = color_model or "DeviceRGB"
@@ -76,7 +78,7 @@ def internal_shading_color_rgba(
         return gray, gray, gray, alpha
     if name.endswith("DeviceCMYK") and len(components) >= 4:
         c, m, y, k = (internal_clamp01(v) for v in components[:4])
-        red, green, blue = cmyk_floats_to_srgb(c, m, y, k)
+        red, green, blue = cmyk_floats_to_srgb(c, m, y, k, rendering=rendering)
         return red, green, blue, alpha
     rgb = [internal_color_component(c) for c in components[:3]]
     while len(rgb) < 3:
@@ -86,6 +88,33 @@ def internal_shading_color_rgba(
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
+
+
+def internal_tiling_pattern_uses_normal_blends(
+    pattern: TilingPattern, active: set[int] | None = None
+) -> bool:
+    """Conservatively identify the isolated optimization allowed by 11.6.7."""
+    if active is None:
+        active = set()
+    identity = id(pattern)
+    if identity in active:
+        return False
+    active.add(identity)
+    try:
+        modes = [drawing.blend_mode for drawing in pattern.drawings]
+        modes.extend(glyph.blend_mode for glyph in pattern.glyphs)
+        modes.extend(image.blend_mode for image in pattern.inline_images)
+        if any(mode is not None and mode.casefold() != "normal" for mode in modes):
+            return False
+        for drawing in pattern.drawings:
+            for nested in (drawing.fill_pattern, drawing.stroke_pattern):
+                if isinstance(
+                    nested, TilingPattern
+                ) and not internal_tiling_pattern_uses_normal_blends(nested, active):
+                    return False
+        return True
+    finally:
+        active.remove(identity)
 
 
 class internal_PatternTargetMixin:
@@ -125,7 +154,9 @@ class internal_PatternTargetMixin:
         scale = self.scale
         shading_box = self.shading_box
         width = self.width
-        shading = prepare_shading(data.get("dictionary"))
+        shading = prepare_shading(
+            data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
+        )
         if shading is None:
             return
         shading_type = shading.shading_type
@@ -178,6 +209,7 @@ class internal_PatternTargetMixin:
                         shading.color_model,
                         shading.evaluate(value),
                         fill_opacity,
+                        shading.color_rendering,
                     )
                     if shading_alpha is not None:
                         rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
@@ -206,7 +238,11 @@ class internal_PatternTargetMixin:
         glyphs = pattern.glyphs
         if not drawings and not glyphs and not pattern.inline_images:
             return False
-        display = DisplayList(width, self.height)
+        display = DisplayList(
+            width,
+            self.height,
+            preserve_object_boundaries=self.group_source_shape is not None,
+        )
         cell_clip = CapturedPath()
         cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
         append_captured_program(
@@ -215,6 +251,7 @@ class internal_PatternTargetMixin:
                 drawings=tuple(drawings),
                 glyphs=tuple(glyphs),
                 inline_images=tuple(pattern.inline_images),
+                text_boundaries=tuple(pattern.text_boundaries),
             ),
             include_text=True,
         )
@@ -254,21 +291,38 @@ class internal_PatternTargetMixin:
         start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
         cells = 0
         y = start_y
-        while y < y1 + y_step and cells < 10000:
-            x = start_x
-            while x < x1 + x_step and cells < 10000:
-                tx = x - cell_x0
-                ty = y - cell_y0
-                if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
-                    self.paint_items(
-                        display.items,
-                        translation=(tx, ty),
-                        parent_blend_mode=blend_mode,
-                        clip_path=cell_clip,
-                    )
-                cells += 1
-                x += x_step
-            y += y_step
+        # ISO 32000-2 11.6.7: all tiles form one non-isolated group. Notes
+        # 1-2 permit a transparent backdrop when every internal blend is Normal.
+        # Object transparency belongs to the complete pattern result.
+        opacity = target_data.fill_opacity
+        alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
+        if is_pdf_number(target_data.soft_mask_alpha):
+            alpha *= internal_clamp01(target_data.soft_mask_alpha)
+        self.push_group(
+            bytearray(len(self.pixels)),
+            alpha,
+            blend_mode,
+            isolated=internal_tiling_pattern_uses_normal_blends(pattern),
+            alpha_is_shape=target_data.alpha_is_shape,
+        )
+        try:
+            while y < y1 + y_step and cells < 10000:
+                x = start_x
+                while x < x1 + x_step and cells < 10000:
+                    tx = x - cell_x0
+                    ty = y - cell_y0
+                    if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
+                        self.paint_items(
+                            display.items,
+                            translation=(tx, ty),
+                            parent_blend_mode=None,
+                            clip_path=cell_clip,
+                        )
+                    cells += 1
+                    x += x_step
+                y += y_step
+        finally:
+            self.composite_group(self.pop_group())
         return True
 
     def paint_fill_pattern(
@@ -293,6 +347,7 @@ class internal_PatternTargetMixin:
                     "bbox": data.bbox or clip_state.path_bbox(path),
                     "fill_opacity": data.fill_opacity,
                     "soft_mask_alpha": data.soft_mask_alpha,
+                    "color_rendering": pattern.color_rendering,
                 }
                 self.paint_shading(shading_data, blend_mode)
                 return True

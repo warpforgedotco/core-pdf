@@ -2,7 +2,7 @@
 
 The canonical public API is exported from `core_pdf`. `PdfDocument`, `PdfPage`, structured
 records, runtime controls, and errors are lazy exports backed by their engine owners.
-There is no parallel capability or versioned API layer.
+The same public document API handles every recognized PDF format version.
 
 ```python
 from core_pdf import PdfDocument
@@ -13,6 +13,36 @@ with PdfDocument.open("document.pdf") as document:
 
 `PdfPage.extract()` and `PdfPage.structured_view` return a structured `Page`;
 `PdfDocument.extract()` and `PdfDocument.structured_document` return a structured `Document`.
+
+## Page coordinates and physical size
+
+Native page boxes, extracted geometry, annotations, fields, and raster crop arguments
+use the PDF's default user-space coordinates. `PdfPage.width` and `height` retain
+those raw units. `user_unit` gives their physical scale: one raw unit is
+`user_unit / 72` inches. It defaults to 1 and is read from the page itself.
+
+`width_points` and `height_points` expose unrotated physical dimensions in points (1/72 inch).
+Structured `Page` records retain `user_unit` and the same physical-size properties;
+JSON page records include the scale so raw geometry remains interpretable after export.
+
+```python
+with PdfDocument("document.pdf") as document:
+    page = document.pages[0]
+    print(page.width, page.height, page.user_unit)  # raw dimensions and scale
+    print(page.width_points, page.height_points)  # physical dimensions
+    rendered = page.render()
+    raster = rendered.rasterize(scale=2)  # 144 pixels per physical inch
+```
+
+Rendered-page dimensions are physical points. The renderer applies `user_unit`
+once when converting its raw display coordinates to pixels, including crops and
+annotations, then applies page rotation. Existing raster-size limits still apply.
+OCR retains the page scale and budgets physical raster dimensions. Its existing
+recognition-coordinate projection remains separate from the public raster rotation.
+
+Compatibility facades follow their reference API's coordinate and raster conventions.
+In particular, pypdf exposes raw boxes and `user_unit`; pdfplumber preserves its
+reference's raw geometry and raster sizing; x-ray uses MuPDF-style physical coordinates.
 
 ## Extraction adapters
 
@@ -156,7 +186,7 @@ findings = inspect_xray("document.pdf")
 primitives, standard data, and semantic service protocols. It has no `PdfDocument` facade
 or command-line entry point; applications compose those operations or use `core_pdf`.
 
-Core currently supports `core-pdf-spec>=0.4.0,<0.5.0`. Supported module exports are listed in
+Core currently supports `core-pdf-spec>=0.4.1,<0.5.0`. Supported module exports are listed in
 `__all__`; names beginning with `internal_` remain private. Parser extension methods used by
 core are documented alongside their strict implementations. Spec reports errors rather than
 repairing malformed input, except where a referenced standard prescribes a fallback or default.
@@ -166,3 +196,23 @@ Core's public exceptions remain available under their existing names and share s
 identities. Core retains reader recovery, fontTools backends, Unicode guesses, selected device
 color conversion, capture, extraction, and rendering. OCR continues to depend on core's exact
 version and does not change native behavior when installed.
+
+## PDF versions and conformance claims
+
+`PdfDocument.standards` returns an immutable `core_pdf_spec.standards.DocumentStandards`:
+header, catalog, and effective versions; current extensions; unverified profile claims;
+and declaration diagnostics. Its `.context` supplies version-sensitive low-level semantics.
+Profile discovery retains XMP namespaces and leaves the existing metadata shape unchanged.
+
+Structure elements retain their original tag in `type`; `role` follows transitive
+root or namespace role mappings. `role_namespace` identifies the resulting namespace,
+`role_resolution` retains the path and terminal status (including cycles), and
+`role_error` records malformed mapping recovery. These projections do not certify
+logical hierarchy or accessibility conformance.
+
+The separately installed `core_pdf_validate.validate(source, *, profiles, backend=None)`
+returns a `ValidationReport` with independent results for explicit profile IDs or
+`profiles="declared"`. It runs a configured local validator against original bytes and
+does not require successful core parsing for explicit targets. See
+[standards interfaces and coverage](standards.md) and the
+[validation companion](../packages/core-pdf-validate/README.md).

@@ -41,6 +41,10 @@ from core_pdf_spec.s_08_graphics.color import (
     initial_color_components,
     normalize_color_components,
 )
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    parse_black_point_compensation,
+    parse_rendering_intent,
+)
 from core_pdf_spec.s_08_graphics.color_spec import (
     DEVICE_CMYK,
     DEVICE_GRAY,
@@ -52,6 +56,8 @@ from core_pdf_spec.s_08_graphics.geometry import transform_bbox
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.metrics import text_adjustment_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
+from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 if TYPE_CHECKING:
@@ -67,12 +73,18 @@ class ContentInterpreter:
         sink: ContentSink,
         font_provider: FontProvider,
         lexer_factory: Callable[[bytes | memoryview], PdfLexer] = PdfLexer,
+        *,
+        semantic_context: SemanticContext | None = None,
     ):
         self.resolver = resolver
         self.sink = sink
         self.font_provider = font_provider
         self.lexer_factory = lexer_factory
+        self.semantic_context = semantic_context
         self.graphics = GraphicsState()
+        self.initial_alpha_is_shape = False
+        self.initial_text_knockout = True
+        self.in_text_object = False
         self.text_matrix = IDENTITY_MATRIX
         self.line_matrix = IDENTITY_MATRIX
         self.stack: list[GraphicsState] = []
@@ -91,6 +103,21 @@ class ContentInterpreter:
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
         }
         self.stream_executor = ContentStreamExecutor(self)
+
+    def create_lexer(self, data: bytes | memoryview) -> PdfLexer:
+        """Create a content parser carrying the selected document semantics.
+
+        A supplied context applies to every nested stream. Without one, retain
+        any context explicitly supplied by a custom lexer factory.
+        """
+        lexer = self.lexer_factory(data)
+        if self.semantic_context is not None:
+            try:
+                lexer.semantic_context = self.semantic_context
+            except BaseException:
+                lexer.close()
+                raise
+        return lexer
 
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
@@ -115,6 +142,9 @@ class ContentInterpreter:
             xobject_depth=self.xobject_depth,
             compatibility_depth=self.compatibility_depth,
             pending_clip_rule=self.internal_pending_clip_rule,
+            initial_alpha_is_shape=self.initial_alpha_is_shape,
+            initial_text_knockout=self.initial_text_knockout,
+            in_text_object=self.in_text_object,
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
@@ -125,6 +155,9 @@ class ContentInterpreter:
         self.xobject_depth = state.xobject_depth
         self.compatibility_depth = state.compatibility_depth
         self.internal_pending_clip_rule = state.pending_clip_rule
+        self.initial_alpha_is_shape = state.initial_alpha_is_shape
+        self.initial_text_knockout = state.initial_text_knockout
+        self.in_text_object = state.in_text_object
         while len(self.stack) > state.graphics_stack_len:
             self.pop_graphics_save()
         del self.marked_content_stack[state.marked_content_stack_len :]
@@ -268,6 +301,8 @@ class ContentInterpreter:
         """
         xobj_dict = xobj.dictionary
         group_alpha = None
+        group_isolated = True
+        group_knockout = False
         group = xobj_dict.get("Group")
         if group is not None:
             group_dict = self.resolver.resolve_dict(group)
@@ -275,26 +310,25 @@ class ContentInterpreter:
                 isinstance(group_dict, dict)
                 and self.resolver.resolve_name(group_dict.get("S")) == "Transparency"
             ):
-                # ISO 32000-1 Table 147 and 11.6.6: the invoking graphics state
-                # supplies group alpha and blend mode. An isolated group has a
-                # transparent backdrop even at full opacity.
-                blend = self.graphics.blend_mode
-                isolated = self.resolver.resolve(group_dict.get("I")) is True
-                if (
-                    isolated
-                    or self.graphics.fill_opacity < 1.0
-                    or (blend is not None and blend != "Normal")
-                ):
-                    group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
+                # ISO 32000-1 Table 147 and 11.6.6: every transparency Form is
+                # a group, including opaque non-isolated groups. Its children
+                # may choose blend modes that require the group's backdrop.
+                group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
+                group_isolated = self.resolver.resolve(group_dict.get("I")) is True
+                # ISO 32000-2 Table 145: /K is independent of isolation.
+                group_knockout = self.resolver.resolve(group_dict.get("K")) is True
         resources = self.resolve_form_resources(xobj_dict.get("Resources"))
         xobj_matrix = xobj_dict.get("Matrix")
         nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
         form_bbox = self.resolve_form_bbox(raw_form_bbox)
+        if form_bbox is not None:
+            x0, y0, x1, y1 = form_bbox
+            form_bbox = (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
-        return self.stream_executor.queue(
+        frame = self.stream_executor.queue(
             xobj,
             resources,
             nested_ctm,
@@ -304,6 +338,13 @@ class ContentInterpreter:
             group_alpha=group_alpha,
             stream_key=stream_key,
         )
+        if frame is not None:
+            # Assign after queueing to retain existing reader queue overrides.
+            frame.form_bbox = form_bbox
+            if group_alpha is not None:
+                frame.group_isolated = group_isolated
+                frame.group_knockout = group_knockout
+        return frame
 
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
         """Decode bytes once, then execute their glyphs and text advance."""
@@ -352,12 +393,11 @@ class ContentInterpreter:
         self.sink.text_boundary(self, "shown")
 
     def internal_render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
-        # ISO 32000-1 9.3.6: "Only a value of 3 for text rendering mode shall
-        # have any effect on text displayed in a Type 3 font", and Table 106
-        # makes mode 3 invisible. Mode 7 deliberately still paints here -- for a
-        # Type 3 font the clause says only mode 3 has an effect, unlike the
-        # simple-font case where 7 also adds no marks.
-        if self.graphics.render_mode == 3:
+        # ISO 32000-2 9.3.6 suppresses Type 3 painting for modes 3 and 7.
+        # Follow this contemporary correction to ISO 32000-1's mode-3-only
+        # wording across PDF versions; no legacy interpretation is selected
+        # by a document header. append_decoded_text still applies the advance.
+        if self.graphics.render_mode in {3, 7}:
             return
         font = decoder.font
         char_procs = font.get("CharProcs")
@@ -396,6 +436,9 @@ class ContentInterpreter:
                     ).multiply(text_space)
                 )
                 previous_type3_uncolored = self.type3_uncolored
+                # 9.3.8 applies text knockout to Type 3 too: all the marks in
+                # one CharProc are one glyph element of the enclosing text.
+                self.sink.text_boundary(self, "type3-glyph-begin")
                 self.type3_uncolored = False
                 try:
                     self.stream_executor.consume(
@@ -403,6 +446,7 @@ class ContentInterpreter:
                     )
                 finally:
                     self.type3_uncolored = previous_type3_uncolored
+                    self.sink.text_boundary(self, "type3-glyph-end")
 
             advance_x, advance_y = decoder.glyph_advance_vector(
                 code,
@@ -495,6 +539,7 @@ class ContentInterpreter:
 
     def op_ET(self, operands: ContentOperands, depth: int) -> None:
         self.sink.text_boundary(self, "end")
+        self.in_text_object = False
 
     def move_text(self, tx: float, ty: float) -> None:
         self.sink.text_boundary(self, "move")
@@ -507,6 +552,7 @@ class ContentInterpreter:
         self.line_matrix = lm._replace(e=e, f=f)
 
     def op_BT(self, operands: ContentOperands, depth: int) -> None:
+        self.in_text_object = True
         self.sink.text_boundary(self, "begin")
         self.internal_begin_text()
 
@@ -932,9 +978,10 @@ class ContentInterpreter:
     def op_ri(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
-        value = self.named_value(operands[0])
-        if isinstance(value, str):
-            self.graphics.render_intent = value
+        try:
+            self.graphics.render_intent = parse_rendering_intent(self.named_value(operands[0]))
+        except ValueError as error:
+            raise PdfParseError(str(error)) from error
 
     def op_MP(self, operands: ContentOperands, depth: int) -> None:
         # A marked-content point is not a scope. Only BMC/BDC push and EMC pops.
@@ -1024,10 +1071,29 @@ class ContentInterpreter:
         return self.as_int(operands[0])
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
-        resolved = self.resolver.resolve_dict(self.lookup_page_resource("ExtGState", name))
+        """Resolve selected state without traversing a soft mask's group graph."""
+        extgstate = self.resolver.resolve(self.lookup_page_resource("ExtGState", name))
+        if not isinstance(extgstate, dict):
+            return None
+        source = cast(PdfDict, extgstate)
+        # G can point back to its own mask through Resources. Preserve that
+        # identity; only the mask parser should resolve the selected entries.
+        # TK is entirely ignored inside BT..ET, even during resolution.
+        values = {
+            key: value
+            for key, value in source.items()
+            if key != "SMask" and (key != "TK" or not self.in_text_object)
+        }
+        resolved = self.resolver.resolve_dict(values)
         if not isinstance(resolved, dict):
             return None
+        if "SMask" in source:
+            resolved["SMask"] = source["SMask"]
         return cast("dict[str, Any]", resolved)
+
+    def resolve_soft_mask(self, value: object) -> SoftMask | None:
+        """Parse SMask at the current CTM; readers may supply function recovery."""
+        return parse_soft_mask(value, self.resolver, ctm=self.graphics.ctm)
 
     def op_q(self, operands: ContentOperands, depth: int) -> None:
         self.stack.append(copy(self.graphics))
@@ -1077,6 +1143,16 @@ class ContentInterpreter:
         Earlier changes remain applied if a later field raises. Reader callers
         own resource recovery and exception handling around this shared step.
         """
+        # Absent keys preserve state (8.4.5; Table 57 errata removes a
+        # misleading per-dictionary Default for UseBlackPtComp).
+        intent = self.resolver.resolve(extgstate.get("RI"))
+        if intent is not None:
+            self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
+        black_point = self.resolver.resolve(extgstate.get("UseBlackPtComp"))
+        if black_point is not None:
+            self.graphics.black_point_compensation = parse_black_point_compensation(
+                self.named_value(black_point)
+            )
         fill_opacity = extgstate.get("ca")
         if fill_opacity is not None:
             self.graphics.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
@@ -1089,6 +1165,22 @@ class ContentInterpreter:
                 blend_mode = blend_mode[0] if blend_mode else None
             if blend_mode is not None:
                 self.graphics.blend_mode = self.named_value(blend_mode)
+        alpha_is_shape = self.resolver.resolve(extgstate.get("AIS"))
+        if alpha_is_shape is not None:
+            if not isinstance(alpha_is_shape, bool):
+                raise ValueError("invalid alpha source flag")
+            self.graphics.alpha_is_shape = alpha_is_shape
+        # ISO 32000-2 9.3.8: TK applies to whole text objects. Inside BT..ET
+        # even an invalid value is ignored, without resolving its reference.
+        if not self.in_text_object:
+            text_knockout = self.resolver.resolve(extgstate.get("TK"))
+            if text_knockout is not None:
+                if not isinstance(text_knockout, bool):
+                    raise ValueError("invalid text knockout flag")
+                self.graphics.text_knockout = text_knockout
+        soft_mask = self.resolver.resolve(extgstate.get("SMask"))
+        if soft_mask is not None:
+            self.graphics.soft_mask = self.resolve_soft_mask(soft_mask)
 
     def resolve_pattern_resource(self, name_operand: object) -> tuple[object, PdfDict] | None:
         """Look up a selected pattern source and its dictionary without decoding it.
@@ -1123,7 +1215,8 @@ class ContentInterpreter:
             shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 raise PdfParseError("invalid pattern resource or operands")
-            return ShadingPattern(dict(shading_dict))
+            extgstate = self.resolver.resolve_dict(pattern_dict.get("ExtGState"))
+            return ShadingPattern(dict(shading_dict), extgstate=extgstate)
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             raise PdfParseError("invalid pattern resource or operands")
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))
@@ -1152,6 +1245,8 @@ class ContentInterpreter:
             paint_type=paint_type,
             base_color=base_color,
             base_color_spec=base_spec,
+            alpha_is_shape=self.initial_alpha_is_shape,
+            text_knockout=self.initial_text_knockout,
         )
 
 

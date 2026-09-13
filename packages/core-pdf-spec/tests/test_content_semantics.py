@@ -95,17 +95,17 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
 
 @pytest.mark.parametrize("indirect", [False, True])
 @pytest.mark.parametrize(
-    ("isolated", "opacity", "blend", "expected"),
+    ("isolated", "opacity", "blend"),
     [
-        (False, 1.0, None, None),
-        (False, 1.0, "Normal", None),
-        (True, 1.0, None, 1.0),
-        (False, 0.4, None, 0.4),
-        (False, 1.0, "Multiply", 1.0),
+        (False, 1.0, None),
+        (False, 1.0, "Normal"),
+        (True, 1.0, None),
+        (False, 0.4, None),
+        (False, 1.0, "Multiply"),
     ],
 )
 def test_form_retains_transparency_transform_and_source_identity(
-    indirect: bool, isolated: bool, opacity: float, blend: str | None, expected: float | None
+    indirect: bool, isolated: bool, opacity: float, blend: str | None
 ) -> None:
     # ISO 32000-1 Table 147 and 11.6.6: the invoking state supplies group alpha.
     state = internal_state()
@@ -132,7 +132,8 @@ def test_form_retains_transparency_transform_and_source_identity(
     assert frame.ctm == Matrix(2, 0, 0, 3, 17, 29)
     assert frame.clip_bbox == (17, 29, 21, 38)
     assert frame.depth == 3
-    assert frame.group_alpha == expected
+    assert frame.group_alpha == opacity
+    assert frame.group_isolated is isolated
 
 
 @pytest.mark.parametrize("resources", [None, {}, {"Font": {}}])

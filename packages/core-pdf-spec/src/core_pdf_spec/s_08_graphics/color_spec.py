@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TypeAlias, cast
 
+from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
@@ -16,6 +17,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number,
     require_pdf_number_array,
 )
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 ColorParams: TypeAlias = Mapping[str, object]
 ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
@@ -33,6 +35,25 @@ class ColorSpace:
     lookup: bytes | None = None
     tint_fn: object = None
     icc_profile: bytes | None = field(default=None, repr=False)
+    devicen_attributes: DeviceNAttributes | None = None
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class DeviceNProcess:
+    """Process components and their DeviceN input indices, in process-space order."""
+
+    color_space: ColorSpace
+    components: tuple[str, ...]
+    component_indices: tuple[int | None, ...]
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class DeviceNAttributes:
+    """DeviceN metadata; process definitions take precedence over spot definitions."""
+
+    subtype: str
+    process: DeviceNProcess | None
+    colorants: Mapping[str, ColorSpace]
 
 
 DEVICE_GRAY = ColorSpace("DeviceGray", ((0.0, 1.0),))
@@ -42,6 +63,162 @@ PATTERN = ColorSpace("Pattern", ())
 internal_DEVICE_SPACES = {
     space.kind: space for space in (DEVICE_GRAY, DEVICE_RGB, DEVICE_CMYK, PATTERN)
 }
+internal_CMYK_NAMES = ("Cyan", "Magenta", "Yellow", "Black")
+
+
+def internal_colorant_names(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError("invalid colorant names")
+    names = tuple(decoded_name(item) for item in value)
+    if any(name is None for name in names):
+        raise ValueError("invalid colorant name")
+    return tuple(name for name in names if name is not None)
+
+
+def internal_device_n_names(names: tuple[str, ...], subtype: str) -> None:
+    # ISO 32000-2:2020, 8.6.6.5: only None may repeat, and only in ordinary
+    # DeviceN. All is reserved for Separation, never DeviceN.
+    named = tuple(name for name in names if name != "None")
+    if "All" in names or len(set(named)) != len(named):
+        raise ValueError("invalid DeviceN colorant names")
+    if subtype == "NChannel" and "None" in names:
+        raise ValueError("None is not allowed in NChannel")
+
+
+def parse_device_n_attributes(
+    value: object,
+    colorants: tuple[str, ...],
+    *,
+    context: SemanticContext | None = None,
+) -> DeviceNAttributes:
+    """Parse resolved attributes without parsing the outer alternate or tint function.
+
+    ISO 32000-2:2020, 8.6.6.5 and Tables 70-71 define process/spot membership
+    and ordering. The Colorants dictionary already appears in Adobe PDF 1.3,
+    Table 4.20; NChannel extends it in PDF 1.6. This parser checks metadata
+    semantics, not the declared introduction version of every feature.
+
+    ``component_indices`` maps each process-space component to its index in
+    ``colorants``. Omitted CMYK channels have None indices. NChannel requires
+    every non-CMYK process component, contiguously and in natural order.
+    """
+    if context is not None and (context.version is None or not context.version.recognized):
+        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
+    version = context.version if context is not None else None
+    names = internal_colorant_names(colorants)
+    return internal_parse_device_n_attributes(value, names, set(), version)
+
+
+def internal_device_n_process(
+    value: object,
+    names: tuple[str, ...],
+    subtype: str,
+    active: set[int],
+    version: PdfVersion | None,
+) -> DeviceNProcess:
+    if not isinstance(value, dict):
+        raise ValueError("invalid DeviceN Process dictionary")
+    source = cast(dict[str, object], value)
+    space = internal_parse_color_space(source.get("ColorSpace"), active, version)
+    if space.kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "CalGray", "CalRGB", "ICCBased"}:
+        raise ValueError("invalid DeviceN process color space")
+    components = internal_colorant_names(source.get("Components"))
+    count = len(space.component_ranges)
+    if len(components) != count or len(set(components)) != count:
+        raise ValueError("invalid DeviceN process Components")
+    cmyk = space.kind == "DeviceCMYK" or (space.kind == "ICCBased" and count == 4)
+    if any(name in {"All", "None"} for name in components) or any(
+        name in internal_CMYK_NAMES and (not cmyk or name != internal_CMYK_NAMES[index])
+        for index, name in enumerate(components)
+    ):
+        raise ValueError("invalid reserved name in DeviceN process Components")
+    indices: list[int | None] = [None] * count
+    for index, name in enumerate(names):
+        if name in internal_CMYK_NAMES:
+            if subtype == "NChannel" and not cmyk:
+                raise ValueError("reserved CMYK colorant requires a CMYK process color space")
+            if cmyk:
+                component = internal_CMYK_NAMES.index(name)
+            elif name in components:
+                component = components.index(name)
+            else:
+                continue
+        elif name in components:
+            component = components.index(name)
+        else:
+            continue
+        if indices[component] is not None:
+            raise ValueError("conflicting DeviceN process component aliases")
+        indices[component] = index
+    if subtype == "NChannel" and not cmyk:
+        first = indices[0]
+        if first is None or indices != list(range(first, first + count)):
+            raise ValueError("NChannel process components must be complete and in natural order")
+    return DeviceNProcess(space, components, tuple(indices))
+
+
+def internal_parse_device_n_attributes(
+    value: object,
+    names: tuple[str, ...],
+    active: set[int],
+    version: PdfVersion | None,
+) -> DeviceNAttributes:
+    if not isinstance(value, dict):
+        raise ValueError("invalid DeviceN attributes")
+    marker = id(value)
+    if marker in active:
+        raise ValueError("color space cycle detected")
+    active.add(marker)
+    try:
+        source = cast(dict[str, object], value)
+        subtype = "DeviceN" if source.get("Subtype") is None else decoded_name(source["Subtype"])
+        if subtype not in {"DeviceN", "NChannel"}:
+            raise ValueError("invalid DeviceN attributes Subtype")
+        internal_device_n_names(names, subtype)
+        raw_process = source.get("Process")
+        process = (
+            internal_device_n_process(raw_process, names, subtype, active, version)
+            if raw_process is not None
+            else None
+        )
+        if (
+            subtype == "NChannel"
+            and process is None
+            and any(name in internal_CMYK_NAMES for name in names)
+        ):
+            raise ValueError("NChannel process colorants require a Process dictionary")
+        process_names = set(process.components) if process is not None else set()
+        if process is not None and (
+            process.color_space.kind == "DeviceCMYK"
+            or (process.color_space.kind == "ICCBased" and len(process.components) == 4)
+        ):
+            process_names.update(internal_CMYK_NAMES)
+        raw_colorants = source.get("Colorants")
+        colorant_spaces: dict[str, ColorSpace] = {}
+        if raw_colorants is not None:
+            if not isinstance(raw_colorants, dict):
+                raise ValueError("invalid DeviceN Colorants dictionary")
+            for raw_name, raw_space in cast(dict[object, object], raw_colorants).items():
+                name = decoded_name(raw_name)
+                if name is None:
+                    raise ValueError("invalid DeviceN Colorants name")
+                # Table 70 and 8.6.6.5 require process entries to be ignored.
+                # Null dictionary entries are absent (7.3.7).
+                if name in process_names or raw_space is None:
+                    continue
+                space = internal_parse_color_space(raw_space, active, version)
+                if space.kind != "Separation" or space.colorants != (name,):
+                    raise ValueError("DeviceN Colorants entry must match its Separation name")
+                colorant_spaces[name] = space
+        if subtype == "NChannel" and any(
+            name not in process_names and name not in colorant_spaces for name in names
+        ):
+            raise ValueError("NChannel spot colorants require matching Colorants entries")
+        if source.get("MixingHints") is not None and not isinstance(source["MixingHints"], dict):
+            raise ValueError("invalid DeviceN MixingHints dictionary")
+        return DeviceNAttributes(subtype, process, MappingProxyType(colorant_spaces))
+    finally:
+        active.remove(marker)
 
 
 def internal_array(value: object, size: int, message: str) -> tuple[float, ...]:
@@ -94,16 +271,26 @@ def internal_calibrated_params(kind: str, source: dict) -> ColorParams:
     return MappingProxyType(params)
 
 
-def parse_color_space(value: object) -> ColorSpace:
+def parse_color_space(value: object, *, context: SemanticContext | None = None) -> ColorSpace:
     """Parse a resolved color-space value without discarding nested spaces.
 
     ISO 32000-1, 8.6: component ranges belong to the color space; image sample
     bit depth does not. Parameter arrays are copied into immutable tuples.
+
+    An explicit context enforces the version-dependent Indexed base constraint
+    in Adobe PDF Reference 1.3, 4.5.5 (pp. 181-182). Omitting context preserves
+    the historical all-version API. This does not validate feature availability
+    for every kind of color space.
     """
-    return internal_parse_color_space(value, set())
+    if context is not None and (context.version is None or not context.version.recognized):
+        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
+    version = context.version if context is not None else None
+    return internal_parse_color_space(value, set(), version)
 
 
-def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
+def internal_parse_color_space(
+    value: object, active: set[int], version: PdfVersion | None
+) -> ColorSpace:
     name = decoded_name(value)
     if name in internal_DEVICE_SPACES:
         return internal_DEVICE_SPACES[name]
@@ -118,14 +305,23 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
         if kind in internal_DEVICE_SPACES and len(value) == 1:
             return internal_DEVICE_SPACES[kind]
         if kind == "Pattern" and len(value) == 2:
-            base = internal_parse_color_space(value[1], active)
+            base = internal_parse_color_space(value[1], active, version)
             if base.kind == "Pattern":
                 raise ValueError("Pattern cannot be its own underlying color space")
             return ColorSpace(kind, base.component_ranges, base=base)
         if kind == "Indexed" and len(value) == 4:
-            base = internal_parse_color_space(value[1], active)
+            base = internal_parse_color_space(value[1], active, version)
             if base.kind in {"Indexed", "Pattern"}:
                 raise ValueError("invalid Indexed base color space")
+            # Adobe PDF Reference 1.3, 4.5.5 explicitly requires an error for
+            # these bases in PDF 1.2; ISO 32000-2:2020, 8.6.6.3 retains 1.3
+            # as the introduction of the broader Indexed base constraint.
+            if (
+                base.kind in {"Separation", "DeviceN"}
+                and version is not None
+                and version < PdfVersion(1, 3)
+            ):
+                raise ValueError("Indexed Separation and DeviceN bases require PDF 1.3")
             hival = require_pdf_integer(value[2], "invalid hival")
             if not 0 <= hival <= 255:
                 raise ValueError("invalid hival")
@@ -161,7 +357,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
             alternate = (
                 {1: DEVICE_GRAY, 3: DEVICE_RGB, 4: DEVICE_CMYK}[count]
                 if raw_alt is None
-                else internal_parse_color_space(raw_alt, active)
+                else internal_parse_color_space(raw_alt, active, version)
             )
             if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN", "ICCBased"}:
                 raise ValueError("invalid ICCBased alternate color space")
@@ -179,28 +375,29 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
             {4} if kind == "Separation" else {4, 5}
         ):
             names = [value[1]] if kind == "Separation" else value[1]
-            if not isinstance(names, (list, tuple)) or not names:
-                raise ValueError("invalid colorant names")
-            colorants = tuple(decoded_name(item) for item in names)
-            if any(item is None for item in colorants):
-                raise ValueError("invalid colorant name")
-            alternate = internal_parse_color_space(value[2], active)
+            colorants = internal_colorant_names(names)
+            if kind == "DeviceN":
+                internal_device_n_names(colorants, "DeviceN")
+            alternate = internal_parse_color_space(value[2], active, version)
             if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN"}:
                 raise ValueError("invalid alternate color space")
             if value[3] is None:
                 raise ValueError("missing tint transform")
             params = {}
+            attributes = None
             if len(value) == 5:
-                if not isinstance(value[4], dict):
-                    raise ValueError("invalid DeviceN attributes")
-                params["Attributes"] = MappingProxyType(dict(value[4]))
+                attributes = internal_parse_device_n_attributes(
+                    value[4], colorants, active, version
+                )
+                params["Attributes"] = MappingProxyType(dict(cast(dict[str, object], value[4])))
             return ColorSpace(
                 kind,
                 ((0.0, 1.0),) * len(colorants),
                 MappingProxyType(params),
                 alternate=alternate,
-                colorants=tuple(item for item in colorants if item is not None),
+                colorants=colorants,
                 tint_fn=value[3],
+                devicen_attributes=attributes,
             )
         raise ValueError(f"invalid {kind or ''} color space")
     finally:
@@ -211,9 +408,12 @@ __all__ = (
     "ColorParams",
     "ComponentRanges",
     "ColorSpace",
+    "DeviceNProcess",
+    "DeviceNAttributes",
     "DEVICE_GRAY",
     "DEVICE_RGB",
     "DEVICE_CMYK",
     "PATTERN",
     "parse_color_space",
+    "parse_device_n_attributes",
 )

@@ -10,6 +10,12 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
+    """Select the sole descendant CIDFont.
+
+    Adobe PDF 1.3, Table 5.16 explicitly applies the one-descendant restriction
+    to every PDF version through 1.3, clarifying PDF 1.2 Table 7.9's generic
+    array wording. ISO 32000-1, 9.7.1 retains that restriction.
+    """
     descendant_fonts = font.get("DescendantFonts")
     if descendant_fonts is None:
         return None

@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, Any
 import numpy
 
 from core_pdf.impl._impl.graphics.images import PreparedImage, prepare_image
+from core_pdf.impl._impl.graphics.soft_masks import image_color_key_mask_is_shape
 from core_pdf.impl._impl.model.geometry import points_bbox, rect_tuple
-from core_pdf.impl._impl.render.blend import internal_color_rgba
+from core_pdf.impl._impl.render.blend import internal_color_rgba, internal_constant_alpha
 from core_pdf.impl._impl.render.kernels import internal_box_downsample
 from core_pdf.impl._impl.render.model import ImagePaintItem
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -85,16 +86,19 @@ class internal_ImageAxisTargetMixin:
             width_px, height_px = reduced_width, reduced_height
         if source_alpha is not None:
             source_alpha = source_alpha.reshape(height_px, width_px)
+        source_shape = (
+            source_alpha if image_color_key_mask_is_shape(item.source.dictionary) else None
+        )
         # The captured mean of a native mask is diagnostic metadata, not an
         # additional paint opacity. Its actual sample is applied by the sampler.
         scalar_mask = item.soft_mask_alpha if native_soft_mask is None else None
         opacity = item.fill_opacity
         constant_alpha = (
-            (float(opacity) if is_pdf_number(opacity) else 1.0)
-            * (float(scalar_mask) if is_pdf_number(scalar_mask) else 1.0)
+            internal_constant_alpha(opacity, scalar_mask)
             if is_pdf_number(opacity) or is_pdf_number(scalar_mask)
             else None
         )
+        self.set_shape_alpha(1.0 if constant_alpha is None else constant_alpha)
         self.blit_affine_image(
             quad,
             converted,
@@ -104,6 +108,7 @@ class internal_ImageAxisTargetMixin:
             constant_alpha,
             blend_mode,
             source_alpha=source_alpha,
+            source_shape=source_shape,
             soft_mask=soft_mask,
             image_clip=rect_tuple(item.image_clip),
         )
@@ -122,7 +127,8 @@ class internal_ImageAxisTargetMixin:
         red, green, blue, alpha = internal_color_rgba(item.fill, item.fill_opacity)
         if is_pdf_number(item.soft_mask_alpha) and prepared.soft_mask is None:
             alpha = max(0, min(255, round(alpha * item.soft_mask_alpha)))
-        if alpha <= 0:
+        self.set_shape_alpha(alpha / 255.0)
+        if alpha <= 0 and self.group_source_shape is None:
             return
         # A stencil has one constant color; only its alpha plane has the image's
         # dimensions. Both are sampled by the same original unit-square map.
@@ -135,5 +141,6 @@ class internal_ImageAxisTargetMixin:
             alpha / 255.0,
             blend_mode,
             source_alpha=raster.array[:, :, raster.channels - 1],
+            source_shape=raster.array[:, :, raster.channels - 1],
             image_clip=rect_tuple(item.image_clip),
         )

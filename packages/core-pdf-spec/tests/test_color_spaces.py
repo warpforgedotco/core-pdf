@@ -11,11 +11,12 @@ from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color import (
+    color_space_paints,
     indexed_color_components,
     normalize_color_components,
     tint_color_components,
 )
-from core_pdf_spec.s_08_graphics.color_spec import DEVICE_RGB, parse_color_space
+from core_pdf_spec.s_08_graphics.color_spec import DEVICE_RGB, ColorSpace, parse_color_space
 from core_pdf_spec.s_08_graphics.image_spec import image_bits_per_component
 from core_pdf_spec.types import PdfName
 
@@ -26,6 +27,54 @@ def internal_lab() -> list[object]:
 
 def internal_tint(outputs: int = 3) -> dict[str, object]:
     return {"FunctionType": 2, "Domain": [0, 1], "N": 1, "C0": [0] * outputs, "C1": [1] * outputs}
+
+
+@pytest.mark.parametrize(
+    ("kind", "names", "paints"),
+    [
+        ("Separation", ("None",), False),
+        ("Separation", ("All",), True),
+        ("Separation", ("Spot",), True),
+        ("DeviceN", ("None",), False),
+        ("DeviceN", ("None", "None"), False),
+        ("DeviceN", ("None", "Spot", "None"), True),
+        ("DeviceN", ("Cyan", "Magenta"), True),
+    ],
+)
+@pytest.mark.parametrize("wrapper", ["direct", "indexed", "pattern", "pattern-indexed"])
+def test_none_colorants_discard_output_through_base_spaces(
+    kind: str, names: tuple[str, ...], paints: bool, wrapper: str
+) -> None:
+    # 8.6.6.5 explicitly requires all-None DeviceN to discard output without
+    # using its tint transform, even when that transform would return black.
+    space = ColorSpace(kind, ((0.0, 1.0),) * len(names), colorants=names, tint_fn=object())
+    if "indexed" in wrapper:
+        space = ColorSpace("Indexed", ((0.0, 0.0),), base=space, lookup=b"\0" * len(names))
+    if "pattern" in wrapper:
+        space = ColorSpace("Pattern", space.component_ranges, base=space)
+    assert color_space_paints(space) is paints
+
+
+@pytest.mark.parametrize("name", ["DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"])
+def test_ordinary_spaces_and_unbound_colored_patterns_can_paint(name: str) -> None:
+    assert color_space_paints(parse_color_space(name))
+
+
+def test_mixed_none_component_still_reaches_the_alternate_tint_function() -> None:
+    # This sampled function returns only the first (None) component.
+    function = PdfStream(
+        dictionary={
+            "FunctionType": 0,
+            "Domain": [0, 1, 0, 1],
+            "Range": [0, 1],
+            "Size": [2, 2],
+            "BitsPerSample": 8,
+        },
+        raw_data=b"\0\xff\0\xff",
+    )
+    space = parse_color_space(["DeviceN", ["None", "Spot"], "DeviceGray", function])
+    assert color_space_paints(space)
+    assert tint_color_components(space, (0.25, 0.9)) == (0.25,)
 
 
 def test_indexed_lab_lookup_scales_each_base_component_range() -> None:

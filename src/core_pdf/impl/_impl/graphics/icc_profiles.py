@@ -10,6 +10,12 @@ from typing import Any
 import imagecodecs
 import numpy
 
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    DEFAULT_COLOR_RENDERING,
+    ColorRendering,
+    use_black_point_compensation,
+)
+
 ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 
@@ -33,6 +39,19 @@ INTERNAL_RENDERING_INTENT = 1
 # dominates because imagecodecs exposes no reusable transform handle, so every
 # call rebuilds the transform.
 INTERNAL_TRANSFORM_FLAGS = 0x2000 | 0x0100
+internal_INTENT_CODES = {
+    "Perceptual": 0,
+    "RelativeColorimetric": 1,
+    "Saturation": 2,
+    "AbsoluteColorimetric": 3,
+}
+
+
+def internal_cms_options(rendering: ColorRendering) -> tuple[int, int]:
+    # Selected reader Default preserves the existing BPC-on policy.
+    flags = 0x0100 | (0x2000 if use_black_point_compensation(rendering, default=True) else 0)
+    return internal_INTENT_CODES[rendering.intent], flags
+
 
 # ICC data colour space signatures (ICC.1:2010, Table 19) as lcms reports them,
 # mapped to the names the colour-space code above this module uses. Lowercasing
@@ -80,7 +99,9 @@ class IccTransform:
     def alternate_color_space(self) -> str:
         return INTERNAL_ALTERNATE_COLOR_SPACES.get(self.color_space, "DeviceRGB")
 
-    def apply_uint8(self, samples: ByteSamples) -> ByteSamples:
+    def apply_uint8(
+        self, samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    ) -> ByteSamples:
         """Convert an (n, channels) block of 8-bit device samples to 8-bit sRGB.
 
         Distinct colours are the only ones worth sending to lcms, so a batch
@@ -97,11 +118,28 @@ class IccTransform:
             # The sort is already paid for by this point, so the test only has
             # to clear the gather that is still ahead, not the sort behind.
             if len(distinct) < len(samples) * INTERNAL_DEDUPLICATE_MAX_DISTINCT:
-                return internal_transform(self, distinct)[inverse]
-        return internal_transform(self, samples)
+                return internal_transform(self, distinct, rendering)[inverse]
+        return internal_transform(self, samples, rendering)
+
+    def apply_uint16(
+        self,
+        samples: numpy.ndarray[Any, Any],
+        *,
+        rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    ) -> ByteSamples:
+        """Convert native-endian 16-bit device samples without an 8-bit input stage."""
+        if samples.dtype != numpy.dtype(numpy.uint16):
+            raise IccSampleError("samples must have uint16 dtype")
+        if samples.ndim != 2 or samples.shape[1] != self.input_channels:
+            raise IccSampleError(f"samples must have shape (count, {self.input_channels})")
+        return internal_transform(self, samples, rendering)
 
 
-def internal_transform(transform: IccTransform, samples: ByteSamples) -> ByteSamples:
+def internal_transform(
+    transform: IccTransform,
+    samples: numpy.ndarray[Any, Any],
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+) -> ByteSamples:
     """Run one batch through lcms, as an (n, 1, channels) single-column image.
 
     Whole batches go in one call: lcms streams sample by sample in C, and
@@ -111,6 +149,7 @@ def internal_transform(transform: IccTransform, samples: ByteSamples) -> ByteSam
     rows, channels = samples.shape
     if rows == 0:
         return numpy.empty((0, 3), dtype=numpy.uint8)
+    intent, flags = internal_cms_options(rendering)
     try:
         converted = imagecodecs.cms_transform(
             numpy.ascontiguousarray(samples).reshape(rows, 1, channels),
@@ -119,8 +158,8 @@ def internal_transform(transform: IccTransform, samples: ByteSamples) -> ByteSam
             colorspace=transform.color_space.lower(),
             outcolorspace="rgb",
             outdtype=numpy.uint8,
-            intent=INTERNAL_RENDERING_INTENT,
-            flags=INTERNAL_TRANSFORM_FLAGS,
+            intent=intent,
+            flags=flags,
         )
     except imagecodecs.CmsError as error:
         raise IccProfileError("ICC profile cannot be converted to sRGB") from error
@@ -166,10 +205,23 @@ def internal_distinct_byte_rows(
     for index in range(channels):
         keys <<= numpy.uint32(8)
         keys |= samples[:, index]
-    # The key holds the whole row, so the distinct rows unpack straight out of
-    # the unique keys. Asking for return_index instead forces numpy.unique onto
-    # a stable sort, which is materially slower for no extra information.
-    unique_keys, inverse = numpy.unique(keys, return_inverse=True)
+    inverse: numpy.ndarray[Any, Any]
+    if channels <= 3:
+        # Up to 24-bit keys fit a presence table, which replaces the sort with
+        # one scatter, one prefix sum and one gather: about five times faster
+        # than numpy.unique on a page-sized RGB image, for ~80 MB of transient
+        # memory. Ranks come out sorted, matching numpy.unique's order.
+        present = numpy.zeros(1 << (8 * channels), dtype=numpy.bool_)
+        present[keys] = True
+        unique_keys = numpy.flatnonzero(present).astype(numpy.uint32)
+        ranks = numpy.cumsum(present, dtype=numpy.int32)
+        inverse = ranks[keys] - 1
+    else:
+        # The key holds the whole row, so the distinct rows unpack straight out
+        # of the unique keys. Asking for return_index instead forces
+        # numpy.unique onto a stable sort, which is materially slower for no
+        # extra information.
+        unique_keys, inverse = numpy.unique(keys, return_inverse=True)
     distinct = numpy.empty((len(unique_keys), channels), dtype=numpy.uint8)
     for index in range(channels):
         shift = numpy.uint32(8 * (channels - 1 - index))

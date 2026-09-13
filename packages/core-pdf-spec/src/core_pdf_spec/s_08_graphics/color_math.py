@@ -53,7 +53,61 @@ def lab_components_to_xyz(
     )
 
 
+def xyz_to_lab_components(
+    values: numpy.ndarray[Any, Any], white_point: tuple[float, float, float]
+) -> numpy.ndarray[Any, Any]:
+    """CIE 1976 L*a*b*: the inverse of lab_components_to_xyz."""
+    white = numpy.asarray(white_point, dtype=numpy.float64)
+    xyz = numpy.asarray(values, dtype=numpy.float64)
+    if white.shape != (3,) or numpy.any(white <= 0) or not numpy.isfinite(white).all():
+        raise ValueError("invalid Lab white point")
+    if xyz.ndim != 2 or xyz.shape[1] != 3 or not numpy.isfinite(xyz).all():
+        raise ValueError("invalid XYZ components")
+    normalized = xyz / white
+    delta = 6.0 / 29.0
+    f = numpy.where(
+        normalized > delta**3, numpy.cbrt(normalized), normalized / (3 * delta**2) + 4.0 / 29.0
+    )
+    return numpy.column_stack(
+        (116 * f[:, 1] - 16, 500 * (f[:, 0] - f[:, 1]), 200 * (f[:, 1] - f[:, 2]))
+    )
+
+
+def compensate_black_point_xyz(
+    values: numpy.ndarray[Any, Any],
+    white_point: tuple[float, float, float],
+    source_black: tuple[float, float, float],
+    destination_black: tuple[float, float, float],
+) -> numpy.ndarray[Any, Any]:
+    """ISO 18619: scale/offset XYZ to map black endpoints while fixing white.
+
+    Black-point determination and any required PCS adaptation precede this
+    calculation. The caller supplies endpoints in the same XYZ coordinates.
+    """
+    white = numpy.asarray(white_point, dtype=numpy.float64)
+    source = numpy.asarray(source_black, dtype=numpy.float64)
+    destination = numpy.asarray(destination_black, dtype=numpy.float64)
+    xyz = numpy.asarray(values, dtype=numpy.float64)
+    if any(endpoint.shape != (3,) for endpoint in (white, source, destination)):
+        raise ValueError("invalid black point endpoints")
+    if (
+        not numpy.isfinite([white, source, destination]).all()
+        or numpy.any(white <= 0)
+        or numpy.any(source < 0)
+        or numpy.any(destination < 0)
+        or numpy.any(source >= white)
+        or numpy.any(destination >= white)
+    ):
+        raise ValueError("invalid black point endpoints")
+    if xyz.ndim != 2 or xyz.shape[1] != 3 or not numpy.isfinite(xyz).all():
+        raise ValueError("invalid XYZ components")
+    scale = (white - destination) / (white - source)
+    return xyz * scale + destination - source * scale
+
+
 __all__ = (
+    "compensate_black_point_xyz",
+    "xyz_to_lab_components",
     "ColorSamples",
     "lab_components_to_xyz",
     "lab_to_xyz",

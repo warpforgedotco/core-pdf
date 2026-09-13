@@ -42,6 +42,12 @@ class PdfName:
 
     @classmethod
     def of(cls, value: str | bytes | memoryview | "PdfName") -> "PdfName":
+        """Return the shared instance for a name; names are immutable and atomic.
+
+        A document repeats a few thousand distinct names millions of times.
+        Interning them makes dictionary keys compare by identity first and
+        skips a decode per occurrence.
+        """
         if type(value) is PdfName:
             return value
         if type(value) is str:
@@ -52,7 +58,14 @@ class PdfName:
             key_bytes = value
         else:
             raise TypeError("PDF names must be str, bytes, memoryview, or PdfName")
-        return cls(key_bytes)
+        if cls is not PdfName:
+            return cls(key_bytes)
+        name = internal_INTERNED_NAMES.get(key_bytes)
+        if name is None:
+            if len(internal_INTERNED_NAMES) >= internal_INTERNED_NAME_LIMIT:
+                internal_INTERNED_NAMES.clear()
+            name = internal_INTERNED_NAMES[key_bytes] = PdfName(key_bytes)
+        return name
 
     def __str__(self) -> str:
         return self.str_value
@@ -74,6 +87,10 @@ class PdfName:
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"cannot assign to field {name!r}")
+
+
+internal_INTERNED_NAME_LIMIT = 1 << 16
+internal_INTERNED_NAMES: dict[bytes, PdfName] = {}
 
 
 class PdfReference:

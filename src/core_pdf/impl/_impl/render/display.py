@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
+from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl._impl.graphics.color_spec import describe_color_space
 from core_pdf.impl._impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl._impl.model.geometry import rect_tuple
@@ -109,8 +109,34 @@ class DisplayList:
     width: float
     height: float
     items: list[DisplayItem] = field(default_factory=list)
+    preserve_object_boundaries: bool = field(default=False, kw_only=True)
+    internal_shape_tracking_groups: list[bool] = field(default_factory=list, init=False, repr=False)
+    internal_group_scope_floors: list[int] = field(default_factory=list, init=False, repr=False)
+
+    def internal_track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
+        """Retain separate strokes whenever their raster coverage is tracked."""
+        if kind == "scope-begin":
+            self.internal_group_scope_floors.append(len(self.internal_shape_tracking_groups))
+        elif kind == "scope-end":
+            if self.internal_group_scope_floors:
+                del self.internal_shape_tracking_groups[self.internal_group_scope_floors.pop() :]
+        elif kind == "group-begin":
+            self.internal_shape_tracking_groups.append(
+                data.get("group_knockout") is True or data.get("group_track_shape") is True
+            )
+        elif kind == "group-end":
+            floor = self.internal_group_scope_floors[-1] if self.internal_group_scope_floors else 0
+            if len(self.internal_shape_tracking_groups) > floor:
+                self.internal_shape_tracking_groups.pop()
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
+        # Capture records carry the mask as an opaque resource; this is the one
+        # place that types it, so renderer consumers read the field directly.
+        graphics_mask = data.get("graphics_soft_mask")
+        if not isinstance(graphics_mask, CapturedSoftMask):
+            graphics_mask = None
+        if "graphics_soft_mask" in data:
+            data["graphics_soft_mask"] = graphics_mask
         if kind in {"image", "inline-image"}:
             metadata = internal_image_display_metadata(kind, data)
             if metadata:
@@ -141,6 +167,8 @@ class DisplayList:
                     fill_opacity=data.get("fill_opacity"),
                     blend_mode=data.get("blend_mode"),
                     soft_mask_alpha=data.get("soft_mask_alpha"),
+                    alpha_is_shape=data.get("alpha_is_shape", False),
+                    graphics_soft_mask=graphics_mask,
                     image_clip=data.get("image_clip"),
                     source_metadata=metadata,
                     ctm=data.get("ctm"),
@@ -169,26 +197,47 @@ class DisplayList:
                     fill_rule=data.get("fill_rule") or "nonzero",
                     blend_mode=data.get("blend_mode"),
                     soft_mask_alpha=data.get("soft_mask_alpha"),
+                    alpha_is_shape=data.get("alpha_is_shape", False),
+                    graphics_soft_mask=graphics_mask,
                     fill_pattern=data.get("fill_pattern"),
                     stroke_pattern=data.get("stroke_pattern"),
+                    edge_array=data.get("edge_array"),
                 )
             )
             return
+        self.internal_track_group_boundary(kind, data)
         self.items.append(DisplayListItem(kind=kind, seqno=seqno, data=data))
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
         """Append a captured drawing without rebuilding its keyword-data mapping."""
+        if not drawing.paints:
+            return
         paint_kind = PATH_PAINT_KINDS.get(drawing.kind)
         if paint_kind is not None:
+            fills = paint_kind is not PathPaintKind.STROKE and drawing.fill_paints
+            strokes = paint_kind is not PathPaintKind.FILL and drawing.stroke_paints
+            if not fills and not strokes:
+                return
+            paint_kind = (
+                PathPaintKind.FILL_STROKE
+                if fills and strokes
+                else PathPaintKind.FILL
+                if fills
+                else PathPaintKind.STROKE
+            )
             path = drawing.path
             previous = self.items[-1] if self.items else None
             if (
                 paint_kind is PathPaintKind.STROKE
+                and not self.preserve_object_boundaries
+                and not any(self.internal_shape_tracking_groups)
                 and drawing.stroke_pattern is None
+                and drawing.graphics_soft_mask is None
                 and type(path) is CapturedPath
                 and type(previous) is PathPaintItem
                 and previous.paint_kind is PathPaintKind.STROKE
                 and previous.stroke_pattern is None
+                and previous.graphics_soft_mask is None
                 and type(previous.path) is CapturedPath
                 and len(previous.path.subpaths) + len(path.subpaths)
                 <= MAX_COALESCED_STROKE_SUBPATHS
@@ -200,6 +249,7 @@ class DisplayList:
                 and previous.dash_pattern == drawing.dash_pattern
                 and previous.blend_mode == drawing.blend_mode
                 and previous.soft_mask_alpha == drawing.soft_mask_alpha
+                and previous.alpha_is_shape == drawing.alpha_is_shape
             ):
                 previous_box = rect_tuple(previous.bbox)
                 drawing_box = rect_tuple(drawing.rect)
@@ -208,6 +258,7 @@ class DisplayList:
                 else:
                     previous.path = CapturedPath([*previous.path.subpaths, *path.subpaths])
                     previous.coalesced_path = True
+                previous.edge_array = None
                 previous.bbox = (
                     (
                         min(previous_box[0], drawing_box[0]),
@@ -236,6 +287,8 @@ class DisplayList:
                     fill_rule=drawing.fill_rule,
                     blend_mode=drawing.blend_mode,
                     soft_mask_alpha=drawing.soft_mask_alpha,
+                    alpha_is_shape=drawing.alpha_is_shape,
+                    graphics_soft_mask=drawing.graphics_soft_mask,
                     fill_pattern=drawing.fill_pattern,
                     stroke_pattern=drawing.stroke_pattern,
                 )
@@ -258,10 +311,15 @@ class DisplayList:
             fill_rule=drawing.fill_rule,
             blend_mode=drawing.blend_mode,
             soft_mask_alpha=drawing.soft_mask_alpha,
+            graphics_soft_mask=drawing.graphics_soft_mask,
+            group_isolated=drawing.group_isolated,
+            group_knockout=drawing.group_knockout,
+            alpha_is_shape=drawing.alpha_is_shape,
             raw_data=drawing.raw_data,
             dictionary=drawing.dictionary,
             image_source=drawing.image_source,
             image_clip=drawing.image_clip,
+            color_rendering=drawing.color_rendering,
             path=drawing.path,
             items=drawing.items,
         )

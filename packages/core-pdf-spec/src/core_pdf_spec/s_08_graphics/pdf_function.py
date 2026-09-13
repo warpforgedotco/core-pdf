@@ -13,6 +13,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number,
     require_pdf_number_array,
 )
+from core_pdf_spec.s_08_graphics.calculator import internal_compile_calculator_function
 
 PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
 
@@ -217,6 +218,8 @@ def compile_pdf_function(
 
     if isinstance(function, PdfStream):
         function_type = internal_function_type(function.dictionary)
+        if function_type == 4:
+            return internal_compile_calculator_function(function)
         if function_type == 0:
             try:
                 return internal_compile_sampled_function(function)

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from core_pdf import PdfPage
+from core_pdf.impl._impl.capture.glyphs import GlyphPaint
 from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl._impl.capture.program import CapturedProgram
 from core_pdf.impl._impl.capture.recovery import CaptureRecovery
@@ -70,7 +71,12 @@ class internal_PdfminerTextState(TextState):
     """Capture literal text with PDFMiner's per-character cursor arithmetic."""
 
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
-        super().__init__(document, page_clip=page_clip)
+        # PDFMiner layout uses advance boxes and font metrics, never ink bounds.
+        # Avoid executing each embedded glyph outline for an unused capture product.
+        # Glyphs also carry their own provenance, so layout does not need text runs.
+        super().__init__(
+            document, page_clip=page_clip, capture_ink_bounds=False, capture_text_runs=False
+        )
         self.internal_cursor = 0.0
         self.internal_frame_cursors: dict[int, float] = {}
 
@@ -112,6 +118,7 @@ class internal_PdfminerTextState(TextState):
         # advances in text space until projection, including across TJ strings.
         # Adding them to the page origin first changes exact line-margin ties.
         needs_spacing = False
+        paint: GlyphPaint | None = None
         for value in array:
             if isinstance(value, (int, float)):
                 self.internal_cursor -= value * adjustment_scale
@@ -135,6 +142,8 @@ class internal_PdfminerTextState(TextState):
                     horizontal_scale=self.graphics.horizontal_scale,
                     encoded_space=decoded.code_bytes == b" ",
                 )
+                if paint is None:
+                    paint = self.internal_glyph_paint(self.capture_color(stroke=False))
                 self.show_text(
                     self,
                     decoded.unicode,
@@ -143,6 +152,7 @@ class internal_PdfminerTextState(TextState):
                     decoder,
                     advance_x,
                     advance_y,
+                    glyph_paint=paint,
                 )
                 if len(self.glyphs) > start:
                     glyph = self.glyphs[start]
@@ -172,6 +182,7 @@ def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
         drawings=tuple(state.drawings),
         inline_images=tuple(state.inline_images),
         lines=tuple(state.lines),
+        text_boundaries=tuple(state.text_boundaries),
     )
 
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy
 
 from core_pdf.impl._impl.model.geometry import points_bbox
-from core_pdf.impl._impl.render.blend import internal_blend_channels_f64
+from core_pdf.impl._impl.render.blend import internal_blend_visible_pixels
 from core_pdf.impl._impl.render.kernels import (
     AFFINE_BLIT_SCRATCH_BYTES,
     internal_sample_image_plane,
@@ -30,7 +30,7 @@ class internal_ImageAffineTargetMixin:
     __slots__ = ()
 
     def blit_opaque_sampled_tiles(
-        self,
+        self: internal_RasterState,
         source_pixels: numpy.ndarray[Any, Any],
         target_region: numpy.ndarray[Any, Any],
         source_y: numpy.ndarray[Any, Any],
@@ -40,7 +40,9 @@ class internal_ImageAffineTargetMixin:
         comps: int,
         *,
         transposed: bool = False,
+        target_origin: tuple[int, int] = (0, 0),
     ) -> None:
+        target_x, target_y = target_origin
         row_count = len(valid_rows)
         column_count = len(valid_columns)
         all_valid = bool(valid_rows.all() and valid_columns.all())
@@ -82,6 +84,11 @@ class internal_ImageAffineTargetMixin:
                 if all_valid:
                     target_tile[:, :, 0:3] = sampled
                     target_tile[:, :, 3] = 255
+                    self.record_source_coverage(
+                        slice(target_y + row_start, target_y + row_end),
+                        slice(target_x + column_start, target_x + column_end),
+                        255,
+                    )
                     del sampled
                     continue
                 visible = (
@@ -90,6 +97,12 @@ class internal_ImageAffineTargetMixin:
                 )
                 numpy.copyto(target_tile[:, :, 0:3], sampled, where=visible[:, :, None])
                 numpy.copyto(target_tile[:, :, 3], 255, where=visible)
+                self.record_source_coverage(
+                    slice(target_y + row_start, target_y + row_end),
+                    slice(target_x + column_start, target_x + column_end),
+                    255,
+                    visible=visible,
+                )
                 # Release this tile before allocating the next one.
                 del sampled, visible
 
@@ -104,6 +117,7 @@ class internal_ImageAffineTargetMixin:
         blend_mode: str | None,
         *,
         source_alpha: UInt8Array | None = None,
+        source_shape: UInt8Array | None = None,
         soft_mask: UInt8Array | None = None,
         image_clip: tuple[float, float, float, float] | None = None,
     ) -> bool:
@@ -148,15 +162,16 @@ class internal_ImageAffineTargetMixin:
         alpha = 255
         if constant_alpha is not None:
             alpha = max(0, min(255, int(round(alpha * constant_alpha))))
-        if alpha <= 0:
+        tracking_shape = self.group_source_shape is not None
+        if alpha <= 0 and not tracking_shape:
             return True
         if source_alpha is not None:
-            if not numpy.any(source_alpha):
+            if not numpy.any(source_alpha) and not tracking_shape:
                 return True
             if numpy.all(source_alpha == 255):
                 source_alpha = None
         if soft_mask is not None:
-            if not numpy.any(soft_mask):
+            if not numpy.any(soft_mask) and not tracking_shape:
                 return True
             if numpy.all(soft_mask == 255):
                 soft_mask = None
@@ -206,6 +221,7 @@ class internal_ImageAffineTargetMixin:
                 valid_y,
                 valid_x,
                 comps,
+                target_origin=(ix0, iy0),
             )
             return True
         u_from_x = abs(uy) <= rect_tolerance and abs(ux) > rect_tolerance
@@ -271,6 +287,7 @@ class internal_ImageAffineTargetMixin:
                 valid_x,
                 comps,
                 transposed=not u_from_x,
+                target_origin=(ix0, iy0),
             )
             return True
         source_pixels = uint8_view(converted)[: width_px * height_px * comps].reshape(
@@ -313,6 +330,12 @@ class internal_ImageAffineTargetMixin:
                 if can_write_opaque:
                     numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
                     numpy.copyto(target[:, :, 3], 255, where=visible)
+                    self.record_source_coverage(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        255,
+                        visible=visible,
+                    )
                     continue
                 alpha_grid = (
                     internal_sample_image_plane(source_alpha, source_u, source_v)
@@ -324,6 +347,23 @@ class internal_ImageAffineTargetMixin:
                     alpha_grid = numpy.rint(
                         alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
                     ).astype(numpy.uint8)
+                if tracking_shape:
+                    # Intrinsic hard masks are shape. Soft alpha contributes
+                    # shape only for AIS; constant opacity is applied by the
+                    # target's shape_alpha, once, after this sampled coverage.
+                    shape_grid: int | UInt8Array = (
+                        alpha_grid
+                        if self.paint_alpha_is_shape
+                        else internal_sample_image_plane(source_shape, source_u, source_v)
+                        if source_shape is not None
+                        else 255
+                    )
+                    self.record_source_shape(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        shape_grid,
+                        visible=visible,
+                    )
                 if constant_alpha is not None:
                     alpha_grid = numpy.clip(
                         numpy.rint(alpha_grid.astype(numpy.float64) * constant_alpha), 0, 255
@@ -332,19 +372,20 @@ class internal_ImageAffineTargetMixin:
                 if not numpy.any(visible):
                     continue
                 source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
-                destination = target[visible].astype(numpy.float64)
-                channels = internal_blend_channels_f64(
+                internal_blend_visible_pixels(
+                    target,
+                    visible,
                     source_colors[:, 0] / 255.0,
                     source_colors[:, 1] / 255.0,
                     source_colors[:, 2] / 255.0,
                     alpha_grid[visible] / 255.0,
-                    destination[:, 0],
-                    destination[:, 1],
-                    destination[:, 2],
-                    destination[:, 3],
                     blend_resolved_mode,
+                    semantic_context=self.semantic_context,
                 )
-                target[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(
-                    numpy.uint8
+                self.record_source_alpha(
+                    slice(row_start, row_end),
+                    slice(column_start, column_end),
+                    alpha_grid,
+                    visible=visible,
                 )
         return True

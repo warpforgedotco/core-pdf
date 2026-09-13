@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from typing import Any, Protocol, cast
 
-from core_pdf.impl._impl.fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl._impl.fonts.font_program_truetype import (
+    TrueTypeFontProgram,
+    cached_truetype_program,
+)
 from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
@@ -29,7 +32,7 @@ def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream
 
 def load_ligature_font_tables(tt_data: bytes) -> TrueTypeFontProgram | None:
     try:
-        return TrueTypeFontProgram(tt_data)
+        return cached_truetype_program(tt_data)
     except ValueError:
         return None
 
@@ -128,16 +131,19 @@ def detect_ligature_overrides(
     font_file = get_font_file(document, font_obj)
     if font_file is None:
         return {}
-    try:
-        tt_data = font_file.data
-    except PdfParseError:
-        return {}
 
+    # Most fonts have no companion, so look for one before decoding the
+    # primary font program: the decoded bytes are only needed once a
+    # companion exists or its lookup fails.
     try:
         starter_widths, starter_chars, companion_data = find_companion_font(
             document, resources, base_name, set("ftscFTSC")
         )
     except ValueError:
+        try:
+            tt_data = font_file.data
+        except PdfParseError:
+            return {}
         if load_ligature_font_tables(tt_data) is None:
             return {}
         raise
@@ -145,12 +151,16 @@ def detect_ligature_overrides(
     if companion_data is None or not starter_widths:
         return {}
 
+    try:
+        tt_data = font_file.data
+    except PdfParseError:
+        return {}
     parsed_primary = load_ligature_font_tables(tt_data)
     if parsed_primary is None:
         return {}
 
     try:
-        TrueTypeFontProgram(companion_data)
+        cached_truetype_program(companion_data)
     except ValueError:
         return {}
 

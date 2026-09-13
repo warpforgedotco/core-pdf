@@ -6,7 +6,8 @@ from __future__ import annotations
 import math
 from typing import TypeGuard, overload
 
-from core_pdf_spec.s_07_syntax_primitives.scanning import is_integer_word, is_number_word_bytes
+from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_syntax_primitives.numbers import parse_integer_token, parse_real_token
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 from core_pdf_spec.types import PdfName, PdfString
 
@@ -59,26 +60,20 @@ def require_pdf_number_array(
     return tuple(require_pdf_number(item, message) for item in value)
 
 
-def internal_scalar_text(value: object) -> str | None:
-    """The text of a scalar that is not already a number, or None if it is not one.
-
-    A number reaches this layer as bytes from the lexer, or as a memoryview or
-    bytearray slice of the source buffer, so all three have to end up as str
-    before int()/float() sees them. bool is rejected rather than converted:
-    True would otherwise parse as 1 and silently stand in for a number.
-    """
-    if type(value) is bool:
-        return None
-    if type(value) is memoryview:
-        value = value.tobytes()
-    if type(value) is bytearray:
-        value = bytes(value)
+def internal_scalar_token(value: object) -> bytes | None:
+    """Normalize textual scalar inputs once; booleans are not numeric tokens."""
     if type(value) is bytes:
+        return value
+    if type(value) is memoryview:
+        return value.tobytes()
+    if type(value) is bytearray:
+        return bytes(value)
+    if type(value) is str:
         try:
-            value = value.decode("ascii")
-        except UnicodeDecodeError:
+            return value.encode("ascii")
+        except UnicodeEncodeError:
             return None
-    return value if type(value) is str else None
+    return None
 
 
 @overload
@@ -92,18 +87,12 @@ def parse_int(value: object, default: int) -> int: ...
 def parse_int(value: object, default: int | None = None) -> int | None:
     if type(value) is int:
         return value
-    text = internal_scalar_text(value)
-    if text is None:
+    token = internal_scalar_token(value)
+    if token is None:
         return default
     try:
-        token = text.encode("ascii")
-    except UnicodeEncodeError:
-        return default
-    if not is_integer_word(token):
-        return default
-    try:
-        return int(text)
-    except (ValueError, OverflowError):
+        return parse_integer_token(token)
+    except PdfParseError:
         return default
 
 
@@ -130,19 +119,12 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
             return float(value)
         except OverflowError:
             return default
-    text = internal_scalar_text(value)
-    if text is None:
+    token = internal_scalar_token(value)
+    if token is None:
         return default
     try:
-        token = text.encode("ascii")
-    except UnicodeEncodeError:
-        return default
-    if not is_number_word_bytes(token):
-        return default
-    try:
-        result = float(text)
-        return result if math.isfinite(result) else default
-    except (ValueError, OverflowError):
+        return parse_real_token(token)
+    except PdfParseError:
         return default
 
 

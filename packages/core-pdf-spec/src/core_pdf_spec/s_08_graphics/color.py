@@ -10,6 +10,23 @@ from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 
 
+def color_space_paints(spec: ColorSpace) -> bool:
+    """Whether this space can paint any colorant (ISO 32000-2, 8.6.6.4-5).
+
+    Separation None and nonempty all-None DeviceN spaces discard their output,
+    including through an Indexed palette or an uncolored Pattern. The tint
+    function is irrelevant in these cases. A mixed DeviceN space still passes
+    every component, including None components, to its alternate tint function.
+    """
+    while spec.kind in {"Indexed", "Pattern"} and spec.base is not None:
+        spec = spec.base
+    if spec.kind == "Separation":
+        return spec.colorants != ("None",)
+    if spec.kind == "DeviceN":
+        return not spec.colorants or any(name != "None" for name in spec.colorants)
+    return True
+
+
 def normalize_color_components(spec: ColorSpace, components: Sequence[object]) -> tuple[float, ...]:
     """Validate component types/counts and apply their PDF-defined limits.
 
@@ -93,6 +110,7 @@ def calgray_to_xyz(
 
 
 __all__ = (
+    "color_space_paints",
     "normalize_color_components",
     "initial_color_components",
     "indexed_color_components",
