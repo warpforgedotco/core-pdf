@@ -60,7 +60,9 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
-@dataclass(slots=True)
+# Identity semantics: these records are never compared by value, and a
+# generated field-wise __eq__ over this many fields is dead weight.
+@dataclass(slots=True, eq=False)
 class PathPaintItem:
     """Typed, allocation-light record for the common unpatterned path hot path."""
 

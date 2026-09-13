@@ -30,6 +30,7 @@ class LexicalRules:
     separator_re: re.Pattern[bytes] = field(init=False, repr=False)
     ignored_re: re.Pattern[bytes] = field(init=False, repr=False)
     split_whitespace_compatible: bool = field(init=False, repr=False)
+    content_token_re: re.Pattern[bytes] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -58,6 +59,36 @@ class LexicalRules:
             "ignored_re",
             re.compile(
                 b"(?:[" + re.escape(self.whitespace) + b"]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*"
+            ),
+        )
+        # One match classifies the common content-stream tokens -- numbers, plain
+        # names and operators -- in C. Anything else (strings, arrays,
+        # dictionaries, escaped names, malformed numbers) is left to the
+        # byte-by-byte scanner so its diagnostics and recovery are unchanged.
+        separator = b"[" + re.escape(self.whitespace + self.delimiters) + b"]"
+        boundary = b"(?=" + separator + b"|$)"
+        name_body = b"[^" + re.escape(self.whitespace + self.delimiters)
+        name_body += b"#]*" if self.name_escapes else b"]*"
+        operator_start = b"[^" + re.escape(self.whitespace + self.delimiters) + b"+\\-.0-9]"
+        operator_rest = b"[^" + re.escape(self.whitespace + self.delimiters) + b"]*"
+        ignored = b"(?:[" + re.escape(self.whitespace) + b"]+|%[^\\r\\n]*)*"
+        object.__setattr__(
+            self,
+            "content_token_re",
+            re.compile(
+                ignored
+                + b"(?:(?P<num>[+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+))"
+                + boundary
+                + b"|(?P<name>/"
+                + name_body
+                + b")"
+                + boundary
+                + b"|(?P<op>"
+                + operator_start
+                + operator_rest
+                + b")"
+                + boundary
+                + b")"
             ),
         )
 

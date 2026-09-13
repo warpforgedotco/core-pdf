@@ -83,7 +83,9 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-@dataclass(slots=True)
+# Identity semantics: these records are never compared by value, and a
+# generated field-wise __eq__ over this many fields is dead weight.
+@dataclass(slots=True, eq=False)
 class GlyphObservation:
     text: str
     ink_bbox: Rectangle
@@ -166,7 +168,9 @@ class GlyphObservation:
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
 
-@dataclass(slots=True)
+# Identity semantics: these records are never compared by value, and a
+# generated field-wise __eq__ over this many fields is dead weight.
+@dataclass(slots=True, eq=False)
 class GlyphCluster:
     """One decoded source glyph's text and its emitted observations."""
 
