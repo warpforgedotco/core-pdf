@@ -63,6 +63,28 @@ def internal_index_extent(index: int | slice, size: int) -> tuple[int, int]:
     return index, index + 1
 
 
+class internal_ElementaryScratch:
+    """Reusable buffers for elementary groups at one nesting depth.
+
+    Every object painted inside a knockout group is its own non-isolated group
+    that starts from the knockout group's fixed initial backdrop. Allocating and
+    copying full-page buffers per glyph dominated rasterization. After such a
+    group composites, only its paint window differs from that backdrop, so the
+    next element under the same parent needs just that window restored.
+    """
+
+    __slots__ = ("buffer", "dirty", "source_alpha", "source_shape", "synced_parent")
+
+    def __init__(self, size: int, height: int, width: int) -> None:
+        self.buffer = bytearray(size)
+        self.source_alpha = numpy.zeros((height, width), dtype=numpy.float32)
+        self.source_shape = numpy.zeros((height, width), dtype=numpy.float32)
+        # The knockout group whose backdrop the buffers currently equal outside
+        # ``dirty``; that backdrop cannot change while the group is open.
+        self.synced_parent: internal_RasterGroup | None = None
+        self.dirty: list[int] | None = None
+
+
 class internal_RasterTarget(
     internal_ImageAffineTargetMixin,
     internal_ImageAxisTargetMixin,
@@ -105,6 +127,7 @@ class internal_RasterTarget(
         "scope_stack",
         "soft_mask_cache",
         "active_soft_masks",
+        "elementary_scratch",
     )
 
     def __init__(
@@ -144,6 +167,7 @@ class internal_RasterTarget(
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
         self.soft_mask_cache: SoftMaskCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
+        self.elementary_scratch: dict[int, internal_ElementaryScratch] = {}
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
@@ -243,11 +267,7 @@ class internal_RasterTarget(
             if elementary_group:
                 # An elementary object blends with the initial backdrop. Its
                 # completed shape then replaces preceding group contributions.
-                self.push_group(
-                    bytearray(len(self.pixels)),
-                    None,
-                    None,
-                    isolated=False,
+                self.push_elementary_group(
                     track_shape=mask_alpha is not None,
                     # Combined fill/stroke inherits the mask on its children
                     # inside its implicit knockout group, including AIS shape.
@@ -258,7 +278,9 @@ class internal_RasterTarget(
                 self.internal_paint_item(item)
             finally:
                 if elementary_group:
-                    self.composite_group(self.pop_group())
+                    child = self.pop_group()
+                    self.composite_group(child)
+                    self.internal_release_elementary_group(child)
                 self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
             return
         self.internal_paint_item(item)
@@ -327,6 +349,81 @@ class internal_RasterTarget(
                 internal_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
             )
             self.paint_shading(data, blend_mode)
+
+    def push_elementary_group(
+        self,
+        *,
+        track_shape: bool,
+        mask_alpha: SoftMaskPlane | None,
+        alpha_is_shape: bool,
+    ) -> None:
+        """Push a non-isolated, non-knockout group over reusable scratch buffers.
+
+        Equivalent to ``push_group(bytearray(len(self.pixels)), None, None,
+        isolated=False, ...)`` without the per-element page-sized allocation
+        and copy when the parent is a knockout group with an initial backdrop.
+        """
+        parent = self.buffer_stack[-1]
+        backdrop = parent.backdrop if parent.knockout else self.pixels
+        if backdrop is None:
+            self.push_group(
+                bytearray(len(self.pixels)),
+                None,
+                None,
+                isolated=False,
+                track_shape=track_shape,
+                mask_alpha=mask_alpha,
+                alpha_is_shape=alpha_is_shape,
+            )
+            return
+        depth = len(self.buffer_stack)
+        scratch = self.elementary_scratch.get(depth)
+        if scratch is None:
+            scratch = self.elementary_scratch[depth] = internal_ElementaryScratch(
+                len(self.pixels), self.height, self.width
+            )
+        buffer = scratch.buffer
+        source_alpha = scratch.source_alpha
+        source_shape = scratch.source_shape
+        if parent.knockout and scratch.synced_parent is parent:
+            dirty = scratch.dirty
+            if dirty:
+                y0, y1, x0, x1 = dirty
+                self.pixel_view(buffer)[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
+                source_alpha[y0:y1, x0:x1] = 0.0
+                source_shape[y0:y1, x0:x1] = 0.0
+        else:
+            buffer[:] = backdrop
+            source_alpha.fill(0.0)
+            source_shape.fill(0.0)
+        # A live (non-knockout) parent's pixels change between elements, so only
+        # a knockout parent's fixed backdrop can be reused incrementally.
+        scratch.synced_parent = parent if parent.knockout else None
+        scratch.dirty = None
+        self.buffer_stack.append(
+            internal_RasterGroup(
+                buffer,
+                None,
+                None,
+                backdrop=backdrop,
+                source_alpha=source_alpha,
+                source_shape=(
+                    source_shape if track_shape or parent.source_shape is not None else None
+                ),
+                knockout=False,
+                alpha_is_shape=alpha_is_shape,
+                mask_alpha=mask_alpha,
+            )
+        )
+        self.pixels = buffer
+        self.group_source_alpha = source_alpha
+        self.group_source_shape = self.buffer_stack[-1].source_shape
+
+    def internal_release_elementary_group(self, child: internal_RasterGroup) -> None:
+        """Record which window of a popped elementary group's scratch was painted."""
+        scratch = self.elementary_scratch.get(len(self.buffer_stack))
+        if scratch is not None and child.pixels is scratch.buffer:
+            scratch.dirty = list(child.paint_window) if child.paint_window else None
 
     def push_group(
         self,
