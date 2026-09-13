@@ -22,6 +22,7 @@ from core_pdf.impl._impl.render.model import (
     PathPaintItem,
     internal_RasterGroup,
 )
+from core_pdf.impl._impl.render.soft_masks import SoftMaskCache, SoftMaskKey, SoftMaskPlane
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, UInt8Array
 from core_pdf_spec.standards import SemanticContext
 
@@ -39,6 +40,20 @@ class internal_RasterState(Protocol):
     page_pixels: UInt8Array
     page_buffer: bytearray
     group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+    group_source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+    paint_alpha_is_shape: bool
+    shape_alpha: float
+    soft_mask_cache: SoftMaskCache
+    active_soft_masks: set[SoftMaskKey]
+
+    def record_source_shape(
+        self,
+        rows: int | slice,
+        columns: int | slice,
+        shape: int | UInt8Array,
+        *,
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
+    ) -> None: ...
 
     def record_source_alpha(
         self,
@@ -49,10 +64,12 @@ class internal_RasterState(Protocol):
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None: ...
 
-    def blend_normal_pixel(self, idx: int, sr: int, sg: int, sb: int, sa: int) -> None: ...
+    def blend_normal_pixel(
+        self, idx: int, sr: int, sg: int, sb: int, sa: int, *, shape: int = 255
+    ) -> None: ...
 
     def blend_normal_solid_span(
-        self, row: int, start: int, end: int, rgba: tuple[int, int, int, int]
+        self, row: int, start: int, end: int, rgba: tuple[int, int, int, int], *, shape: int = 255
     ) -> None: ...
 
     def blend_px(
@@ -60,6 +77,8 @@ class internal_RasterState(Protocol):
         idx: int,
         rgba: tuple[int, int, int, int],
         mode: str | None,
+        *,
+        shape: int = 255,
     ) -> None: ...
 
     def blit_affine_image(
@@ -73,6 +92,7 @@ class internal_RasterState(Protocol):
         blend_mode: str | None,
         *,
         source_alpha: UInt8Array | None = None,
+        source_shape: UInt8Array | None = None,
         soft_mask: UInt8Array | None = None,
         image_clip: tuple[float, float, float, float] | None = None,
     ) -> bool: ...
@@ -178,6 +198,10 @@ class internal_RasterState(Protocol):
         blend_mode: str | None,
         *,
         isolated: bool = True,
+        knockout: bool = False,
+        alpha_is_shape: bool = False,
+        track_shape: bool = False,
+        mask_alpha: SoftMaskPlane | None = None,
     ) -> None: ...
 
     def pop_group(self) -> internal_RasterGroup: ...

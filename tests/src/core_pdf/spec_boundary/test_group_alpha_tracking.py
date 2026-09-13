@@ -6,8 +6,10 @@ import pytest
 
 from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl._impl.render.clipping import internal_ClipState
+from core_pdf.impl._impl.render.model import ImagePaintItem
 from core_pdf.impl._impl.render.target import internal_RasterTarget
 from core_pdf.impl._impl.runtime.array_views import uint8_image_view
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 internal_WIDTH = 60
 internal_HEIGHT = 24
@@ -200,3 +202,198 @@ def test_nested_group_records_its_alpha_once_in_parent(
     expected = parent_alpha + (1 - parent_alpha) * child_plane
     numpy.testing.assert_allclose(target.group_source_alpha, expected, atol=1 / 255)
     assert numpy.all(target.pixel_view(target.pixels)[..., 3] == 255)
+
+
+@pytest.mark.parametrize(
+    "paint",
+    [
+        "pixel",
+        "normal-pixel",
+        "span-small",
+        "span-large",
+        "rectangle",
+        "rectangle-aa",
+        "rectangle-clipped",
+        "path-analytic",
+        "path-sampled",
+        "path-clipped",
+        "scanlines",
+        "scanlines-clipped",
+        "glyph-bitmap",
+        "circle-small",
+        "circle-large",
+        "stroke-small",
+        "stroke-large",
+        "image",
+        "image-edge",
+        "image-rotated",
+        "image-affine",
+        "image-masked",
+        "image-clipped",
+    ],
+)
+@pytest.mark.parametrize("alpha", [0, 85, 255])
+@pytest.mark.parametrize("blend_mode", [None, "Multiply"])
+def test_source_shape_preserves_coverage_independently_of_paint_opacity(
+    paint: str, alpha: int, blend_mode: str | None
+) -> None:
+    # ISO 32000-2 §11.4.6: zero-opacity shape can still remove prior knockout elements.
+    tracked = internal_target(opaque=True)
+    tracked.push_group(bytearray(len(tracked.pixels)), None, None, isolated=False, knockout=True)
+    transparent = internal_target(opaque=False)
+    internal_paint(tracked, paint, (149, 201, 57, alpha), blend_mode)
+    internal_paint(
+        transparent,
+        "image-affine" if paint == "image-masked" else paint,
+        (149, 201, 57, 255),
+        blend_mode,
+    )
+    assert tracked.group_source_shape is not None
+    expected = transparent.pixel_view(transparent.pixels)[..., 3]
+    assert numpy.any(expected)
+    assert numpy.any(expected == 0)
+    numpy.testing.assert_allclose(tracked.group_source_shape * 255, expected, atol=1)
+    if alpha == 0:
+        assert tracked.group_source_alpha is not None
+        assert not numpy.any(tracked.group_source_alpha)
+
+
+@pytest.mark.parametrize("alpha_is_shape", [False, True])
+@pytest.mark.parametrize("constant_alpha", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("hard_mask", [False, True])
+@pytest.mark.parametrize("soft_mask", [False, True])
+def test_image_shape_separates_intrinsic_masks_from_soft_opacity(
+    alpha_is_shape: bool, constant_alpha: float, hard_mask: bool, soft_mask: bool
+) -> None:
+    tracked = internal_target(opaque=True)
+    tracked.push_group(bytearray(len(tracked.pixels)), None, None, isolated=False, knockout=True)
+    tracked.paint_alpha_is_shape = alpha_is_shape
+    tracked.shape_alpha = constant_alpha if alpha_is_shape else 1.0
+    hard = numpy.array([[255, 0, 255, 255], [0, 255, 255, 0]], dtype=numpy.uint8)
+    soft = numpy.array([[255, 255, 0, 128], [255, 0, 128, 255]], dtype=numpy.uint8)
+    assert tracked.blit_affine_image(
+        ((10, 5), (14, 5), (10, 7), (14, 7)),
+        bytes((64,)),
+        1,
+        1,
+        1,
+        constant_alpha,
+        None,
+        source_alpha=hard if hard_mask else None,
+        source_shape=hard if hard_mask else None,
+        soft_mask=soft if soft_mask else None,
+    )
+    expected = numpy.zeros((internal_HEIGHT, internal_WIDTH), dtype=numpy.float32)
+    shape = hard.astype(numpy.float32) / 255 if hard_mask else numpy.ones((2, 4))
+    if alpha_is_shape:
+        if soft_mask:
+            shape *= soft / 255
+        shape *= constant_alpha
+    expected[internal_HEIGHT - 7 : internal_HEIGHT - 5, 10:14] = shape
+    assert tracked.group_source_shape is not None
+    numpy.testing.assert_allclose(tracked.group_source_shape, expected, atol=1 / 255)
+
+
+@pytest.mark.parametrize("alpha_is_shape", [False, True])
+@pytest.mark.parametrize("constant_alpha", [0.0, 0.5, 1.0])
+def test_embedded_image_opacity_is_shape_only_when_ais_is_true(
+    alpha_is_shape: bool, constant_alpha: float
+) -> None:
+    tracked = internal_target(opaque=True)
+    tracked.push_group(bytearray(len(tracked.pixels)), None, None, isolated=False, knockout=True)
+    tracked.paint_alpha_is_shape = alpha_is_shape
+    tracked.shape_alpha = constant_alpha if alpha_is_shape else 1.0
+    embedded_opacity = numpy.array([[255, 0, 128, 64]], dtype=numpy.uint8)
+    assert tracked.blit_affine_image(
+        ((10, 5), (14, 5), (10, 6), (14, 6)),
+        bytes((64,)),
+        1,
+        1,
+        1,
+        constant_alpha,
+        None,
+        source_alpha=embedded_opacity,
+    )
+    expected = numpy.zeros((internal_HEIGHT, internal_WIDTH), dtype=numpy.float32)
+    expected[internal_HEIGHT - 6, 10:14] = (
+        embedded_opacity[0] / 255 * constant_alpha if alpha_is_shape else 1.0
+    )
+    assert tracked.group_source_shape is not None
+    numpy.testing.assert_allclose(tracked.group_source_shape, expected, atol=1 / 255)
+
+
+@pytest.mark.parametrize("paint", ["rectangle-aa", "path-analytic", "path-sampled", "stroke-large"])
+@pytest.mark.parametrize("alpha", [0, 85])
+def test_ais_multiplies_geometric_coverage_by_object_alpha_once(paint: str, alpha: int) -> None:
+    tracked = internal_target(opaque=True)
+    tracked.push_group(bytearray(len(tracked.pixels)), None, None, isolated=False, knockout=True)
+    tracked.paint_alpha_is_shape = True
+    tracked.shape_alpha = alpha / 255
+    transparent = internal_target(opaque=False)
+    internal_paint(tracked, paint, (149, 201, 57, alpha), None)
+    internal_paint(transparent, paint, (149, 201, 57, 255), None)
+    expected = transparent.pixel_view(transparent.pixels)[..., 3] / 255 * alpha / 255
+    assert tracked.group_source_shape is not None
+    numpy.testing.assert_allclose(tracked.group_source_shape, expected, atol=1 / 255)
+
+
+@pytest.mark.parametrize("kind", ["color-key", "color-key-rgb", "stencil", "soft-mask"])
+@pytest.mark.parametrize("alpha_is_shape", [False, True])
+@pytest.mark.parametrize("opacity", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("smask_in_data", [0, 1, 2])
+def test_image_preparation_keeps_hard_shape_and_native_soft_mask_distinct(
+    kind: str, alpha_is_shape: bool, opacity: float, smask_in_data: int
+) -> None:
+    dictionary: dict[str, object] = {
+        "Width": 4,
+        "Height": 1,
+        "BitsPerComponent": 8,
+        "ColorSpace": "DeviceGray",
+    }
+    raw = bytes((50, 0, 100, 255))
+    native_mask = None
+    if kind == "stencil":
+        dictionary = {"Width": 4, "Height": 1, "ImageMask": True, "BitsPerComponent": 1}
+        raw = b"\x50"
+        intrinsic = numpy.array([1, 0, 1, 0], dtype=numpy.float32)
+    elif kind in {"color-key", "color-key-rgb"}:
+        dictionary["Mask"] = [0, 0]
+        if kind == "color-key-rgb":
+            dictionary["ColorSpace"] = "DeviceRGB"
+            dictionary["Mask"] = [0, 0] * 3
+            raw = bytes(value for component in raw for value in [component] * 3)
+        intrinsic = numpy.array([1, 0, 1, 1], dtype=numpy.float32)
+    else:
+        native_mask = SoftMask(bytes((255, 0, 128, 64)), dict(dictionary))
+        intrinsic = numpy.ones(4, dtype=numpy.float32)
+    # Table 89/87: SMaskInData is meaningless for these non-JPX images and
+    # cannot turn a color-key mask into soft opacity.
+    dictionary["SMaskInData"] = smask_in_data
+    item = ImagePaintItem(
+        "image",
+        0,
+        (10, 5, 14, 6),
+        ImageSource(raw, dictionary, soft_mask=native_mask),
+        ((10, 5), (14, 5), (10, 6), (14, 6)),
+        (0.3, 0.7, 0.9),
+        opacity,
+        None,
+        0.25,
+        None,
+        {},
+        alpha_is_shape=alpha_is_shape,
+    )
+    tracked = internal_target(opaque=True)
+    tracked.push_group(bytearray(len(tracked.pixels)), None, None, isolated=False, knockout=True)
+    # Exercise the real prepare_image path and the mask-specific shape_alpha setup.
+    tracked.paint_item(item)
+    expected = numpy.zeros((internal_HEIGHT, internal_WIDTH), dtype=numpy.float32)
+    if alpha_is_shape:
+        if kind == "soft-mask":
+            # The native mask replaces the captured diagnostic mean (0.25).
+            intrinsic *= numpy.array([255, 0, 128, 64]) / 255 * opacity
+        else:
+            intrinsic *= opacity * 0.25
+    expected[internal_HEIGHT - 6, 10:14] = intrinsic
+    assert tracked.group_source_shape is not None
+    numpy.testing.assert_allclose(tracked.group_source_shape, expected, atol=1 / 255)

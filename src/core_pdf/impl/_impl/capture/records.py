@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Any, TypeAlias
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from core_pdf.impl._impl.model.geometry import RectBox, bbox_union, points_bbox
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
@@ -14,8 +14,30 @@ from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.matrix import Matrix
+from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
+
+if TYPE_CHECKING:
+    from core_pdf.impl._impl.capture.program import CapturedProgram
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class CapturedSoftMask:
+    """A mask-only program captured in its installation coordinate system."""
+
+    program: CapturedProgram
+    transfer: PdfFunctionEvaluator | None = None
+    offset: tuple[float, float] = (0.0, 0.0)
+
+
+@dataclass(frozen=True, slots=True)
+class CapturedTextBoundary:
+    """An ordered text/glyph scope, independent of extraction paint records."""
+
+    seqno: int
+    kind: Literal["begin", "end", "glyph-begin", "glyph-end", "stream-begin", "stream-end"]
+    knockout: bool = True
 
 
 class CapturedLine:
@@ -46,6 +68,8 @@ class CapturedInlineImage:
     fill: tuple[float, ...] | None = None
     fill_opacity: float | None = None
     paints: bool = True
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
 
 
 class CapturedSubpath:
@@ -237,6 +261,9 @@ class CapturedDrawing:
     fill_paints: bool = True
     stroke_paints: bool = True
     group_isolated: bool = True
+    group_knockout: bool = False
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -293,6 +320,9 @@ def marker_drawing(
     blend_mode: str | None = None,
     soft_mask_alpha: float | None = None,
     group_isolated: bool = True,
+    group_knockout: bool = False,
+    alpha_is_shape: bool = False,
+    graphics_soft_mask: CapturedSoftMask | None = None,
 ) -> CapturedDrawing:
     """A zero-geometry drawing that only marks a scope boundary in page order.
 
@@ -306,6 +336,9 @@ def marker_drawing(
         blend_mode=blend_mode,
         soft_mask_alpha=soft_mask_alpha,
         group_isolated=group_isolated,
+        group_knockout=group_knockout,
+        alpha_is_shape=alpha_is_shape,
+        graphics_soft_mask=graphics_soft_mask,
         kind=kind,
     )
 
@@ -333,6 +366,7 @@ class TilingPattern:
     drawings: list[CapturedDrawing]
     glyphs: list[GlyphObservation]
     inline_images: list[CapturedInlineImage]
+    text_boundaries: list[CapturedTextBoundary] = field(default_factory=list, kw_only=True)
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
@@ -343,7 +377,9 @@ __all__ = (
     "CapturedInlineImage",
     "CapturedLine",
     "CapturedPath",
+    "CapturedSoftMask",
     "CapturedSubpath",
+    "CapturedTextBoundary",
     "PatternPaint",
     "ShadingPattern",
     "TilingPattern",

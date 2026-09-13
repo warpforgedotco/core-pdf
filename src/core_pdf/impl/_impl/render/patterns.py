@@ -238,7 +238,11 @@ class internal_PatternTargetMixin:
         glyphs = pattern.glyphs
         if not drawings and not glyphs and not pattern.inline_images:
             return False
-        display = DisplayList(width, self.height)
+        display = DisplayList(
+            width,
+            self.height,
+            preserve_object_boundaries=self.group_source_shape is not None,
+        )
         cell_clip = CapturedPath()
         cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
         append_captured_program(
@@ -247,6 +251,7 @@ class internal_PatternTargetMixin:
                 drawings=tuple(drawings),
                 glyphs=tuple(glyphs),
                 inline_images=tuple(pattern.inline_images),
+                text_boundaries=tuple(pattern.text_boundaries),
             ),
             include_text=True,
         )
@@ -298,6 +303,7 @@ class internal_PatternTargetMixin:
             alpha,
             blend_mode,
             isolated=internal_tiling_pattern_uses_normal_blends(pattern),
+            alpha_is_shape=target_data.alpha_is_shape,
         )
         try:
             while y < y1 + y_step and cells < 10000:

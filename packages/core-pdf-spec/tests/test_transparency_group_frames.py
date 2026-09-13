@@ -135,7 +135,10 @@ def test_form_isolation_preserves_existing_executor_queue_override_signature() -
 
     state, _ = internal_state()
     state.stream_executor = ExistingExecutor(state)
-    frame = state.append_form_xobject(internal_form({"S": PdfName.of("Transparency")}), 0)
+    frame = state.append_form_xobject(
+        internal_form({"S": PdfName.of("Transparency"), "K": True}), 0
+    )
     assert frame is not None
     assert frame.group_alpha == 1.0
     assert frame.group_isolated is False
+    assert frame.group_knockout is True

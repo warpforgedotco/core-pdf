@@ -100,16 +100,65 @@ selects PDF 2.0. Source image helpers preserve 16-bit samples, and
 `s_11_transparency.images` supplies strict Matte unblending. Codec selection and
 output raster conversion stay in core.
 
+`s_08_graphics.pdf_function.compile_pdf_function` supports Type 4 calculator streams using
+the shared PDF 1.3+ semantics for all 42 operators. The compiler accepts PDF numeric syntax,
+comments, and conditional blocks, clips inputs to Domain and outputs to Range, and requires
+exact numeric output arity. Evaluation uses finite float64 reals and signed 32-bit integers;
+oversized integer literals and applicable arithmetic results promote to reals. The limits
+are 100 operand-stack entries and 255 nested brace levels, including the outer braces.
+Blocks are conditional syntax, not manipulable procedure objects. Compiled evaluators are
+reusable and need no external runtime. Function types 0, 2, and 3 remain supported within
+their existing limits: sampled functions require 8-bit samples and linear interpolation,
+including the prescribed fallback for small cubic tables. This is not complete PDF function
+conformance validation.
+
 `s_11_transparency.groups.remove_group_backdrop` removes a transparency group's initial
 backdrop using independently accumulated source alpha. It returns unquantized, unclipped
 source components and alpha; callers own compositing state, raster storage, and output gamut
 clipping. `ContentStreamFrame.group_isolated` preserves Form isolation for semantic sinks.
 Actual transparency Forms default to non-isolated; legacy explicit `group_alpha` frames
 retain their isolated default, and executor override signatures are unchanged.
+`ContentStreamFrame.group_knockout` independently retains Form `/K`, defaulting to false.
+`composite_knockout_element` in the same transparency module combines an element rendered
+against the initial backdrop with previous group contributions, using separate shape and
+source alpha. Its results are unquantized and unclipped; raster coverage and rounding remain
+the caller's responsibility. `GraphicsState.alpha_is_shape` preserves `/AIS` through saved
+and nested state; tiling pattern definitions retain their initial stream's value separately
+from the alpha source selected when painting the pattern.
+
+`GraphicsState.text_knockout` implements the initial `/TK true` value and saved-state behavior
+from ISO 32000-2 §9.3.8. The interpreter ignores `/TK` entries inside `BT`/`ET`, including
+invalid values and their indirect references, while applying other supported graphics-state
+changes. Text-object scope is separate from `q`/`Q` and is restored across child streams.
+`TilingPattern.text_knockout` retains the defining stream's initial value. Existing
+`ContentSink.text_boundary` callbacks also emit `type3-glyph-begin` and `type3-glyph-end`
+around each executed `CharProc`, including cleanup after a failed glyph stream. Sinks own
+the implicit text/glyph compositing groups and deferred text clipping; these boundaries do
+not reset graphics state. Type 3 modes 3 and 7 suppress program paint while text advances
+remain active, following the shared contemporary rule in ISO 32000-2 §9.3.6. Type 3 glyphs
+do not contribute outlines to text clipping. ISO 32000-1 named only mode 3; this correction
+does not introduce a document-header branch.
+
 `ContentStreamFrame.form_bbox` retains normalized, resolved local Form bounds for sinks that
 need the transformed clipping quadrilateral. `clip_bbox` remains the enclosing transformed
 rectangle, while `form_bbox_operand` preserves the original operand. The new field defaults
 to `None` for legacy frames and does not change resolver or executor override signatures.
+
+`s_11_transparency.soft_masks` exports immutable `SoftMask` descriptors and `parse_soft_mask`.
+Descriptors retain the original transparency Form, the invoking CTM at `gs`, the transfer
+function, and Luminosity backdrop/colour-space metadata. The Form Matrix is concatenated
+when the group executes. Parsing preserves group/resource identity without traversing the
+resource graph; Alpha ignores `/BC`, and transfer results are clipped to `[0, 1]`. `/None`
+clears the mask, while omitted/null graphics-state entries preserve it. Graphics saves retain
+the mask, and transparency Form entry resets it alongside alpha constants and blend mode.
+Group execution and conversion to a raster mask remain the consumer's responsibility.
+`ContentInterpreter.resolve_soft_mask` is an additive parsing extension for supplying function
+compilation or recovery through `parse_soft_mask(..., compile_function=...)`; strict defaults
+support function types 0, 2, 3, and 4 within the limits of `compile_pdf_function`, including
+Type 4 Alpha-mask transfer functions without an injected compiler.
+`ContentStreamExecutor.consume_frame` executes a prepared frame, including Form bounds and
+transparency state, through the same error hooks and cleanup as `consume`. Existing parser
+and executor signatures remain unchanged.
 
 `s_07_document.page.page_user_unit` supplies strict page-local unit parsing with the
 prescribed default; applications own physical geometry and raster-size limits.

@@ -196,8 +196,8 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         if isinstance(function, PdfStream)
         else dictionary
     )
-    if kind == 0 and isinstance(prepared, PdfStream):
-        # The strict sampled compiler wraps evaluation setup errors as ValueError.
+    if kind in {0, 4} and isinstance(prepared, PdfStream):
+        # Stream-backed function compilers report numeric setup errors as ValueError.
         # Decode first so authentication failures and unexpected decoder defects
         # cannot become a recoverable numeric error. Keep existing recovery for
         # known malformed or unsupported stream data, and never decode it twice.
@@ -211,6 +211,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             PdfParseError,
             PdfUnsupportedError,
         ) as error:
-            raise ValueError("invalid sampled PDF function") from error
+            label = "sampled" if kind == 0 else "calculator"
+            raise ValueError(f"invalid {label} PDF function") from error
         prepared = prepared.replace(raw_data=decoded, spec=None, decoder=None)
     return strict.compile_pdf_function(prepared, compile_nested=internal_compile_pdf_function)

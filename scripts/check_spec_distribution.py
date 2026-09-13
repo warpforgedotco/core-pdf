@@ -34,17 +34,27 @@ import importlib.util
 import pkgutil
 import zlib
 from importlib import resources
+from types import SimpleNamespace
 
 import core_pdf_spec
 import numpy
+from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf_spec.s_07_content.model import GraphicsState
+from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, parse_device_n_attributes
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
+from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 from core_pdf_spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf_spec.s_09_fonts.glyphs import glyph_name_to_unicode
-from core_pdf_spec.s_11_transparency.groups import remove_group_backdrop
+from core_pdf_spec.s_11_transparency.groups import composite_knockout_element, remove_group_backdrop
+from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.standards import PdfVersion
+from core_pdf_spec.types import PdfName
 
 for module in pkgutil.walk_packages(core_pdf_spec.__path__, core_pdf_spec.__name__ + "."):
     importlib.import_module(module.name)
@@ -82,11 +92,83 @@ color, alpha = remove_group_backdrop(
     numpy.array([[1.0]]), numpy.array([1.0]), numpy.array([0.5]),
 )
 assert numpy.allclose(color, [[0.5]]) and numpy.allclose(alpha, [0.5])
+color, alpha, group_alpha = composite_knockout_element(
+    numpy.array([[0.0, 0.0, 1.0]]), numpy.array([1.0]),
+    backdrop_components=numpy.array([[1.0, 1.0, 1.0]]), backdrop_alpha=numpy.array([1.0]),
+    element_components=numpy.array([[1.0, 1.0, 1.0]]), element_alpha=numpy.array([1.0]),
+    shape=numpy.array([1.0]), group_alpha=numpy.array([1.0]),
+    element_group_alpha=numpy.array([0.0]),
+)
+assert numpy.allclose(color, [[1.0, 1.0, 1.0]])
+assert numpy.allclose(alpha, [1.0]) and numpy.allclose(group_alpha, [0.0])
+frame = ContentStreamFrame(PdfStream(), {}, IDENTITY_MATRIX, 1, None)
+assert not frame.group_knockout
+frame = ContentStreamFrame(PdfStream(), {}, IDENTITY_MATRIX, 1, None, group_knockout=True)
+assert frame.group_knockout
+assert GraphicsState().text_knockout
+calculator = PdfStream(
+    dictionary={
+        "FunctionType": 4, "Domain": [0, 1], "Range": [0, 1],
+        "Filter": PdfName.of("FlateDecode"),
+    },
+    raw_data=zlib.compress(b"{ dup .5 lt { 1 exch sub } { dup mul } ifelse }"),
+    spec={"Filter": PdfName.of("FlateDecode")},
+)
+evaluate = compile_pdf_function(calculator)
+assert evaluate(0.25) == (0.75,)
+assert evaluate(0.75) == (0.5625,)
+assert evaluate(-1.0) == (1.0,) and evaluate(2.0) == (1.0,)
+assert evaluate(0.25) == (0.75,)
+resolver = ObjectResolver(b"", {})
+try:
+    state = ContentInterpreter(resolver, SimpleNamespace(text_boundary=lambda *args: None), None)
+    state.apply_extgstate({"TK": False})
+    state.op_BT((), 0)
+    state.apply_extgstate({"TK": "ignored invalid value", "ca": 0.4})
+    state.op_ET((), 0)
+    assert not state.graphics.text_knockout and state.graphics.fill_opacity == 0.4
+    state.apply_extgstate({"TK": True})
+    assert state.graphics.text_knockout
+    group = PdfStream(
+        dictionary={
+            "Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1],
+            "Group": {"S": PdfName.of("Transparency")},
+        },
+        raw_data=b"0 0 1 1 re f",
+    )
+    mask_dictionary = {
+        "S": PdfName.of("Alpha"), "G": group,
+        "TR": calculator,
+    }
+    mask = parse_soft_mask(mask_dictionary, resolver, ctm=IDENTITY_MATRIX)
+    assert isinstance(mask, SoftMask) and mask.group is group
+    assert mask.transfer is not None and mask.transfer(0.0) == (1.0,)
+    assert mask.transfer(0.75) == (0.5625,)
+    state.apply_extgstate({"SMask": mask_dictionary})
+    installed_mask = state.graphics.soft_mask
+    assert isinstance(installed_mask, SoftMask)
+    paints = []
+    ignore = lambda *args: None
+    state.sink = SimpleNamespace(
+        text_boundary=ignore, save_graphics=ignore, restore_graphics=ignore,
+        enter_stream=ignore, exit_stream=ignore,
+        paint_path=lambda state, *args: paints.append(
+            (state.graphics.soft_mask, state.graphics.fill_opacity)
+        ),
+    )
+    frame = state.append_form_xobject(group, 0)
+    assert frame is not None and frame.form_bbox == (0, 0, 1, 1)
+    state.stream_executor.consume_frame(frame)
+    assert paints == [(None, 1.0)] and state.graphics.soft_mask is installed_mask
+    state.apply_extgstate({"SMask": PdfName.of("None")})
+    assert state.graphics.soft_mask is None
+finally:
+    resolver.close()
 assert resources.files("core_pdf_spec").joinpath("py.typed").is_file()
 data = resources.files("core_pdf_spec._vendor.font_data")
 assert data.joinpath("LICENSE.txt").is_file()
 assert data.joinpath("LICENSE.external.txt").is_file()
-print("Standalone spec wheel: imports, parsing, NChannel, decoding, CMaps and notices passed")
+print("Standalone spec wheel: parsing, NChannel, K/TK/SMask, Type 4, codecs and resources passed")
 """
 
 CORE_SMOKE = """

@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import PatternPaint
+from core_pdf.impl._impl.capture.records import CapturedSoftMask, PatternPaint
 from core_pdf.impl._impl.runtime.array_views import uint8_image_view
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
@@ -81,6 +81,8 @@ class PathPaintItem:
     coalesced_path: bool = False
     fill_pattern: PatternPaint | None = None
     stroke_pattern: PatternPaint | None = None
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
 
     @property
     def kind(self) -> str:
@@ -101,6 +103,8 @@ class PathPaintItem:
             "fill_rule": self.fill_rule,
             "blend_mode": self.blend_mode,
             "soft_mask_alpha": self.soft_mask_alpha,
+            "alpha_is_shape": self.alpha_is_shape,
+            "graphics_soft_mask": self.graphics_soft_mask,
             "fill_pattern": self.fill_pattern,
             "stroke_pattern": self.stroke_pattern,
         }
@@ -123,6 +127,8 @@ class ImagePaintItem:
     source_metadata: dict[str, Any]
     ctm: Any = None
     xobject_depth: Any = None
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
 
     @property
     def kind(self) -> str:
@@ -142,6 +148,8 @@ class ImagePaintItem:
             "fill_opacity": self.fill_opacity,
             "blend_mode": self.blend_mode,
             "soft_mask_alpha": self.soft_mask_alpha,
+            "alpha_is_shape": self.alpha_is_shape,
+            "graphics_soft_mask": self.graphics_soft_mask,
             "image_clip": self.image_clip,
             "source_metadata": self.source_metadata,
             "ctm": self.ctm,
@@ -163,6 +171,14 @@ class internal_RasterGroup:
     # alpha must remain separate from the alpha already present in that backdrop.
     backdrop: bytearray | None = field(default=None, kw_only=True)
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
+        default=None, kw_only=True
+    )
+    source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
+        default=None, kw_only=True
+    )
+    knockout: bool = field(default=False, kw_only=True)
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
         default=None, kw_only=True
     )
 

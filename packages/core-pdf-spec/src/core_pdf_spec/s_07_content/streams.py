@@ -36,6 +36,9 @@ class StreamState:
     compatibility_depth: int = field(default=0, kw_only=True)
     # Path construction is outside q/Q, but pending child clips must not leak.
     pending_clip_rule: str | None = field(default=None, kw_only=True)
+    initial_alpha_is_shape: bool = field(default=False, kw_only=True)
+    initial_text_knockout: bool = field(default=True, kw_only=True)
+    in_text_object: bool = field(default=False, kw_only=True)
 
 
 @dataclass(slots=True)
@@ -50,6 +53,7 @@ class ContentStreamFrame:
     group_alpha: float | None = None
     # Legacy explicitly queued groups are isolated; Form dictionaries supply /I.
     group_isolated: bool = field(default=True, kw_only=True)
+    group_knockout: bool = field(default=False, kw_only=True)
     form_bbox_operand: object = field(default=None, kw_only=True)
     # Resolved local bounds; clip_bbox is only their transformed enclosing box.
     form_bbox: Rectangle | None = field(default=None, kw_only=True)
@@ -113,6 +117,8 @@ class ContentStreamExecutor:
         # A failed stream entry must leave its parent exactly as it was.
         frame.lexer = state.create_lexer(frame.stream.data)
         frame.old_state = state.capture_stream_state()
+        state.initial_alpha_is_shape = state.graphics.alpha_is_shape
+        state.initial_text_knockout = state.graphics.text_knockout
         # The implicit Form save also owns clips made without an explicit q.
         # Its floor prevents malformed child Q operators from consuming any
         # caller saves, while exit can discard unfinished child scopes safely.
@@ -122,6 +128,9 @@ class ContentStreamExecutor:
         # starts a fresh scope; its snapshot retains the parent's depth.
         state.compatibility_depth = 0
         state.internal_pending_clip_rule = None
+        # 9.4 permits child Type 3 descriptions and pattern cells to contain
+        # their own text objects while the invoking stream is inside BT..ET.
+        state.in_text_object = False
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key
         state.sink.enter_stream(state, frame)
@@ -131,6 +140,7 @@ class ContentStreamExecutor:
             state.graphics.fill_opacity = 1.0
             state.graphics.stroke_opacity = 1.0
             state.graphics.blend_mode = None
+            state.graphics.soft_mask = None
         state.resources = frame.resources
         state.graphics.ctm = frame.ctm
         state.xobject_depth = frame.depth
@@ -187,8 +197,18 @@ class ContentStreamExecutor:
         *,
         clip_bbox: Rectangle | None = None,
     ) -> None:
+        self.consume_frame(ContentStreamFrame(stream, resources, ctm, depth, clip_bbox))
+
+    def consume_frame(self, frame: ContentStreamFrame) -> None:
+        """Execute a prepared frame through the normal lifecycle and error hooks.
+
+        This includes Form bounds, transparency defaults, and nested cleanup.
+        The supplied frame must not already be entered by another invocation.
+        """
+        if frame.old_state is not None:
+            raise PdfParseError("content stream frame is already entered")
         state = self.state
-        stream_stack = [ContentStreamFrame(stream, resources, ctm, depth, clip_bbox)]
+        stream_stack = [frame]
         try:
             while stream_stack:
                 frame = stream_stack[-1]

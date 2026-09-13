@@ -89,6 +89,11 @@ class internal_ImageAffineTargetMixin:
                         slice(target_x + column_start, target_x + column_end),
                         255,
                     )
+                    self.record_source_shape(
+                        slice(target_y + row_start, target_y + row_end),
+                        slice(target_x + column_start, target_x + column_end),
+                        255,
+                    )
                     del sampled
                     continue
                 visible = (
@@ -98,6 +103,12 @@ class internal_ImageAffineTargetMixin:
                 numpy.copyto(target_tile[:, :, 0:3], sampled, where=visible[:, :, None])
                 numpy.copyto(target_tile[:, :, 3], 255, where=visible)
                 self.record_source_alpha(
+                    slice(target_y + row_start, target_y + row_end),
+                    slice(target_x + column_start, target_x + column_end),
+                    255,
+                    visible=visible,
+                )
+                self.record_source_shape(
                     slice(target_y + row_start, target_y + row_end),
                     slice(target_x + column_start, target_x + column_end),
                     255,
@@ -117,6 +128,7 @@ class internal_ImageAffineTargetMixin:
         blend_mode: str | None,
         *,
         source_alpha: UInt8Array | None = None,
+        source_shape: UInt8Array | None = None,
         soft_mask: UInt8Array | None = None,
         image_clip: tuple[float, float, float, float] | None = None,
     ) -> bool:
@@ -161,15 +173,16 @@ class internal_ImageAffineTargetMixin:
         alpha = 255
         if constant_alpha is not None:
             alpha = max(0, min(255, int(round(alpha * constant_alpha))))
-        if alpha <= 0:
+        tracking_shape = self.group_source_shape is not None
+        if alpha <= 0 and not tracking_shape:
             return True
         if source_alpha is not None:
-            if not numpy.any(source_alpha):
+            if not numpy.any(source_alpha) and not tracking_shape:
                 return True
             if numpy.all(source_alpha == 255):
                 source_alpha = None
         if soft_mask is not None:
-            if not numpy.any(soft_mask):
+            if not numpy.any(soft_mask) and not tracking_shape:
                 return True
             if numpy.all(soft_mask == 255):
                 soft_mask = None
@@ -334,6 +347,12 @@ class internal_ImageAffineTargetMixin:
                         255,
                         visible=visible,
                     )
+                    self.record_source_shape(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        255,
+                        visible=visible,
+                    )
                     continue
                 alpha_grid = (
                     internal_sample_image_plane(source_alpha, source_u, source_v)
@@ -345,6 +364,23 @@ class internal_ImageAffineTargetMixin:
                     alpha_grid = numpy.rint(
                         alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
                     ).astype(numpy.uint8)
+                if tracking_shape:
+                    # Intrinsic hard masks are shape. Soft alpha contributes
+                    # shape only for AIS; constant opacity is applied by the
+                    # target's shape_alpha, once, after this sampled coverage.
+                    shape_grid: int | UInt8Array = (
+                        alpha_grid
+                        if self.paint_alpha_is_shape
+                        else internal_sample_image_plane(source_shape, source_u, source_v)
+                        if source_shape is not None
+                        else 255
+                    )
+                    self.record_source_shape(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        shape_grid,
+                        visible=visible,
+                    )
                 if constant_alpha is not None:
                     alpha_grid = numpy.clip(
                         numpy.rint(alpha_grid.astype(numpy.float64) * constant_alpha), 0, 255

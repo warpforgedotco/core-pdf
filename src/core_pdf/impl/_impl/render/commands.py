@@ -11,7 +11,9 @@ from core_pdf.impl._impl.capture.records import (
     CapturedDrawing,
     CapturedInlineImage,
     CapturedPath,
+    CapturedSoftMask,
     CapturedSubpath,
+    CapturedTextBoundary,
 )
 from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl._impl.model.runs import TextRun
@@ -94,6 +96,10 @@ def internal_append_glyph_paint(
         fill_rule="nonzero",
         blend_mode=glyph.blend_mode,
         soft_mask_alpha=glyph.soft_mask_alpha,
+        graphics_soft_mask=glyph.graphics_soft_mask
+        if isinstance(glyph.graphics_soft_mask, CapturedSoftMask)
+        else None,
+        alpha_is_shape=glyph.alpha_is_shape,
     )
     return True
 
@@ -105,6 +111,11 @@ def append_captured_program(
     commands = page_program.commands
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
+    explicit_text_boundaries = bool(page_program.text_boundaries)
+    text_active = False
+    text_group_open = False
+    glyph_scope_depth = 0
+    text_stream_stack: list[tuple[bool, bool, list[CapturedSubpath], int | None]] = []
 
     def append_text_run(run: TextRun) -> None:
         display_list.append(
@@ -130,7 +141,72 @@ def append_captured_program(
         )
         text_clipping_subpaths.clear()
 
+    def finish_text(seqno: int) -> None:
+        nonlocal text_active, text_group_open, current_text_object_id
+        if text_group_open:
+            display_list.append("group-end", seqno)
+        # ISO 32000-2 9.3.6/9.3.8: paint the text object before its
+        # accumulated outlines modify the clipping path at ET.
+        flush_text_clip(seqno)
+        text_active = False
+        text_group_open = False
+        current_text_object_id = None
+
+    def begin_text_group(seqno: int, *, knockout: bool) -> None:
+        # Text and Type 3 glyph groups retain transparency on their children;
+        # outer composition is always Normal, alpha=1 and no soft mask.
+        display_list.append(
+            "group-begin",
+            seqno,
+            fill_opacity=1.0,
+            blend_mode=None,
+            group_isolated=False,
+            group_knockout=knockout,
+            # Even TK=false glyphs are elementary objects: their stroke pieces
+            # and combined fill/stroke need one geometric coverage result.
+            group_track_shape=True,
+        )
+
     for command in commands:
+        if isinstance(command, CapturedTextBoundary):
+            kind = command.kind
+            if kind == "stream-begin":
+                text_stream_stack.append(
+                    (text_active, text_group_open, text_clipping_subpaths, current_text_object_id)
+                )
+                text_active = text_group_open = False
+                text_clipping_subpaths = []
+                current_text_object_id = None
+                display_list.append("scope-begin", command.seqno)
+            elif kind == "stream-end":
+                finish_text(command.seqno)
+                display_list.append("scope-end", command.seqno)
+                if text_stream_stack:
+                    text_active, text_group_open, text_clipping_subpaths, current_text_object_id = (
+                        text_stream_stack.pop()
+                    )
+            elif kind == "begin":
+                finish_text(command.seqno)
+                text_active = True
+                text_group_open = include_text and command.knockout
+                if text_group_open:
+                    begin_text_group(command.seqno, knockout=True)
+            elif kind == "end":
+                finish_text(command.seqno)
+            elif kind == "glyph-begin":
+                glyph_scope_depth += 1
+                if include_text:
+                    begin_text_group(command.seqno, knockout=False)
+            elif kind == "glyph-end":
+                if glyph_scope_depth:
+                    if include_text:
+                        display_list.append("group-end", command.seqno)
+                    glyph_scope_depth -= 1
+            continue
+        if not include_text and glyph_scope_depth:
+            # Type 3 paint is captured as paths/images, but remains text for
+            # the renderer's include_text option. Scope records stay balanced.
+            continue
         if not include_text and isinstance(command, TextRun):
             continue
         if isinstance(command, TextRun):
@@ -139,48 +215,65 @@ def append_captured_program(
             glyph = command
             glyph_text_object_id = glyph.text_object_id
             if (
-                current_text_object_id is not None
+                not explicit_text_boundaries
+                and current_text_object_id is not None
                 and glyph_text_object_id != current_text_object_id
             ):
                 flush_text_clip(glyph.seqno)
             current_text_object_id = glyph_text_object_id
-            if internal_append_glyph_paint(
-                display_list,
-                glyph,
-                text_clipping_subpaths,
-                include_paint=include_text,
-            ):
-                continue
-            if not include_text or glyph.text_render_mode in NON_PAINTING_RENDER_MODES:
-                continue
-            bitmap = glyph.resolved_bitmap()
-            if not bitmap:
-                continue
-            display_list.append(
-                "glyph",
-                glyph.seqno,
-                text=glyph.text,
-                code=glyph.cid,
-                gid=glyph.gid,
-                font_name=glyph.font_name,
-                unicode_source=glyph.unicode_source,
-                alternates=glyph.alternates,
-                bbox=glyph.ink_bbox,
-                advance_bbox=glyph.advance_bbox,
-                fill_color=glyph.fill,
-                visible=glyph.visible,
-                bitmap=bitmap,
-                bitmap_width=glyph.bitmap_width,
-                bitmap_height=glyph.bitmap_height,
-            )
+            glyph_group_open = include_text and explicit_text_boundaries and not text_group_open
+            if glyph_group_open:
+                begin_text_group(glyph.seqno, knockout=False)
+            try:
+                if internal_append_glyph_paint(
+                    display_list,
+                    glyph,
+                    text_clipping_subpaths,
+                    include_paint=include_text,
+                ):
+                    continue
+                if not include_text or glyph.text_render_mode in NON_PAINTING_RENDER_MODES:
+                    continue
+                bitmap = glyph.resolved_bitmap()
+                if not bitmap:
+                    continue
+                display_list.append(
+                    "glyph",
+                    glyph.seqno,
+                    text=glyph.text,
+                    code=glyph.cid,
+                    gid=glyph.gid,
+                    font_name=glyph.font_name,
+                    unicode_source=glyph.unicode_source,
+                    alternates=glyph.alternates,
+                    bbox=glyph.ink_bbox,
+                    advance_bbox=glyph.advance_bbox,
+                    fill_color=glyph.fill,
+                    fill_opacity=glyph.fill_opacity,
+                    blend_mode=glyph.blend_mode,
+                    soft_mask_alpha=glyph.soft_mask_alpha,
+                    graphics_soft_mask=glyph.graphics_soft_mask
+                    if isinstance(glyph.graphics_soft_mask, CapturedSoftMask)
+                    else None,
+                    alpha_is_shape=glyph.alpha_is_shape,
+                    visible=glyph.visible,
+                    bitmap=bitmap,
+                    bitmap_width=glyph.bitmap_width,
+                    bitmap_height=glyph.bitmap_height,
+                )
+            finally:
+                if glyph_group_open:
+                    display_list.append("group-end", glyph.seqno)
         elif isinstance(command, CapturedDrawing):
-            flush_text_clip(command.seqno)
+            if not text_active:
+                flush_text_clip(command.seqno)
             display_list.append_captured_drawing(command)
         else:
             assert isinstance(command, CapturedInlineImage)
             inline_image = command
             bbox, quad = unit_square_placement(inline_image.ctm)
-            flush_text_clip(inline_image.seqno)
+            if not text_active:
+                flush_text_clip(inline_image.seqno)
             if not inline_image.paints:
                 continue
             display_list.append(
@@ -194,13 +287,24 @@ def append_captured_program(
                 xobject_depth=inline_image.xobject_depth,
                 blend_mode=inline_image.blend_mode,
                 soft_mask_alpha=inline_image.soft_mask_alpha,
+                graphics_soft_mask=inline_image.graphics_soft_mask,
+                alpha_is_shape=inline_image.alpha_is_shape,
                 fill=inline_image.fill,
                 fill_opacity=inline_image.fill_opacity,
                 bbox=bbox,
                 quad=quad,
                 raw_data=inline_image.data,
             )
-    flush_text_clip(len(commands))
+    finish_text(len(commands))
+
+
+def internal_translated_soft_mask(
+    mask: CapturedSoftMask | None, tx: float, ty: float
+) -> CapturedSoftMask | None:
+    """Move a mask with its repeated paint without recapturing its program."""
+    if mask is None or (tx == 0 and ty == 0):
+        return mask
+    return replace(mask, offset=(mask.offset[0] + tx, mask.offset[1] + ty))
 
 
 def translated_command(
@@ -213,6 +317,7 @@ def translated_command(
             bbox=internal_translate_rect(item.bbox, tx, ty),
             path=item.path.translated(tx, ty) if isinstance(item.path, CapturedPath) else item.path,
             blend_mode=item.blend_mode or parent_blend_mode,
+            graphics_soft_mask=internal_translated_soft_mask(item.graphics_soft_mask, tx, ty),
         )
     if isinstance(item, ImagePaintItem):
         return replace(
@@ -221,8 +326,11 @@ def translated_command(
             quad=tuple((x + tx, y + ty) for x, y in item.quad) if item.quad else None,
             image_clip=internal_translate_rect(item.image_clip, tx, ty),
             blend_mode=item.blend_mode or parent_blend_mode,
+            graphics_soft_mask=internal_translated_soft_mask(item.graphics_soft_mask, tx, ty),
         )
     data: dict[str, Any] = dict(item.data)
+    if isinstance(mask := data.get("graphics_soft_mask"), CapturedSoftMask):
+        data["graphics_soft_mask"] = internal_translated_soft_mask(mask, tx, ty)
     for key in ("bbox", "rect"):
         if key in data:
             data[key] = internal_translate_rect(data[key], tx, ty)

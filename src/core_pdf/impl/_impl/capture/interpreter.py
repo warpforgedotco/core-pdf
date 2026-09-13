@@ -37,6 +37,9 @@ class TextState(RecordingMethods):
         self.stream_order = -1
         self.sequence = 0
         self.text_object_id = 0
+        self.text_boundaries = []
+        self.capture_text_open = False
+        self.capture_text_frames = {}
         self.pending_line_break = False
         self.group_alpha = None
         self.run_accumulator = RunAccumulator(self.runs)
@@ -45,6 +48,9 @@ class TextState(RecordingMethods):
         self.capture_frames = {}
         self.capture_patterns = {}
         self.capture_colors = {}
+        self.capture_soft_masks = {}
+        self.capture_mask_resources = {}
+        self.capture_active_mask_groups = set()
 
         def font_provider(font: dict[str, Any], resources: dict[str, Any]) -> FontDecoder:
             return FontDecoder(

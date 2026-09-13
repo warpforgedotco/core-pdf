@@ -11,6 +11,7 @@ from core_pdf.impl._impl.document.recovery.resources import (
     resolve_resource_dict as recover_resources,
 )
 from core_pdf.impl._impl.graphics.color_spec import parse_color_space
+from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -24,6 +25,7 @@ from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
+from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.types import PdfReference, PdfString
 
 
@@ -31,6 +33,14 @@ class RecoveringTextState(ContentInterpreter):
     """Reader repairs layered over the shared PDF state transitions."""
 
     recovery: CaptureRecovery
+
+    def resolve_soft_mask(self, value: object) -> SoftMask | None:
+        return parse_soft_mask(
+            value,
+            self.resolver,
+            ctm=self.graphics.ctm,
+            compile_function=internal_compile_pdf_function,
+        )
 
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
@@ -208,6 +218,8 @@ class RecoveringTextState(ContentInterpreter):
             paint_type=paint_type,
             base_color=base_color,
             base_color_spec=base_spec,
+            alpha_is_shape=self.initial_alpha_is_shape,
+            text_knockout=self.initial_text_knockout,
         )
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:

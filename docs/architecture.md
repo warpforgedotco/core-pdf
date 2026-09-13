@@ -160,7 +160,7 @@ Subpackages under `core_pdf_spec` mirror chapters of the PDF specification:
 | `s_07_security` | 7 — encryption handlers |
 | `s_08_graphics` | 8 — color-space/image semantics, functions, shading geometry, matrices |
 | `s_09_fonts` | 9 — font formats, CMaps, encodings, widths, and semantic font services |
-| `s_11_transparency` | 11 — version-sensitive blend equations, group backdrop removal, image Matte semantics |
+| `s_11_transparency` | 11 — version-sensitive blend equations, group backdrop removal and knockout equations, image Matte semantics |
 | `s_14_structure` | 14 — logical structure tree |
 
 ---
@@ -246,10 +246,62 @@ become public drawing records, PDFMiner layout delimiters, or OCR routing eviden
 Raster paint state separates object opacity from group compositing opacity. Form group isolation
 survives interpretation and capture; an omitted `/I` means non-isolated. Non-isolated groups
 start with their parent's current RGB backdrop and track their own paint alpha separately.
-Backdrop removal precedes outer blending, opacity, and the existing scalar soft-mask factor,
+Backdrop removal precedes outer blending, opacity, and the selected soft mask,
 so the background and group opacity each contribute once. Nested groups contribute only their
 completed output alpha to the enclosing group. Stroke dash phase advances across
 the segments of one subpath, and a zero-width stroke retains its device-pixel hairline semantics.
+
+Form `/K` selects knockout independently of isolation, with an omitted flag defaulting to false.
+Each element blends against the group's initial backdrop, then replaces earlier contributions
+according to its shape. A non-isolated child of a knockout group inherits that initial backdrop.
+Groups used inside knockout groups retain shape separately from opacity, including antialiased
+edges and zero-opacity paint. Image stencils and color-key masks constrain shape; soft masks
+and alpha constants affect opacity unless `/AIS` selects shape. Pattern group constants apply
+once to the completed pattern, with initial-stream AIS retained separately from paint state.
+Distinct strokes retain their object boundaries inside knockout groups; a stroke's overlapping
+segments and caps contribute its opacity once. Combined fill/stroke paint in these groups uses
+an implicit knockout group to prevent opacity from accumulating at the border.
+
+Text `/TK` defaults to true. Each `BT`/`ET` object then composites as a non-isolated knockout
+group, with each glyph contributing one element; `/TK false` lets overlapping glyphs composite
+normally. Glyphs inherit the current opacity, blend mode, soft mask, and alpha source. The
+completed text group uses Normal blending and unit opacity/mask, so inherited transparency
+applies once. `/TK` changes inside a text object are ignored, while other graphics-state
+changes persist after `ET`. Saved graphics state retains `/TK`; nested streams separately
+save and restore text-object scope and retain initial-stream `/TK` for tiling patterns.
+
+Capture records explicit text, stream, and Type 3 glyph boundaries without advancing existing
+paint sequence numbers. The renderer uses these records to group glyphs across text-showing
+operators and to unwind nested text. A Type 3 `CharProc` executes its graphics program as one
+glyph element, without painting a second substitute outline. Text clipping accumulates until
+`ET`, after text paint completes, and remains active until the surrounding graphics scope
+restores it. Closing the implicit text group does not save, restore, or reset graphics state.
+Type 3 rendering modes 3 and 7 suppress program paint while preserving text advances; Type 3
+glyphs do not add outlines to text clipping. This follows ISO 32000-2 §9.3.6 as a shared
+contemporary correction, without selecting a different rule from the document header.
+
+Graphics-state `/SMask` supports spatial Alpha masks. The CTM and resource scope are retained
+from `gs`; other inherited non-transparency state, such as line width,
+comes from each paint. Mask artwork is captured separately, preserving page extraction and
+paint ordering. The group uses its Form Matrix and bounding-box clip, with alpha constants,
+blend mode, and inherited soft mask reset before its content runs. The completed mask applies
+once to the painted object or transparency group, with `/AIS` selecting shape or opacity.
+
+Alpha masks use group alpha independently of colour and the destination backdrop. Transfer
+functions apply to every resulting sample, including zero outside the group bounding box:
+`TR(0)` can therefore make the outside opaque. `/None` clears the mask; omitted/null entries
+preserve it, and `q`/`Q` restores it. An image's own soft mask, explicit mask, colour-key mask,
+or embedded opacity overrides the graphics-state mask; ordinary images and stencils retain it.
+The strict transfer compiler supports function types 0, 2, 3, and 4 within its function limits.
+Type 4 calculator functions use the shared PDF 1.3+ operator semantics for all 42 operators,
+with PDF numeric syntax, comments, conditional blocks, and exact numeric output arity.
+Inputs are clipped to Domain and results to Range. The evaluator uses finite float64 reals
+and signed 32-bit integers, promoting oversized integer literals and applicable arithmetic
+results to real values. Its implementation limits are 100 operand-stack entries and 255 nested brace
+levels, including the outer braces; blocks cannot be manipulated as procedure objects.
+Compilation is internal to spec and reused by tints, shading, and Alpha-mask transfers without
+an external runtime. Sampled functions remain limited to 8-bit samples and linear interpolation
+(including the prescribed fallback for small cubic tables). Compiler injection remains available.
 
 Images, soft masks, and stencils sample through the original image placement. Page crops and
 captured Form clips restrict the destination without stretching the source; masks retain their
@@ -303,12 +355,16 @@ space containing both `None` and real colorants still passes every component to 
 The early image/shading probe reads only names; general color-space selection still parses
 alternate ICC profiles eagerly, including an unused alternate in a malformed no-paint space.
 
-Tiling patterns render all tiles into one group, then apply the outer opacity, scalar soft
+Tiling patterns render all tiles into one group, then apply the outer opacity, selected soft
 mask, and blend mode once. Non-Normal contents see the initial backdrop through a non-isolated
 group. Patterns whose captured contents use only Normal blending retain the isolated
 optimization permitted by ISO 32000-2 §11.6.7. Group alpha follows the same effective coverage
 and mask samples as image, path, text, and shading paint, including vectorized raster paths.
 
 Transparency groups composite in the renderer's RGB space with its existing supported blend
-modes and byte quantization. Knockout groups, arbitrary group `/CS` blending spaces, and full
-transparency soft-mask groups require additional work.
+modes and byte quantization. Arbitrary group `/CS` blending spaces, Luminosity soft-mask
+rendering, and plate-aware compositing require additional work. Spec preserves
+Luminosity `/CS` and backdrop metadata; core currently uses its unmasked fallback for that
+unsupported subtype. Alpha mask rasterization uses the renderer's existing byte precision.
+Implicit text and glyph groups currently allocate and process page-sized scratch planes,
+which can make text-heavy rendering expensive. This allocation strategy has not been optimized.

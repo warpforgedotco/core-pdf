@@ -172,6 +172,7 @@ def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
         drawings=tuple(state.drawings),
         inline_images=tuple(state.inline_images),
         lines=tuple(state.lines),
+        text_boundaries=tuple(state.text_boundaries),
     )
 
 

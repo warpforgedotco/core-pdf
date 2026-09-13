@@ -117,7 +117,12 @@ def internal_convert_components(
     if kind in {"Separation", "DeviceN"} and space.alternate is not None:
         function = internal_compile_pdf_function(space.tint_fn)
         distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
-        tinted = numpy.asarray([function(*row) for row in distinct], dtype=numpy.float64)
+        # Decoded image samples are NumPy scalars; shared function evaluators
+        # accept ordinary Python numbers at their numeric boundary.
+        tinted = numpy.asarray(
+            [function(*(float(component) for component in row)) for row in distinct],
+            dtype=numpy.float64,
+        )
         if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
             raise ValueError("invalid tint transform output count")
         return internal_convert_components(tinted, space.alternate, depth + 1, rendering=rendering)[

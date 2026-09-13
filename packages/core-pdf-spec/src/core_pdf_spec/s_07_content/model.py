@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf_spec.s_07_content.streams import ContentStreamFrame
+    from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
 NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
@@ -71,6 +72,8 @@ class TilingPattern:
     paint_type: int
     base_color: tuple[float, ...] | None
     base_color_spec: ColorSpace | None = field(default=None, kw_only=True)
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    text_knockout: bool = field(default=True, kw_only=True)
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
@@ -115,6 +118,9 @@ class GraphicsState:
     current_font: str | None = None
     current_decoder: FontService | None = None
     decoder_resources: PdfDict | None = None
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    text_knockout: bool = field(default=True, kw_only=True)
+    soft_mask: SoftMask | None = field(default=None, kw_only=True)
 
     @property
     def color_rendering(self) -> ColorRendering:

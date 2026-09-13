@@ -125,6 +125,7 @@ def rasterize_unclipped_line_normal(
     x_coords: numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]] | None = None,
     y_coords: numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]] | None = None,
     return_source_alpha: bool = False,
+    source_shape: UInt8Array | None = None,
 ) -> UInt8Array | None:
     """Rasterize one antialiased line into an unclipped normal RGBA bitmap.
 
@@ -132,7 +133,8 @@ def rasterize_unclipped_line_normal(
     kernel free of renderer state makes it suitable for isolated performance testing
     while preserving
     the existing renderer for clipped, dashed, and non-normal blend-mode paths.
-    A caller tracking group opacity may request the effective source alpha plane.
+    A caller tracking group opacity may request the effective source alpha plane;
+    source_shape receives geometric coverage even when the paint opacity is zero.
     """
     x_delta = x1 - x0
     y_delta = y1 - y0
@@ -212,6 +214,9 @@ def rasterize_unclipped_line_normal(
 
     if not numpy.any(covered):
         return None
+
+    if source_shape is not None:
+        source_shape[...] = numpy.rint(255 * covered / sample_total).astype(numpy.uint8)
 
     alpha = numpy.rint(source_alpha * covered / sample_total).astype(numpy.int16)
     alpha = numpy.clip(alpha, 0, 255)

@@ -341,6 +341,7 @@ def internal_canonical_image_array(
         or explicit_jpx_decode
         or sample_array is not samples.array
         or rendering != DEFAULT_COLOR_RENDERING
+        or isinstance(high_depth_dictionary.get("Mask"), (list, tuple))
     ):
         if samples.source == "jpx" and not explicit_jpx_decode:
             high_depth_dictionary.pop("Decode", None)
@@ -464,11 +465,28 @@ def decode_pdf_image(
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
-    if parse_int(dictionary.get("BitsPerComponent"), 8) == 16:
+    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
+    if bits_per_component == 16 or isinstance(dictionary.get("Mask"), (list, tuple)):
         try:
-            converted_words = convert_16bit_image(
-                samples, dictionary, matte=matte, alpha=alpha, rendering=rendering
-            )
+            if bits_per_component == 16:
+                converted_words = convert_16bit_image(
+                    samples, dictionary, matte=matte, alpha=alpha, rendering=rendering
+                )
+            else:
+                # Color-key masks compare original integers before Decode or
+                # conversion (8.9.6.4), and their holes are intrinsic shape.
+                space = parse_color_space(dictionary.get("ColorSpace"))
+                integers = unpack_image_samples(
+                    samples, bits_per_component, width, height, len(space.component_ranges)
+                )
+                converted_words = convert_integer_samples(
+                    integers,
+                    dictionary,
+                    bits_per_component=bits_per_component,
+                    matte=matte,
+                    alpha=alpha,
+                    rendering=rendering,
+                )
         except (TypeError, ValueError):
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])

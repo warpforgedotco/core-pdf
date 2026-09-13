@@ -130,6 +130,7 @@ class internal_PathFillTargetMixin:
                         else:
                             pixel_view(pixels)[py, visible_start:visible_end] = rgba
                         self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
+                        self.record_source_shape(py, slice(visible_start, visible_end), 255)
                         continue
                     if rectangular_clip and normal_fast:
                         blend_normal_solid_span(row, visible_start, visible_end, rgba)
@@ -143,6 +144,7 @@ class internal_PathFillTargetMixin:
                             rgba,
                         )
                         self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
+                        self.record_source_shape(py, slice(visible_start, visible_end), 255)
                         continue
                     if (
                         blend_target is not None
@@ -155,6 +157,7 @@ class internal_PathFillTargetMixin:
                             semantic_context=self.semantic_context,
                         )
                         self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
+                        self.record_source_shape(py, slice(visible_start, visible_end), 255)
                         continue
                     for px in range(visible_start, visible_end):
                         if normal_fast:
@@ -276,6 +279,10 @@ class internal_PathFillTargetMixin:
         if (
             rgba == (0, 0, 0, 255)
             and blend_mode is None
+            # This shortcut uses a different scanline approximation from the
+            # general fill. Tracked shape must not change with paint opacity
+            # or color, including a zero-opacity knockout element.
+            and self.group_source_shape is None
             and fast_bbox is not None
             and fill_rule == "nonzero"
             and fast_fill_path(edges, fast_bbox)
@@ -313,6 +320,10 @@ class internal_PathFillTargetMixin:
                 alpha_plane,
             )
             self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
+            if self.group_source_shape is not None:
+                self.record_source_shape(
+                    slice(iy0, iy1), slice(ix0, ix1), numpy.rint(coverage * 255).astype(numpy.uint8)
+                )
             return
         edge_segments = [
             (
@@ -403,6 +414,14 @@ class internal_PathFillTargetMixin:
                         alpha_plane,
                     )
                     self.record_source_alpha(py, slice(ix0, ix1), alpha_plane)
+                    if self.group_source_shape is not None:
+                        self.record_source_shape(
+                            py,
+                            slice(ix0, ix1),
+                            numpy.rint(
+                                coverage.astype(numpy.float32) * 255 / (samples * samples)
+                            ).astype(numpy.uint8),
+                        )
                 continue
             for px in range(ix0, ix1):
                 covered = 0
@@ -421,14 +440,18 @@ class internal_PathFillTargetMixin:
                     if not rectangular_clip and not pixel_in_clip(px, py):
                         continue
                     alpha = max(
-                        1,
+                        0,
                         min(255, round(rgba[3] * covered / (samples * samples))),
                     )
+                    shape = round(255 * covered / (samples * samples))
                     if normal_fast:
-                        blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], alpha)
+                        blend_normal_pixel(
+                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
+                        )
                     else:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
                             blend_resolved_mode,
+                            shape=shape,
                         )

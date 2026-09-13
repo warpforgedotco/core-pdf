@@ -245,6 +245,8 @@ class GlyphPaint:
     blend_mode: str | None
     group_alpha: float | None
     clip_glyph: bool = False
+    alpha_is_shape: bool = False
+    graphics_soft_mask: object | None = None
 
 
 @dataclass(slots=True)
@@ -514,7 +516,7 @@ def capture_glyphs(
                 provenance=provenance,
                 glyph_transform=outline_transform,
                 text_render_mode=paint.render_mode,
-                clip_glyph=paint.clip_glyph,
+                clip_glyph=paint.clip_glyph and not decoder.is_type3,
                 fill_opacity=paint.fill_opacity,
                 stroke_color=paint.stroke_color,
                 stroke_opacity=paint.stroke_opacity,
@@ -524,7 +526,10 @@ def capture_glyphs(
                 dash_pattern=paint.dash_pattern,
                 blend_mode=paint.blend_mode,
                 soft_mask_alpha=paint.group_alpha,
+                alpha_is_shape=paint.alpha_is_shape,
+                graphics_soft_mask=paint.graphics_soft_mask,
                 paint_glyph=index == 0,
+                paint_from_program=decoder.is_type3,
                 text_object_id=text_object_id,
                 cluster_key=cluster_provenance_id,
             )
