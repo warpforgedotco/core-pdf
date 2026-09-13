@@ -69,6 +69,8 @@ def test_normalized_lab_wrapper_preserves_original_float32_results() -> None:
     )
     # Captured from the public function before adding the components interface.
     # Bit patterns pin its normalization and arithmetic order, including negatives.
+    # The cubes go through numpy's float32 power, whose SIMD variants round
+    # differently across CPU generations, so allow the resulting ULP or two.
     expected_bits = numpy.array(
         [
             [3103783820, 0, 968314105],
@@ -79,7 +81,8 @@ def test_normalized_lab_wrapper_preserves_original_float32_results() -> None:
         dtype=numpy.uint32,
     )
     result = lab_to_xyz(values, (0.9505, 1.0, 1.089))
-    numpy.testing.assert_array_equal(result.view(numpy.uint32), expected_bits)
+    assert result.dtype == numpy.float32
+    numpy.testing.assert_array_max_ulp(result, expected_bits.view(numpy.float32), maxulp=2)
 
 
 @pytest.mark.parametrize("convert", [lab_components_to_xyz, lab_to_xyz])
