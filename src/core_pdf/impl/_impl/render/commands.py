@@ -15,7 +15,8 @@ from core_pdf.impl._impl.capture.records import (
     CapturedSubpath,
     CapturedTextBoundary,
 )
-from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl._impl.fonts.decoder import GlyphOutlineArrays
+from core_pdf.impl._impl.model.glyphs import GlyphObservation, Matrix6
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl._impl.render.display import DisplayList
 from core_pdf.impl._impl.render.model import (
@@ -25,22 +26,34 @@ from core_pdf.impl._impl.render.model import (
     PathPaintItem,
 )
 from core_pdf.impl._impl.render.paths import internal_translate_rect
+from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
 
-def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
-    """Resolve and transform one captured embedded-font outline."""
+def internal_glyph_outline_path(
+    glyph: GlyphObservation,
+) -> tuple[CapturedPath, Rectangle | None] | None:
+    """Resolve and transform one captured embedded-font outline, with its bounds."""
     if not glyph.paint_glyph:
         return None
     transform = glyph.glyph_transform
-    resolver = getattr(glyph.font_decoder, "glyph_outline", None)
-    if transform is None or not callable(resolver):
+    decoder = glyph.font_decoder
+    if transform is None or decoder is None:
         return None
     code = glyph.bitmap_code
     if code is None:
         code = glyph.cid if glyph.cid is not None else glyph.char_code
     if code is None:
+        return None
+    array_resolver = getattr(decoder, "glyph_outline_arrays", None)
+    if callable(array_resolver):
+        arrays = array_resolver(code, glyph.gid, glyph.text)
+        if arrays is None:
+            return None
+        return internal_transformed_outline(arrays, transform)
+    resolver = getattr(decoder, "glyph_outline", None)
+    if not callable(resolver):
         return None
     contours = resolver(code, glyph.gid, glyph.text)
     if not contours:
@@ -55,7 +68,37 @@ def internal_glyph_outline_path(glyph: GlyphObservation) -> CapturedPath | None:
             points.pop()
         if len(points) >= 2:
             subpaths.append(subpath)
-    return CapturedPath(subpaths) if subpaths else None
+    if not subpaths:
+        return None
+    path = CapturedPath(subpaths)
+    return path, path.bbox()
+
+
+def internal_transformed_outline(
+    arrays: GlyphOutlineArrays, transform: Matrix6
+) -> tuple[CapturedPath, Rectangle | None] | None:
+    # Elementwise operations in the same order as the scalar
+    # ``x * a + y * c + e`` keep every transformed coordinate bit-identical.
+    a, b, c, d, e, f = transform
+    linear_x, linear_y = arrays.linear_columns(a, b, c, d)
+    tx = (linear_x + e).tolist()
+    ty = (linear_y + f).tolist()
+    subpaths: list[CapturedSubpath] = []
+    dropped = False
+    for start, end in arrays.spans:
+        points = list(zip(tx[start:end], ty[start:end], strict=True))
+        if points[0] == points[-1]:
+            points.pop()
+        if len(points) >= 2:
+            subpaths.append(CapturedSubpath(points, closed=True))
+        else:
+            dropped = True
+    if not subpaths:
+        return None
+    path = CapturedPath(subpaths)
+    if dropped:
+        return path, path.bbox()
+    return path, (min(tx), min(ty), max(tx), max(ty))
 
 
 def internal_append_glyph_paint(
@@ -72,9 +115,10 @@ def internal_append_glyph_paint(
         return True
     if not include_paint and mode < 4:
         return True
-    path = internal_glyph_outline_path(glyph)
-    if path is None:
+    outline = internal_glyph_outline_path(glyph)
+    if outline is None:
         return False
+    path, bbox = outline
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
     if not include_paint or mode in NON_PAINTING_RENDER_MODES or glyph.visible is False:
@@ -83,7 +127,7 @@ def internal_append_glyph_paint(
     display_list.append(
         paint_kind,
         glyph.seqno,
-        bbox=path.bbox(),
+        bbox=bbox,
         path=path,
         fill=glyph.fill,
         fill_opacity=glyph.fill_opacity,

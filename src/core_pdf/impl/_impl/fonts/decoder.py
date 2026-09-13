@@ -10,7 +10,9 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from io import BytesIO
-from typing import Iterable
+from typing import Any, Iterable
+
+import numpy
 
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl._impl.fonts.cid_unicode import resolve_cid_unicode_map
@@ -83,8 +85,6 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf_spec.standards import SemanticContext
 
 if typing.TYPE_CHECKING:
-    from typing import Any
-
     from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
 
 
@@ -367,6 +367,71 @@ def internal_font_is_vertical(
         return False
 
 
+class GlyphOutlineArrays:
+    """One glyph's paintable contours as coordinate columns.
+
+    ``spans`` holds the ``[start, end)`` slice of each contour with at least
+    two points, so a renderer transforms every point of the glyph in one
+    vectorized pass and slices the result back into subpaths. Text shows the
+    same glyph at the same scale many times, so the linear part of each
+    transform is kept per ``(a, b, c, d)``; an occurrence only adds its offset.
+    """
+
+    __slots__ = ("linear", "spans", "xs", "ys")
+
+    def __init__(
+        self,
+        xs: numpy.ndarray[Any, Any],
+        ys: numpy.ndarray[Any, Any],
+        spans: tuple[tuple[int, int], ...],
+    ) -> None:
+        self.xs = xs
+        self.ys = ys
+        self.spans = spans
+        self.linear: dict[
+            tuple[float, float, float, float],
+            tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]],
+        ] = {}
+
+    def linear_columns(
+        self, a: float, b: float, c: float, d: float
+    ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
+        """``x * a + y * c`` and ``x * b + y * d`` for every point, in that float order."""
+        key = (a, b, c, d)
+        columns = self.linear.get(key)
+        if columns is None:
+            if len(self.linear) >= internal_LINEAR_CACHE_LIMIT:
+                self.linear.clear()
+            xs = self.xs
+            ys = self.ys
+            columns = self.linear[key] = (xs * a + ys * c, xs * b + ys * d)
+        return columns
+
+
+internal_LINEAR_CACHE_LIMIT = 256
+
+
+def internal_outline_arrays(
+    contours: tuple[tuple[tuple[float, float], ...], ...],
+) -> GlyphOutlineArrays | None:
+    xs: list[float] = []
+    ys: list[float] = []
+    spans: list[tuple[int, int]] = []
+    for contour in contours:
+        if len(contour) < 2:
+            continue
+        start = len(xs)
+        for x, y in contour:
+            xs.append(x)
+            ys.append(y)
+        spans.append((start, len(xs)))
+    if not spans:
+        return None
+    return GlyphOutlineArrays(
+        numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64), tuple(spans)
+    )
+
+
 internal_MISSING: typing.Final = object()
 
 
@@ -411,6 +476,7 @@ class FontDecoder:
     internal_glyph_outline_cache: dict[
         tuple[int, int | None, str], tuple[tuple[tuple[float, float], ...], ...]
     ]
+    internal_glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
 
     def __init__(
         self,
@@ -430,6 +496,7 @@ class FontDecoder:
     def internal_initialize(self) -> None:
         self.internal_glyph_bbox_cache = {}
         self.internal_glyph_outline_cache = {}
+        self.internal_glyph_outline_array_cache = {}
         font = self.font
         subtype = font.get("Subtype")
         if subtype is not None:
@@ -1063,6 +1130,19 @@ class FontDecoder:
         if contours is None:
             contours = cache[key] = self.internal_glyph_outline_uncached(code, gid, text)
         return contours
+
+    def glyph_outline_arrays(
+        self, code: int, gid: int | None = None, text: str = ""
+    ) -> GlyphOutlineArrays | None:
+        """Column form of ``glyph_outline`` for batched transforms; None paints nothing."""
+        if code < 0:
+            return None
+        cache = self.internal_glyph_outline_array_cache
+        key = (code, gid, text)
+        arrays = cache.get(key, internal_MISSING)
+        if arrays is internal_MISSING:
+            arrays = cache[key] = internal_outline_arrays(self.glyph_outline(code, gid, text))
+        return typing.cast(GlyphOutlineArrays | None, arrays)
 
     def internal_glyph_outline_uncached(
         self, code: int, gid: int | None, text: str
