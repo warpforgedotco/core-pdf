@@ -79,11 +79,10 @@ def resolve_info_metadata(
         info = info_dictionary(resolver, trailer)
         if info is None:
             return {}
+        coerced = cast(dict[object, object], coerce_value(info, decode_pdf_text_string))
         return {
-            str(recover_pdf_name(key) or key): cast(
-                MetadataValue, coerce_value(value, decode_pdf_text_string)
-            )
-            for key, value in info.items()
+            str(recover_pdf_name(key) or key): cast(MetadataValue, value)
+            for key, value in coerced.items()
         }
     except (PdfError, RecursionError, ValueError):
         if recover:

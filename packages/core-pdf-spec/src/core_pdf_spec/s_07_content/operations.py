@@ -20,9 +20,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, r
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
     CONTENT_OPERATOR_SIGNATURES,
 )
-from core_pdf_spec.s_07_syntax_primitives.scanning import (
-    is_number_word_bytes,
-)
+from core_pdf_spec.s_07_syntax_primitives.numbers import is_number_token
 from core_pdf_spec.types import PdfName, PdfString
 
 if TYPE_CHECKING:
@@ -54,8 +52,11 @@ def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
         scanned = lexer.scan_word_at(start, skip_ignored=False)
         assert scanned is not None
         word, lexer.pos = scanned
-        if is_number_word_bytes(word):
-            return ContentToken(start, lexer.parse_real_token(word) if b"." in word else int(word))
+        if is_number_token(word):
+            return ContentToken(
+                start,
+                lexer.parse_real_token(word) if b"." in word else lexer.parse_integer_token(word),
+            )
         if word == b"BI":
             return ContentToken(start, parse_inline_image(lexer))
         if word in (b"true", b"false", b"null"):

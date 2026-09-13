@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import threading
 import typing
 
 if typing.TYPE_CHECKING:
@@ -15,47 +14,35 @@ from core_pdf_spec.s_07_syntax.objects import (
     parse_object_stream_pair,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import ObjectCache
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
-from core_pdf_spec.standards import SemanticContext
 
 
 class PdfObjectStream(SyntaxObjectStream):
     __slots__ = ()
 
-    def __init__(
-        self, stream: PdfStream, *, semantic_context: SemanticContext | None = None
-    ) -> None:
-        self.semantic_context = semantic_context
-        first, pairs = self.read_header(stream)
-        self.validate_header_pairs(pairs)
+    def build_index(self, pairs: list[tuple[int, int]], body_length: int) -> dict[int, int]:
         index_map: dict[int, int] = {}
-        body = stream.data[first:]
-        body_len = len(body)
         for obj_num, offset in pairs:
-            if obj_num < 0 or offset < 0 or offset >= body_len:
+            if obj_num < 0 or offset < 0 or offset >= body_length:
                 continue
             if obj_num in index_map:
                 continue
             index_map[obj_num] = offset
         if not index_map:
             raise PdfParseError("invalid object stream header")
-        self.stream = stream
-        self.objects: ObjectCache = {}
-        self.raw_body = body
-        self.index = index_map
-        self.lexer = self.create_lexer(body)
-        self.lock = threading.RLock()
+        return index_map
 
-    def parse_object_at(self, offset: int) -> Any:
+    def parse_object_at(self, offset: int, end: int) -> Any:
         try:
-            return super().parse_object_at(offset)
+            return super().parse_object_at(offset, end)
         except PdfParseError:
             return self.handle_object_error(offset)
 
-    def read_header(self, stream: PdfStream) -> tuple[int, list[tuple[int, int]]]:
+    def read_header(
+        self, stream: PdfStream, decoded_data: bytes
+    ) -> tuple[int, list[tuple[int, int]]]:
         type_name = recover_pdf_name(stream.dictionary.get("Type"))
         if type_name is not None and type_name != "ObjStm":
             raise PdfParseError("stream is not an object stream")
@@ -63,16 +50,16 @@ class PdfObjectStream(SyntaxObjectStream):
         first = parse_int_strict(stream.dictionary.get("First"))
         if n < 0 or first < 0:
             raise PdfParseError("invalid object stream dictionary")
-        if first > len(stream.data):
-            recovered_first = recover_object_stream_first(stream.data, n)
+        if first > len(decoded_data):
+            recovered_first = recover_object_stream_first(decoded_data, n)
             if recovered_first is None:
                 raise PdfParseError("invalid object stream dictionary")
             first = recovered_first
-        pairs = parse_object_stream_header(stream.data, first, n)
+        pairs = parse_object_stream_header(decoded_data, first, n)
         if len(pairs) < n:
-            recovered_first = recover_object_stream_first(stream.data, n)
+            recovered_first = recover_object_stream_first(decoded_data, n)
             if recovered_first is not None and recovered_first != first:
-                recovered_pairs = parse_object_stream_header(stream.data, recovered_first, n)
+                recovered_pairs = parse_object_stream_header(decoded_data, recovered_first, n)
                 if len(recovered_pairs) > len(pairs):
                     first = recovered_first
                     pairs = recovered_pairs
@@ -80,10 +67,7 @@ class PdfObjectStream(SyntaxObjectStream):
             raise PdfParseError("object stream header is truncated")
         return first, pairs
 
-    def validate_header_pairs(self, pairs: list[tuple[int, int]]) -> None:
-        pass
-
-    def create_lexer(self, body: bytes) -> PdfLexer:
+    def create_lexer(self, body: bytes | memoryview) -> PdfLexer:
         return PdfLexer(body, semantic_context=self.semantic_context)
 
     def handle_object_error(self, rel_offset: int) -> Any:
@@ -100,12 +84,18 @@ class PdfObjectStream(SyntaxObjectStream):
                 continue
             starts.append(pos)
         starts.sort(key=lambda pos: (abs(pos - rel_offset), pos))
-        for pos in starts:
-            try:
-                return self.lexer.parse_object_at(pos)
-            except PdfParseError:
-                continue
-        raise PdfParseError("invalid object stream object")
+        lexer = self.create_lexer(body)
+        try:
+            # The bounded strict parse may have rejected trailing bytes or an
+            # inaccurate following offset. Try the declared start before searching.
+            for pos in [rel_offset, *starts]:
+                try:
+                    return lexer.parse_object_at(pos)
+                except PdfParseError:
+                    continue
+            raise PdfParseError("invalid object stream object")
+        finally:
+            lexer.close()
 
 
 def recover_object_stream_first(data: bytes | memoryview, n: int) -> int | None:

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any, Protocol, cast
 
+from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
 from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules, lexical_rules
 
-IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
 EMPTY_TRANSLATE_TABLE = bytes.maketrans(b"", b"")
 
 STRING_ESCAPE: dict[int, bytes] = {
@@ -123,90 +125,36 @@ def skip_pdf_ignored(
 
 
 def looks_like_indirect_object_header(
-    data: memoryview, position: int, data_len: int, *, rules: LexicalRules | None = None
+    data: memoryview,
+    position: int,
+    data_len: int,
+    *,
+    rules: LexicalRules | None = None,
+    parse_identifier: Callable[[bytes, bytes], tuple[int, int]] | None = None,
 ) -> bool:
-    """Recognize an object header using the same whitespace as its parser."""
-    ws_table = (lexical_rules() if rules is None else rules).whitespace_table
+    """Recognize a complete header using the selected token and identifier rules."""
+    rules = lexical_rules() if rules is None else rules
     pos = position
-    if pos >= data_len or not (48 <= data[pos] <= 57):
-        return False
-
-    while pos < data_len and 48 <= data[pos] <= 57:
-        pos += 1
-    if pos >= data_len or not ws_table[data[pos]]:
-        return False
-    while pos < data_len and ws_table[data[pos]]:
-        pos += 1
-
-    if pos >= data_len or not (48 <= data[pos] <= 57):
-        return False
-    while pos < data_len and 48 <= data[pos] <= 57:
-        pos += 1
-    if pos >= data_len or not ws_table[data[pos]]:
-        return False
-    while pos < data_len and ws_table[data[pos]]:
-        pos += 1
-
-    return pos + 3 <= data_len and data[pos : pos + 3] == b"obj"
-
-
-def is_digit_bytes(value: memoryview | bytes) -> bool:
-    if type(value) is memoryview:
-        value = value.tobytes()
-    return value.isdigit()
-
-
-def is_digit_bytes_from(value: memoryview | bytes, pos: int) -> bool:
-    if type(value) is memoryview:
-        value = value.tobytes()
-    return value[pos:].isdigit()
-
-
-def is_number_word_bytes(value: bytes) -> bool:
-    if not value:
-        return False
-    if value.isdigit():
-        return True
-    first = value[0]
-    if not IS_NUMBER_CHAR[first]:
-        return False
-    n = len(value)
-    if n == 1:
-        return 48 <= first <= 57
-    if first == 43 or first == 45:
-        rest = value[1:]
-        if rest.isdigit():
-            return True
-        start_idx = 1
-    else:
-        start_idx = 0
-
-    saw_digit = False
-    saw_dot = False
-    for byte in value[start_idx:]:
-        if 48 <= byte <= 57:
-            saw_digit = True
-        elif byte == 46 and not saw_dot:
-            saw_dot = True
-        else:
+    tokens: list[bytes] = []
+    for _ in range(3):
+        start = pos
+        while pos < data_len and not rules.separator_table[data[pos]]:
+            pos += 1
+        if start == pos:
             return False
-    return saw_digit
-
-
-def is_integer_word(value: memoryview | bytes) -> bool:
-    if not value:
+        tokens.append(bytes(data[start:pos]))
+        if len(tokens) < 3:
+            pos = skip_pdf_ignored(data, pos, data_len, rules=rules)
+    if tokens[2] != b"obj":
         return False
-    first = value[0]
-    if len(value) == 1:
-        return 48 <= first <= 57
-
-    if 48 <= first <= 57:
-        return is_digit_bytes(value)
-
-    if first not in (43, 45):
+    try:
+        if parse_identifier is None:
+            parse_identifier_tokens(tokens[0], tokens[1], canonical=rules.canonical_identifiers)
+        else:
+            parse_identifier(tokens[0], tokens[1])
+    except PdfParseError:
         return False
-
-    return is_digit_bytes_from(value, 1)
+    return True
 
 
 def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
@@ -370,8 +318,6 @@ __all__ = (
     "STRING_SPECIAL_TABLE",
     "full_source_buffer",
     "full_source_bytes",
-    "is_integer_word",
-    "is_number_word_bytes",
     "looks_like_indirect_object_header",
     "read_literal_string",
     "skip_comment",

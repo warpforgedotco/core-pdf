@@ -49,8 +49,8 @@ def internal_entries(table: dict[int, PdfXRefEntry]) -> dict[int, tuple[object, 
             {key_for(2): (16, 0, True, None, None), key_for(3): (32, 0, True, None, None)},
         ),
         (
-            [1, 0, 0],
-            b"\x00\x01\x07",
+            [1, 1, 0],
+            b"\x00\x00\x01\x00\x07\x00",
             [1, 3],
             4,
             {
@@ -84,7 +84,7 @@ def test_row_bulk_and_stream_decoding_share_defaults_and_entry_types(
     assert trailer is dictionary
 
 
-@pytest.mark.parametrize("widths", [[], [1, 1], [-1, 1, 1], [True, 1, 1], [0, 0, 0]])
+@pytest.mark.parametrize("widths", [[], [1, 1], [-1, 1, 1], [True, 1, 1], [0, 0, 0], [1, 0, 1]])
 def test_all_xref_entrypoints_reject_invalid_widths(widths: list[int]) -> None:
     with pytest.raises(PdfParseError, match="invalid xref stream W"):
         decode_xref_row(b"\x00" * 3, 0, widths, 0)
@@ -96,7 +96,10 @@ def test_all_xref_entrypoints_reject_invalid_widths(widths: list[int]) -> None:
         )
 
 
-@pytest.mark.parametrize("index", [[0], [0, -1], [True, 1], [1, 2], [0, 1.0]])
+@pytest.mark.parametrize(
+    "index",
+    [[0], [0, -1], [True, 1], [1, 2], [0, 1.0], [1, 1, 0, 1], [0, 1, 0, 1], [0, 2, 1, 1]],
+)
 def test_bulk_and_stream_reject_invalid_index(index: list[int]) -> None:
     with pytest.raises(PdfParseError, match="invalid xref stream Index"):
         decode_xref_rows(b"", [1, 1, 1], index, 2)
@@ -131,8 +134,9 @@ def test_single_xref_row_retains_position_validation() -> None:
         decode_xref_row(b"\x00\x00\x00", 0, [1, 1, 1], -1)
 
 
-def test_xref_stream_default_index_covers_size() -> None:
+@pytest.mark.parametrize("index_entry", [{}, {"Index": None}])
+def test_xref_stream_default_index_covers_size(index_entry: dict[str, None]) -> None:
     entries, _ = XRefScanner.parse_stream(
-        PdfStream({"Type": "XRef", "Size": 1, "W": [1, 1, 2]}, b"\x00\x00\xff\xff")
+        PdfStream({"Type": "XRef", "Size": 1, "W": [1, 1, 2], **index_entry}, b"\x00\x00\xff\xff")
     )
     assert internal_entries(entries) == {key_for(0, 65535): (0, 65535, False, None, None)}

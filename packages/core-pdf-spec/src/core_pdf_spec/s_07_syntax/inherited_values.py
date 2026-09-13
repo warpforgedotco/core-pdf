@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
+from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.types import (
     CachedPdfObject,
     InheritedValueMap,
@@ -27,14 +28,7 @@ def inherited_dictionary_value(
     only the selected scalar chain; a resource dictionary remains shallow.
     """
     value = node.get(key)
-    resolved: object = value
-    seen: set[tuple[int, int]] = set()
-    while isinstance(resolved, PdfReference):
-        marker = (resolved.object_number, resolved.generation_number)
-        if marker in seen:
-            break
-        seen.add(marker)
-        resolved = resolve(resolved)
+    resolved = resolve_reference_chain(value, resolve)
     return parent_value if resolved is None else value
 
 
@@ -45,14 +39,15 @@ def collect_inherited_values(
 ) -> InheritedValueMap:
     values: InheritedValueMap = {}
     current: object = node
-    seen: set[int] = set()
+    seen: dict[int, PdfDict] = {}
+    references: set[tuple[int, int]] = set()
     while current is not None:
         if not isinstance(current, dict):
             raise ValueError("invalid inherited dictionary parent")
         marker = id(current)
         if marker in seen:
             raise ValueError("inherited dictionary cycle detected")
-        seen.add(marker)
+        seen[marker] = cast(PdfDict, current)
 
         current_dict = cast("PdfDict", current)
         for key in keys:
@@ -63,6 +58,11 @@ def collect_inherited_values(
                 values[key] = cast(CachedPdfObject, value)
 
         parent = current_dict.get("Parent")
+        if isinstance(parent, PdfReference):
+            reference = (parent.object_number, parent.generation_number)
+            if reference in references:
+                raise ValueError("inherited dictionary cycle detected")
+            references.add(reference)
         current = resolve_ref(parent) if parent is not None else None
 
     return values

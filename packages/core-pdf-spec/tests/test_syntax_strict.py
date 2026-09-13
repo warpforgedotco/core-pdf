@@ -163,7 +163,7 @@ def test_object_stream_parses_exact_offsets() -> None:
         assert objects.get(1).data == b"x"
         assert objects.get(2) == 17
     finally:
-        objects.lexer.close()
+        objects.close()
 
 
 def test_xref_unknown_type_is_null_and_missing_reference_resolves_null() -> None:

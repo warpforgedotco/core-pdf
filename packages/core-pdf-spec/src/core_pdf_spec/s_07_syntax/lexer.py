@@ -14,14 +14,18 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
+from core_pdf_spec.s_07_syntax_primitives.numbers import (
+    is_integer_token,
+    is_number_token,
+    parse_identifier_tokens,
+    parse_integer_token,
+    parse_real_token,
+)
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
     FindableSizedBuffer,
     full_source_buffer,
-    is_integer_word,
-    is_number_word_bytes,
     read_literal_string,
     skip_pdf_ignored,
 )
@@ -179,7 +183,7 @@ class PdfLexer:
 
         if self.lexical_rules.separator_table[byte]:
             token = (
-                source_buffer[pos : pos + 1]
+                bytes(source_buffer[pos : pos + 1])
                 if source_buffer is not None
                 else bytes(data[pos : pos + 1])
             )
@@ -189,7 +193,9 @@ class PdfLexer:
         match = self.lexical_rules.separator_re.search(data, start)
         pos = self.data_len if match is None else match.start()
 
-        token = source_buffer[start:pos] if source_buffer is not None else bytes(data[start:pos])
+        token = (
+            bytes(source_buffer[start:pos]) if source_buffer is not None else bytes(data[start:pos])
+        )
         return token, pos
 
     def scan_word(self, skip_ignored: bool = True) -> tuple[bytes, int] | None:
@@ -223,16 +229,10 @@ class PdfLexer:
         marker = -1
         if source_buffer is not None:
             marker = source_buffer.find(b">", start)
-        elif self.raw_data.c_contiguous:
+        else:
             match = HEX_STRING_END_RE.search(self.raw_data, start)
             if match is not None:
                 marker = match.start()
-        else:
-            marker = start
-            while marker < self.data_len and self.raw_data[marker] != 62:
-                marker += 1
-            if marker >= self.data_len:
-                marker = -1
         if marker < 0:
             raise PdfParseError("unterminated hex string")
 
@@ -335,55 +335,36 @@ class PdfLexer:
             raise PdfParseError("unexpected end of PDF input")
         raw, end = scanned
         self.pos = end
-        if is_number_word_bytes(raw):
-            raw_is_integer = 46 not in raw
-            if not raw_is_integer:
-                return self.parse_real_token(raw)
-            next_pos = self.skip_ignored_at(end)
-            if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
-                next_token = self.scan_word_at(next_pos, skip_ignored=False)
-                assert next_token is not None
-                next_raw, next_end = next_token
-                if is_integer_word(next_raw):
-                    reference = self.parse_reference_suffix(raw, next_raw, next_end)
-                    if reference is not None:
-                        return reference
-            return int(raw)
+        if is_number_token(raw):
+            return self.internal_parse_number_or_reference(raw, end)
         return self.parse_keyword(raw)
 
     def parse_object_at(self, position: int) -> Any:
         self.rewind(position)
         return self.parse_object()
 
+    def parse_identifier(self, object_token: bytes, generation_token: bytes) -> tuple[int, int]:
+        """Validate a header/reference identifier; readers may supply explicit recovery."""
+        return parse_identifier_tokens(
+            object_token, generation_token, canonical=self.lexical_rules.canonical_identifiers
+        )
+
     def read_indirect_header(self) -> tuple[int, int]:
         """Consume an object header; leave the cursor after obj on success."""
-        scanned = self.scan_word(skip_ignored=True)
-        if scanned is None or not is_number_word_bytes(scanned[0]):
+        object_token = self.scan_word()
+        if object_token is None:
             raise PdfParseError("expected indirect object header")
-        raw, end = scanned
-        self.pos = end
-        try:
-            obj_num = int(raw)
-        except ValueError as exc:
-            raise PdfParseError("invalid indirect object header") from exc
-        if obj_num <= 0:
-            raise PdfParseError("invalid indirect object header")
-
-        gen_num_raw = self.scan_word(skip_ignored=True)
-        if gen_num_raw is None or not is_number_word_bytes(gen_num_raw[0]):
+        self.pos = object_token[1]
+        generation_token = self.scan_word()
+        if generation_token is None:
             raise PdfParseError("expected indirect object generation number")
-        self.pos = gen_num_raw[1]
-        try:
-            gen_num = int(gen_num_raw[0])
-        except ValueError as exc:
-            raise PdfParseError("invalid indirect object generation number") from exc
-        if not 0 <= gen_num <= 65535:
-            raise PdfParseError("invalid indirect object generation number")
-        keyword = self.scan_word(skip_ignored=True)
+        self.pos = generation_token[1]
+        identifier = self.parse_identifier(object_token[0], generation_token[0])
+        keyword = self.scan_word()
         if keyword is None or keyword[0] != b"obj":
             raise PdfParseError("expected keyword 'obj'")
         self.pos = keyword[1]
-        return obj_num, gen_num
+        return identifier
 
     def read_indirect_terminator(self) -> None:
         """Consume endobj, raising at its expected position when absent."""
@@ -393,8 +374,13 @@ class PdfLexer:
             raise PdfParseError("expected keyword 'endobj'")
         self.pos = keyword[1]
 
-    def parse_indirect_object(self) -> Any:
+    def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
         obj_num, gen_num = self.read_indirect_header()
+        if expected_reference is not None and (obj_num, gen_num) != (
+            expected_reference.object_number,
+            expected_reference.generation_number,
+        ):
+            raise PdfParseError("indirect object header does not match expected reference")
         previous_obj, previous_gen = self.current_obj_num, self.current_gen_num
         self.current_obj_num, self.current_gen_num = obj_num, gen_num
         try:
@@ -408,102 +394,58 @@ class PdfLexer:
         return obj
 
     def parse_numeric_array(self) -> list[int | float] | None:
+        """Parse an all-numeric array, leaving the cursor unchanged on rejection."""
         start_pos = self.pos
         data = self.raw_data
-        source_buffer = self.source_buffer
-        raw_data = source_buffer if source_buffer is not None else data
-        data_len = self.data_len
-
+        source = self.source_buffer
         end_array = -1
-        if source_buffer is not None:
-            end_array = source_buffer.find(b"]", start_pos + 1)
-        elif data.c_contiguous:
+        if source is not None:
+            end_array = source.find(b"]", start_pos + 1)
+        else:
             match = ARRAY_END_RE.search(data, start_pos + 1)
             if match is not None:
                 end_array = match.start()
-        if end_array >= 0:
-            if end_array == start_pos + 1:
-                self.pos = end_array + 1
-                return []
-            payload = (
-                source_buffer[start_pos + 1 : end_array]
-                if source_buffer is not None
-                else data[start_pos + 1 : end_array].tobytes()
+        if end_array >= 0 and self.lexical_rules.split_whitespace_compatible:
+            payload = bytes(
+                source[start_pos + 1 : end_array]
+                if source is not None
+                else data[start_pos + 1 : end_array]
             )
+            # bytes.split also recognizes VT, which is not standard PDF whitespace.
             if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
                 tokens = payload.split()
-                if tokens and (
-                    tokens[-1] == b"R"
-                    or tokens[0][0] not in (43, 45, 46)
-                    and not 48 <= tokens[0][0] <= 57
-                ):
-                    return None
-                if not all(self.is_numeric_array_word(token) for token in tokens):
-                    return None
-                try:
-                    values: list[int | float] = list(map(int, tokens))
-                except ValueError:
+                if all(self.is_numeric_array_word(token) for token in tokens):
                     try:
                         values = [
-                            self.parse_real_token(token) if b"." in token else int(token)
+                            self.parse_real_token(token)
+                            if b"." in token
+                            else self.parse_integer_token(token)
                             for token in tokens
                         ]
                     except ValueError:
+                        # Reader conversion overrides may reject a non-PDF spelling.
                         pass
                     else:
                         self.pos = end_array + 1
                         return values
-                else:
-                    self.pos = end_array + 1
-                    return values
 
         values = []
         pos = start_pos + 1
-        ws_table = self.lexical_rules.whitespace_table
-        sep_table = self.lexical_rules.separator_table
-
         while True:
-            while pos < data_len:
-                byte = raw_data[pos]
-                if ws_table[byte]:
-                    pos += 1
-                    continue
-                if byte == 37:
-                    pos += 1
-                    while pos < data_len and raw_data[pos] not in (10, 13):
-                        pos += 1
-                    continue
-                break
-            if pos >= data_len:
-                self.pos = start_pos
+            pos = self.skip_ignored_at(pos)
+            if pos >= self.data_len:
                 return None
-
-            byte = raw_data[pos]
-            if byte == 93:
+            if data[pos] == 93:
                 self.pos = pos + 1
                 return values
-            if byte not in (43, 45, 46) and not 48 <= byte <= 57:
-                self.pos = start_pos
-                return None
-
-            has_decimal = byte == 46
-            end = pos + 1
-            while end < data_len:
-                end_byte = raw_data[end]
-                if sep_table[end_byte]:
-                    break
-                if end_byte == 46:
-                    has_decimal = True
-                end += 1
-
-            raw = raw_data[pos:end]
+            scanned = self.scan_word_at(pos, skip_ignored=False)
+            assert scanned is not None
+            raw, end = scanned
             if not self.is_numeric_array_word(raw):
-                self.pos = start_pos
                 return None
             try:
-                value = self.parse_real_token(raw) if has_decimal else int(raw)
+                value = self.parse_real_token(raw) if b"." in raw else self.parse_integer_token(raw)
             except ValueError:
-                self.pos = start_pos
                 return None
             values.append(value)
             pos = end
@@ -514,22 +456,33 @@ class PdfLexer:
         The default accepts PDF number syntax. Overrides must not change parser
         state; returning False leaves the token to ordinary array parsing.
         """
-        return is_number_word_bytes(raw.tobytes() if isinstance(raw, memoryview) else raw)
+        return is_number_token(raw)
+
+    def parse_integer_token(self, token: bytes | memoryview) -> int:
+        """Convert a complete integer token without changing parser state."""
+        return parse_integer_token(token)
 
     def parse_real_token(self, token: bytes | memoryview) -> float:
-        """Convert one complete PDF number token without changing parser state.
+        """Convert a complete PDF number token to a finite real without moving the cursor."""
+        return parse_real_token(token)
 
-        Valid syntax outside the implementation's finite real-number range
-        raises PdfParseError, as required by ISO 32000-2:2020, Annex C.
-        Consumers may override this conversion while reusing lexical traversal.
-        """
-        value = parse_float(token, default=None)
-        if value is not None:
-            return value
-        raw = token.tobytes() if isinstance(token, memoryview) else token
-        if is_number_word_bytes(raw):
-            raise PdfParseError("PDF real number exceeds implementation limits")
-        raise PdfParseError("invalid PDF real number")
+    def internal_parse_number_or_reference(
+        self, raw: bytes, end: int
+    ) -> int | float | PdfReference:
+        if b"." in raw:
+            return self.parse_real_token(raw)
+        next_pos = self.skip_ignored_at(end)
+        if next_pos < self.data_len and (
+            self.raw_data[next_pos] in (43, 45) or 48 <= self.raw_data[next_pos] <= 57
+        ):
+            next_token = self.scan_word_at(next_pos, skip_ignored=False)
+            assert next_token is not None
+            next_raw, next_end = next_token
+            if is_integer_token(next_raw):
+                reference = self.parse_reference_suffix(raw, next_raw, next_end)
+                if reference is not None:
+                    return reference
+        return self.parse_integer_token(raw)
 
     def parse_reference_suffix(
         self, raw: bytes, next_raw: bytes, next_end: int
@@ -543,13 +496,7 @@ class PdfLexer:
         if next_next is None or next_next[0] != b"R":
             return None
         self.pos = next_next[1]
-        try:
-            obj_num = int(raw)
-            gen_num = int(next_raw)
-        except ValueError as exc:
-            raise PdfParseError("invalid reference") from exc
-        if obj_num < 0 or not 0 <= gen_num <= 65535:
-            raise PdfParseError("invalid reference")
+        obj_num, gen_num = self.parse_identifier(raw, next_raw)
         return PdfReference(obj_num, gen_num)
 
     def parse_array(self) -> list[Any]:
@@ -599,21 +546,8 @@ class PdfLexer:
                 raise PdfParseError("unexpected end of PDF input")
             raw, end = scanned
             self.pos = end
-            if is_number_word_bytes(raw):
-                if 46 in raw:
-                    values.append(self.parse_real_token(raw))
-                    continue
-                next_pos = self.skip_ignored_at(end)
-                if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
-                    next_token = self.scan_word_at(next_pos, skip_ignored=False)
-                    if next_token is not None:
-                        next_raw, next_end = next_token
-                        if is_integer_word(next_raw):
-                            reference = self.parse_reference_suffix(raw, next_raw, next_end)
-                            if reference is not None:
-                                values.append(reference)
-                                continue
-                values.append(int(raw))
+            if is_number_token(raw):
+                values.append(self.internal_parse_number_or_reference(raw, end))
                 continue
             values.append(self.parse_keyword(raw))
 
@@ -644,6 +578,9 @@ class PdfLexer:
             key_bytes = self.read_name()
 
             key = PdfName_of(key_bytes)
+            if key in values:
+                # ISO 32000-1/2, 7.3.7: keys are unique after name escape decoding.
+                raise PdfParseError("duplicate dictionary key")
             value_start = self.pos
             if deciphering and key == "Contents":
                 value_pos = self.skip_ignored_at(value_start)

@@ -7,6 +7,7 @@ import struct
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 from typing import cast
 
 from defusedxml.common import DefusedXmlException
@@ -22,7 +23,13 @@ from core_pdf_spec.s_07_document.standards import (
     parse_header_version,
 )
 from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict, PdfValueResolver
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, XRefScanner
+from core_pdf_spec.s_07_syntax.xref import (
+    PdfXRefEntry,
+    XRefRevision,
+    XRefScanner,
+    iter_xref_revisions,
+    overlay_xref_entries,
+)
 from core_pdf_spec.standards import (
     DocumentStandards,
     PdfExtension,
@@ -329,28 +336,15 @@ def preserve_historical_version(
     previous = trailer.get("Prev")
     if previous is None:
         return internal_extension_diagnostics(replace(standards, diagnostics=tuple(diagnostics)))
-    sections: list[tuple[dict[int, PdfXRefEntry], PdfDict, int]] = []
-    seen: set[int] = set()
+    sections: list[XRefRevision] = []
     try:
-        while previous is not None:
-            if type(previous) is not int or previous in seen or len(seen) >= 1024:
+        if type(previous) is not int:
+            raise ValueError("invalid revision chain")
+        read_section = partial(XRefScanner.parse_section_at, data, semantic_context=trailer_context)
+        for revision in iter_xref_revisions(previous, read_section):
+            if len(sections) >= 1024:
                 raise ValueError("invalid or excessive revision chain")
-            seen.add(previous)
-            entries, revision_trailer, earlier, hybrid = XRefScanner.parse_section_at(
-                data, previous, semantic_context=trailer_context
-            )
-            if hybrid is not None:
-                # Hybrid stream entries are the classic section's fallback.
-                # A hybrid stream and its classic trailer may converge on the
-                # same earlier section. Retain ancestor cycle checks without
-                # marking the main /Prev branch as already audited.
-                hybrid_entries, ignored = XRefScanner.load_section_chain(
-                    data, hybrid, seen.copy(), semantic_context=trailer_context
-                )
-                hybrid_entries.update(entries)
-                entries = hybrid_entries
-            sections.append((entries, revision_trailer, previous))
-            previous = earlier
+            sections.append(revision)
     except (PdfError, ValueError, RecursionError, struct.error, OSError):
         diagnostics.append(
             StandardsDiagnostic(
@@ -362,17 +356,12 @@ def preserve_historical_version(
 
     merged: dict[int, PdfXRefEntry] = {}
     floor = standards.effective_version
-    for entries, revision_trailer, offset in reversed(sections):
-        freed = {key >> 16 for key, entry in entries.items() if not entry.in_use}
-        if freed:
-            for key in tuple(merged):
-                if key >> 16 in freed:
-                    del merged[key]
-        merged.update(entries)
+    for revision in reversed(sections):
+        overlay_xref_entries(merged, revision.entries)
         resolver_type = internal_VersionProbeResolver if version_probe else ObjectResolver
         resolver = resolver_type(data, merged, decipher=decipher)
         try:
-            catalog = resolver.resolve(revision_trailer.get("Root"))
+            catalog = resolver.resolve(revision.trailer.get("Root"))
             if not isinstance(catalog, dict):
                 raise ValueError("missing historical catalog")
             catalog = cast(PdfDict, catalog)
@@ -384,7 +373,7 @@ def preserve_historical_version(
                 StandardsDiagnostic(
                     "invalid-historical-version",
                     "Cannot read a historical catalog version",
-                    f"xref/{offset}/Root",
+                    f"xref/{revision.offset}/Root",
                 )
             )
         finally:

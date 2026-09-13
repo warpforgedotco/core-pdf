@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 from typing import TypeVar
 
 from core_pdf_spec.s_07_syntax.trees import NameDecodeFn, NumberDecodeFn, ResolveFn, tree_entry
+from core_pdf_spec.types import PdfReference
 
 
 def iter_number_tree_items(
@@ -95,6 +96,8 @@ def internal_iter_tree_items(
 
     if seen is None:
         seen = set()
+    visited_objects: dict[int, dict] = {}
+    references: set[tuple[int, int]] = set()
     stack: list[tuple[object, int]] = [(node, depth)]
     while stack:
         current, current_depth = stack.pop()
@@ -102,6 +105,13 @@ def internal_iter_tree_items(
             if recover:
                 continue
             raise ValueError(f"invalid {tree_name} tree depth")
+        if isinstance(current, PdfReference):
+            reference = (current.object_number, current.generation_number)
+            if reference in references:
+                if recover:
+                    continue
+                raise ValueError(f"{tree_name} tree cycle detected")
+            references.add(reference)
         current = resolve(current)
         if current is None:
             continue
@@ -115,6 +125,7 @@ def internal_iter_tree_items(
                 continue
             raise ValueError(f"{tree_name} tree cycle detected")
         seen.add(marker)
+        visited_objects[marker] = current
 
         entries = resolve(current.get(key_field))
         if entries is not None:

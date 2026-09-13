@@ -7,6 +7,7 @@ import binascii
 import mmap
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from core_pdf.impl._impl.document.recovery.scanning import (
@@ -19,16 +20,14 @@ from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf_spec.s_07_syntax_primitives.numbers import is_integer_token, parse_integer_token
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
     FindableSizedBuffer,
-    is_number_word_bytes,
     looks_like_indirect_object_header,
 )
 from core_pdf_spec.s_07_syntax_primitives.tokens import (
-    DELIMITERS,
-    SEPARATOR_TABLE,
     WHITESPACE,
     LexicalRules,
     lexical_rules,
@@ -59,9 +58,6 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Info",
     b"Encrypt",
 }
-
-SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
-internal_LEGACY_READER_RULES = LexicalRules(WHITESPACE, name_escapes=False)
 
 
 def internal_drop_unknown_escape(byte: int) -> bytes:
@@ -102,7 +98,7 @@ class PdfLexer(SyntaxLexer):
         if context is not None and (context.version is None or not context.version.recognized):
             context = None
         rules = lexical_rules(context)
-        return lexical_rules() if rules.name_escapes else internal_LEGACY_READER_RULES
+        return replace(rules, whitespace=WHITESPACE, canonical_identifiers=False)
 
     def read_string(
         self,
@@ -146,6 +142,16 @@ class PdfLexer(SyntaxLexer):
         # Retain reader acceptance of Python numeric spellings in array fast paths.
         return True
 
+    def parse_integer_token(self, token: bytes | memoryview) -> int:
+        # Retain Python spellings in numeric-array recovery, but report limits
+        # on otherwise valid PDF integers consistently with ordinary parsing.
+        try:
+            return int(token)
+        except ValueError:
+            if is_integer_token(token):
+                return parse_integer_token(token)
+            raise
+
     def parse_real_token(self, token: bytes | memoryview) -> float:
         # Keep the reader's existing numeric conversion, including overflow to infinity.
         return float(token)
@@ -160,7 +166,11 @@ class PdfLexer(SyntaxLexer):
         if keyword is not None and keyword[0] in {b"xref", b"trailer", b"startxref"}:
             return True
         return keyword is not None and looks_like_indirect_object_header(
-            self.raw_data, keyword[1] - len(keyword[0]), self.data_len
+            self.raw_data,
+            keyword[1] - len(keyword[0]),
+            self.data_len,
+            rules=self.lexical_rules,
+            parse_identifier=self.parse_identifier,
         )
 
     def handle_empty_indirect_object(self) -> object:
@@ -199,7 +209,7 @@ class PdfLexer(SyntaxLexer):
             if data[pos : pos + 6] == b"endobj":
                 return False
             if byte == 47:
-                match = SEPARATOR_RE.search(data, pos + 1)
+                match = self.lexical_rules.separator_re.search(data, pos + 1)
                 name_end = self.data_len if match is None else match.start()
                 name = bytes(data[pos + 1 : name_end])
                 if name not in RECOVERABLE_DICTIONARY_KEY_NAMES:
@@ -304,9 +314,11 @@ class PdfLexer(SyntaxLexer):
             before_ok = (
                 before >= 0 and buffer[before] in (10, 13)
                 if require_eol_before
-                else before < 0 or bool(SEPARATOR_TABLE[buffer[before]])
+                else before < 0 or bool(self.lexical_rules.separator_table[buffer[before]])
             )
-            after_ok = after >= self.data_len or bool(SEPARATOR_TABLE[buffer[after]])
+            after_ok = after >= self.data_len or bool(
+                self.lexical_rules.separator_table[buffer[after]]
+            )
             if before_ok and after_ok:
                 return candidate, raw_candidate
             if reverse:
@@ -371,33 +383,12 @@ class PdfLexer(SyntaxLexer):
             raise PdfParseError("unexpected indirect reference marker")
         return key.decode("latin-1")
 
-    def read_indirect_header(self) -> tuple[int, int]:
-        scanned = self.scan_word(skip_ignored=True)
-        if scanned is None or not is_number_word_bytes(scanned[0]):
-            raise PdfParseError("expected indirect object header")
-        raw, end = scanned
-        self.pos = end
-        try:
-            obj_num = int(raw)
-        except ValueError as exc:
-            raise PdfParseError("invalid indirect object header") from exc
-        if obj_num < 0:
-            raise PdfParseError("invalid indirect object header")
-
-        gen_num_raw = self.scan_word(skip_ignored=True)
-        if gen_num_raw is None or not is_number_word_bytes(gen_num_raw[0]):
-            raise PdfParseError("expected indirect object generation number")
-        self.pos = gen_num_raw[1]
-        try:
-            gen_num = int(gen_num_raw[0])
-        except ValueError as exc:
-            raise PdfParseError("invalid indirect object generation number") from exc
-        if not 0 <= gen_num <= 65535:
-            raise PdfParseError("invalid indirect object generation number")
-        keyword = self.scan_word(skip_ignored=True)
-        if keyword is None or keyword[0] != b"obj":
-            raise PdfParseError("expected keyword 'obj'")
-        self.pos = keyword[1]
+    def parse_identifier(self, object_token: bytes, generation_token: bytes) -> tuple[int, int]:
+        # Reader recovery retains zero, signed and padded object identifiers.
+        obj_num = parse_integer_token(object_token)
+        gen_num = parse_integer_token(generation_token)
+        if obj_num < 0 or not 0 <= gen_num <= 65535:
+            raise PdfParseError("invalid indirect object identifier")
         return obj_num, gen_num
 
     def parse_dictionary_or_stream(self) -> Any:
@@ -441,16 +432,10 @@ class PdfLexer(SyntaxLexer):
         marker = -1
         if source_buffer is not None:
             marker = source_buffer.find(b">", start)
-        elif self.raw_data.c_contiguous:
+        else:
             match = HEX_STRING_END_RE.search(self.raw_data, start)
             if match is not None:
                 marker = match.start()
-        else:
-            marker = start
-            while marker < self.data_len and self.raw_data[marker] != 62:
-                marker += 1
-            if marker >= self.data_len:
-                marker = -1
         if marker < 0:
             raise PdfParseError("unterminated hex string")
 
@@ -477,7 +462,7 @@ class PdfLexer(SyntaxLexer):
 
     def read_name(self) -> memoryview:
         self.advance(1)
-        match = SEPARATOR_RE.search(self.raw_data, self.pos)
+        match = self.lexical_rules.separator_re.search(self.raw_data, self.pos)
         end = self.data_len if match is None else match.start()
 
         start = self.pos
@@ -587,8 +572,13 @@ class PdfLexer(SyntaxLexer):
                 )
         return values
 
-    def parse_indirect_object(self) -> Any:
+    def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
         obj_num, gen_num = self.read_indirect_header()
+        if expected_reference is not None and (obj_num, gen_num) != (
+            expected_reference.object_number,
+            expected_reference.generation_number,
+        ):
+            raise PdfParseError("indirect object header does not match expected reference")
         previous_obj = self.current_obj_num
         previous_gen = self.current_gen_num
         self.current_obj_num = obj_num

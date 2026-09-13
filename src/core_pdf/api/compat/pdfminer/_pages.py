@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator
+from functools import partial
 from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
@@ -13,6 +14,7 @@ from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, merge_xref_sections
 
 
 def internal_pdfminer_resolvable_pages(  # noqa: C901
@@ -235,12 +237,14 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             yield from fallback_projection()
             return
     try:
-        strict_xref, strict_trailer = XRefScanner.load_section_chain(
+        read_section = partial(
+            XRefScanner.recover_section_at,
             document.raw_data,
-            section_start,
-            set(),
             recover_malformed_objects=False,
         )
+        revisions = list(iter_xref_revisions(section_start, read_section))
+        strict_xref = merge_xref_sections(revision.entries for revision in revisions)
+        strict_trailer = revisions[0].trailer
     except Exception:
         # pdfminer falls back to its brute-force xref reader for malformed
         # sections that still expose a usable catalog.
@@ -252,39 +256,22 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
     try:
         while section_start not in section_seen:
             section_seen.add(section_start)
-            try:
-                entries, _trailer, previous, xref_stream = XRefScanner.parse_section_at(
-                    data,
-                    section_start,
-                    recover_malformed_objects=False,
-                )
-            except Exception as original_error:
-                recovered_section = None
-                for nearby in XRefScanner.find_nearby_sections(data, section_start):
-                    if nearby in section_seen:
-                        continue
-                    try:
-                        recovered_section = XRefScanner.parse_section_at(
-                            data,
-                            nearby,
-                            recover_malformed_objects=False,
-                        )
-                    except Exception:
-                        continue
-                    section_seen.add(nearby)
-                    break
-                if recovered_section is None:
-                    raise original_error
-                entries, _trailer, previous, xref_stream = recovered_section
+            section = read_section(section_start)
+            section_seen.add(section.offset)
+            entries = section.entries
+            previous = cast(int | None, section.trailer.get("Prev"))
+            xref_stream = (
+                cast(int | None, section.trailer.get("XRefStm"))
+                if section.kind == "table"
+                else None
+            )
             if xref_stream is not None:
-                stream_entries, _ignored = XRefScanner.load_section_chain(
-                    data,
-                    xref_stream,
-                    set(section_seen),
-                    recover_malformed_objects=False,
-                )
+                supplemental = read_section(xref_stream, stream_only=True)
+                # Preserve pdfminer's supplemental-entry precedence in this
+                # compatibility projection; the native revision iterator uses
+                # the specification's primary-table precedence.
                 entries = dict(entries)
-                entries.update(stream_entries)
+                entries.update(supplemental.entries)
             xref_sections.append(entries)
             if previous is None:
                 break

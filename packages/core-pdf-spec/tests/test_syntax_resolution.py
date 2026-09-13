@@ -100,7 +100,9 @@ def test_concurrent_resolution_returns_one_cached_object_identity() -> None:
     barrier = Barrier(2, timeout=5)
 
     class Resolver(ObjectResolver):
-        def load_indirect_object(self, lexer: PdfLexer, offset: int) -> object:
+        def load_indirect_object(
+            self, lexer: PdfLexer, offset: int, *, expected_reference: PdfReference
+        ) -> object:
             value = {"text": "shared"}
             barrier.wait()
             return value

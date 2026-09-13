@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Iterator
+from functools import partial
 from typing import cast
 
 from core_pdf.impl._impl.document.page_tree import (
@@ -25,7 +26,7 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfObject,
     ResolvedObjectCache,
 )
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, iter_xref_revisions, merge_xref_sections
 from core_pdf_spec.standards import SemanticContext
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
@@ -53,13 +54,14 @@ class DocumentXRefMixin:
         if start is None:
             return None
         try:
-            XRefScanner.load_section_chain(
+            read_section = partial(
+                XRefScanner.recover_section_at,
                 self.raw_data,
-                start,
-                set(),
                 recover_malformed_objects=False,
                 semantic_context=self.internal_xref_context,
             )
+            for _revision in iter_xref_revisions(start, read_section):
+                pass
         except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
             return str(error)
         return None
@@ -85,9 +87,14 @@ class DocumentXRefMixin:
         recovery_reason = None
         if start is not None:
             try:
-                self.xref, self.trailer_dict = XRefScanner.load_section_chain(
-                    data, start, set(), semantic_context=self.internal_xref_context
+                read_section = partial(
+                    XRefScanner.recover_section_at,
+                    data,
+                    semantic_context=self.internal_xref_context,
                 )
+                revisions = list(iter_xref_revisions(start, read_section))
+                self.xref = merge_xref_sections(revision.entries for revision in revisions)
+                self.trailer_dict = revisions[0].trailer
                 self.repair_stale_xref_offsets()
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
                 root_ref = self.trailer_dict.get("Root")
