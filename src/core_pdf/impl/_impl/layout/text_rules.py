@@ -10,6 +10,7 @@ import struct
 import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from functools import cache
 from importlib.resources import files
 from statistics import median_low
 
@@ -116,6 +117,7 @@ def english_word_frequencies() -> dict[str, WordFrequency]:
     return frequencies
 
 
+@cache
 def english_word_ranks() -> Mapping[str, int]:
     """Open the packaged rank index without inflating source word lists."""
     import os

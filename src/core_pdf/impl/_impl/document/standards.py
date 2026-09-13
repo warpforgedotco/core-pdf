@@ -98,13 +98,31 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
     )
 
 
+def internal_resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
+    """Resolve the catalog dictionary itself, not the object graph beneath it.
+
+    Standards, metadata, and profile discovery read a handful of catalog
+    entries and resolve each one on demand. Deep resolution here would parse
+    every object reachable from the catalog before a single page is requested.
+    """
+    value: object = trailer.get("Root")
+    seen: set[tuple[int, int]] = set()
+    while type(value) is PdfReference:
+        marker = (value.object_number, value.generation_number)
+        if marker in seen:
+            return None
+        seen.add(marker)
+        value = resolver.resolve(value)
+    return cast(PdfDict, value) if isinstance(value, dict) else None
+
+
 def discover_document_standards(
     header: DocumentStandards, resolver: PdfValueResolver, trailer: PdfDict
 ) -> DocumentStandards:
     """Resolve the latest catalog only after security authentication is complete."""
     diagnostics = list(header.diagnostics)
     try:
-        catalog = resolver.resolve_dict(trailer.get("Root"))
+        catalog = internal_resolve_catalog(resolver, trailer)
         if catalog is None:
             raise ValueError("missing catalog")
     except (PdfError, RecursionError, ValueError):
@@ -398,7 +416,7 @@ def discover_profile_claims(
     diagnostics = list(standards.diagnostics)
     claims: list[ProfileClaim] = []
     try:
-        catalog = resolver.resolve_dict(trailer.get("Root"))
+        catalog = internal_resolve_catalog(resolver, trailer)
         stream = catalog_metadata_stream(resolver, catalog) if catalog is not None else None
         if stream is not None and stream.data:
             claims.extend(internal_xmp_claims(stream.data, diagnostics))

@@ -10,6 +10,7 @@ from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
 
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
+from core_pdf.impl._impl.document.standards import internal_resolve_catalog
 from core_pdf.impl._impl.model.pdf_values import coerce_value
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError
@@ -149,7 +150,7 @@ def resolve_metadata_stream(
     resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> XmpNodeRecord | None:
     try:
-        catalog = resolver.resolve_dict(trailer.get("Root"))
+        catalog = internal_resolve_catalog(resolver, trailer)
         if catalog is None:
             return None
         metadata = catalog_metadata_stream(resolver, catalog)

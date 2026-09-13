@@ -367,6 +367,9 @@ def internal_font_is_vertical(
         return False
 
 
+internal_MISSING: typing.Final = object()
+
+
 @dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
 class FontDecoder:
     font: dict[str, Any]
@@ -402,6 +405,12 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
+    # Per-decoder memos. A page shows the same glyph many times; the
+    # embedded program's geometry for a code never changes after initialization.
+    internal_glyph_bbox_cache: dict[int, Rectangle | None]
+    internal_glyph_outline_cache: dict[
+        tuple[int, int | None, str], tuple[tuple[tuple[float, float], ...], ...]
+    ]
 
     def __init__(
         self,
@@ -419,6 +428,8 @@ class FontDecoder:
         self.internal_initialize()
 
     def internal_initialize(self) -> None:
+        self.internal_glyph_bbox_cache = {}
+        self.internal_glyph_outline_cache = {}
         font = self.font
         subtype = font.get("Subtype")
         if subtype is not None:
@@ -992,6 +1003,13 @@ class FontDecoder:
         return ".notdef"
 
     def glyph_bbox(self, code: int) -> Rectangle | None:
+        cache = self.internal_glyph_bbox_cache
+        box = cache.get(code, internal_MISSING)
+        if box is internal_MISSING:
+            box = cache[code] = self.internal_glyph_bbox_uncached(code)
+        return typing.cast(Rectangle | None, box)
+
+    def internal_glyph_bbox_uncached(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
         program = self.font_program
@@ -1039,6 +1057,16 @@ class FontDecoder:
         """
         if code < 0:
             return ()
+        cache = self.internal_glyph_outline_cache
+        key = (code, gid, text)
+        contours = cache.get(key)
+        if contours is None:
+            contours = cache[key] = self.internal_glyph_outline_uncached(code, gid, text)
+        return contours
+
+    def internal_glyph_outline_uncached(
+        self, code: int, gid: int | None, text: str
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
         glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
         if glyph_id is None:
             return ()
