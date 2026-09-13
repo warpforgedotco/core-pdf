@@ -60,6 +60,7 @@ def internal_composite_nonisolated_group(
         backdrop[..., :3] / 255.0,
         backdrop[..., 3] / 255.0,
         source_alpha[visible],
+        validate=False,
     )
     # Byte rounding during painting can put the reconstructed color just
     # outside gamut; clipping belongs to this selected raster output policy.
@@ -149,6 +150,7 @@ def internal_composite_knockout_group(
         shape=shape[visible],
         group_alpha=group_alpha[visible],
         element_group_alpha=effective_alpha[visible],
+        validate=False,
     )
     destination[visible] = numpy.clip(
         numpy.rint(numpy.column_stack((colors, complete)) * 255.0), 0, 255

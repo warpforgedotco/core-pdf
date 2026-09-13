@@ -10,12 +10,22 @@ import numpy
 GroupSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
 
 
+def internal_unit_range(*arrays: numpy.ndarray[Any, Any]) -> bool:
+    """Whether every sample lies in [0, 1]; NaN fails because it compares false."""
+    for values in arrays:
+        if values.size and not (values.min() >= 0.0 and values.max() <= 1.0):
+            return False
+    return True
+
+
 def remove_group_backdrop(
     components: numpy.ndarray[Any, Any],
     alpha: numpy.ndarray[Any, Any],
     backdrop_components: numpy.ndarray[Any, Any],
     backdrop_alpha: numpy.ndarray[Any, Any],
     group_alpha: numpy.ndarray[Any, Any],
+    *,
+    validate: bool = True,
 ) -> tuple[GroupSamples, GroupSamples]:
     """Return the group's source colour and alpha, ISO 32000-1/2 11.4.4/11.4.8.
 
@@ -32,6 +42,8 @@ def remove_group_backdrop(
     group_alpha)``; independent raster rounding of these inputs is permitted.
     The returned float64 arrays are new, unquantized, and unclipped. Inexact
     inputs may produce colours outside the colour space's component range.
+    ``validate=False`` skips the unit-range check for callers whose samples are
+    unit-range by construction, such as byte rasters divided by 255.
 
     Backdrop removal reverses Normal compositing of the initial backdrop:
     ``Cg = (alpha * Cn - (1 - group_alpha) * backdrop_alpha * C0) / group_alpha``.
@@ -50,10 +62,7 @@ def remove_group_backdrop(
         or complete.shape != color.shape[:-1]
         or initial.shape != complete.shape
         or accumulated.shape != complete.shape
-        or any(
-            not numpy.all((values >= 0.0) & (values <= 1.0))
-            for values in (color, complete, backdrop, initial, accumulated)
-        )
+        or (validate and not internal_unit_range(color, complete, backdrop, initial, accumulated))
     ):
         raise ValueError("invalid transparency group samples")
     backdrop_weight = (1.0 - accumulated) * initial
@@ -79,6 +88,7 @@ def composite_knockout_element(
     shape: numpy.ndarray[Any, Any],
     group_alpha: numpy.ndarray[Any, Any],
     element_group_alpha: numpy.ndarray[Any, Any],
+    validate: bool = True,
 ) -> tuple[GroupSamples, GroupSamples, GroupSamples]:
     """Insert an element into a knockout group, ISO 32000-1/2 11.4.6/11.4.8.
 
@@ -101,6 +111,8 @@ def composite_knockout_element(
     ``remove_group_backdrop``. All returned arrays are new float64 samples,
     ordered colour, complete alpha, and group alpha. Colours are neither
     clipped nor quantized; inexact raster inputs may put them out of range.
+    ``validate=False`` skips the unit-range check for samples that are
+    unit-range by construction.
 
     With premultiplied colours P, the result is
     ``P = P_element + (1 - shape) * (P_previous - P_initial)`` and its group
@@ -127,21 +139,23 @@ def composite_knockout_element(
             values.shape != complete.shape
             for values in (initial, element_complete, coverage, accumulated, element_accumulated)
         )
-        or any(
-            not numpy.all((values >= 0.0) & (values <= 1.0))
-            for values in (
-                color,
-                complete,
-                backdrop,
-                initial,
-                element,
-                element_complete,
-                coverage,
-                accumulated,
-                element_accumulated,
+        or (
+            validate
+            and (
+                not internal_unit_range(
+                    color,
+                    complete,
+                    backdrop,
+                    initial,
+                    element,
+                    element_complete,
+                    coverage,
+                    accumulated,
+                    element_accumulated,
+                )
+                or bool(numpy.any(element_accumulated > coverage))
             )
         )
-        or numpy.any(element_accumulated > coverage)
     ):
         raise ValueError("invalid knockout group samples")
     remaining = 1.0 - coverage

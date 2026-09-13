@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Literal
+from typing import Any, Literal
 
 import numpy
 import pytest
@@ -8,7 +8,7 @@ import pytest
 from core_pdf_spec.s_11_transparency.groups import composite_knockout_element
 
 
-def internal_samples() -> dict[str, numpy.ndarray]:
+def internal_samples() -> dict[str, Any]:
     """An opaque gray initial backdrop and two partly transparent marks."""
     return {
         "components": numpy.asarray([[0.9, 0.1, 0.1]]),
@@ -139,7 +139,7 @@ def test_transparent_knockout_erases_isolated_group_without_dividing_by_zero() -
 def test_knockout_outputs_are_new_arrays_with_color_space_dimensions(
     color_shape: tuple[int, ...],
 ) -> None:
-    samples = {
+    samples: dict[str, Any] = {
         name: numpy.full(color_shape if "components" in name else color_shape[:-1], 0.5)
         for name in internal_samples()
     }
@@ -208,7 +208,7 @@ def test_knockout_rejects_mismatched_sample_shapes(name: str) -> None:
 
 @pytest.mark.parametrize("color_shape", [(), (2, 0)])
 def test_knockout_requires_a_nonempty_component_axis(color_shape: tuple[int, ...]) -> None:
-    samples = {
+    samples: dict[str, Any] = {
         name: numpy.full(color_shape if "components" in name else color_shape[:-1], 0.5)
         for name in internal_samples()
     }
