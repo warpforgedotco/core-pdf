@@ -29,8 +29,3 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 core_pdf_validate = ["py.typed"]
-
-[dependency-groups]
-test = [
-    "pytest>=8.4.0,<10.0.0",
-]

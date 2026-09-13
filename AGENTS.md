@@ -34,9 +34,10 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 The authored test suite includes differential comparisons under
-`tests/src/core_pdf/api/compat/differential` and strict package tests under
-`packages/core-pdf-spec/tests` and `packages/core-pdf-validate/tests`.
-Reference corpora remain in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and
+`tests/src/core_pdf/api/compat/differential`, strict spec tests under
+`packages/core-pdf-spec/tests`, and validation tests under
+`packages/core-pdf-validate/tests`. Reference corpora remain in
+`tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and
 licensing material; maintenance scripts are in `scripts/`.
 
 Start with `docs/architecture.md` — it describes the pipeline and how the source tree is organized.

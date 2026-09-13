@@ -20,11 +20,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-        with:
-          lfs: "false"
-
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -39,7 +34,7 @@ jobs:
       - name: Install workspace packages and quality tools
         run: uv sync --locked --all-packages --group lint --group test
 
-      - name: Run strict spec, validation, and integration tests
+      - name: Run strict spec and validation tests
         run: uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests packages/core-pdf-validate/tests
 
       - name: Build standalone distributions
@@ -82,10 +77,10 @@ jobs:
           java-version: "17"
 
       - name: Install validation companion and tests
-        run: uv sync --locked --package core-pdf-validate --group test
+        run: uv sync --locked --package core-pdf --package core-pdf-validate --group test
 
       - name: Install checksum-pinned veraPDF in temporary storage
-        run: uv run --locked --package core-pdf-validate python scripts/install_verapdf_ci.py "$RUNNER_TEMP/verapdf"
+        run: uv run --locked --no-sync python scripts/install_verapdf_ci.py "$RUNNER_TEMP/verapdf"
 
       - name: Check real passes and failures for every advertised profile
         env:
@@ -93,7 +88,7 @@ jobs:
           CORE_PDF_REQUIRE_VERAPDF: "1"
           JAVA_TOOL_OPTIONS: -Duser.home=${{ runner.temp }}/verapdf
         run: >-
-          uv run --locked --package core-pdf-validate --group test pytest
+          uv run --locked --no-sync pytest
           packages/core-pdf-validate/tests/test_verapdf_integration.py -ra
 
       - name: Prune uv cache
