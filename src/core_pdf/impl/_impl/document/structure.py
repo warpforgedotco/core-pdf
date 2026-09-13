@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
 
 from core_pdf.impl._impl.document.recovery.trees import iter_number_tree_items
@@ -111,7 +111,40 @@ def structure_key_name(key: Any) -> str:
     return recover_pdf_name(key) or str(key)
 
 
-class StructureElement:
+class internal_StructureNode:
+    """Shared kid enumeration for structure elements and the tree root."""
+
+    __slots__ = ("document", "internal_lookup", "kids_value", "props")
+
+    def __init__(
+        self,
+        document: PdfDocument,
+        props: StructureDict,
+        *,
+        internal_lookup: internal_PageLookup | None = None,
+    ) -> None:
+        self.document = document
+        self.internal_lookup = internal_lookup
+        self.props = props if isinstance(props, dict) else {}
+        self.kids_value: Any = MISSING
+
+    def internal_kids_page(self) -> PdfPage | None:
+        return None
+
+    def __iter__(self) -> Iterator[StructureChild]:
+        if self.kids_value is MISSING:
+            self.kids_value = tuple(
+                make_kids(
+                    self.props.get("K"),
+                    self.internal_kids_page(),
+                    self.document,
+                    internal_lookup=self.internal_lookup,
+                )
+            )
+        yield from self.kids_value
+
+
+class StructureElement(internal_StructureNode):
     """Logical structure element dictionary from the structure tree."""
 
     __slots__ = (
@@ -119,12 +152,8 @@ class StructureElement:
         "alternate_description_value",
         "attributes_value",
         "class_name_value",
-        "document",
-        "internal_lookup",
-        "kids_value",
         "language_value",
         "parent_value",
-        "props",
         "role_value",
         "role_resolution_value",
         "role_error_value",
@@ -139,14 +168,11 @@ class StructureElement:
         *,
         internal_lookup: internal_PageLookup | None = None,
     ) -> None:
-        self.document = document
-        self.internal_lookup = internal_lookup
-        self.props = props if isinstance(props, dict) else {}
+        super().__init__(document, props, internal_lookup=internal_lookup)
         self.role_value: str | None = None
         self.role_resolution_value: StructureRole | None | object = MISSING
         self.role_error_value: str | None = None
         self.type_value: Any = MISSING
-        self.kids_value: Any = MISSING
         self.title_value: Any = MISSING
         self.language_value: Any = MISSING
         self.alternate_description_value: Any = MISSING
@@ -337,19 +363,8 @@ class StructureElement:
         )
         return self.parent_value
 
-    def __iter__(
-        self,
-    ) -> Iterator[StructureChild]:
-        if self.kids_value is MISSING:
-            self.kids_value = tuple(
-                make_kids(
-                    self.props.get("K"),
-                    self.page,
-                    self.document,
-                    internal_lookup=self.internal_lookup,
-                )
-            )
-        yield from self.kids_value
+    def internal_kids_page(self) -> PdfPage | None:
+        return self.page
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator["StructureElement"]:
         elements: list[StructureChild] = list(self)
@@ -360,20 +375,11 @@ class StructureElement:
         return next(self.find_all(matcher), None)
 
 
-class StructureTree(Iterable[StructureElement | StructureContentItem | StructureContentObject]):
+class StructureTree(internal_StructureNode):
     """Document logical structure tree rooted at StructTreeRoot."""
 
-    __slots__ = (
-        "document",
-        "internal_lookup",
-        "props",
-        "role_map_value",
-        "parent_tree_value",
-        "kids_value",
-    )
+    __slots__ = ("role_map_value", "parent_tree_value")
 
-    document: PdfDocument
-    props: StructureDict
     role_map_value: dict[str, str] | None
     parent_tree_value: ParentTree | None
 
@@ -384,12 +390,9 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         *,
         internal_lookup: internal_PageLookup | None = None,
     ) -> None:
-        self.document = document
-        self.internal_lookup = internal_lookup
-        self.props = props if isinstance(props, dict) else {}
+        super().__init__(document, props, internal_lookup=internal_lookup)
         self.role_map_value: dict[str, str] | None = None
         self.parent_tree_value: ParentTree | None = None
-        self.kids_value: Any = MISSING
 
     @property
     def type(self) -> str:
@@ -443,20 +446,6 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         )
         self.parent_tree_value = results
         return results
-
-    def __iter__(
-        self,
-    ) -> Iterator[StructureChild]:
-        if self.kids_value is MISSING:
-            self.kids_value = tuple(
-                make_kids(
-                    self.props.get("K"),
-                    None,
-                    self.document,
-                    internal_lookup=self.internal_lookup,
-                )
-            )
-        yield from self.kids_value
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
         return find_all([item for item in self if isinstance(item, StructureElement)], matcher)

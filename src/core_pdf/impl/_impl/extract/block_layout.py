@@ -638,8 +638,16 @@ def internal_sparse_block_candidate_pairs(
     return sorted(pairs)
 
 
+def internal_full_width_blocks(blocks: list[ParsedBlock]) -> list[bool]:
+    """Flag blocks spanning most of the page width, which act as section headers."""
+    page_x0 = min(block.bbox[0] for block in blocks)
+    page_x1 = max(block.bbox[2] for block in blocks)
+    page_width = max(1.0, page_x1 - page_x0)
+    return [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
+
+
 def internal_topological_block_order_from_pairs(
-    blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]]
+    blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]], full_width: list[bool]
 ) -> list[ParsedBlock]:
     """Sort blocks into topological reading order using a spatial predecessor DAG.
 
@@ -649,12 +657,7 @@ def internal_topological_block_order_from_pairs(
     """
     if len(blocks) <= 2:
         return blocks
-    page_x0 = min(block.bbox[0] for block in blocks)
-    page_x1 = max(block.bbox[2] for block in blocks)
-    page_width = max(1.0, page_x1 - page_x0)
-
     n = len(blocks)
-    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
     in_degree = [0] * n
     graph: dict[int, list[int]] = defaultdict(list)
 
@@ -715,12 +718,9 @@ def internal_topological_block_order_from_pairs(
 def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     if len(blocks) <= 2:
         return blocks
-    page_x0 = min(block.bbox[0] for block in blocks)
-    page_x1 = max(block.bbox[2] for block in blocks)
-    page_width = max(1.0, page_x1 - page_x0)
-    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
+    full_width = internal_full_width_blocks(blocks)
     pairs = internal_sparse_block_candidate_pairs(blocks, full_width)
-    return internal_topological_block_order_from_pairs(blocks, pairs)
+    return internal_topological_block_order_from_pairs(blocks, pairs, full_width)
 
 
 def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:

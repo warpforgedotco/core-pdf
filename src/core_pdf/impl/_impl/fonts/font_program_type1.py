@@ -194,8 +194,9 @@ class Type1FontProgram(internal_Type1FontProgram):
     def glyph_bitmap_for_gid(
         self, glyph_id: int, *, width: int = 24, height: int = 32
     ) -> tuple[int, ...]:
-        contours = self.normalized_glyph_contours(glyph_id)
-        return rasterize_contours(contours, width=width, height=height) if contours else ()
+        return rasterize_contours(
+            self.normalized_glyph_contours(glyph_id), width=width, height=height
+        )
 
     def glyph_contours(self, glyph_name: str) -> tuple[tuple[Point, ...], ...]:
         charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")

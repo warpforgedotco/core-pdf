@@ -56,13 +56,17 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
+        # Operator names are ASCII, so membership of the raw token equals
+        # membership of its latin-1 decoding; build the byte set once per
+        # stream instead of decoding every token twice.
+        operator_names = frozenset(
+            name.encode("latin-1")
+            for name in (*state.internal_default_handlers, *state.operator_overrides)
+        )
         for name, operands in iter_content_operations(
             frame.lexer,
             recovery=state.recovery,
-            is_operator=lambda word: (
-                word.decode("latin-1") in state.internal_default_handlers
-                or word.decode("latin-1") in state.operator_overrides
-            ),
+            is_operator=operator_names.__contains__,
         ):
             child = state.execute_operation(name, operands, frame.depth)
             if child is not None:

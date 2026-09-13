@@ -199,6 +199,10 @@ class PdfLexer(SyntaxLexer):
     def handle_empty_indirect_object(self) -> object:
         return None
 
+    def internal_at_dictionary_end(self, pos: int) -> bool:
+        data = self.raw_data
+        return data[pos] == 62 and pos + 1 < self.data_len and data[pos + 1] == 62
+
     def handle_dictionary_key_error(self) -> bool:
         if not (self.recover_malformed_objects and self.recover_dictionary_structure):
             return False
@@ -210,7 +214,7 @@ class PdfLexer(SyntaxLexer):
             if byte == 47:
                 self.pos = pos
                 return True
-            if byte == 62 and pos + 1 < self.data_len and data[pos + 1] == 62:
+            if byte == 62 and self.internal_at_dictionary_end(pos):
                 self.pos = pos
                 return True
             if data[pos : pos + 6] == b"endobj":
@@ -226,7 +230,7 @@ class PdfLexer(SyntaxLexer):
         end = min(self.data_len, pos + 512)
         while pos < end:
             byte = data[pos]
-            if byte == 62 and pos + 1 < self.data_len and data[pos + 1] == 62:
+            if byte == 62 and self.internal_at_dictionary_end(pos):
                 self.pos = pos
                 return True
             if data[pos : pos + 6] == b"endobj":
@@ -531,22 +535,14 @@ class PdfLexer(SyntaxLexer):
             self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated dictionary")
-            if (
-                self.raw_data[self.pos] == 62
-                and self.pos + 1 < self.data_len
-                and self.raw_data[self.pos + 1] == 62
-            ):
+            if self.internal_at_dictionary_end(self.pos):
                 self.advance(2)
                 break
             if self.raw_data[self.pos] != 47:
                 if self.handle_dictionary_key_error():
                     if self.pos >= self.data_len:
                         raise PdfParseError("unterminated dictionary")
-                    if (
-                        self.raw_data[self.pos] == 62
-                        and self.pos + 1 < self.data_len
-                        and self.raw_data[self.pos + 1] == 62
-                    ):
+                    if self.internal_at_dictionary_end(self.pos):
                         self.advance(2)
                         break
                 if self.raw_data[self.pos] != 47:

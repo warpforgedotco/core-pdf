@@ -21,7 +21,6 @@ from core_pdf.impl._impl.document.page_tree import collect_inherited_values
 from core_pdf.impl._impl.document.records import RawAnnotation, RawLink
 from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dict
 from core_pdf.impl._impl.document.structure import PageStructure
-from core_pdf.impl._impl.model.geometry import rotate_page_runs
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
@@ -389,13 +388,3 @@ class PdfPage:
     @property
     def chars(self) -> list[TextRun]:
         return list(self.get_page_program().runs)
-
-    @property
-    def display_chars(self) -> list[TextRun]:
-        """Text runs transformed into the page's displayed rotation frame."""
-        return rotate_page_runs(
-            self.chars,
-            rotate=self.rotation,
-            page_width=self.width,
-            page_height=self.height,
-        )

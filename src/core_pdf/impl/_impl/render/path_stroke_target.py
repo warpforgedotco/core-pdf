@@ -251,19 +251,9 @@ class internal_PathStrokeTargetMixin:
         line_join: int = 0,
         blend_mode: str | None = None,
     ) -> None:
-        fill_circle = self.fill_circle
-        fill_rect = self.fill_rect
-        scale = self.scale
-        radius = max(0.5 / scale, float(line_width) * 0.5)
-        match line_join:
-            case LineJoin.ROUND:
-                fill_circle(px, py, radius, rgba, blend_mode)
-            case _:
-                fill_rect(
-                    (px - radius, py - radius, px + radius, py + radius),
-                    rgba,
-                    blend_mode,
-                )
+        self.internal_fill_terminal(
+            px, py, line_width, rgba, line_join == LineJoin.ROUND, blend_mode
+        )
 
     def fill_cap(
         self: internal_RasterState,
@@ -274,21 +264,29 @@ class internal_PathStrokeTargetMixin:
         line_cap: int,
         blend_mode: str | None = None,
     ) -> None:
-        fill_circle = self.fill_circle
-        fill_rect = self.fill_rect
-        scale = self.scale
         if line_cap == LineCap.BUTT:
             return
-        radius = max(0.5 / scale, float(line_width) * 0.5)
-        match line_cap:
-            case LineCap.ROUND:
-                fill_circle(px, py, radius, rgba, blend_mode)
-            case _:
-                fill_rect(
-                    (px - radius, py - radius, px + radius, py + radius),
-                    rgba,
-                    blend_mode,
-                )
+        self.internal_fill_terminal(px, py, line_width, rgba, line_cap == LineCap.ROUND, blend_mode)
+
+    def internal_fill_terminal(
+        self: internal_RasterState,
+        px: float,
+        py: float,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        round_shape: bool,
+        blend_mode: str | None,
+    ) -> None:
+        """Paint one join or cap: a disc when round, else a square of the stroke width."""
+        radius = max(0.5 / self.scale, float(line_width) * 0.5)
+        if round_shape:
+            self.fill_circle(px, py, radius, rgba, blend_mode)
+        else:
+            self.fill_rect(
+                (px - radius, py - radius, px + radius, py + radius),
+                rgba,
+                blend_mode,
+            )
 
     def stroke_path(
         self: internal_RasterState,

@@ -93,8 +93,6 @@ def color_operands_to_srgb(
         rendering != DEFAULT_COLOR_RENDERING and kind not in {"DeviceGray", "DeviceRGB", "Pattern"}
     ):
         if kind == "DeviceCMYK":
-            from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
-
             if len(components) != 4:
                 return None
             red, green, blue = cmyk_floats_to_srgb(*components, rendering=rendering)

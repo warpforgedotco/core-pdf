@@ -27,6 +27,41 @@ from core_pdf.impl._impl.render.paths import internal_intersect_box
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
+# Keyed by ``(id(pattern), preserve_object_boundaries)``; the pinned pattern
+# keeps that id from being recycled while the render lives.
+TilingCellCache = dict[tuple[int, bool], tuple[TilingPattern, DisplayList, CapturedPath]]
+
+
+def internal_tiling_cell(
+    target: internal_RasterState, pattern: TilingPattern
+) -> tuple[DisplayList, CapturedPath]:
+    """Build one pattern cell's display list and clip once per render."""
+    preserve_object_boundaries = target.group_source_shape is not None
+    key = (id(pattern), preserve_object_boundaries)
+    cached = target.tiling_cell_cache.get(key)
+    if cached is not None and cached[0] is pattern:
+        return cached[1], cached[2]
+    cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
+    display = DisplayList(
+        target.width,
+        target.height,
+        preserve_object_boundaries=preserve_object_boundaries,
+    )
+    cell_clip = CapturedPath()
+    cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
+    append_captured_program(
+        display,
+        CapturedProgram(
+            drawings=tuple(pattern.drawings),
+            glyphs=tuple(pattern.glyphs),
+            inline_images=tuple(pattern.inline_images),
+            text_boundaries=tuple(pattern.text_boundaries),
+        ),
+        include_text=True,
+    )
+    target.tiling_cell_cache[key] = (pattern, display, cell_clip)
+    return display, cell_clip
+
 
 def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
     x0, y0, x1, y1 = coords[:4]
@@ -238,23 +273,7 @@ class internal_PatternTargetMixin:
         glyphs = pattern.glyphs
         if not drawings and not glyphs and not pattern.inline_images:
             return False
-        display = DisplayList(
-            width,
-            self.height,
-            preserve_object_boundaries=self.group_source_shape is not None,
-        )
-        cell_clip = CapturedPath()
-        cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
-        append_captured_program(
-            display,
-            CapturedProgram(
-                drawings=tuple(drawings),
-                glyphs=tuple(glyphs),
-                inline_images=tuple(pattern.inline_images),
-                text_boundaries=tuple(pattern.text_boundaries),
-            ),
-            include_text=True,
-        )
+        display, cell_clip = internal_tiling_cell(self, pattern)
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         target_box_type = type(target_box)
         if target_box_type is RectBox:

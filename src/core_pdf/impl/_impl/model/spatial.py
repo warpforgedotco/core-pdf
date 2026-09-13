@@ -49,12 +49,6 @@ class SpatialFrame:
             where=denominator > 0.0,
         )
 
-    def overlap_of_query(self, box: Rectangle) -> numpy.ndarray[Any, Any]:
-        box_area = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
-        if box_area <= 0.0:
-            return numpy.zeros(len(self.boxes), dtype=numpy.float64)
-        return self.intersection_areas(box) / box_area
-
     def matching_overlap_min(self, box: Rectangle, minimum: float) -> numpy.ndarray[Any, Any]:
         return numpy.flatnonzero(self.overlap_min(box) >= minimum)
 

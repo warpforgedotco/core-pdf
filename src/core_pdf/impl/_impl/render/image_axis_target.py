@@ -15,9 +15,28 @@ from core_pdf.impl._impl.render.blend import internal_color_rgba, internal_const
 from core_pdf.impl._impl.render.kernels import internal_box_downsample
 from core_pdf.impl._impl.render.model import ImagePaintItem
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
+
+# Keyed by ``id(source)``; the pinned source keeps that id from being recycled.
+PreparedImageCache = dict[int, tuple[ImageSource, PreparedImage | None]]
+
+
+def internal_prepared_image(
+    target: internal_RasterState, source: ImageSource
+) -> PreparedImage | None:
+    """Decode an image source once per render; repeated paints reuse the result."""
+    cached = target.prepared_image_cache.get(id(source))
+    if cached is not None and cached[0] is source:
+        return cached[1]
+    try:
+        prepared = prepare_image(source)
+    except Exception:
+        prepared = None
+    target.prepared_image_cache[id(source)] = (source, prepared)
+    return prepared
 
 
 def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float], ...] | None:
@@ -46,10 +65,7 @@ class internal_ImageAxisTargetMixin:
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
-        try:
-            prepared = prepare_image(item.source)
-        except Exception:
-            prepared = None
+        prepared = internal_prepared_image(self, item.source)
         if prepared is None:
             return
         if prepared.is_stencil:

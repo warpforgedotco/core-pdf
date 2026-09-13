@@ -217,36 +217,31 @@ def internal_png_predict_codec(
     return packed.tobytes()
 
 
-def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    bytes_per_row = colors * columns
+def internal_tiff_predict(
+    data: bytes | memoryview, columns: int, colors: int, dtype: str, sample_bytes: int
+) -> bytes:
+    bytes_per_row = colors * columns * sample_bytes
     if bytes_per_row <= 0:
         return b""
     complete = (len(data) // bytes_per_row) * bytes_per_row
     if complete == 0:
         return b""
-    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=complete).reshape(
+    rows = numpy.frombuffer(data, dtype=dtype, count=complete // sample_bytes).reshape(
         -1,
         columns,
         colors,
     )
     return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
+
+
+def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
+    return internal_tiff_predict(data, columns, colors, "u1", 1)
 
 
 def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    bytes_per_row = colors * columns * 2
-    if bytes_per_row <= 0:
-        return b""
-    complete = (len(data) // bytes_per_row) * bytes_per_row
-    if complete == 0:
-        return b""
     # delta_decode preserves byte order, so the big-endian view accumulates and
     # serializes without a pair of byte swaps around it.
-    rows = numpy.frombuffer(data, dtype=">u2", count=complete // 2).reshape(
-        -1,
-        columns,
-        colors,
-    )
-    return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
+    return internal_tiff_predict(data, columns, colors, ">u2", 2)
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:

@@ -36,6 +36,7 @@ from core_pdf.impl._impl.model.glyphs import (
     glyph_unicode_semantics,
 )
 from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl._impl.model.text import collapse_ws
 from core_pdf.impl.types import Rectangle
 
 
@@ -92,7 +93,7 @@ def internal_discard_duplicate_layer_runs(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
     )
     primary_tokens = [internal_normalized_tokens((run,)) for run in primary_runs]
-    primary_text = [" ".join(run.text.split()) for run in primary_runs]
+    primary_text = [collapse_ws(run.text) for run in primary_runs]
     duplicate_indices: set[int] = set()
     for indices in candidate_groups:
         tokens_by_index = {index: internal_normalized_tokens((runs[index],)) for index in indices}
@@ -115,7 +116,7 @@ def internal_discard_duplicate_layer_runs(
             local_text = " ".join(primary_text[int(position)] for position in nearby)
             # Punctuation, case, and word boundaries are content too. Never
             # equate "now here" with "nowhere", or a word with part of another.
-            candidate_text = " ".join(run.text.split())
+            candidate_text = collapse_ws(run.text)
             if f" {candidate_text} " in f" {local_text} ":
                 matched_indices.append(index)
                 matched_tokens += len(tokens)

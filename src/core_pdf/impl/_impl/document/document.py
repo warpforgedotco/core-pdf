@@ -452,10 +452,6 @@ class PdfDocument(
         )
 
     @property
-    def mark_info(self) -> PdfDict | None:
-        return self.internal_catalog_dict("MarkInfo")
-
-    @property
     def recovery_enabled(self) -> bool:
         """Whether the document was reconstructed and so needs lenient traversal."""
         return self.xref_was_recovered or self.page_tree_was_recovered
@@ -717,15 +713,18 @@ class PdfDocument(
             self.page_tree_was_recovered = True
         return discovered
 
+    def internal_page_tree_root(self) -> PdfDict:
+        pages_ref = self.catalog().get("Pages")
+        if pages_ref is None:
+            raise ValueError("missing page tree root")
+        pages_node = self.resolver.resolve(pages_ref)
+        if not isinstance(pages_node, dict):
+            raise ValueError("invalid page tree root")
+        return pages_node
+
     def internal_iter_page_nodes(self) -> Iterator[internal_PageNode]:
         try:
-            catalog = self.catalog()
-            pages_ref = catalog.get("Pages")
-            if pages_ref is None:
-                raise ValueError("missing page tree root")
-            pages_node = self.resolver.resolve(pages_ref)
-            if not isinstance(pages_node, dict):
-                raise ValueError("invalid page tree root")
+            pages_node = self.internal_page_tree_root()
             page_dicts = list(
                 iter_page_nodes(
                     pages_node,
@@ -751,21 +750,13 @@ class PdfDocument(
             return
 
     def page_count(self) -> int:
-        if self.page_tree_was_recovered:
-            return len(self.build_page_dicts())
-        try:
-            catalog = self.catalog()
-            pages_ref = catalog.get("Pages")
-            if pages_ref is None:
-                raise ValueError("missing page tree root")
-            pages_node = self.resolver.resolve(pages_ref)
-            if not isinstance(pages_node, dict):
-                raise ValueError("invalid page tree root")
-            count = self.resolver.resolve(pages_node.get("Count"))
-            if type(count) is int and count >= 0:
-                return count
-        except (PdfParseError, ValueError):
-            return len(self.build_page_dicts())
+        if not self.page_tree_was_recovered:
+            try:
+                count = self.resolver.resolve(self.internal_page_tree_root().get("Count"))
+                if type(count) is int and count >= 0:
+                    return count
+            except (PdfParseError, ValueError):
+                pass
         return len(self.build_page_dicts())
 
     def build_page_dicts(self) -> list[PdfDict]:
@@ -847,9 +838,6 @@ class PdfDocument(
 
     def page_index_for(self, page_obj: object) -> int | None:
         return internal_PageLookup(self).page_index_for(page_obj)
-
-    def selected_page_indexes(self, pages: PageSelection | None = None) -> list[int]:
-        return resolve_page_selection(pages, len(self.pages))
 
     def iter_selected_pages(
         self, pages: PageSelection | None = None

@@ -29,12 +29,46 @@ from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.types import PdfReference, PdfString
 
+FontCompanions = dict[str, tuple[tuple[int, int], ...]]
+FontCompanionsCache = dict[int, tuple[dict[str, object], FontCompanions]]
+
+
+def internal_font_companions(
+    fonts: dict[str, object],
+    resolve: typing.Callable[[object], object],
+    cache: FontCompanionsCache,
+) -> FontCompanions:
+    """Group the references of one ``/Font`` resource dictionary by base name.
+
+    Every value must already be an indirect reference. The grouping is
+    computed once per resource dictionary; the cache entry pins the
+    dictionary so its identity cannot be reused by a collected object.
+    """
+    entry = cache.get(id(fonts))
+    if entry is not None and entry[0] is fonts:
+        return entry[1]
+    grouped: dict[str, list[tuple[int, int]]] = {}
+    for value in fonts.values():
+        reference = typing.cast(PdfReference, value)
+        sibling = resolve(reference)
+        if not isinstance(sibling, dict):
+            continue
+        name = strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "")
+        if name:
+            grouped.setdefault(name, []).append(
+                (reference.object_number, reference.generation_number)
+            )
+    companions = {name: tuple(sorted(refs)) for name, refs in grouped.items()}
+    cache[id(fonts)] = (fonts, companions)
+    return companions
+
 
 def internal_font_signature(
     font_ref: PdfReference,
     font_obj: object,
     resources: object,
     resolve: typing.Callable[[object], object],
+    companions_cache: FontCompanionsCache,
 ) -> object | None:
     """Identify a font selection by its reference and its same-named siblings.
 
@@ -48,20 +82,13 @@ def internal_font_signature(
     fonts = resolve(resources.get("Font"))
     if not isinstance(fonts, dict):
         return None
+    if any(type(value) is not PdfReference for value in fonts.values()):
+        return None
     base_name = strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
-    companions: list[tuple[int, int]] = []
-    for value in fonts.values():
-        if type(value) is not PdfReference:
-            return None
-        if not base_name:
-            continue
-        sibling = resolve(value)
-        if isinstance(sibling, dict) and (
-            strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "") == base_name
-        ):
-            companions.append((value.object_number, value.generation_number))
-    companions.sort()
-    return (font_ref.object_number, font_ref.generation_number, tuple(companions))
+    companions: tuple[tuple[int, int], ...] = ()
+    if base_name:
+        companions = internal_font_companions(fonts, resolve, companions_cache).get(base_name, ())
+    return (font_ref.object_number, font_ref.generation_number, companions)
 
 
 class RecoveringTextState(ContentInterpreter):
@@ -87,6 +114,9 @@ class RecoveringTextState(ContentInterpreter):
     # A ``Tf`` selects a font resource; the decoder belongs to that resource,
     # not to the operator, so re-selecting a font reuses its decoder.
     capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
+    # Sibling grouping per ``/Font`` resource dictionary, computed once per
+    # dictionary rather than once per selected font.
+    capture_font_companions: FontCompanionsCache
 
     def get_decoder(self) -> FontDecoder:
         if self.graphics.current_decoder is not None:
@@ -135,7 +165,11 @@ class RecoveringTextState(ContentInterpreter):
         signature = None
         if document_decoders is not None and isinstance(font_obj_ref, PdfReference):
             signature = internal_font_signature(
-                font_obj_ref, font_obj, resources, self.resolver.resolve
+                font_obj_ref,
+                font_obj,
+                resources,
+                self.resolver.resolve,
+                self.capture_font_companions,
             )
         if signature is not None and document_decoders is not None:
             shared = document_decoders.get(signature)

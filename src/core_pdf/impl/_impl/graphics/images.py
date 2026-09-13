@@ -68,7 +68,6 @@ class ImageRaster:
 
     array: numpy.ndarray[Any, Any]
     color_model: str
-    has_alpha: bool = False
 
     def __post_init__(self) -> None:
         array = numpy.asarray(self.array, dtype=numpy.uint8)
@@ -76,9 +75,6 @@ class ImageRaster:
             array = array[:, :, None]
         if array.ndim != 3 or array.shape[2] not in {1, 2, 3, 4}:
             raise ValueError("image raster must have one, two, three, or four channels")
-        expected_alpha = array.shape[2] in {2, 4}
-        if expected_alpha != self.has_alpha:
-            raise ValueError("image raster alpha flag does not match its channel layout")
         if self.color_model not in {"gray", "rgb"}:
             raise ValueError("unsupported image raster color model")
         expected_channels = 1 if self.color_model == "gray" else 3
@@ -97,6 +93,10 @@ class ImageRaster:
     @property
     def channels(self) -> int:
         return int(self.array.shape[2])
+
+    @property
+    def has_alpha(self) -> bool:
+        return self.channels in {2, 4}
 
     @property
     def stride(self) -> int:
@@ -164,11 +164,7 @@ class internal_ImagePreparation(ImageSource):
             flat_array = numpy.frombuffer(decoded.data, dtype=numpy.uint8)
             array = flat_array.reshape(decoded.height, decoded.width, decoded.channels)
         color_model = "gray" if decoded.channels in {1, 2} else "rgb"
-        raster = ImageRaster(
-            array,
-            color_model,
-            has_alpha=decoded.channels in {2, 4},
-        )
+        raster = ImageRaster(array, color_model)
         if is_stencil:
             return PreparedImage(raster, is_stencil=True)
         soft_mask = self.internal_decode_soft_mask()
@@ -288,7 +284,7 @@ class internal_ImagePreparation(ImageSource):
         array = numpy.empty((raster.height, raster.width, channels + 1), dtype=numpy.uint8)
         array[:, :, :channels] = raster.array[:, :, :channels]
         array[:, :, channels] = alpha
-        return ImageRaster(array, raster.color_model, has_alpha=True)
+        return ImageRaster(array, raster.color_model)
 
 
 def internal_canonical_image_array(

@@ -20,6 +20,7 @@ from core_pdf.impl._impl.extract.table_reconcile import (
     internal_project_text_and_tables,
 )
 from core_pdf.impl._impl.model.geometry import (
+    bbox_intersects,
     horizontal_overlap_ratio,
     interval_overlap,
     rect_tuple,
@@ -103,8 +104,7 @@ def internal_attach_semantic_context(
 def internal_block_inside_page(block: Block, width: float, height: float) -> bool:
     if block.bbox is None:
         return True
-    x0, y0, x1, y1 = block.bbox
-    return min(width, x1) > max(0.0, x0) and min(height, y1) > max(0.0, y0)
+    return bbox_intersects(block.bbox, (0.0, 0.0, width, height))
 
 
 def internal_remove_off_page_blocks(

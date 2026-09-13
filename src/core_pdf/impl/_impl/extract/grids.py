@@ -97,15 +97,25 @@ def internal_grid_components(
     vertical_x = vertical[:, 0]
     vertical_y0 = vertical[:, 1]
     vertical_y1 = vertical[:, 2]
-    pairs: list[tuple[int, int]] = []
-    for h_index, segment in enumerate(horizontal):
-        matching = numpy.flatnonzero(
-            (vertical_x >= float(segment[0]) - AXIS_TOLERANCE)
-            & (vertical_x <= float(segment[1]) + AXIS_TOLERANCE)
-            & (vertical_y1 >= float(segment[2]) - AXIS_TOLERANCE)
-            & (vertical_y0 <= float(segment[2]) + AXIS_TOLERANCE)
-        )
-        pairs.extend((h_index, int(v_index)) for v_index in matching)
+    # One broadcast over every (horizontal, vertical) pair replaces a mask per
+    # horizontal segment. The tolerance bounds are widened in float64 and then
+    # rounded to the segment dtype, exactly as a Python float compared against
+    # the float32 columns would be.
+    bounds = horizontal.astype(numpy.float64)
+    dtype = vertical.dtype
+    x_low = (bounds[:, 0:1] - AXIS_TOLERANCE).astype(dtype)
+    x_high = (bounds[:, 1:2] + AXIS_TOLERANCE).astype(dtype)
+    y_low = (bounds[:, 2:3] - AXIS_TOLERANCE).astype(dtype)
+    y_high = (bounds[:, 2:3] + AXIS_TOLERANCE).astype(dtype)
+    crossing = (
+        (vertical_x >= x_low)
+        & (vertical_x <= x_high)
+        & (vertical_y1 >= y_low)
+        & (vertical_y0 <= y_high)
+    )
+    pairs: list[tuple[int, int]] = [
+        (int(h_index), int(v_index)) for h_index, v_index in numpy.argwhere(crossing)
+    ]
     if not pairs:
         return ()
     disjoint = internal_DisjointSet(len(horizontal) + len(vertical))

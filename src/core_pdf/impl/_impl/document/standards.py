@@ -22,6 +22,7 @@ from core_pdf_spec.s_07_document.standards import (
     parse_extension,
     parse_header_version,
 )
+from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
@@ -105,14 +106,7 @@ def internal_resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> Pd
     entries and resolve each one on demand. Deep resolution here would parse
     every object reachable from the catalog before a single page is requested.
     """
-    value: object = trailer.get("Root")
-    seen: set[tuple[int, int]] = set()
-    while type(value) is PdfReference:
-        marker = (value.object_number, value.generation_number)
-        if marker in seen:
-            return None
-        seen.add(marker)
-        value = resolver.resolve(value)
+    value = resolve_reference_chain(trailer.get("Root"), resolver.resolve)
     return cast(PdfDict, value) if isinstance(value, dict) else None
 
 
