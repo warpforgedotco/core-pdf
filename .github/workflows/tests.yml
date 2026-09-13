@@ -40,6 +40,15 @@ jobs:
       - name: Build standalone distributions
         run: uv build --all-packages
 
+      # setup-uv caches uv's own store, not prek's clones of the remote hook
+      # repositories. Their revisions are pinned in prek.toml, so its hash is
+      # an exact key.
+      - name: Restore prek hook repositories
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('prek.toml') }}
+
       - name: Run prek
         run: uvx prek run --all-files --stage pre-push
 
@@ -49,7 +58,6 @@ jobs:
 
   verapdf:
     name: veraPDF 1.30.2 / Java 17
-    needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -57,10 +65,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      # The integration tests validate one PDF/A file and one PDF 2.0 file.
       - name: Restore fixture submodules
         uses: ./.github/actions/cache-submodules
         with:
           lfs: "false"
+          paths: tests/fixtures/pypdf tests/fixtures/pdf20examples
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -97,7 +107,6 @@ jobs:
 
   differential:
     name: Differential / Python 3.13
-    needs: quality
     runs-on: ubuntu-latest
 
     steps:

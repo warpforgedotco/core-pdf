@@ -43,15 +43,15 @@ hooks = [
     "pre-push",
     "manual",
   ], require_serial = true },
-]
-
-[[repos]]
-repo = "https://github.com/astral-sh/ty-pre-commit"
-rev = "v0.0.59"
-hooks = [
-  { id = "ty", stages = [
+  # Run the ty pinned by uv.lock so local hooks and CI check with one version.
+  # ty checks the whole project rather than the staged files: a change in one
+  # module can surface diagnostics in another.
+  { id = "ty", name = "ty", entry = "uv run --all-packages --group lint ty check", language = "system", pass_filenames = false, types_or = [
+    "python",
+    "pyi",
+  ], stages = [
     "pre-commit",
     "pre-push",
     "manual",
-  ] },
+  ], require_serial = true },
 ]
