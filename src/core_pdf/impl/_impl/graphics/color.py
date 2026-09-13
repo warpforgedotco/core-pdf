@@ -40,7 +40,7 @@ from core_pdf.impl._impl.graphics.image_kernels import (
     unpack_subbyte_image_samples,
 )
 from core_pdf.impl._impl.graphics.image_samples import (
-    convert_16bit_image,
+    convert_integer_image,
     convert_integer_samples,
     internal_convert_components,
 )
@@ -209,7 +209,7 @@ def internal_convert_image_data(
     spec = parse_color_space(image_dict.get("ColorSpace"))
     bits_per_component = recover_image_bits_per_component(image_dict)
     if bits_per_component == 16:
-        return convert_16bit_image(
+        return convert_integer_image(
             memoryview(raw).cast("B"), image_dict, rendering=rendering
         ).reshape(-1)
     if bits_per_component not in {1, 2, 4, 8} or not spec.component_ranges:

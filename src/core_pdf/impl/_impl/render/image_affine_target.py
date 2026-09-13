@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy
 
 from core_pdf.impl._impl.model.geometry import points_bbox
-from core_pdf.impl._impl.render.blend import internal_blend_channels_f64
+from core_pdf.impl._impl.render.blend import internal_blend_visible_pixels
 from core_pdf.impl._impl.render.kernels import (
     AFFINE_BLIT_SCRATCH_BYTES,
     internal_sample_image_plane,
@@ -84,12 +84,7 @@ class internal_ImageAffineTargetMixin:
                 if all_valid:
                     target_tile[:, :, 0:3] = sampled
                     target_tile[:, :, 3] = 255
-                    self.record_source_alpha(
-                        slice(target_y + row_start, target_y + row_end),
-                        slice(target_x + column_start, target_x + column_end),
-                        255,
-                    )
-                    self.record_source_shape(
+                    self.record_source_coverage(
                         slice(target_y + row_start, target_y + row_end),
                         slice(target_x + column_start, target_x + column_end),
                         255,
@@ -102,13 +97,7 @@ class internal_ImageAffineTargetMixin:
                 )
                 numpy.copyto(target_tile[:, :, 0:3], sampled, where=visible[:, :, None])
                 numpy.copyto(target_tile[:, :, 3], 255, where=visible)
-                self.record_source_alpha(
-                    slice(target_y + row_start, target_y + row_end),
-                    slice(target_x + column_start, target_x + column_end),
-                    255,
-                    visible=visible,
-                )
-                self.record_source_shape(
+                self.record_source_coverage(
                     slice(target_y + row_start, target_y + row_end),
                     slice(target_x + column_start, target_x + column_end),
                     255,
@@ -341,13 +330,7 @@ class internal_ImageAffineTargetMixin:
                 if can_write_opaque:
                     numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
                     numpy.copyto(target[:, :, 3], 255, where=visible)
-                    self.record_source_alpha(
-                        slice(row_start, row_end),
-                        slice(column_start, column_end),
-                        255,
-                        visible=visible,
-                    )
-                    self.record_source_shape(
+                    self.record_source_coverage(
                         slice(row_start, row_end),
                         slice(column_start, column_end),
                         255,
@@ -389,21 +372,15 @@ class internal_ImageAffineTargetMixin:
                 if not numpy.any(visible):
                     continue
                 source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
-                destination = target[visible].astype(numpy.float64)
-                channels = internal_blend_channels_f64(
+                internal_blend_visible_pixels(
+                    target,
+                    visible,
                     source_colors[:, 0] / 255.0,
                     source_colors[:, 1] / 255.0,
                     source_colors[:, 2] / 255.0,
                     alpha_grid[visible] / 255.0,
-                    destination[:, 0],
-                    destination[:, 1],
-                    destination[:, 2],
-                    destination[:, 3],
                     blend_resolved_mode,
                     semantic_context=self.semantic_context,
-                )
-                target[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(
-                    numpy.uint8
                 )
                 self.record_source_alpha(
                     slice(row_start, row_end),

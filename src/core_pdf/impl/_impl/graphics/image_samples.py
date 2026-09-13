@@ -192,18 +192,29 @@ def convert_integer_samples(
     return output
 
 
-def convert_16bit_image(
+def convert_integer_image(
     data: bytes | memoryview,
     dictionary: dict[Any, Any],
     *,
+    bits_per_component: int = 16,
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> numpy.ndarray:
+    """Unpack packed integer samples and convert them with their colour-key mask."""
     space = parse_color_space(dictionary.get("ColorSpace"))
     samples = unpack_image_samples(
-        data, 16, int(dictionary["Width"]), int(dictionary["Height"]), len(space.component_ranges)
+        data,
+        bits_per_component,
+        int(dictionary["Width"]),
+        int(dictionary["Height"]),
+        len(space.component_ranges),
     )
     return convert_integer_samples(
-        samples, dictionary, matte=matte, alpha=alpha, rendering=rendering
+        samples,
+        dictionary,
+        bits_per_component=bits_per_component,
+        matte=matte,
+        alpha=alpha,
+        rendering=rendering,
     )

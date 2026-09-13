@@ -113,11 +113,6 @@ class DisplayList:
     internal_shape_tracking_groups: list[bool] = field(default_factory=list, init=False, repr=False)
     internal_group_scope_floors: list[int] = field(default_factory=list, init=False, repr=False)
 
-    def __post_init__(self) -> None:
-        for item in self.items:
-            if isinstance(item, DisplayListItem):
-                self.internal_track_group_boundary(item.kind, item.data)
-
     def internal_track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
         """Retain separate strokes whenever their raster coverage is tracked."""
         if kind == "scope-begin":
@@ -135,9 +130,13 @@ class DisplayList:
                 self.internal_shape_tracking_groups.pop()
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
+        # Capture records carry the mask as an opaque resource; this is the one
+        # place that types it, so renderer consumers read the field directly.
         graphics_mask = data.get("graphics_soft_mask")
         if not isinstance(graphics_mask, CapturedSoftMask):
             graphics_mask = None
+        if "graphics_soft_mask" in data:
+            data["graphics_soft_mask"] = graphics_mask
         if kind in {"image", "inline-image"}:
             metadata = internal_image_display_metadata(kind, data)
             if metadata:

@@ -16,7 +16,11 @@ from core_pdf.impl._impl.graphics.color import (
 from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints, parse_color_space
 from core_pdf.impl._impl.graphics.image_filters import decode_stream_image_data
 from core_pdf.impl._impl.graphics.image_models import DecodedImage
-from core_pdf.impl._impl.graphics.image_samples import convert_16bit_image, convert_integer_samples
+from core_pdf.impl._impl.graphics.image_samples import (
+    convert_integer_image,
+    convert_integer_samples,
+)
+from core_pdf.impl._impl.graphics.soft_masks import image_has_color_key_mask
 from core_pdf.impl._impl.graphics.stream_decoding import (
     decode_stream_data,
 )
@@ -341,7 +345,7 @@ def internal_canonical_image_array(
         or explicit_jpx_decode
         or sample_array is not samples.array
         or rendering != DEFAULT_COLOR_RENDERING
-        or isinstance(high_depth_dictionary.get("Mask"), (list, tuple))
+        or image_has_color_key_mask(high_depth_dictionary)
     ):
         if samples.source == "jpx" and not explicit_jpx_decode:
             high_depth_dictionary.pop("Decode", None)
@@ -466,27 +470,18 @@ def decode_pdf_image(
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
-    if bits_per_component == 16 or isinstance(dictionary.get("Mask"), (list, tuple)):
+    if bits_per_component == 16 or image_has_color_key_mask(dictionary):
+        # Color-key masks compare original integers before Decode or
+        # conversion (8.9.6.4), and their holes are intrinsic shape.
         try:
-            if bits_per_component == 16:
-                converted_words = convert_16bit_image(
-                    samples, dictionary, matte=matte, alpha=alpha, rendering=rendering
-                )
-            else:
-                # Color-key masks compare original integers before Decode or
-                # conversion (8.9.6.4), and their holes are intrinsic shape.
-                space = parse_color_space(dictionary.get("ColorSpace"))
-                integers = unpack_image_samples(
-                    samples, bits_per_component, width, height, len(space.component_ranges)
-                )
-                converted_words = convert_integer_samples(
-                    integers,
-                    dictionary,
-                    bits_per_component=bits_per_component,
-                    matte=matte,
-                    alpha=alpha,
-                    rendering=rendering,
-                )
+            converted_words = convert_integer_image(
+                samples,
+                dictionary,
+                bits_per_component=bits_per_component,
+                matte=matte,
+                alpha=alpha,
+                rendering=rendering,
+            )
         except (TypeError, ValueError):
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])

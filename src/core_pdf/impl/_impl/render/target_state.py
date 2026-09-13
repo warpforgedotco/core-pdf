@@ -64,6 +64,20 @@ class internal_RasterState(Protocol):
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None: ...
 
+    def record_source_coverage(
+        self,
+        rows: int | slice,
+        columns: int | slice,
+        alpha: int | UInt8Array,
+        *,
+        shape: int | UInt8Array = 255,
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
+    ) -> None: ...
+
+    def set_shape_alpha(self, alpha: float) -> None: ...
+
+    def blank_sibling(self) -> tuple[internal_RasterState, UInt8Array]: ...
+
     def blend_normal_pixel(
         self, idx: int, sr: int, sg: int, sb: int, sa: int, *, shape: int = 255
     ) -> None: ...

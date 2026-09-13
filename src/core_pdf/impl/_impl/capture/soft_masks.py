@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.capture.recording import RecordingMethods
 
 
+GRAPHICS_STATE_FIELDS = tuple(item.name for item in fields(GraphicsState))
+
+
 def internal_state_key(value: object) -> object:
     if isinstance(value, tuple):
         return tuple(internal_state_key(part) for part in value)
@@ -41,7 +44,7 @@ def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | No
     graphics.blend_mode = None
     key = (
         id(mask),
-        tuple(internal_state_key(getattr(graphics, item.name)) for item in fields(GraphicsState)),
+        tuple(internal_state_key(getattr(graphics, name)) for name in GRAPHICS_STATE_FIELDS),
     )
     cached = state.capture_soft_masks.get(key)
     if cached is not None:
@@ -58,12 +61,7 @@ def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | No
         return None
     state.capture_active_mask_groups.add(group_key)
     try:
-        from core_pdf.impl._impl.capture.interpreter import TextState
-
-        nested = TextState(state.document, hidden_layers=state.hidden_layers)
-        nested.capture_soft_masks = state.capture_soft_masks
-        nested.capture_mask_resources = state.capture_mask_resources
-        nested.capture_active_mask_groups = state.capture_active_mask_groups
+        nested = state.nested_capture_state()
         nested.graphics = copy(graphics)
         scope = state.capture_mask_resources.get(id(mask))
         nested.resources = scope[1] if scope is not None else state.resources

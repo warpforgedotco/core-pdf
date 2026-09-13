@@ -11,6 +11,7 @@ import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedSoftMask, PatternPaint
 from core_pdf.impl._impl.runtime.array_views import uint8_image_view
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 
@@ -181,6 +182,31 @@ class internal_RasterGroup:
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
         default=None, kw_only=True
     )
+    # Device rows/columns [y0, y1, x0, x1] touched by recorded paint, empty
+    # until the first record. A group with an initial backdrop composites only
+    # this window: its unrecorded pixels still equal that backdrop.
+    paint_window: list[int] = field(default_factory=list, kw_only=True)
+
+    @property
+    def source_scale(self) -> float:
+        """The group's constant alpha, clamped to the unit interval; unset is 1."""
+        return (
+            max(0.0, min(1.0, float(self.composite_alpha)))
+            if is_pdf_number(self.composite_alpha)
+            else 1.0
+        )
+
+    def extend_paint_window(self, y0: int, y1: int, x0: int, x1: int) -> None:
+        window = self.paint_window
+        if window:
+            window[:] = (
+                min(window[0], y0),
+                max(window[1], y1),
+                min(window[2], x0),
+                max(window[3], x1),
+            )
+        else:
+            window[:] = y0, y1, x0, x1
 
 
 @dataclass(frozen=True, slots=True)

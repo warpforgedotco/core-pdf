@@ -129,8 +129,7 @@ class internal_PathFillTargetMixin:
                             page_pixels[py, visible_start:visible_end] = rgba
                         else:
                             pixel_view(pixels)[py, visible_start:visible_end] = rgba
-                        self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
-                        self.record_source_shape(py, slice(visible_start, visible_end), 255)
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if rectangular_clip and normal_fast:
                         blend_normal_solid_span(row, visible_start, visible_end, rgba)
@@ -143,8 +142,7 @@ class internal_PathFillTargetMixin:
                             normal_target[py, visible_start:visible_end],
                             rgba,
                         )
-                        self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
-                        self.record_source_shape(py, slice(visible_start, visible_end), 255)
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if (
                         blend_target is not None
@@ -156,8 +154,7 @@ class internal_PathFillTargetMixin:
                             blend_mode,
                             semantic_context=self.semantic_context,
                         )
-                        self.record_source_alpha(py, slice(visible_start, visible_end), rgba[3])
-                        self.record_source_shape(py, slice(visible_start, visible_end), 255)
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     for px in range(visible_start, visible_end):
                         if normal_fast:
@@ -346,6 +343,7 @@ class internal_PathFillTargetMixin:
             fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
             return
         samples = 4
+        track_shape = self.group_source_shape is not None
         # Sample every scanline of the box up front. Called per pixel row this
         # handed the kernel four y values at a time, so the numpy work was pure
         # call overhead; one call per fill amortizes it over the whole box.
@@ -443,7 +441,7 @@ class internal_PathFillTargetMixin:
                         0,
                         min(255, round(rgba[3] * covered / (samples * samples))),
                     )
-                    shape = round(255 * covered / (samples * samples))
+                    shape = round(255 * covered / (samples * samples)) if track_shape else 255
                     if normal_fast:
                         blend_normal_pixel(
                             row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape

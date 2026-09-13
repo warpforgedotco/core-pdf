@@ -96,9 +96,7 @@ def internal_append_glyph_paint(
         fill_rule="nonzero",
         blend_mode=glyph.blend_mode,
         soft_mask_alpha=glyph.soft_mask_alpha,
-        graphics_soft_mask=glyph.graphics_soft_mask
-        if isinstance(glyph.graphics_soft_mask, CapturedSoftMask)
-        else None,
+        graphics_soft_mask=glyph.graphics_soft_mask,
         alpha_is_shape=glyph.alpha_is_shape,
     )
     return True
@@ -114,8 +112,11 @@ def append_captured_program(
     explicit_text_boundaries = bool(page_program.text_boundaries)
     text_active = False
     text_group_open = False
+    # A knockout text object opens its group at its first paint, so text that
+    # only clips or is invisible never pays for an empty group.
+    text_group_pending = False
     glyph_scope_depth = 0
-    text_stream_stack: list[tuple[bool, bool, list[CapturedSubpath], int | None]] = []
+    text_stream_stack: list[tuple[bool, bool, bool, list[CapturedSubpath], int | None]] = []
 
     def append_text_run(run: TextRun) -> None:
         display_list.append(
@@ -142,7 +143,7 @@ def append_captured_program(
         text_clipping_subpaths.clear()
 
     def finish_text(seqno: int) -> None:
-        nonlocal text_active, text_group_open, current_text_object_id
+        nonlocal text_active, text_group_open, text_group_pending, current_text_object_id
         if text_group_open:
             display_list.append("group-end", seqno)
         # ISO 32000-2 9.3.6/9.3.8: paint the text object before its
@@ -150,7 +151,15 @@ def append_captured_program(
         flush_text_clip(seqno)
         text_active = False
         text_group_open = False
+        text_group_pending = False
         current_text_object_id = None
+
+    def open_pending_text_group(seqno: int) -> None:
+        nonlocal text_group_open, text_group_pending
+        if text_group_pending:
+            text_group_pending = False
+            text_group_open = True
+            begin_text_group(seqno, knockout=True)
 
     def begin_text_group(seqno: int, *, knockout: bool) -> None:
         # Text and Type 3 glyph groups retain transparency on their children;
@@ -172,9 +181,15 @@ def append_captured_program(
             kind = command.kind
             if kind == "stream-begin":
                 text_stream_stack.append(
-                    (text_active, text_group_open, text_clipping_subpaths, current_text_object_id)
+                    (
+                        text_active,
+                        text_group_open,
+                        text_group_pending,
+                        text_clipping_subpaths,
+                        current_text_object_id,
+                    )
                 )
-                text_active = text_group_open = False
+                text_active = text_group_open = text_group_pending = False
                 text_clipping_subpaths = []
                 current_text_object_id = None
                 display_list.append("scope-begin", command.seqno)
@@ -182,20 +197,23 @@ def append_captured_program(
                 finish_text(command.seqno)
                 display_list.append("scope-end", command.seqno)
                 if text_stream_stack:
-                    text_active, text_group_open, text_clipping_subpaths, current_text_object_id = (
-                        text_stream_stack.pop()
-                    )
+                    (
+                        text_active,
+                        text_group_open,
+                        text_group_pending,
+                        text_clipping_subpaths,
+                        current_text_object_id,
+                    ) = text_stream_stack.pop()
             elif kind == "begin":
                 finish_text(command.seqno)
                 text_active = True
-                text_group_open = include_text and command.knockout
-                if text_group_open:
-                    begin_text_group(command.seqno, knockout=True)
+                text_group_pending = include_text and command.knockout
             elif kind == "end":
                 finish_text(command.seqno)
             elif kind == "glyph-begin":
                 glyph_scope_depth += 1
                 if include_text:
+                    open_pending_text_group(command.seqno)
                     begin_text_group(command.seqno, knockout=False)
             elif kind == "glyph-end":
                 if glyph_scope_depth:
@@ -221,7 +239,14 @@ def append_captured_program(
             ):
                 flush_text_clip(glyph.seqno)
             current_text_object_id = glyph_text_object_id
-            glyph_group_open = include_text and explicit_text_boundaries and not text_group_open
+            glyph_paints = (
+                include_text
+                and glyph.text_render_mode not in NON_PAINTING_RENDER_MODES
+                and glyph.visible is not False
+            )
+            if glyph_paints:
+                open_pending_text_group(glyph.seqno)
+            glyph_group_open = glyph_paints and explicit_text_boundaries and not text_group_open
             if glyph_group_open:
                 begin_text_group(glyph.seqno, knockout=False)
             try:
@@ -252,9 +277,7 @@ def append_captured_program(
                     fill_opacity=glyph.fill_opacity,
                     blend_mode=glyph.blend_mode,
                     soft_mask_alpha=glyph.soft_mask_alpha,
-                    graphics_soft_mask=glyph.graphics_soft_mask
-                    if isinstance(glyph.graphics_soft_mask, CapturedSoftMask)
-                    else None,
+                    graphics_soft_mask=glyph.graphics_soft_mask,
                     alpha_is_shape=glyph.alpha_is_shape,
                     visible=glyph.visible,
                     bitmap=bitmap,
@@ -267,6 +290,8 @@ def append_captured_program(
         elif isinstance(command, CapturedDrawing):
             if not text_active:
                 flush_text_clip(command.seqno)
+            elif command.paints:
+                open_pending_text_group(command.seqno)
             display_list.append_captured_drawing(command)
         else:
             assert isinstance(command, CapturedInlineImage)
@@ -276,6 +301,8 @@ def append_captured_program(
                 flush_text_clip(inline_image.seqno)
             if not inline_image.paints:
                 continue
+            if text_active:
+                open_pending_text_group(inline_image.seqno)
             display_list.append(
                 "inline-image",
                 inline_image.seqno,
@@ -329,7 +356,7 @@ def translated_command(
             graphics_soft_mask=internal_translated_soft_mask(item.graphics_soft_mask, tx, ty),
         )
     data: dict[str, Any] = dict(item.data)
-    if isinstance(mask := data.get("graphics_soft_mask"), CapturedSoftMask):
+    if (mask := data.get("graphics_soft_mask")) is not None:
         data["graphics_soft_mask"] = internal_translated_soft_mask(mask, tx, ty)
     for key in ("bbox", "rect"):
         if key in data:

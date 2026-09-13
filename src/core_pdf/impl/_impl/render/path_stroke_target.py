@@ -132,6 +132,7 @@ class internal_PathStrokeTargetMixin:
         inv_seg_len2 = 1.0 / seg_len2
         extension_t = cap_extension / seg_len
         normal_fast = blend_mode is None
+        track_shape = self.group_source_shape is not None
         if (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
             and normal_fast
@@ -228,7 +229,7 @@ class internal_PathStrokeTargetMixin:
                                 covered += 1
                 if covered:
                     alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
-                    shape = round(255 * covered / sample_total)
+                    shape = round(255 * covered / sample_total) if track_shape else 255
                     if normal_fast:
                         blend_normal_pixel(
                             row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedPath
-from core_pdf.impl._impl.render.blend import internal_blend_channels_f64
+from core_pdf.impl._impl.render.blend import internal_blend_visible_pixels
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
@@ -50,24 +50,25 @@ def internal_paint_stroke_once(
         target.group_source_alpha = source_alpha
         target.group_source_shape = source_shape
     coverage = target.pixel_view(coverage_buffer)[..., 3]
-    target.record_source_shape(slice(None), slice(None), coverage)
+    covered_rows = numpy.flatnonzero(coverage.any(axis=1))
+    if covered_rows.size == 0:
+        return
+    covered_columns = numpy.flatnonzero(coverage.any(axis=0))
+    rows = slice(int(covered_rows[0]), int(covered_rows[-1]) + 1)
+    columns = slice(int(covered_columns[0]), int(covered_columns[-1]) + 1)
+    coverage = coverage[rows, columns]
     alpha = numpy.rint(coverage.astype(numpy.float64) * (rgba[3] / 255.0)).astype(numpy.uint8)
-    target.record_source_alpha(slice(None), slice(None), alpha)
+    target.record_source_coverage(rows, columns, alpha, shape=coverage)
     visible = alpha > 0
     if not numpy.any(visible):
         return
-    destination = target.pixel_view(pixels)
-    backdrop = destination[visible].astype(numpy.float64)
-    channels = internal_blend_channels_f64(
+    internal_blend_visible_pixels(
+        target.pixel_view(pixels)[rows, columns],
+        visible,
         rgba[0] / 255.0,
         rgba[1] / 255.0,
         rgba[2] / 255.0,
         alpha[visible].astype(numpy.float64) / 255.0,
-        backdrop[:, 0],
-        backdrop[:, 1],
-        backdrop[:, 2],
-        backdrop[:, 3],
         target.internal_resolved_blend(blend_mode),
         semantic_context=target.semantic_context,
     )
-    destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)

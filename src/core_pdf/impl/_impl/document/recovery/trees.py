@@ -96,6 +96,8 @@ def internal_iter_tree_items(
 
     if seen is None:
         seen = set()
+    # Pins visited nodes for this walk so a freed dictionary's id cannot be
+    # reused by a later resolved node and read as a cycle.
     visited_objects: dict[int, dict] = {}
     references: set[tuple[int, int]] = set()
     stack: list[tuple[object, int]] = [(node, depth)]

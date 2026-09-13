@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.render.blend import internal_blend_channels_f64
+from core_pdf.impl._impl.render.blend import internal_blend_visible_pixels
 from core_pdf.impl._impl.runtime.array_views import UInt8Array
 from core_pdf_spec.s_11_transparency.groups import (
     composite_knockout_element,
@@ -64,20 +64,16 @@ def internal_composite_nonisolated_group(
     # Byte rounding during painting can put the reconstructed color just
     # outside gamut; clipping belongs to this selected raster output policy.
     colors = numpy.clip(colors, 0.0, 1.0)
-    channels = internal_blend_channels_f64(
+    internal_blend_visible_pixels(
+        destination,
+        visible,
         colors[..., 0],
         colors[..., 1],
         colors[..., 2],
         effective_alpha[visible].astype(numpy.float64) / 255.0,
-        backdrop[..., 0],
-        backdrop[..., 1],
-        backdrop[..., 2],
-        backdrop[..., 3],
         mode,
         semantic_context=semantic_context,
     )
-    for channel, values in enumerate(channels):
-        destination[..., channel][visible] = numpy.clip(values, 0.0, 255.0).astype(numpy.uint8)
     return effective_alpha
 
 
@@ -110,21 +106,17 @@ def internal_composite_masked_group(
     visible = effective_alpha > 0
     if not numpy.any(visible):
         return effective_alpha
-    backdrop = destination[visible].astype(numpy.float64)
     colors = rendered[visible, :3].astype(numpy.float64) / 255.0
-    channels = internal_blend_channels_f64(
+    internal_blend_visible_pixels(
+        destination,
+        visible,
         colors[:, 0],
         colors[:, 1],
         colors[:, 2],
         effective_alpha[visible].astype(numpy.float64) / 255.0,
-        backdrop[:, 0],
-        backdrop[:, 1],
-        backdrop[:, 2],
-        backdrop[:, 3],
         blend_mode.casefold() if isinstance(blend_mode, str) else None,
         semantic_context=semantic_context,
     )
-    destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
     return effective_alpha
 
 

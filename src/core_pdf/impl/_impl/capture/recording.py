@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from core_pdf.impl._impl.capture.paths import flatten_path
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.capture.interpreter import TextState
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
 from dataclasses import dataclass
@@ -952,6 +953,16 @@ class RecordingMethods(RecoveringTextState):
             for key, value in dictionary.items()
         }
 
+    def nested_capture_state(self) -> TextState:
+        """A fresh interpreter sharing this capture's mask caches and recursion guards."""
+        from core_pdf.impl._impl.capture.interpreter import TextState
+
+        nested = TextState(self.document, hidden_layers=self.hidden_layers)
+        nested.capture_soft_masks = self.capture_soft_masks
+        nested.capture_mask_resources = self.capture_mask_resources
+        nested.capture_active_mask_groups = self.capture_active_mask_groups
+        return nested
+
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
         if pattern is None:
             return None
@@ -979,12 +990,7 @@ class RecordingMethods(RecoveringTextState):
                 self.capture_shading_dictionary(pattern.dictionary), color_rendering=rendering
             )
         elif isinstance(pattern, PdfTilingPattern):
-            from core_pdf.impl._impl.capture.interpreter import TextState
-
-            nested = TextState(self.document, hidden_layers=self.hidden_layers)
-            nested.capture_soft_masks = self.capture_soft_masks
-            nested.capture_mask_resources = self.capture_mask_resources
-            nested.capture_active_mask_groups = self.capture_active_mask_groups
+            nested = self.nested_capture_state()
             nested.graphics.render_intent = self.graphics.render_intent
             nested.graphics.black_point_compensation = self.graphics.black_point_compensation
             # ISO 32000-2 11.6.7: AIS comes from the defining stream's initial

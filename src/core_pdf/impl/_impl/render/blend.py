@@ -8,6 +8,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
@@ -389,6 +390,45 @@ def internal_color_component(value: Any, default: int = 0) -> int:
 
 def internal_clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+def internal_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
+    """Combine a paint's constant alpha with a scalar soft-mask alpha; unset means 1."""
+    return (float(opacity) if is_pdf_number(opacity) else 1.0) * (
+        float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else 1.0
+    )
+
+
+def internal_blend_visible_pixels(
+    destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]],
+    red: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    green: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    blue: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    alpha: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    blend_mode: str | None,
+    *,
+    semantic_context: SemanticContext | None = None,
+) -> None:
+    """Blend unit-scale source channels into the destination pixels selected by ``visible``.
+
+    Per-pixel channels and alpha are given for the visible pixels only;
+    ``blend_mode`` is already normalized. Same float64 math as ``blend_px``.
+    """
+    backdrop = destination[visible].astype(numpy.float64)
+    channels = internal_blend_channels_f64(
+        red,
+        green,
+        blue,
+        alpha,
+        backdrop[:, 0],
+        backdrop[:, 1],
+        backdrop[:, 2],
+        backdrop[:, 3],
+        blend_mode,
+        semantic_context=semantic_context,
+    )
+    destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
 
 
 def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:

@@ -9,14 +9,16 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSoftMask
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     internal_blend_context,
     internal_blend_normal_solid_array_numpy,
+    internal_clamp01,
     internal_color_rgba,
     internal_composite_blended_group_numpy,
     internal_composite_normal_group_numpy,
+    internal_constant_alpha,
     internal_scale_rgba_alpha,
 )
 from core_pdf.impl._impl.render.clipping import internal_ClipState
@@ -51,6 +53,14 @@ from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_image_view
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
 from core_pdf_spec.standards import SemanticContext
+
+
+def internal_index_extent(index: int | slice, size: int) -> tuple[int, int]:
+    """Half-open device extent addressed by a row or column index."""
+    if isinstance(index, slice):
+        start, stop, _ = index.indices(size)
+        return start, max(start, stop)
+    return index, index + 1
 
 
 class internal_RasterTarget(
@@ -155,6 +165,33 @@ class internal_RasterTarget(
         self.clip_floor = self.clip.depth
         self.group_floor = len(self.buffer_stack)
 
+    def blank_sibling(self) -> tuple[internal_RasterTarget, UInt8Array]:
+        """A transparent target with this device geometry, sharing mask caches and guards."""
+        pixels = bytearray(self.width * self.height * 4)
+        view = uint8_image_view(pixels, (self.height, self.width, 4))
+        sibling = internal_RasterTarget(
+            pixels,
+            None,
+            clip=internal_ClipState(
+                crop_x0=self.crop_x0,
+                crop_y1=self.crop_y1,
+                scale=self.scale,
+                width=self.width,
+                height=self.height,
+            ),
+            width=self.width,
+            height=self.height,
+            scale=self.scale,
+            crop_x0=self.crop_x0,
+            crop_y0=self.crop_y0,
+            crop_y1=self.crop_y1,
+            page_view=view,
+            semantic_context=self.semantic_context,
+        )
+        sibling.soft_mask_cache = self.soft_mask_cache
+        sibling.active_soft_masks = self.active_soft_masks
+        return sibling, view
+
     def pop_scope(self) -> None:
         if not self.scope_stack:
             return
@@ -202,7 +239,8 @@ class internal_RasterTarget(
             fillstroke = (
                 isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
             )
-            if knockout or mask_alpha is not None:
+            elementary_group = knockout or mask_alpha is not None
+            if elementary_group:
                 # An elementary object blends with the initial backdrop. Its
                 # completed shape then replaces preceding group contributions.
                 self.push_group(
@@ -219,7 +257,7 @@ class internal_RasterTarget(
             try:
                 self.internal_paint_item(item)
             finally:
-                if knockout or mask_alpha is not None:
+                if elementary_group:
                     self.composite_group(self.pop_group())
                 self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
             return
@@ -266,7 +304,7 @@ class internal_RasterTarget(
                 alpha_is_shape=data.get("alpha_is_shape", False),
                 track_shape=data.get("group_track_shape", False),
                 mask_alpha=internal_resolve_soft_mask(self, graphics_mask)
-                if isinstance(graphics_mask := data.get("graphics_soft_mask"), CapturedSoftMask)
+                if (graphics_mask := data.get("graphics_soft_mask")) is not None
                 else None,
             )
         elif item.kind == "group-end" and len(self.buffer_stack) > self.group_floor:
@@ -275,7 +313,7 @@ class internal_RasterTarget(
             rgba = internal_color_rgba(data.get("fill_color"), data.get("fill_opacity"))
             if is_pdf_number(mask := data.get("soft_mask_alpha")):
                 rgba = internal_scale_rgba_alpha(rgba, mask)
-            self.shape_alpha = rgba[3] / 255.0 if self.paint_alpha_is_shape else 1.0
+            self.set_shape_alpha(rgba[3] / 255.0)
             self.draw_glyph_bitmap(
                 data.get("bbox"),
                 data.get("bitmap"),
@@ -285,19 +323,9 @@ class internal_RasterTarget(
                 data.get("bitmap_height"),
             )
         elif item.kind == "shading":
-            if self.paint_alpha_is_shape:
-                opacity = data.get("fill_opacity")
-                mask = data.get("soft_mask_alpha")
-                self.shape_alpha = max(
-                    0.0,
-                    min(
-                        1.0,
-                        (
-                            (float(opacity) if is_pdf_number(opacity) else 1.0)
-                            * (float(mask) if is_pdf_number(mask) else 1.0)
-                        ),
-                    ),
-                )
+            self.set_shape_alpha(
+                internal_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
+            )
             self.paint_shading(data, blend_mode)
 
     def push_group(
@@ -350,6 +378,28 @@ class internal_RasterTarget(
         self.group_source_shape = self.buffer_stack[-1].source_shape
         return child
 
+    def set_shape_alpha(self, alpha: float) -> None:
+        """Under AIS a paint's constant alpha is its shape, ISO 32000-2 11.6.4.3."""
+        self.shape_alpha = internal_clamp01(alpha) if self.paint_alpha_is_shape else 1.0
+
+    def internal_extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
+        y0, y1 = internal_index_extent(rows, self.height)
+        x0, x1 = internal_index_extent(columns, self.width)
+        self.buffer_stack[-1].extend_paint_window(y0, y1, x0, x1)
+
+    def record_source_coverage(
+        self,
+        rows: int | slice,
+        columns: int | slice,
+        alpha: int | UInt8Array,
+        *,
+        shape: int | UInt8Array = 255,
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
+    ) -> None:
+        """Record one paint's alpha and geometric shape over the same pixels."""
+        self.record_source_alpha(rows, columns, alpha, visible=visible)
+        self.record_source_shape(rows, columns, shape, visible=visible)
+
     def record_source_alpha(
         self,
         rows: int | slice,
@@ -362,6 +412,7 @@ class internal_RasterTarget(
         plane = self.group_source_alpha
         if plane is None:
             return
+        self.internal_extend_paint_window(rows, columns)
         previous = plane[rows, columns]
         source = alpha / 255.0
         updated = previous + (1.0 - previous) * source
@@ -385,6 +436,7 @@ class internal_RasterTarget(
         plane = self.group_source_shape
         if plane is None:
             return
+        self.internal_extend_paint_window(rows, columns)
         previous = plane[rows, columns]
         source = shape / 255.0 * self.shape_alpha
         updated = previous + (1.0 - previous) * source
@@ -558,89 +610,108 @@ class internal_RasterTarget(
             pixels[idx + 2] = max(0, min(255, out_b))
             pixels[idx + 3] = max(0, min(255, out_a_i))
 
+    def internal_group_window(self, group: internal_RasterGroup) -> tuple[slice, slice] | None:
+        """Rows and columns a group can change in its parent; None when it painted nothing.
+
+        A group with an initial backdrop contributes only through recorded
+        alpha and shape, so its window is exact. An isolated group's own pixel
+        alpha is its contribution and is read over the whole page.
+        """
+        if group.backdrop is None:
+            return slice(0, self.height), slice(0, self.width)
+        if not group.paint_window:
+            return None
+        y0, y1, x0, x1 = group.paint_window
+        return slice(y0, y1), slice(x0, x1)
+
     def composite_group(self, group: internal_RasterGroup) -> None:
         parent = self.buffer_stack[-1]
-        source_scale = (
-            max(0.0, min(1.0, float(group.composite_alpha)))
-            if is_pdf_number(group.composite_alpha)
-            else 1.0
-        )
-        shape = group.source_shape
+        window = self.internal_group_window(group)
+        if window is None:
+            return
+        rows, columns = window
+        shape = group.source_shape[rows, columns] if group.source_shape is not None else None
         if shape is not None and group.alpha_is_shape:
-            shape = shape * source_scale
+            shape = shape * group.source_scale
             if group.mask_alpha is not None:
-                shape = shape * group.mask_alpha
+                shape = shape * group.mask_alpha[rows, columns]
         if parent.knockout:
             assert parent.source_alpha is not None
             assert shape is not None
-            initial = parent.backdrop or bytearray(len(parent.pixels))
-            element = bytearray(initial)
-            effective_alpha = self.internal_composite_group_into(group, element)
+            initial = (
+                self.pixel_view(parent.backdrop)[rows, columns]
+                if parent.backdrop is not None
+                else numpy.zeros((*shape.shape, 4), dtype=numpy.uint8)
+            )
+            element = initial.copy()
+            effective_alpha = self.internal_composite_group_into(group, element, rows, columns)
             internal_composite_knockout_group(
-                self.pixel_view(parent.pixels),
-                self.pixel_view(initial),
-                self.pixel_view(element),
-                parent.source_alpha,
+                self.pixel_view(parent.pixels)[rows, columns],
+                initial,
+                element,
+                parent.source_alpha[rows, columns],
                 effective_alpha,
                 shape,
             )
         else:
-            effective_alpha = self.internal_composite_group_into(group, self.pixels)
-            self.record_source_alpha(slice(None), slice(None), effective_alpha)
+            effective_alpha = self.internal_composite_group_into(
+                group, self.pixel_view(self.pixels)[rows, columns], rows, columns
+            )
+            self.record_source_alpha(rows, columns, effective_alpha)
         if shape is not None and parent.source_shape is not None:
             # Child shape is complete, including its own AIS constant. Do not
             # apply the currently executing outer paint's shape constant twice.
-            parent.source_shape[:] += (1.0 - parent.source_shape) * shape
+            parent_shape = parent.source_shape[rows, columns]
+            parent_shape += (1.0 - parent_shape) * shape
+        self.internal_extend_paint_window(rows, columns)
 
     def internal_composite_group_into(
-        self, group: internal_RasterGroup, destination: bytearray
+        self,
+        group: internal_RasterGroup,
+        destination: UInt8Array,
+        rows: slice,
+        columns: slice,
     ) -> UInt8Array:
-        """Apply one group's outer state, returning its effective source alpha."""
-        child = group.pixels
+        """Apply one group's outer state within a window, returning its effective alpha."""
+        child = self.pixel_view(group.pixels)[rows, columns]
         group_alpha = group.composite_alpha
         group_blend_mode = group.blend_mode
         normalized_blend_mode = (
             group_blend_mode.casefold() if isinstance(group_blend_mode, str) else None
         )
-        source_scale = max(0.0, min(1.0, float(group_alpha))) if is_pdf_number(group_alpha) else 1.0
+        source_scale = group.source_scale
         if group.mask_alpha is not None:
             return internal_composite_masked_group(
-                self.pixel_view(destination),
-                self.pixel_view(child),
-                group.source_alpha if group.backdrop is not None else None,
+                destination,
+                child,
+                group.source_alpha[rows, columns]
+                if group.backdrop is not None and group.source_alpha is not None
+                else None,
                 source_scale,
                 group_blend_mode,
-                group.mask_alpha,
+                group.mask_alpha[rows, columns],
                 semantic_context=self.semantic_context,
             )
         if group.backdrop is not None:
             assert group.source_alpha is not None
             return internal_composite_nonisolated_group(
-                self.pixel_view(destination),
-                self.pixel_view(child),
-                group.source_alpha,
+                destination,
+                child,
+                group.source_alpha[rows, columns],
                 source_scale,
                 group_blend_mode,
                 semantic_context=self.semantic_context,
             )
         effective_alpha = numpy.clip(
-            numpy.rint(self.pixel_view(child)[..., 3].astype(numpy.float64) * source_scale),
-            0.0,
-            255.0,
+            numpy.rint(child[..., 3].astype(numpy.float64) * source_scale), 0.0, 255.0
         ).astype(numpy.uint8)
-        if normalized_blend_mode in {None, "normal"} and len(child) >= 4_096:
-            source_pixels = self.pixel_view(child)
-            target_pixels = self.pixel_view(destination)
-            internal_composite_normal_group_numpy(
-                target_pixels,
-                source_pixels,
-                source_scale,
-            )
+        if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
+            internal_composite_normal_group_numpy(destination, child, source_scale)
             return effective_alpha
         # The parent retains its own composite opacity until it is closed.
         internal_composite_blended_group_numpy(
-            self.pixel_view(destination),
-            self.pixel_view(child),
+            destination,
+            child,
             float(group_alpha) if is_pdf_number(group_alpha) else None,
             None,
             group_blend_mode,
@@ -671,14 +742,14 @@ class internal_RasterTarget(
             rgba = internal_color_rgba(item.fill, item.fill_opacity)
             if is_pdf_number(soft_mask_alpha):
                 rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
-            self.shape_alpha = rgba[3] / 255.0 if self.paint_alpha_is_shape else 1.0
+            self.set_shape_alpha(rgba[3] / 255.0)
             if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
                 self.fill_path(path, rgba, blend_mode, item.fill_rule)
         if paint_kind is not PathPaintKind.FILL:
             stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
             if is_pdf_number(soft_mask_alpha):
                 stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
-            self.shape_alpha = stroke_rgba[3] / 255.0 if self.paint_alpha_is_shape else 1.0
+            self.set_shape_alpha(stroke_rgba[3] / 255.0)
             if self.group_source_shape is not None:
                 internal_paint_stroke_once(
                     self,

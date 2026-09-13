@@ -62,6 +62,8 @@ def collect_inherited_values(
 ) -> InheritedValueMap:
     values: InheritedValueMap = {}
     current: object = node
+    # Values pin visited nodes so a freed dictionary's id cannot be reused by
+    # a later resolved parent and read as a cycle.
     seen: dict[int, PdfDict] = {}
     references: set[tuple[int, int]] = set()
     while current is not None:
