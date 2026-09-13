@@ -10,6 +10,7 @@ from core_pdf.impl._impl.capture.recovery import CaptureRecovery
 from core_pdf.impl._impl.document.recovery.resources import (
     resolve_resource_dict as recover_resources,
 )
+from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl._impl.graphics.color_spec import parse_color_space
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
@@ -27,6 +28,40 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.types import PdfReference, PdfString
+
+
+def internal_font_signature(
+    font_ref: PdfReference,
+    font_obj: object,
+    resources: object,
+    resolve: typing.Callable[[object], object],
+) -> object | None:
+    """Identify a font selection by its reference and its same-named siblings.
+
+    A decoder depends on its font object and on the sibling fonts that
+    ligature detection may pair it with, which share its base name. Only
+    indirect objects have an identity that holds across pages, so any direct
+    sibling disables sharing.
+    """
+    if not isinstance(resources, dict) or not isinstance(font_obj, dict):
+        return None
+    fonts = resolve(resources.get("Font"))
+    if not isinstance(fonts, dict):
+        return None
+    base_name = strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
+    companions: list[tuple[int, int]] = []
+    for value in fonts.values():
+        if type(value) is not PdfReference:
+            return None
+        if not base_name:
+            continue
+        sibling = resolve(value)
+        if isinstance(sibling, dict) and (
+            strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "") == base_name
+        ):
+            companions.append((value.object_number, value.generation_number))
+    companions.sort()
+    return (font_ref.object_number, font_ref.generation_number, tuple(companions))
 
 
 class RecoveringTextState(ContentInterpreter):
@@ -90,6 +125,27 @@ class RecoveringTextState(ContentInterpreter):
                 self.graphics.decoder_resources = resources
                 return decoder
 
+        # Pages of one document select the same fonts over and over. A decoder
+        # depends only on its font object and on the sibling fonts that
+        # ligature detection may pair it with, so those identify a decoder the
+        # whole document can share once every one of them is an indirect object.
+        document_decoders: dict[object, object] | None = getattr(
+            getattr(self, "document", None), "internal_font_decoders", None
+        )
+        signature = None
+        if document_decoders is not None and isinstance(font_obj_ref, PdfReference):
+            signature = internal_font_signature(
+                font_obj_ref, font_obj, resources, self.resolver.resolve
+            )
+        if signature is not None and document_decoders is not None:
+            shared = document_decoders.get(signature)
+            if shared is not None:
+                decoder = typing.cast(FontDecoder, shared)
+                owned.append((resources, font_obj, decoder))
+                self.graphics.current_decoder = decoder
+                self.graphics.decoder_resources = resources
+                return decoder
+
         if not isinstance(font_obj, dict):
             decoder = self.font_provider({}, typing.cast(dict[str, Any], resources))
         else:
@@ -99,6 +155,8 @@ class RecoveringTextState(ContentInterpreter):
                 typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], resources)
             )
         owned.append((resources, font_obj, decoder))
+        if signature is not None and document_decoders is not None:
+            document_decoders[signature] = decoder
         self.graphics.current_decoder = decoder
         self.graphics.decoder_resources = resources
         return decoder

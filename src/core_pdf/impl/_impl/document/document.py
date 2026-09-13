@@ -217,6 +217,7 @@ class PdfDocument(
         "internal_closed",
         "internal_standards",
         "internal_standards_complete",
+        "internal_font_decoders",
     )
 
     source: PdfSource
@@ -235,6 +236,9 @@ class PdfDocument(
     internal_closed: bool
     internal_standards: DocumentStandards
     internal_standards_complete: bool
+    # Font decoders shared by every page that selects the same font from the
+    # same font resources; keyed by the capture interpreter, cleared on close.
+    internal_font_decoders: dict[object, object]
 
     def __init__(
         self,
@@ -259,6 +263,7 @@ class PdfDocument(
         self.page_tree_was_recovered = False
         self.internal_standards = DocumentStandards()
         self.internal_standards_complete = False
+        self.internal_font_decoders = {}
         try:
             self.raw_data = self.load_data(source)
             self.internal_standards = discover_header_standards(self.raw_data)
@@ -372,6 +377,7 @@ class PdfDocument(
         if self.internal_closed:
             return
         self.internal_closed = True
+        self.internal_font_decoders.clear()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
