@@ -41,6 +41,7 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.standards import DocumentStandards
 
 if TYPE_CHECKING:
+    from core_pdf.impl._impl.capture.program import PageProgram
     from core_pdf.impl._impl.document.records import RawFormField
     from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
 
@@ -120,7 +121,20 @@ class PdfPage(EnginePdfPage):
     ) -> tuple[ImageRecord, ...]:
         if not include_inline and not include_xobjects:
             return ()
-        program = self.get_page_program()
+        return self.internal_extract_program_images(
+            self.get_page_program(),
+            include_inline=include_inline,
+            include_xobjects=include_xobjects,
+        )
+
+    def internal_extract_program_images(
+        self,
+        program: PageProgram,
+        *,
+        include_inline: bool = True,
+        include_xobjects: bool = True,
+    ) -> tuple[ImageRecord, ...]:
+        """Decode the image records of an already captured page program."""
         images: list[ImageRecord] = []
         if include_xobjects:
             images.extend(

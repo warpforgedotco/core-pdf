@@ -13,9 +13,12 @@ def is_integer_token(token: bytes | memoryview) -> bool:
     return bool(raw) and (raw[1:].isdigit() if raw[0] in (43, 45) else raw.isdigit())
 
 
+internal_NUMBER_LEAD_BYTES = frozenset(b"+-.0123456789")
+
+
 def is_number_token(token: bytes | memoryview) -> bool:
     raw = token.tobytes() if isinstance(token, memoryview) else token
-    if not raw:
+    if not raw or raw[0] not in internal_NUMBER_LEAD_BYTES:
         return False
     if raw.isdigit():
         return True

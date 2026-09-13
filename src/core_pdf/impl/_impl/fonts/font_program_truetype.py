@@ -57,6 +57,43 @@ def internal_glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float
     )
 
 
+internal_GLYPH_HEADER = struct.Struct(">hhhhh")
+
+
+def internal_raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
+    """Return the decoded ``loca`` offsets and the undecoded ``glyf`` bytes.
+
+    Only the header of a glyph record is needed for its bounding box, so the
+    glyph table stays as raw bytes; decompiling every glyph record costs time
+    proportional to the whole font for each lookup.
+    """
+    try:
+        locations = font["loca"]
+        reader = font.reader
+        glyph_data = bytes(reader["glyf"]) if reader is not None else b""
+    except FONT_PROGRAM_ERRORS:
+        return (), b""
+    return locations, glyph_data
+
+
+def internal_glyph_header_bbox(
+    locations: Any, glyph_data: bytes, gid: int
+) -> tuple[float, float, float, float] | None:
+    """Read one glyph's stored bounds straight from its ``glyf`` record header."""
+    if gid < 0 or gid + 1 >= len(locations):
+        return None
+    start = locations[gid]
+    end = locations[gid + 1]
+    if end - start < internal_GLYPH_HEADER.size or end > len(glyph_data):
+        # An empty record is a glyph without contours; a truncated one is
+        # unusable, matching a failed record decompile.
+        return None
+    contours, x_min, y_min, x_max, y_max = internal_GLYPH_HEADER.unpack_from(glyph_data, start)
+    if contours == 0:
+        return None
+    return (float(x_min), float(y_min), float(x_max), float(y_max))
+
+
 # fontTools validates malformed tables with bare `assert` as well as by raising,
 # and it decompiles lazily, so a damaged table surfaces late and as almost any
 # exception type. Embedded font programs are untrusted input, so treat every
@@ -142,6 +179,8 @@ class TrueTypeFontProgram:
         "unicode_cmap",
         "glyph_to_unicode",
         "outlines",
+        "glyph_locations",
+        "glyph_table_data",
     )
 
     def __init__(
@@ -157,6 +196,7 @@ class TrueTypeFontProgram:
             raise ValueError("invalid TrueType glyph tables")
         internal_ensure_glyph_order(self.font)
         self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
+        self.glyph_locations, self.glyph_table_data = internal_raw_glyph_locations(self.font)
         self.outlines = internal_FontToolsOutlineAccess(self.font)
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = internal_best_unicode_gid_cmap(self.font)
@@ -200,11 +240,7 @@ class TrueTypeFontProgram:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
 
     def glyph_bbox_for_gid(self, gid: int) -> tuple[float, float, float, float] | None:
-        try:
-            glyph_name = self.font.getGlyphName(gid)
-            bbox = internal_glyph_bbox(self.font["glyf"], glyph_name)
-        except FONT_PROGRAM_ERRORS:
-            bbox = None
+        bbox = internal_glyph_header_bbox(self.glyph_locations, self.glyph_table_data, gid)
         if bbox is None:
             return None
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0

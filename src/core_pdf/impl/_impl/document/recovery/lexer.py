@@ -32,7 +32,7 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     LexicalRules,
     lexical_rules,
 )
-from core_pdf_spec.standards import SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 PdfName_of = PdfName.of
 HEX_STRING_END_RE = re.compile(b">")
@@ -57,6 +57,30 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"XRefStm",
     b"Info",
     b"Encrypt",
+}
+
+
+def internal_reader_lexical_rules(rules: LexicalRules) -> LexicalRules:
+    """Derive the reader grammar from a spec grammar.
+
+    Reader acceptance keeps NUL whitespace and unknown versions. Valid legacy
+    names still retain a literal # instead of changing identity.
+    """
+    return replace(rules, whitespace=WHITESPACE, canonical_identifiers=False)
+
+
+# One reader grammar per spec grammar. The spec selects among a fixed set of
+# grammars by version, so deriving each once at import keeps lexer creation
+# from rebuilding lookup tables and compiling patterns per content stream.
+internal_READER_RULES: dict[LexicalRules, LexicalRules] = {
+    rules: internal_reader_lexical_rules(rules)
+    for rules in {
+        lexical_rules(None),
+        *(
+            lexical_rules(SemanticContext(PdfVersion(major, minor)))
+            for major, minor in ((1, 1), (1, 2), (1, 7), (2, 0))
+        ),
+    }
 }
 
 
@@ -93,12 +117,11 @@ class PdfLexer(SyntaxLexer):
         self.recover_dictionary_structure = recover_dictionary_structure
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
-        # Preserve reader acceptance of NUL whitespace and unknown versions.
-        # Valid legacy names still retain a literal # instead of changing identity.
         if context is not None and (context.version is None or not context.version.recognized):
             context = None
         rules = lexical_rules(context)
-        return replace(rules, whitespace=WHITESPACE, canonical_identifiers=False)
+        reader_rules = internal_READER_RULES.get(rules)
+        return internal_reader_lexical_rules(rules) if reader_rules is None else reader_rules
 
     def read_string(
         self,

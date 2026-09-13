@@ -482,22 +482,29 @@ class CFFFont(PdfCFFFont):
         return tuple(contours)
 
     def internal_glyph_geometry_for_gid(
-        self, glyph_id: int
+        self, glyph_id: int, *, bounds_only: bool = False
     ) -> tuple[
         tuple[tuple[tuple[float, float], ...], ...],
         tuple[float, float, float, float] | None,
     ]:
+        """Return the glyph's outline points and their bounds.
+
+        With ``bounds_only`` the outline keeps just each curve's endpoints and
+        coordinate extrema, which fix the bounds exactly under an axis-aligned
+        font matrix; a skewed or rotated matrix needs the flattened outline.
+        """
         try:
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return ((), None)
+        matrix = self.font_matrix(glyph_id)
         contours, raw_bbox = internal_type2_glyph_geometry_impl(
             charstring,
             local_subrs=self.local_subrs_for_glyph(glyph_id),
             global_subrs=self.global_subrs,
             seac_resolver=self.internal_seac_contours,
+            flatten=not bounds_only or matrix[1] != 0.0 or matrix[2] != 0.0,
         )
-        matrix = self.font_matrix(glyph_id)
         if matrix == DEFAULT_CFF_FONT_MATRIX:
             # The interpreter tracked the bounds of exactly these points.
             return (tuple(tuple(contour) for contour in contours), raw_bbox)
@@ -521,7 +528,7 @@ class CFFFont(PdfCFFFont):
         return rasterize_contours(contours, width=width, height=height)
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
+        geometry = self.internal_glyph_geometry_for_gid(glyph_id, bounds_only=True)
         return geometry[1]
 
     def glyph_contours_for_gid(self, glyph_id: int) -> tuple[tuple[tuple[float, float], ...], ...]:
@@ -664,7 +671,14 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         ]
         | None
     ) = None,
+    flatten: bool = True,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
+    """Execute a charstring into contours and their bounds.
+
+    Flattening samples every curve adaptively for rasterization. Without it a
+    curve contributes only its endpoints and coordinate extrema, the points that
+    determine its bounds.
+    """
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
     current_min_x = inf
@@ -741,8 +755,15 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         point1 = (x + dx1, y + dy1)
         point2 = (point1[0] + dx2, point1[1] + dy2)
         point3 = (point2[0] + dx3, point2[1] + dy3)
-        for t in internal_cubic_sample_times(point0, point1, point2, point3):
-            record_point(*cubic_point(point0, point1, point2, point3, t))
+        if flatten:
+            for t in internal_cubic_sample_times(point0, point1, point2, point3):
+                record_point(*cubic_point(point0, point1, point2, point3, t))
+        else:
+            for t in cubic_extrema_times(point0[0], point1[0], point2[0], point3[0]):
+                record_point(*cubic_point(point0, point1, point2, point3, t))
+            for t in cubic_extrema_times(point0[1], point1[1], point2[1], point3[1]):
+                record_point(*cubic_point(point0, point1, point2, point3, t))
+            record_point(*point3)
         x, y = point3
 
     def has_current_point() -> bool:

@@ -51,6 +51,7 @@ class TextState(RecordingMethods):
         self.capture_soft_masks = {}
         self.capture_mask_resources = {}
         self.capture_active_mask_groups = set()
+        self.capture_font_decoders = {}
 
         def font_provider(font: dict[str, Any], resources: dict[str, Any]) -> FontDecoder:
             return FontDecoder(

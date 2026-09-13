@@ -37,10 +37,12 @@ class CMapDecoder:
     cid_mappings: dict[bytes, int]
     cid_ranges: list[CIDRange]
     cid_ranges_by_length: dict[int, tuple[CIDRange, ...]]
+    cid_ranges_by_lead_byte: dict[int, dict[int, tuple[CIDRange, ...]]]
     decode_lengths: tuple[int, ...]
     notdef_mappings: dict[bytes, int]
     notdef_ranges: list[NotdefRange]
     notdef_ranges_by_length: dict[int, tuple[NotdefRange, ...]]
+    notdef_ranges_by_lead_byte: dict[int, dict[int, tuple[NotdefRange, ...]]]
     code_space_ranges_by_length: dict[int, tuple[tuple[bytes, bytes], ...]]
     default_to_identity: bool
     wmode: int
@@ -50,10 +52,12 @@ class CMapDecoder:
         "cid_mappings",
         "cid_ranges",
         "cid_ranges_by_length",
+        "cid_ranges_by_lead_byte",
         "decode_lengths",
         "notdef_mappings",
         "notdef_ranges",
         "notdef_ranges_by_length",
+        "notdef_ranges_by_lead_byte",
         "code_space_ranges_by_length",
         "default_to_identity",
         "wmode",
@@ -72,9 +76,11 @@ class CMapDecoder:
         self.cid_mappings = {}
         self.cid_ranges = []
         self.cid_ranges_by_length = {}
+        self.cid_ranges_by_lead_byte = {}
         self.notdef_mappings = {}
         self.notdef_ranges = []
         self.notdef_ranges_by_length = {}
+        self.notdef_ranges_by_lead_byte = {}
         self.code_space_ranges_by_length = {}
         self.default_to_identity = False
         self.wmode = 0
@@ -177,7 +183,9 @@ class CMapDecoder:
 
     def freeze(self) -> None:
         self.cid_ranges_by_length = index_ranges_by_length(self.cid_ranges)
+        self.cid_ranges_by_lead_byte = index_ranges_by_lead_byte(self.cid_ranges_by_length)
         self.notdef_ranges_by_length = index_ranges_by_length(self.notdef_ranges)
+        self.notdef_ranges_by_lead_byte = index_ranges_by_lead_byte(self.notdef_ranges_by_length)
         self.code_space_ranges_by_length = index_code_space_ranges(self.code_space_ranges)
 
     @staticmethod
@@ -306,7 +314,12 @@ class CMapDecoder:
         cid = self.cid_mappings.get(code)
         if cid is not None:
             return cid
-        for cid_range in self.cid_ranges_by_length.get(len(code), ()):
+        if not code:
+            return None
+        by_lead_byte = self.cid_ranges_by_lead_byte.get(len(code))
+        if by_lead_byte is None:
+            return None
+        for cid_range in by_lead_byte.get(code[0], ()):
             if cid_range.contains(code):
                 return cid_range.first_cid + range_offset(
                     code,
@@ -321,7 +334,12 @@ class CMapDecoder:
         cid = self.notdef_mappings.get(code)
         if cid is not None:
             return cid
-        for notdef_range in self.notdef_ranges_by_length.get(len(code), ()):
+        if not code:
+            return None
+        by_lead_byte = self.notdef_ranges_by_lead_byte.get(len(code))
+        if by_lead_byte is None:
+            return None
+        for notdef_range in by_lead_byte.get(code[0], ()):
             if notdef_range.contains(code):
                 return notdef_range.cid
         return None
@@ -455,6 +473,27 @@ def index_ranges_by_length(ranges: list[CodeRangeT]) -> dict[int, tuple[CodeRang
     return {length: tuple(items) for length, items in indexed.items()}
 
 
+def index_ranges_by_lead_byte(
+    ranges_by_length: dict[int, tuple[CodeRangeT, ...]],
+) -> dict[int, dict[int, tuple[CodeRangeT, ...]]]:
+    """Sub-bucket length-indexed ranges by their first code byte.
+
+    A range spanning several lead bytes is listed under each of them, so every
+    bucket keeps the same relative order as the length index and a lookup only
+    scans the ranges that can contain the code.
+    """
+    indexed: dict[int, dict[int, list[CodeRangeT]]] = {}
+    for length, items in ranges_by_length.items():
+        buckets = indexed.setdefault(length, {})
+        for item in items:
+            for lead_byte in range(item.start[0], item.end[0] + 1):
+                buckets.setdefault(lead_byte, []).append(item)
+    return {
+        length: {lead_byte: tuple(items) for lead_byte, items in buckets.items()}
+        for length, buckets in indexed.items()
+    }
+
+
 def index_code_space_ranges(
     ranges: list[tuple[bytes, bytes]],
 ) -> dict[int, tuple[tuple[bytes, bytes], ...]]:
@@ -469,5 +508,6 @@ __all__ = [
     "CMapDecoder",
     "CMapResourceResolver",
     "index_ranges_by_length",
+    "index_ranges_by_lead_byte",
     "index_code_space_ranges",
 ]

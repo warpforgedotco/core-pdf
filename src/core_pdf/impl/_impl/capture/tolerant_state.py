@@ -48,6 +48,11 @@ class RecoveringTextState(ContentInterpreter):
         handler = self.operator_overrides.get(name) or self.internal_default_handlers.get(name)
         return handler(operands, depth) if handler is not None else None
 
+    # Decoders owned by this capture, one per (font object, resource scope).
+    # A ``Tf`` selects a font resource; the decoder belongs to that resource,
+    # not to the operator, so re-selecting a font reuses its decoder.
+    capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
+
     def get_decoder(self) -> FontDecoder:
         if self.graphics.current_decoder is not None:
             return self.graphics.current_decoder
@@ -71,19 +76,31 @@ class RecoveringTextState(ContentInterpreter):
             font_obj = None
         if isinstance(font_obj, PdfStream):
             font_obj = font_obj.dictionary
-        if not isinstance(font_obj, dict):
-            decoder = self.font_provider({}, typing.cast(dict[str, Any], self.resources))
-            self.graphics.current_decoder = decoder
-            self.graphics.decoder_resources = self.resources
-            return decoder
+        resources = self.resources
+        if isinstance(font_obj_ref, PdfReference):
+            font_key: object = (font_obj_ref.object_number, font_obj_ref.generation_number)
+        else:
+            font_key = id(font_obj)
+        owned = self.capture_font_decoders.setdefault(font_key, [])
+        for owner_resources, owner_font, decoder in owned:
+            # The entries pin their font and resources objects, so identity
+            # comparison cannot alias a collected object.
+            if owner_resources is resources and owner_font is font_obj:
+                self.graphics.current_decoder = decoder
+                self.graphics.decoder_resources = resources
+                return decoder
 
-        font_dict = typing.cast(PdfDict, font_obj)
-        resolved_font = self.resolver.resolve_font_dict(font_dict)
-        decoder = self.font_provider(
-            typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], self.resources)
-        )
+        if not isinstance(font_obj, dict):
+            decoder = self.font_provider({}, typing.cast(dict[str, Any], resources))
+        else:
+            font_dict = typing.cast(PdfDict, font_obj)
+            resolved_font = self.resolver.resolve_font_dict(font_dict)
+            decoder = self.font_provider(
+                typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], resources)
+            )
+        owned.append((resources, font_obj, decoder))
         self.graphics.current_decoder = decoder
-        self.graphics.decoder_resources = self.resources
+        self.graphics.decoder_resources = resources
         return decoder
 
     def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:

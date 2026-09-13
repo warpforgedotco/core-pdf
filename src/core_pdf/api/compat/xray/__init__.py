@@ -103,8 +103,23 @@ def _path_rectangles(
     return output
 
 
-def _uniform(page: Any, box: tuple[float, float, float, float]) -> bool:
-    raster = page.render().rasterize(scale=1.0, crop=box)
+class _PageRaster:
+    """Compose a page's display list once; each rectangle only rasterizes its crop."""
+
+    __slots__ = ("page", "rendered")
+
+    def __init__(self, page: Any) -> None:
+        self.page = page
+        self.rendered: Any = None
+
+    def rasterize(self, box: tuple[float, float, float, float]) -> Any:
+        if self.rendered is None:
+            self.rendered = self.page.render()
+        return self.rendered.rasterize(scale=1.0, crop=box)
+
+
+def _uniform(raster_page: _PageRaster, box: tuple[float, float, float, float]) -> bool:
+    raster = raster_page.rasterize(box)
     pixels = memoryview(raster.pixels).cast("B")
     if not pixels or raster.channels <= 0:
         return False
@@ -234,7 +249,8 @@ def _page_redactions(
     crop_box = cast(
         tuple[float, float, float, float], tuple(float(value) for value in source_crop_box)
     )
-    drawings = tuple(page.get_drawings())
+    program = page.get_page_program()
+    drawings = page.internal_drawing_records(program.drawings)
     rectangles = [
         rectangle
         for drawing in drawings
@@ -257,7 +273,8 @@ def _page_redactions(
     if "overrides" not in override_cache:
         override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
     operand_overrides = override_cache["overrides"]
-    glyphs = tuple(page.get_page_program().glyphs)
+    glyphs = program.glyphs
+    raster_page = _PageRaster(page)
     sequence_codes: dict[int, bytes] = {}
     for glyph in glyphs:
         sequence_codes[glyph.seqno] = sequence_codes.get(glyph.seqno, b"") + glyph.code_bytes
@@ -363,7 +380,7 @@ def _page_redactions(
             or (is_widget and not widget_has_later_content)
             else _pixmap_crop(rectangle.bbox, float(page.height), user_unit)
         )
-        if not page.rotation and not outside_page and not _uniform(page, raster_box):
+        if not page.rotation and not outside_page and not _uniform(raster_page, raster_box):
             continue
         center = (
             (rectangle.bbox[0] + rectangle.bbox[2]) * 0.5,
