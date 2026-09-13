@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from typing import Any, Protocol, cast
 
-from core_pdf.impl._impl.fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl._impl.fonts.font_program_truetype import (
+    TrueTypeFontProgram,
+    cached_truetype_program,
+)
 from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfParseError
@@ -29,7 +32,7 @@ def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream
 
 def load_ligature_font_tables(tt_data: bytes) -> TrueTypeFontProgram | None:
     try:
-        return TrueTypeFontProgram(tt_data)
+        return cached_truetype_program(tt_data)
     except ValueError:
         return None
 
@@ -157,7 +160,7 @@ def detect_ligature_overrides(
         return {}
 
     try:
-        TrueTypeFontProgram(companion_data)
+        cached_truetype_program(companion_data)
     except ValueError:
         return {}
 

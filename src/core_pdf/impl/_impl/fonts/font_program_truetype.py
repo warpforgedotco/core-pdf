@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import struct
+import threading
 from io import BytesIO
 from typing import Any
 
@@ -181,6 +182,7 @@ class TrueTypeFontProgram:
         "outlines",
         "glyph_locations",
         "glyph_table_data",
+        "internal_composite_bbox_cache",
     )
 
     def __init__(
@@ -191,6 +193,9 @@ class TrueTypeFontProgram:
         use_cmap: bool = False,
     ) -> None:
         self.data = data
+        self.internal_composite_bbox_cache: dict[
+            int, tuple[tuple[float, float, float, float] | None, bool]
+        ] = {}
         self.font = internal_tt_font_from_data(data)
         if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
             raise ValueError("invalid TrueType glyph tables")
@@ -205,6 +210,18 @@ class TrueTypeFontProgram:
             self.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
         else:
             self.cmap = {}
+
+    def internal_variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
+        """A program over the same parsed tables with a different code mapping."""
+        variant = object.__new__(TrueTypeFontProgram)
+        for name in TrueTypeFontProgram.__slots__:
+            setattr(variant, name, getattr(self, name))
+        variant.cid_to_gid = cid_to_gid
+        if use_cmap:
+            variant.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
+        else:
+            variant.cmap = {}
+        return variant
 
     def glyph_id_for_code(self, code: int) -> int:
         if self.cid_to_gid is not None:
@@ -265,6 +282,16 @@ class TrueTypeFontProgram:
     def composite_body_bbox(
         self, gid: int
     ) -> tuple[tuple[float, float, float, float] | None, bool]:
+        cache = self.internal_composite_bbox_cache
+        try:
+            return cache[gid]
+        except KeyError:
+            result = cache[gid] = self.internal_composite_body_bbox(gid)
+            return result
+
+    def internal_composite_body_bbox(
+        self, gid: int
+    ) -> tuple[tuple[float, float, float, float] | None, bool]:
         try:
             glyph_name = self.font.getGlyphName(gid)
             glyf = self.font["glyf"]
@@ -288,6 +315,45 @@ class TrueTypeFontProgram:
             return (body_bbox, has_dot)
         except FONT_PROGRAM_ERRORS:
             return (None, False)
+
+
+internal_PROGRAM_CACHE_LIMIT = 64
+internal_program_cache = threading.local()
+
+
+def cached_truetype_program(
+    data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
+) -> TrueTypeFontProgram:
+    """Return a parsed program for these bytes, sharing one per thread.
+
+    Every page builds its own font decoders, and ligature detection parses the
+    same program again to inspect its composites. Parsing is by far the most
+    expensive step of decoder construction, and the program is read-only after
+    construction, so equal inputs within a thread share one instance. The
+    cache is per thread because fontTools loads tables lazily on first use.
+    """
+    programs: dict[object, TrueTypeFontProgram] | None = getattr(
+        internal_program_cache, "programs", None
+    )
+    if programs is None:
+        programs = internal_program_cache.programs = {}
+    key: object = (data, cid_to_gid, use_cmap)
+    program = programs.get(key)
+    if program is None:
+        # Parse each distinct font program once; code mappings are cheap
+        # variants over the same tables.
+        base = programs.get(data)
+        if base is None:
+            if len(programs) >= internal_PROGRAM_CACHE_LIMIT:
+                programs.clear()
+            base = programs[data] = TrueTypeFontProgram(data)
+        program = (
+            base
+            if cid_to_gid is None and not use_cmap
+            else base.internal_variant(cid_to_gid, use_cmap=use_cmap)
+        )
+        programs[key] = program
+    return program
 
 
 def internal_tt_font_from_data(data: bytes) -> TTFont:
@@ -559,5 +625,6 @@ def internal_flatten_cubic(
 __all__ = (
     "Point",
     "TrueTypeFontProgram",
+    "cached_truetype_program",
     "rasterize_contours",
 )

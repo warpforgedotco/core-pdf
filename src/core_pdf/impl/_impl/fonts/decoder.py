@@ -35,6 +35,7 @@ from core_pdf.impl._impl.fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl._impl.fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     TrueTypeFontProgram,
+    cached_truetype_program,
 )
 from core_pdf.impl._impl.fonts.font_program_type1 import (
     Type1FontProgram,
@@ -130,7 +131,9 @@ def internal_tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:
-        return TrueTypeFontProgram(font_file.data, cid_to_gid, use_cmap=inputs.descendant is None)
+        return cached_truetype_program(
+            font_file.data, cid_to_gid, use_cmap=inputs.descendant is None
+        )
     except ValueError:
         return None
 
@@ -430,9 +433,6 @@ def internal_outline_arrays(
     return GlyphOutlineArrays(
         numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64), tuple(spans)
     )
-
-
-internal_MISSING: typing.Final = object()
 
 
 @dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
@@ -1071,10 +1071,11 @@ class FontDecoder:
 
     def glyph_bbox(self, code: int) -> Rectangle | None:
         cache = self.internal_glyph_bbox_cache
-        box = cache.get(code, internal_MISSING)
-        if box is internal_MISSING:
+        try:
+            return cache[code]
+        except KeyError:
             box = cache[code] = self.internal_glyph_bbox_uncached(code)
-        return typing.cast(Rectangle | None, box)
+            return box
 
     def internal_glyph_bbox_uncached(self, code: int) -> Rectangle | None:
         if code < 0:
@@ -1139,10 +1140,11 @@ class FontDecoder:
             return None
         cache = self.internal_glyph_outline_array_cache
         key = (code, gid, text)
-        arrays = cache.get(key, internal_MISSING)
-        if arrays is internal_MISSING:
+        try:
+            return cache[key]
+        except KeyError:
             arrays = cache[key] = internal_outline_arrays(self.glyph_outline(code, gid, text))
-        return typing.cast(GlyphOutlineArrays | None, arrays)
+            return arrays
 
     def internal_glyph_outline_uncached(
         self, code: int, gid: int | None, text: str
