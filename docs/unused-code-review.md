@@ -1,5 +1,24 @@
 # Coverage and unused-code findings
 
+## Structured output ownership and immutable view contracts
+
+Added **21 deterministic cases** for shared-object identity, reading-order node
+IDs, page ownership, word position/source stamping, empty page boundaries, table
+references, deep metadata/destination snapshots, schema rejection, user-unit
+dimensions, page serialization, and line/span decoration composition. These
+exercise supported views that had no test callers; no production deletion or
+behavior change was justified. Projection does not mutate shared source records.
+
+The focused run passed **21 tests in 5.78s**, appended to the existing verified
+full-workspace coverage database and subsequent focused runs. The output model
+now covers **385 / 385 statements and 40 / 40 branches**, with no exclusions.
+Workspace coverage is **35,344 / 38,842 statements (90.99%)** and
+**12,469 / 14,958 branches (83.36%)**. All four source roots, vendor-only
+omissions, and **554 excluded lines** remain unchanged. This was not another
+full-suite run; the committed coverage floor remains unchanged. Ruff, mypy, ty,
+and import contracts passed. The 100% workspace goal remains incomplete:
+**3,498 statements and 2,489 branches** remain uncovered. These are local results.
+
 ## PDFMiner startxref boundary contracts
 
 Added eight differential cases for exact offsets, offsets inside the `xref`
