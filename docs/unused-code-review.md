@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Wrapped-cell logical rows and unreachable height guard
+
+Added **24 deterministic cases** for logical row merging with tall cells, ragged
+rows, blank content, missing cell boxes, spans, geometry unions, and retained
+metadata. Positive controls verify text stays within its column; rejection
+controls cover numeric tables, missing row geometry, short/narrow tables, and
+insufficient evidence of wrapping. Removed the unreachable empty-height guard:
+at least four rows are required, and every row either contributes a nonempty
+set of box heights or returns before that point. This removes **two statements
+and two branches** from the production denominator.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **7,485 tests, no skips, in 445.46s**. Workspace coverage increased
+**90.62% → 90.71% statements** and **82.76% → 82.90% branches**:
+**35,232 / 38,842 statements** and **12,400 / 14,958 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates;
+that heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,610 statements and 2,558 branches** remain
+uncovered. These are local results.
+
 ## Reader PDF-function adapter contracts
 
 Added **54 deterministic cases** for callable/constant function inputs, output

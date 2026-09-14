@@ -436,8 +436,6 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
             return table
         extents.append((max(box[3] for box in boxes), min(box[1] for box in boxes)))
         heights.extend(box[3] - box[1] for box in boxes)
-    if not heights:
-        return table
     # Merge only where a cell is demonstrably several lines tall. Spacing
     # alone is too weak a signal: a tightly set table of one-line records
     # separates its rows by less than a wrapped cell's leading, so inferring
