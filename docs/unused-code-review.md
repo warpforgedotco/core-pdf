@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Private line-formatter branch removal
+
+Removed unused tuning arguments from `_group_chars` and `_line_text`, including
+the unreachable ratio/extra-attribute spacing paths. Repository callers,
+documentation, scripts, and export tables were checked: these private helpers
+are called only by the default line-record projection. Existing ordinary and
+tiny-font thresholds are retained. Public method signatures are unchanged.
+
+Added **18 line-record contracts** for spacing boundaries, explicit whitespace,
+punctuation, ligatures, source character identity, optional character inclusion,
+line clustering, tiny fonts, and blank groups. They pass before and after the
+cleanup; **29 focused tests** pass including the recent utility differentials.
+All pre-push quality gates passed.
+
+The locked full workspace/differential run with real Tesseract and veraPDF
+passed **7,898 tests with no skips in 536.69s**. The cleanup removes **five
+statements and two branches** from the production denominator. Fresh coverage
+is **35,575 / 38,839 statements (91.60%)** and
+**12,580 / 14,956 branches (84.11%)**. The exact baseline is ratcheted to this
+complete result. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. The static unused-symbol scan returned no candidates.
+The goal remains incomplete: **3,264 statements and 2,376 branches** remain
+uncovered. These are local results.
+
 ## Shared pdfplumber plain-text extraction
 
 Consolidated page and utility plain-text extraction into one word-based path.

@@ -2401,14 +2401,14 @@ def _lines(chars: Iterable[ObjectDict], return_chars: bool = True) -> list[Objec
     return lines
 
 
-def _group_chars(chars: Iterable[ObjectDict], tolerance: float = 3) -> list[list[ObjectDict]]:
+def _group_chars(chars: Iterable[ObjectDict]) -> list[list[ObjectDict]]:
     # pdfplumber's text map uses whitespace to separate words but does not let
     # standalone space glyphs create layout lines of their own.  Keeping them
     # in the clustering input produced empty lines whenever a space's nominal
     # top differed slightly from the surrounding visible glyphs.
     ordered = sorted(chars, key=lambda item: (item["top"], item["x0"]))
     tiny_font = ordered and max(float(item.get("size", 1)) for item in ordered) <= 1
-    line_tolerance = 25 if tiny_font else tolerance
+    line_tolerance = 25 if tiny_font else 3
     return [
         group
         for group in cluster_by(ordered, "top", line_tolerance)
@@ -2416,14 +2416,8 @@ def _group_chars(chars: Iterable[ObjectDict], tolerance: float = 3) -> list[list
     ]
 
 
-def _line_text(
-    chars: Iterable[ObjectDict],
-    tolerance: float = 3,
-    ratio: float | None = None,
-    extra_attrs: Iterable[str] = (),
-) -> str:
+def _line_text(chars: Iterable[ObjectDict]) -> str:
     ordered = sorted(chars, key=lambda item: item["x0"])
-    attrs = tuple(extra_attrs)
     result: list[str] = []
     previous: ObjectDict | None = None
     pending_space = False
@@ -2433,17 +2427,7 @@ def _line_text(
             pending_space = True
             continue
         gap = char["x0"] - previous["x1"] if previous is not None else 0
-        threshold = tolerance
-        if ratio is not None and previous is not None:
-            threshold = max(tolerance, float(previous.get("size", 0)) * ratio)
-        attrs_changed = previous is not None and any(
-            char.get(attr) != previous.get(attr) for attr in attrs
-        )
-        insert_space = (
-            previous is not None
-            and (pending_space or gap > threshold or attrs_changed)
-            and not punctuation_only
-        )
+        insert_space = previous is not None and (pending_space or gap > 3) and not punctuation_only
         if insert_space:
             result.append(" ")
         char_text = str(char["text"] or "")
