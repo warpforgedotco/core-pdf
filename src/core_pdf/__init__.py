@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.model.page_selection import PageSelection
     from core_pdf.impl._impl.output.model import (
         ContentNode,
-        DiagnosticTextRun,
         Document,
         DocumentTableView,
         DocumentTextView,
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
         TableReference,
         TableRowBand,
         TableView,
-        TextDiagnostics,
         TextLineReference,
         TextView,
     )
@@ -65,7 +63,6 @@ internal_EXPORTS = {
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.exceptions", "PdfContractError"),
     "ContentNode": ("core_pdf.impl._impl.output.model", "ContentNode"),
-    "DiagnosticTextRun": ("core_pdf.impl._impl.output.model", "DiagnosticTextRun"),
     "DocumentTableView": ("core_pdf.impl._impl.output.model", "DocumentTableView"),
     "DocumentTextView": ("core_pdf.impl._impl.output.model", "DocumentTextView"),
     "DrawingRecord": ("core_pdf.impl.types", "DrawingRecord"),
@@ -79,7 +76,6 @@ internal_EXPORTS = {
     "TableRowBand": ("core_pdf.impl._impl.output.model", "TableRowBand"),
     "TextView": ("core_pdf.impl._impl.output.model", "TextView"),
     "TextWord": ("core_pdf.impl.types", "TextWord"),
-    "TextDiagnostics": ("core_pdf.impl._impl.output.model", "TextDiagnostics"),
     "TextLineReference": ("core_pdf.impl._impl.output.model", "TextLineReference"),
     "PdfPage": ("core_pdf.api.document", "PdfPage"),
     "PdfDecryptionError": ("core_pdf.impl.exceptions", "PdfDecryptionError"),
@@ -102,7 +98,6 @@ __all__ = (
     "PdfError",
     "PdfContractError",
     "ContentNode",
-    "DiagnosticTextRun",
     "DocumentTableView",
     "DocumentTextView",
     "DrawingRecord",
@@ -116,7 +111,6 @@ __all__ = (
     "TableRowBand",
     "TextView",
     "TextWord",
-    "TextDiagnostics",
     "TextLineReference",
     "PdfPage",
     "PdfDecryptionError",

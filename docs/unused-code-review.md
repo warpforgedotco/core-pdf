@@ -46,6 +46,11 @@ because x-ray differential tests use them. The table above records the pre-remov
 
 ## Test gaps, not deletion candidates
 
+`PdfPage.text_diagnostics()` and `Document.edit()` were also retired after
+the baseline. Their diagnostic result records/exports and the otherwise unused internal
+`DocumentEditor` were removed with them. Shared geometry-diagnostic helpers remain in use.
+This is an intentional API removal, not an inference that uncovered public APIs are dead.
+
 - **OCR: 4,181 statements uncovered.** The configured suite has no OCR test path, and core
   intentionally never imports the companion. Add tests using `core_pdf_ocr.PdfDocument`
   and representative raster/vector inputs before evaluating unused OCR internals.
@@ -55,8 +60,6 @@ because x-ray differential tests use them. The table above records the pre-remov
   public methods and validate output content.
 - **Core CLI: 79 statements uncovered** in `src/core_pdf/cli.py`. It is a registered
   command entry point. Add command-level success/error and output-format checks.
-- **Native API:** `PdfPage.text_diagnostics` and `Document.edit` never execute.
-  Both expose supported behavior; their lack of internal callers does not make them dead.
 - **pdfplumber facade:** 752 missing statements, with 45.23% statement coverage.
   In particular, `Page.to_image` and `Page.dedupe_chars` never execute. Broaden method-level
   differential coverage, not just the number of PDFs passed to existing methods.
