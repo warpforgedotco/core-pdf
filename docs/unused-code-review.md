@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR session integration
+
+Added **25 deterministic tests** for declared projection caching, undeclared projection
+errors, page-box selection, real text-band preflight scaling, direct/rendered page tasks,
+weak-region retry provenance, bounded timeout recovery, packed-vector options, image-region
+filtering/cropped fallback, and distributed-outline routing. No production changes were needed.
+
+The full suite with pinned Tesseract enabled passed **3,467 tests**, with **32 veraPDF
+integration skips**, in **204.29s**. OCR session coverage rose from **70.00% statements /
+55.56% branches to 100% of both**. Workspace coverage rose **79.99% → 80.10% statements**
+and **67.74% → 67.84% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,819 statements and 4,888 branches** remain uncovered. OCR engine details and all
+remaining core, spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: packed-vector and table-grid orchestration
 
 Added **12 deterministic integration tests** covering packed-coordinate remapping, isolated
