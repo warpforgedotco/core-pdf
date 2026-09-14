@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Structure ActualText ownership and recovery contracts
+
+Added **26 deterministic cases** for ancestor replacement precedence, shared
+parent wrappers, distinct owner identity, intentional empty replacements,
+geometry/baseline/confidence merging, retained glyph evidence, and source-run
+immutability. Tests also cover cycles, malformed lazy structure access, lookup
+and parent failures, non-string replacements, invalid MCIDs, and avoiding
+structure loading when no MCID exists. No production change was needed.
+
+The focused run passed **26 tests in 28.34s**, with coverage appended to the
+verified **7,717-test full run** and subsequent form tests on unchanged
+production sources. This was not another full-suite run. Workspace coverage is
+**35,424 / 38,843 statements (91.20%)** and
+**12,507 / 14,958 branches (83.61%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All pre-push gates and the coverage check passed.
+The static unused-symbol scan returned no candidates; that is not proof of
+absence of dead code. **3,419 statements and 2,451 branches** remain uncovered,
+so the workspace goal remains incomplete. These are local results.
+
 ## PDFMiner nested form and page-transform contracts
 
 Added **16 differential cases** for single/nested Form XObjects, all four page
