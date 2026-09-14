@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Outline geometry and text paint contracts
+
+Added **69 deterministic cases** comparing scalar and cached-array glyph outlines
+under identity, rotation/scaling, fractional shear/translation, and collapsed
+transforms. Controls include empty, single-point, closed, and degenerate contours,
+exact bounds and edge geometry, outline code precedence, missing inputs, and bitmap
+fallback. All eight text render modes are exercised with painting enabled/disabled
+and visible/invisible glyphs, distinguishing paint from accumulated clipping.
+The scalar fallback and cached-array route agree; no production change was needed.
+
+All 69 tests passed in **9.88s**, appending coverage to the verified locked
+**5,995-test** full workspace report with real Tesseract and veraPDF. Production
+sources are unchanged since that full run; the full suite was not rerun for this
+test-only change. Workspace coverage increased **87.80% → 87.88% statements** and
+**79.06% → 79.25% branches**: **34,155 / 38,864 statements** and
+**11,864 / 14,970 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan
+returned no candidates. The 100% goal remains incomplete: **4,709 statements and
+3,106 branches** remain uncovered. These are local results.
+
+
 ## Pattern command translation keeps cached edges aligned
 
 Added **21 deterministic cases** for translated path geometry and cached edges,
