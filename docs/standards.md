@@ -97,7 +97,12 @@ Changing `ObjectResolver.semantic_context` clears parsed object and object-strea
 caches so later resolutions use the new rules. Finish active parsing before changing
 it; objects already returned to the caller remain unchanged. `PdfLexer.select_lexical_rules`,
 resolver `decode_text`, and interpreter `create_lexer` are public parser extension
-points for reader adapters.
+points for reader adapters, as are the lexer's `handle_invalid_hex_string`,
+`handle_invalid_name_escape`, `handle_dictionary_key_error`,
+`handle_duplicate_dictionary_key`, and `handle_dictionary_entry_error` methods, the
+`unknown_escape`/`eol_pair` hooks of `read_literal_string`, and the `node_type`,
+`on_invalid_child`, `max_depth`, and `stop_at_malformed_parent` options of the page-tree
+walkers. Their defaults keep the specified strict behaviour.
 
 `s_08_graphics.color_spec.parse_color_space(..., context=...)` also applies the
 PDF 1.3 change permitting Separation and DeviceN Indexed bases, including nested

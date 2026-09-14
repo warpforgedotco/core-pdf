@@ -11,12 +11,10 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy
 
 from core_pdf.impl._impl.capture.program import PageProgram
-from core_pdf.impl._impl.model.text import internal_reconcile_text_words
 from core_pdf.impl._impl.output.model import (
-    TextSpan,
+    TextLine,
 )
 from core_pdf.impl._impl.runtime.array_views import readonly
-from core_pdf.impl.types import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.document.page import PdfPage
@@ -71,7 +69,6 @@ class ObservationBatch:
 
     text: tuple[str, ...]
     bbox: FloatArray
-    polygon: FloatArray
     source: ByteArray
     confidence: FloatArray
     sequence: IntArray
@@ -87,7 +84,6 @@ class ObservationBatch:
             raise ValueError("observation references must match the text column")
         columns = (
             ("bbox", self.bbox, (size, 4), numpy.float32),
-            ("polygon", self.polygon, (size, 8), numpy.float32),
             ("source", self.source, (size,), numpy.uint8),
             ("confidence", self.confidence, (size,), numpy.float32),
             ("sequence", self.sequence, (size,), numpy.int64),
@@ -112,7 +108,6 @@ class ObservationBatch:
         return cls(
             (),
             numpy.empty((0, 4), dtype=numpy.float32),
-            numpy.empty((0, 8), dtype=numpy.float32),
             numpy.empty(0, dtype=numpy.uint8),
             numpy.empty(0, dtype=numpy.float32),
             numpy.empty(0, dtype=numpy.int64),
@@ -129,7 +124,6 @@ class ObservationBatch:
         text: Iterable[str],
         bbox: Iterable[tuple[float, float, float, float]],
         *,
-        polygon: Iterable[tuple[float, ...]] | None = None,
         source: int,
         confidence: Iterable[float] | None = None,
         sequence: Iterable[int] | None = None,
@@ -142,14 +136,8 @@ class ObservationBatch:
         texts = tuple(text)
         size = len(texts)
         boxes = internal_column(bbox, numpy.float32)
-        polygons = internal_column(
-            polygon, numpy.float32, lambda: numpy.full((size, 8), numpy.nan, dtype=numpy.float32)
-        )
-        if size == 0:
-            if boxes.shape == (0,):
-                boxes = boxes.reshape((0, 4))
-            if polygons.shape == (0,):
-                polygons = polygons.reshape((0, 8))
+        if size == 0 and boxes.shape == (0,):
+            boxes = boxes.reshape((0, 4))
         conf_arr = internal_column(
             confidence, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
@@ -174,7 +162,6 @@ class ObservationBatch:
         return cls(
             texts,
             boxes,
-            polygons,
             numpy.full(size, int(source), dtype=numpy.uint8),
             conf_arr,
             seq_arr,
@@ -202,7 +189,6 @@ class ObservationBatch:
         return ObservationBatch(
             tuple(self.text[int(index)] for index in indexes),
             self.bbox[indexes],
-            self.polygon[indexes],
             self.source[indexes],
             self.confidence[indexes],
             self.sequence[indexes],
@@ -232,7 +218,6 @@ class ObservationBatch:
         return cls(
             tuple(text for batch in batches for text in batch.text),
             numpy.concatenate(tuple(batch.bbox for batch in batches)),
-            numpy.concatenate(tuple(batch.polygon for batch in batches)),
             numpy.concatenate(tuple(batch.source for batch in batches)),
             numpy.concatenate(tuple(batch.confidence for batch in batches)),
             numpy.concatenate(tuple(batch.sequence for batch in batches)),
@@ -279,7 +264,6 @@ class ObservationBatch:
         return cls(
             (*primary.text, *(secondary.text[int(index)] for index in indexes)),
             combine(primary.bbox, secondary.bbox),
-            combine(primary.polygon, secondary.polygon),
             combine(primary.source, secondary.source),
             combine(primary.confidence, secondary.confidence),
             combine(primary.sequence, secondary.sequence),
@@ -375,7 +359,6 @@ class PageEvidence:
     all_text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     glyphs: GlyphEvidence = field(default_factory=GlyphEvidence)
     painted_native_characters: int | None = None
-    painted_text_coverage: float | None = None
     trusted_hidden_text: bool = False
 
     @property
@@ -411,25 +394,16 @@ class PageAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class ParsedLine:
-    text: str
-    bbox: tuple[float, float, float, float]
-    source: str
-    confidence: float | None = None
+    """A positioned output line plus the evidence layout needs to order it."""
+
+    line: TextLine
     sequence: int = 0
     rotation: int = 0
     font_size: float | None = None
-    bold: bool = False
-    italic: bool = False
-    underline: bool = False
-    strikeout: bool = False
-    mark: bool = False
-    superscript: bool = False
-    subscript: bool = False
-    spans: tuple[TextSpan, ...] = ()
-    words: tuple[TextWord, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "words", internal_reconcile_text_words(self.text, self.words))
+        if self.line.bbox is None:
+            raise ValueError("ParsedLine requires a positioned line")
 
 
 @dataclass(frozen=True, slots=True)

@@ -175,6 +175,8 @@ class ObjectResolver(SyntaxResolver):
         return parse_int(self.resolve(value), default)
 
     def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
+        # Same shape as the spec method, but the reader's parse_box also accepts
+        # numeric strings the recovery lexer retains, such as an exponent token.
         resolved = self.deep_resolve(value)
         if resolved is None:
             return None

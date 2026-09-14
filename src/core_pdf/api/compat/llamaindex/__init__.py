@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from os import PathLike
 from pathlib import Path
-from typing import Any, TypeAlias, cast
+from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
@@ -17,8 +17,6 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
-
-PdfInput: TypeAlias = Any
 
 
 class MetadataMode(StrEnum):

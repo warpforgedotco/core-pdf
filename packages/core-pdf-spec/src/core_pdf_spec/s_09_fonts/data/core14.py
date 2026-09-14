@@ -6916,7 +6916,7 @@ internal_ZAPF_DINGBATS_WIDTHS: dict[str, int] = {
 }
 
 # The fourteen Standard-14 metric records, keyed by their canonical name.
-internal_STANDARD_14: dict[str, Core14FontMetrics] = {
+FONT_DATA: dict[str, Core14FontMetrics] = {
     "Courier": {
         "widths": internal_COURIER_WIDTHS,
         "props": {
@@ -7120,8 +7120,6 @@ internal_STANDARD_14: dict[str, Core14FontMetrics] = {
         },
     },
 }
-
-FONT_DATA: dict[str, Core14FontMetrics] = internal_STANDARD_14
 
 
 __all__ = ["Core14FontMetrics", "GLYPH_DATA", "FONT_DATA"]

@@ -22,13 +22,12 @@ from core_pdf.impl._impl.model.geometry import (
 from core_pdf.impl._impl.output.model import Table as StructuredTable
 from core_pdf.impl._impl.output.model import TableCell
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import DrawingRecord, ImageRecord, PdfReference
 
-from .._shared import ClosingMixin, encode_png, png_chunk
+from .._shared import ClosingMixin, PdfInput, encode_png, png_chunk
 from .exceptions import PdfminerException
 
 BBox: TypeAlias = tuple[float, float, float, float]
-PdfInput: TypeAlias = Any
 ObjectDict: TypeAlias = dict[str, Any]
 LIGATURE_EXPANSIONS = {
     "ﬀ": "ff",
@@ -367,47 +366,17 @@ class EnginePageAdapter:
         """Capture the page once; drawings and images are views of that program."""
         return self.page.get_page_program()
 
-    def drawings(self, program: Any | None = None) -> Iterator[Any]:
+    def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
+        """Native drawing records of the program; ``_drawing`` projects them."""
         if program is None:
             program = self.page_program()
-        for drawing in self.page.internal_drawing_records(program.drawings):
-            box = drawing.rect
-            yield SimpleNamespace(
-                kind=drawing.kind,
-                bbox=(SimpleNamespace(x0=box[0], y0=box[1], x1=box[2], y1=box[3]) if box else None),
-                fill=drawing.fill,
-                stroke=drawing.stroke_color,
-                fill_opacity=drawing.fill_opacity,
-                stroke_opacity=drawing.stroke_opacity,
-                sequence=drawing.seqno,
-                items=(),
-                data={
-                    "path": None,
-                    "dash_pattern": drawing.dash_pattern,
-                    "line_width": drawing.line_width,
-                    "line_cap": drawing.line_cap,
-                    "line_join": drawing.line_join,
-                },
-            )
+        return self.page.internal_drawing_records(program.drawings)
 
-    def images(self, program: Any | None = None) -> Iterator[Any]:
+    def images(self, program: Any | None = None) -> tuple[ImageRecord, ...]:
+        """Native image records of the program; ``_image`` projects them."""
         if program is None:
             program = self.page_program()
-        for image in self.page.internal_extract_program_images(program):
-            metadata = image.image_metadata
-            box = image.rect or image.image_clip
-            if metadata is None or box is None:
-                continue
-            data = image.data
-            yield SimpleNamespace(
-                bbox=SimpleNamespace(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
-                sequence=image.seqno,
-                width=metadata.width,
-                height=metadata.height,
-                channels=metadata.channels,
-                color_model=metadata.color_model,
-                data=bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None,
-            )
+        return self.page.internal_extract_program_images(program)
 
     def render(self, *, dpi: float) -> Any:
         # PDFium, used by pdfplumber's image API, leaves UserUnit unapplied.
@@ -512,29 +481,72 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     )
 
 
-def _drawing(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
-    box = item.bbox
-    x0, top, x1, bottom = _bbox(page, (box.x0, box.y0, box.x1, box.y1)) if box else (0, 0, 0, 0)
+def _drawing(page: EnginePageAdapter, drawing: DrawingRecord, doctop: float) -> ObjectDict:
+    box = drawing.rect
+    x0, top, x1, bottom = _bbox(page, box) if box else (0, 0, 0, 0)
     return _envelope(
-        item.kind.lower(),
+        drawing.kind.lower(),
         page.info.number,
         (x0, top, x1, bottom),
         doctop,
-        y0=box.y0 if box else 0.0,
-        y1=box.y1 if box else 0.0,
-        fill=item.fill,
-        non_stroking_color=item.fill,
-        stroke=item.stroke,
-        stroking_color=item.stroke,
-        fill_opacity=item.fill_opacity,
-        stroke_opacity=item.stroke_opacity,
-        seqno=item.sequence,
-        items=[dict(kind=part.kind, **dict(part.data)) for part in item.items],
-        path=item.data.get("path"),
-        dash=item.data.get("dash_pattern"),
-        linewidth=item.data.get("line_width"),
-        linecap=item.data.get("line_cap"),
-        linejoin=item.data.get("line_join"),
+        y0=box[1] if box else 0.0,
+        y1=box[3] if box else 0.0,
+        fill=drawing.fill,
+        non_stroking_color=drawing.fill,
+        stroke=drawing.stroke_color,
+        stroking_color=drawing.stroke_color,
+        fill_opacity=drawing.fill_opacity,
+        stroke_opacity=drawing.stroke_opacity,
+        seqno=drawing.seqno,
+        # pdfplumber path items and the raw path are not projected from the
+        # native record; the facade has always emitted these placeholders.
+        items=[],
+        path=None,
+        dash=drawing.dash_pattern,
+        linewidth=drawing.line_width,
+        linecap=drawing.line_cap,
+        linejoin=drawing.line_join,
+    )
+
+
+def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> ObjectDict | None:
+    """Project a native image record; ``None`` when it has no metadata or box."""
+    metadata = image.image_metadata
+    box = image.rect or image.image_clip
+    if metadata is None or box is None:
+        return None
+    data = image.data
+    payload = bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None
+    x0, top, x1, bottom = _bbox(page, box)
+    # Images carry the full drawing envelope with null paint state, then the
+    # image-specific keys; ``width``/``height`` keep their envelope positions.
+    return _envelope(
+        "image",
+        page.info.number,
+        (x0, top, x1, bottom),
+        doctop,
+        y0=box[1],
+        y1=box[3],
+        fill=None,
+        non_stroking_color=None,
+        stroke=None,
+        stroking_color=None,
+        fill_opacity=None,
+        stroke_opacity=None,
+        seqno=image.seqno or 0,
+        items=[],
+        path=None,
+        dash=None,
+        linewidth=None,
+        linecap=None,
+        linejoin=None,
+        width=metadata.width,
+        height=metadata.height,
+        srcsize=(metadata.width, metadata.height),
+        stream=payload,
+        data=payload,
+        colorspace=metadata.color_model,
+        bits=metadata.channels,
     )
 
 
@@ -642,35 +654,9 @@ class Page:
                     curve["object_type"] = "curve"
                     objects.setdefault("curve", []).append(curve)
             for image in self._adapter.images(program):
-                if image.bbox is None:
-                    continue
-                record = _drawing(
-                    self._adapter,
-                    SimpleNamespace(
-                        kind="image",
-                        bbox=image.bbox,
-                        sequence=image.sequence or 0,
-                        fill=None,
-                        stroke=None,
-                        fill_opacity=None,
-                        stroke_opacity=None,
-                        items=(),
-                        data={},
-                    ),
-                    self.initial_doctop,
-                )
-                record.update(
-                    {
-                        "width": image.width,
-                        "height": image.height,
-                        "srcsize": (image.width, image.height),
-                        "stream": image.data,
-                        "data": image.data,
-                        "colorspace": image.color_model,
-                        "bits": image.channels,
-                    }
-                )
-                objects.setdefault("image", []).append(record)
+                image_record = _image(self._adapter, image, self.initial_doctop)
+                if image_record is not None:
+                    objects.setdefault("image", []).append(image_record)
             if not objects.get("curve") and objects.get("rect"):
                 objects["curve"] = [{**rect, "object_type": "curve"} for rect in objects["rect"]]
             self._objects = objects

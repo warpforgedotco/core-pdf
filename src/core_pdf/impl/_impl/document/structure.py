@@ -67,10 +67,8 @@ MAX_PARENT_TREE_DEPTH = 100
 MAX_STRUCTURE_DEPTH = 200
 
 MatchFunc = Callable[["StructureElement"], bool]
-StructureDict: TypeAlias = PdfDict
 StructureAttributes: TypeAlias = dict[str, Any]
 ParentTree: TypeAlias = dict[int, Any]
-ParentTreeParents: TypeAlias = PdfArray
 
 
 def make_match_func(
@@ -119,7 +117,7 @@ class internal_StructureNode:
     def __init__(
         self,
         document: PdfDocument,
-        props: StructureDict,
+        props: PdfDict,
         *,
         internal_lookup: internal_PageLookup | None = None,
     ) -> None:
@@ -164,7 +162,7 @@ class StructureElement(internal_StructureNode):
     def __init__(
         self,
         document: PdfDocument,
-        props: StructureDict,
+        props: PdfDict,
         *,
         internal_lookup: internal_PageLookup | None = None,
     ) -> None:
@@ -386,7 +384,7 @@ class StructureTree(internal_StructureNode):
     def __init__(
         self,
         document: PdfDocument,
-        props: StructureDict,
+        props: PdfDict,
         *,
         internal_lookup: internal_PageLookup | None = None,
     ) -> None:
@@ -472,7 +470,7 @@ class PageStructure(Sequence[StructureElement | None]):
     __slots__ = ("elements", "page", "parents", "internal_lookup")
 
     page: PdfPage
-    parents: ParentTreeParents
+    parents: PdfArray
     elements: dict[int, StructureElement]
 
     def __init__(

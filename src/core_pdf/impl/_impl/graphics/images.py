@@ -117,174 +117,110 @@ class PreparedImage:
             raise ValueError("prepared image soft mask must be grayscale without alpha")
 
 
-class internal_ImagePreparation(ImageSource):
-    def prepare(self) -> PreparedImage | None:
-        """Decode and return an immutable prepared image."""
-        if not internal_image_color_space_paints(self.dictionary):
-            return None
-        is_stencil = self.dictionary.get("ImageMask") is True
-        dictionary = self.dictionary
+def internal_decode_mask(source: ImageSource) -> DecodedRaster | None:
+    width = parse_int(source.dictionary.get("Width"), 0)
+    height = parse_int(source.dictionary.get("Height"), 0)
+    if width <= 0 or height <= 0:
+        return None
+    try:
+        decoded = decode_stream_data(source.raw, source.dictionary)
+    except FilterError:
+        # Falling back to source.raw here unpacked the still-encoded bytes as
+        # a bitmap, painting compressed noise into the alpha plane. A mask
+        # that cannot be decoded is dropped instead. An unfiltered stream
+        # does not reach this path -- decode_stream_data returns it as-is.
+        return None
+    row_bytes = (width + 7) // 8
+    if len(decoded) < row_bytes * height:
+        return None
+    packed = numpy.frombuffer(decoded, dtype=numpy.uint8)[: row_bytes * height]
+    bits = numpy.unpackbits(packed).reshape(height, row_bytes * 8)[:, :width]
+    # ISO 32000-1 8.9.6.2: "If the Decode array is [ 0 1 ] (the default for
+    # an image mask), a sample value of 0 shall mark the page with the
+    # current colour, and a 1 shall leave the previous contents unchanged.
+    # If the Decode array is [ 1 0 ], these meanings shall be reversed."
+    # Alpha is the marking mask here, so sample 0 is the opaque one.
+    alpha = (1 - bits) * 255
+    decode = source.dictionary.get("Decode")
+    if isinstance(decode, (list, tuple)) and len(decode) >= 2:
         try:
-            rendering = image_color_rendering(dictionary, self.color_rendering)
-        except ValueError:
-            rendering = self.color_rendering
-        matte = None
-        alpha = None
-        if self.soft_mask is not None:
-            dictionary = dict(dictionary)
-            dictionary.pop("Mask", None)
-            filters = dictionary.get("Filter", ())
-            filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-            if self.soft_mask.dictionary.get("Matte") is not None and (
-                parse_int(dictionary.get("BitsPerComponent"), 8) == 16 or "JPXDecode" in filters
-            ):
-                try:
-                    matte, alpha = self.internal_decode_matte()
-                except (TypeError, ValueError):
-                    return None
-        decoded = (
-            self.internal_decode_mask()
-            if is_stencil
-            else decode_pdf_image(
-                self.raw,
-                dictionary,
-                matte=matte,
-                alpha=alpha,
-                semantic_context=self.semantic_context,
-                rendering=rendering,
-            )
-        )
-        if decoded is None:
-            return None
-        array: numpy.ndarray[Any, Any]
-        if isinstance(decoded.data, numpy.ndarray):
-            decoded_array = numpy.asarray(decoded.data)
-            array = decoded_array.reshape(decoded.height, decoded.width, decoded.channels)
-        else:
-            flat_array = numpy.frombuffer(decoded.data, dtype=numpy.uint8)
-            array = flat_array.reshape(decoded.height, decoded.width, decoded.channels)
-        color_model = "gray" if decoded.channels in {1, 2} else "rgb"
-        raster = ImageRaster(array, color_model)
-        if is_stencil:
-            return PreparedImage(raster, is_stencil=True)
-        soft_mask = self.internal_decode_soft_mask()
-        if soft_mask is None:
-            return PreparedImage(raster)
-        return PreparedImage(
-            self.internal_apply_soft_mask(raster, soft_mask),
-            soft_mask=soft_mask,
-        )
+            if float(decode[0]) > float(decode[1]):
+                alpha = 255 - alpha
+        except (TypeError, ValueError):
+            pass
+    array = numpy.zeros((height, width, 2), dtype=numpy.uint8)
+    array[:, :, 1] = alpha
+    return DecodedRaster(array, width, height, 2)
 
-    def decode(self) -> ImageRaster | None:
-        """Decode and return the canonical raster for extraction consumers."""
-        prepared = self.prepare()
-        return prepared.raster if prepared is not None else None
 
-    def internal_decode_mask(self) -> DecodedRaster | None:
-        width = parse_int(self.dictionary.get("Width"), 0)
-        height = parse_int(self.dictionary.get("Height"), 0)
-        if width <= 0 or height <= 0:
-            return None
-        try:
-            decoded = decode_stream_data(self.raw, self.dictionary)
-        except FilterError:
-            # Falling back to self.raw here unpacked the still-encoded bytes as
-            # a bitmap, painting compressed noise into the alpha plane. A mask
-            # that cannot be decoded is dropped instead. An unfiltered stream
-            # does not reach this path -- decode_stream_data returns it as-is.
-            return None
-        row_bytes = (width + 7) // 8
-        if len(decoded) < row_bytes * height:
-            return None
-        packed = numpy.frombuffer(decoded, dtype=numpy.uint8)[: row_bytes * height]
-        bits = numpy.unpackbits(packed).reshape(height, row_bytes * 8)[:, :width]
-        # ISO 32000-1 8.9.6.2: "If the Decode array is [ 0 1 ] (the default for
-        # an image mask), a sample value of 0 shall mark the page with the
-        # current colour, and a 1 shall leave the previous contents unchanged.
-        # If the Decode array is [ 1 0 ], these meanings shall be reversed."
-        # Alpha is the marking mask here, so sample 0 is the opaque one.
-        alpha = (1 - bits) * 255
-        decode = self.dictionary.get("Decode")
-        if isinstance(decode, (list, tuple)) and len(decode) >= 2:
-            try:
-                if float(decode[0]) > float(decode[1]):
-                    alpha = 255 - alpha
-            except (TypeError, ValueError):
-                pass
-        array = numpy.zeros((height, width, 2), dtype=numpy.uint8)
-        array[:, :, 1] = alpha
-        return DecodedRaster(array, width, height, 2)
+def internal_decode_soft_mask(source: ImageSource, soft_mask: SoftMask) -> ImageRaster | None:
+    mask_dictionary = dict(soft_mask.dictionary)
+    mask_dictionary.setdefault("ColorSpace", "DeviceGray")
+    mask_dictionary.setdefault("BitsPerComponent", 8)
+    prepared = prepare_image(
+        ImageSource(soft_mask.raw, mask_dictionary, semantic_context=source.semantic_context)
+    )
+    if prepared is None:
+        return None
+    mask = prepared.raster
+    if mask.color_model == "gray" and not mask.has_alpha:
+        return mask
+    return ImageRaster(mask.array[:, :, :1], "gray")
 
-    def internal_decode_soft_mask(self) -> ImageRaster | None:
-        soft_mask = self.soft_mask
-        if soft_mask is None:
-            return None
-        mask_dictionary = dict(soft_mask.dictionary)
-        mask_dictionary.setdefault("ColorSpace", "DeviceGray")
-        mask_dictionary.setdefault("BitsPerComponent", 8)
-        prepared = internal_ImagePreparation(
-            soft_mask.raw, mask_dictionary, semantic_context=self.semantic_context
-        ).prepare()
-        if prepared is None:
-            return None
-        mask = prepared.raster
-        if mask.color_model == "gray" and not mask.has_alpha:
-            return mask
-        return ImageRaster(mask.array[:, :, :1], "gray")
 
-    def internal_decode_matte(self) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
-        soft_mask = self.soft_mask
-        if soft_mask is None:
-            raise ValueError("missing image soft mask")
-        dictionary = soft_mask.dictionary
-        width = parse_int(dictionary.get("Width"), 0)
-        height = parse_int(dictionary.get("Height"), 0)
-        if (width, height) != (
-            parse_int(self.dictionary.get("Width"), 0),
-            parse_int(self.dictionary.get("Height"), 0),
+def internal_decode_matte(
+    source: ImageSource, soft_mask: SoftMask
+) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
+    dictionary = soft_mask.dictionary
+    width = parse_int(dictionary.get("Width"), 0)
+    height = parse_int(dictionary.get("Height"), 0)
+    if (width, height) != (
+        parse_int(source.dictionary.get("Width"), 0),
+        parse_int(source.dictionary.get("Height"), 0),
+    ):
+        # ISO 32000-1/2 11.6.5.2 requires matching dimensions with Matte.
+        raise ValueError("image matte requires matching soft mask dimensions")
+    decoded = internal_decode_image_samples(soft_mask.raw, dictionary)
+    decode = dictionary.get("Decode", (0, 1))
+    if isinstance(decoded, DecodedImage):
+        if decoded.channels != 1:
+            raise ValueError("invalid image soft mask channels")
+        integers = decoded.array.reshape(-1)
+        maximum = 65535 if integers.dtype == numpy.uint16 else 255
+        if decoded.source == "jpx" and not internal_decode_array_applies(
+            dictionary, source.semantic_context
         ):
-            # ISO 32000-1/2 11.6.5.2 requires matching dimensions with Matte.
-            raise ValueError("image matte requires matching soft mask dimensions")
-        decoded = internal_decode_image_samples(soft_mask.raw, dictionary)
-        decode = dictionary.get("Decode", (0, 1))
-        if isinstance(decoded, DecodedImage):
-            if decoded.channels != 1:
-                raise ValueError("invalid image soft mask channels")
-            integers = decoded.array.reshape(-1)
-            maximum = 65535 if integers.dtype == numpy.uint16 else 255
-            if decoded.source == "jpx" and not internal_decode_array_applies(
-                dictionary, self.semantic_context
-            ):
-                decode = (0, 1)
-        elif decoded is not None:
-            bits = parse_int(dictionary.get("BitsPerComponent"), 8)
-            integers = unpack_image_samples(decoded, bits, width, height, 1)
-            maximum = (1 << bits) - 1
-        else:
-            raise ValueError("invalid image soft mask samples")
-        if len(decode) != 2:
-            raise ValueError("invalid image soft mask Decode")
-        pairs = ((float(decode[0]), float(decode[1])),)
-        alpha = numpy.clip(decode_sample_values(integers, pairs, maximum).reshape(-1), 0, 1)
-        matte = tuple(float(value) for value in dictionary["Matte"])
-        return matte, alpha
+            decode = (0, 1)
+    elif decoded is not None:
+        bits = parse_int(dictionary.get("BitsPerComponent"), 8)
+        integers = unpack_image_samples(decoded, bits, width, height, 1)
+        maximum = (1 << bits) - 1
+    else:
+        raise ValueError("invalid image soft mask samples")
+    if len(decode) != 2:
+        raise ValueError("invalid image soft mask Decode")
+    pairs = ((float(decode[0]), float(decode[1])),)
+    alpha = numpy.clip(decode_sample_values(integers, pairs, maximum).reshape(-1), 0, 1)
+    matte = tuple(float(value) for value in dictionary["Matte"])
+    return matte, alpha
 
-    def internal_apply_soft_mask(self, raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
-        mask_array = mask.array[:, :, 0]
-        y = numpy.minimum(
-            mask.height - 1,
-            (numpy.arange(raster.height) * mask.height) // raster.height,
-        )
-        x = numpy.minimum(
-            mask.width - 1,
-            (numpy.arange(raster.width) * mask.width) // raster.width,
-        )
-        alpha = mask_array[y[:, None], x[None, :]]
-        channels = raster.channels - int(raster.has_alpha)
-        array = numpy.empty((raster.height, raster.width, channels + 1), dtype=numpy.uint8)
-        array[:, :, :channels] = raster.array[:, :, :channels]
-        array[:, :, channels] = alpha
-        return ImageRaster(array, raster.color_model)
+
+def internal_apply_soft_mask(raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
+    mask_array = mask.array[:, :, 0]
+    y = numpy.minimum(
+        mask.height - 1,
+        (numpy.arange(raster.height) * mask.height) // raster.height,
+    )
+    x = numpy.minimum(
+        mask.width - 1,
+        (numpy.arange(raster.width) * mask.width) // raster.width,
+    )
+    alpha = mask_array[y[:, None], x[None, :]]
+    channels = raster.channels - int(raster.has_alpha)
+    array = numpy.empty((raster.height, raster.width, channels + 1), dtype=numpy.uint8)
+    array[:, :, :channels] = raster.array[:, :, :channels]
+    array[:, :, channels] = alpha
+    return ImageRaster(array, raster.color_model)
 
 
 def internal_canonical_image_array(
@@ -520,13 +456,63 @@ __all__ = (
 
 def prepare_image(source: ImageSource) -> PreparedImage | None:
     """Prepare a PDF image using the configured device and recovery behavior."""
-    return internal_ImagePreparation(
-        source.raw,
-        source.dictionary,
-        soft_mask=source.soft_mask,
-        semantic_context=source.semantic_context,
-        color_rendering=source.color_rendering,
-    ).prepare()
+    if not internal_image_color_space_paints(source.dictionary):
+        return None
+    is_stencil = source.dictionary.get("ImageMask") is True
+    dictionary = source.dictionary
+    try:
+        rendering = image_color_rendering(dictionary, source.color_rendering)
+    except ValueError:
+        rendering = source.color_rendering
+    matte = None
+    alpha = None
+    soft_mask_source = source.soft_mask
+    if soft_mask_source is not None:
+        dictionary = dict(dictionary)
+        dictionary.pop("Mask", None)
+        filters = dictionary.get("Filter", ())
+        filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+        if soft_mask_source.dictionary.get("Matte") is not None and (
+            parse_int(dictionary.get("BitsPerComponent"), 8) == 16 or "JPXDecode" in filters
+        ):
+            try:
+                matte, alpha = internal_decode_matte(source, soft_mask_source)
+            except (TypeError, ValueError):
+                return None
+    decoded = (
+        internal_decode_mask(source)
+        if is_stencil
+        else decode_pdf_image(
+            source.raw,
+            dictionary,
+            matte=matte,
+            alpha=alpha,
+            semantic_context=source.semantic_context,
+            rendering=rendering,
+        )
+    )
+    if decoded is None:
+        return None
+    array: numpy.ndarray[Any, Any]
+    if isinstance(decoded.data, numpy.ndarray):
+        decoded_array = numpy.asarray(decoded.data)
+        array = decoded_array.reshape(decoded.height, decoded.width, decoded.channels)
+    else:
+        flat_array = numpy.frombuffer(decoded.data, dtype=numpy.uint8)
+        array = flat_array.reshape(decoded.height, decoded.width, decoded.channels)
+    color_model = "gray" if decoded.channels in {1, 2} else "rgb"
+    raster = ImageRaster(array, color_model)
+    if is_stencil:
+        return PreparedImage(raster, is_stencil=True)
+    if soft_mask_source is None:
+        return PreparedImage(raster)
+    soft_mask = internal_decode_soft_mask(source, soft_mask_source)
+    if soft_mask is None:
+        return PreparedImage(raster)
+    return PreparedImage(
+        internal_apply_soft_mask(raster, soft_mask),
+        soft_mask=soft_mask,
+    )
 
 
 def decode_image(source: ImageSource) -> ImageRaster | None:

@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from core_pdf.impl._impl.model.geometry import RectBox, bbox_union, points_bbox
-from core_pdf.impl._impl.model.glyphs import GlyphObservation
+from core_pdf.impl._impl.model.geometry import bbox_union, points_bbox
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -40,15 +39,13 @@ class CapturedTextBoundary:
     knockout: bool = True
 
 
+@dataclass(slots=True, eq=False, repr=False)
 class CapturedLine:
-    __slots__ = ("x0", "y0", "x1", "y1", "line_width")
-
-    def __init__(self, x0: float, y0: float, x1: float, y1: float, line_width: float = 1.0) -> None:
-        self.x0 = x0
-        self.y0 = y0
-        self.x1 = x1
-        self.y1 = y1
-        self.line_width = line_width
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    line_width: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +250,7 @@ class CapturedDrawing:
     kind: str = "fill"
     items: tuple[DrawingItem, ...] | list[DrawingItem] = internal_EMPTY_DRAWING_ITEMS
     path: CapturedPath | None = None
-    bbox: RectBox | None = None
+    bbox: Rectangle | None = None
     stream_order: int = 0
     xobject_depth: int = 0
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
@@ -292,24 +289,19 @@ class CapturedDrawing:
         )
 
     @property
-    def rect(self) -> RectBox | None:
-        if self.bbox is not None:
-            return self.bbox.normalize()
-        if self.path is None:
-            return None
-        bbox = self.path.bbox()
+    def rect(self) -> Rectangle | None:
+        """Normalized bounds: the explicit bbox, else the path's own bounds."""
+        bbox = self.bbox
         if bbox is None:
-            return None
+            if self.path is None:
+                return None
+            bbox = self.path.bbox()
+            if bbox is None:
+                return None
         x0, y0, x1, y1 = bbox
-        return RectBox(
-            x0,
-            y0,
-            x1,
-            y1,
-            seqno=self.seqno,
-            fill=self.fill,
-            fill_opacity=self.fill_opacity,
-        )
+        if x0 <= x1 and y0 <= y1:
+            return bbox
+        return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
 
 
 def marker_drawing(
@@ -355,18 +347,14 @@ class ShadingPattern:
 class TilingPattern:
     """A PatternType 1 paint: one captured cell plus the step to repeat it by.
 
-    Holds the captured records themselves. This used to be a nested dict of
-    string keys cast to PdfDict, which meant the renderer re-parsed by key and
-    every projected field had to be listed by hand on both sides.
+    The cell is a complete ``CapturedProgram`` built by capture after
+    recolouring and glyph filtering, so rendering appends it directly.
     """
 
     bbox: Rectangle
     x_step: float
     y_step: float
-    drawings: list[CapturedDrawing]
-    glyphs: list[GlyphObservation]
-    inline_images: list[CapturedInlineImage]
-    text_boundaries: list[CapturedTextBoundary] = field(default_factory=list, kw_only=True)
+    program: CapturedProgram
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

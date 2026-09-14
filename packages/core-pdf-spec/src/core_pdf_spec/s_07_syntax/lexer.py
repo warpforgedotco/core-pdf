@@ -255,7 +255,11 @@ class PdfLexer:
         try:
             return binascii.unhexlify(filtered)
         except binascii.Error:
-            raise PdfParseError("invalid hex string") from None
+            return self.handle_invalid_hex_string(filtered)
+
+    def handle_invalid_hex_string(self, filtered: bytes) -> bytes:
+        """Extension point for hex string data that stays invalid without whitespace."""
+        raise PdfParseError("invalid hex string") from None
 
     def read_name(self) -> memoryview:
         self.advance(1)
@@ -277,18 +281,27 @@ class PdfLexer:
                 out.append(byte)
                 i += 1
                 continue
-            if i + 2 >= n:
-                raise PdfParseError("invalid hexadecimal escape in name")
-            hi = HEX_VALUE[data[i + 1]]
-            lo = HEX_VALUE[data[i + 2]]
-            if hi == 255 or lo == 255:
-                raise PdfParseError("invalid hexadecimal escape in name")
-            decoded = (hi << 4) | lo
-            if decoded == 0:
-                raise PdfParseError("null byte in PDF name")
+            hi = HEX_VALUE[data[i + 1]] if i + 1 < n else 255
+            lo = HEX_VALUE[data[i + 2]] if i + 2 < n else 255
+            decoded = None if hi == 255 or lo == 255 else (hi << 4) | lo
+            if decoded is None or decoded == 0:
+                i = self.handle_invalid_name_escape(data, i, decoded, out)
+                continue
             out.append(decoded)
             i += 3
         return memoryview(bytes(out))
+
+    def handle_invalid_name_escape(
+        self, data: bytes, index: int, decoded: int | None, out: bytearray
+    ) -> int:
+        """Extension point for a ``#`` escape at ``index`` that is malformed or encodes NUL.
+
+        ``decoded`` is ``None`` for a malformed escape. Return the index to continue
+        from; ISO 32000-1, 7.3.5 rejects both cases.
+        """
+        if decoded is None:
+            raise PdfParseError("invalid hexadecimal escape in name")
+        raise PdfParseError("null byte in PDF name")
 
     def apply_decipher(self, value: bytes | memoryview, dictionary: PdfDict | None = None) -> bytes:
         if self.decipher is None or self.current_obj_num is None:
@@ -565,43 +578,49 @@ class PdfLexer:
             self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated dictionary")
-            if (
-                self.raw_data[self.pos] == 62
-                and self.pos + 1 < self.data_len
-                and self.raw_data[self.pos + 1] == 62
-            ):
+            if self.at_dictionary_end(self.pos):
                 self.advance(2)
                 break
             if self.raw_data[self.pos] != 47:
-                raise PdfParseError("dictionary keys must be names")
+                if self.handle_dictionary_key_error():
+                    if self.pos >= self.data_len:
+                        raise PdfParseError("unterminated dictionary")
+                    if self.at_dictionary_end(self.pos):
+                        self.advance(2)
+                        break
+                if self.raw_data[self.pos] != 47:
+                    raise PdfParseError("dictionary keys must be names")
 
             key_bytes = self.read_name()
 
             key = PdfName_of(key_bytes)
             if key in values:
-                # ISO 32000-1/2, 7.3.7: keys are unique after name escape decoding.
-                raise PdfParseError("duplicate dictionary key")
+                self.handle_duplicate_dictionary_key(key)
             value_start = self.pos
-            if deciphering and key == "Contents":
-                value_pos = self.skip_ignored_at(value_start)
-                if (
-                    value_pos < self.data_len
-                    and self.raw_data[value_pos] == 60
-                    and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
-                ):
-                    # ISO 32000-2:2020, 7.6.2 excludes a Signature
-                    # dictionary's hexadecimal Contents value from
-                    # encryption. Parse it raw until the whole dictionary
-                    # identifies its type; Type may follow Contents and
-                    # defaults to Sig under Table 255.
-                    self.pos = value_pos
-                    values[key] = PdfString(self.read_hex_string(), is_literal=False)
-                    contents_was_parsed_without_decipher = True
+            try:
+                if deciphering and key == "Contents":
+                    value_pos = self.skip_ignored_at(value_start)
+                    if (
+                        value_pos < self.data_len
+                        and self.raw_data[value_pos] == 60
+                        and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
+                    ):
+                        # ISO 32000-2:2020, 7.6.2 excludes a Signature
+                        # dictionary's hexadecimal Contents value from
+                        # encryption. Parse it raw until the whole dictionary
+                        # identifies its type; Type may follow Contents and
+                        # defaults to Sig under Table 255.
+                        self.pos = value_pos
+                        values[key] = PdfString(self.read_hex_string(), is_literal=False)
+                        contents_was_parsed_without_decipher = True
+                    else:
+                        values[key] = self.parse_object()
+                        contents_was_parsed_without_decipher = False
                 else:
                     values[key] = self.parse_object()
-                    contents_was_parsed_without_decipher = False
-            else:
-                values[key] = self.parse_object()
+            except PdfParseError:
+                if not self.handle_dictionary_entry_error(value_start):
+                    raise
 
         if contents_was_parsed_without_decipher:
             signature_type = values.get("Type")
@@ -615,6 +634,30 @@ class PdfLexer:
                     is_literal=raw_contents.is_literal,
                 )
         return values
+
+    def at_dictionary_end(self, pos: int) -> bool:
+        data = self.raw_data
+        return data[pos] == 62 and pos + 1 < self.data_len and data[pos + 1] == 62
+
+    def handle_dictionary_key_error(self) -> bool:
+        """Extension point when a dictionary key is not a name.
+
+        Return ``True`` after moving ``pos`` to a recovered key or dictionary end;
+        the default leaves the strict error to the caller.
+        """
+        return False
+
+    def handle_duplicate_dictionary_key(self, key: PdfName) -> None:
+        """Extension point for a repeated key; ISO 32000-1/2, 7.3.7 requires unique keys."""
+        raise PdfParseError("duplicate dictionary key")
+
+    def handle_dictionary_entry_error(self, value_start: int) -> bool:
+        """Extension point when the value starting at ``value_start`` fails to parse.
+
+        ``pos`` is where parsing failed. Return ``True`` after moving ``pos`` to a
+        recovered key or dictionary end; the default re-raises the error.
+        """
+        return False
 
     def parse_stream(self, dictionary: PdfDict) -> PdfStream:
         self.read_stream_eol()

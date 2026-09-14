@@ -6,7 +6,6 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl._impl.capture.program import CapturedProgram
 from core_pdf.impl._impl.capture.records import (
     CapturedPath,
     ShadingPattern,
@@ -14,7 +13,7 @@ from core_pdf.impl._impl.capture.records import (
 )
 from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl._impl.graphics.shading import PreparedShading, prepare_shading
-from core_pdf.impl._impl.model.geometry import RectBox, rect_tuple
+from core_pdf.impl._impl.model.geometry import rect_tuple
 from core_pdf.impl._impl.render.blend import (
     internal_clamp01,
     internal_color_component,
@@ -49,16 +48,7 @@ def internal_tiling_cell(
     )
     cell_clip = CapturedPath()
     cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
-    append_captured_program(
-        display,
-        CapturedProgram(
-            drawings=tuple(pattern.drawings),
-            glyphs=tuple(pattern.glyphs),
-            inline_images=tuple(pattern.inline_images),
-            text_boundaries=tuple(pattern.text_boundaries),
-        ),
-        include_text=True,
-    )
+    append_captured_program(display, pattern.program, include_text=True)
     target.tiling_cell_cache[key] = (pattern, display, cell_clip)
     return display, cell_clip
 
@@ -136,12 +126,13 @@ def internal_tiling_pattern_uses_normal_blends(
         return False
     active.add(identity)
     try:
-        modes = [drawing.blend_mode for drawing in pattern.drawings]
-        modes.extend(glyph.blend_mode for glyph in pattern.glyphs)
-        modes.extend(image.blend_mode for image in pattern.inline_images)
+        program = pattern.program
+        modes = [drawing.blend_mode for drawing in program.drawings]
+        modes.extend(glyph.blend_mode for glyph in program.glyphs)
+        modes.extend(image.blend_mode for image in program.inline_images)
         if any(mode is not None and mode.casefold() != "normal" for mode in modes):
             return False
-        for drawing in pattern.drawings:
+        for drawing in program.drawings:
             for nested in (drawing.fill_pattern, drawing.stroke_pattern):
                 if isinstance(
                     nested, TilingPattern
@@ -269,22 +260,13 @@ class internal_PatternTargetMixin:
         y_step = abs(pattern.y_step)
         if x_step <= 0.0 or y_step <= 0.0:
             return False
-        drawings = pattern.drawings
-        glyphs = pattern.glyphs
-        if not drawings and not glyphs and not pattern.inline_images:
+        program = pattern.program
+        if not program.drawings and not program.glyphs and not program.inline_images:
             return False
         display, cell_clip = internal_tiling_cell(self, pattern)
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         target_box_type = type(target_box)
-        if target_box_type is RectBox:
-            target_rect = cast(RectBox, target_box)
-            x0, y0, x1, y1 = (
-                target_rect.x0,
-                target_rect.y0,
-                target_rect.x1,
-                target_rect.y1,
-            )
-        elif target_box_type is list or target_box_type is tuple:
+        if target_box_type is list or target_box_type is tuple:
             target_box = cast(list[Any] | tuple[Any, ...], target_box)
             if len(target_box) == 4:
                 try:

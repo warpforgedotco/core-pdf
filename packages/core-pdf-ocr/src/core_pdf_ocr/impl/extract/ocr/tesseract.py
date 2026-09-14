@@ -443,11 +443,9 @@ def internal_recognize(
     )
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
-    polygons: list[tuple[float, ...]] = []
     confidences: list[float] = []
     filtered_texts: list[str] = []
     filtered_boxes: list[tuple[float, float, float, float]] = []
-    filtered_polygons: list[tuple[float, ...]] = []
     filtered_confidences: list[float] = []
     text_heights: list[float] = []
     line_breaks: list[bool] = []
@@ -483,17 +481,6 @@ def internal_recognize(
                 texts.append(text)
                 mapped_box = internal_map_ocr_box(task, (x0, y0, x1, y1))
                 boxes.append(mapped_box)
-                polygon = (
-                    mapped_box[0],
-                    mapped_box[1],
-                    mapped_box[2],
-                    mapped_box[1],
-                    mapped_box[2],
-                    mapped_box[3],
-                    mapped_box[0],
-                    mapped_box[3],
-                )
-                polygons.append(polygon)
                 confidences.append(confidence)
                 line_breaks.append(pending_line_break)
                 pending_line_break = False
@@ -504,7 +491,6 @@ def internal_recognize(
                 ):
                     filtered_texts.append(filtered_text)
                     filtered_boxes.append(mapped_box)
-                    filtered_polygons.append(polygon)
                     filtered_confidences.append(confidence)
                     filtered_line_breaks.append(line_breaks[-1])
                 text_heights.append(float(y1 - y0))
@@ -526,7 +512,6 @@ def internal_recognize(
         texts,
         boxes,
         source=ObservationSource.OCR,
-        polygon=polygons,
         confidence=confidences,
         sequence=range(len(texts)),
         line_break_before=line_breaks,
@@ -544,7 +529,6 @@ def internal_recognize(
         filtered_texts,
         filtered_boxes,
         source=ObservationSource.OCR,
-        polygon=filtered_polygons,
         confidence=filtered_confidences,
         sequence=range(len(filtered_texts)),
         line_break_before=filtered_line_breaks,

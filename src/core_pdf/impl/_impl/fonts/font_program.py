@@ -532,15 +532,11 @@ class CFFFont(PdfCFFFont):
         geometry = self.internal_glyph_geometry_for_gid(glyph_id, bounds_only=True)
         return geometry[1]
 
-    def glyph_contours_for_gid(self, glyph_id: int) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Return the Type 2 outline normalized into PDF's 1000-unit glyph space."""
-        return self.internal_glyph_geometry_for_gid(glyph_id)[0]
-
     def normalized_glyph_contours(
         self, glyph_id: int
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Return contours through the shared embedded-program geometry contract."""
-        return self.glyph_contours_for_gid(glyph_id)
+        """Return the Type 2 outline normalized into PDF's 1000-unit glyph space."""
+        return self.internal_glyph_geometry_for_gid(glyph_id)[0]
 
 
 def internal_contours_bbox(

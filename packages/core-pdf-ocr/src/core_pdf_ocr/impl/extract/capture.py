@@ -398,12 +398,8 @@ def internal_capture_with_newstroke_text(
         text_quality=text_quality,
         all_text_quality=text_quality,
         painted_native_characters=characters,
-        painted_text_coverage=text_coverage,
-        vector_text_characters=characters,
         vector_text_candidate_segments=decoded.candidate_segments,
         vector_text_matched_segments=decoded.matched_segments,
-        vector_text_sequences=decoded.sequences,
-        vector_text_maximum_error=decoded.maximum_error,
         vector_text_trusted=True,
     )
     return replace(

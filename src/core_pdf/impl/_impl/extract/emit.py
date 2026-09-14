@@ -12,10 +12,7 @@ from core_pdf.impl._impl.extract.block_layout import (
     internal_has_repeated_block_columns,
     layout_element_order,
 )
-from core_pdf.impl._impl.extract.contracts import (
-    ParsedBlock,
-    ParsedLine,
-)
+from core_pdf.impl._impl.extract.contracts import ParsedBlock
 from core_pdf.impl._impl.extract.table_reconcile import (
     internal_project_text_and_tables,
 )
@@ -114,7 +111,7 @@ def internal_remove_off_page_blocks(
 
 
 def internal_line_decoration_flags(
-    line: ParsedLine,
+    line: TextLine,
     drawings: tuple[CapturedDrawing, ...],
     *,
     decoration_boxes: tuple[tuple[float, float, float, float], ...] | None = None,
@@ -174,34 +171,24 @@ def internal_normalized_blocks(
     blocks: list[Block] = []
     for index, parsed_block in enumerate(parsed_blocks):
         confidences = tuple(
-            line.confidence
-            for line in parsed_block.lines
-            if line.confidence is not None and math.isfinite(line.confidence)
+            parsed.line.confidence
+            for parsed in parsed_block.lines
+            if parsed.line.confidence is not None and math.isfinite(parsed.line.confidence)
         )
-        sources = tuple(dict.fromkeys(line.source for line in parsed_block.lines))
+        sources = tuple(dict.fromkeys(parsed.line.source for parsed in parsed_block.lines))
         lines: list[TextLine] = []
-        for line in parsed_block.lines:
+        for parsed in parsed_block.lines:
             flags = internal_line_decoration_flags(
-                line,
+                parsed.line,
                 drawings,
                 decoration_boxes=decoration_boxes,
             )
             lines.append(
-                TextLine(
-                    line.text,
-                    bbox=line.bbox,
-                    source=line.source,
-                    confidence=line.confidence,
-                    contributing_sources=(line.source,),
-                    bold=line.bold,
-                    italic=line.italic,
+                replace(
+                    parsed.line,
+                    contributing_sources=(parsed.line.source,),
                     underline=flags["underline"],
                     strikeout=flags["strikeout"],
-                    mark=line.mark,
-                    superscript=line.superscript,
-                    subscript=line.subscript,
-                    spans=line.spans,
-                    words=line.words,
                 )
             )
         blocks.append(

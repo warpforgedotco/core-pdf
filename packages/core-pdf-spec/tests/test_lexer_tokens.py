@@ -292,3 +292,17 @@ def test_identifier_helper_and_header_recognition_share_legacy_rules() -> None:
         )
     finally:
         raw.release()
+
+
+def test_dictionary_value_error_leaves_cursor_at_failure() -> None:
+    # The strict lexer declines recovery; ``pos`` stays where parsing failed so
+    # callers can report or resume from the offending value, not its start.
+    lexer = PdfLexer(b"<< /A <GG> >>")
+    with pytest.raises(PdfParseError, match="invalid hex string"):
+        lexer.parse_object()
+    assert lexer.pos == 10
+
+    lexer = PdfLexer(b"<< /A (open >>")
+    with pytest.raises(PdfParseError, match="unterminated string"):
+        lexer.parse_object()
+    assert lexer.pos == len(b"<< /A (open >>")

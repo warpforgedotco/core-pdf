@@ -11,6 +11,7 @@ from math import hypot
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl._impl.capture.paths import flatten_path
+from core_pdf.impl._impl.capture.program import CapturedProgram
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.capture.interpreter import TextState
@@ -51,7 +52,7 @@ from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints
 from core_pdf.impl._impl.graphics.soft_masks import image_overrides_graphics_soft_mask
-from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
+from core_pdf.impl._impl.model.geometry import intersect_bbox, transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
     GlyphObservation,
 )
@@ -650,8 +651,7 @@ class RecordingMethods(RecoveringTextState):
             bbox = None
             quad = None
             if width > 0 and height > 0:
-                bounds, quad = unit_square_placement(self.graphics.ctm)
-                bbox = RectBox(*bounds)
+                bbox, quad = unit_square_placement(self.graphics.ctm)
             source, smask_alpha = image_source_from_stream(
                 xobj, self.resolver, color_rendering=self.graphics.color_rendering
             )
@@ -1052,10 +1052,12 @@ class RecordingMethods(RecoveringTextState):
                 pattern.bbox,
                 pattern.x_step,
                 pattern.y_step,
-                nested.drawings,
-                [glyph for glyph in nested.glyphs if glyph.has_paint],
-                nested.inline_images,
-                text_boundaries=nested.text_boundaries,
+                CapturedProgram(
+                    glyphs=tuple(glyph for glyph in nested.glyphs if glyph.has_paint),
+                    drawings=tuple(nested.drawings),
+                    inline_images=tuple(nested.inline_images),
+                    text_boundaries=tuple(nested.text_boundaries),
+                ),
             )
         self.capture_patterns[key] = (pattern, result)
         return result

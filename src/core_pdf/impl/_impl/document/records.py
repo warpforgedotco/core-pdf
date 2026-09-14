@@ -3,61 +3,37 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from core_pdf.impl.types import PdfName, PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
+@dataclass(slots=True, eq=False, repr=False)
 class RawOutlineItem:
-    __slots__ = ("title", "level", "dest", "page_index", "count")
-
-    def __init__(
-        self,
-        title: str,
-        level: int,
-        dest: PdfObject | str | None,
-        page_index: int | None,
-        count: int,
-    ) -> None:
-        self.title = title
-        self.level = level
-        self.dest = dest
-        self.page_index = page_index
-        self.count = count
+    title: str
+    level: int
+    dest: PdfObject | str | None
+    page_index: int | None
+    count: int
 
 
+@dataclass(slots=True, eq=False, repr=False)
 class RawNamedDestination:
-    __slots__ = ("page_index", "type", "args", "raw")
-
-    def __init__(
-        self,
-        page_index: int | None,
-        type: str | None,
-        args: PdfArray,
-        raw: PdfObject | str,
-    ) -> None:
-        self.page_index = page_index
-        self.type = type
-        self.args = args
-        self.raw = raw
+    page_index: int | None
+    type: str | None
+    args: PdfArray
+    raw: PdfObject | str
 
 
+@dataclass(slots=True, eq=False, repr=False)
 class RawEmbeddedFile:
-    __slots__ = ("name", "filename", "filespec", "stream", "data")
-
-    def __init__(
-        self,
-        name: str,
-        filename: str,
-        filespec: PdfDict,
-        stream: PdfStream,
-        data: bytes,
-    ) -> None:
-        self.name = name
-        self.filename = filename
-        self.filespec = filespec
-        self.stream = stream
-        self.data = data
+    name: str
+    filename: str
+    filespec: PdfDict
+    stream: PdfStream
+    data: bytes
 
 
 class RawAnnotation:

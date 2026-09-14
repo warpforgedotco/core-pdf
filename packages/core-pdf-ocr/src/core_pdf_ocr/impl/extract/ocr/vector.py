@@ -347,7 +347,6 @@ def internal_remap_stroked_vector_observations(
     """Translate montage observations back through their containing cells."""
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
-    polygons: list[tuple[float, ...]] = []
     confidences: list[float] = []
     sequences: list[int] = []
     references: list[Any | None] = []
@@ -373,18 +372,6 @@ def internal_remap_stroked_vector_observations(
         mapped = (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
         texts.append(observations.text[index])
         boxes.append(mapped)
-        polygons.append(
-            (
-                mapped[0],
-                mapped[1],
-                mapped[2],
-                mapped[1],
-                mapped[2],
-                mapped[3],
-                mapped[0],
-                mapped[3],
-            )
-        )
         confidences.append(float(observations.confidence[index]))
         sequences.append(cell.drawing_indexes[0])
         references.append(observations.references[index])
@@ -392,7 +379,6 @@ def internal_remap_stroked_vector_observations(
         ObservationBatch.from_columns(
             texts,
             boxes,
-            polygon=polygons,
             source=ObservationSource.OCR,
             confidence=confidences,
             sequence=sequences,
@@ -468,7 +454,6 @@ def internal_stroked_vector_decoded_batch(
     return ObservationBatch.from_columns(
         (observation.text for observation in observations),
         boxes,
-        polygon=((box[0], box[1], box[2], box[1], box[2], box[3], box[0], box[3]) for box in boxes),
         source=ObservationSource.STRUCTURE,
         confidence=(observation.confidence for observation in observations),
         sequence=(observation.first_drawing for observation in observations),

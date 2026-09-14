@@ -718,5 +718,5 @@ class OperatorTextProjection:
         return "".join(state.output_parts)
 
     def extract_text(self) -> str:
-        resources = self.page.resolve_resources()
+        resources = self.page.resources
         return self.internal_extract(tuple(self.page.content_streams), resources)

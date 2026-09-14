@@ -57,15 +57,6 @@ class internal_FontEnrichment:
     )
 
 
-@dataclass(frozen=True, slots=True)
-class internal_StrokedEnrichment:
-    """Selection-local recognition replacements learned across compatible pages."""
-
-    recognition_by_index: Mapping[int, RecognitionResult] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
-
-
 def internal_unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
     counts: Counter[object] = Counter()
     quality = capture.evidence.text_quality
@@ -340,15 +331,18 @@ def internal_prepare_document_stroked_mappings(
     extractions: tuple[internal_PageExtraction, ...],
     captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
-) -> internal_StrokedEnrichment:
-    """OCR the richest flattened-font page, then decode compatible pages structurally."""
+) -> Mapping[int, RecognitionResult]:
+    """OCR the richest flattened-font page, then decode compatible pages structurally.
+
+    Returns selection-local recognition replacements learned across compatible pages.
+    """
     indexes = tuple(
         index
         for index, capture in enumerate(captures)
         if capture.evidence.stroked_vector_text.trusted
     )
     if len(indexes) < 2:
-        return internal_StrokedEnrichment()
+        return MappingProxyType({})
     ordered = tuple(
         sorted(
             indexes,
@@ -383,19 +377,17 @@ def internal_prepare_document_stroked_mappings(
                 cast(tuple[tuple[GlyphSignature, str], ...], learned),
             )
         recognition_by_index[page_index] = recognition
-    return internal_StrokedEnrichment(
-        recognition_by_index=MappingProxyType(recognition_by_index),
-    )
+    return MappingProxyType(recognition_by_index)
 
 
 def internal_apply_stroked_enrichment(
     extractions: tuple[internal_PageExtraction, ...],
-    stroked: internal_StrokedEnrichment,
+    recognition_by_index: Mapping[int, RecognitionResult],
 ) -> tuple[internal_PageExtraction, ...]:
-    if not stroked.recognition_by_index:
+    if not recognition_by_index:
         return extractions
     enriched = list(extractions)
-    for index, recognition in stroked.recognition_by_index.items():
+    for index, recognition in recognition_by_index.items():
         base = extractions[index]
         enriched[index] = internal_PageExtraction(
             base.page,

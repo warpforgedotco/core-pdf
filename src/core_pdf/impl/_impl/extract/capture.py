@@ -409,7 +409,6 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
         return ObservationBatch.empty()
     n = len(runs)
     texts = [run.text for run in runs]
-    polygons = numpy.full((n, 8), numpy.nan, dtype=numpy.float32)
     source = numpy.full(n, int(ObservationSource.NATIVE), dtype=numpy.uint8)
 
     # Build columns from Python lists in one pass; per-element numpy stores
@@ -443,7 +442,6 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
     return ObservationBatch(
         text=tuple(texts),
         bbox=boxes,
-        polygon=polygons,
         source=source,
         confidence=confidence,
         sequence=sequence,
@@ -587,11 +585,6 @@ def internal_capture_from_program(
         1.0,
         float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
     )
-    numpy.multiply(box_areas, painted_mask, out=coverage_areas)
-    painted_text_coverage = min(
-        1.0,
-        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
-    )
     visible_image_areas: list[float] = []
     visible_image_boxes: list[tuple[float, float, float, float]] = []
     for drawing in drawings:
@@ -657,7 +650,6 @@ def internal_capture_from_program(
             all_text_quality=all_text_quality,
             glyphs=glyph_evidence,
             painted_native_characters=painted_native_characters,
-            painted_text_coverage=painted_text_coverage,
             trusted_hidden_text=trusted_hidden_text,
         ),
     )

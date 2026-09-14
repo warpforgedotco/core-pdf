@@ -10,22 +10,19 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
-from core_pdf.impl._impl.document.recovery.scanning import (
-    matches_keyword_with_one_substitution,
-    read_literal_string,
-)
+from core_pdf.impl._impl.document.recovery.scanning import matches_keyword_with_one_substitution
 from core_pdf.impl._impl.graphics.stream_decoding import decode_stream_data
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
-from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf_spec.s_07_syntax.types import Decipher
 from core_pdf_spec.s_07_syntax_primitives.numbers import is_integer_token, parse_integer_token
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
-    EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
     FindableSizedBuffer,
     looks_like_indirect_object_header,
+    read_literal_string,
 )
 from core_pdf_spec.s_07_syntax_primitives.tokens import (
     WHITESPACE,
@@ -199,9 +196,18 @@ class PdfLexer(SyntaxLexer):
     def handle_empty_indirect_object(self) -> object:
         return None
 
-    def internal_at_dictionary_end(self, pos: int) -> bool:
-        data = self.raw_data
-        return data[pos] == 62 and pos + 1 < self.data_len and data[pos + 1] == 62
+    def handle_invalid_name_escape(
+        self, data: bytes, index: int, decoded: int | None, out: bytearray
+    ) -> int:
+        # A malformed escape keeps its literal '#'; an escaped NUL is retained.
+        if decoded is None:
+            out.append(35)
+            return index + 1
+        out.append(decoded)
+        return index + 3
+
+    def handle_duplicate_dictionary_key(self, key: PdfName) -> None:
+        pass
 
     def handle_dictionary_key_error(self) -> bool:
         if not (self.recover_malformed_objects and self.recover_dictionary_structure):
@@ -214,7 +220,7 @@ class PdfLexer(SyntaxLexer):
             if byte == 47:
                 self.pos = pos
                 return True
-            if byte == 62 and self.internal_at_dictionary_end(pos):
+            if byte == 62 and self.at_dictionary_end(pos):
                 self.pos = pos
                 return True
             if data[pos : pos + 6] == b"endobj":
@@ -222,15 +228,16 @@ class PdfLexer(SyntaxLexer):
             pos += 1
         return False
 
-    def handle_dictionary_entry_error(self) -> bool:
+    def handle_dictionary_entry_error(self, value_start: int) -> bool:
+        self.pos = value_start
         if not (self.recover_malformed_objects and self.recover_dictionary_structure):
             return False
         data = self.raw_data
-        pos = self.pos
+        pos = value_start
         end = min(self.data_len, pos + 512)
         while pos < end:
             byte = data[pos]
-            if byte == 62 and self.internal_at_dictionary_end(pos):
+            if byte == 62 and self.at_dictionary_end(pos):
                 self.pos = pos
                 return True
             if data[pos : pos + 6] == b"endobj":
@@ -451,145 +458,6 @@ class PdfLexer(SyntaxLexer):
             self.pos = next_pos
             return self.parse_stream(dictionary)
         return dictionary
-
-    def read_hex_string(self) -> bytes:
-        self.advance(1)
-        start = self.pos
-        source_buffer = self.source_buffer
-        marker = -1
-        if source_buffer is not None:
-            marker = source_buffer.find(b">", start)
-        else:
-            match = HEX_STRING_END_RE.search(self.raw_data, start)
-            if match is not None:
-                marker = match.start()
-        if marker < 0:
-            raise PdfParseError("unterminated hex string")
-
-        raw = (
-            source_buffer[start:marker]
-            if source_buffer is not None
-            else bytes(self.raw_data[start:marker])
-        )
-        self.pos = marker + 1
-
-        if not (len(raw) & 1):
-            try:
-                return binascii.unhexlify(raw)
-            except binascii.Error:
-                pass
-
-        filtered = raw.translate(EMPTY_TRANSLATE_TABLE, WHITESPACE)
-        if len(filtered) & 1:
-            filtered += b"0"
-        try:
-            return binascii.unhexlify(filtered)
-        except binascii.Error:
-            return self.handle_invalid_hex_string(filtered)
-
-    def read_name(self) -> memoryview:
-        self.advance(1)
-        match = self.lexical_rules.separator_re.search(self.raw_data, self.pos)
-        end = self.data_len if match is None else match.start()
-
-        start = self.pos
-        self.pos = end
-        raw = self.raw_data[start:end]
-        if not self.lexical_rules.name_escapes or 35 not in raw:
-            return raw
-        data = raw.tobytes()
-        out = bytearray()
-        i = 0
-        n = len(data)
-        while i < n:
-            byte = data[i]
-            if byte != 35:
-                out.append(byte)
-                i += 1
-                continue
-            if i + 2 >= n:
-                out.append(byte)
-                i += 1
-                continue
-            hi = HEX_VALUE[data[i + 1]]
-            lo = HEX_VALUE[data[i + 2]]
-            if hi == 255 or lo == 255:
-                out.append(byte)
-                i += 1
-                continue
-            out.append((hi << 4) | lo)
-            i += 3
-        return memoryview(bytes(out))
-
-    def parse_dictionary(self) -> PdfDict:
-        values: PdfDict = {}
-        contents_was_parsed_without_decipher = False
-        # The signature-Contents carve-out below is the only reason to inspect a
-        # value before parsing it, and it cannot apply when nothing is being
-        # deciphered. Deciding that once keeps the probe -- a skip_ignored_at the
-        # following parse_object immediately repeats, two buffer reads, and a
-        # PdfName-to-str compare -- off every key of every dictionary.
-        deciphering = self.decipher is not None and self.current_obj_num is not None
-        self.advance(2)
-        while True:
-            self.pos = self.skip_ignored_at(self.pos)
-            if self.pos >= self.data_len:
-                raise PdfParseError("unterminated dictionary")
-            if self.internal_at_dictionary_end(self.pos):
-                self.advance(2)
-                break
-            if self.raw_data[self.pos] != 47:
-                if self.handle_dictionary_key_error():
-                    if self.pos >= self.data_len:
-                        raise PdfParseError("unterminated dictionary")
-                    if self.internal_at_dictionary_end(self.pos):
-                        self.advance(2)
-                        break
-                if self.raw_data[self.pos] != 47:
-                    raise PdfParseError("dictionary keys must be names")
-
-            key_bytes = self.read_name()
-
-            key = PdfName_of(key_bytes)
-            value_start = self.pos
-            try:
-                if deciphering and key == "Contents":
-                    value_pos = self.skip_ignored_at(value_start)
-                    if (
-                        value_pos < self.data_len
-                        and self.raw_data[value_pos] == 60
-                        and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
-                    ):
-                        # ISO 32000-2:2020, 7.6.2 excludes a Signature
-                        # dictionary's hexadecimal Contents value from
-                        # encryption. Parse it raw until the whole dictionary
-                        # identifies its type; Type may follow Contents and
-                        # defaults to Sig under Table 255.
-                        self.pos = value_pos
-                        values[key] = PdfString(self.read_hex_string(), is_literal=False)
-                        contents_was_parsed_without_decipher = True
-                    else:
-                        values[key] = self.parse_object()
-                        contents_was_parsed_without_decipher = False
-                else:
-                    values[key] = self.parse_object()
-            except PdfParseError:
-                self.pos = value_start
-                if not self.handle_dictionary_entry_error():
-                    raise
-
-        if contents_was_parsed_without_decipher:
-            signature_type = values.get("Type")
-            is_signature_dictionary = signature_type in ("Sig", "DocTimeStamp") or (
-                signature_type is None and "ByteRange" in values
-            )
-            raw_contents = values.get("Contents")
-            if not is_signature_dictionary and type(raw_contents) is PdfString:
-                values["Contents"] = PdfString(
-                    self.apply_decipher(raw_contents.data),
-                    is_literal=raw_contents.is_literal,
-                )
-        return values
 
     def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
         obj_num, gen_num = self.read_indirect_header()

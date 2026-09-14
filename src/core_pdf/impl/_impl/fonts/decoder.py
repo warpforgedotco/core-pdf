@@ -1074,19 +1074,19 @@ class FontDecoder:
             case CFFFont() as program:
                 if self.is_cid_font:
                     return program.glyph_id_for_cid(code)
-                return program.glyph_id_for_name(self.internal_simple_glyph_name(code))
+                return program.glyph_id_for_name(self.glyph_name(code))
             case TrueTypeFontProgram() as program:
                 if not self.is_cid_font and 0 <= code < 256 and program.cmap:
-                    glyph_text = glyph_name_to_unicode(self.internal_simple_glyph_name(code))
+                    glyph_text = glyph_name_to_unicode(self.glyph_name(code))
                     if len(glyph_text) == 1:
                         return program.glyph_id_for_unicode(ord(glyph_text))
                 return program.glyph_id_for_code(code)
             case Type1FontProgram() as program:
-                return program.glyph_id_for_name(self.internal_simple_glyph_name(code))
+                return program.glyph_id_for_name(self.glyph_name(code))
             case OpenTypeFontProgram() as program:
                 if self.is_cid_font:
                     return code
-                return program.glyph_id_for_name(self.internal_simple_glyph_name(code))
+                return program.glyph_id_for_name(self.glyph_name(code))
             case _:
                 return code
 
@@ -1098,9 +1098,6 @@ class FontDecoder:
             return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
 
     def glyph_name(self, code: int) -> str:
-        return self.internal_simple_glyph_name(code)
-
-    def internal_simple_glyph_name(self, code: int) -> str:
         if 0 <= code < 256:
             return self.simple_encoding_glyph_names[code]
         return ".notdef"

@@ -147,12 +147,10 @@ class Page(PdfPageObject):
             if not run.text:
                 continue
             if previous is not None:
-                current_height = max(
-                    run.advance_bbox[3] - run.advance_bbox[1], run.coords[run.FONT_SIZE]
-                )
+                current_height = max(run.advance_bbox[3] - run.advance_bbox[1], run.font_size)
                 previous_height = max(
                     previous.advance_bbox[3] - previous.advance_bbox[1],
-                    previous.coords[previous.FONT_SIZE],
+                    previous.font_size,
                 )
                 degenerate = (
                     run.advance_bbox[3] == run.advance_bbox[1]
@@ -205,7 +203,7 @@ class Page(PdfPageObject):
         for run_index, run in enumerate(products.runs):
             if not run.text or not run.visible or run.baseline is None:
                 continue
-            font_size = run.coords[run.FONT_SIZE]
+            font_size = run.font_size
             ascent = (run.advance_bbox[3] - run.baseline[1]) / font_size
             descent = (run.baseline[1] - run.advance_bbox[1]) / font_size
             metric_height = ascent + descent

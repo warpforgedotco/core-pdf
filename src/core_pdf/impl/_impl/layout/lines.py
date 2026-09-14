@@ -32,11 +32,7 @@ class LayoutLine:
         "y1",
         "is_vertical",
         "rotation_angle",
-        "max_order",
-        "max_depth",
-        "min_order",
         "height",
-        "max_font_size",
         "is_all_caps_text",
     )
 
@@ -47,10 +43,6 @@ class LayoutLine:
     y1: float
     is_vertical: bool
     rotation_angle: int
-    max_order: int
-    max_depth: int
-    min_order: int
-    max_font_size: float
     is_all_caps_text: bool
 
     def __init__(self, runs: list[TextRun] | None = None) -> None:
@@ -59,11 +51,7 @@ class LayoutLine:
             self.x0 = self.y0 = self.x1 = self.y1 = 0.0
             self.is_vertical = False
             self.rotation_angle = 0
-            self.max_order = -1
-            self.max_depth = -1
-            self.min_order = 999999
             self.height = 0.0
-            self.max_font_size = 0.0
             self.is_all_caps_text = True
             return
 
@@ -72,10 +60,6 @@ class LayoutLine:
         y0 = first_run.y0
         x1 = first_run.x1
         y1 = first_run.y1
-        max_order = first_run.order
-        min_order = first_run.order
-        max_depth = first_run.xobject_depth
-        max_font_size = first_run.font_size
         is_all_caps_text = not first_run.has_text or first_run.text_is_upper
 
         for run in islice(run_list, 1, None):
@@ -83,7 +67,6 @@ class LayoutLine:
             run_y0 = run.y0
             run_x1 = run.x1
             run_y1 = run.y1
-            font_size = run.font_size
             if run_x0 < x0:
                 x0 = run_x0
             if run_y0 < y0:
@@ -92,14 +75,6 @@ class LayoutLine:
                 x1 = run_x1
             if run_y1 > y1:
                 y1 = run_y1
-            if run.order > max_order:
-                max_order = run.order
-            if run.order < min_order:
-                min_order = run.order
-            if run.xobject_depth > max_depth:
-                max_depth = run.xobject_depth
-            if font_size > max_font_size:
-                max_font_size = font_size
             if is_all_caps_text and run.has_text and not run.text_is_upper:
                 is_all_caps_text = False
 
@@ -109,11 +84,7 @@ class LayoutLine:
         self.y1 = y1
         self.is_vertical = first_run.is_vertical
         self.rotation_angle = first_run.rotation_angle
-        self.max_order = max_order
-        self.max_depth = max_depth
-        self.min_order = min_order
         self.height = y1 - y0
-        self.max_font_size = max_font_size
         self.is_all_caps_text = is_all_caps_text
 
     def reconstructed_text(self) -> LayoutLineText:
