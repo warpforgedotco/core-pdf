@@ -27,6 +27,7 @@ from core_pdf.impl._impl.render.page import RenderedPage
 from core_pdf.impl._impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, ObservationSource, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
+from core_pdf_ocr.impl.extract.ocr.raster import internal_fit_raster_scale
 from core_pdf_ocr.impl.extract.ocr.strokes import (
     StrokedTextDecode,
     StrokedTextObservation,
@@ -228,6 +229,7 @@ def internal_stroked_vector_text_raster(
         rotate=0,
         display_list=display_list,
     )
+    scale = internal_fit_raster_scale(rendered, scale, max_pixels)
     # The Wu kernel draws one-pixel skeletons regardless of stroke width, so
     # the isolated variant must use the general renderer to honour the widened
     # strokes it just requested.
@@ -322,6 +324,7 @@ def internal_full_stroked_vector_text_raster(
         rotate=0,
         display_list=display_list,
     )
+    scale = internal_fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     data = rendered.rasterize(
         background=(255, 255, 255, 255),
         scale=scale,

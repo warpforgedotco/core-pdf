@@ -1,5 +1,37 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR vector raster and remapping
+
+This checkpoint adds **51 deterministic tests** for the vector OCR adapter. The full suite
+with pinned Tesseract enabled passed **3,181 tests**, with **32 veraPDF integration skips**,
+in **198.62s**. HTML and JSON reports describe that single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR vector adapter | 18.37% → 100.00% | 1.35% → 100.00% |
+| Entire workspace | 76.74% → 77.62% | 64.26% → 65.08% |
+
+Tests cover shelf packing, dense and isolated variants, both raster backends, crop bounds,
+ambiguous/outside cell rejection, reference identity, sequence remapping, pin-label filters,
+symbol assembly, supplemental learning, substitution thresholds, and decoded-text recovery.
+Real raster output is checked for ink and pixel budgets. Recovery checks retain unchanged
+OCR objects where possible, replace eligible misreads once, and add previously absent runs.
+
+A raster-budget regression produced 20,049 pixels against a 20,000-pixel limit. The fast
+renderer silently exceeded the budget while the general renderer raised an allocation error.
+Both vector paths now use the integer-dimension adjustment already used by page OCR,
+extracted into one shared helper. Pixel fitting checks cover single-pixel axes and reject
+nonpositive budgets before allocation. The area estimate still chooses the initial scale;
+the shared helper checks the renderer's actual rounded dimensions.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No compiled modules shadowed sources, and the unused-symbol scan found no new candidates.
+Coverage source roots, exclusions, and recognition acceptance thresholds remain unchanged.
+
+The **100% workspace goal remains incomplete**: **8,799 statements and 5,313 branches**
+remain uncovered. Remaining work includes OCR regions/capture, document structure and
+recovery, layout, rendering, and compatibility facade behavior.
+
 ## Workspace coverage completion: OCR stroke learning
 
 This checkpoint adds **35 deterministic tests** for page-local stroke learning. The full

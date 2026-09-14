@@ -497,6 +497,23 @@ def internal_orient_direct_image_raster(
     )
 
 
+def internal_fit_raster_scale(
+    rendered: Any,
+    scale: float,
+    max_pixels: int,
+    *,
+    crop: tuple[float, float, float, float] | None = None,
+) -> float:
+    """Fit rounded pixel dimensions inside the allocation budget."""
+    if max_pixels < 1:
+        raise ValueError("OCR raster pixel budget must be positive")
+    width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    while width * height > max_pixels:
+        scale *= min(max(1, width - 1) / width, max(1, height - 1) / height)
+        width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    return scale
+
+
 def internal_rendered_page_raster(
     capture: PageAnalysis,
     requested_scale: float,
@@ -513,11 +530,7 @@ def internal_rendered_page_raster(
     user_unit = float(getattr(page, "user_unit", 1.0))
     safe_scale = math.sqrt(max_pixels / raster_area) * 0.999 / user_unit
     scale = min(requested_scale, safe_scale)
-    # Integer pixel rounding can still exceed the area estimate on small crops.
-    width, height = rendered.unrotated_raster_size(scale, crop=crop)
-    while width * height > max_pixels:
-        scale *= min(max(1, width - 1) / width, max(1, height - 1) / height)
-        width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    scale = internal_fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     try:
         data = rendered.rasterize(
             background=(255, 255, 255, 255),
