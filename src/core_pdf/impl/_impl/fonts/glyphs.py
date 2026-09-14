@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Mapping
+from functools import lru_cache
 
 from core_pdf.impl._impl.fonts.data.glyph_aliases import (
     MODIFIER_NAMES,
@@ -162,6 +163,7 @@ TEX_GLYPH_ALIASES = {
 }
 
 
+@lru_cache(maxsize=4096)
 def glyph_name_to_unicode(name: str) -> str:
     if not name or name.startswith("."):
         return ""

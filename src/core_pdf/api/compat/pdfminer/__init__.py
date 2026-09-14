@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeAlias
-
 from ._extract import (
     extract_pages,
     extract_text,
@@ -27,8 +25,6 @@ from ._layout import (
     LTTextLineHorizontal,
     LTTextLineVertical,
 )
-
-PdfInput: TypeAlias = Any
 
 # Preserve the historical public identity for imports, reprs, and pickling.
 for internal_export in (

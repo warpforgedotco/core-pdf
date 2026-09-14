@@ -144,7 +144,7 @@ class LegacyTextExtractor:
     ) -> None:
         self.page = page
         self.document = page.document
-        self.resources = resources if resources is not None else page.resolve_resources()
+        self.resources = resources if resources is not None else page.resources
         self.known_forms = known_forms if known_forms is not None else set()
         # Extracted text per form XObject (keyed by identity, holding the stream
         # alive), shared across nested extractors for one page extraction. A

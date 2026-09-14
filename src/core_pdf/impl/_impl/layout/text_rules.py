@@ -10,7 +10,7 @@ import struct
 import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, lru_cache
 from importlib.resources import files
 from statistics import median_low
 
@@ -149,6 +149,14 @@ def english_word_ranks() -> Mapping[str, int]:
                     pass
 
     res = files(WORDLIST_PACKAGE).joinpath(WORD_RANK_INDEX)
+    # A zipimport or compiled-bundle traversable has no filesystem path.
+    index_path = os.fspath(res) if isinstance(res, os.PathLike) else None
+    if index_path is not None and os.path.isfile(index_path):
+        try:
+            # Map the packaged file instead of reading it into memory.
+            return WordRankIndex(index_path)
+        except Exception:
+            pass
     try:
         return WordRankIndex(res.read_bytes())
     except Exception:
@@ -164,18 +172,20 @@ def english_word_ranks() -> Mapping[str, int]:
         return {word: freq.rank for word, freq in english_word_frequencies().items()}
 
 
-def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
-    res = files(WORDLIST_PACKAGE).joinpath(NORVIG_COUNTS)
+def internal_gzipped_wordlist_lines(resource: str) -> list[str]:
+    """Read one packaged gzip word list, falling back to a materialized file."""
+    res = files(WORDLIST_PACKAGE).joinpath(resource)
     try:
-        raw_bytes = res.read_bytes()
-        lines = gzip.decompress(raw_bytes).decode("utf-8").splitlines()
+        return gzip.decompress(res.read_bytes()).decode("utf-8").splitlines()
     except (TypeError, ValueError, OSError, AttributeError):
         from importlib.resources import as_file
 
         with as_file(res) as path_obj, gzip.open(str(path_obj), "rt", encoding="utf-8") as handle:
-            lines = handle.readlines()
+            return handle.readlines()
 
-    for rank, line in enumerate(lines, start=1):
+
+def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
+    for rank, line in enumerate(internal_gzipped_wordlist_lines(NORVIG_COUNTS), start=1):
         parts = line.strip().split()
         if len(parts) != 2:
             continue
@@ -191,23 +201,14 @@ def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
 
 
 def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
-    res = files(WORDLIST_PACKAGE).joinpath(WORDNINJA_WORDS)
-    try:
-        raw_bytes = res.read_bytes()
-        lines = gzip.decompress(raw_bytes).decode("utf-8").splitlines()
-    except (TypeError, ValueError, OSError, AttributeError):
-        from importlib.resources import as_file
-
-        with as_file(res) as path_obj, gzip.open(str(path_obj), "rt", encoding="utf-8") as handle:
-            lines = handle.readlines()
-
-    for rank, line in enumerate(lines, start=1):
+    for rank, line in enumerate(internal_gzipped_wordlist_lines(WORDNINJA_WORDS), start=1):
         word = line.strip().casefold()
         if not word or not word.isalpha() or word in frequencies:
             continue
         frequencies[word] = WordFrequency(0, rank)
 
 
+@lru_cache(maxsize=16384)
 def word_rank(word: str) -> int | None:
     normalized = word.casefold()
     if not normalized or not normalized.isalpha():

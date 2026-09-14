@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeAlias
-
 # Enforce the NLP requirement before any element submodule can be cached.
 from . import _classification as _classification
 from ._elements import (
@@ -24,8 +22,6 @@ from ._elements import (
 from ._partition import (
     partition_pdf,
 )
-
-PdfInput: TypeAlias = Any
 
 # Preserve the historical public identity for imports, reprs, and pickling.
 for internal_export in (

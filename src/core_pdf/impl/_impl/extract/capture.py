@@ -36,6 +36,7 @@ from core_pdf.impl._impl.model.glyphs import (
     glyph_unicode_semantics,
 )
 from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl._impl.model.text import collapse_ws
 from core_pdf.impl.types import Rectangle
 
 
@@ -92,7 +93,7 @@ def internal_discard_duplicate_layer_runs(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
     )
     primary_tokens = [internal_normalized_tokens((run,)) for run in primary_runs]
-    primary_text = [" ".join(run.text.split()) for run in primary_runs]
+    primary_text = [collapse_ws(run.text) for run in primary_runs]
     duplicate_indices: set[int] = set()
     for indices in candidate_groups:
         tokens_by_index = {index: internal_normalized_tokens((runs[index],)) for index in indices}
@@ -115,7 +116,7 @@ def internal_discard_duplicate_layer_runs(
             local_text = " ".join(primary_text[int(position)] for position in nearby)
             # Punctuation, case, and word boundaries are content too. Never
             # equate "now here" with "nowhere", or a word with part of another.
-            candidate_text = " ".join(run.text.split())
+            candidate_text = collapse_ws(run.text)
             if f" {candidate_text} " in f" {local_text} ":
                 matched_indices.append(index)
                 matched_tokens += len(tokens)
@@ -408,7 +409,6 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
         return ObservationBatch.empty()
     n = len(runs)
     texts = [run.text for run in runs]
-    polygons = numpy.full((n, 8), numpy.nan, dtype=numpy.float32)
     source = numpy.full(n, int(ObservationSource.NATIVE), dtype=numpy.uint8)
 
     # Build columns from Python lists in one pass; per-element numpy stores
@@ -442,7 +442,6 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
     return ObservationBatch(
         text=tuple(texts),
         bbox=boxes,
-        polygon=polygons,
         source=source,
         confidence=confidence,
         sequence=sequence,
@@ -586,11 +585,6 @@ def internal_capture_from_program(
         1.0,
         float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
     )
-    numpy.multiply(box_areas, painted_mask, out=coverage_areas)
-    painted_text_coverage = min(
-        1.0,
-        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
-    )
     visible_image_areas: list[float] = []
     visible_image_boxes: list[tuple[float, float, float, float]] = []
     for drawing in drawings:
@@ -656,7 +650,6 @@ def internal_capture_from_program(
             all_text_quality=all_text_quality,
             glyphs=glyph_evidence,
             painted_native_characters=painted_native_characters,
-            painted_text_coverage=painted_text_coverage,
             trusted_hidden_text=trusted_hidden_text,
         ),
     )

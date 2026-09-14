@@ -48,11 +48,15 @@ def png_predict(
     )
 
 
+def internal_predictor_row_length(params: FilterParams) -> int:
+    return (params.columns * params.colors * params.bits_per_component + 7) // 8
+
+
 def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
         if not data:
             return b""
-        row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
+        row_length = internal_predictor_row_length(params)
         if row_length and len(data) % row_length:
             raise FilterParseError("truncated TIFF predictor row")
     try:
@@ -70,8 +74,7 @@ def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
         if not data:
             return b""
-        row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
-        stride = row_length + 1
+        stride = internal_predictor_row_length(params) + 1
         if len(data) % stride and not params.damaged_rows_before_error:
             raise FilterParseError("truncated PNG predictor row")
     try:

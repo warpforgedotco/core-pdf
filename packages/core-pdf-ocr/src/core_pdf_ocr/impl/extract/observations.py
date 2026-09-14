@@ -259,11 +259,9 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
         and vector_complexity < 150
     )
     if corrupt_mapping:
-        schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
-        image_modes = (PSM_AUTO,)
+        # vector_complexity < 150 here, below the schematic floor of 180, so this
+        # route can never be schematic or need the high-resolution vector pass.
         scale = 6.0
-        weak_threshold = 300 if schematic else 1_000
-        high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
         return WorkPlan(
             PageRoute.OCR,
             reason=PagePlanReason.NATIVE_TEXT_CORRUPT,
@@ -271,31 +269,23 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                 OcrPass(
                     "primary-page",
                     OcrPassScope.PAGE,
-                    8.0 if high_resolution_vector else scale,
-                    image_modes,
+                    scale,
+                    (PSM_AUTO,),
                     minimum_confidence=(
-                        STROKED_VECTOR_WORD_MIN_CONFIDENCE
-                        if high_resolution_vector
-                        else 45.0
-                        if evidence.image_count
-                        else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
+                        45.0 if evidence.image_count else NATIVE_UNAVAILABLE_MIN_CONFIDENCE
                     ),
-                    adaptive_scale=not high_resolution_vector,
-                    character_confidence_threshold=(
-                        55.0 if schematic and not high_resolution_vector else None
-                    ),
+                    adaptive_scale=True,
                     region_first=True,
-                    pixel_budget=(MAX_OCR_PIXELS if high_resolution_vector else PRIMARY_OCR_PIXELS),
+                    pixel_budget=PRIMARY_OCR_PIXELS,
                     include_native_text=True,
-                    recognize_words=high_resolution_vector,
                     parallel_tiles=2,
                 ),
                 internal_fallback_pass(
-                    schematic=schematic,
+                    schematic=False,
                     scale=scale,
                     modes=(6,),
-                    minimum_confidence=(NATIVE_UNAVAILABLE_MIN_CONFIDENCE if schematic else 45.0),
-                    run_if_characters_below=weak_threshold,
+                    minimum_confidence=45.0,
+                    run_if_characters_below=1_000,
                     include_native_text=True,
                 ),
             ),

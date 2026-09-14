@@ -29,9 +29,7 @@ from core_pdf.impl._impl.model.text import (
     internal_reconcile_text_words,
     internal_text_word_tokens,
 )
-from core_pdf.impl._impl.output.model import (
-    TextSpan,
-)
+from core_pdf.impl._impl.output.model import TextLine, TextSpan
 from core_pdf.impl._impl.runtime.array_views import finite_median
 from core_pdf.impl.types import TextWord
 
@@ -233,9 +231,6 @@ def internal_build_lines(
                 )
             )
             pending_space = reference.text.endswith((" ", "\t", "\n"))
-        spans = tuple(span_values)
-        if not spans or "".join(span.text for span in spans) != text:
-            spans = ()
         source_low = int(source_minimum[group_index])
         source_high = int(source_maximum[group_index])
         source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
@@ -243,24 +238,21 @@ def internal_build_lines(
         group_box = group_boxes[group_index]
         output.append(
             ParsedLine(
-                text=text,
-                bbox=(
-                    float(group_box[0]),
-                    float(group_box[1]),
-                    float(group_box[2]),
-                    float(group_box[3]),
-                ),
-                source=source,
-                confidence=(
-                    float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
+                TextLine(
+                    text,
+                    bbox=internal_bbox_tuple(group_box),
+                    source=source,
+                    confidence=(
+                        float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
+                    ),
+                    bold=bold,
+                    italic=italic,
+                    spans=tuple(span_values),
+                    words=words,
                 ),
                 sequence=int(group_sequences[group_index]),
                 rotation=int(observations.rotation[indexes[0]]),
                 font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
-                bold=bold,
-                italic=italic,
-                spans=spans,
-                words=words,
             )
         )
         output_boxes.append(group_box)
@@ -336,7 +328,7 @@ def internal_classify_blocks(
     )
     heading_rank = {size: rank for rank, size in enumerate(heading_sizes, start=1)}
     for block in blocks:
-        text = " ".join(line.text for line in block.lines)
+        text = " ".join(line.line.text for line in block.lines)
         normalized = collapse_ws(text)
         kind = "paragraph"
         level: int | None = None
@@ -344,7 +336,7 @@ def internal_classify_blocks(
         if internal_CAPTION_RE.match(lowered):
             kind = "caption"
         elif block.lines and all(
-            internal_LIST_MARKER_RE.match(line.text.strip()) for line in block.lines
+            internal_LIST_MARKER_RE.match(line.line.text.strip()) for line in block.lines
         ):
             kind = "list"
         elif (
@@ -443,7 +435,7 @@ def layout_blocks(
             boxes,
         )
         blocks = [
-            ParsedBlock(lines=(lines[int(index)],), bbox=lines[int(index)].bbox)
+            ParsedBlock(lines=(lines[int(index)],), bbox=internal_line_bbox(lines[int(index)]))
             for index in indexes
         ]
         return tuple(
@@ -542,8 +534,14 @@ def layout_element_order(
 # Block-level reading-order evidence and repair heuristics.
 
 
+def internal_line_bbox(line: ParsedLine) -> tuple[float, float, float, float]:
+    bbox = line.line.bbox
+    assert bbox is not None  # ParsedLine only accepts positioned lines.
+    return bbox
+
+
 def internal_block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, float]:
-    boxes = numpy.asarray(tuple(line.bbox for line in lines), dtype=numpy.float32)
+    boxes = numpy.asarray(tuple(internal_line_bbox(line) for line in lines), dtype=numpy.float32)
     return (
         float(numpy.min(boxes[:, 0])),
         float(numpy.min(boxes[:, 1])),
@@ -638,8 +636,16 @@ def internal_sparse_block_candidate_pairs(
     return sorted(pairs)
 
 
+def internal_full_width_blocks(blocks: list[ParsedBlock]) -> list[bool]:
+    """Flag blocks spanning most of the page width, which act as section headers."""
+    page_x0 = min(block.bbox[0] for block in blocks)
+    page_x1 = max(block.bbox[2] for block in blocks)
+    page_width = max(1.0, page_x1 - page_x0)
+    return [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
+
+
 def internal_topological_block_order_from_pairs(
-    blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]]
+    blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]], full_width: list[bool]
 ) -> list[ParsedBlock]:
     """Sort blocks into topological reading order using a spatial predecessor DAG.
 
@@ -649,12 +655,7 @@ def internal_topological_block_order_from_pairs(
     """
     if len(blocks) <= 2:
         return blocks
-    page_x0 = min(block.bbox[0] for block in blocks)
-    page_x1 = max(block.bbox[2] for block in blocks)
-    page_width = max(1.0, page_x1 - page_x0)
-
     n = len(blocks)
-    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
     in_degree = [0] * n
     graph: dict[int, list[int]] = defaultdict(list)
 
@@ -715,12 +716,9 @@ def internal_topological_block_order_from_pairs(
 def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     if len(blocks) <= 2:
         return blocks
-    page_x0 = min(block.bbox[0] for block in blocks)
-    page_x1 = max(block.bbox[2] for block in blocks)
-    page_width = max(1.0, page_x1 - page_x0)
-    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
+    full_width = internal_full_width_blocks(blocks)
     pairs = internal_sparse_block_candidate_pairs(blocks, full_width)
-    return internal_topological_block_order_from_pairs(blocks, pairs)
+    return internal_topological_block_order_from_pairs(blocks, pairs, full_width)
 
 
 def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
@@ -733,7 +731,9 @@ def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[Parse
     if max(x0s) - min(x0s) > 20.0 or max(x1s) - min(x1s) > 30.0:
         return blocks
     merged_lines = tuple(line for block in candidates for line in block.lines)
-    boxes = numpy.asarray(tuple(line.bbox for line in merged_lines), dtype=numpy.float32)
+    boxes = numpy.asarray(
+        tuple(internal_line_bbox(line) for line in merged_lines), dtype=numpy.float32
+    )
     ordered = extract_regions.internal_row_order_indexes(numpy.arange(len(merged_lines)), boxes)
     merged = ParsedBlock(
         lines=tuple(merged_lines[int(index)] for index in ordered),
@@ -753,11 +753,13 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         alphabetic = 0
         total = 0
         for line in block.lines:
-            for character in line.text:
+            for character in line.line.text:
                 is_alpha = character.isalpha()
                 alphabetic += is_alpha
                 total += is_alpha or character.isdigit()
-        line_starts = numpy.fromiter((line.bbox[0] for line in block.lines), dtype=numpy.float64)
+        line_starts = numpy.fromiter(
+            (internal_line_bbox(line)[0] for line in block.lines), dtype=numpy.float64
+        )
         starts = numpy.sort(line_starts)
         clusters: list[float] = []
         for start in starts:
@@ -787,7 +789,9 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         for line, assigned in zip(block.lines, line_clusters, strict=True):
             columns[int(assigned)].append(line)
         ordered = tuple(
-            line for column in columns for line in sorted(column, key=lambda item: -item.bbox[1])
+            line
+            for column in columns
+            for line in sorted(column, key=lambda item: -internal_line_bbox(item)[1])
         )
         output.append(replace(block, lines=ordered))
     return output
@@ -800,10 +804,10 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
         if len(block.lines) < 300:
             output.append(block)
             continue
-        text = " ".join(line.text for line in block.lines)
+        text = " ".join(line.line.text for line in block.lines)
         numeric = sum(character.isdigit() for character in text)
         alphanumeric = sum(character.isalnum() for character in text)
-        starts = sorted(line.bbox[0] for line in block.lines)
+        starts = sorted(internal_line_bbox(line)[0] for line in block.lines)
         columns: list[float] = []
         for start in starts:
             if not columns or start - columns[-1] > 8.0:
@@ -811,7 +815,7 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
         if numeric / max(1, alphanumeric) < 0.25 or len(columns) < 20:
             output.append(block)
             continue
-        ordered = tuple(sorted(block.lines, key=lambda line: (line.bbox[0], line.bbox[1])))
+        ordered = tuple(sorted(block.lines, key=lambda line: internal_line_bbox(line)[:2]))
         output.append(replace(block, lines=ordered))
     return output
 

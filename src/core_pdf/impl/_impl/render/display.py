@@ -9,7 +9,7 @@ from typing import Any, cast
 from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl._impl.graphics.color_spec import describe_color_space
 from core_pdf.impl._impl.graphics.filter_registry import declared_filter_names
-from core_pdf.impl._impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.model.geometry import rect_tuple, union_bbox
 from core_pdf.impl._impl.render.model import (
     DisplayItem,
     DisplayListItem,
@@ -260,12 +260,7 @@ class DisplayList:
                     previous.coalesced_path = True
                 previous.edge_array = None
                 previous.bbox = (
-                    (
-                        min(previous_box[0], drawing_box[0]),
-                        min(previous_box[1], drawing_box[1]),
-                        max(previous_box[2], drawing_box[2]),
-                        max(previous_box[3], drawing_box[3]),
-                    )
+                    union_bbox(previous_box, drawing_box)
                     if previous_box is not None and drawing_box is not None
                     else None
                 )
@@ -276,21 +271,7 @@ class DisplayList:
                     seqno=drawing.seqno,
                     bbox=drawing.rect,
                     path=drawing.path,
-                    fill=drawing.fill,
-                    fill_opacity=drawing.fill_opacity,
-                    stroke_color=drawing.stroke_color,
-                    stroke_opacity=drawing.stroke_opacity,
-                    line_width=drawing.line_width,
-                    line_cap=drawing.line_cap,
-                    line_join=drawing.line_join,
-                    dash_pattern=drawing.dash_pattern,
-                    fill_rule=drawing.fill_rule,
-                    blend_mode=drawing.blend_mode,
-                    soft_mask_alpha=drawing.soft_mask_alpha,
-                    alpha_is_shape=drawing.alpha_is_shape,
-                    graphics_soft_mask=drawing.graphics_soft_mask,
-                    fill_pattern=drawing.fill_pattern,
-                    stroke_pattern=drawing.stroke_pattern,
+                    **internal_drawing_paint_kwargs(drawing),
                 )
             )
             return
@@ -298,23 +279,9 @@ class DisplayList:
             drawing.kind,
             drawing.seqno,
             bbox=drawing.rect,
-            fill=drawing.fill,
-            fill_pattern=drawing.fill_pattern,
-            fill_opacity=drawing.fill_opacity,
-            stroke_color=drawing.stroke_color,
-            stroke_pattern=drawing.stroke_pattern,
-            stroke_opacity=drawing.stroke_opacity,
-            line_width=drawing.line_width,
-            line_cap=drawing.line_cap,
-            line_join=drawing.line_join,
-            dash_pattern=drawing.dash_pattern,
-            fill_rule=drawing.fill_rule,
-            blend_mode=drawing.blend_mode,
-            soft_mask_alpha=drawing.soft_mask_alpha,
-            graphics_soft_mask=drawing.graphics_soft_mask,
+            **internal_drawing_paint_kwargs(drawing),
             group_isolated=drawing.group_isolated,
             group_knockout=drawing.group_knockout,
-            alpha_is_shape=drawing.alpha_is_shape,
             raw_data=drawing.raw_data,
             dictionary=drawing.dictionary,
             image_source=drawing.image_source,
@@ -323,6 +290,27 @@ class DisplayList:
             path=drawing.path,
             items=drawing.items,
         )
+
+
+def internal_drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
+    """Paint state shared by typed path items and generic display entries."""
+    return {
+        "fill": drawing.fill,
+        "fill_opacity": drawing.fill_opacity,
+        "stroke_color": drawing.stroke_color,
+        "stroke_opacity": drawing.stroke_opacity,
+        "line_width": drawing.line_width,
+        "line_cap": drawing.line_cap,
+        "line_join": drawing.line_join,
+        "dash_pattern": drawing.dash_pattern,
+        "fill_rule": drawing.fill_rule,
+        "blend_mode": drawing.blend_mode,
+        "soft_mask_alpha": drawing.soft_mask_alpha,
+        "alpha_is_shape": drawing.alpha_is_shape,
+        "graphics_soft_mask": drawing.graphics_soft_mask,
+        "fill_pattern": drawing.fill_pattern,
+        "stroke_pattern": drawing.stroke_pattern,
+    }
 
 
 def internal_display_item_box(

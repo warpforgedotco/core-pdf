@@ -62,12 +62,10 @@ from core_pdf_ocr.impl.extract.quality import internal_Candidate
 class internal_OcrPassState:
     """Candidate selection and task provenance carried between OCR passes."""
 
-    selected_name: str = ""
     selected: internal_Candidate | None = None
     selected_tasks: tuple[internal_OcrTask, ...] = ()
     previous_region_additions: int = 0
     seeded_region_selected: bool = False
-    candidates: tuple[tuple[str, internal_Candidate], ...] = ()
 
     def prepare(self, ocr_pass: OcrPass, *, visible_native_characters: int) -> Self | None:
         selected = self.selected
@@ -121,29 +119,20 @@ class internal_OcrPassState:
         ):
             return replace(
                 self,
-                selected_name="",
                 selected=None,
                 selected_tasks=(),
                 seeded_region_selected=False,
             )
         return self
 
-
-@dataclass(frozen=True, slots=True)
-class internal_OcrPassExecution:
-    """Completed pass data needed for the selection transition."""
-
-    ocr_pass: OcrPass
-    candidate: internal_Candidate
-    candidate_source_tasks: tuple[internal_OcrTask, ...]
-    tasks: tuple[internal_OcrTask, ...]
-
-    def complete(self, state: internal_OcrPassState) -> internal_OcrPassState:
-        ocr_pass = self.ocr_pass
-        candidate = self.candidate
-        selected = state.selected
-        additions = 0
-        used_native_seed = False
+    def complete(
+        self,
+        ocr_pass: OcrPass,
+        candidate: internal_Candidate,
+        candidate_source_tasks: tuple[internal_OcrTask, ...],
+    ) -> Self:
+        """Fold a completed pass into the selection, keeping task provenance."""
+        selected = self.selected
         if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
             used_native_seed = selected is None
             if selected is not None:
@@ -154,34 +143,24 @@ class internal_OcrPassExecution:
                 )
             else:
                 additions = len(candidate.observations)
-
-        next_state = replace(
-            state,
-            candidates=(*state.candidates, (ocr_pass.name, candidate)),
-        )
-        if not self.tasks:
-            return next_state
-        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
-            next_state = replace(next_state, previous_region_additions=additions)
+            next_state = replace(self, previous_region_additions=additions)
             if not additions:
                 return next_state
             return replace(
                 next_state,
-                selected_name=ocr_pass.name,
                 selected=candidate,
-                selected_tasks=(*state.selected_tasks, *self.candidate_source_tasks),
+                selected_tasks=(*self.selected_tasks, *candidate_source_tasks),
                 seeded_region_selected=used_native_seed and ocr_pass.seed_with_native,
             )
         if selected is None or candidate.metrics.utility > (
             selected.metrics.utility * ocr_pass.minimum_utility_gain
         ):
             return replace(
-                next_state,
-                selected_name=ocr_pass.name,
+                self,
                 selected=candidate,
-                selected_tasks=self.candidate_source_tasks,
+                selected_tasks=candidate_source_tasks,
             )
-        return next_state
+        return self
 
 
 def recognize_page(
@@ -245,11 +224,10 @@ def internal_recognize_page_with_reserved_raster(
         )
         verification_candidates = session.recognize_tasks(verification_tasks)
         verification_candidate = internal_merge_candidate_batches(verification_candidates)
-        verification = internal_hidden_text_verification(
+        if internal_hidden_text_verification(
             capture.observations,
             verification_candidate.observations,
-        )
-        if verification.accepted:
+        ):
             return internal_promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
@@ -434,12 +412,7 @@ def internal_recognize_page_with_reserved_raster(
                     candidate = retry_candidate
                 elif augmented_candidate.metrics.utility > candidate.metrics.utility:
                     candidate = augmented_candidate
-        pass_state = internal_OcrPassExecution(
-            ocr_pass=ocr_pass,
-            candidate=candidate,
-            candidate_source_tasks=candidate_source_tasks,
-            tasks=tasks,
-        ).complete(pass_state)
+        pass_state = pass_state.complete(ocr_pass, candidate, candidate_source_tasks)
 
     selected = pass_state.selected
     if selected is None:

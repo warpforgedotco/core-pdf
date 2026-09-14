@@ -10,6 +10,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedSoftMask, PatternPaint
+from core_pdf.impl._impl.render.blend import internal_clamp01
 from core_pdf.impl._impl.runtime.array_views import uint8_image_view
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
@@ -196,7 +197,7 @@ class internal_RasterGroup:
     def source_scale(self) -> float:
         """The group's constant alpha, clamped to the unit interval; unset is 1."""
         return (
-            max(0.0, min(1.0, float(self.composite_alpha)))
+            internal_clamp01(float(self.composite_alpha))
             if is_pdf_number(self.composite_alpha)
             else 1.0
         )

@@ -28,8 +28,8 @@ from ._regions import (
     internal_combine_list_regions,
     internal_figure_text_snippets,
     internal_layout_regions,
-    internal_LayoutRegion,
     internal_region_order,
+    internal_TextRegion,
 )
 
 internal_GRAPHICS_OPS = re.compile(
@@ -54,7 +54,7 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
         if document.xref_recovery_reason == "xref section loop detected":
             return True
         for page in document.pages:
-            fonts = page.resolve_resources().get("Font")
+            fonts = page.resources.get("Font")
             if not isinstance(fonts, dict):
                 continue
             for raw_font in fonts.values():
@@ -128,7 +128,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                 # page into one document-wide paragraph.
                 for figure_text in internal_figure_text_snippets(figure):
                     if cleaned_figure_text := internal_clean_text(figure_text):
-                        regions.append(internal_LayoutRegion(cleaned_figure_text, figure.bbox))
+                        regions.append(internal_TextRegion(cleaned_figure_text, figure.bbox))
             fields: tuple[Any, ...] | list[Any]
             if source_page is None:
                 fields = ()
@@ -137,13 +137,13 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                     fields = source_page.get_fields()
                 except (PdfError, ValueError):
                     fields = ()
-            field_regions: list[internal_LayoutRegion] = []
+            field_regions: list[internal_TextRegion] = []
             for field in fields:
                 if field.rect is None or field.type not in {"Tx", "Ch"} or not field.value_text:
                     continue
                 left, bottom, right, top = (float(value) for value in field.rect)
                 field_regions.append(
-                    internal_LayoutRegion(
+                    internal_TextRegion(
                         field.value_text,
                         (left, bottom, right, top),
                     )

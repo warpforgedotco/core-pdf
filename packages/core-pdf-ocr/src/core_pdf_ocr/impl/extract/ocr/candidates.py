@@ -7,7 +7,6 @@ import math
 import re
 import unicodedata
 from collections import defaultdict
-from dataclasses import dataclass
 
 import numpy
 
@@ -49,25 +48,11 @@ def internal_normalized_ocr_token_key(text: str) -> str:
     return unicodedata.normalize("NFKC", text).translate(internal_OCR_TOKEN_TRANSLATION).casefold()
 
 
-@dataclass(frozen=True, slots=True)
-class internal_HiddenTextVerification:
-    """Operational result of comparing hidden text with a raster preview."""
-
-    hidden_tokens: int
-    preview_tokens: int
-    matched_tokens: int
-    spatially_matched_tokens: int
-    token_overlap: float
-    spatial_overlap: float
-    accepted: bool
-    reason: str
-
-
 def internal_hidden_text_verification(
     hidden: ObservationBatch,
     preview: ObservationBatch,
-) -> internal_HiddenTextVerification:
-    """Compare a word-level raster preview with hidden text and its page geometry."""
+) -> bool:
+    """Whether a word-level raster preview matches hidden text and its page geometry."""
     hidden_by_token: dict[str, list[tuple[float, float, float, float]]] = defaultdict(list)
     for text, raw_box in zip(hidden.text, hidden.bbox, strict=True):
         box = internal_bbox_tuple(raw_box)
@@ -120,31 +105,13 @@ def internal_hidden_text_verification(
         )
 
     preview_tokens = len(preview_entries)
-    hidden_tokens = sum(len(boxes) for boxes in hidden_by_token.values())
-    token_overlap = matched / max(1, preview_tokens)
-    spatial_overlap = spatially_matched / max(1, preview_tokens)
     if matched < HIDDEN_TEXT_VERIFY_MIN_MATCHED_TOKENS:
-        accepted = False
-        reason = "insufficient-matched-tokens"
-    elif token_overlap < HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP:
-        accepted = False
-        reason = "low-token-overlap"
-    elif spatial_overlap < HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP:
-        accepted = False
-        reason = "low-spatial-overlap"
-    else:
-        accepted = True
-        reason = "semantic-and-spatial-match"
-    return internal_HiddenTextVerification(
-        hidden_tokens=hidden_tokens,
-        preview_tokens=preview_tokens,
-        matched_tokens=matched,
-        spatially_matched_tokens=spatially_matched,
-        token_overlap=token_overlap,
-        spatial_overlap=spatial_overlap,
-        accepted=accepted,
-        reason=reason,
-    )
+        return False
+    token_overlap = matched / max(1, preview_tokens)
+    if token_overlap < HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP:
+        return False
+    spatial_overlap = spatially_matched / max(1, preview_tokens)
+    return spatial_overlap >= HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP
 
 
 def internal_candidate_text_containment(

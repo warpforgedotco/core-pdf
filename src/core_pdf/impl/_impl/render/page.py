@@ -135,16 +135,6 @@ class RenderedPage:
             internal_pixel_dimension(self.height, scale),
         )
 
-    def raster_size(
-        self,
-        scale: float = 1.0,
-        *,
-        crop: tuple[float, float, float, float] | None = None,
-    ) -> tuple[int, int]:
-        """Return the width and height of the bytes produced by ``rasterize``."""
-        width, height = self.unrotated_raster_size(scale, crop=crop)
-        return (height, width) if self.rotate % 180 else (width, height)
-
     def validate_raster_size(
         self,
         scale: float = 1.0,

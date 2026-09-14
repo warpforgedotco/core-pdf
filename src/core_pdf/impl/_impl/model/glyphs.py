@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -181,11 +180,6 @@ class GlyphCluster:
     ink_bbox: Rectangle
     baseline: Rectangle | None
     confidence: float | None
-
-    def iter_decode_fields(self) -> Iterator[tuple[object, bytes, str]]:
-        """Yield ``(font_decoder, code_bytes, text)`` for each observation."""
-        for glyph in self.glyphs:
-            yield glyph.font_decoder, glyph.code_bytes, glyph.text
 
 
 def glyph_unicode_confidence(

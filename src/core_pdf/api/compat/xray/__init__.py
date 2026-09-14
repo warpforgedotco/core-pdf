@@ -461,7 +461,7 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
     if not highlights:
         return []
     raw_data = bytes(page.document.raw_data)
-    resources = page.resolve_resources()
+    resources = page.resources
     resource_fonts = resources.get("Font")
     font_names = (
         {str(name) for name in resource_fonts} if isinstance(resource_fonts, dict) else set()

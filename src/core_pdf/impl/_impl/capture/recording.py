@@ -11,6 +11,7 @@ from math import hypot
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl._impl.capture.paths import flatten_path
+from core_pdf.impl._impl.capture.program import CapturedProgram
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.capture.interpreter import TextState
@@ -51,7 +52,7 @@ from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints
 from core_pdf.impl._impl.graphics.soft_masks import image_overrides_graphics_soft_mask
-from core_pdf.impl._impl.model.geometry import RectBox, intersect_bbox, transform_bbox
+from core_pdf.impl._impl.model.geometry import intersect_bbox, transform_bbox
 from core_pdf.impl._impl.model.glyphs import (
     GlyphObservation,
 )
@@ -76,6 +77,7 @@ from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
@@ -160,6 +162,11 @@ class RecordingMethods(RecoveringTextState):
     capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool]]
     capture_patterns: dict[
         tuple[int, ColorRendering, bool, bool], tuple[object, PatternPaint | None]
+    ]
+    # Keyed by the resolved stream's identity, which the resolver cache keeps
+    # stable per document; the value pins the stream so its id is not recycled.
+    capture_image_sources: dict[
+        tuple[int, ColorRendering], tuple[PdfStream, ImageSource, float | None]
     ]
     capture_colors: dict[
         tuple[int, tuple[float, ...], ColorRendering], tuple[object, tuple[float, ...] | None]
@@ -639,6 +646,24 @@ class RecordingMethods(RecoveringTextState):
             )
             self.sequence += 1
 
+    def captured_image_source(self, xobj: PdfStream) -> tuple[ImageSource, float | None]:
+        """One image source per XObject and colour rendering for the whole capture.
+
+        Every ``Do`` of the same image then shares one descriptor, so consumers
+        keyed by source identity (the renderer's decoded-image cache) reuse work
+        instead of decoding once per paint.
+        """
+        rendering = self.graphics.color_rendering
+        key = (id(xobj), rendering)
+        cached = self.capture_image_sources.get(key)
+        if cached is not None and cached[0] is xobj:
+            return cached[1], cached[2]
+        source, smask_alpha = image_source_from_stream(
+            xobj, self.resolver, color_rendering=rendering
+        )
+        self.capture_image_sources[key] = (xobj, source, smask_alpha)
+        return source, smask_alpha
+
     def paint_image(self, state: object, xobj: PdfStream) -> None:
         xobj_dict = xobj.dictionary
         if self.is_graphics_visible():
@@ -650,11 +675,8 @@ class RecordingMethods(RecoveringTextState):
             bbox = None
             quad = None
             if width > 0 and height > 0:
-                bounds, quad = unit_square_placement(self.graphics.ctm)
-                bbox = RectBox(*bounds)
-            source, smask_alpha = image_source_from_stream(
-                xobj, self.resolver, color_rendering=self.graphics.color_rendering
-            )
+                bbox, quad = unit_square_placement(self.graphics.ctm)
+            source, smask_alpha = self.captured_image_source(xobj)
             paints = (
                 color_space_paints(self.graphics.fill_space)
                 if image_is_stencil
@@ -991,6 +1013,7 @@ class RecordingMethods(RecoveringTextState):
         nested.capture_soft_masks = self.capture_soft_masks
         nested.capture_mask_resources = self.capture_mask_resources
         nested.capture_active_mask_groups = self.capture_active_mask_groups
+        nested.capture_image_sources = self.capture_image_sources
         return nested
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
@@ -1052,10 +1075,12 @@ class RecordingMethods(RecoveringTextState):
                 pattern.bbox,
                 pattern.x_step,
                 pattern.y_step,
-                nested.drawings,
-                [glyph for glyph in nested.glyphs if glyph.has_paint],
-                nested.inline_images,
-                text_boundaries=nested.text_boundaries,
+                CapturedProgram(
+                    glyphs=tuple(glyph for glyph in nested.glyphs if glyph.has_paint),
+                    drawings=tuple(nested.drawings),
+                    inline_images=tuple(nested.inline_images),
+                    text_boundaries=tuple(nested.text_boundaries),
+                ),
             )
         self.capture_patterns[key] = (pattern, result)
         return result

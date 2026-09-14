@@ -250,6 +250,7 @@ class GlyphLineBuilder:
         "next_non_space_x0s",
         "estimated_char_width",
         "column_gap_threshold",
+        "internal_text_runs_by_x0",
     )
 
     def __init__(
@@ -264,6 +265,7 @@ class GlyphLineBuilder:
         suppress_tiny_page_footer: bool = False,
     ) -> None:
         self.runs = runs
+        self.internal_text_runs_by_x0: list[TextRun] | None = None
         self.page_label_indexes = rules.trailing_tiny_page_label_run_indexes(runs)
         self.is_table_like_line = is_table_like_line
         self.is_all_caps_line = is_all_caps_line
@@ -461,11 +463,6 @@ class GlyphLineBuilder:
             self.next_non_space_run(index),
             context_text_ok=lambda text: text != "TM",
             font_size_ratio=0.82,
-            baseline_drops=False,
-            shift_minimum=1.5,
-            shift_factor=0.18,
-            attach_factor=0.25,
-            attach_previous_only=False,
         )
 
     def is_superscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
@@ -477,11 +474,6 @@ class GlyphLineBuilder:
             self.next_non_space_run(index),
             context_text_ok=lambda text: not text.isdigit(),
             font_size_ratio=0.8,
-            baseline_drops=False,
-            shift_minimum=1.5,
-            shift_factor=0.18,
-            attach_factor=0.25,
-            attach_previous_only=False,
         )
 
     def is_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
@@ -511,13 +503,16 @@ class GlyphLineBuilder:
         *,
         context_text_ok: Callable[[str], bool],
         font_size_ratio: float,
-        baseline_drops: bool,
-        shift_minimum: float,
-        shift_factor: float,
-        attach_factor: float,
-        attach_previous_only: bool,
+        baseline_drops: bool = False,
+        shift_minimum: float = 1.5,
+        shift_factor: float = 0.18,
+        attach_factor: float = 0.25,
+        attach_previous_only: bool = False,
     ) -> bool:
         """Shared gate for runs shifted off the surrounding baseline.
+
+        The defaults describe a raised (superscript-like) run; subscript
+        callers override them to look for a dropped baseline.
 
         Classifies a run as script-like when its neighbours accept it as
         context, its font is small enough relative to theirs, its baseline is
@@ -587,35 +582,41 @@ class GlyphLineBuilder:
         attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
         return run.x0 - previous.x1 <= attach_gap
 
+    def text_runs_by_x0(self) -> list[TextRun]:
+        """Text runs of the line in stable left-to-right order, sorted once."""
+        ordered = self.internal_text_runs_by_x0
+        if ordered is None:
+            ordered = sorted(
+                (candidate for candidate in self.runs if candidate.has_text),
+                key=lambda candidate: candidate.x0,
+            )
+            self.internal_text_runs_by_x0 = ordered
+        return ordered
+
     def is_unit_exponent_run(self, run: TextRun) -> bool:
         if not internal_is_short_digit_run(run, max_length=2, require_baseline=False):
             return False
-        following = min(
+        ordered = self.text_runs_by_x0()
+        # The stable x0 order makes the first match the leftmost candidate,
+        # with ties resolved in the original run order.
+        following = next(
             (
                 candidate
-                for candidate in self.runs
+                for candidate in ordered
                 if candidate is not run
-                and candidate.has_text
                 and candidate.x0 >= run.x1 - 0.01
                 and candidate.stripped_text.lstrip().startswith((")", "]", "}"))
             ),
-            key=lambda candidate: candidate.x0,
-            default=None,
+            None,
         )
         if following is None:
             return False
 
-        left_candidates = sorted(
-            (
-                candidate
-                for candidate in self.runs
-                if candidate is not run
-                and candidate.has_text
-                and candidate.x0 < run.x0
-                and candidate.x1 <= run.x1 + 0.01
-            ),
-            key=lambda candidate: candidate.x0,
-        )
+        left_candidates = [
+            candidate
+            for candidate in ordered
+            if candidate is not run and candidate.x0 < run.x0 and candidate.x1 <= run.x1 + 0.01
+        ]
         previous = max(
             (
                 candidate

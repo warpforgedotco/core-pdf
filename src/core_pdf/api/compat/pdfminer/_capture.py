@@ -49,7 +49,7 @@ class internal_PdfminerContentLexer(PdfLexer):
     def handle_dictionary_key_error(self) -> bool:
         raise PdfParseError("invalid content dictionary")
 
-    def handle_dictionary_entry_error(self) -> bool:
+    def handle_dictionary_entry_error(self, value_start: int) -> bool:
         raise PdfParseError("invalid content dictionary")
 
 

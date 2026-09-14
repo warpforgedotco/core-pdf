@@ -4,15 +4,10 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Iterator, Sequence
-from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Iterable, Sequence
+from typing import Any, cast
 
 from core_pdf.impl.types import Rectangle
-
-if TYPE_CHECKING:
-    from core_pdf.impl._impl.model.glyphs import GlyphObservation
-    from core_pdf.impl._impl.model.runs import Provenance, TextRun
 
 
 def internal_float_value(value: object) -> float:
@@ -222,103 +217,6 @@ def page_rotation_matrix(
             return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
-def rotate_page_runs(
-    runs: list[TextRun],
-    *,
-    rotate: int,
-    page_width: float,
-    page_height: float,
-) -> list[TextRun]:
-    """Text runs mapped into the frame the page displays at ``rotate`` degrees."""
-    rotate %= 360
-    if rotate == 0:
-        return runs
-
-    matrix = page_rotation_matrix(rotate, page_width, page_height)
-    a, b, c, d, e, f = matrix
-    glyphs: dict[int, GlyphObservation] = {}
-    transformed: list[TextRun] = []
-    for run in runs:
-        x0, y0, x1, y1 = transform_bbox((run.x0, run.y0, run.x1, run.y1), matrix)
-        clusters = []
-        for cluster in run.glyph_clusters:
-            for glyph in cluster.glyphs:
-                if id(glyph) not in glyphs:
-                    glyphs[id(glyph)] = internal_rotate_glyph(glyph, matrix, rotate)
-            clusters.append(
-                replace(
-                    cluster,
-                    advance_bbox=transform_bbox(cluster.advance_bbox, matrix),
-                    ink_bbox=transform_bbox(cluster.ink_bbox, matrix),
-                    baseline=internal_transform_baseline(cluster.baseline, matrix),
-                    glyphs=tuple(glyphs[id(glyph)] for glyph in cluster.glyphs),
-                )
-            )
-        transformed.append(
-            run.replace(
-                x0=x0,
-                y0=y0,
-                x1=x1,
-                y1=y1,
-                tx=run.tx * a + run.ty * c + e,
-                ty=run.tx * b + run.ty * d + f,
-                rotation_angle=(run.rotation_angle - rotate) % 360,
-                advance_bbox=transform_bbox(run.advance_bbox, matrix),
-                ink_bbox=transform_bbox(run.ink_bbox, matrix),
-                baseline=internal_transform_baseline(run.baseline, matrix),
-                glyph_clusters=tuple(clusters),
-                provenance=internal_transform_provenance(run.provenance, matrix),
-            )
-        )
-    return transformed
-
-
-def internal_transform_baseline(
-    baseline: Rectangle | None, matrix: Sequence[float]
-) -> Rectangle | None:
-    """Transform baseline endpoints without sorting away their direction."""
-    if baseline is None:
-        return None
-    x0, y0, x1, y1 = baseline
-    a, b, c, d, e, f = matrix
-    return (x0 * a + y0 * c + e, x0 * b + y0 * d + f, x1 * a + y1 * c + e, x1 * b + y1 * d + f)
-
-
-def internal_transform_provenance(provenance: Provenance, matrix: Sequence[float]) -> Provenance:
-    return tuple(
-        (key, transform_bbox(box, matrix))
-        if key in {"clip_bbox", "layout_form_bbox"} and (box := rect_tuple(value)) is not None
-        else (key, value)
-        for key, value in provenance
-    )
-
-
-def internal_rotate_glyph(
-    glyph: GlyphObservation, matrix: Sequence[float], rotate: int
-) -> GlyphObservation:
-    transform = glyph.glyph_transform
-    if transform is not None:
-        ga, gb, gc, gd, ge, gf = transform
-        a, b, c, d, e, f = matrix
-        transform = (
-            ga * a + gb * c,
-            ga * b + gb * d,
-            gc * a + gd * c,
-            gc * b + gd * d,
-            ge * a + gf * c + e,
-            ge * b + gf * d + f,
-        )
-    return replace(
-        glyph,
-        advance_bbox=transform_bbox(glyph.advance_bbox, matrix),
-        ink_bbox=transform_bbox(glyph.ink_bbox, matrix),
-        baseline=internal_transform_baseline(glyph.baseline, matrix),
-        rotation_angle=(glyph.rotation_angle - rotate) % 360,
-        glyph_transform=transform,
-        provenance=internal_transform_provenance(glyph.provenance, matrix),
-    )
-
-
 def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
     """Convert between bottom-left- and top-left-origin page coordinates."""
     return (
@@ -327,50 +225,3 @@ def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
         float(rect[2]),
         page_height - float(rect[1]),
     )
-
-
-class RectBox:
-    __slots__ = ("x0", "y0", "x1", "y1", "seqno", "fill", "fill_opacity")
-
-    def __init__(
-        self,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        seqno: int = -1,
-        fill: tuple[float, ...] | None = None,
-        fill_opacity: float | None = None,
-    ) -> None:
-        self.x0 = x0
-        self.y0 = y0
-        self.x1 = x1
-        self.y1 = y1
-        self.seqno = seqno
-        self.fill = fill
-        self.fill_opacity = fill_opacity
-
-    def normalize(self) -> RectBox:
-        if self.x0 <= self.x1 and self.y0 <= self.y1:
-            return self
-        return RectBox(
-            min(self.x0, self.x1),
-            min(self.y0, self.y1),
-            max(self.x0, self.x1),
-            max(self.y0, self.y1),
-            seqno=self.seqno,
-            fill=self.fill,
-            fill_opacity=self.fill_opacity,
-        )
-
-    def __iter__(self) -> Iterator[float]:
-        yield self.x0
-        yield self.y0
-        yield self.x1
-        yield self.y1
-
-    def __len__(self) -> int:
-        return 4
-
-    def __getitem__(self, index: int) -> float:
-        return (self.x0, self.y0, self.x1, self.y1)[index]

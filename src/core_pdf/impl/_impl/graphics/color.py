@@ -33,18 +33,19 @@ from core_pdf.impl._impl.graphics.icc_profiles import (
     parse_icc_transform,
 )
 from core_pdf.impl._impl.graphics.image_kernels import (
-    apply_decode_array as apply_decode_array_kernel,
-)
-from core_pdf.impl._impl.graphics.image_kernels import (
+    ImageBuffer,
     image_dimension,
     unpack_subbyte_image_samples,
+)
+from core_pdf.impl._impl.graphics.image_kernels import (
+    apply_decode_array as apply_decode_array_kernel,
 )
 from core_pdf.impl._impl.graphics.image_samples import (
     convert_integer_image,
     convert_integer_samples,
     internal_convert_components,
 )
-from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
+from core_pdf.impl._impl.runtime.array_views import uint8_view
 from core_pdf.impl._impl.runtime.scalars import parse_float
 from core_pdf_spec.s_08_graphics.color import indexed_color_components
 from core_pdf_spec.s_08_graphics.color_kernels import unpack_image_samples
@@ -53,7 +54,6 @@ from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING,
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
-ImageBuffer: TypeAlias = ByteBuffer
 
 
 def internal_requires_component_conversion(space: ColorSpace) -> bool:
@@ -93,8 +93,6 @@ def color_operands_to_srgb(
         rendering != DEFAULT_COLOR_RENDERING and kind not in {"DeviceGray", "DeviceRGB", "Pattern"}
     ):
         if kind == "DeviceCMYK":
-            from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
-
             if len(components) != 4:
                 return None
             red, green, blue = cmyk_floats_to_srgb(*components, rendering=rendering)

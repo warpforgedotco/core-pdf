@@ -36,16 +36,29 @@ def collect_inherited_values(
     node: PdfDict,
     keys: tuple[str, ...],
     resolve_ref: Callable[[object], object],
+    *,
+    stop_at_malformed_parent: bool = False,
 ) -> InheritedValueMap:
+    """Collect ``keys`` from ``node`` and its Parent chain, nearest ancestor first.
+
+    A parent that is not a dictionary or that closes a cycle raises ``ValueError``;
+    ``stop_at_malformed_parent`` instead ends the walk with the values found so far.
+    """
     values: InheritedValueMap = {}
     current: object = node
+    # Values pin visited nodes so a freed dictionary's id cannot be reused by
+    # a later resolved parent and read as a cycle.
     seen: dict[int, PdfDict] = {}
     references: set[tuple[int, int]] = set()
     while current is not None:
         if not isinstance(current, dict):
+            if stop_at_malformed_parent:
+                break
             raise ValueError("invalid inherited dictionary parent")
         marker = id(current)
         if marker in seen:
+            if stop_at_malformed_parent:
+                break
             raise ValueError("inherited dictionary cycle detected")
         seen[marker] = cast(PdfDict, current)
 
@@ -61,6 +74,8 @@ def collect_inherited_values(
         if isinstance(parent, PdfReference):
             reference = (parent.object_number, parent.generation_number)
             if reference in references:
+                if stop_at_malformed_parent:
+                    break
                 raise ValueError("inherited dictionary cycle detected")
             references.add(reference)
         current = resolve_ref(parent) if parent is not None else None

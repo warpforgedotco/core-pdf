@@ -9,7 +9,7 @@ from dataclasses import replace
 from core_pdf.impl._impl.extract.table_cleanup import internal_table_with_bands
 from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_min, overlap_ratio_of
 from core_pdf.impl._impl.model.spatial import SpatialFrame
-from core_pdf.impl._impl.model.text import complete_text_covered, content_tokens
+from core_pdf.impl._impl.model.text import collapse_ws, complete_text_covered, content_tokens
 from core_pdf.impl._impl.output.model import Block, Table
 from core_pdf.impl.types import Rectangle
 
@@ -25,7 +25,7 @@ def internal_remove_block_duplicate_table_rows(
     for block in blocks:
         for line in block.lines:
             box = line.bbox or (block.bbox if len(block.lines) == 1 else None)
-            text = " ".join(line.text.split())
+            text = collapse_ws(line.text)
             if box is not None and text:
                 line_boxes_by_text.setdefault(text, []).append(box)
     filtered: list[Table] = []
@@ -36,7 +36,7 @@ def internal_remove_block_duplicate_table_rows(
         kept_row_indexes: list[int] = []
         for row_index, row in enumerate(table.rows):
             cells = [cell for cell in row if cell.text]
-            text = " ".join(" ".join(cell.text.split()) for cell in cells)
+            text = " ".join(collapse_ws(cell.text) for cell in cells)
             cell_boxes = tuple(cell.bbox for cell in cells if cell.bbox is not None)
             row_box = bbox_union(cell_boxes)
             if not text or row_box is None or len(cell_boxes) != len(cells):
@@ -86,7 +86,7 @@ def internal_remove_block_duplicate_table_rows(
 
 def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> bool:
     """Require complete text in the same cell region before dropping a line."""
-    normalized = " ".join(text.split())
+    normalized = collapse_ws(text)
     if not normalized or table.bbox is None or overlap_ratio_of(box, table.bbox) < 0.90:
         return False
     tokens = content_tokens(normalized)
@@ -101,7 +101,7 @@ def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> b
         if not cells:
             continue
         participating_cells.extend(cells)
-        cell_texts = [" ".join(cell.text.split()) for cell in cells]
+        cell_texts = [collapse_ws(cell.text) for cell in cells]
         for cell, cell_text in zip(cells, cell_texts, strict=True):
             if (
                 cell.bbox is not None
@@ -144,7 +144,7 @@ def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> b
     return (
         covered_box is not None
         and overlap_ratio_of(box, covered_box) >= 0.90
-        and normalized == " ".join(" ".join(cell.text.split()) for cell in participating_cells)
+        and normalized == " ".join(collapse_ws(cell.text) for cell in participating_cells)
     )
 
 
