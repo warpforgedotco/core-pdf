@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Standards declaration recovery and profile-claim identity
+
+Added **36 deterministic cases** for profile revisions, repeated/conflicting
+properties, XMP namespace-prefix independence, attribute/element forms, nested
+resource exclusion, WTPDF targets, and extension diagnostics. They verify that
+raw claims stay visible, unknown/conflicting targets remain unidentified, and
+valid extension entries survive malformed neighbors. Declaration discovery is
+not validation. No production change was needed.
+
+The focused coverage run passed **36 tests in 5.75s**, appended to the verified
+**7,485-test full workspace/differential run** on unchanged production sources;
+this was not another full-suite run. Workspace coverage increased
+**90.71% → 90.77% statements** and **82.90% → 83.05% branches**:
+**35,258 / 38,842 statements** and **12,422 / 14,958 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates;
+that heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,584 statements and 2,536 branches** remain
+uncovered. These are local results.
+
 ## Wrapped-cell logical rows and unreachable height guard
 
 Added **24 deterministic cases** for logical row merging with tall cells, ragged
