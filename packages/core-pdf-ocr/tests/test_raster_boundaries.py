@@ -162,3 +162,69 @@ def test_region_padding_clips_to_page_and_rejects_empty_regions() -> None:
         internal_ocr_region_box((200, 0, 300, 20), page_width=100, page_height=100, padding=10)
         is None
     )
+
+
+@pytest.mark.parametrize("representation", ["array", "bytearray", "bytes"])
+def test_decoded_raster_accepts_supported_sample_buffers(monkeypatch, representation) -> None:
+    import numpy
+
+    source = numpy.array([[[0], [80]], [[160], [240]]], dtype=numpy.uint8)
+    data = (
+        source
+        if representation == "array"
+        else bytearray(source.tobytes())
+        if representation == "bytearray"
+        else source.tobytes()
+    )
+    decoded = SimpleNamespace(data=data, width=2, height=2, channels=1)
+    monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
+    drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
+    result = raster.internal_decoded_image_raster(drawing, 4, upscale=False)
+    assert result is not None
+    assert bytes(result.image.pixels) == source.tobytes()
+    assert result.resolution == 72
+
+
+def test_unavailable_image_decoder_returns_no_raster(monkeypatch) -> None:
+    monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: None)
+    drawing = CapturedDrawing(0, None, None, raw_data=b"bad", dictionary={})
+    assert raster.internal_decoded_image_raster(drawing, 100) is None
+
+
+def test_fractional_upscale_blends_pixels_within_budget(monkeypatch) -> None:
+    decoded = SimpleNamespace(data=bytes([0, 100, 0, 100]), width=2, height=2, channels=1)
+    monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
+    drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
+    result = raster.internal_decoded_image_raster(drawing, 4, max_pixels=30)
+    assert result is not None
+    assert (result.width, result.height) == (5, 5)
+    assert result.image.array()[0, :, 0].tolist() == [0, 10, 50, 90, 100]
+    assert result.resolution == 180
+
+
+@pytest.mark.parametrize(
+    "quad",
+    [
+        ((0,), (1, 0), (0, 1), (1, 1)),
+        ((None, 0), (1, 0), (0, 1), (1, 1)),
+        ((float("nan"), 0), (1, 0), (0, 1), (1, 1)),
+        ((float("inf"), 0), (1, 0), (0, 1), (1, 1)),
+        ((0, float("-inf")), (1, 0), (0, 1), (1, 1)),
+        ((0, 0),) * 4,
+    ],
+)
+def test_direct_orientation_rejects_malformed_nonfinite_or_degenerate_quads(quad) -> None:
+    drawing = CapturedDrawing(0, None, None, items=(("quad", quad),))
+    assert raster.internal_direct_image_orientation(drawing) is None
+
+
+def test_malformed_compositor_image_does_not_prevent_native_extraction(ocr_capture) -> None:
+    class Rendered:
+        def unrotated_raster_size(self, scale, *, crop):
+            return (10, 10)
+
+        def rasterize(self, **kwargs):
+            raise IndexError("source sample outside decoded image")
+
+    capture = replace(ocr_capture, page=SimpleNamespace(width=100, height=100))
+    assert raster.internal_rendered_page_raster(capture, 1, rendered=Rendered()) is None

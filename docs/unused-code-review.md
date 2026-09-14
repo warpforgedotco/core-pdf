@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR atlas and raster boundaries
+
+Added **25 deterministic tests** for atlas clipping, stroke reversal/thickness, closed and
+degenerate paths, unsupported display items, decoded sample representations, fractional
+upscaling, malformed placement quads, and compositor failure recovery. A NaN placement
+coordinate previously passed orientation detection as an identity transform. Orientation
+now rejects nonfinite coordinates before calculating bounds from the four valid points.
+
+The full suite with pinned Tesseract enabled passed **3,630 tests**, with **32 veraPDF
+integration skips**, in **199.27s**. OCR atlas coverage is **100% statements and branches**;
+raster coverage is **98.37% statements / 96.43% branches**. Workspace coverage rose
+**80.61% → 80.65% statements** and **68.68% → 68.76% branches**. Reports describe that
+single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,601 statements and 4,749 branches** remain uncovered. Remaining OCR processing, core,
+spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR layout and selection enrichment
 
 Added **21 deterministic tests** for rotated OCR order, Unicode direction votes, stable

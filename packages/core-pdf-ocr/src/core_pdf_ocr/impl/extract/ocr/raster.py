@@ -19,7 +19,7 @@ import numpy
 from core_pdf.impl._impl.capture.records import CapturedDrawing
 from core_pdf.impl._impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
 from core_pdf.impl._impl.graphics.images import decode_image, decode_pdf_image
-from core_pdf.impl._impl.model.geometry import bbox_union, points_bbox
+from core_pdf.impl._impl.model.geometry import bbox_union
 from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf.impl._impl.runtime.array_views import (
     contiguous_bytes,
@@ -424,10 +424,10 @@ def internal_direct_image_orientation(
         points = tuple((float(point[0]), float(point[1])) for point in quad)
     except (IndexError, TypeError, ValueError):
         return None
-    bounds = points_bbox(points)
-    if bounds is None:
+    if not all(math.isfinite(value) for point in points for value in point):
         return None
-    x0, y0, x1, y1 = bounds
+    xs, ys = zip(*points, strict=True)
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
     if x1 <= x0 or y1 <= y0:
         return None
     target_corners = ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
