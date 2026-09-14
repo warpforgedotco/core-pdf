@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR rescue policy and orchestration
+
+Added **29 deterministic tests** for spatial utility distribution, clipping, raster
+identity deduplication, rescue thresholds, hidden-text verification, and full-page versus
+weak-region adaptive retries. Retry tests check unavailable rasters and results that
+replace, augment, or fail to improve the original observations. The rescue decision now
+returns directly instead of carrying a temporary boolean; decision thresholds are unchanged.
+
+The final full suite with pinned Tesseract enabled passed **3,430 tests**, with **32 veraPDF
+integration skips**, in **209.33s**. An earlier run was interrupted after a lint-driven
+source adjustment; only the completed run against the final source is reported here.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR rescue policy | 31.71% → 100.00% | 0.00% → 100.00% |
+| OCR pipeline | 58.43% → 75.28% | 56.76% → 75.68% |
+| Entire workspace | 79.64% → 79.87% | 67.42% → 67.62% |
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal is incomplete**: **7,909
+statements and 4,923 branches** remain uncovered. Packed-vector and table-grid pipeline
+integration are next; all remaining workspace packages remain in scope.
+
 ## Workspace coverage completion: OCR candidate reconciliation
 
 Added **46 deterministic tests**: 37 for candidate reconciliation and nine for remaining
