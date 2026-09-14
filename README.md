@@ -39,6 +39,12 @@ uv run --locked --all-packages --extra unstructured --group test --group vendor-
 See [coverage and unused-code review](docs/coverage.md) for parallel coverage.py runs
 and guidance on distinguishing dead code from missing tests.
 
+Both `core-pdf` and `core-pdf-ocr` emit Markdown when `--print`, `--write`, or
+`--output-dir` is selected; without those options they parse without emitting content.
+The redundant `--mode markdown` and unused `--plain` options have been removed.
+Omit them from existing invocations. The Python CLI helper `process_pdf` likewise
+no longer accepts an `output_format` argument.
+
 ## License
 
 core-pdf uses [Core License version 0.1.0](https://github.com/core-experiments/core-pdf/blob/main/docs/license/VERSION.md).

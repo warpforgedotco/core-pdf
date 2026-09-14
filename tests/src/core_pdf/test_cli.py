@@ -5,6 +5,13 @@ import pytest
 from core_pdf.cli import run
 
 
+@pytest.mark.parametrize("arguments", [["--plain"], ["--mode", "markdown"]])
+def test_cli_rejects_removed_options(arguments: list[str]) -> None:
+    with pytest.raises(SystemExit) as error:
+        run(["example.pdf", *arguments])
+    assert error.value.code == 2
+
+
 @pytest.mark.parametrize("arguments", [[], ["--print"], ["--write"], ["--output-dir", "output"]])
 def test_cli_output_modes(
     tmp_path: Path,
