@@ -1,5 +1,24 @@
 # Coverage and unused-code findings
 
+## X-ray lifecycle and failure-routing contracts
+
+Added **27 deterministic cases** for recoverable page errors, raw-font fallback,
+fatal recovery failures, unexpected exception propagation, document closure,
+shared override caches, password gating, local source loading, the narrow
+object-stream fallback, and date-only result suppression. Injected handler
+tests verify password-gate routing and arguments, not cryptographic correctness.
+No production change was needed.
+
+The coverage run passed **27 tests in 29.09s**, appended to the verified
+**7,717-test full run** and subsequent focused tests on unchanged production
+sources. This was not another full-suite run. Workspace coverage is
+**35,543 / 38,843 statements (91.50%)** and
+**12,570 / 14,958 branches (84.04%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All quality gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The goal remains incomplete:
+**3,300 statements and 2,388 branches** remain uncovered. These are local results.
+
 ## X-ray raw-highlight recovery contracts
 
 Added **15 deterministic cases** for raw font/CMap recovery, font selection,
