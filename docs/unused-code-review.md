@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: word-rank lookup and resource loading
+
+Added **25 deterministic tests** for byte-backed and mapped indexes, empty mappings, exact
+lookup and missing keys, truncated headers, invalid formats/offsets, unmappable files,
+case normalization, source-list filtering and precedence, materialized gzip resources,
+compiled-distribution candidates, and recovery from corrupt packaged indexes. No production
+changes were needed. The focused scan covers every statement and branch in the word-rank
+index and resource-loading section of `text_rules.py`.
+
+The full suite with pinned Tesseract enabled passed **3,677 tests**, with **32 veraPDF
+integration skips**, in **210.47s**. These tests cover **70 previously unexecuted statements
+and 32 branches**. The whole `text_rules.py` module now has **70.19% statement / 53.41%
+branch coverage**; text geometry and spacing rules remain. Workspace coverage rose
+**80.76% → 80.93% statements** and **68.92% → 69.13% branches**. Reports describe that
+single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,491 statements and 4,693 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: OCR region boundaries
 
 Added **5 deterministic regression cases** for patterned strokes, off-page grids, and
