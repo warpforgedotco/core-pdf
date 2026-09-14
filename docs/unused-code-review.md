@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR chart tables and native routing
+
+Added **29 deterministic tests** for chart numeric splitting, geometry, spatial duplicate
+suppression, invalid observations, row ordering, shared table finalization, trusted-vector
+bypass, native text around artwork, and rotated-label routing. Chart column indexes now
+come from the accepted-cell count, removing a redundant counter; the empty-box guard was
+removed because each accepted cell contributes a box.
+
+The full suite with pinned Tesseract enabled passed **3,533 tests**, with **32 veraPDF
+integration skips**, in **202.15s**. OCR chart-table detection now has **100% statement and
+branch coverage**. OCR observation planning/fusion reached **88.95% statements / 82.05%
+branches**. Workspace coverage rose **80.24% → 80.44% statements** and **68.11% → 68.38%
+branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,686 statements and 4,807 branches** remain uncovered. Remaining OCR processing, core,
+spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: Tesseract binding
 
 Added **37 deterministic tests** for text confidence/noise gates, optional hOCR failures,
