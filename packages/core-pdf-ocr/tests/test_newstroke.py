@@ -9,6 +9,7 @@ import pytest
 from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII
 from core_pdf_ocr.impl.extract.ocr import newstroke
+from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 
 def internal_line(points: list[tuple[float, float]]) -> CapturedDrawing:
@@ -378,3 +379,133 @@ def test_fixed_match_rejects_ambiguous_templates() -> None:
         )
         is None
     )
+
+
+def test_matchers_reject_barrier_at_start_and_stale_seed() -> None:
+    templates = newstroke.internal_templates()
+    template = next(t for t in templates.robust if t.char == "R")
+    segments, _, points, styles = internal_arrays(internal_text("R"))
+    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    assert seed is not None
+    blocked = (None, *segments[1:])
+    continuity = newstroke.internal_continuity(blocked)
+    assert newstroke.internal_fit_match(blocked, 0, template, points, styles) is None
+    assert (
+        newstroke.internal_fixed_match(
+            blocked, continuity, templates, 0, seed.transform, 0, points, styles
+        )
+        is None
+    )
+    assert (
+        newstroke.internal_decode_forward(blocked, continuity, templates, seed, points, styles)
+        == ()
+    )
+    assert (
+        newstroke.internal_decode_around(blocked, continuity, templates, seed, 0, points, styles)
+        == ()
+    )
+
+
+def test_fixed_match_declines_delta_without_any_template() -> None:
+    templates = newstroke.internal_templates()
+    template = next(t for t in templates.robust if t.char == "R")
+    segments, _, points, styles = internal_arrays(internal_text("R"))
+    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    assert seed is not None
+    empty = replace(templates, by_first_delta={})
+    assert (
+        newstroke.internal_fixed_match(
+            segments,
+            newstroke.internal_continuity(segments),
+            empty,
+            0,
+            seed.transform,
+            0,
+            points,
+            styles,
+        )
+        is None
+    )
+
+
+def test_backward_decode_stops_at_ambiguous_preceding_glyph() -> None:
+    templates = newstroke.internal_templates()
+    template = next(t for t in templates.robust if t.char == "R")
+    segments, _, points, styles = internal_arrays(internal_text("RR"))
+    start = len(internal_text("R"))
+    seed = newstroke.internal_fit_match(segments, start, template, points, styles)
+    assert seed is not None
+    ambiguous = replace(templates, all=(template, replace(template, char="X")))
+    matches = newstroke.internal_decode_around(
+        segments, newstroke.internal_continuity(segments), ambiguous, seed, 0, points, styles
+    )
+    assert len(matches) == 1
+    assert matches[0] is seed
+
+
+def test_template_loader_accepts_repeated_pen_up_markers(monkeypatch) -> None:
+    encoded = NEWSTROKE_ASCII[ord("R") - 32]
+    repeated = encoded[:2] + " R R" + encoded[2:]
+    monkeypatch.setattr(newstroke, "NEWSTROKE_ASCII_ALTERNATES", {"R": repeated})
+    templates = newstroke.internal_templates()
+    variants = [template for template in templates.all if template.char == "R"]
+    assert len(variants) == 2
+    numpy.testing.assert_array_equal(variants[0].points, variants[1].points)
+
+
+def test_isolated_glyphs_do_not_become_decoded_sequences_on_dense_page() -> None:
+    per_glyph = len(internal_text("R"))
+    drawings = tuple(
+        drawing
+        for row in range(10000 // per_glyph + 1)
+        for drawing in (*internal_text("R", y=row * 20), CapturedDrawing(row, None, None))
+    )
+    result = newstroke.decode_newstroke_drawings(drawings)
+    assert result.candidate_segments >= 10000
+    assert result.runs == ()
+    assert result.sequences == 0
+    assert not result.trusted
+
+
+def test_fixed_match_rejects_fractional_template_delta() -> None:
+    templates = newstroke.internal_templates()
+    template = next(t for t in templates.robust if t.char == "R")
+    segments, _, points, styles = internal_arrays(internal_text("R"))
+    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    assert seed is not None
+    first = segments[0]
+    assert first is not None
+    changed = (replace(first, x1=first.x1 + 0.15), *segments[1:])
+    points = points.copy()
+    points[0, 1, 0] += 0.15
+    assert (
+        newstroke.internal_fixed_match(
+            changed,
+            newstroke.internal_continuity(changed),
+            templates,
+            0,
+            seed.transform,
+            first.style,
+            points,
+            styles,
+        )
+        is None
+    )
+
+
+def test_dense_page_learns_multiple_scales_for_same_style() -> None:
+    text = "R1234567890"
+    drawings = []
+    for row in range(160):
+        for drawing in internal_text(text, row * 30):
+            assert drawing.path is not None
+            drawings.append(
+                replace(drawing, path=drawing.path.transformed(Matrix(2, 0, 0, 2, 0, 0)))
+                if row >= 80
+                else drawing
+            )
+    result = newstroke.decode_newstroke_drawings(tuple(drawings))
+    assert result.trusted
+    assert [run.text for run in result.runs] == [text] * 160
+    assert result.runs[0].font_size == pytest.approx(10.5)
+    assert result.runs[-1].font_size == pytest.approx(21)

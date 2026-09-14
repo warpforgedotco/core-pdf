@@ -1,5 +1,24 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: Newstroke recognition boundaries
+
+Added **7 deterministic tests** for barrier handling, missing templates, ambiguous preceding
+glyphs, repeated pen-up markers, isolated glyphs on dense pages, fractional template deltas,
+and multiple scales sharing one stroke style. No production changes were needed.
+
+The full suite with pinned Tesseract enabled passed **3,647 tests**, with **32 veraPDF
+integration skips**, in **203.33s**. Newstroke now has **100% statement and branch coverage**
+(391 statements and 130 branches). Workspace coverage rose **80.73% → 80.75% statements**
+and **68.83% → 68.89% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+The final test fixture uses the path API's `Matrix` type; all 50 Newstroke tests passed again
+after that typing correction. No source-shadowing binaries or new unused-symbol candidates
+were found. Coverage sources and exclusions remain unchanged. The **100% workspace goal
+remains incomplete**: **7,565 statements and 4,729 branches** remain uncovered. OCR's
+remaining gaps are three statements and seven branches in capture, raster orientation,
+and region clipping. Core, spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR entry points and raster scaling
 
 Added **10 deterministic tests** for public companion page extraction, CLI and both module
