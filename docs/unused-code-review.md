@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: formulas, cleanup, and footer rules
+
+Added **90 deterministic cases** for numeric labels, private/control characters, repeated
+spaces and marks, rotated baselines, formulas, scripts, units, chemical prefixes, and footer
+geometry. Formula reordering previously duplicated runs and could overwrite intervening
+text; it now moves the numerator with `pop`/`insert`, preserving every run exactly once.
+An empty following run also incorrectly satisfied the punctuation condition for a time
+symbol numerator. Membership now checks a set of punctuation characters, rejecting empties.
+
+All **238 targeted text-rule tests** passed. The full suite with pinned Tesseract enabled
+passed **3,890 tests**, with **32 veraPDF integration skips**, in **199.84s**. The entire
+`text_rules.py` module now has **100% statement and branch coverage** (563 statements,
+260 branches). Workspace coverage rose **81.17% → 81.36% statements** and
+**69.56% → 69.93% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,322 statements and 4,570 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: lexical joining and spacing
 
 Added **74 deterministic cases** for alphabetic boundaries, phrase continuation, split-word

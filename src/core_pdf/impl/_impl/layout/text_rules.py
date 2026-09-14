@@ -679,9 +679,7 @@ def reorder_stacked_formula_numerators(runs: list[TextRun]) -> list[TextRun]:
         )
         if denominator_index is None:
             continue
-        denominator = reordered[denominator_index]
-        reordered[denominator_index:index] = [numerator, *reordered[denominator_index:index]]
-        reordered[index] = denominator
+        reordered.insert(denominator_index, reordered.pop(index))
     return reordered
 
 
@@ -699,7 +697,7 @@ def stacked_formula_denominator(
         return False
     numerator_text = numerator.stripped_text
     if denominator.stripped_text[:1] == "T" and numerator_text in {"t", "s"}:
-        if following is None or following.stripped_text[:1] not in ",;:)]}]:":
+        if following is None or following.stripped_text[:1] not in {",", ";", ":", ")", "]", "}"}:
             return False
     elif not numerator_text.isdigit():
         return False
