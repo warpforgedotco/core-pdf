@@ -266,3 +266,146 @@ def test_private_subroutines_use_private_relative_offset() -> None:
     assert font.read_private_subrs({18: [2, 3, 99]}) == [b"\x0b"]
     font.data = font.data[:-1]
     assert font.read_private_subrs({18: [2, 3]}) == []
+
+
+@pytest.mark.parametrize("offset", [-1, 3.5, float("nan"), float("inf"), -float("inf"), 99])
+def test_invalid_font_dictionary_offsets_recover_without_entries(offset: float) -> None:
+    font = internal_font(b"")
+    font.is_cid_keyed = True
+    font.top_dict = {(12, 36): [offset]}
+    assert font.read_font_dicts() == ()
+
+
+def test_font_dictionary_recovery_preserves_indices_after_a_bad_entry() -> None:
+    # Three INDEX entries: malformed short integer, empty dictionary, valid dict.
+    font = internal_font(b"\x00\x03\x01\x01\x02\x02\x04\x1c\x8b\x11")
+    font.is_cid_keyed = True
+    font.top_dict = {(12, 36): [3]}
+    assert font.read_font_dicts() == ({}, {}, {17: [0.0]})
+    font.top_dict = {}
+    assert font.read_font_dicts() == ()
+    font.is_cid_keyed = False
+    assert font.read_font_dicts() == ()
+
+
+@pytest.mark.parametrize(("offset", "count"), [(0, 229), (1, 166), (2, 87)])
+def test_predefined_charset_recovery_does_not_invent_extra_names(offset: int, count: int) -> None:
+    font = internal_font(b"")
+    charset = font.read_charset(offset, count + 5)
+    assert len(charset) == count
+    assert charset[0] == 0
+    assert set(charset.values()) == set(range(len(charset)))
+
+
+def test_builtin_encoding_distinguishes_implicit_standard_and_explicit_expert() -> None:
+    from core_pdf.impl._impl.fonts.font_program import STANDARD_GLYPH_SIDS
+
+    font = internal_font(b"")
+    assert font.builtin_encoding() == {}
+    assert not font.builtin_encoding_is_authoritative()
+    font.top_dict = {16: [1]}
+    font.cid_to_gid = {STANDARD_GLYPH_SIDS["space"]: 1}
+    assert font.builtin_encoding() == {32: "space"}
+    assert font.builtin_encoding_is_authoritative()
+    font.is_cid_keyed = True
+    assert font.builtin_encoding() == {}
+    assert not font.builtin_encoding_is_authoritative()
+
+
+def test_custom_encoding_skips_notdef_and_unknown_names() -> None:
+    font = internal_font(b"\x00\x03ABC")
+    font.top_dict = {16: [3]}
+    font.cid_to_gid = {0: 1, 999: 2, 391: 3}
+    font.custom_string_sids = {"custom": 391}
+    assert font.builtin_encoding() == {67: "custom"}
+    assert font.builtin_encoding_is_authoritative()
+
+
+def test_negative_glyph_subroutine_lookup_uses_default_font_dictionary() -> None:
+    font = internal_font(b"")
+    font.local_subrs = ((b"first",), (b"last",))
+    font.fd_select = (0, 1)
+    assert font.local_subrs_for_glyph(-1) == (b"first",)
+    assert font.local_subrs_for_glyph(-9) == (b"first",)
+    assert font.local_subrs_for_glyph(99) == (b"first",)
+
+
+def test_invalid_top_matrix_recovers_using_child_matrix() -> None:
+    font = internal_font(b"")
+    font.top_dict = {(12, 7): [1, 2]}
+    font.font_dicts = ({(12, 7): [0.002, 0, 0, 0.003, 0, 0]},)
+    assert tuple(font.font_matrix(0)) == (0.002, 0, 0, 0.003, 0, 0)
+    font.top_dict = {(12, 7): [2, 0, 0, 3, 0, 0]}
+    assert tuple(font.font_matrix(0)) == pytest.approx((0.004, 0, 0, 0.009, 0, 0))
+
+
+def test_accent_components_are_translated_before_bounds_and_rasterization() -> None:
+    from core_pdf.impl._impl.fonts.font_program import STANDARD_GLYPH_SIDS
+
+    font = internal_font(b"")
+    base = bytes([139, 139, 21, 149, 159, 5, 14])
+    accent = bytes([139, 139, 21, 144, 144, 5, 14])
+    # seac endchar with displacement (30, 40), StandardEncoding A and B.
+    composite = bytes([169, 179, 204, 205, 14])
+    font.charstrings = [b"\x0e", base, accent, composite]
+    font.cid_to_gid = {STANDARD_GLYPH_SIDS["A"]: 1, STANDARD_GLYPH_SIDS["B"]: 2}
+    assert font.normalized_glyph_contours(3) == (((0, 0), (10, 20)), ((30, 40), (35, 45)))
+    assert font.glyph_bbox_for_gid(3) == (0, 0, 35, 45)
+    assert font.internal_seac_contours(-1, 999, 0, 0) == ()
+    assert font.internal_seac_contours(67, 68, 0, 0) == ()
+    font.is_cid_keyed = True
+    assert font.normalized_glyph_contours(3) == ()
+
+
+def test_random_charstring_geometry_is_repeatable() -> None:
+    font = internal_font(b"")
+    # Two random values provide the moveto operands; rlineto adds (10, 20).
+    font.charstrings = [bytes([12, 23, 12, 23, 21, 149, 159, 5, 14])]
+    first = font.glyph_bbox_for_gid(0)
+    assert first == font.glyph_bbox_for_gid(0)
+    assert first is not None
+    x0, y0, x1, y1 = first
+    assert 0 < x0 <= 1
+    assert 0 < y0 <= 1
+    assert x1 - x0 == 10
+    assert y1 - y0 == 20
+
+
+@pytest.mark.parametrize("data", [b"", b"\x01\x00\x04", b"\x02\x00\x04\x01"])
+def test_invalid_cff_headers_fail_clearly(data: bytes) -> None:
+    with pytest.raises(ValueError, match="invalid CFF font program"):
+        CFFFont(data)
+
+
+def test_minimal_cff_font_initializes_from_bytes() -> None:
+    font = CFFFont(
+        b"\x01\x00\x04\x01"
+        b"\x00\x01\x01\x01\x02F"
+        b"\x00\x01\x01\x01\x03\xa0\x11"
+        b"\x00\x00\x00\x00"
+        b"\x00\x01\x01\x01\x02\x0e"
+    )
+    assert font.charstrings == [b"\x0e"]
+    assert font.glyph_bbox_for_gid(0) is None
+    assert font.dict_offset(16, default=0) == 0
+    with pytest.raises(ValueError, match="CharStrings offset"):
+        font.dict_offset(99)
+
+
+@pytest.mark.parametrize("payload", [b"\x03\x00", b"\x09"])
+def test_cid_fdselect_recovery_after_strict_reader_rejects_table(payload: bytes) -> None:
+    font = internal_font(payload)
+    font.is_cid_keyed = True
+    font.top_dict = {(12, 37): [3]}
+    assert font.read_fd_select() == (0, 0, 0, 0)
+
+
+def test_charset_multiple_ranges_preserve_separate_cid_intervals() -> None:
+    font = internal_font(b"\x01\x00\x2a\x00\x00\x3c\x09")
+    assert font.read_charset(3, 4) == {0: 0, 42: 1, 60: 2, 61: 3}
+
+
+def test_glyph_feature_grid_handles_subunit_dimensions() -> None:
+    feature = internal_feature_from_contours([[(0, 0), (0.5, 0.5)]])
+    assert feature.cells == ((0, 0), (8, 12))
+    assert feature.aspect == 1.0

@@ -138,40 +138,37 @@ class CFFFont(PdfCFFFont):
         pos += 1
         cid_to_gid = {0: 0}
         gid = 1
-        try:
-            if fmt == 0:
-                while gid < glyph_count:
+        if fmt == 0:
+            while gid < glyph_count:
+                if pos + 2 > len(data):
+                    break
+                cid = int.from_bytes(data[pos : pos + 2], "big")
+                pos += 2
+                cid_to_gid.setdefault(cid, gid)
+                gid += 1
+        elif fmt in {1, 2}:
+            while gid < glyph_count:
+                if pos + 2 > len(data):
+                    break
+                first = int.from_bytes(data[pos : pos + 2], "big")
+                pos += 2
+                if fmt == 1:
+                    if pos >= len(data):
+                        break
+                    left = data[pos]
+                    pos += 1
+                else:
                     if pos + 2 > len(data):
                         break
-                    cid = int.from_bytes(data[pos : pos + 2], "big")
+                    left = int.from_bytes(data[pos : pos + 2], "big")
                     pos += 2
-                    cid_to_gid.setdefault(cid, gid)
+                for offset in range(left + 1):
+                    if gid >= glyph_count:
+                        break
+                    cid_to_gid.setdefault(first + offset, gid)
                     gid += 1
-            elif fmt in {1, 2}:
-                while gid < glyph_count:
-                    if pos + 2 > len(data):
-                        break
-                    first = int.from_bytes(data[pos : pos + 2], "big")
-                    pos += 2
-                    if fmt == 1:
-                        if pos >= len(data):
-                            break
-                        left = data[pos]
-                        pos += 1
-                    else:
-                        if pos + 2 > len(data):
-                            break
-                        left = int.from_bytes(data[pos : pos + 2], "big")
-                        pos += 2
-                    for offset in range(left + 1):
-                        if gid >= glyph_count:
-                            break
-                        cid_to_gid.setdefault(first + offset, gid)
-                        gid += 1
-            else:
-                return {gid: gid for gid in range(glyph_count)}
-        except IndexError:
-            pass
+        else:
+            return {gid: gid for gid in range(glyph_count)}
         return cid_to_gid
 
     def read_encoding_codes(self, pos: int) -> dict[int, int]:
@@ -323,32 +320,29 @@ class CFFFont(PdfCFFFont):
         fmt = data[pos]
         pos += 1
         fd_select = [0] * glyph_count
-        try:
-            if fmt == 0:
-                if pos + glyph_count <= len(data):
-                    return tuple(data[pos : pos + glyph_count])
-            elif fmt == 3:
-                if pos + 2 > len(data):
+        if fmt == 0:
+            if pos + glyph_count <= len(data):
+                return tuple(data[pos : pos + glyph_count])
+        elif fmt == 3:
+            if pos + 2 > len(data):
+                return tuple(fd_select)
+            range_count = int.from_bytes(data[pos : pos + 2], "big")
+            pos += 2
+            ranges: list[tuple[int, int]] = []
+            for ignored in range(range_count):
+                if pos + 3 > len(data):
                     return tuple(fd_select)
-                range_count = int.from_bytes(data[pos : pos + 2], "big")
-                pos += 2
-                ranges: list[tuple[int, int]] = []
-                for ignored in range(range_count):
-                    if pos + 3 > len(data):
-                        return tuple(fd_select)
-                    first = int.from_bytes(data[pos : pos + 2], "big")
-                    fd = data[pos + 2]
-                    pos += 3
-                    ranges.append((first, fd))
-                if pos + 2 > len(data):
-                    return tuple(fd_select)
-                sentinel = int.from_bytes(data[pos : pos + 2], "big")
-                for idx, (first, fd) in enumerate(ranges):
-                    end = ranges[idx + 1][0] if idx + 1 < len(ranges) else sentinel
-                    for gid in range(max(0, first), min(glyph_count, end)):
-                        fd_select[gid] = fd
-        except IndexError:
-            pass
+                first = int.from_bytes(data[pos : pos + 2], "big")
+                fd = data[pos + 2]
+                pos += 3
+                ranges.append((first, fd))
+            if pos + 2 > len(data):
+                return tuple(fd_select)
+            sentinel = int.from_bytes(data[pos : pos + 2], "big")
+            for idx, (first, fd) in enumerate(ranges):
+                end = ranges[idx + 1][0] if idx + 1 < len(ranges) else sentinel
+                for gid in range(max(0, first), min(glyph_count, end)):
+                    fd_select[gid] = fd
         return tuple(fd_select)
 
     def read_font_dicts(
@@ -356,7 +350,7 @@ class CFFFont(PdfCFFFont):
     ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
         try:
             return super().read_font_dicts()
-        except (IndexError, TypeError, ValueError):
+        except (IndexError, OverflowError, TypeError, ValueError):
             return self.internal_recover_read_font_dicts()
 
     def internal_recover_read_font_dicts(
@@ -426,7 +420,7 @@ class CFFFont(PdfCFFFont):
             return self.internal_recover_local_subrs_for_glyph(glyph_id)
 
     def internal_recover_local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
-        fd_index = self.fd_select[glyph_id] if glyph_id < len(self.fd_select) else 0
+        fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
         if 0 <= fd_index < len(self.local_subrs):
             return self.local_subrs[fd_index]
         return ()
@@ -573,14 +567,6 @@ def internal_feature_from_contours(
     for px, py in points:
         cell_x = round((px - min_x) / width * 17)
         cell_y = round((py - min_y) / height * 23)
-        if cell_x < 0:
-            cell_x = 0
-        elif cell_x > 17:
-            cell_x = 17
-        if cell_y < 0:
-            cell_y = 0
-        elif cell_y > 23:
-            cell_y = 23
         add_cell((cell_x, cell_y))
     bitmap = rasterize_contours(contours, width=18, height=24)
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)

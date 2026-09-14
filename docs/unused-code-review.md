@@ -1,5 +1,40 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: CFF dictionary recovery and accents
+
+This checkpoint adds **24 tests**, bringing the focused CFF suite to **98 tests**. The
+full suite with pinned Tesseract enabled passed **3,052 tests**, with **32 veraPDF
+integration skips**, in **726.08s**. Reports come from this single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| Core CFF font-program module | 87.44% → 98.50% | 80.49% → 95.38% |
+| Entire workspace | 75.05% → 75.24% | 62.28% → 62.57% |
+
+Tests reproduced two recovery bugs. Infinite FDArray offsets escaped as OverflowError
+before reaching the existing finite-offset validation; the reader now routes that error
+through recovery. Negative glyph IDs indexed from the end of FDSelect (or raised for more
+negative values); recovery now uses the default font dictionary consistently with matrix
+recovery and positive out-of-range IDs.
+
+Additional checks cover malformed dictionary entries without shifting FD indices,
+predefined charset overflow, custom and expert encodings, composed accent placement and
+bounds, child matrix recovery/composition, deterministic random charstrings, invalid headers,
+and complete minimal CFF construction. Byte-reader IndexError handlers were removed where
+every byte access already has a length check. Feature-grid clamps were removed because the
+coordinates are normalized against their own bounds and remain inside the grid, including
+subunit dimensions. These are source simplifications, not coverage exclusions.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing compiled modules or new top-level unused-symbol candidates were found.
+The four coverage source roots and all exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **9,732 statements and 5,697 branches**
+remain uncovered. CFF retains nine uncovered statements and 11 branches. Larger gaps remain
+in OCR stroke processing, pdfplumber, document structure, layout, and rendering. Newstroke
+has no dedicated OCR tests yet; deterministic vector paths can exercise its template fitting
+and page-level acceptance thresholds in the next pass.
+
 ## Workspace coverage completion: CFF recovery and glyph matching
 
 This checkpoint adds **74 deterministic tests** for truncated CFF charsets and encodings,
