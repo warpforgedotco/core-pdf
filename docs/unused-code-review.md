@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## PDFMiner nested form and page-transform contracts
+
+Added **16 differential cases** for single/nested Form XObjects, all four page
+rotations, and zero/nonzero MediaBox origins. Tests compare the full recursive
+layout tree, figure and character bounds rounded to six decimals, and character
+text against installed PDFMiner. An explicit `AB` text control prevents empty
+projections from passing. Authored streams are indirect PDF objects. No
+production change was needed.
+
+The focused run passed **16 tests in 27.25s**, with coverage appended to the
+verified **7,717-test full run** on unchanged production sources. This was not
+another full-suite run. Workspace coverage is **35,394 / 38,843 statements
+(91.12%)** and **12,500 / 14,958 branches (83.57%)**. The committed full-run
+baseline remains unchanged. All four source roots, vendor-only omissions, and
+**554 excluded lines** remain unchanged. All pre-push quality gates and the
+coverage check passed. The goal remains incomplete: **3,449 statements and
+2,458 branches** remain uncovered. These are local results.
+
 ## JBIG2 segment-header reference boundaries
 
 Corrected segment reference widths, extended-count parsing, and reserved count
