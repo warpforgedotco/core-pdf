@@ -753,15 +753,18 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         stack.clear()
-                    case 4:  # vmoveto
+                    case 4 | 22:  # vmoveto / hmoveto
                         if len(stack) == 1:
-                            dy = stack[0]
+                            displacement = stack[0]
                         elif not width_resolved and len(stack) == 2:
-                            dy = stack[1]
+                            displacement = stack[1]
                         else:
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
-                        move(0.0, dy)
+                        if byte == 4:
+                            move(0.0, displacement)
+                        else:
+                            move(displacement, 0.0)
                         stack.clear()
                     case 5:  # rlineto
                         if not has_current_point() or len(stack) < 2 or len(stack) % 2:
@@ -849,16 +852,6 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         width_resolved = True
                         move(dx, dy)
                         stack.clear()
-                    case 22:  # hmoveto
-                        if len(stack) == 1:
-                            dx = stack[0]
-                        elif not width_resolved and len(stack) == 2:
-                            dx = stack[1]
-                        else:
-                            raise ValueError("invalid Type 2 charstring")
-                        width_resolved = True
-                        move(dx, 0.0)
-                        stack.clear()
                     case 24:  # rcurveline -- curves followed by exactly one line
                         if not has_current_point() or len(stack) < 8 or (len(stack) - 2) % 6:
                             raise ValueError("invalid Type 2 charstring")
@@ -875,43 +868,21 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             line(line_args[i], line_args[i + 1])
                         curve(*stack[-6:])
                         stack.clear()
-                    case 26:  # vvcurveto
+                    case 26 | 27:  # vvcurveto / hhcurveto
                         if (
                             not has_current_point()
                             or len(stack) < 4
                             or len(stack) % 4 not in {0, 1}
                         ):
                             raise ValueError("invalid Type 2 charstring")
-                        dx1 = stack.pop(0) if len(stack) % 2 else 0.0
+                        first_offset = stack.pop(0) if len(stack) % 2 else 0.0
                         for i in range(0, len(stack) - 3, 4):
-                            curve(
-                                dx1,
-                                stack[i],
-                                stack[i + 1],
-                                stack[i + 2],
-                                0.0,
-                                stack[i + 3],
-                            )
-                            dx1 = 0.0
-                        stack.clear()
-                    case 27:  # hhcurveto
-                        if (
-                            not has_current_point()
-                            or len(stack) < 4
-                            or len(stack) % 4 not in {0, 1}
-                        ):
-                            raise ValueError("invalid Type 2 charstring")
-                        dy1 = stack.pop(0) if len(stack) % 2 else 0.0
-                        for i in range(0, len(stack) - 3, 4):
-                            curve(
-                                stack[i],
-                                dy1,
-                                stack[i + 1],
-                                stack[i + 2],
-                                stack[i + 3],
-                                0.0,
-                            )
-                            dy1 = 0.0
+                            first, dx2, dy2, last = stack[i : i + 4]
+                            if byte == 26:
+                                curve(first_offset, first, dx2, dy2, 0.0, last)
+                            else:
+                                curve(first, first_offset, dx2, dy2, last, 0.0)
+                            first_offset = 0.0
                         stack.clear()
                     case 30 | 31:  # vhcurveto / hvcurveto -- alternating tangents
                         if (

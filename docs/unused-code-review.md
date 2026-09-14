@@ -1,5 +1,34 @@
 # Coverage and unused-code findings
 
+## Type 2 interpreter and CFF binary contracts
+
+Added **141 cases** for arithmetic and conditional operators, stack order, shared
+transient storage and per-glyph reset, invalid indices and underflow, all flex variants,
+axis-specific moves/curves, optional width handling, and the 48-operand limit. Path
+callbacks assert exact emitted displacements and errors before geometry emission.
+Operator expectations follow [Adobe Technical Note 5177](https://adobe-type-tools.github.io/font-tech-notes/pdfs/5177.Type2.pdf).
+Undefined-input handling is characterized as implementation behavior, not a mandated default.
+CFF tests independently encode number boundaries and INDEX tables, including empty
+entries, all offset sizes, memoryviews, truncation, and signed/fixed-point values.
+
+Horizontal/vertical moves now share width handling, validation, and stack cleanup.
+Parallel-tangent curves share validation and first-curve offset handling while preserving
+axis-specific displacements. This removes **29 net production lines** without changing
+public entry points or recovery boundaries. Font-program coverage is **94.14% statements /
+90.10% branches**, with **39 statements and 38 branches** remaining in that module.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,712 tests,
+no skips, in 533.80s**. Workspace coverage increased **84.75% → 84.94% statements**
+and **74.25% → 74.60% branches**: **33,057 / 38,916 statements** and
+**11,200 / 15,014 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; the exact verified fractions ratchet the baseline.
+
+The isolated spec suite passed **2,744 tests**. Ruff, formatting, both type checkers,
+import contracts, and pre-push checks passed. The static unused-symbol scan is empty.
+The full 100% goal remains incomplete: **5,859 statements and 3,814 branches** remain
+uncovered. These are local measurements; the longer run is not a performance benchmark.
+
+
 ## JBIG2 packed bitmap composition
 
 Added **121 independent pixel-oracle and buffer-contract cases** across scalar, NumPy,
