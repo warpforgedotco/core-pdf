@@ -356,4 +356,3 @@ class internal_PatternTargetMixin:
         finally:
             if pushed_clip:
                 clip_state.pop()
-        return False
