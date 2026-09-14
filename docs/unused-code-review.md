@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Layout diagnostic contracts
+
+Added **33 deterministic cases** for nonpositive run/advance/ink geometry, visibility
+and whitespace controls, unsupported Unicode, confidence thresholds, glyph-cluster
+text mismatch and geometry, writing-axis checks, and page issue locations/counts.
+Valid text and empty lines provide controls against false positives. These helpers
+remain used by public page diagnostics. All tests pass without production changes.
+
+The 33 tests passed in **9.14s**, appending coverage to the verified locked
+**5,995-test** full workspace report with real Tesseract and veraPDF and subsequent
+69 outline, 76 codec, 94 blend, and 43 word-grouping cases. Production sources are
+unchanged since that full run; the full suite was not rerun for this test-only change.
+Workspace coverage increased **88.24% → 88.51% statements** and
+**79.62% → 80.01% branches**: **34,399 / 38,864 statements** and
+**11,978 / 14,970 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan
+returned no candidates. The 100% goal remains incomplete: **4,465 statements and
+2,992 branches** remain uncovered. These are local results.
+
+
 ## Differential word grouping contracts
 
 Added **43 cases** comparing the pdfplumber facade with the installed reference
