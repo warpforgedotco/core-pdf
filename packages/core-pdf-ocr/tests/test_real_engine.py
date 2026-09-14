@@ -1,6 +1,7 @@
 """Opt-in integration with the pinned Tesseract engine and English model."""
 
 import hashlib
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -21,16 +22,15 @@ pytestmark = pytest.mark.skipif(
     reason="set CORE_PDF_TESSERACT_TESTS=1 to run pinned real-engine integration",
 )
 FIXTURES = Path(__file__).with_name("fixtures")
-TESSERACT_VERSION = "tesseract 5.5.1"
-ENG_SHA256 = "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+PINS = json.loads((FIXTURES / "engine.json").read_text())
 
 
 @pytest.fixture(autouse=True)
 def pinned_engine() -> None:
     engine = tesseract.internal_import_tesserocr()
-    assert engine.tesseract_version().splitlines()[0] == TESSERACT_VERSION
+    assert engine.tesseract_version().splitlines()[0] == PINS["version"]
     model = Path(tesseract.internal_tessdata_path()) / "eng.traineddata"
-    assert hashlib.sha256(model.read_bytes()).hexdigest() == ENG_SHA256
+    assert hashlib.sha256(model.read_bytes()).hexdigest() == PINS["model_sha256"]
 
 
 @pytest.fixture

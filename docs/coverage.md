@@ -6,6 +6,7 @@ and reviewed candidates.
 Run the configured suite from the repository root:
 
 ```sh
+CORE_PDF_TESSERACT_TESTS=1 \
 uv run --locked --all-packages --extra unstructured --group test --group vendor-test \
   pytest -n auto --cov --cov-config=pyproject.toml \
   --cov-report=term --cov-report=html --cov-report=json -ra
@@ -29,9 +30,10 @@ tests. OCR tests cover assembly, routing/fusion, cross-page enrichment, cancella
 engine ownership/failures, timeout recovery, pass scheduling, raster budgets, rotation,
 and coordinate remapping using fixed inputs and engine stubs.
 Serialization tests cover JSON identity, escaping, merged cells, and CSV/TEI selections.
-An opt-in [pinned Tesseract suite](../packages/core-pdf-ocr/tests/fixtures/README.md)
+The [pinned Tesseract suite](../packages/core-pdf-ocr/tests/fixtures/README.md)
 also checks actual recognition and cleanup with authored image-only PDFs and raster crops.
-Set `CORE_PDF_TESSERACT_TESTS=1` to include it; otherwise its four checks skip.
+Default CI and the standard command above enable it with `CORE_PDF_TESSERACT_TESTS=1`;
+focused local pytest runs can omit the flag to skip its four checks.
 These tests do not exercise every native API or real OCR engine workflow. Real veraPDF execution
 tests require `CORE_PDF_VERAPDF`; otherwise they skip. The default differential matrix also
 omits selected expensive fixtures and uses each facade's own corpus. Prefix the command
@@ -52,3 +54,21 @@ a function or module:
 
 Treat removal candidates as review findings, not automatic deletions. Add focused tests
 for supported behavior; remove internal code only after establishing that it has no caller.
+
+## Default CI and coverage floors
+
+Every pull request runs the complete workspace suite, including pinned real Tesseract,
+with the locked Unstructured extra and reference libraries. CI verifies the OCR binding's
+linked engine and downloads the English model using the shared fixture manifest's checksum.
+Real veraPDF tests run in their existing Java job. Both jobs must pass before their coverage
+databases are combined under the existing `Differential / Python 3.13` status.
+
+The `workspace-coverage` artifact contains HTML, JSON, and the combined `.coverage` database.
+`scripts/check_coverage.py` rejects incomplete source inventories, missing branch coverage,
+and regressions in either statement or branch coverage. `coverage-baseline.json` stores exact
+fractions so display rounding cannot make an unchanged result fail. The initial floor is the
+last recorded complete local run; confirm and ratchet it upward with complete CI results.
+Do not update it from focused tests or lower it to accommodate a regression.
+
+Focused local pytest invocations remain lightweight; coverage is not injected into pytest's
+`addopts`. Keep all four source roots and the existing vendor-only omit rule.
