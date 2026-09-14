@@ -26,8 +26,12 @@ and [xdist documentation](https://pytest-cov.readthedocs.io/en/latest/xdist.html
 The default test paths cover native core tests (including CLI and assembly checks),
 compatibility differentials, deterministic OCR tests, strict spec tests, and validation
 tests. OCR tests cover assembly, routing/fusion, cross-page enrichment, cancellation,
-engine ownership/failures, and timeout recovery using fixed observations and engine stubs.
+engine ownership/failures, timeout recovery, pass scheduling, raster budgets, rotation,
+and coordinate remapping using fixed inputs and engine stubs.
 Serialization tests cover JSON identity, escaping, merged cells, and CSV/TEI selections.
+An opt-in [pinned Tesseract suite](../packages/core-pdf-ocr/tests/fixtures/README.md)
+also checks actual recognition and cleanup with authored image-only PDFs and raster crops.
+Set `CORE_PDF_TESSERACT_TESTS=1` to include it; otherwise its four checks skip.
 These tests do not exercise every native API or real OCR engine workflow. Real veraPDF execution
 tests require `CORE_PDF_VERAPDF`; otherwise they skip. The default differential matrix also
 omits selected expensive fixtures and uses each facade's own corpus. Prefix the command

@@ -290,3 +290,41 @@ def test_cancelled_page_does_not_start_raster_or_engine(
         ocr_capture, WorkPlan(PageRoute.NATIVE), ExtractionScope(), stroked_profile=None
     )
     assert not len(result.observations)
+
+
+@pytest.mark.parametrize("same_image", [True, False])
+def test_session_cancellation_between_tasks_closes_engine(
+    task: internal_OcrTask,
+    fake_engine: Engine,
+    ocr_capture: PageAnalysis,
+    same_image: bool,
+) -> None:
+    from core_pdf_ocr.impl.extract.ocr.session import internal_OcrSession
+
+    second = task if same_image else replace(task, image=RasterImage(bytes(100), 10, 10, 1))
+    context = ExtractionScope(cancelled=lambda: "recognize" in fake_engine.calls)
+    session = internal_OcrSession(ocr_capture, WorkPlan(PageRoute.OCR), True, context, None)
+    with pytest.raises(internal_ExtractionCancelled):
+        session.recognize_tasks((task, second))
+    assert fake_engine.calls.count("recognize") == 1
+    assert fake_engine.calls.count("end") == 1
+
+
+@pytest.mark.parametrize(("width", "height"), [(1, 1000), (1000, 1)])
+def test_timeout_retry_budget_holds_for_narrow_rasters(
+    monkeypatch: pytest.MonkeyPatch,
+    width: int,
+    height: int,
+) -> None:
+    monkeypatch.setattr(tesseract, "OCR_TIMEOUT_RETRY_PIXELS", 4)
+    task = internal_OcrTask(
+        3,
+        RasterImage(bytes(width * height), width, height, 1),
+        (0, 0, width, height),
+        (10, 20, 30, 40),
+        300,
+    )
+    retry = tesseract.internal_timeout_recovery_task(task)
+    assert retry is not None
+    assert retry.image.width * retry.image.height <= 4
+    assert retry.page_box == task.page_box

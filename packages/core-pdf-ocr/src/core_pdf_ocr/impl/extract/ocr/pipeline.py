@@ -143,11 +143,11 @@ class internal_OcrPassState:
                 )
             else:
                 additions = len(candidate.observations)
-            next_state = replace(self, previous_region_additions=additions)
             if not additions:
-                return next_state
+                return replace(self, previous_region_additions=0)
             return replace(
-                next_state,
+                self,
+                previous_region_additions=additions,
                 selected=candidate,
                 selected_tasks=(*self.selected_tasks, *candidate_source_tasks),
                 seeded_region_selected=used_native_seed and ocr_pass.seed_with_native,

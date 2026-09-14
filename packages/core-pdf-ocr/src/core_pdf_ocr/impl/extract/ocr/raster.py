@@ -334,7 +334,16 @@ def internal_decoded_image_raster(
     height = decoded_height
     channels = decoded_channels
     if width * height > max_pixels:
-        reduction = math.sqrt(max_pixels / (width * height)) * 0.999
+        # Either dimension can bottom out at one pixel on a narrow image.
+        # Bound the other dimension as well as the estimated area.
+        reduction = (
+            min(
+                math.sqrt(max_pixels / (width * height)),
+                max_pixels / width,
+                max_pixels / height,
+            )
+            * 0.999
+        )
         target_width = max(1, int(width * reduction))
         target_height = max(1, int(height * reduction))
         if samples is None:
@@ -357,7 +366,10 @@ def internal_decoded_image_raster(
         # them. Fractional factors have no such option, and there replication
         # staircases the strokes badly enough to change which glyph is read.
         whole_factor = round(scale)
-        if whole_factor >= 1 and abs(scale - whole_factor) <= DIRECT_OCR_WHOLE_SCALE_TOLERANCE:
+        if (
+            1 <= whole_factor <= headroom
+            and abs(scale - whole_factor) <= DIRECT_OCR_WHOLE_SCALE_TOLERANCE
+        ):
             target_width = width * whole_factor
             target_height = height * whole_factor
             samples = resample_nearest(samples, target_height, target_width)

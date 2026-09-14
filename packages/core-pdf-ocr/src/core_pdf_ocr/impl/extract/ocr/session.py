@@ -173,7 +173,11 @@ class internal_OcrSession:
     ) -> tuple[internal_Candidate, ...]:
         groups = internal_ocr_task_groups(tasks)
         return tuple(
-            candidate for group in map(internal_recognize_group, groups) for candidate in group
+            candidate
+            for group in groups
+            for candidate in internal_recognize_group(
+                group, raise_if_cancelled=self.context.raise_if_cancelled
+            )
         )
 
     def recognize_tasks(

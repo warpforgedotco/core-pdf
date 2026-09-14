@@ -538,14 +538,22 @@ def internal_recognize(
     return internal_select_character_filtered_candidate(candidate, filtered_candidate)
 
 
-def internal_recognize_group(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
+def internal_recognize_group(
+    tasks: tuple[internal_OcrTask, ...],
+    *,
+    raise_if_cancelled: Callable[[], None] | None = None,
+) -> tuple[internal_Candidate, ...]:
     """Recognize same-raster tasks while reusing Tesseract image setup."""
     if not tasks:
         return ()
+    if raise_if_cancelled is not None:
+        raise_if_cancelled()
     first = tasks[0]
     with internal_owned_api(first.mode) as api:
         candidates = [internal_recognize(first, api_override=api)]
         for task in tasks[1:]:
+            if raise_if_cancelled is not None:
+                raise_if_cancelled()
             candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
         return tuple(candidates)
 
@@ -562,7 +570,12 @@ def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask |
     pixels = max(1, width * height)
     if pixels <= OCR_TIMEOUT_RETRY_PIXELS:
         return None
-    reduction = math.sqrt(OCR_TIMEOUT_RETRY_PIXELS / pixels)
+    # Clamping a thin axis to one pixel must not let the other exceed the budget.
+    reduction = min(
+        math.sqrt(OCR_TIMEOUT_RETRY_PIXELS / pixels),
+        OCR_TIMEOUT_RETRY_PIXELS / max(1, width),
+        OCR_TIMEOUT_RETRY_PIXELS / max(1, height),
+    )
     target_width = max(1, int(width * reduction))
     target_height = max(1, int(height * reduction))
     source = task.image.array()[y : y + height, x : x + width]
