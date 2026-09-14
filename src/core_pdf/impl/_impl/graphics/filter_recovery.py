@@ -135,7 +135,8 @@ def recover_flate(data: bytes, wbits: int = zlib.MAX_WBITS) -> bytes | None:
     try:
         decoder = zlib.decompressobj(wbits)
         decoded = decoder.decompress(data) + decoder.flush()
-        if wbits < 0 and not decoder.eof and len(data) < MIN_TRUNCATED_RAW_FLATE_BYTES:
+        minimum = MIN_TRUNCATED_RAW_FLATE_BYTES if wbits < 0 else 2
+        if not decoder.eof and len(data) < minimum:
             return None
         return decoded
     except zlib.error:

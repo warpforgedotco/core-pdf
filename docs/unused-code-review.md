@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Stream recovery and incomplete compression headers
+
+Added **146 deterministic cases** for ASCIIHex junk/odd nibbles, RunLength
+truncated literals and repeats, ASCII85 delimiters and invalid groups, native and
+Python LZW routes, real raw/zlib/gzip Flate data, checksum recovery, and content
+recognition across strings, names, containers, memoryview slices, and scan limits.
+Testing exposed a one-byte invalid Flate stream being accepted as empty output
+while a wrapped decoder was still waiting for the rest of its header. Recovery
+now requires at least two bytes for an incomplete wrapped stream, retaining the
+existing eight-byte minimum for incomplete raw data. Tests check every possible
+one-byte prefix in all three decoder modes and preserve complete empty streams.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **7,165 tests, no skips, in 430.63s**. The recovery module now has
+**173 / 173 statements and 76 / 76 branches covered**. Workspace coverage increased
+**89.69% → 89.82% statements** and **81.45% → 81.62% branches**:
+**34,912 / 38,867 statements** and **12,219 / 14,970 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including both
+type checkers and import contracts. The static unused-symbol scan returned no
+candidates; it is not proof that every remaining symbol is necessary.
+The 100% goal remains incomplete: **3,955 statements and 2,751 branches** remain
+uncovered. These are local results.
+
 ## Polygon painting across scanline, sampled, and analytic routes
 
 Added **356 deterministic cases** comparing painted pixels with explicit rectangle
