@@ -400,7 +400,7 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
         if width <= 0.0:
             suspect_runs += 1
             continue
-        if abs((width / max(1, text_len)) - run.space_width) <= max(1.0, run.space_width * 0.05):
+        if abs((width / text_len) - run.space_width) <= max(1.0, run.space_width * 0.05):
             suspect_runs += 1
     if suspect_runs < max(3, len(non_space_runs) // 3):
         return None
@@ -410,20 +410,20 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
     for run in non_space_runs:
         if previous is not None:
             prev_len = len(previous.stripped_text)
-            if prev_len > 0:
-                delta = run.x0 - previous.x0
-                ratio = delta / prev_len
-                space_width = max(1.0, min(previous.space_width, run.space_width))
-                if space_width * 0.18 <= ratio <= space_width * 0.95:
-                    ratios.append(ratio)
+            delta = run.x0 - previous.x0
+            ratio = delta / prev_len
+            space_width = max(1.0, min(previous.space_width, run.space_width))
+            if space_width * 0.18 <= ratio <= space_width * 0.95:
+                ratios.append(ratio)
         previous = run
     if len(ratios) < 3:
         return None
     ratios.sort()
     median_ratio = ratios[len(ratios) // 2]
-    typical_space = median_low([run.space_width for run in non_space_runs if run.space_width > 0.0])
-    if typical_space <= 0.0:
+    spaces = [run.space_width for run in non_space_runs if run.space_width > 0.0]
+    if not spaces:
         return median_ratio
+    typical_space = median_low(spaces)
     return min(median_ratio, typical_space * 0.48)
 
 

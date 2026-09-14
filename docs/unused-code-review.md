@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: text geometry and width estimation
+
+Added **49 deterministic cases** for reading direction, stream-order ties, blank-run
+filtering, overlap tolerances, positive gaps, tracked glyph detection, explicit spaces,
+word/column gap thresholds, and suspect character-width estimates. A zero-width glyph line
+with no positive space metrics previously raised `StatisticsError` while calculating a
+median. It now uses the position-derived median estimate. Removed two redundant length
+guards after the existing nonempty alphabetic input filter.
+
+The full suite with pinned Tesseract enabled passed **3,726 tests**, with **32 veraPDF
+integration skips**, in **204.62s**. Reading direction through character-width estimation
+now has full statement and branch coverage. The whole `text_rules.py` module reached
+**77.07% statements / 64.12% branches**; lexical joining and other text rules remain.
+Workspace coverage rose **80.93% → 81.03% statements** and **69.13% → 69.32% branches**.
+Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,452 statements and 4,664 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: word-rank lookup and resource loading
 
 Added **25 deterministic tests** for byte-backed and mapped indexes, empty mappings, exact
