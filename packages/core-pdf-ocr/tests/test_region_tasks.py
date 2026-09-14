@@ -219,3 +219,73 @@ def test_candidate_regions_use_direct_pixels_unless_overlaid_images_need_composi
     )
     assert all(task.recognize_words is layered for task in result)
     assert calls == ([box] if layered else [])
+
+
+@pytest.mark.parametrize(
+    ("enabled", "characters", "images", "full_page", "expected"),
+    [
+        (False, 0, 1, True, False),
+        (True, 10, 1, False, True),
+        (True, 0, 0, False, True),
+        (True, 0, 1, True, True),
+        (True, 1, 1, True, False),
+        (True, 0, 1, False, False),
+    ],
+)
+def test_direct_scan_routing_respects_opt_out_and_native_page_evidence(
+    ocr_capture, enabled: bool, characters: int, images: int, full_page: bool, expected: bool
+) -> None:
+    from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
+
+    capture = replace(
+        ocr_capture,
+        evidence=replace(
+            ocr_capture.evidence,
+            visible_native_characters=characters,
+            image_count=images,
+            full_page_image=full_page,
+        ),
+    )
+    plan = WorkPlan(PageRoute.OCR, allow_direct_image_ocr=enabled)
+    assert region_tasks.internal_direct_scan_allowed(capture, plan) is expected
+
+
+@pytest.mark.parametrize(
+    ("dominant", "render_available"), [(True, False), (False, True), (False, False)]
+)
+def test_candidate_region_falls_back_to_dominant_scan_or_renderer(
+    monkeypatch: pytest.MonkeyPatch, ocr_capture, dominant: bool, render_available: bool
+) -> None:
+    from core_pdf_ocr.impl.extract.ocr.types import internal_OcrRegion, internal_RasterRegion
+
+    source = internal_raster(numpy.zeros((100, 100, 1), dtype=numpy.uint8))
+    box = (0, 0, 100, 100)
+    calls = []
+
+    def fallback(capture, *, max_pixels):
+        assert capture is ocr_capture
+        assert max_pixels == operation.pixel_budget
+        calls.append("dominant")
+        return internal_RasterRegion(source, box) if dominant else None
+
+    def render(capture, scale, *, crop, rendered, max_pixels):
+        assert crop == box
+        assert max_pixels == operation.pixel_budget
+        calls.append("render")
+        return source if render_available else None
+
+    operation = internal_pass()
+    monkeypatch.setattr(region_tasks, "internal_page_image_regions", lambda *a, **k: ())
+    monkeypatch.setattr(region_tasks, "internal_dominant_image_region", fallback)
+    monkeypatch.setattr(region_tasks, "internal_rendered_page_raster", render)
+    tasks = region_tasks.internal_candidate_region_tasks(
+        ocr_capture,
+        (internal_OcrRegion(box, 1, ("test",)),),
+        operation,
+        rendered=None,
+        compact_image=False,
+    )
+    assert len(tasks) == (2 if dominant or render_available else 0)
+    assert calls == (["dominant"] if dominant else ["dominant", "render"])
+    if tasks:
+        assert all(task.image is source.image for task in tasks)

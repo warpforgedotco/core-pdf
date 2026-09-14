@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR candidate reconciliation
+
+Added **46 deterministic tests**: 37 for candidate reconciliation and nine for remaining
+region-task fallbacks. Both modules now have **100% statement and branch coverage**.
+Tests cover Unicode/punctuation normalization, contiguous token containment, hidden-text
+minimum-count/token/spatial thresholds, nearest unused repeated-token matching, overlapping
+tile reconciliation, utility and mode selection, symbol preservation, stale replacement
+entries, augmentation confidence/coverage boundaries, direct-scan opt-out, dominant-image
+fallback, and unavailable raster handling. No production changes were needed.
+
+The full suite with pinned Tesseract enabled passed **3,401 tests**, with **32 veraPDF
+integration skips**, in **214.29s**. Workspace statement coverage rose **79.38% → 79.64%**
+and branch coverage **67.09% → 67.42%**. These numbers describe that single full-suite run.
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **7,999 statements and 4,954 branches**
+remain uncovered. OCR pipeline orchestration, engine handling, and all remaining core/spec
+and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR region tasks
 
 Added **18 deterministic tests** for same-image/mode batching, count and pixel budgets,
