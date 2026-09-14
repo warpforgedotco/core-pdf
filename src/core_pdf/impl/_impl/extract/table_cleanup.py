@@ -26,7 +26,7 @@ from core_pdf.impl._impl.output.model import (
 )
 from core_pdf.impl._impl.runtime.array_views import finite_median
 
-TABLE_MERGE_GAP = 36.0  # further increased to allow modestly wider table merges (conservative)
+TABLE_MERGE_GAP = 36.0  # Maximum vertical gap between adjacent table regions.
 
 
 def internal_cell_text(
@@ -53,7 +53,7 @@ def internal_table_quality(table: Table) -> tuple[int, int, float, int, int]:
     facts = internal_TableFacts.from_rows(table.rows)
     populated = len(facts.filled_texts)
     density = populated / max(1, facts.row_count * facts.columns)
-    # Allow more columns to be considered valid for table quality (up to 16)
+    # Prefer plausible multi-column tables before comparing population and density.
     return (int(2 <= facts.columns <= 16), populated, density, facts.row_count, -facts.columns)
 
 
@@ -107,7 +107,7 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
     ordered = sorted(tables, key=lambda table: -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3])
     merged: list[Table] = []
     for table in ordered:
-        if not merged or table.bbox is None or merged[-1].bbox is None:
+        if not merged:
             merged.append(table)
             continue
         previous = merged[-1]
@@ -119,10 +119,8 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
         previous_columns = max((len(row) for row in previous.rows), default=0)
         columns = max((len(row) for row in table.rows), default=0)
         vertical_gap = previous_bbox[1] - table_bbox[3]
-        # Relax adjacent-table merge conditions slightly to allow merging
-        # of tables with minor horizontal overlap or slightly differing column
-        # counts. This reduces false splits where a single logical table is
-        # broken into two adjacent segments.
+        # Continuations must share a column count and alignment, overlap
+        # horizontally, and remain within the allowed vertical gap.
         if (
             columns != previous_columns
             or not 2 <= columns <= 16
@@ -158,7 +156,10 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
             order=previous.order,
             rows=tuple(combined_rows),
             bbox=union_bbox(previous_bbox, table_bbox),
-            confidence=min(previous.confidence or 1.0, table.confidence or 1.0),
+            confidence=min(
+                (value for value in (previous.confidence, table.confidence) if value is not None),
+                default=1.0,
+            ),
             title=previous.title or table.title,
             caption=table.caption or previous.caption,
             metadata=previous.metadata,

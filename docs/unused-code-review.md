@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Table merge confidence and continuation contracts
+
+Added **32 deterministic cases** for adjacent-table confidence, repeated headers,
+row indexes, cell spans and geometry, title/caption selection, metadata preservation,
+merge rejection, missing geometry, and wrapped stream-row text/bounds.
+
+Seven confidence controls initially failed because zero was treated as missing by
+`confidence or 1.0`. Merging now takes the minimum supplied confidence, defaulting to
+1.0 only when both are absent. Consolidated the duplicated bounding-box guard and
+corrected historical comments that inaccurately described different column counts
+as mergeable. Explicit zero confidence survives the merge.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,679 tests,
+no skips, in 567.43s**. Workspace coverage increased **86.86% → 86.91% statements**
+and **77.77% → 77.85% branches**: **33,789 / 38,878 statements** and
+**11,657 / 14,974 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,089 statements and 3,317 branches**
+remain uncovered. These are local results.
+
+
 ## Decoded-image normalization contracts
 
 Added **72 deterministic cases** for gray/RGB JPX opacity selectors at 8/16-bit
