@@ -8,7 +8,36 @@ The [configured coverage run](coverage.md) passed: **2,608 passed, 32 skipped in
 The skipped tests are the opt-in installed veraPDF integration cases. This was the default
 facade-owned differential matrix, not the exhaustive cross-corpus matrix.
 
-## Coverage baseline
+## Post-removal rescan
+
+Source commit: `302c55f1`. The same configured suite passed after all removals:
+**2,608 passed, 32 skipped in 207.09s**. All skips require an installed veraPDF engine.
+
+| Package | Statements covered | Statement coverage | Branch coverage |
+| --- | ---: | ---: | ---: |
+| core-pdf | 18,165 / 25,902 | 70.13% | 55.80% |
+| core-pdf-spec | 7,604 / 8,990 | 84.58% | 73.27% |
+| core-pdf-ocr | 0 / 4,181 | 0.00% | 0.00% |
+| core-pdf-validate | 229 / 246 | 93.09% | 80.49% |
+| Total | 25,998 / 39,319 | 66.12% | 55.29% |
+
+The combined statement/branch headline is **63.10%**. Compared with the baseline,
+629 measured statements were removed, including 598 previously missing statements.
+There are now 13,321 missing statements and 37 nonempty files with no executed statements.
+The percentage increase comes from removing code, not adding behavioral coverage.
+
+The conservative static rescan found no remaining top-level production function or class
+whose identifier occurs only at its definition in tracked authored Python/TOML. This does
+not rule out unused methods, self-contained unused code groups, or names hidden by unrelated
+same-name occurrences. Method candidates still include public APIs and framework callbacks;
+none was promoted to a new high-confidence removal candidate. The OCR, serializer, CLI,
+facade-method, and rendering test gaps below remain.
+
+Ruff lint/format, mypy, ty, and all 19 import contracts passed. Every remaining root public
+export resolves, and the removed package and API names are absent. The generated HTML and
+JSON reports now describe this post-removal source state.
+
+## Original coverage baseline
 
 | Package | Statements covered | Statement coverage | Branch coverage |
 | --- | ---: | ---: | ---: |
@@ -26,11 +55,11 @@ coverage.py's default exclusions remain in effect (554 excluded statements).
 
 `src/core_pdf/impl/_impl/model/geometry.py:205` — `page_rotation_matrix`
 
-- All nine executable statements and all six branches are uncovered.
-- Its identifier occurs only at its definition across tracked authored Python,
+- All nine executable statements and all six branches were uncovered.
+- Its identifier occurred only at its definition across tracked authored Python,
   Markdown, and TOML files, including tests, scripts, and export tables.
-- It is an internal implementation helper, not part of the public or spec extension API.
-- It has no decorator or apparent registration mechanism.
+- It was an internal implementation helper, not part of the public or spec extension API.
+- It had no decorator or apparent registration mechanism.
 
 The helper was subsequently removed after this baseline. Its defining statement and nine
 body statements were deleted; no caller needed updating. The scan cannot establish whether
@@ -69,8 +98,10 @@ This is an intentional API removal, not an inference that uncovered public APIs 
 
 ## Review limits and next steps
 
-The static pass parsed top-level definitions and methods, then checked identifier occurrences
-across tracked authored Python, Markdown, and TOML. It is a conservative reference heuristic,
+The initial static pass parsed top-level definitions and methods, then checked identifier
+occurrences across tracked authored Python, Markdown, and TOML. The post-removal pass counted
+Python/TOML references separately so mentions in this report cannot hide candidates, then
+reviewed documentation and exports. It is a conservative reference heuristic,
 not a complete call graph. Framework callbacks such as the OCR HTML parser's `handle_starttag`,
 `handle_data`, and `handle_endtag` must be retained even when no explicit caller appears.
 Public spec exports and documented extension methods are compatibility contracts.
