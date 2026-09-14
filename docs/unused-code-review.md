@@ -1,5 +1,63 @@
 # Coverage and unused-code findings
 
+## OCR scheduling and raster execution pass
+
+Source commit: `f1b12732`. This pass adds **59 deterministic checks** and **four
+opt-in real-engine checks**. The final full run enabled the pinned Tesseract suite:
+**2,780 passed, 32 skipped in 215.83s**. All skips were the existing veraPDF integration
+checks. The ordinary OCR suite passes **115 tests** and skips the four real-engine checks.
+
+The deterministic tests exercise character/addition fallback thresholds, strict utility
+gains, native seeding, duplicate rejection, selected-task provenance, and pass orchestration.
+Both `internal_OcrPassState.prepare` and `.complete` now have **100% statement and branch
+coverage**. Raster checks cover pixel budgets, UserUnit/crop rounding, all eight direct-image
+orientations, tile overlap, page-coordinate remapping, and safe crop selection.
+
+The tests reproduced and fixed these issues:
+
+- Cancellation could continue through a recognition batch. The session now passes its
+  cancellation check into the engine batch; checks run before engine creation and between
+  tasks. Tests verify both shared-image and separate-image batches and engine cleanup.
+- A one-pixel-wide or one-pixel-high image could exceed a raster or timeout-retry budget
+  after the other dimension was rounded. Both reductions now bound individual dimensions
+  as well as area.
+- Rounding an enlargement to a whole-number scale could exceed the remaining pixel budget.
+  Whole-number replication now requires enough headroom; otherwise fractional resampling
+  stays within the cap.
+
+The `schematic-regions-fallback` pass was unreachable: its additions threshold was zero,
+while additions start at zero and can only be nonnegative. The scheduling guard always
+skipped it. Its configuration is removed. Successful region completion now creates the
+next immutable state once instead of creating an intermediate replacement first. Other
+selection state remains necessary for the tested fallback and provenance behavior.
+
+The real-engine tests use **Tesseract 5.5.1 linked by tesserocr** and a checksum-pinned English
+model. Authored image-only PDFs exercise upright and rotated image placement through the
+public OCR API; a raster crop checks actual recognition and coordinates. A delegating
+wrapper verifies real API release on success and cancellation. All three fixture files
+reproduce byte-for-byte with the checked-in generator. See the
+[fixture and engine instructions](../packages/core-pdf-ocr/tests/fixtures/README.md).
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR package | 38.34% → 50.57% | 19.14% → 32.66% |
+| OCR pass pipeline | 16.76% → 58.43% | 2.70% → 56.76% |
+| OCR session | 30.00% → 67.33% | 0.00% → 47.22% |
+| OCR raster preparation | 17.38% → 60.33% | 0.00% → 60.47% |
+| Tesseract adapter | 78.21% → 86.29% | 66.67% → 73.38% |
+| Entire workspace | 71.35% → 72.65% | 58.06% → 59.29% |
+
+The final scan includes the opt-in real-engine tests; the preceding baseline did not.
+The combined statement/branch headline is **68.92%**: 28,553 of 39,300 statements and
+9,019 of 15,212 branches execute. Reproduce this scan by prefixing the full command in
+[coverage.md](coverage.md) with `CORE_PDF_TESSERACT_TESTS=1` in the pinned environment.
+Generated HTML and JSON reports describe this final run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks
+passed. The conservative top-level unused-code scan found no additional candidates.
+Adaptive rescue, grid-cell fallback, packed vector recognition, and more varied real
+scans still need broader tests; the remaining coverage gaps do not establish dead code.
+
 ## OCR and serialization pass
 
 Source commit: `22706f2f`. This pass added deterministic tests for:
