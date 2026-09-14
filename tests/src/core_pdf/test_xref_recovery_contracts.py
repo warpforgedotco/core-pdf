@@ -9,6 +9,7 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
+from core_pdf_spec.types import PdfReference
 
 
 @pytest.mark.parametrize("ending", [b"", b"\n", b"\r", b"\r\n", b"\n\r", b" \n", b"\t\r\n"])
@@ -119,10 +120,10 @@ def test_xref_stream_rejects_invalid_shape_before_decoding(field, value):
 
 @pytest.mark.parametrize("size", [None, 0, -1, True, 1, 4])
 def test_trailer_size_repair_preserves_input_and_valid_identity(size):
-    trailer: PdfDict = {"Size": size, "Root": "preserved"}
+    trailer: PdfDict = {"Size": size, "Root": PdfReference(1)}
     result = xref.XRefScanner.validate_trailer_size(trailer, 2)
     assert trailer["Size"] is size
-    assert result == {"Size": 4 if size == 4 else 3, "Root": "preserved"}
+    assert result == {"Size": 4 if size == 4 else 3, "Root": PdfReference(1)}
     assert (result is trailer) == (size == 4)
 
 
@@ -255,3 +256,116 @@ def test_object_scan_ignores_fake_headers_inside_valid_stream_payload(generation
         key_for(2, generation): (offset, generation, True, None, None),
     }
     assert list(xref.XRefScanner.brute_force_scan(data, max_entries=1)) == [key_for(1)]
+
+
+@pytest.mark.parametrize("generation", [0, 7])
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("limit", [1, 2, 10])
+def test_recovered_object_stream_entries_preserve_parser_indexes(generation, existing, limit):
+    from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
+    from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+
+    header = b"20 0 21 3 22 6 "
+    stream = PdfStream({"N": 3, "First": len(header)}, header + b"10 20 30")
+    container_key = key_for(5, generation)
+    entries = {container_key: PdfXRefEntry(100, generation, True)}
+    preserved = PdfXRefEntry(500, 0, True)
+    if existing:
+        entries[key_for(20)] = preserved
+    initial_count = len(entries)
+    xref.XRefScanner.recover_object_stream_entries(entries, {container_key: (100, stream)}, limit)
+    assert len(entries) == max(initial_count, min(limit, 4))
+    parser = PdfObjectStream(stream)
+    try:
+        for index, number in enumerate((20, 21, 22)):
+            entry = entries.get(key_for(number))
+            if entry is None:
+                continue
+            if existing and number == 20:
+                assert entry is preserved
+                continue
+            assert entry.object_stream == 5
+            assert entry.index_in_stream == index
+            assert (
+                parser.get_at_index(entry.index_in_stream, expected_reference=PdfReference(number))
+                == (index + 1) * 10
+            )
+    finally:
+        parser.close()
+
+
+@pytest.mark.parametrize(
+    "kind", ["free", "compressed", "negative", "absent", "stale", "wrong-type", "bad-header"]
+)
+def test_object_stream_recovery_skips_unusable_containers(kind):
+    from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+
+    stream = PdfStream({"N": 1, "First": 4}, b"2 0 42")
+    entry = PdfXRefEntry(100, 0, True)
+    parsed = {key_for(1): (100, stream)}
+    if kind == "free":
+        entry.in_use = False
+    elif kind == "compressed":
+        entry.object_stream = 9
+    elif kind == "negative":
+        entry.offset = -1
+    elif kind == "absent":
+        parsed.clear()
+    elif kind == "stale":
+        parsed[key_for(1)] = (101, stream)
+    elif kind == "wrong-type":
+        stream.dictionary = {"Type": "Other"}
+    else:
+        stream.dictionary = {"N": -1, "First": 0}
+    entries = {key_for(1): entry}
+    xref.XRefScanner.recover_object_stream_entries(entries, parsed)
+    assert entries == {key_for(1): entry}
+
+
+@pytest.mark.parametrize("representation", ["bytes", "view", "slice", "strided"])
+@pytest.mark.parametrize("allow_prefix", [False, True])
+def test_bounded_header_discovery_agrees_for_buffer_representations(representation, allow_prefix):
+    data = b"1 0 obj 42 endobj\n2 0 obj true endobj\n"
+    source = data
+    if representation == "view":
+        source = memoryview(data)
+    elif representation == "slice":
+        source = memoryview(b"prefix" + data + b"suffix")[6:-6]
+    elif representation == "strided":
+        source = memoryview(b"".join(bytes((byte, 0)) for byte in data))[::2]
+    second = data.index(b"2 0 obj")
+    expected = [(0, 1, 0), (second, 2, 0)] if allow_prefix else [(second, 2, 0)]
+    assert (
+        list(
+            xref.iter_indirect_object_headers(
+                source, 4, len(data), allow_prefix_before_start=allow_prefix
+            )
+        )
+        == expected
+    )
+    assert list(xref.iter_indirect_object_headers(source, -5, second)) == [(0, 1, 0)]
+    assert list(xref.iter_indirect_object_headers(source, len(data), len(data) + 20)) == []
+
+
+@pytest.mark.parametrize(
+    "data", [b"obj", b"1 obj", b"1 65536 obj", b"x1 0 obj", b"1 0 object", b"1 0 xyz"]
+)
+def test_header_discovery_rejects_malformed_prefixes_and_keyword_suffixes(data):
+    marker = data.find(b"obj")
+    assert xref.parse_object_marker_prefix(data, marker) is None
+    assert xref.find_previous_object_marker(data, len(data)) is None
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (b"", -1),
+        (b"%", -1),
+        (b"garbage%%EOF", 7),
+        (b"garbage%%EOX", 7),
+        (b"%%BAD", -1),
+        (b"\n%%EOFjunk\n%%EOF\n", 11),
+    ],
+)
+def test_eof_recovery_keeps_raw_fallback_but_prefers_delimited_exact_marker(data, expected):
+    assert xref.find_eof_marker(data) == expected

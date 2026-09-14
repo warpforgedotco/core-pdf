@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Recovered object-stream identity and bounded scanning
+
+Added **39 cases** for embedded-object indexes, existing-entry preservation, recovery
+limits, invalid/stale containers, bounded header searches across bytes and memoryview
+representations, and EOF fallback selection. Five index controls initially failed:
+recovered entries used the container generation as every embedded object's index.
+Recovery now records each object's position in the parsed container, preserving positions
+when earlier entries are skipped. The tests resolve each recovered index against its
+expected object identity and value. An older trailer fixture now uses a PDF reference
+for Root, matching its declared object type.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,928 tests,
+no skips, in 441.68s**. Workspace coverage increased **85.20% → 85.23% statements**
+and **75.11% → 75.16% branches**: **33,163 / 38,912 statements** and
+**11,279 / 15,006 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; exact verified fractions ratchet the baseline.
+Recovery xref coverage is **93.72% / 91.38%**, with 38 statements and 25 branches remaining.
+
+Ruff, formatting, both type checkers, and import contracts passed; the static unused-symbol
+scan is empty. The full 100% goal remains incomplete: **5,749 statements and 3,727 branches**
+remain uncovered. These are local results, including all compatibility corpus suites.
+
+
 ## Cross-reference recovery contracts
 
 Added **123 deterministic cases** across fixed/loose entry formats, line endings,

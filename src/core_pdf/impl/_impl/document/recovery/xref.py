@@ -196,7 +196,6 @@ class XRefScanner(SyntaxXRefScanner):
             if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
                 continue
             obj_num = key >> 16
-            gen_num = key & 0xFFFF
             parsed = parsed_streams.get(key)
             if parsed is None or parsed[0] != entry.offset:
                 continue
@@ -213,7 +212,7 @@ class XRefScanner(SyntaxXRefScanner):
                 container = PdfObjectStream(obj, semantic_context=semantic_context)
             except Exception:
                 continue
-            for embedded_num in container.index:
+            for embedded_index, embedded_num in enumerate(container.index):
                 if len(entries) >= max_entries:
                     return
                 if embedded_num < 0 or embedded_num >= 10000000:
@@ -226,7 +225,7 @@ class XRefScanner(SyntaxXRefScanner):
                     0,
                     True,
                     object_stream=obj_num,
-                    index_in_stream=gen_num,
+                    index_in_stream=embedded_index,
                 )
 
     @staticmethod
