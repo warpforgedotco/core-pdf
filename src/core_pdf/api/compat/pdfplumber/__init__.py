@@ -15,6 +15,7 @@ from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl._impl.model.geometry import (
+    bbox_contains,
     bbox_union,
     flip_rect_vertical,
 )
@@ -1954,12 +1955,7 @@ def extract_words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict
 
 
 def within_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
-    x0, top, x1, bottom = bbox
-    return [
-        obj
-        for obj in objs
-        if obj["x0"] >= x0 and obj["x1"] <= x1 and obj["top"] >= top and obj["bottom"] <= bottom
-    ]
+    return [obj for obj in objs if bbox_contains(bbox, obj_to_bbox(obj))]
 
 
 def outside_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
