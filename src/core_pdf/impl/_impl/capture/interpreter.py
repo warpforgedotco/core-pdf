@@ -52,6 +52,7 @@ class TextState(RecordingMethods):
         self.capture_marked_entries = {}
         self.capture_frames = {}
         self.capture_patterns = {}
+        self.capture_image_sources = {}
         self.capture_colors = {}
         self.capture_soft_masks = {}
         self.capture_mask_resources = {}

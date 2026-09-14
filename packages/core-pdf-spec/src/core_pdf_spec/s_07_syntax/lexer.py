@@ -578,15 +578,17 @@ class PdfLexer:
             self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated dictionary")
-            if self.at_dictionary_end(self.pos):
-                self.advance(2)
+            terminator = self.dictionary_end_length(self.pos)
+            if terminator:
+                self.advance(terminator)
                 break
             if self.raw_data[self.pos] != 47:
                 if self.handle_dictionary_key_error():
                     if self.pos >= self.data_len:
                         raise PdfParseError("unterminated dictionary")
-                    if self.at_dictionary_end(self.pos):
-                        self.advance(2)
+                    terminator = self.dictionary_end_length(self.pos)
+                    if terminator:
+                        self.advance(terminator)
                         break
                 if self.raw_data[self.pos] != 47:
                     raise PdfParseError("dictionary keys must be names")
@@ -635,9 +637,14 @@ class PdfLexer:
                 )
         return values
 
-    def at_dictionary_end(self, pos: int) -> bool:
+    def dictionary_end_length(self, pos: int) -> int:
+        """Extension point naming the dictionary terminator at ``pos``.
+
+        Return the terminator's byte length, or ``0`` when ``pos`` does not start
+        one; the default accepts only the ``>>`` of ISO 32000-1/2, 7.3.7.
+        """
         data = self.raw_data
-        return data[pos] == 62 and pos + 1 < self.data_len and data[pos + 1] == 62
+        return 2 if data[pos] == 62 and pos + 1 < self.data_len and data[pos + 1] == 62 else 0
 
     def handle_dictionary_key_error(self) -> bool:
         """Extension point when a dictionary key is not a name.

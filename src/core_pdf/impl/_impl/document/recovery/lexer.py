@@ -209,6 +209,14 @@ class PdfLexer(SyntaxLexer):
     def handle_duplicate_dictionary_key(self, key: PdfName) -> None:
         pass
 
+    def dictionary_end_length(self, pos: int) -> int:
+        length = super().dictionary_end_length(pos)
+        if length or not (self.recover_malformed_objects and self.recover_dictionary_structure):
+            return length
+        # Input cut off after a single '>' is a truncated terminator; consume it
+        # so the dictionary closes instead of failing on a missing key.
+        return 1 if self.raw_data[pos] == 62 and pos + 1 >= self.data_len else 0
+
     def handle_dictionary_key_error(self) -> bool:
         if not (self.recover_malformed_objects and self.recover_dictionary_structure):
             return False
@@ -220,7 +228,7 @@ class PdfLexer(SyntaxLexer):
             if byte == 47:
                 self.pos = pos
                 return True
-            if byte == 62 and self.at_dictionary_end(pos):
+            if byte == 62 and self.dictionary_end_length(pos):
                 self.pos = pos
                 return True
             if data[pos : pos + 6] == b"endobj":
@@ -237,7 +245,7 @@ class PdfLexer(SyntaxLexer):
         end = min(self.data_len, pos + 512)
         while pos < end:
             byte = data[pos]
-            if byte == 62 and self.at_dictionary_end(pos):
+            if byte == 62 and self.dictionary_end_length(pos):
                 self.pos = pos
                 return True
             if data[pos : pos + 6] == b"endobj":

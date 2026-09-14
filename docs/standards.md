@@ -97,7 +97,7 @@ rules are:
 Reader adapters extend the strict parsers through documented hooks whose defaults
 keep the specified behavior: `PdfLexer.select_lexical_rules`, resolver `decode_text`,
 interpreter `create_lexer`, the lexer's `handle_invalid_hex_string`,
-`handle_invalid_name_escape`, `handle_dictionary_key_error`,
+`handle_invalid_name_escape`, `dictionary_end_length`, `handle_dictionary_key_error`,
 `handle_duplicate_dictionary_key`, and `handle_dictionary_entry_error`, the
 `unknown_escape` and `eol_pair` hooks of `read_literal_string`, and the `node_type`,
 `on_invalid_child`, `max_depth`, and `stop_at_malformed_parent` options of the

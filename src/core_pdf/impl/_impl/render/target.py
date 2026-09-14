@@ -173,7 +173,7 @@ class internal_RasterTarget(
         self.soft_mask_cache: SoftMaskCache = {}
         # Decoded images and tiling cells keyed by object identity; the value
         # pins the key object so a recycled id cannot alias a different source.
-        self.prepared_image_cache: PreparedImageCache = {}
+        self.prepared_image_cache = PreparedImageCache()
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, internal_ElementaryScratch] = {}

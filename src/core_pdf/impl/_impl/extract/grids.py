@@ -18,6 +18,10 @@ from core_pdf.impl._impl.output.model import Table, TableCell
 
 AXIS_TOLERANCE = 1.5
 
+# Upper bound on the elements of one crossing mask; each bool temporary stays
+# near 1 MiB regardless of how many segments a page draws.
+GRID_CROSSING_MASK_ELEMENTS = 1 << 20
+
 
 TABLE_REGION_GAP = 22.0  # loosened to allow adjacent table regions with modest gaps to merge
 
@@ -97,25 +101,30 @@ def internal_grid_components(
     vertical_x = vertical[:, 0]
     vertical_y0 = vertical[:, 1]
     vertical_y1 = vertical[:, 2]
-    # One broadcast over every (horizontal, vertical) pair replaces a mask per
-    # horizontal segment. The tolerance bounds are widened in float64 and then
-    # rounded to the segment dtype, exactly as a Python float compared against
-    # the float32 columns would be.
+    # Broadcast (horizontal, vertical) pairs in row chunks sized so that each
+    # temporary mask stays within GRID_CROSSING_MASK_ELEMENTS, whatever the
+    # segment counts of a line-heavy page. The tolerance bounds are widened in
+    # float64 and then rounded to the segment dtype, exactly as a Python float
+    # compared against the float32 columns would be.
     bounds = horizontal.astype(numpy.float64)
     dtype = vertical.dtype
     x_low = (bounds[:, 0:1] - AXIS_TOLERANCE).astype(dtype)
     x_high = (bounds[:, 1:2] + AXIS_TOLERANCE).astype(dtype)
     y_low = (bounds[:, 2:3] - AXIS_TOLERANCE).astype(dtype)
     y_high = (bounds[:, 2:3] + AXIS_TOLERANCE).astype(dtype)
-    crossing = (
-        (vertical_x >= x_low)
-        & (vertical_x <= x_high)
-        & (vertical_y1 >= y_low)
-        & (vertical_y0 <= y_high)
-    )
-    pairs: list[tuple[int, int]] = [
-        (int(h_index), int(v_index)) for h_index, v_index in numpy.argwhere(crossing)
-    ]
+    rows_per_chunk = max(1, GRID_CROSSING_MASK_ELEMENTS // len(vertical))
+    pairs: list[tuple[int, int]] = []
+    for start in range(0, len(horizontal), rows_per_chunk):
+        stop = start + rows_per_chunk
+        crossing = (
+            (vertical_x >= x_low[start:stop])
+            & (vertical_x <= x_high[start:stop])
+            & (vertical_y1 >= y_low[start:stop])
+            & (vertical_y0 <= y_high[start:stop])
+        )
+        pairs.extend(
+            (start + int(h_index), int(v_index)) for h_index, v_index in numpy.argwhere(crossing)
+        )
     if not pairs:
         return ()
     disjoint = internal_DisjointSet(len(horizontal) + len(vertical))
