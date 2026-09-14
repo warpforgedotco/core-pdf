@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## Attachment projection contracts
+
+Added **39 deterministic cases** for Unicode/legacy filename and stream precedence,
+name-tree aliases, shared filespec/stream identity, absent trees, malformed entries,
+and strict versus recovered handling of independent siblings. The record builder
+always returns a RawEmbeddedFile or raises; its return annotation now states that
+contract, and the caller no longer checks an unreachable None result.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,516 tests,
+no skips, in 349.66s**. Workspace coverage increased **86.56% → 86.63% statements**
+and **77.37% → 77.46% branches**: **33,683 / 38,880 statements** and
+**11,601 / 14,976 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,197 statements and 3,375 branches**
+remain uncovered. These are local results.
+
+
 ## Path geometry and square-cap coverage
 
 Added **72 deterministic cases** for dash intervals and phase, odd and zero-length

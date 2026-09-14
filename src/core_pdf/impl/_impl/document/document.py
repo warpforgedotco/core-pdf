@@ -1247,11 +1247,10 @@ class PdfDocument(
                 if recover:
                     continue
                 raise
-            if record is not None:
-                records.append(record)
+            records.append(record)
         return records
 
-    def embedded_file_record(self, name: str, value: object) -> RawEmbeddedFile | None:
+    def embedded_file_record(self, name: str, value: object) -> RawEmbeddedFile:
         filespec = self.resolver.resolve(value)
         if not isinstance(filespec, dict):
             raise ValueError("invalid embedded file spec")
