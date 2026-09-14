@@ -1,0 +1,120 @@
+"""Equivalent PDF colours must not depend on their storage representation."""
+
+import numpy as np
+import pytest
+
+from core_pdf.impl._impl.graphics.color import color_operands_to_srgb, internal_convert_image_data
+from core_pdf.impl._impl.graphics.color_spec import parse_color_space
+from core_pdf.impl._impl.graphics.image_samples import convert_integer_samples
+
+
+@pytest.mark.parametrize(
+    "space",
+    [
+        "DeviceGray",
+        "DeviceRGB",
+        "DeviceCMYK",
+        ["CalGray", {"WhitePoint": [0.9505, 1, 1.089]}],
+        ["CalRGB", {"WhitePoint": [0.9505, 1, 1.089]}],
+        ["Lab", {"WhitePoint": [0.9642, 1, 0.8249]}],
+        ["ICCBased", {"N": 3, "Alternate": "DeviceRGB"}],
+        ["Separation", "Spot", "DeviceGray", lambda tint: 1 - tint],
+        ["DeviceN", ["A", "B"], "DeviceRGB", lambda a, b: (1 - a, 1 - b, 1)],
+    ],
+)
+@pytest.mark.parametrize("reverse_decode", [False, True])
+def test_equivalent_eight_and_sixteen_bit_components(space, reverse_decode):
+    spec = parse_color_space(space)
+    count = len(spec.component_ranges)
+    samples = np.tile(np.array([0, 64, 128, 255], dtype=np.uint8)[:, None], (1, count))
+    dictionary = {"ColorSpace": space, "Width": 4, "Height": 1, "BitsPerComponent": 8}
+    if reverse_decode:
+        dictionary["Decode"] = [n for low, high in spec.component_ranges for n in (high, low)]
+    actual = internal_convert_image_data(samples.reshape(-1), dictionary)
+    high = convert_integer_samples(samples.astype(np.uint16) * 257, dictionary)
+    assert actual is not None
+    np.testing.assert_array_equal(np.asarray(actual).reshape(4, -1), high)
+
+
+@pytest.mark.parametrize("function", [None, {}, lambda t: (t, t), lambda t: float("nan")])
+@pytest.mark.parametrize("tint", [0, 0.5, 1])
+def test_unusable_tint_has_same_subtractive_recovery_everywhere(function, tint):
+    space = ["Separation", "Spot", "DeviceGray", function]
+    vector = color_operands_to_srgb(parse_color_space(space), [tint])
+    expected = round((1 - tint) * 255)
+    assert vector == (expected / 255,) * 3
+    # Explicit Decode produces the identical natural tint at either sample depth.
+    for bits in (8, 16):
+        raw = bytes(bits // 8)
+        image = internal_convert_image_data(
+            raw,
+            {
+                "ColorSpace": space,
+                "Width": 1,
+                "Height": 1,
+                "BitsPerComponent": bits,
+                "Decode": [tint, tint],
+            },
+        )
+        np.testing.assert_array_equal(image, [expected] * 3)
+
+
+@pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
+def test_indexed_decode_selects_palette_before_alternate_conversion(bits):
+    space = ["Indexed", "DeviceRGB", 1, b"\xff\x00\x00\x00\xff\x00"]
+    raw = bytes(2 if bits == 16 else 1)
+    actual = internal_convert_image_data(
+        raw,
+        {
+            "ColorSpace": space,
+            "BitsPerComponent": bits,
+            "Width": 1,
+            "Height": 1,
+            "Decode": [1, 0],
+        },
+    )
+    np.testing.assert_array_equal(actual, [0, 255, 0])
+    assert color_operands_to_srgb(parse_color_space(space), [1]) == (0, 1, 0)
+
+
+@pytest.mark.parametrize(
+    ("space", "raw"), [("DeviceGray", b"\x80"), ("DeviceRGB", b"\x80\x00\xff")]
+)
+def test_device_passthrough_preserves_buffer_identity(space, raw):
+    assert (
+        internal_convert_image_data(
+            raw,
+            {
+                "ColorSpace": space,
+                "Width": 1,
+                "Height": 1,
+                "BitsPerComponent": 8,
+            },
+        )
+        is raw
+    )
+
+
+def test_colour_key_mask_uses_low_sixteen_bits_before_decode():
+    result = convert_integer_samples(
+        np.array([[256], [257]], dtype=np.uint16),
+        {
+            "ColorSpace": "DeviceGray",
+            "Decode": [1, 0],
+            "Mask": [256, 256],
+        },
+    )
+    assert result[:, 0].tolist() == [254, 254]
+    assert result[:, 1].tolist() == [0, 255]
+
+
+def test_soft_mask_precedes_colour_key_mask():
+    result = convert_integer_samples(
+        np.array([[0]], dtype=np.uint16),
+        {
+            "ColorSpace": "DeviceGray",
+            "Mask": [0, 0],
+            "SMask": object(),
+        },
+    )
+    assert result.shape == (1, 1)

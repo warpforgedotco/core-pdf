@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""High-depth PDF image colour conversion with quantization at the output boundary."""
+"""Shared natural-component conversion and integer image sample decoding."""
 
 from __future__ import annotations
 
@@ -114,20 +114,29 @@ def internal_convert_components(
         return internal_convert_components(
             base, space.base, depth + 1, matte=matte, alpha=alpha, rendering=rendering
         )
-    if kind in {"Separation", "DeviceN"} and space.alternate is not None:
-        function = internal_compile_pdf_function(space.tint_fn)
-        distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
-        # Decoded image samples are NumPy scalars; shared function evaluators
-        # accept ordinary Python numbers at their numeric boundary.
-        tinted = numpy.asarray(
-            [function(*(float(component) for component in row)) for row in distinct],
-            dtype=numpy.float64,
-        )
-        if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
-            raise ValueError("invalid tint transform output count")
-        return internal_convert_components(tinted, space.alternate, depth + 1, rendering=rendering)[
-            inverse
-        ]
+    if kind in {"Separation", "DeviceN"}:
+        # Reader recovery for missing/unusable tint transforms is subtractive:
+        # zero tint is unpainted, full tint is the darkest approximation.
+        # Keep this policy identical for vector, low- and high-depth samples.
+        try:
+            if space.alternate is None:
+                raise ValueError("missing tint alternate")
+            function = internal_compile_pdf_function(space.tint_fn)
+            distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
+            tinted = numpy.asarray(
+                [function(*(float(component) for component in row)) for row in distinct],
+                dtype=numpy.float64,
+            )
+            if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
+                raise ValueError("invalid tint transform output count")
+            if not numpy.isfinite(tinted).all():
+                raise ValueError("nonfinite tint transform output")
+            return internal_convert_components(
+                tinted, space.alternate, depth + 1, rendering=rendering
+            )[inverse]
+        except (TypeError, ValueError, ArithmeticError):
+            gray = internal_quantize(1 - numpy.max(values, axis=1, keepdims=True))
+            return numpy.repeat(gray, 3, axis=1)
     if kind in {"Lab", "CalGray", "CalRGB"}:
         white = cs_param_floats(space.params, "WhitePoint", 3, [0.9642, 1, 0.8249])
         if kind == "Lab":
