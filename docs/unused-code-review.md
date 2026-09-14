@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Pypdf metadata projection and encrypted-reader lifecycle
+
+Added **51 differential cases** using independently pypdf-written RC4-40, RC4-128,
+AES-128, AES-256-R5, and AES-256 files. Tests cover user/owner passwords, failed
+attempts, locked-page access, constructor authentication, page materialization,
+source forms, and plain/encrypted metadata. Twenty initial failures exposed that
+facade metadata used bare Title keys and included native info/xmp wrapper fields.
+Metadata now projects the PDF Info dictionary directly with slash-prefixed keys,
+matching pypdf, instead of merging the native structured metadata wrapper.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **6,608 tests, no skips, in 421.05s**. Workspace coverage increased
+**89.21% → 89.28% statements** and **80.87% → 80.93% branches**:
+**34,700 / 38,867 statements** and **12,117 / 14,972 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,167 statements and 2,855 branches** remain
+uncovered. These are local results.
+
+
 ## Recorded font contour contracts
 
 Added **38 deterministic cases** comparing quadratic/cubic sampling with independent

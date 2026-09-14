@@ -328,15 +328,16 @@ class PdfReader(ClosingMixin):
         raise AttributeError(name)
 
     def _materialize(self) -> None:
-        """Materialize page objects and merge engine info metadata lazily."""
+        """Materialize page objects and project PDF Info names lazily."""
         document = self._document
         self.pages = tuple(PdfPageObject(document, page) for page in document.pages)
         raw_metadata = document.source_pdf.get_metadata()
-        metadata: dict[str, Any] = (
-            dict(cast(Any, raw_metadata.get("info", {}))) if isinstance(raw_metadata, dict) else {}
+        info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}
+        self.metadata = (
+            {f"/{str(key).lstrip('/')}": value for key, value in info.items()}
+            if isinstance(info, Mapping)
+            else {}
         )
-        metadata.update(document.metadata)
-        self.metadata = metadata
 
     @property
     def num_pages(self) -> int:
