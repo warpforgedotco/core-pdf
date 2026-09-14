@@ -307,35 +307,43 @@ def parse_page_association(data: bytes, pos: int, long_form: bool) -> tuple[int,
 def parse_referred_to_segments(
     data: bytes, pos: int, count: int, long_form: bool
 ) -> tuple[list[int], int]:
-    segments: list[int] = []
-    for ignored in range(count):
-        value, pos = read_u32(data, pos) if long_form else read_u8(data, pos)
-        segments.append(value)
-    return segments, pos
+    return internal_read_segment_references(data, pos, count, 4 if long_form else 1)
+
+
+def internal_read_segment_references(
+    data: bytes, pos: int, count: int, width: int
+) -> tuple[list[int], int]:
+    end = pos + count * width
+    if end > len(data):
+        raise Jbig2ParseError("truncated JBIG2 segment references")
+    return [
+        int.from_bytes(data[index : index + width], "big") for index in range(pos, end, width)
+    ], end
 
 
 def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int]:
     start = pos
-    if pos + 10 > len(data):
+    if pos + 11 > len(data):
         raise Jbig2ParseError("truncated JBIG2 segment header")
     number, pos = read_u32(data, pos)
     flags, pos = read_u8(data, pos)
     retention_flags, pos = read_u8(data, pos)
     referred_to_count = retention_flags >> 5
-    referred_to_segments: list[int] = []
+    # T.88 7.2.4: the long form uses all 29 count bits, then retention bytes.
     if referred_to_count == 7:
-        if pos + 3 > len(data):
-            raise Jbig2ParseError("truncated JBIG2 segment header")
         ref_count, pos = read_u24(data, pos)
-        referred_to_count = ref_count & 0x1FFFFFFF
+        referred_to_count = ((retention_flags & 0x1F) << 24) | ref_count
         bit_bytes = (referred_to_count + 1 + 7) // 8
         if pos + bit_bytes > len(data):
             raise Jbig2ParseError("truncated JBIG2 segment header")
         pos += bit_bytes
-    else:
-        referred_to_segments, pos = parse_referred_to_segments(
-            data, pos, referred_to_count, number > 65536
-        )
+    elif referred_to_count in (5, 6):
+        raise Jbig2ParseError("invalid JBIG2 referred-to segment count")
+    # T.88 7.2.5: reference width depends on this segment's number, in both forms.
+    reference_width = 1 if number <= 256 else 2 if number <= 65536 else 4
+    referred_to_segments, pos = internal_read_segment_references(
+        data, pos, referred_to_count, reference_width
+    )
     if pos + (4 if (flags & 0x40) else 1) + 4 > len(data):
         raise Jbig2ParseError("truncated JBIG2 segment header")
     page_association, pos = parse_page_association(data, pos, bool(flags & 0x40))

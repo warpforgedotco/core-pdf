@@ -1,5 +1,31 @@
 # Coverage and unused-code findings
 
+## JBIG2 segment-header reference boundaries
+
+Corrected segment reference widths, extended-count parsing, and reserved count
+tags according to [T.88 §§7.2.4–7.2.7](https://www.itu.int/rec/dologin_pub.asp?id=T-REC-T.88-200002-S%21%21PDF-E&lang=e&type=items).
+Segments numbered 257–65536 now read two-byte references. Extended counts retain
+all 29 bits and consume their reference list before page association and payload
+length. Both forms share a bounded reader; the exported legacy reader keeps its
+signature. Removed an unreachable truncation check after establishing the
+minimum complete header size.
+
+Added **63 deterministic cases** covering width boundaries, short/extended
+counts, retention-byte boundaries, both page-association sizes, nonzero starting
+offsets, payload alignment, every truncated prefix, reserved count tags, and
+large counts without allocating their claimed storage. **44 cases failed before
+the fix**; all **104 focused JBIG2 tests** now pass. The isolated spec suite, with
+core and OCR confirmed absent, passed **2,861 tests in 51.35s**. All pre-push
+quality gates passed, and the static unused-symbol scan returned no candidates.
+
+The locked full workspace/differential run, including real Tesseract and
+veraPDF, passed **7,717 tests with no skips in 381.70s**. Fresh coverage is
+**35,389 / 38,843 statements (91.11%)** and
+**12,495 / 14,958 branches (83.53%)**. The exact baseline is ratcheted to this
+complete result. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. The workspace goal remains incomplete:
+**3,454 statements and 2,463 branches** remain uncovered. These are local results.
+
 ## Formula script geometry and normalization contracts
 
 Added **41 deterministic cases** for letter/digit script atoms and numeric
