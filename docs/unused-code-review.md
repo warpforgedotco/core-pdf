@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## CID Unicode mapping and voting contracts
+
+Added **42 deterministic cases** for effective CMap inversion, later-range and explicit
+mapping precedence, codespace filtering, orientation-specific votes, weighted ties,
+opposite-orientation and zero-weight fallback, overrides, cached misses, legacy
+encodings, and packaged collection lookup identity. Small controlled maps exercise
+real Unicode decoding and ranking; packaged GB1 maps provide integration controls.
+The distinct voting tiers remain necessary. No production changes were needed.
+The CID Unicode recovery module now has **100% statement and branch coverage**
+(101 statements and 46 branches).
+
+All 42 tests passed in **6.42s**, appending coverage to the verified locked
+**5,909-test** full workspace report with real Tesseract and veraPDF and the subsequent
+23 font-width cases. Production sources are unchanged since that full run; the full
+suite was not rerun for this test-only change. Workspace coverage increased
+**87.49% → 87.74% statements** and **78.60% → 78.97% branches**:
+**34,100 / 38,864 statements** and **11,822 / 14,970 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,764 statements and 3,148 branches** remain
+uncovered. These are local results.
+
+
 ## Shared finite-number validation for native font widths
 
 Added **90 deterministic cases** covering compact, sparse, and range CID widths,
