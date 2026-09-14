@@ -93,7 +93,8 @@ vendor-test = [
 
 [tool.pytest.ini_options]
 testpaths = [
-    "tests/src/core_pdf/api/compat/differential",
+    "tests/src/core_pdf",
+    "packages/core-pdf-ocr/tests",
     "packages/core-pdf-spec/tests",
     "packages/core-pdf-validate/tests",
 ]
