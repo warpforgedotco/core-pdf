@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Differential word grouping contracts
+
+Added **43 cases** comparing the pdfplumber facade with the installed reference
+using controlled glyph records. Tests cover upright/rotated text, punctuation,
+ligatures, whitespace, extra font attributes, tolerances, right-to-left and
+bottom-to-top reading, input order, page projection, and source-character identity.
+All final cases pass without production changes; these cases establish parity for
+the tested options, not the complete word-extraction API.
+
+The 43 tests passed in **9.79s**, appending coverage to the verified locked
+**5,995-test** full workspace report with real Tesseract and veraPDF and the
+subsequent 69 outline, 76 codec, and 94 blend cases. Production sources are unchanged
+since that full run; the full suite was not rerun for this test-only change.
+Workspace coverage increased **88.20% → 88.24% statements** and
+**79.57% → 79.62% branches**: **34,293 / 38,864 statements** and
+**11,919 / 14,970 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan
+returned no candidates. The 100% goal remains incomplete: **4,571 statements and
+3,051 branches** remain uncovered. These are local results.
+
+
 ## Array compositing and alpha-stage contracts
 
 Added **94 deterministic cases** comparing Normal, Multiply, and Screen array
