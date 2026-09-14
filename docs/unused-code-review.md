@@ -1,5 +1,30 @@
 # Coverage and unused-code findings
 
+## Encoding CMaps and font metric contracts
+
+Added **86 cases** for malformed character/range mappings, notdef range semantics,
+identity aliases, custom inheritance and cycles, mixed-width byte splitting, single-code
+mapping, writing modes, spacing, and text advances with cached/uncached glyph inputs.
+Aggregate advances agree with per-glyph sums within tight floating-point tolerance;
+the implementation comment now accurately describes the historical operation-order
+difference instead of claiming bit-identical arithmetic.
+
+Three controls exposed nonfinite Type 1 Length1 metadata escaping font recovery.
+Length conversion now occurs inside the existing failure boundary and catches overflow,
+allowing standard-font decoding after an unusable embedded program. Encoding CMap recovery
+now covers **78/78 statements and 32/32 branches**.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,082 tests,
+no skips, in 390.42s**. Workspace coverage increased **85.47% → 85.66% statements**
+and **75.48% → 75.82% branches**: **33,324 / 38,902 statements** and
+**11,374 / 15,002 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; exact verified fractions ratchet the baseline.
+
+All pre-push quality gates passed, including both type checkers and import contracts.
+The static unused-symbol scan is empty. The full 100% goal remains incomplete:
+**5,578 statements and 3,628 branches** remain uncovered. These are local results.
+
+
 ## ToUnicode recovery and range expansion
 
 Added **68 deterministic cases** for destination byte recovery, null preservation,
