@@ -1,5 +1,36 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: raster OCR grids
+
+This checkpoint adds **31 deterministic tests** for raster ruling detection and cell OCR.
+The full suite with pinned Tesseract enabled passed **3,304 tests**, with **32 veraPDF
+integration skips**, in **205.48s**. Reports describe that single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR raster grids | 46.51% → 100.00% | 20.27% → 100.00% |
+| Entire workspace | 78.59% → 78.88% | 66.32% → 66.70% |
+
+Tests cover bounded row gaps, independent row runs, ruling clustering, grayscale/RGB/RGBA
+grid detection, skew estimation/shearing, cell insets and ink gates, task coordinate mapping,
+cell-count limits, table regularity, column-straddling thresholds, and row observation merging.
+
+Gap-closing regression tests reproduced two faults: gaps larger than the requested limit
+were filled, and existing ink near row edges was erased. The helper now finds neighboring
+ink positions and fills only bounded gaps within the specified limit, preserving source ink
+and row margins. Blank, full, and zero-width rows are positive controls. The RasterImage
+contract guarantees a three-dimensional array, so the unreachable two-dimensional input
+branch was removed. The minimum-column gate also makes an empty interior-column list
+impossible; its redundant guard was removed.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No compiled modules shadowed source files, and the unused-symbol scan found no new candidates.
+Coverage sources and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **8,301 statements and 5,064 branches**
+remain uncovered. OCR raster preprocessing, region tasks, candidate scoring, document
+structure, layout, rendering, and compatibility behavior remain in scope.
+
 ## Workspace coverage completion: learned Unicode alignment
 
 This checkpoint adds **29 tests** for learned Unicode overlays and capture enrichment.
