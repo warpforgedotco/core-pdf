@@ -1,5 +1,30 @@
 # Coverage and unused-code findings
 
+## JBIG2 packed bitmap composition
+
+Added **121 independent pixel-oracle and buffer-contract cases** across scalar, NumPy,
+and dispatched composition. They cover OR/XOR, aligned and unaligned placement, all
+clipping directions, partial bytes, padded destination strides, incomplete rows,
+mutable views, non-contiguous arrays, and dtype conversion.
+
+The contracts exposed a row-count bug: a uint16 array was counted using its storage
+bytes even though conversion produces one uint8 per element. Counting elements now
+matches conversion in both scalar and bulk paths. NumPy composition selects its bitwise
+operator once, sharing aligned, masked-tail, and unaligned application logic.
+The bitmap kernel now covers **95/95 statements and 40/40 branches**.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,571 tests,
+no skips, in 236.32s**. Workspace coverage increased **84.59% → 84.75% statements**
+and **74.04% → 74.25% branches**: **32,991 / 38,928 statements** and
+**11,154 / 15,022 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; the exact verified fractions ratchet the baseline.
+
+The isolated spec suite passed **2,603 tests**. Ruff, formatting, mypy, ty, and import
+contracts passed; the static unused-symbol candidate scan is empty.
+The full 100% goal remains incomplete: **5,937 statements and 3,868 branches** remain
+uncovered. These measurements are local, not a claimed GitHub execution.
+
+
 ## Filter codec and predictor contracts
 
 Added **176 deterministic cases** covering ASCII85 scalar/bulk/zero-shorthand decoding,
