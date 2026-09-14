@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import math
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from copy import copy
 from dataclasses import dataclass
@@ -1207,46 +1208,48 @@ class Page:
         return PageImage(self, raster, bbox=bbox)
 
     def search(
-        self, pattern: str, regex: bool = True, case: bool = True, **kwargs: Any
+        self, pattern: str | re.Pattern[str], regex: bool = True, case: bool = True, **kwargs: Any
     ) -> list[ObjectDict]:
         if isinstance(pattern, str) and (not pattern or pattern.isspace()):
             return []
-        if not regex and hasattr(pattern, "pattern"):
-            raise ValueError("Cannot pass compiled regex with regex=False")
-        import re
-
-        text = "".join(char["text"] for char in self.chars)
+        if isinstance(pattern, re.Pattern) and (not regex or not case):
+            raise ValueError("Cannot combine a compiled regex with regex=False or case=False")
+        main_group = kwargs.get("main_group", 0)
+        characters = self.chars
+        text = "".join(char["text"] for char in characters)
+        source_chars = [char for char in characters for _ in char["text"]]
         expression = (
             re.sub(r"\\ +", r"\\s+", re.escape(pattern))
             if regex and isinstance(pattern, str) and " " in pattern
             else pattern
             if regex
-            else re.escape(pattern)
+            else re.escape(cast(str, pattern))
         )
         flags = 0 if case else re.IGNORECASE
 
         def build_result(match: Any, chars: list[ObjectDict]) -> ObjectDict:
             x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in chars)
             result: ObjectDict = {
-                "text": match.group(0),
-                "groups": match.groups(),
+                "text": match.group(main_group),
                 "x0": x0,
                 "top": top,
                 "x1": x1,
                 "bottom": bottom,
                 "doctop": min(char["doctop"] for char in chars),
             }
+            if kwargs.get("return_groups", True):
+                result["groups"] = match.groups()
             if kwargs.get("return_chars", True):
                 result["chars"] = chars
             return result
 
         results: list[ObjectDict] = []
         for match in re.finditer(expression, text, flags):
-            chars = self.chars[match.start() : match.end()]
-            if not chars:
+            if not match.group(main_group).strip():
                 continue
+            chars = source_chars[match.start(main_group) : match.end(main_group)]
             results.append(build_result(match, chars))
-        if not results and regex and not kwargs.get("layout"):
+        if not results and regex and isinstance(pattern, str) and not kwargs.get("layout"):
             formatted = self.extract_text()
             fallback_expression = re.sub(r"\\ +", r"\\s+", re.escape(pattern))
             for match in re.finditer(fallback_expression, formatted, flags):

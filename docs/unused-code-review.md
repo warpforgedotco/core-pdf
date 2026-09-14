@@ -1,5 +1,33 @@
 # Coverage and unused-code findings
 
+## pdfplumber search spans and CSV contracts
+
+Added **56 deterministic cases** for search spans, regex groups, compiled patterns,
+case handling, omitted result fields, CSV quoting, precision, object/attribute selection,
+and source-object preservation. Search cases compare with the installed pdfplumber
+TextMap implementation, including multi-character glyphs and source identity.
+
+Search now maps text offsets to their originating glyph objects, honors `main_group`
+and `return_groups`, rejects incompatible compiled-pattern options, and avoids sending
+compiled patterns through the literal fallback. Empty and whitespace-only matches are
+filtered before building geometry, making the separate empty-character-span check
+redundant. The existing formatted-text fallback remains; these tests do not establish
+complete search/layout parity with pdfplumber. CSV tests establish current facade
+contracts without claiming full reference serialization parity.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,138 tests,
+no skips, in 500.83s**. Workspace coverage increased **85.66% → 85.79% statements**
+and **75.82% → 75.99% branches**: **33,378 / 38,907 statements** and
+**11,401 / 15,004 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. The exact verified fractions ratchet the baseline.
+
+A subsequent type-only cast and fixture annotations passed the 56 focused tests.
+All pre-push quality gates passed, including both type checkers and import contracts;
+the static unused-symbol scan remains empty.
+The full 100% goal remains incomplete: **5,529 statements and 3,603 branches** remain
+uncovered. These are local results.
+
+
 ## Encoding CMaps and font metric contracts
 
 Added **86 cases** for malformed character/range mappings, notdef range semantics,
