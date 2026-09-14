@@ -74,31 +74,21 @@ class BitReader:
         self.bits_in_buffer = 0
 
     def read_bits(self, n: int) -> int | None:
-        if self.bits_in_buffer >= n:
-            self.bits_in_buffer -= n
-            value = (self.buffer >> self.bits_in_buffer) & ((1 << n) - 1)
-            self.buffer &= (1 << self.bits_in_buffer) - 1 if self.bits_in_buffer else 0
-            return value
-
-        if self.pos >= self.length:
-            return None
-
-        data = self.data
-        pos = self.pos
-        length = self.length
-        buffer = self.buffer
-        bits_in_buffer = self.bits_in_buffer
-
-        while bits_in_buffer < n and pos < length:
-            buffer = (buffer << 8) | data[pos]
-            bits_in_buffer += 8
-            pos += 1
-
-        self.pos = pos
-        self.buffer = buffer
-        self.bits_in_buffer = bits_in_buffer
-        if bits_in_buffer < n:
-            return None
+        if self.bits_in_buffer < n:
+            data = self.data
+            pos = self.pos
+            length = self.length
+            buffer = self.buffer
+            bits_in_buffer = self.bits_in_buffer
+            while bits_in_buffer < n and pos < length:
+                buffer = (buffer << 8) | data[pos]
+                bits_in_buffer += 8
+                pos += 1
+            self.pos = pos
+            self.buffer = buffer
+            self.bits_in_buffer = bits_in_buffer
+            if bits_in_buffer < n:
+                return None
 
         self.bits_in_buffer -= n
         value = (self.buffer >> self.bits_in_buffer) & ((1 << n) - 1)
@@ -152,150 +142,97 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
     return bytes(out)
 
 
+def internal_ascii85_tail(accumulator: int, digits: int) -> bytes:
+    """ISO 32000-1 7.4.3: pad a final 2-4 digit group with u, then truncate."""
+    if not digits:
+        return b""
+    if digits == 1:
+        raise ValueError("invalid final Ascii85 tuple")
+    for _ in range(5 - digits):
+        accumulator = accumulator * 85 + 84
+    if accumulator > ASCII85_MAX:
+        raise ValueError("Ascii85 overflow")
+    return accumulator.to_bytes(4, "big")[: digits - 1]
+
+
 def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
     try:
-        clean = bytes(data).lstrip(WHITESPACE)
-        clean = clean.translate(None, WHITESPACE)
+        clean = bytes(data).translate(None, WHITESPACE)
         terminator = clean.find(b"~>")
         if terminator < 0:
             raise ValueError("missing ASCII85 end marker")
         clean = clean[:terminator]
-        clean_len = len(clean)
+        invalid = clean.translate(None, ASCII85_DIGITS + b"z")
+        if invalid:
+            raise ValueError(f"Non-Ascii85 digit found: {chr(invalid[0])}")
 
         acc = 0
         digits = 0
-        zero_quad = b"\x00\x00\x00\x00"
-        has_z = 122 in clean
-        if has_z:
+        if 122 in clean:
             decoded = bytearray()
-            append = decoded.extend
             for byte in clean:
                 if byte == 122:
                     if digits:
                         raise ValueError("z inside Ascii85 5-tuple")
-                    append(zero_quad)
+                    decoded.extend(b"\x00\x00\x00\x00")
                     continue
-                if 33 <= byte <= 117:
-                    acc = acc * 85 + (byte - 33)
-                    digits += 1
-                    if digits == 5:
-                        if acc > ASCII85_MAX:
-                            raise ValueError("Ascii85 overflow")
-                        append(acc.to_bytes(4, "big"))
-                        acc = 0
-                        digits = 0
-                    continue
-                raise ValueError(f"Non-Ascii85 digit found: {chr(byte)}")
-        else:
-            decoded = bytearray(((clean_len + 4) // 5) * 4)
-            out_pos = 0
-            pack_quad = ASCII85_PACK_QUAD
-            full_end = clean_len - clean_len % 5
-            pos = 0
-            invalid_digits = clean.translate(None, ASCII85_DIGITS)
-            # Keep short streams on the allocation-free scalar path.  For large,
-            # validated streams, five ASCII85 digits form an independent numeric
-            # group and can be decoded in bulk.
-            if not invalid_digits and full_end >= 4096:
-                import numpy
-
-                groups = numpy.frombuffer(clean[:full_end], dtype=numpy.uint8).reshape(-1, 5)
-                values = groups.astype(numpy.uint64) - 33
-                accumulators = (
-                    values[:, 0] * 52200625
-                    + values[:, 1] * 614125
-                    + values[:, 2] * 7225
-                    + values[:, 3] * 85
-                    + values[:, 4]
-                )
-                if bool(numpy.any(accumulators > ASCII85_MAX)):
-                    raise ValueError("Ascii85 overflow")
-                encoded = accumulators.astype(">u4", copy=False).tobytes()
-                decoded[: len(encoded)] = encoded
-                out_pos = len(encoded)
-                pos = full_end
-            if invalid_digits:
-                while pos < full_end:
-                    byte0 = clean[pos]
-                    byte1 = clean[pos + 1]
-                    byte2 = clean[pos + 2]
-                    byte3 = clean[pos + 3]
-                    byte4 = clean[pos + 4]
-                    if not (
-                        33 <= byte0 <= 117
-                        and 33 <= byte1 <= 117
-                        and 33 <= byte2 <= 117
-                        and 33 <= byte3 <= 117
-                        and 33 <= byte4 <= 117
-                    ):
-                        for byte in (byte0, byte1, byte2, byte3, byte4):
-                            if not 33 <= byte <= 117:
-                                raise ValueError(f"Non-Ascii85 digit found: {chr(byte)}")
-                    acc = (
-                        (byte0 - 33) * 52200625
-                        + (byte1 - 33) * 614125
-                        + (byte2 - 33) * 7225
-                        + (byte3 - 33) * 85
-                        + byte4
-                        - 33
-                    )
+                acc = acc * 85 + (byte - 33)
+                digits += 1
+                if digits == 5:
                     if acc > ASCII85_MAX:
                         raise ValueError("Ascii85 overflow")
-                    pack_quad(decoded, out_pos, acc)
-                    out_pos += 4
-                    pos += 5
-            else:
-                while pos < full_end:
-                    byte0 = clean[pos]
-                    byte1 = clean[pos + 1]
-                    byte2 = clean[pos + 2]
-                    byte3 = clean[pos + 3]
-                    byte4 = clean[pos + 4]
-                    acc = (
-                        (byte0 - 33) * 52200625
-                        + (byte1 - 33) * 614125
-                        + (byte2 - 33) * 7225
-                        + (byte3 - 33) * 85
-                        + byte4
-                        - 33
-                    )
-                    if acc > ASCII85_MAX:
-                        raise ValueError("Ascii85 overflow")
-                    pack_quad(decoded, out_pos, acc)
-                    out_pos += 4
-                    pos += 5
+                    decoded.extend(acc.to_bytes(4, "big"))
+                    acc = 0
+                    digits = 0
+            decoded.extend(internal_ascii85_tail(acc, digits))
+            return bytes(decoded)
 
-            digits = clean_len - full_end
-            if digits:
-                if digits == 1:
-                    raise ValueError("invalid final Ascii85 tuple")
-                acc = 0
-                if invalid_digits:
-                    for byte in clean[full_end:]:
-                        if 33 <= byte <= 117:
-                            acc = acc * 85 + (byte - 33)
-                            continue
-                        raise ValueError(f"Non-Ascii85 digit found: {chr(byte)}")
-                else:
-                    for byte in clean[full_end:]:
-                        acc = acc * 85 + (byte - 33)
-                for count in range(5 - digits):
-                    acc = acc * 85 + 84
-                if acc > ASCII85_MAX:
-                    raise ValueError("Ascii85 overflow")
-                pack_quad(decoded, out_pos, acc)
-                out_pos += digits - 1
-            return bytes(decoded[:out_pos])
+        clean_len = len(clean)
+        decoded = bytearray(((clean_len + 4) // 5) * 4)
+        out_pos = 0
+        full_end = clean_len - clean_len % 5
+        pos = 0
+        # Full tuples are independent. Keep the bulk path for large streams,
+        # after the same alphabet validation used by the scalar/z paths.
+        if full_end >= 4096:
+            import numpy
 
-        if digits:
-            if digits == 1:
-                raise ValueError("invalid final Ascii85 tuple")
-            for ignored in range(5 - digits):
-                acc = acc * 85 + 84
+            groups = numpy.frombuffer(clean[:full_end], dtype=numpy.uint8).reshape(-1, 5)
+            values = groups.astype(numpy.uint64) - 33
+            accumulators = (
+                values[:, 0] * 52200625
+                + values[:, 1] * 614125
+                + values[:, 2] * 7225
+                + values[:, 3] * 85
+                + values[:, 4]
+            )
+            if bool(numpy.any(accumulators > ASCII85_MAX)):
+                raise ValueError("Ascii85 overflow")
+            encoded = accumulators.astype(">u4", copy=False).tobytes()
+            decoded[: len(encoded)] = encoded
+            out_pos = len(encoded)
+            pos = full_end
+        pack_quad = ASCII85_PACK_QUAD
+        while pos < full_end:
+            acc = (
+                (clean[pos] - 33) * 52200625
+                + (clean[pos + 1] - 33) * 614125
+                + (clean[pos + 2] - 33) * 7225
+                + (clean[pos + 3] - 33) * 85
+                + clean[pos + 4]
+                - 33
+            )
             if acc > ASCII85_MAX:
                 raise ValueError("Ascii85 overflow")
-            append(acc.to_bytes(4, "big")[: digits - 1])
-        return bytes(decoded)
+            pack_quad(decoded, out_pos, acc)
+            out_pos += 4
+            pos += 5
+        acc = 0
+        for byte in clean[full_end:]:
+            acc = acc * 85 + (byte - 33)
+        tail = internal_ascii85_tail(acc, clean_len - full_end)
+        decoded[out_pos : out_pos + len(tail)] = tail
+        return bytes(decoded[: out_pos + len(tail)])
     except (ValueError, binascii.Error) as exc:
         raise FilterParseError("invalid ASCII85Decode stream") from exc
 

@@ -74,8 +74,6 @@ class FilterParams:
                 value = default
             if type(value) is bool:
                 return value
-            if value is default and isinstance(default, bool):
-                return default
             raise ValueError(f"invalid DecodeParms {name}")
 
         def require_nonneg_int(name: str, default: int | None = None) -> int:
@@ -88,7 +86,7 @@ class FilterParams:
             value = require_int("EarlyChange", 1)
             if value not in (0, 1):
                 raise ValueError("invalid DecodeParms EarlyChange")
-            return 0 if value == 0 else 1
+            return value
 
         columns_value = parms.get("Columns")
         jbig2_globals = parms.get("JBIG2Globals")
@@ -98,7 +96,7 @@ class FilterParams:
             columns=require_pos_int("Columns", 1),
             colors=require_pos_int("Colors", 1),
             bits_per_component=require_bits_per_component("BitsPerComponent"),
-            k=require_int("K", 0) or 0,
+            k=require_int("K", 0),
             damaged_rows_before_error=require_nonneg_int("DamagedRowsBeforeError", 0),
             black_is_1=require_bool("BlackIs1", False),
             rows=require_nonneg_int("Rows", 0),

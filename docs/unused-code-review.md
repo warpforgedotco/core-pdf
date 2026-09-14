@@ -1,5 +1,31 @@
 # Coverage and unused-code findings
 
+## Filter codec and predictor contracts
+
+Added **176 deterministic cases** covering ASCII85 scalar/bulk/zero-shorthand decoding,
+LZW code-width transitions and dictionary saturation, strict DecodeParms, and TIFF
+sample depths, channels, row padding, and truncation. The standard-library ASCII85
+encoder supplies an independent oracle; TIFF fixtures encode horizontal differences
+from known sample rows. Existing PNG contracts cover all five row filters.
+
+Consolidated bit extraction and ASCII85 validation/tail decoding, removed redundant
+parameter branches, shared TIFF word accumulation, and kept PNG previous-row state
+as a memoryview. Public kernel entry points and strict-wrapper error boundaries remain.
+The three changed production modules have **100% statement and branch coverage**.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,450 tests,
+no skips, in 222.09s**. Workspace coverage increased **84.17% → 84.59% statements**
+and **73.44% → 74.04% branches**: **32,933 / 38,934 statements** and
+**11,127 / 15,028 branches**. All four source roots, vendor-only omissions, and
+**554 excluded lines** remain unchanged. Exact verified fractions ratchet the baseline.
+
+The isolated spec environment, with core and OCR absent, passed **2,482 tests**.
+All pre-push checks passed, including both type checkers and import contracts; no
+source-shadowing binaries or static unused-symbol candidates were found.
+The workspace 100% goal remains incomplete: **6,001 statements and 3,901 branches**
+are still uncovered. These are local results; no new GitHub run is claimed.
+
+
 ## Structural consolidation and default complete-suite coverage
 
 Implemented the six structural improvements: shared vector/image color conversion,
