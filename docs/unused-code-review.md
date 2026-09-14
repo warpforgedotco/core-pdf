@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR region tasks
+
+Added **18 deterministic tests** for same-image/mode batching, count and pixel budgets,
+text-band estimation, preprocessing options, utility-grid coordinates, dense-page rescue
+limits, weak-cell selection, source-raster deduplication, rescue crop mapping, and layered
+image compositing. A regression test exposed transparent RGBA text influencing estimated
+text height; estimation now uses the shared white-background intensity conversion.
+
+The full suite with pinned Tesseract enabled passed **3,355 tests**, with **32 veraPDF
+integration skips**, in **206.80s**.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR region tasks | 45.65% → 96.74% | 32.26% → 90.32% |
+| Entire workspace | 79.14% → 79.38% | 66.85% → 67.09% |
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No compiled modules shadowed sources; the unused-symbol scan found no new candidates.
+Coverage sources and exclusions remain unchanged. The **100% workspace goal is incomplete**:
+**8,102 statements and 5,003 branches** remain uncovered, including six statements and six
+branches in region tasks. Candidate scoring and the remaining region fallback paths remain
+in scope.
+
 ## Workspace coverage completion: raster preprocessing
 
 Added **33 deterministic tests** for alpha compositing, ink grids, adaptive thresholds,
