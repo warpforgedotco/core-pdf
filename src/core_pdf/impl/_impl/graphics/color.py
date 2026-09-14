@@ -13,12 +13,12 @@ from core_pdf.impl._impl.graphics.color_spec import (
     parse_color_space,
     recover_image_bits_per_component,
 )
-from core_pdf.impl._impl.graphics.image_kernels import ImageBuffer, image_dimension
 from core_pdf.impl._impl.graphics.image_samples import (
     convert_integer_image,
     internal_convert_components,
 )
-from core_pdf.impl._impl.runtime.array_views import uint8_view
+from core_pdf.impl._impl.runtime.array_views import ByteBuffer, uint8_view
+from core_pdf.impl._impl.runtime.scalars import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
@@ -47,11 +47,11 @@ def color_operands_to_srgb(
 
 
 def internal_convert_image_data(
-    raw: ImageBuffer,
+    raw: ByteBuffer,
     image_dict: ImageDict,
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
-) -> ImageBuffer | None:
+) -> ByteBuffer | None:
     """Unpack and decode once, keeping original integers for colour-key masks."""
     spec = parse_color_space(image_dict.get("ColorSpace"))
     bits = recover_image_bits_per_component(image_dict)
@@ -81,19 +81,19 @@ def internal_convert_image_data(
 
 
 def internal_simple_device_color_fast_path(
-    raw: ImageBuffer,
+    raw: ByteBuffer,
     spec: ColorSpace,
     image_dict: ImageDict,
     bits_per_component: int,
-) -> ImageBuffer | None:
+) -> ByteBuffer | None:
     if bits_per_component != 8:
         return None
     if spec.kind not in {"DeviceRGB", "DeviceGray"}:
         return None
     if image_dict.get("Decode") is not None:
         return None
-    width = image_dimension(image_dict, "Width")
-    height = image_dimension(image_dict, "Height")
+    width = internal_image_dimension(image_dict, "Width")
+    height = internal_image_dimension(image_dict, "Height")
     if width <= 0 or height <= 0:
         return None
     expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
@@ -105,7 +105,7 @@ def internal_simple_device_color_fast_path(
 
 
 def internal_convert_cmyk(
-    raw: ImageBuffer,
+    raw: ByteBuffer,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
     if len(raw) % 4:
         raise ValueError("invalid color sample data")
@@ -113,3 +113,10 @@ def internal_convert_cmyk(
         uint8_view(raw).reshape(-1, 4).astype(numpy.float64) / 255,
         parse_color_space("DeviceCMYK"),
     ).reshape(-1)
+
+
+def internal_image_dimension(image_dict: ImageDict, key: str) -> int:
+    value = image_dict.get(key)
+    if type(value) is bool:
+        return 0
+    return parse_int(value, 0) or 0

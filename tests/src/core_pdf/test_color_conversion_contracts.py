@@ -118,3 +118,24 @@ def test_soft_mask_precedes_colour_key_mask():
         },
     )
     assert result.shape == (1, 1)
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize("inks", [(0, 0, 0, 0), (19, 64, 201, 128), (255, 255, 255, 255)])
+def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fallback, inks):
+    from core_pdf.impl._impl.graphics import device_profiles
+
+    device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()
+    try:
+        if fallback:
+            monkeypatch.setattr(device_profiles, "default_cmyk_transform", lambda: None)
+        vector = device_profiles.cmyk_floats_to_srgb(*(ink / 255 for ink in inks))
+        image = convert_integer_samples(
+            np.array([inks], dtype=np.uint16) * 257, {"ColorSpace": "DeviceCMYK"}
+        )
+        np.testing.assert_array_equal(image[0], vector)
+        if fallback:
+            expected = np.rint(255 * (1 - np.array(inks[:3]) / 255) * (1 - inks[3] / 255))
+            np.testing.assert_array_equal(vector, expected)
+    finally:
+        device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()

@@ -14,7 +14,7 @@ from core_pdf.impl._impl.graphics.color_spec import (
     internal_nchannel_process,
     parse_color_space,
 )
-from core_pdf.impl._impl.graphics.device_profiles import default_cmyk_transform
+from core_pdf.impl._impl.graphics.device_profiles import cmyk_components_to_srgb
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.graphics.icc_profiles import (
     IccProfileError,
@@ -84,21 +84,15 @@ def internal_convert_components(
             return mixed
     if kind in {"DeviceGray", "DeviceRGB"}:
         return internal_quantize(values)
-    if kind in {"DeviceCMYK", "ICCBased"}:
+    if kind == "DeviceCMYK":
+        return cmyk_components_to_srgb(values, rendering=rendering)
+    if kind == "ICCBased":
         try:
-            transform = (
-                default_cmyk_transform()
-                if kind == "DeviceCMYK"
-                else parse_icc_transform(space.icc_profile)
-                if space.icc_profile
-                else None
-            )
+            transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
             if transform is not None and transform.input_channels == values.shape[1]:
                 return transform.apply_uint16(internal_quantize(values, 65535), rendering=rendering)
         except (IccProfileError, IccSampleError):
             pass
-        if kind == "DeviceCMYK":
-            return internal_quantize((1 - values[:, :3]) * (1 - values[:, 3:]))
         if space.alternate is not None:
             return internal_convert_components(
                 values, space.alternate, depth + 1, rendering=rendering
