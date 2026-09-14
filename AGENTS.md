@@ -37,10 +37,8 @@ The authored test suite includes differential comparisons under
 `tests/src/core_pdf/api/compat/differential`, strict spec tests under
 `packages/core-pdf-spec/tests`, and validation tests under
 `packages/core-pdf-validate/tests`. Reference corpora remain in
-`tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and
+`tests/fixtures`. `docs/` holds `api.md`, `standards.md`, `roadmap.md`, and
 licensing material; maintenance scripts are in `scripts/`.
-
-Start with `docs/architecture.md` — it describes the pipeline and how the source tree is organized.
 
 ## Build, Test, and Development Commands
 
@@ -96,7 +94,7 @@ Write Python with four-space indentation, clear type annotations, and lines no l
 
 Module-level symbols that are not part of a module's interface are prefixed `internal_` rather than with a leading underscore — about 490 of them. Treat anything so prefixed as private. The convention is applied unevenly across subpackages, so its *absence* does not imply a symbol is public; nothing under `impl/` is. Where a module declares `__all__`, that is the more reliable signal. Two wrinkles worth knowing: `internal_EXPORTS` in `__init__.py` is the public export table (the prefix marks the variable as private, not its contents), and a handful of constants are spelled `internal_UPPER_CASE`.
 
-Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the derived-processing layering, the spec layering, the spec/reader policy boundary, and the foundational packages that must not depend upward (`impl/_impl/runtime/`, `impl/_impl/model/`, `core_pdf_spec.s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the "Dependency direction" section of `docs/architecture.md` before editing the contract.
+Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the derived-processing layering, the spec layering, the spec/reader policy boundary, and the foundational packages that must not depend upward (`impl/_impl/runtime/`, `impl/_impl/model/`, `core_pdf_spec.s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the contract's own description in `pyproject.toml` before editing it.
 
 Third-party implementations belong in the owning package's `_vendor/` directory.
 The fontTools backend stays in `src/core_pdf/_vendor/`; spec may contain attributed inert

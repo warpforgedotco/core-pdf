@@ -176,9 +176,7 @@ applications, without adding a color-management backend dependency to spec.
 
 `s_08_graphics.color_spec.parse_color_space(..., context=...)` enforces the PDF 1.3
 change permitting Separation/DeviceN bases in Indexed color spaces, recursively through
-nested spaces. It does not enforce every feature's introduction version. The repository's
-[version coverage audit](../../docs/version-coverage.md) distinguishes implemented rules,
-shared algorithms, and remaining historical or feature gaps.
+nested spaces. It does not enforce every feature's introduction version.
 
 `ColorSpace.devicen_attributes` retains typed `DeviceNAttributes` and `DeviceNProcess`
 metadata from ISO 32000-2:2020, 8.6.6.5 and Tables 70-71. The public
