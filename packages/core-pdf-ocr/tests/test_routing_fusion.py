@@ -271,3 +271,147 @@ def test_rotation_route_distinguishes_minor_labels_from_page_orientation(
     else:
         assert result.route is PageRoute.NATIVE
         assert result.ocr_passes == ()
+
+
+@pytest.mark.parametrize(
+    ("schematic", "complexity", "images", "scale"),
+    [
+        (False, 200000, 0, 3),
+        (True, 3999, 0, 3),
+        (True, 4000, 0, 5),
+        (True, 149999, 0, 5),
+        (True, 150000, 0, 4),
+        (True, 150000, 1, 3.5),
+    ],
+)
+def test_schematic_raster_scale_thresholds(
+    ocr_capture, schematic, complexity, images, scale
+) -> None:
+    from core_pdf_ocr.impl.extract.observations import internal_ocr_scale
+
+    capture = replace(ocr_capture, evidence=replace(ocr_capture.evidence, image_count=images))
+    assert internal_ocr_scale(capture, schematic=schematic, vector_complexity=complexity) == scale
+
+
+@pytest.mark.parametrize(
+    ("characters", "tokens", "short", "wordlike", "suspicious", "expected"),
+    [
+        (23, 12, 0.5, 0.1, 0, False),
+        (24, 11, 0.5, 0.1, 0, False),
+        (24, 12, 0.5, 0.1, 0, True),
+        (24, 12, 0.1, 0.1, 0, False),
+        (24, 12, 0.5, 0.1, 6, False),
+        (24, 12, 0.7, 0.4, 0, False),
+    ],
+)
+def test_noisy_native_policy_requires_structure_tokens_and_language_evidence(
+    ocr_capture, characters, tokens, short, wordlike, suspicious, expected
+) -> None:
+    from core_pdf_ocr.impl.extract.observations import internal_noisy_native_text
+
+    evidence = replace(
+        ocr_capture.evidence,
+        native_characters=characters,
+        visible_native_characters=characters,
+        suspicious_characters=suspicious,
+        vector_complexity=200,
+        text_quality=TextQualityStats(
+            token_count=tokens, short_token_ratio=short, wordlike_ratio=wordlike
+        ),
+    )
+    assert internal_noisy_native_text(evidence) is expected
+    if expected:
+        result = plan_page(replace(ocr_capture, evidence=evidence))
+        assert result.reason is PagePlanReason.NOISY_NATIVE_TEXT
+        assert result.fusion_policy is FusionPolicy.NOISY_NATIVE
+
+
+def test_actual_text_override_can_make_an_unmapped_native_layer_usable(ocr_capture) -> None:
+    from core_pdf.impl._impl.extract.contracts import GlyphEvidence
+    from core_pdf_ocr.impl.extract.observations import internal_native_mapping_is_usable
+
+    evidence = replace(
+        ocr_capture.evidence,
+        native_characters=100,
+        glyphs=GlyphEvidence(glyph_count=100, unknown_glyphs=100, actual_text_characters=80),
+    )
+    assert internal_native_mapping_is_usable(evidence)
+    assert not internal_native_mapping_is_usable(
+        replace(evidence, glyphs=replace(evidence.glyphs, actual_text_characters=79))
+    )
+
+
+def test_embedded_image_supplement_has_image_scope_and_distinct_fusion_floor(ocr_capture) -> None:
+    evidence = replace(
+        ocr_capture.evidence,
+        native_characters=100,
+        visible_native_characters=100,
+        image_count=1,
+        image_area_ratio=0.2,
+    )
+    result = plan_page(replace(ocr_capture, evidence=evidence))
+    assert result.reason is PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT
+    assert result.image_regions_only
+    assert result.ocr_passes[0].scope is OcrPassScope.IMAGE_REGIONS
+
+
+def test_candidate_coverage_empty_inputs_and_chunk_boundaries() -> None:
+    import numpy
+
+    from core_pdf_ocr.impl.extract.observations import maximum_candidate_coverage
+
+    candidates = numpy.tile([[0, 0, 10, 10]], (300, 1))
+    native = numpy.asarray([[0, 0, 5, 10]])
+    numpy.testing.assert_array_equal(
+        maximum_candidate_coverage(candidates, native), numpy.full(300, 0.5)
+    )
+    assert maximum_candidate_coverage(candidates[:0], native).size == 0
+    assert maximum_candidate_coverage(candidates, native[:0]).tolist() == [0] * 300
+
+
+def test_simple_rectangular_artwork_keeps_native_text_route(ocr_capture) -> None:
+    from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
+    from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
+
+    drawings = tuple(
+        CapturedDrawing(
+            i,
+            (0,),
+            1,
+            kind="fill",
+            path=CapturedPath(
+                [
+                    CapturedSubpath(
+                        [(i * 10, 0), (i * 10 + 5, 0), (i * 10 + 5, 100), (i * 10, 100)],
+                        closed=True,
+                    )
+                ]
+            ),
+        )
+        for i in range(40)
+    )
+    capture = replace(
+        ocr_capture,
+        program=PageProgram(CapturedProgram(drawings=drawings)),
+        evidence=replace(
+            ocr_capture.evidence,
+            native_characters=100,
+            visible_native_characters=100,
+            uncovered_vector_area=20000,
+        ),
+    )
+    result = plan_page(capture)
+    assert result.reason is PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS
+    assert result.ocr_passes == ()
+
+
+def test_strong_ocr_replaces_noisy_native_batch_as_a_whole() -> None:
+    native = ObservationBatch.from_columns(("?a?",), ((0, 0, 10, 10),), source=0, confidence=(100,))
+    ocr = ObservationBatch.from_columns(
+        ("clear", "useful", "recognized", "text"),
+        ((0, 0, 10, 10), (20, 0, 30, 10), (40, 0, 50, 10), (60, 0, 70, 10)),
+        source=1,
+        confidence=(95,) * 4,
+    )
+    plan = WorkPlan(PageRoute.HYBRID, fusion_policy=FusionPolicy.NOISY_NATIVE)
+    assert fuse_observations(native, ocr, plan) is ocr

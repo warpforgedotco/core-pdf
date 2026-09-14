@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR routing and resampling
+
+Added **51 deterministic tests** for resampling shape contracts, identity, noncontiguous
+inputs, nearest-neighbor replication, box-filter stroke preservation, bilinear pixel centers,
+single-pixel channels, mixed-axis resizing, OCR scale thresholds, noisy-native routing,
+ActualText overrides, embedded images, bounded overlap calculation, rectangular artwork,
+and whole-batch replacement by stronger OCR. Smooth resizing now validates shape before
+reading both spatial axes, consistently raising ValueError for invalid 1D input instead
+of leaking IndexError. Valid-image resampling behavior is unchanged.
+
+The full suite with pinned Tesseract enabled passed **3,584 tests**, with **32 veraPDF
+integration skips**, in **201.69s**. OCR routing/fusion and resampling now each have **100%
+statement and branch coverage**. Workspace coverage rose **80.44% → 80.52% statements**
+and **68.38% → 68.53% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,652 statements and 4,784 branches** remain uncovered. Remaining OCR processing, core,
+spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR chart tables and native routing
 
 Added **29 deterministic tests** for chart numeric splitting, geometry, spatial duplicate

@@ -138,6 +138,7 @@ def resample_smooth(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
     """Resize using the filter that suits the direction of each axis change."""
+    internal_validate_resampling_shape(samples, height, width)
     if height <= samples.shape[0] and width <= samples.shape[1]:
         return resample_box(samples, height, width)
     if height >= samples.shape[0] and width >= samples.shape[1]:
