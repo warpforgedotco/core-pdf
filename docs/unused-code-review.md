@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## X-ray raw-highlight recovery contracts
+
+Added **15 deterministic cases** for raw font/CMap recovery, font selection,
+hexadecimal text operands, width limits, line-relative positioning, highlight
+intersection, missing text-object boundaries, absent font/annotation evidence,
+crop origins, and user units. Positive text and coordinate assertions verify
+the fallback returns recovered content in the expected coordinate space.
+The fixture suppresses the base page's unrelated text-object start so malformed
+boundary cases are independent. No production change was needed.
+
+The coverage run passed **15 tests in 29.08s**, appended to the verified
+**7,717-test full run** and subsequent focused tests on unchanged production
+sources. This was not another full-suite run. Workspace coverage is now
+**35,517 / 38,843 statements (91.44%)** and
+**12,559 / 14,958 branches (83.96%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All quality gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The goal remains incomplete:
+**3,326 statements and 2,399 branches** remain uncovered. These are local results.
+
 ## Font geometry cache and no-paint contracts
 
 Added **14 deterministic cases** for negative/missing glyph identities,
