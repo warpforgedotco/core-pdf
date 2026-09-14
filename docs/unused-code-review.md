@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Polygon painting across scanline, sampled, and analytic routes
+
+Added **356 deterministic cases** comparing painted pixels with explicit rectangle
+and hole geometry. They cover both winding rules, contour orientation, rectangular
+and triangular clips, transparent and partial opacity, normal and Multiply modes,
+scalar and NumPy span routes, precomputed edges, the opaque-black shortcut, and
+isolated/non-isolated group compositing. Quarter-pixel boundaries provide an
+independent exact-area oracle for both analytic and 4x4 sampled coverage.
+No production changes were needed for these contracts.
+
+The focused coverage run passed **356 tests in 11.70s**, appended to the verified
+**6,663-test full workspace/differential run** on unchanged production sources;
+this was not another full-suite run. Workspace coverage increased
+**89.36% → 89.69% statements** and **81.04% → 81.45% branches**:
+**34,858 / 38,866 statements** and **12,193 / 14,970 branches**. The path-fill
+module now reaches **95.93% statements / 88.73% branches**. All four source roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+coverage ratchets and all pre-push quality gates passed, including mypy, ty, and
+import contracts. The static unused-symbol scan returned no candidates; that
+heuristic does not prove the absence of dead code.
+The 100% goal remains incomplete: **4,008 statements and 2,777 branches** remain
+uncovered. These are local results.
+
 ## Finite numeric recovery in capture state
 
 Added **55 deterministic cases** for numeric errors, state preservation, line-width
