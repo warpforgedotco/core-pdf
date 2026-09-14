@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Finite numeric recovery in capture state
+
+Added **55 deterministic cases** for numeric errors, state preservation, line-width
+and miter clamping, dash recovery, scope underflow, incomplete paths, matrix contexts,
+font-size errors, and accepted tolerant numeric encodings. Seven failures with the
+complete capture state exposed direct float/int shortcuts admitting NaN/infinity
+or raising OverflowError. Capture now uses one host conversion path followed by an
+explicit finite check, so existing recovery handlers preserve prior state. Host
+scalar semantics and tolerant exponent-string support remain unchanged.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **6,663 tests, no skips, in 426.68s**. Workspace coverage increased
+**89.28% → 89.36% statements** and **80.93% → 81.04% branches**:
+**34,731 / 38,866 statements** and **12,131 / 14,970 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,135 statements and 2,839 branches** remain
+uncovered. These are local results.
+
+
 ## Pypdf metadata projection and encrypted-reader lifecycle
 
 Added **51 differential cases** using independently pypdf-written RC4-40, RC4-128,
