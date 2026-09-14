@@ -95,51 +95,53 @@ def cluster_by_preserving_order(
 
 
 class TableSettings:
+    vertical_strategy: str
+    horizontal_strategy: str
+    text_settings: dict[str, Any]
+
     def __init__(self, **values: Any) -> None:
-        allowed = {
-            "vertical_strategy",
-            "horizontal_strategy",
-            "explicit_vertical_lines",
-            "explicit_horizontal_lines",
-            "text_settings",
-            "text_layout",
-            "snap_tolerance",
-            "snap_x_tolerance",
-            "snap_y_tolerance",
-            "join_tolerance",
-            "join_x_tolerance",
-            "join_y_tolerance",
-            "edge_min_length",
-            "edge_min_length_prefilter",
-            "min_words_vertical",
-            "min_words_horizontal",
-            "intersection_tolerance",
-            "intersection_x_tolerance",
-            "intersection_y_tolerance",
+        defaults = {
+            "vertical_strategy": "lines",
+            "horizontal_strategy": "lines",
+            "explicit_vertical_lines": None,
+            "explicit_horizontal_lines": None,
+            "snap_tolerance": 3,
+            "snap_x_tolerance": None,
+            "snap_y_tolerance": None,
+            "join_tolerance": 3,
+            "join_x_tolerance": None,
+            "join_y_tolerance": None,
+            "edge_min_length": 3,
+            "edge_min_length_prefilter": 1,
+            "min_words_vertical": 3,
+            "min_words_horizontal": 1,
+            "intersection_tolerance": 3,
+            "intersection_x_tolerance": None,
+            "intersection_y_tolerance": None,
+            "text_settings": None,
         }
-        unknown = set(values) - allowed
+        unknown = set(values) - defaults.keys() - {"text_layout"}
         if unknown:
-            if "strategy" in unknown:
-                raise TypeError("strategy is not a valid table setting")
-            raise ValueError(f"Unknown table setting: {sorted(unknown)[0]}")
-        self.vertical_strategy = values.pop("vertical_strategy", "lines")
-        self.horizontal_strategy = values.pop("horizontal_strategy", "lines")
-        self.text_settings = values.pop("text_settings", {})
-        self.__dict__.update(values)
+            raise TypeError(f"Unknown table setting: {sorted(unknown)[0]}")
+        self.__dict__.update(defaults | values)
+        self.text_settings = dict(self.text_settings or {})
+        text_tolerance = self.text_settings.pop("tolerance", 3)
+        for axis in ("x", "y"):
+            self.text_settings.setdefault(f"{axis}_tolerance", text_tolerance)
+            for family in ("snap", "join", "intersection"):
+                name = f"{family}_{axis}_tolerance"
+                if name not in values:
+                    setattr(self, name, getattr(self, f"{family}_tolerance"))
         for name, value in self.__dict__.items():
-            if name.endswith("tolerance") and isinstance(value, (int, float)) and value < 0:
+            if (
+                (name.endswith("tolerance") or name.startswith(("edge_min_length", "min_words")))
+                and isinstance(value, (int, float))
+                and value < 0
+            ):
                 raise ValueError(f"{name} must be non-negative")
         for strategy in (self.vertical_strategy, self.horizontal_strategy):
             if strategy not in {"lines", "lines_strict", "text", "explicit"}:
                 raise ValueError(f"unknown table strategy: {strategy}")
-            if strategy == "explicit" and not getattr(
-                self,
-                "explicit_vertical_lines"
-                if strategy == self.vertical_strategy
-                else "explicit_horizontal_lines",
-                None,
-            ):
-                raise ValueError("explicit table strategy requires explicit lines")
 
     @classmethod
     def resolve(cls, settings: Mapping[str, Any] | "TableSettings" | None) -> "TableSettings":
@@ -153,11 +155,7 @@ class TableSettings:
         text_values = {key[5:]: value for key, value in raw.items() if key.startswith("text_")}
         values = {key: value for key, value in raw.items() if not key.startswith("text_")}
         if text_values:
-            existing = values.get("text_settings", {})
-            values["text_settings"] = {
-                **(existing if isinstance(existing, Mapping) else {}),
-                **text_values,
-            }
+            values["text_settings"] = text_values
         return cls(**values)
 
 
@@ -987,8 +985,16 @@ class Page:
                 raise ValueError(f"{name} must be a boolean")
         return _words(self.chars, **kwargs)
 
-    def find_tables(self, table_settings: Mapping[str, Any] | None = None) -> list["Table"]:
+    def find_tables(
+        self, table_settings: Mapping[str, Any] | TableSettings | None = None
+    ) -> list["Table"]:
         settings = TableSettings.resolve(table_settings)
+        for axis in ("vertical", "horizontal"):
+            if (
+                getattr(settings, f"{axis}_strategy") == "explicit"
+                and len(getattr(settings, f"explicit_{axis}_lines") or []) < 2
+            ):
+                raise ValueError(f"explicit {axis} strategy requires at least two lines")
         result = self.pdf._document.extract(pages=(self.page_number,))
         page = result.pages[0]
         tables: tuple[StructuredTable | _CompatNativeTable, ...] = page.tables
@@ -1045,8 +1051,19 @@ class Page:
         return self._fallback_tables(settings)
 
     def _fallback_tables(self, settings: TableSettings) -> list["Table"]:
-        words = self.extract_words(return_chars=False)
-        if words:
+        def cell_text(bbox: BBox) -> str:
+            left, top, right, bottom = bbox
+            selected = self.filter(
+                lambda obj: (
+                    obj.get("object_type") == "char"
+                    and left <= (obj["x0"] + obj["x1"]) / 2 < right
+                    and top <= (obj["top"] + obj["bottom"]) / 2 < bottom
+                )
+            )
+            return selected.extract_text(**settings.text_settings)
+
+        words = self.extract_words(return_chars=False, **settings.text_settings)
+        if words and settings.vertical_strategy == settings.horizontal_strategy == "text":
             lines: list[list[ObjectDict]] = []
             for word in words:
                 if not lines or abs(word["top"] - lines[-1][0]["top"]) > 5:
@@ -1080,9 +1097,7 @@ class Page:
                     cell_row: list[_CompatCell] = []
                     for left, right in zip(boundaries, boundaries[1:]):
                         bbox = (left, top, right, bottom)
-                        cell_row.append(
-                            _CompatCell(bbox, self.crop(bbox, strict=False).extract_text())
-                        )
+                        cell_row.append(_CompatCell(bbox, cell_text(bbox)))
                     rows.append(cell_row)
                 table = Table(
                     _CompatNativeTable(
@@ -1141,9 +1156,7 @@ class Page:
                 )
                 if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
                     continue
-                text = self.crop(bbox, strict=False).extract_text()
-                grid_row.append(_CompatCell(bbox, text))
-            grid_rows.append(grid_row)
+                grid_row.append(_CompatCell(bbox, cell_text(bbox)))
             grid_rows.append(grid_row)
         if not grid_rows:
             return []
@@ -1435,7 +1448,7 @@ class TableFinder:
         self.settings = TableSettings.resolve(settings)
         self.edges = self._select_edges()
         self.intersections = self._intersections()
-        self.tables = page.find_tables(self.settings.__dict__)
+        self.tables = page.find_tables(self.settings)
         self.cells = [cell for table in self.tables for cell in table.cells]
 
     def get_edges(self) -> list[ObjectDict]:
@@ -1715,8 +1728,6 @@ class PageImage:
                 }.get(value.lower(), default)
             if isinstance(value, (tuple, list)) and len(value) >= 3:
                 values = tuple(float(item) for item in value[:3])
-                if max(values) <= 1:
-                    values = tuple(item * 255 for item in values)
                 return (
                     max(0, min(255, round(values[0]))),
                     max(0, min(255, round(values[1]))),
@@ -1737,10 +1748,17 @@ class PageImage:
         for kind, (value, options) in self._drawings:
             if kind in {"line", "rect", "word"}:
                 ink = color(options.get("stroke"), (255, 0, 0))
-                if isinstance(value, Mapping):
+                if kind == "line" and isinstance(value, Mapping) and "pts" in value:
+                    coords = tuple(value["pts"])
+                elif isinstance(value, Mapping):
                     coords = (value["x0"], value["top"], value["x1"], value["bottom"])
                 else:
                     coords = tuple(value)
+                if kind == "line" and coords and isinstance(coords[0], (tuple, list)):
+                    points = [point(float(x), float(y)) for x, y in coords]
+                    for first, last in zip(points, points[1:], strict=False):
+                        line(*first, *last, ink)
+                    continue
                 x0, y0 = point(float(coords[0]), float(coords[1]))
                 x1, y1 = point(float(coords[2]), float(coords[3]))
                 if kind in {"rect", "word"} and options.get("fill") is not None:
@@ -1748,20 +1766,30 @@ class PageImage:
                     for y in range(min(y0, y1), max(y0, y1) + 1):
                         for x in range(min(x0, x1), max(x0, x1) + 1):
                             set_pixel(x, y, fill)
-                line(x0, y0, x1, y1, ink)
-                if kind in {"rect", "word"}:
+                if kind == "line":
+                    line(x0, y0, x1, y1, ink)
+                else:
+                    line(x0, y0, x1, y0, ink)
                     line(x0, y0, x0, y1, ink)
                     line(x1, y0, x1, y1, ink)
                     line(x0, y1, x1, y1, ink)
-            elif kind == "circle" and isinstance(value, Mapping):
-                center = point(float(value["x0"]), float(value["top"]))
-                radius = round(float(value.get("radius", value.get("r", 1))) * scale_x)
+            else:  # The remaining entries are circles emitted by draw_circle().
+                if isinstance(value, Mapping):
+                    cx = (float(value["x0"]) + float(value.get("x1", value["x0"]))) / 2
+                    cy = (float(value["top"]) + float(value.get("bottom", value["top"]))) / 2
+                    default_radius = value.get("radius", value.get("r", 5))
+                else:
+                    cx, cy = value
+                    default_radius = 5
+                center = point(float(cx), float(cy))
+                radius = float(options.get("radius", default_radius))
+                ink = color(options.get("stroke"), (255, 0, 0))
                 for angle in range(360):
                     radians = math.radians(angle)
                     set_pixel(
-                        round(center[0] + radius * math.cos(radians)),
-                        round(center[1] + radius * math.sin(radians)),
-                        (255, 0, 0),
+                        round(center[0] + radius * scale_x * math.cos(radians)),
+                        round(center[1] + radius * scale_y * math.sin(radians)),
+                        ink,
                     )
 
     def _repr_png_(self) -> bytes:
