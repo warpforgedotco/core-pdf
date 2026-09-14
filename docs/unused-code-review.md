@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## LlamaIndex font contracts and shared CMap recovery
+
+Added **62 deterministic cases** for CID width ranges and overrides, malformed
+width entries, simple-font metric truncation, glyph-name aliases, encoding
+fallbacks, mapped-text widths, Type3 interpretability, and optional CMap recovery.
+The shared reader CMap parser already retains explicit mappings when codespace
+metadata is malformed. The facade's duplicate codespace-stripping retry instead
+turned one invalid empty-map case into an empty CMap object. Removed that retry
+and its tokenizer imports: invalid optional maps now return None so declared/base
+encoding remains available. Explicit usable mappings remain preserved. The net
+production denominator shrank by **26 statements and 10 branches**.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **7,383 tests, no skips, in 432.82s**. Workspace coverage increased
+**90.22% → 90.34% statements** and **82.26% → 82.43% branches**:
+**35,089 / 38,842 statements** and **12,332 / 14,960 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates; its
+reference heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,753 statements and 2,628 branches** remain
+uncovered. These are local results.
+
 ## Pdfplumber layout and annotation projections
 
 Added **20 differential cases** against installed pdfplumber, using deterministic

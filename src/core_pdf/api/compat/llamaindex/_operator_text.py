@@ -17,11 +17,6 @@ from core_pdf.api.compat._text_state import (
 )
 from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.fonts.cmap_tokenizer import (
-    cmap_tokens,
-    decode_cmap_hex_token,
-    iter_blocks,
-)
 from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl._impl.fonts.decoder import FontDecoder
 from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
@@ -381,38 +376,9 @@ class OperatorTextProjection:
         try:
             return ToUnicodeCMap(data)
         except ValueError:
-            pass
-        begin = b"begincodespacerange"
-        end = b"endcodespacerange"
-        ranges: list[tuple[bytes, bytes]] = []
-        try:
-            for block in iter_blocks(data, begin, end):
-                tokens = cmap_tokens(block)
-                ranges.extend(
-                    (decode_cmap_hex_token(tokens[index]), decode_cmap_hex_token(tokens[index + 1]))
-                    for index in range(0, len(tokens) - 1, 2)
-                )
-        except (UnicodeDecodeError, ValueError):
-            return None
-        if len(ranges) != 1:
-            return None
-        range_start, range_end = ranges[0]
-        if (
-            len(range_start) != len(range_end)
-            or int.from_bytes(range_start, "big") > int.from_bytes(range_end, "big")
-            or all(left <= right for left, right in zip(range_start, range_end, strict=True))
-        ):
-            return None
-        while (start := data.find(begin)) >= 0:
-            line_start = data.rfind(b"\n", 0, start) + 1
-            stop = data.find(end, start + len(begin))
-            if stop < 0:
-                return None
-            line_end = data.find(b"\n", stop + len(end))
-            data = data[:line_start] + data[len(data) if line_end < 0 else line_end + 1 :]
-        try:
-            return ToUnicodeCMap(data)
-        except ValueError:
+            # The shared reader parser already preserves usable mappings when
+            # codespace metadata is malformed. An invalid map with no usable
+            # mappings must not override the font's declared/base encoding.
             return None
 
     def internal_validate_font_files(self, font: Mapping[object, object]) -> None:
