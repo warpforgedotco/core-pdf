@@ -352,6 +352,7 @@ def internal_prepare_document_stroked_mappings(
     ambiguous: set[GlyphSignature] = set()
     recognition_by_index: dict[int, RecognitionResult] = {}
     for page_index in ordered:
+        context.raise_if_cancelled()
         extraction = extractions[page_index]
         recognition = extraction.recognition_result
         if recognition is None and alphabet and (profile := extraction.stroked_profile) is not None:

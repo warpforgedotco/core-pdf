@@ -273,3 +273,20 @@ def test_stroked_alphabet_conflicts_remain_excluded() -> None:
     selection.internal_merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "A"),))
     assert alphabet == {}
     assert ambiguous == {signature}
+
+
+def test_cancelled_stroke_enrichment_stops_even_with_cached_recognition(
+    ocr_capture: PageAnalysis,
+) -> None:
+    capture = replace(
+        ocr_capture,
+        evidence=replace(
+            ocr_capture.evidence, stroked_vector_text=StrokedVectorTextEvidence(trusted=True)
+        ),
+    )
+    recognition = RecognitionResult(ObservationBatch.empty())
+    extractions = (SimpleNamespace(recognition_result=recognition),) * 2
+    with pytest.raises(internal_ExtractionCancelled):
+        selection.internal_prepare_document_stroked_mappings(
+            cast(Any, extractions), (capture, capture), ExtractionScope(cancelled=lambda: True)
+        )
