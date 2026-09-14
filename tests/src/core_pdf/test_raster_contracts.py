@@ -45,7 +45,10 @@ def test_normal_blend_matches_optimized_sampler(quad, opacity, mask_kind, clippe
             soft_mask=mask if mask_kind == "soft" else None,
         )
         results.append(np.frombuffer(target.pixels, dtype=np.uint8).astype(int))
-    np.testing.assert_allclose(*results, atol=1, rtol=0)
+    if mask_kind is None and opacity in {0, 1}:
+        np.testing.assert_array_equal(results[0], results[1])
+    else:
+        np.testing.assert_allclose(results[0], results[1], atol=1, rtol=0)
     if opacity == 0:
         np.testing.assert_array_equal(results[0].reshape(-1, 4), [[20, 40, 60, 255]] * 16)
 

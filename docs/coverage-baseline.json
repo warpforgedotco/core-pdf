@@ -5,6 +5,12 @@
     "packages/core-pdf-spec/src/core_pdf_spec",
     "packages/core-pdf-validate/src/core_pdf_validate"
   ],
-  "statements": {"covered": 32219, "total": 39274},
-  "branches": {"covered": 10791, "total": 15188}
+  "statements": {
+    "covered": 32816,
+    "total": 38987
+  },
+  "branches": {
+    "covered": 11062,
+    "total": 15062
+  }
 }

@@ -1,5 +1,55 @@
 # Coverage and unused-code findings
 
+## Structural consolidation and default complete-suite coverage
+
+Implemented the six structural improvements: shared vector/image color conversion,
+unified line classification, complete-suite CI coverage, PDF MAC interoperability tests,
+a raster equivalence/failure matrix, and supported pdfplumber edge merging/image display.
+The remaining obsolete image-kernel module was removed after verifying its callers were gone;
+CMYK profile selection and failure recovery now share one implementation across sample depths.
+
+The raster matrix demonstrated four cleanup failures: soft-mask preparation and group
+composition left shape state changed; failed clip setup and scope composition left scopes
+or suspended buffers active. Cleanup now restores those boundaries, including nested groups.
+The short formula case now produces `2√x` regardless of inserted empty capture records.
+Missing/unusable tint transforms consistently use subtractive grayscale recovery.
+
+Added **251 deterministic cases** across these contracts. Existing independently generated
+MAC fixtures are unchanged. Their checks cover both passwords, extracted text, six tampering
+variants, strict byte ranges, CMS failures, supported digest algorithms, and rejection before
+installing decryption state. PDFMiner recovery and lazy resource ownership remain facade policy.
+
+The final locked full run with pinned Tesseract and real veraPDF enabled passed
+**4,274 tests with no skips in 223.22s**. Coverage.py 7.16.1 reported:
+
+| Package | Statements | Branches |
+| --- | ---: | ---: |
+| Core | 80.26% | 68.11% |
+| OCR | 100.00% | 99.71% |
+| Spec | 87.56% | 77.18% |
+| Validate | 100.00% | 100.00% |
+| **Workspace** | **84.17%** | **73.44%** |
+
+Workspace coverage increased from **82.04% / 71.05%**. The report contains
+**32,816 / 38,987 statements** and **11,062 / 15,062 branches** covered;
+**6,171 statements and 4,000 branches remain uncovered**. All four source roots,
+the vendor-only omit rule, and **554 excluded lines** remain unchanged.
+The exact verified fractions are now the independent coverage floors.
+
+A fresh spec-only environment, with core and OCR confirmed absent, passed **2,306 tests**.
+The real veraPDF adapter run separately passed **48 cases**. Local veraPDF was 1.30.2 on
+Java 26; CI remains configured for Java 17. The pinned OCR installer was exercised against
+the checksum-verified model download; the locked Linux wheel also bundles Tesseract 5.5.1.
+Ruff, mypy, ty, all 19 import contracts, full pre-push hooks, and all four distribution
+builds passed. Built wheels contain no obsolete image-kernel module; the core wheel declares Pillow.
+The static unused-symbol candidate scan is empty; this is not proof that all remaining
+uncovered code is dead. The workspace 100% goal remains incomplete.
+
+CI preserves the existing required status name, runs all authored suites by default,
+combines workspace and real-validator coverage, publishes reports, and rejects either metric
+regressing or an incomplete source inventory. GitHub execution awaits the next push;
+the recorded measurements above are local, not a claimed Linux CI result.
+
 ## Workspace coverage completion: structure diagnostics and cache consistency
 
 Added **12 cases** for role namespaces, unknown-version recovery, cached role diagnostics,

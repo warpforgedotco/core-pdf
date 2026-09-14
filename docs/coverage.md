@@ -3,10 +3,12 @@
 See the [review findings](unused-code-review.md) for current results, historical baselines,
 and reviewed candidates.
 
-Run the configured suite from the repository root:
+Set `CORE_PDF_VERAPDF` to the veraPDF 1.30.2 executable and install the
+[pinned OCR prerequisites](../packages/core-pdf-ocr/tests/fixtures/README.md).
+Run the complete configured suite from the repository root:
 
 ```sh
-CORE_PDF_TESSERACT_TESTS=1 \
+CORE_PDF_TESSERACT_TESTS=1 CORE_PDF_REQUIRE_VERAPDF=1 \
 uv run --locked --all-packages --extra unstructured --group test --group vendor-test \
   pytest -n auto --cov --cov-config=pyproject.toml \
   --cov-report=term --cov-report=html --cov-report=json -ra
@@ -35,8 +37,9 @@ also checks actual recognition and cleanup with authored image-only PDFs and ras
 Default CI and the standard command above enable it with `CORE_PDF_TESSERACT_TESTS=1`;
 focused local pytest runs can omit the flag to skip its four checks.
 These tests do not exercise every native API or real OCR engine workflow. Real veraPDF execution
-tests require `CORE_PDF_VERAPDF`; otherwise they skip. The default differential matrix also
-omits selected expensive fixtures and uses each facade's own corpus. Prefix the command
+tests require `CORE_PDF_VERAPDF`; the standard command fails if it is unavailable.
+Focused runs without either validator environment flag skip those integration checks.
+The default differential matrix also omits selected expensive fixtures and uses each facade's own corpus. Prefix the command
 with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run every facade against every fixture.
 
 ## Interpreting candidates
@@ -66,8 +69,9 @@ databases are combined under the existing `Differential / Python 3.13` status.
 The `workspace-coverage` artifact contains HTML, JSON, and the combined `.coverage` database.
 `scripts/check_coverage.py` rejects incomplete source inventories, missing branch coverage,
 and regressions in either statement or branch coverage. `coverage-baseline.json` stores exact
-fractions so display rounding cannot make an unchanged result fail. The initial floor is the
-last recorded complete local run; confirm and ratchet it upward with complete CI results.
+fractions so display rounding cannot make an unchanged result fail. The floor records the
+latest complete local run with both real engines enabled; confirm it on Linux CI and
+ratchet it upward with subsequent complete results.
 Do not update it from focused tests or lower it to accommodate a regression.
 
 Focused local pytest invocations remain lightweight; coverage is not injected into pytest's
