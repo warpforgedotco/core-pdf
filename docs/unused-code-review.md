@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## TrueType CMap and glyph recovery contracts
+
+Added **39 deterministic cases** for Unicode/symbol CMap precedence, Macintosh
+fallback, generated glyph names, explicit byte-code aliases, Unicode inversion
+ranking, raw glyph-header bounds, unusable locations, and damaged glyph-order
+recovery. Mapping tests use real fontTools table objects; a controlled damaged-font
+boundary checks fallback order generation. No production changes were needed.
+
+The 39 tests passed in **9.09s** with coverage and again after making the fixture's
+CMap constructor concrete for type checking. Coverage was appended to the verified
+locked **6,384-test** full workspace report with real Tesseract and veraPDF and the
+subsequent 96 primitive-shape cases. Production sources are unchanged since that
+full run; the full suite was not rerun for this test-only change. Workspace coverage
+increased **89.09% → 89.15% statements** and **80.70% → 80.78% branches**:
+**34,649 / 38,868 statements** and **12,094 / 14,972 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,219 statements and 2,878 branches** remain
+uncovered. These are local results.
+
+
 ## Primitive-shape raster contracts
 
 Added **96 deterministic cases** comparing circle rendering with explicit pixel-center
