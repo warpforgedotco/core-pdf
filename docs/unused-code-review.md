@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR entry points and raster scaling
+
+Added **10 deterministic tests** for public companion page extraction, CLI and both module
+entry points, import behavior, lazy stroke-profile reuse, recognition dispatch, legacy
+reason normalization, segment coverage, exact integer enlargement, and array reduction
+without source mutation. No production changes were needed.
+
+The full suite with pinned Tesseract enabled passed **3,640 tests**, with **32 veraPDF
+integration skips**, in **204.05s**. Companion API/CLI entry points, extraction contracts,
+and the page pipeline now have **100% statement and branch coverage**. Workspace coverage
+rose **80.65% → 80.73% statements** and **68.76% → 68.83% branches**. Reports describe
+that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,573 statements and 4,738 branches** remain uncovered. Within OCR, the remaining gaps
+are in capture, Newstroke, raster orientation, and region clipping; core, spec, and
+compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR atlas and raster boundaries
 
 Added **25 deterministic tests** for atlas clipping, stroke reversal/thickness, closed and

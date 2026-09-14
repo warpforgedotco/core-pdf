@@ -228,3 +228,38 @@ def test_malformed_compositor_image_does_not_prevent_native_extraction(ocr_captu
 
     capture = replace(ocr_capture, page=SimpleNamespace(width=100, height=100))
     assert raster.internal_rendered_page_raster(capture, 1, rendered=Rendered()) is None
+
+
+def test_whole_factor_upscale_replicates_pixels_exactly(monkeypatch) -> None:
+    import numpy
+
+    source = numpy.arange(100, dtype=numpy.uint8).reshape(10, 10, 1)
+    decoded = SimpleNamespace(data=source.tobytes(), width=10, height=10, channels=1)
+    monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
+    drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
+    result = raster.internal_decoded_image_raster(drawing, 51.84, max_pixels=1600)
+    assert result is not None
+    assert (result.width, result.height, result.resolution) == (40, 40, 400)
+    numpy.testing.assert_array_equal(
+        result.image.array(), source.repeat(4, axis=0).repeat(4, axis=1)
+    )
+
+
+def test_decoded_array_reduction_preserves_source_buffer(monkeypatch) -> None:
+    import numpy
+
+    source = numpy.arange(100, dtype=numpy.uint8).reshape(10, 10, 1)
+    original = source.copy()
+    decoded = SimpleNamespace(data=source, width=10, height=10, channels=1)
+    monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
+    drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
+    result = raster.internal_decoded_image_raster(drawing, 100, max_pixels=25, upscale=False)
+    assert result is not None
+    assert result.width * result.height <= 25
+    assert result.image.array()[:, :, 0].tolist() == [
+        [0, 2, 5, 7],
+        [20, 22, 25, 27],
+        [50, 52, 55, 57],
+        [70, 72, 75, 77],
+    ]
+    numpy.testing.assert_array_equal(source, original)
