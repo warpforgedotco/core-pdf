@@ -1,5 +1,54 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: first checkpoint
+
+Source commit: `e316dd60`; test commit: `5d1de1c2`. The workspace-wide goal remains
+**100% statement and branch coverage** under the existing four-package configuration.
+No coverage exclusions or source roots were changed. This checkpoint adds **133 tests**:
+106 pdfplumber differential cases, four serialization cases, and 23 validation cases.
+
+The final full scan, including the pinned Tesseract tests, passed:
+**2,913 passed, 32 skipped in 201.17s**. All skips remain the opt-in veraPDF execution
+checks. Unlike the earlier interim merge, the generated HTML/JSON reports now come
+from one full-suite run containing all the new tests.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| Serialization | 98.25% → 100.00% | 93.42% → 100.00% |
+| Validation package | 93.09% → 100.00% | 80.49% → 100.00% |
+| pdfplumber facade module | 45.23% → 61.78% | 26.67% → 44.86% |
+| Entire workspace | 72.65% → 73.39% | 59.29% → 60.07% |
+
+Serialization now covers malformed element dispatch, absent table-associated text,
+Markdown headings/lists/paragraphs, and list prefixes inside styled spans. Validator
+coverage includes malformed counts and rule records, contradictory summaries, incomplete
+jobs, engine permissions, non-POSIX timeout cleanup, duplicate declarations, and backend
+profile mismatches. This proves adapter execution coverage; installed veraPDF integration
+remains separate from recorded reports and controlled process failures.
+
+The pdfplumber comparisons exposed and fixed behavior beyond extraction snapshots:
+
+- Moves and resizes preserve optional PDF coordinates. Snapping moves whole objects in
+  cluster order; edge filters honor type, orientation, and minimum length.
+- Cropping clips object bounds and preserves parent selection in nested crops. Containment
+  reuses the shared geometry helper; pdfplumber-specific edge-touch semantics remain local.
+- Deduplication honors default font/size and upright attributes and transitive position
+  clusters, replacing the stateful per-character filter with grouped selection.
+- JSON attribute filtering copies records before filtering, preserving cached page objects.
+- Image dimensions honor resolution, CropBox/MediaBox selection, and antialiasing. Copies
+  preserve an already-cropped raster, and annotation coordinates account for crop origins.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, all repository hooks, and diff checks
+passed. No source-shadowing compiled extensions were present. The top-level unused-code
+scan found no new candidates after reusing the shared containment helper.
+
+**The overall goal is not complete:** 10,458 statements and 6,076 branches remain uncovered.
+The combined headline is **69.68%** (28,848/39,306 statements and 9,142/15,218 branches).
+Remaining work includes table finding and image annotations in the facade, fonts,
+document structure/recovery, rendering, and deeper OCR execution paths. Continue adding
+behavioral tests and reviewing proven unreachable code; uncovered supported paths remain
+part of the target.
+
 ## OCR scheduling and raster execution pass
 
 Source commit: `f1b12732`. This pass adds **59 deterministic checks** and **four
