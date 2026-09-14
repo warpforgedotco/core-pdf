@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Primitive-shape raster contracts
+
+Added **96 deterministic cases** comparing circle rendering with explicit pixel-center
+geometry and rectangle painting with explicit clip boundaries. Tests force scalar
+and array circle routing, include rectangular/triangular clips, fractional centers,
+zero-radius/off-page shapes, opaque/partial/zero alpha, and four rectangle blend modes.
+All final tests pass; no production changes were needed.
+
+The 96 tests passed in **12.29s** with coverage and again after style/type-only edits.
+Coverage was appended to the verified locked **6,384-test** full workspace report
+with real Tesseract and veraPDF. Production sources are unchanged since that full
+run; the full suite was not rerun for this test-only change. Workspace coverage
+increased **88.88% → 89.09% statements** and **80.44% → 80.70% branches**:
+**34,627 / 38,868 statements** and **12,082 / 14,972 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,241 statements and 2,890 branches** remain
+uncovered. These are local results.
+
+
 ## Consistent bitmap height across rendering routes
 
 Added **24 deterministic cases** comparing glyph bitmap rendering with explicit
