@@ -107,9 +107,6 @@ with open_pdf("document.pdf") as pdf:
 findings = inspect_xray("document.pdf")  # redaction inspection from engine evidence
 ```
 
-An experimental PyMuPDF facade under `core_pdf.api.compat._unsupported.pymupdf` is not
-part of the supported surface.
-
 ### Unstructured NLP requirements
 
 The Unstructured facade needs the `unstructured` extra with spaCy and the pinned

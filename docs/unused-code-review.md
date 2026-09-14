@@ -36,13 +36,12 @@ This is a strong candidate for a small, separate removal. The scan cannot establ
 out-of-repository consumers improperly import it, or exclude arbitrary constructed-name
 dispatch. No implementation code was removed during this review.
 
-## Larger retirement decision
+## Removed after this baseline
 
-`src/core_pdf/api/compat/_unsupported/pymupdf/__init__.py` contains **549 statements with
-zero coverage**. The supported compatibility facade's export table does not expose it;
-`docs/api.md` explicitly identifies it as experimental and unsupported. This is a candidate
-for an explicit retain-or-retire decision, rather than proof of an unreachable module:
-users can still import the documented module path directly.
+The unsupported PyMuPDF facade contained **549 statements with zero coverage**. It and its
+otherwise empty parent package have now been removed, along with the type-checker exclusion
+and API/roadmap references. The third-party PyMuPDF test dependency and fixture corpus remain
+because x-ray differential tests use them. The table above records the pre-removal baseline.
 
 ## Test gaps, not deletion candidates
 
@@ -72,7 +71,7 @@ not a complete call graph. Framework callbacks such as the OCR HTML parser's `ha
 `handle_data`, and `handle_endtag` must be retained even when no explicit caller appears.
 Public spec exports and documented extension methods are compatibility contracts.
 
-Start with the isolated geometry helper, decide the unsupported facade's future, and add
-native output/CLI and companion OCR coverage. Then rerun coverage before reviewing deeper
+Start with the isolated geometry helper and add native output/CLI and companion OCR coverage.
+Then rerun coverage before reviewing deeper
 implementation clusters. The HTML report at `htmlcov/index.html` and function-level JSON at
 `htmlcov/coverage.json` are the detailed evidence for this baseline.

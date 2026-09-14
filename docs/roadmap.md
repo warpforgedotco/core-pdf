@@ -67,7 +67,7 @@ Real veraPDF positive and negative fixtures cover all 15 advertised targets.
 ### 6. Compatibility and corpus maturity
 
 - Continue high-level API compatibility for `core_pdf.api.compat.pdfminer`, `pdfplumber`,
-  `pymupdf`, `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
+  `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
   maps cleanly to the shared capability model.
 - Maintain differential comparisons in `tests/src/core_pdf/api/compat/differential` against
   each reference corpus using `uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto`.
