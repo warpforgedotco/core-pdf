@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Source ownership and security alias contracts
+
+Added **36 deterministic cases** for security-name alias collisions in either order,
+nested and cyclic security dictionaries, supported binary source forms, borrowed file
+ownership and position, empty sources, unavailable file descriptors and positions,
+and read failures. The retained fallback routes serve supported reader protocols;
+these tests did not establish additional dead code. Production sources are unchanged.
+
+All 36 tests passed in **6.20s**, with coverage appended to the verified report from
+the locked **5,713-test** full workspace run with real Tesseract and veraPDF and the
+subsequent 39 table-section and 54 scanline cases. The full suite was not rerun for
+this test-only change. Workspace coverage increased **87.05% → 87.14% statements**
+and **77.94% → 78.06% branches**: **33,869 / 38,867 statements** and
+**11,689 / 14,974 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including mypy, ty, and import contracts. The static unused-symbol scan returned no
+candidates; that is not proof that no dead code remains. The 100% goal is incomplete:
+**4,998 statements and 3,285 branches** remain uncovered. These are local results.
+
+
 ## Scanline crossing and winding contracts
 
 Added **54 deterministic cases** comparing scalar, row-at-a-time, and batched crossing
