@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## Soft masks through the raster target
+
+Added **10 cases** rendering captured mask programs through the actual raster
+target. They check independence from destination clipping and backdrop alpha,
+translated footprints, transfer evaluation including transparent pixels,
+read-only cached planes, sibling cache sharing with separate paint buffers, and
+recovery after a failed transfer. No production change was needed.
+
+The focused run passed **10 tests in 6.06s**, appended to the verified
+**7,934-test full run** on unchanged production sources. This was not another
+full-suite run. Workspace coverage is **35,672 / 38,821 statements (91.89%)**
+and **12,611 / 14,950 branches (84.35%)**. The committed full-run baseline remains
+unchanged, as do all four source roots, vendor-only omissions, and **554 excluded
+lines**. All pre-push quality gates and the coverage check passed; the static
+scan returned no candidates.
+The goal remains incomplete: **3,149 statements and 2,339 branches** remain
+uncovered. These are local results.
+
 ## Non-normal pixel blending and independent shape coverage
 
 Added **42 cases** for Multiply, Screen, ColorDodge, and ColorBurn across
