@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Reconstruction atom invariants and geometry boundaries
+
+Added **57 deterministic cases** for text-atom preservation, Unicode whitespace and
+control cleanup, glyph clusters, superscript thresholds, stacked-fraction geometry,
+long-line duplicate-history trimming, tiny-footer suppression, and rotated-cell spacing.
+For nonempty normalized text, atom construction always emits at least one nonempty
+atom. The builder now relies on that invariant: removed redundant empty/whitespace
+checks and the always-true emitted-run flag. No output policy changed.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,302 tests,
+no skips, in 281.55s**. With production sources unchanged, the 17 boundary cases added
+after collection passed and their coverage was appended to the full-run database.
+The other 40 new cases and 19 existing reconstruction contracts also passed together.
+Reconstruction now covers **445/513 statements and 220/276 branches**.
+
+Combined workspace coverage increased **86.06% → 86.17% statements** and
+**76.61% → 76.84% branches**: **33,504 / 38,883 statements** and
+**11,510 / 14,980 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,379 statements and 3,470 branches**
+remain uncovered. These are local results.
+
+
 ## Navigation recovery and visibility consolidation
 
 Added **74 deterministic cases** for page-label ranges and reader defaults, nested

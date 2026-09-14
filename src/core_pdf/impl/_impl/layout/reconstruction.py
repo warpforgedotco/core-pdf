@@ -303,10 +303,6 @@ class GlyphLineBuilder:
             text = self.normalized_text(run, index)
             if not text:
                 continue
-            stripped = text.strip()
-            if not stripped and not text.isspace():
-                continue
-
             if self.is_recent_duplicate_overlap(recent_emitted_runs, run, text):
                 continue
 
@@ -318,14 +314,9 @@ class GlyphLineBuilder:
             ):
                 continue
 
-            emitted_run = False
+            # Nonempty normalized text always yields at least one nonempty atom.
             for atom in self.text_atoms(run, text):
                 atom_text = atom.text
-                if not atom_text:
-                    continue
-                if not atom_text.strip() and not atom_text.isspace():
-                    continue
-
                 separator_before = ""
                 if prev_atom is not None:
                     separator_before = self.atom_separator(prev_atom, atom)
@@ -339,10 +330,6 @@ class GlyphLineBuilder:
                     )
                 )
                 prev_atom = atom
-                emitted_run = True
-
-            if not emitted_run:
-                continue
             prev_run = run
             prev_run_text = text
             prev_last_char = text[-1:]
