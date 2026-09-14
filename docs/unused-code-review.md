@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Capture occurrence geometry and hidden-text trust contracts
+
+Added **30 deterministic cases** for inflated font bounds, positive/negative
+font sizes, baseline-free ink geometry, ordinary/rotated/vertical runs, empty or
+large ink boxes, and nonblank cluster ink precedence. Hidden-text tests cover
+minimum text volume, painted/suspicious character thresholds, ActualText,
+authoritative and heuristic mappings, unknown/unsupported/low-confidence glyphs,
+word quality, and noise. Promotion preserves original paint visibility and
+geometry. No production change was needed.
+
+The focused run passed **30 tests in 27.71s**, appended to the verified
+**7,717-test full run** and subsequent focused cases on unchanged production
+sources. This was not another full-suite run. Workspace coverage is now
+**35,439 / 38,843 statements (91.24%)** and
+**12,517 / 14,958 branches (83.68%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All pre-push quality gates and the coverage check
+passed; the static scan returned no unused-symbol candidates. The goal remains
+incomplete: **3,404 statements and 2,441 branches** remain uncovered.
+These are local results.
+
 ## Structure ActualText ownership and recovery contracts
 
 Added **26 deterministic cases** for ancestor replacement precedence, shared
