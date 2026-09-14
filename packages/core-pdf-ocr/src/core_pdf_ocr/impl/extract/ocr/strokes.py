@@ -318,7 +318,8 @@ def internal_consensus_mapping(
     # words.  A single anchor is sufficient only for tokens of at least three
     # characters, and it must be alphanumeric rather than punctuation.
     accepted_sequences: set[int] = set()
-    for _ in range(8):
+    # Each productive round adds signatures from the finite sample alphabet.
+    while True:
         anchored_votes: dict[GlyphSignature, dict[str, set[int]]] = defaultdict(
             lambda: defaultdict(set)
         )
@@ -341,13 +342,8 @@ def internal_consensus_mapping(
         for signature, character_votes in anchored_votes.items():
             if signature in mapping:
                 continue
-            ranked = sorted(
-                ((len(sequences), character) for character, sequences in character_votes.items()),
-                reverse=True,
-            )
-            winner_count, winner = ranked[0]
-            if winner_count == sum(count for count, _ in ranked):
-                mapping[signature] = winner
+            if len(character_votes) == 1:
+                mapping[signature] = next(iter(character_votes))
                 additions += 1
         if not additions:
             break

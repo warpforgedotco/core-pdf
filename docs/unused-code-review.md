@@ -1,5 +1,39 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR stroke learning
+
+This checkpoint adds **35 deterministic tests** for page-local stroke learning. The full
+suite with pinned Tesseract enabled passed **3,130 tests**, with **32 veraPDF integration
+skips**, in **222.32s**. HTML and JSON reports describe that single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR stroke learner | 26.92% → 100.00% | 0.00% → 100.00% |
+| Entire workspace | 76.02% → 76.74% | 63.39% → 64.26% |
+
+Tests construct captured paths and OCR seed records directly. They cover independent votes,
+duplicate source sequences, the 75% consensus threshold, tied labels, anchored-word learning,
+conflicting anchored words, supplemental evidence, document alphabets, and geometry-based
+alignment. Shape checks cover approximate variants, ambiguous labels, topology mismatches,
+empty geometry with explicit bounds, overlapping components, capture-order gaps, isolated
+wire rejection, token limits, and seed-run dimensions. Caller alphabets remain unchanged.
+
+A long-chain regression reproduced the eight-round learning cap truncating a supported
+alphabet. Learning now continues until no signatures are added. Each productive round adds
+previously unknown signatures from the finite sample alphabet, so it terminates without an
+arbitrary iteration count. The regression shares source sequence identities across chained
+samples, preventing repeated observations from manufacturing independent consensus votes.
+Anchored unanimity now checks for exactly one proposed label directly, removing redundant
+sorting and vote-count comparison. Existing consensus and conflict policies are preserved.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing compiled modules or new top-level unused-symbol candidates were found.
+Coverage source roots and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **9,140 statements and 5,438 branches**
+remain uncovered. The next OCR target is vector raster packing and observation remapping,
+which connect the now-tested stroke learner to engine results and page coordinates.
+
 ## Workspace coverage completion: OCR Newstroke recognition
 
 This checkpoint adds **43 deterministic tests** for Newstroke vector recognition. The full
