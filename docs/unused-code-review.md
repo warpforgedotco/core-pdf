@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Recorded font contour contracts
+
+Added **38 deterministic cases** comparing quadratic/cubic sampling with independent
+de Casteljau evaluation. Recording tests cover implicit quadratic midpoints, chained
+cubics, translated controls, endpoint preservation, explicit/implicit closure,
+unstarted and incomplete commands, and single-point contour rejection.
+No production changes were needed.
+
+The 38 tests passed in **9.23s**, appending coverage to the verified locked
+**6,384-test** full workspace report with real Tesseract and veraPDF and subsequent
+96 primitive-shape and 39 TrueType recovery cases. Production sources are unchanged
+since that full run; the full suite was not rerun for this test-only change.
+Workspace coverage increased **89.15% → 89.21% statements** and
+**80.78% → 80.87% branches**: **34,675 / 38,868 statements** and
+**12,108 / 14,972 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan
+returned no candidates. The 100% goal remains incomplete: **4,193 statements and
+2,864 branches** remain uncovered. These are local results.
+
+
 ## TrueType CMap and glyph recovery contracts
 
 Added **39 deterministic cases** for Unicode/symbol CMap precedence, Macintosh
