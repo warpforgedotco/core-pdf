@@ -210,3 +210,47 @@ def test_empty_table_and_mismatched_explicit_bands() -> None:
     table = Table(0, rows=((TableCell(0, 0, "x"),),), row_bands=(TableRowBand(0), TableRowBand(1)))
     with pytest.raises(ValueError, match="zip"):
         Document((Page(1, tables=(table,)),)).to_html()
+
+
+@pytest.mark.parametrize("level", [None, 3])
+def test_markdown_headings_and_list_prefix_inside_styled_span(level: int | None) -> None:
+    heading = Block(0, BlockKind.HEADING, (TextLine("Title"),), level=level)
+    listing = Block(
+        1,
+        BlockKind.LIST,
+        (
+            TextLine("1. item", spans=(TextSpan("1. item", bold=True),)),
+            TextLine("plain"),
+        ),
+    )
+    document = Document((Page(1, blocks=(heading, listing, block("Body", order=2))),))
+    markdown = document.to_markdown()
+    assert f"{'#' * (level or 2)} Title" in markdown
+    assert "1. **item**\n- plain" in markdown
+    assert "\n\nBody" in markdown
+    assert "<strong>item</strong>" in document.to_html()
+
+
+def test_json_table_without_associated_text_preserves_null_values() -> None:
+    document = Document((Page(1, tables=(Table(0),)),))
+    tables = document.to_json_dict()["tables"]
+    assert isinstance(tables, list)
+    assert len(tables) == 1
+    record = tables[0]
+    assert isinstance(record, dict)
+    assert record["title"] is None
+    assert record["caption"] is None
+
+
+def test_element_dispatch_rejects_unknown_runtime_types() -> None:
+    from typing import cast
+
+    from core_pdf.impl._impl.output.serialize import internal_map_page_element
+
+    with pytest.raises(TypeError, match="unsupported page element: object"):
+        internal_map_page_element(
+            cast(Any, object()),
+            block=lambda item: item.order,
+            table=lambda item: item.order,
+            figure=lambda item: item.order,
+        )
