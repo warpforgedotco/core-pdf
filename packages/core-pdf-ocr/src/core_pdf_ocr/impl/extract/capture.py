@@ -24,12 +24,10 @@ from core_pdf.impl._impl.extract.capture import (
     internal_observations_from_runs,
     internal_promoted_hidden_runs,
     internal_run_uses_actual_text,
+    internal_STRUCTURE_UNSET,
 )
 from core_pdf.impl._impl.extract.capture import (
     internal_glyph_evidence_fields as native_glyph_evidence_fields,
-)
-from core_pdf.impl._impl.extract.capture import (
-    internal_STRUCTURE_UNSET as internal_STRUCTURE_UNSET,
 )
 from core_pdf.impl._impl.extract.contracts import (
     GlyphEvidence,

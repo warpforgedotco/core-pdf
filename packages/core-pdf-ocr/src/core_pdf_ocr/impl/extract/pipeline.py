@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, cast
 
+from core_pdf.impl._impl.extract.capture import internal_STRUCTURE_UNSET
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.extract.pipeline import (
     internal_PageExtraction as NativePageExtraction,
@@ -16,7 +17,7 @@ from core_pdf.impl._impl.extract.pipeline import (
 from core_pdf.impl._impl.output.model import Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
-from core_pdf_ocr.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
+from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan
 from core_pdf_ocr.impl.extract.emit import assemble_page
 from core_pdf_ocr.impl.extract.observations import fuse_observations, plan_page

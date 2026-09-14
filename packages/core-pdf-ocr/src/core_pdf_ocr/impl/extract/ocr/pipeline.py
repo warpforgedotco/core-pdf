@@ -8,6 +8,7 @@ from typing import Self
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.capture import internal_promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
@@ -15,7 +16,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_PIXELS,
     MAX_OCR_PIXELS,
     PSM_SPARSE_TEXT,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,

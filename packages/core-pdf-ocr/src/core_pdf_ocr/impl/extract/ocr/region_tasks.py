@@ -9,12 +9,12 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.geometry import overlap_ratio_min_exact, overlap_ratio_of
 from core_pdf.impl._impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
     PRIMARY_OCR_PIXELS,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import internal_bbox_tuple
 from core_pdf.impl._impl.extract.grids import (
     internal_axis_segments,
     internal_grid_components,
@@ -22,7 +23,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     OcrPass,
     PageAnalysis,
-    internal_bbox_tuple,
 )
 from core_pdf_ocr.impl.extract.ocr.raster import (
     internal_decoded_image_raster,

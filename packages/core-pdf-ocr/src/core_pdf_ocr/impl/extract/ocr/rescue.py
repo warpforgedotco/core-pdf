@@ -8,12 +8,12 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_RESCUE_LARGE_TEXT_HEIGHT,
     OCR_RESCUE_MIN_CONFIDENCE,
     OCR_RESCUE_MIN_WEAK_INK_RATIO,
     OCR_RESCUE_SATURATED_MEAN_INK,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,

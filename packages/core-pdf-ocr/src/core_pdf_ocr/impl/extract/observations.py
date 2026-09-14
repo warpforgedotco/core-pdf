@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.text import compact_text, text_tokens
 from core_pdf_ocr.impl.extract.capture import (
     internal_hidden_text_needs_verification,
@@ -18,7 +19,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     PSM_SPARSE_TEXT,
     PSM_SPARSE_TEXT_OSD,
     FusionPolicy,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,

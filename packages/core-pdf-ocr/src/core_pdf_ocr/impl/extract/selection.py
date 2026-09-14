@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch, internal_bbox_tuple
 from core_pdf.impl._impl.extract.selection import (
     internal_assemble_document,
     internal_prepare_document_pages,
@@ -22,12 +23,7 @@ from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     internal_capture_from_program,
 )
-from core_pdf_ocr.impl.extract.contracts import (
-    ObservationBatch,
-    PageAnalysis,
-    RecognitionResult,
-    internal_bbox_tuple,
-)
+from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult
 from core_pdf_ocr.impl.extract.ocr.strokes import (
     GlyphSignature,
     StrokedTextDecode,

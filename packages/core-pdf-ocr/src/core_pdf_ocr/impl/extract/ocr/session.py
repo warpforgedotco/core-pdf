@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass, replace
 from typing import Any
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.geometry import rect_tuple
 from core_pdf.impl._impl.render.model import RenderOptions
 from core_pdf.impl._impl.render.page import compose_page
@@ -15,7 +16,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,
     PRIMARY_OCR_PIXELS,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,
