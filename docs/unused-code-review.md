@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Embedded font recovery and encoding contracts
+
+Added **86 deterministic cases** for exact CFF table extraction, absent/truncated
+OpenType tables, damaged Type 1/TrueType/CFF/OpenType programs, malformed descriptors,
+font-name precedence, simple encoding defaults, CID Unicode and ligature overrides,
+and CID system metadata normalization. Tests use actual parsers and synthetic bytes;
+no font-parser mocks or external fixture downloads are needed. These contracts pass
+without production changes, so the existing recovery paths remain intact.
+
+All 86 tests passed in **6.53s** with coverage appended to the existing verified report.
+Production sources are unchanged since the locked **5,302-test** full workspace run
+with real Tesseract and veraPDF; that report already included the 17 subsequently
+appended reconstruction boundary tests. Font decoding now covers **707/770 statements
+and 239/298 branches**.
+
+Combined workspace coverage increased **86.17% → 86.35% statements** and
+**76.84% → 77.03% branches**: **33,575 / 38,883 statements** and
+**11,539 / 14,980 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,308 statements and 3,441 branches**
+remain uncovered. These are local results.
+
+
 ## Reconstruction atom invariants and geometry boundaries
 
 Added **57 deterministic cases** for text-atom preservation, Unicode whitespace and
