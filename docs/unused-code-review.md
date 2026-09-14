@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## pdfplumber structured-table projection contracts
+
+Added **11 deterministic cases** for shared-column table merging, positioned
+versus geometry-free row ordering, distinct/missing table bounds, thin-table
+body recovery, footer exclusion, ragged columns, page ownership, and source
+immutability. These characterize the facade's existing projection heuristics;
+they do not claim differential parity for every heuristic. No production change
+was needed.
+
+The focused run passed **11 tests in 6.29s**, appended to the verified
+**7,898-test full run** on unchanged production sources. This was not another
+full-suite run. Workspace coverage is **35,599 / 38,839 statements (91.66%)**
+and **12,594 / 14,956 branches (84.21%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All quality gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The goal remains incomplete:
+**3,240 statements and 2,362 branches** remain uncovered. These are local results.
+
 ## Private line-formatter branch removal
 
 Removed unused tuning arguments from `_group_chars` and `_line_text`, including
