@@ -22,7 +22,7 @@ Coverage.py's combined statement/branch headline is **62.26%**. There are 13,919
 statements and 38 nonempty source files with no executed statements. Vendor code is omitted;
 coverage.py's default exclusions remain in effect (554 excluded statements).
 
-## Strong removal candidate
+## Removed internal helper
 
 `src/core_pdf/impl/_impl/model/geometry.py:205` — `page_rotation_matrix`
 
@@ -32,9 +32,10 @@ coverage.py's default exclusions remain in effect (554 excluded statements).
 - It is an internal implementation helper, not part of the public or spec extension API.
 - It has no decorator or apparent registration mechanism.
 
-This is a strong candidate for a small, separate removal. The scan cannot establish whether
-out-of-repository consumers improperly import it, or exclude arbitrary constructed-name
-dispatch. No implementation code was removed during this review.
+The helper was subsequently removed after this baseline. Its defining statement and nine
+body statements were deleted; no caller needed updating. The scan cannot establish whether
+out-of-repository consumers improperly imported it, or exclude arbitrary constructed-name
+dispatch.
 
 ## Removed after this baseline
 
@@ -71,7 +72,7 @@ not a complete call graph. Framework callbacks such as the OCR HTML parser's `ha
 `handle_data`, and `handle_endtag` must be retained even when no explicit caller appears.
 Public spec exports and documented extension methods are compatibility contracts.
 
-Start with the isolated geometry helper and add native output/CLI and companion OCR coverage.
+Add native output/CLI and companion OCR coverage.
 Then rerun coverage before reviewing deeper
 implementation clusters. The HTML report at `htmlcov/index.html` and function-level JSON at
 `htmlcov/coverage.json` are the detailed evidence for this baseline.
