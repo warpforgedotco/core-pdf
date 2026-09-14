@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Capture resource identity and recovery transitions
+
+Added **58 deterministic cases** for indirect font identity, sorted subset-font
+companions, cache reuse across equivalent page resources, scope-local reuse of
+direct/stream fonts, and isolation when sibling dependencies change. Complete
+capture states also exercise font lookup/resolution failures, color fallbacks,
+invalid component handling, retained paint state, and shading/tiling pattern
+selection. Pattern tests distinguish colored and uncolored paints and reject
+missing geometry or zero steps while preserving negative tiling steps.
+No production changes were needed for these contracts.
+
+The focused coverage run passed **58 tests in 7.31s**, appended to the verified
+**7,243-test full workspace/differential run** on unchanged production sources;
+this was not another full-suite run. Workspace coverage increased
+**89.97% → 90.07% statements** and **81.92% → 82.09% branches**:
+**35,008 / 38,868 statements** and **12,289 / 14,970 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates; that
+heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,860 statements and 2,681 branches** remain
+uncovered. These are local results.
+
 ## Color-space recovery and Pattern branch simplification
 
 Added **78 deterministic cases** for nested color descriptions, cyclic bases and
