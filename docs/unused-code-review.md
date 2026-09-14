@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Reader PDF-function adapter contracts
+
+Added **54 deterministic cases** for callable/constant function inputs, output
+shape, Type2 defaults and unequal component extension, malformed Type3 stitching
+intervals, repeated missing subfunctions, sampled-function setup recovery, and
+stream-decoder error boundaries. Tests use explicit scalar results, retain input
+dictionaries unchanged, preserve known failure causes, and verify unexpected
+decoder defects propagate unchanged. No production change was needed.
+
+The focused coverage run passed **54 tests in 5.81s**, appended to the verified
+**7,407-test full workspace/differential run** on unchanged production sources;
+this was not another full-suite run. The function adapter now has
+**142 / 142 statements and 64 / 64 branches covered**. Workspace coverage increased
+**90.50% → 90.62% statements** and **82.60% → 82.76% branches**:
+**35,200 / 38,844 statements** and **12,381 / 14,960 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates;
+that heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,644 statements and 2,579 branches** remain
+uncovered. These are local results.
+
 ## Numeric table reading order and large-block repair contracts
 
 Added **24 deterministic cases** covering numeric grids, interleaved magazine
