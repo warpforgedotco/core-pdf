@@ -1,5 +1,30 @@
 # Coverage and unused-code findings
 
+## Diagonal line routes and square-cap geometry
+
+Added **36 cases** comparing scalar, vectorized, and explicit-Normal line
+rendering across all three cap styles, forward/reversed endpoints, destination
+clipping, and zero/partial/opaque paint. Independent rectangle/capsule sampling
+checks group shape and source alpha, including geometric shape at zero opacity.
+Six route comparisons failed before the fix: the scalar square-cap calculation
+rounded off endpoint corners. Butt and square caps now share the rectangular
+projection test, removing the duplicate fallback calculation: **13 statements
+and 10 branches** removed. All 36 cases pass after the fix.
+
+This corrects the internal helper contract. Current production `stroke_path`
+callers request butt caps and paint other caps separately; these tests do not
+establish a change in ordinary PDF output. That division of cap ownership is
+a candidate for a further caller audit and simplification.
+
+The fresh locked workspace/differential run, including real Tesseract and
+veraPDF, passed **8,022 tests with no skips in 212.95s**. Workspace coverage is
+**35,692 / 38,808 statements (91.97%)** and **12,629 / 14,940 branches (84.53%)**.
+The exact baseline is ratcheted to this complete run. All pre-push quality
+gates and the coverage check passed; the static scan returned no candidates.
+All four roots, vendor-only omissions, and **554 excluded lines** remain
+unchanged. The goal remains incomplete: **3,116 statements and 2,311 branches**
+remain uncovered. These are local results.
+
 ## Soft masks through the raster target
 
 Added **10 cases** rendering captured mask programs through the actual raster
