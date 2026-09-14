@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: Tesseract binding
+
+Added **37 deterministic tests** for text confidence/noise gates, optional hOCR failures,
+character-filter recall, symbol iteration, word-boundary propagation, filtered recognition,
+optional cleanup, language-data discovery failures, main-thread initialization, partial
+stderr setup, and invalid timeout crop recovery. Word and line filtering previously accepted
+NaN and infinite confidence; it now rejects them consistently with symbol filtering.
+Redundant positive-size checks were removed after rectangle dimensions are clamped to one.
+
+The full suite with pinned Tesseract enabled passed **3,504 tests**, with **32 veraPDF
+integration skips**, in **203.45s**. Tesseract binding coverage rose **86.29% → 100% statements**
+and **73.38% → 100% branches**. Workspace coverage rose **80.10% → 80.24% statements**
+and **67.84% → 68.11% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,765 statements and 4,847 branches** remain uncovered across the authored workspace.
+Remaining OCR processing, core, spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR session integration
 
 Added **25 deterministic tests** for declared projection caching, undeclared projection

@@ -239,7 +239,7 @@ def internal_hocr_filtered_lines(
 def internal_acceptable_text(
     text: str, confidence: float, minimum_confidence: float = 20.0
 ) -> bool:
-    if confidence < minimum_confidence or not text:
+    if not math.isfinite(confidence) or confidence < minimum_confidence or not text:
         return False
     stripped = collapse_ws(text)
     if not stripped:
@@ -412,11 +412,7 @@ def internal_recognize(
     y0 = max(0, min(task.image.height - 1, int(raw_y)))
     w = max(1, int(right - x0))
     h = max(1, int(bottom - y0))
-    if (
-        w > 0
-        and h > 0
-        and (image_prepared or (x0, y0, w, h) != (0, 0, task.image.width, task.image.height))
-    ):
+    if image_prepared or (x0, y0, w, h) != (0, 0, task.image.width, task.image.height):
         with internal_suppress_c_stderr():
             api.SetRectangle(x0, y0, w, h)
     api.SetSourceResolution(task.resolution)
