@@ -1,5 +1,24 @@
 # Coverage and unused-code findings
 
+## Table section and prose-classification contracts
+
+Added **39 deterministic cases** for section boundaries, row identity, cell geometry,
+confidence/metadata preservation, title/caption placement, repeated identical headers,
+spanning titles, and positive controls distinguishing prose grids from numeric tables.
+All cases pass without production changes.
+
+The 39 tests passed in **10.08s** with coverage appended to the verified report.
+Production sources are unchanged since the locked **5,713-test** full workspace run
+with real Tesseract and veraPDF. Combined workspace coverage increased
+**87.01% → 87.03% statements** and **77.86% → 77.90% branches**:
+**33,825 / 38,867 statements** and **11,665 / 14,974 branches**.
+All four roots, vendor-only omissions, and **554 excluded lines** remain unchanged.
+Both exact ratchets and all pre-push quality gates passed, including both type checkers
+and import contracts. The static unused-symbol scan remains empty. The full 100% goal
+remains incomplete: **5,042 statements and 3,309 branches** remain uncovered.
+These are local results.
+
+
 ## Retired facade-local snapshot mutation helpers
 
 A manual call/export audit found four unexported, unreferenced StructuredState methods:
