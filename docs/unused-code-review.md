@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Scanline crossing and winding contracts
+
+Added **54 deterministic cases** comparing scalar, row-at-a-time, and batched crossing
+routes with explicit rectangle and diagonal intersections. Cases cover half-open
+scanline boundaries, edge order, translations, empty rows/edges, and the memory-limit
+fallback. Independent occupied-interval expectations distinguish holes, overlapping
+contours, shared boundaries, and coincident edges under nonzero/even-odd fill rules.
+Both batching and its bounded-memory fallback remain supported and necessary.
+
+All 54 tests passed in **9.46s** with coverage appended to the verified report.
+Production sources are unchanged since the locked **5,713-test** full workspace run
+with real Tesseract and veraPDF; the report already contained the subsequent 39 table
+section cases. Combined workspace coverage increased **87.03% → 87.05% statements**
+and **77.90% → 77.94% branches**: **33,835 / 38,867 statements** and
+**11,670 / 14,974 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,032 statements and 3,304 branches**
+remain uncovered. These are local results.
+
+
 ## Table section and prose-classification contracts
 
 Added **39 deterministic cases** for section boundaries, row identity, cell geometry,
