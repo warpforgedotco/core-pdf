@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## pdfplumber structure ownership and recovery contracts
+
+Added **16 deterministic cases** for root page filtering, projected fields,
+nested children, non-structural entries, absent structure, malformed tree/child
+iteration and page-index access, document aggregation, and unexpected exception
+propagation. Tests exercise the facade's projection contract with controlled
+structure providers; no production change was needed.
+
+The focused coverage run passed **16 tests in 6.32s**, appended to the verified
+**7,898-test full run** and table projection tests on unchanged production
+sources. This was not another full-suite run. Workspace coverage is
+**35,630 / 38,839 statements (91.74%)** and
+**12,602 / 14,956 branches (84.26%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All quality gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The goal remains incomplete:
+**3,209 statements and 2,354 branches** remain uncovered. These are local results.
+
 ## pdfplumber structured-table projection contracts
 
 Added **11 deterministic cases** for shared-column table merging, positioned
