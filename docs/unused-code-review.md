@@ -1,5 +1,33 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: learned Unicode alignment
+
+This checkpoint adds **29 tests** for learned Unicode overlays and capture enrichment.
+The full suite with pinned Tesseract enabled passed **3,273 tests**, with **32 veraPDF
+integration skips**, in **209.36s**. Reports describe that single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR capture analysis | 67.20% → 99.60% | 51.00% → 96.00% |
+| Entire workspace | 78.38% → 78.59% | 66.01% → 66.32% |
+
+Tests preserve spacing, geometry, cluster identity, and original runs when applying learned
+text. They reject invalid replacement strings, ActualText overrides, mixed source clusters,
+misaligned text, and reversed text-show geometry. Ligature observations receive one semantic
+replacement, and glyph evidence reclassifies only applied substitutions. Program-level tests
+verify that learned text reaches observations and evidence before routing, while image filter
+metadata, fields, annotations, and the original capture program are retained. Controlled
+template-decoder results test trusted versus untrusted promotion separately from the existing
+real template-decoding suite. Capture entry-point options are checked at the native boundary.
+
+No production changes were needed. Ruff lint/format, mypy, ty, all 19 import contracts,
+repository hooks, and diff checks passed. No source-shadowing compiled modules or new
+unused-symbol candidates were found. Coverage sources and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **8,416 statements and 5,123 branches**
+remain uncovered. OCR capture retains one uncovered statement and four branches. OCR raster,
+grid extraction, region tasks, document structure, layout, and rendering remain in scope.
+
 ## Workspace coverage completion: OCR capture evidence
 
 This checkpoint adds **37 deterministic tests** for capture-time OCR evidence. The full
