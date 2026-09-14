@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Decoded-image normalization contracts
+
+Added **72 deterministic cases** for gray/RGB JPX opacity selectors at 8/16-bit
+precision, zero/partial/full alpha, premultiplication reversal, ignored opacity,
+invalid component layouts and selectors, precision endpoints, and native sample storage
+validation. Version controls cover JPX Decode with/without explicit ColorSpace under
+PDF 1.7, PDF 2.0, unknown versions, and absent context. These operate on explicit
+sample arrays without codec mocks or external fixtures and preserve the input samples.
+
+All 72 cases passed in **13.52s** with coverage appended to the verified report.
+Production sources are unchanged since the locked **5,575-test** full workspace run
+with real Tesseract and veraPDF. No production correction was needed for these contracts.
+
+Combined workspace coverage increased **86.75% → 86.86% statements** and
+**77.63% → 77.77% branches**: **33,768 / 38,878 statements** and
+**11,646 / 14,974 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,110 statements and 3,328 branches**
+remain uncovered. These are local results.
+
+
 ## Image preparation and declared-filter routing
 
 Added **59 deterministic cases** for canonical layouts and read-only samples, stencil
