@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Shared pdfplumber plain-text extraction
+
+Consolidated page and utility plain-text extraction into one word-based path.
+Previously, both utility namespaces accepted keyword options but ignored them
+while reconstructing lines independently. They now honor spacing tolerances,
+punctuation splitting, and ligature expansion consistently with page extraction.
+Layout-mode and line-record projections retain their separate responsibilities.
+
+Added **11 differential and cross-entry-point cases**; **eight failed before
+the fix**, and all now pass. Tests compare both utility namespaces with installed
+pdfplumber and compare utility/page results over the same captured characters.
+All pre-push quality gates passed; the static unused-symbol scan returned no
+candidates, which does not prove the absence of dead code.
+
+The locked full workspace/differential run with real Tesseract and veraPDF
+passed **7,880 tests with no skips in 555.57s**. Fresh coverage is
+**35,544 / 38,844 statements (91.50%)** and
+**12,570 / 14,958 branches (84.04%)**. The exact baseline is ratcheted to this
+complete result. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. This is a correctness/consolidation improvement;
+rounded coverage remains unchanged from the prior appended measurement.
+The goal remains incomplete: **3,300 statements and 2,388 branches** remain
+uncovered. These are local results.
+
 ## X-ray lifecycle and failure-routing contracts
 
 Added **27 deterministic cases** for recoverable page errors, raw-font fallback,

@@ -951,10 +951,7 @@ class Page:
                 width_chars=int(kwargs.get("layout_width_chars", 80)),
                 height_chars=kwargs.get("layout_height_chars"),
             )
-        y_tolerance = float(kwargs.get("y_tolerance", 3))
-        words = _words(self.chars, **kwargs)
-        lines = cluster_by_preserving_order(words, "top", y_tolerance)
-        return "\n".join(" ".join(word["text"] for word in line) for line in lines)
+        return internal_plain_text(self.chars, **kwargs)
 
     def extract_text_simple(self, **kwargs: Any) -> str:
         return self.extract_text(**kwargs)
@@ -2185,11 +2182,15 @@ def to_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [value]
 
 
+def internal_plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
+    words = _words(chars, **kwargs)
+    lines = cluster_by_preserving_order(words, "top", float(kwargs.get("y_tolerance", 3)))
+    return "\n".join(" ".join(word["text"] for word in line) for line in lines)
+
+
 class _TextUtils:
     extract_words = staticmethod(extract_words)
-    extract_text = staticmethod(
-        lambda chars, **kwargs: "\n".join(line["text"] for line in _lines(chars))
-    )
+    extract_text = staticmethod(internal_plain_text)
     extract_text_simple = extract_text
 
 
@@ -2204,7 +2205,7 @@ class _Utils:
                 height_chars=kwargs.get("layout_height_chars"),
             )
             if kwargs.get("layout")
-            else "\n".join(line["text"] for line in _lines(chars))
+            else internal_plain_text(chars, **kwargs)
         )
     )
     extract_text_simple = extract_text
