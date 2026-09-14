@@ -1,5 +1,30 @@
 # Coverage and unused-code findings
 
+## Shared finite-number validation for native font widths
+
+Added **90 deterministic cases** covering compact, sparse, and range CID widths,
+invalid numeric values, coercion, clipping at CID boundaries, resynchronization,
+last-assignment precedence, vertical metric triples, and simple-font defaults.
+Eight initial failures showed that compact and sparse arrays admitted NaN/infinity
+and raised OverflowError for huge integers while range entries already recovered.
+All three forms now use the same finite-number parser. Valid contiguous entries
+retain compact storage; invalid entries are skipped without losing later widths.
+Strict spec parsing remains unchanged. Both native font-width modules now have
+**100% statement and branch coverage** (196 statements and 92 branches together).
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,909 tests,
+no skips, in 217.01s**. After that run, 23 additional test-only boundary/vertical
+cases were added; all 90 new cases passed in **5.89s**, appending coverage against
+unchanged production sources. Workspace coverage increased **87.14% → 87.49%
+statements** and **78.06% → 78.60% branches**: **34,004 / 38,864 statements** and
+**11,766 / 14,970 branches**. The consolidation removed three statements and four
+branches. All four roots, vendor-only omissions, and **554 excluded lines** remain
+unchanged. Both exact ratchets and all pre-push quality gates passed, including mypy,
+ty, and import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,860 statements and 3,204 branches** remain
+uncovered. These are local results.
+
+
 ## Source ownership and security alias contracts
 
 Added **36 deterministic cases** for security-name alias collisions in either order,
