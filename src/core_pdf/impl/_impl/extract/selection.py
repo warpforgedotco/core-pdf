@@ -64,23 +64,16 @@ def internal_prepare_document_pages(
     )
 
 
-def internal_assemble_document_pages(
-    extractions: tuple[internal_PageExtraction, ...],
-    context: ExtractionScope,
-) -> tuple[Page, ...]:
-    pages: list[Page] = []
-    for extraction in extractions:
-        context.raise_if_cancelled()
-        pages.append(extraction.assembled_page(context))
-    return tuple(pages)
-
-
 def internal_assemble_document(
     document: PdfDocument,
     extractions: tuple[internal_PageExtraction, ...],
     context: ExtractionScope,
 ) -> Document:
-    assembled_pages = internal_assemble_document_pages(extractions, context)
+    pages: list[Page] = []
+    for extraction in extractions:
+        context.raise_if_cancelled()
+        pages.append(extraction.assembled_page(context))
+    assembled_pages = tuple(pages)
     diagnostics = tuple(diagnostic for page in assembled_pages for diagnostic in page.diagnostics)
     metadata = document.get_metadata()
     return Document(
