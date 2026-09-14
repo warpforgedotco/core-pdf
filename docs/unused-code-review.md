@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: packed-vector and table-grid orchestration
+
+Added **12 deterministic integration tests** covering packed-coordinate remapping, isolated
+label supplementation, full-vector fallback availability, real raster grid detection and
+cell-task construction, replacement quality gates, retained outside text, unavailable passes,
+and page augmentation policy. Recognition results are controlled at the OCR boundary.
+The selected-task guard around table retry was removed: selection occurs only after a
+nonempty task batch completes, and resetting selection clears both candidate and tasks.
+
+The full suite with pinned Tesseract enabled passed **3,442 tests**, with **32 veraPDF
+integration skips**, in **205.04s**. OCR pipeline coverage rose from **75.28% statements /
+75.68% branches to 100% of both**. Workspace coverage rose **79.87% → 79.99% statements**
+and **67.62% → 67.74% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,864 statements and 4,904 branches** remain uncovered. OCR session/engine integration
+and the remaining core, spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR rescue policy and orchestration
 
 Added **29 deterministic tests** for spatial utility distribution, clipping, raster

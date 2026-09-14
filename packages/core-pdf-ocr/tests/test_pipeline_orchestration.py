@@ -188,3 +188,226 @@ def test_hidden_layer_verification_short_circuits_only_after_matching_preview(
     result = pipeline.recognize_page(capture, plan, ExtractionScope(), stroked_profile=None)
     assert result.observations.text == (texts if verified else ("fallback",))
     assert seen == (["verify"] if verified else ["verify", "fallback"])
+
+
+@pytest.mark.parametrize(
+    ("populated", "cell_text", "replace_grid"),
+    [(48, "replacement", True), (48, "x", False), (48, "", False), (6, "replacement", False)],
+)
+def test_ruled_table_retry_preserves_outside_text_and_rejects_worse_cell_reads(
+    monkeypatch: pytest.MonkeyPatch, ocr_capture, populated: int, cell_text: str, replace_grid: bool
+) -> None:
+    import numpy
+
+    samples = numpy.full((400, 300, 1), 255, dtype=numpy.uint8)
+    for x in range(30, 271, 40):
+        samples[30:351, x] = 0
+    for y in range(30, 351, 40):
+        samples[y, 30:271] = 0
+    for index in range(populated):
+        row, column = divmod(index, 6)
+        samples[40 + row * 40 : 44 + row * 40, 40 + column * 40 : 44 + column * 40] = 0
+    source = internal_OcrTask(
+        6, RasterImage(samples.tobytes(), 300, 400, 1), (0, 0, 300, 400), (0, 0, 300, 400), 72
+    )
+    prior = internal_candidate(
+        6,
+        ObservationBatch.from_columns(
+            ("outside heading", "abcdefghij"),
+            ((0, 380, 100, 390), (40, 330, 65, 340)),
+            source=1,
+            confidence=(95, 95),
+        ),
+    )
+    cells = internal_candidate(
+        7,
+        ObservationBatch.from_columns(
+            (cell_text,) if cell_text else (),
+            ((40, 330, 65, 340),) if cell_text else (),
+            source=1,
+            confidence=(95,) if cell_text else (),
+        ),
+    )
+    calls = []
+
+    class Session:
+        page_box = source.page_box
+
+        def __init__(self, *args):
+            pass
+
+        def materialize(self, operation, **kwargs):
+            return internal_OcrPassTasks(operation, (source,))
+
+        def recognize_tasks(self, tasks):
+            calls.append(tasks)
+            if tasks[0].mode == 7:
+                assert len(tasks) == populated
+                assert all(task.image is source.image for task in tasks)
+                return (cells,)
+            return (prior,)
+
+    monkeypatch.setattr(pipeline, "internal_OcrSession", Session)
+    plan = WorkPlan(PageRoute.OCR, ocr_passes=(OcrPass("page", OcrPassScope.PAGE, 1, (6,)),))
+    result = pipeline.recognize_page(ocr_capture, plan, ExtractionScope(), stroked_profile=None)
+    assert len(calls) == (2 if populated >= 12 else 1)
+    assert result.observations.text == (
+        ("outside heading", "replacement") if replace_grid else prior.observations.text
+    )
+    if not replace_grid:
+        assert result.observations is prior.observations
+
+
+@pytest.mark.parametrize(
+    ("accepted", "supplement_available"),
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_packed_vector_pipeline_remaps_seeds_and_chooses_isolated_or_full_fallback(
+    monkeypatch: pytest.MonkeyPatch, ocr_capture, accepted: bool, supplement_available: bool
+) -> None:
+    from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextDecode, StrokedTextObservation
+    from core_pdf_ocr.impl.extract.ocr.types import (
+        internal_PackedStrokedTextRaster,
+        internal_StrokedTextCell,
+    )
+
+    source = internal_task()
+    raster = internal_Raster(source.image, 72)
+    packed = internal_PackedStrokedTextRaster(
+        raster,
+        source.page_box,
+        (internal_StrokedTextCell((100, 200, 120, 210), (0, 0, 20, 10), (7,)),),
+    )
+    isolated = internal_PackedStrokedTextRaster(
+        raster,
+        source.page_box,
+        (internal_StrokedTextCell((300, 200, 320, 210), (0, 0, 20, 10), (9,)),),
+    )
+    seed = internal_result("AB")
+    supplement = internal_result(
+        "7" if accepted else "full fallback",
+        box=(0, 0, 20, 10) if accepted else (100, 200, 120, 210),
+    )
+    calls = []
+
+    class Session:
+        page_box = source.page_box
+
+        def __init__(self, *args):
+            self.count = 0
+
+        def materialize(self, operation, **kwargs):
+            return internal_OcrPassTasks(operation, (source,), packed)
+
+        def recognize_tasks(self, tasks):
+            self.count += 1
+            if self.count == 1:
+                return (seed,)
+            assert tasks[0].recognize_words is accepted
+            if accepted:
+                assert tasks[0].collect_symbols
+                assert tasks[0].minimum_confidence == 50
+            calls.append("supplement")
+            return (supplement,)
+
+    def decode(profile, observations, symbols):
+        assert observations.text == ("AB",)
+        assert observations.bbox.tolist() == [[100, 200, 120, 210]]
+        return StrokedTextDecode(
+            aligned_seeds=4 if accepted else 0,
+            learned_signatures=8,
+            observations=tuple(
+                StrokedTextObservation("AB", (100, 200, 120, 210), i, i) for i in range(8)
+            ),
+        )
+
+    def isolated_raster(*args, **kwargs):
+        calls.append("isolated")
+        assert kwargs["variant"] == "isolated"
+        return isolated if supplement_available else None
+
+    def full_raster(*args, **kwargs):
+        calls.append("full")
+        return internal_RasterRegion(raster, source.page_box) if supplement_available else None
+
+    monkeypatch.setattr(pipeline, "internal_OcrSession", Session)
+    monkeypatch.setattr(pipeline, "internal_decode_stroked_vector_text", decode)
+    monkeypatch.setattr(pipeline, "internal_stroked_vector_text_raster", isolated_raster)
+    monkeypatch.setattr(pipeline, "internal_full_stroked_vector_text_raster", full_raster)
+    operation = OcrPass("vector", OcrPassScope.STROKED_VECTOR_TEXT, 1, (6,), recognize_words=True)
+    result = pipeline.recognize_page(
+        ocr_capture,
+        WorkPlan(PageRoute.OCR, ocr_passes=(operation,)),
+        ExtractionScope(),
+        stroked_profile=None,
+    )
+    assert calls == (
+        ["isolated" if accepted else "full"] + (["supplement"] if supplement_available else [])
+    )
+    if accepted and supplement_available:
+        assert result.observations.text == ("AB", "7")
+        assert result.observations.bbox.tolist() == [[100, 200, 120, 210], [300, 200, 320, 210]]
+    elif supplement_available:
+        assert result.observations.text == ("full fallback",)
+    else:
+        assert result.observations.text == ("AB",)
+
+
+@pytest.mark.parametrize("unavailable", [False, True])
+def test_pipeline_returns_empty_when_no_pass_materializes_tasks(
+    monkeypatch: pytest.MonkeyPatch, ocr_capture, unavailable: bool
+) -> None:
+    class Session:
+        page_box = (0, 0, 100, 100)
+
+        def __init__(self, *args):
+            pass
+
+        def materialize(self, operation, **kwargs):
+            return None if unavailable else internal_OcrPassTasks(operation)
+
+        def recognize_tasks(self, tasks):
+            pytest.fail("Unavailable or empty tasks must not invoke OCR")
+
+    monkeypatch.setattr(pipeline, "internal_OcrSession", Session)
+    plan = WorkPlan(PageRoute.OCR, ocr_passes=(OcrPass("empty", OcrPassScope.PAGE, 1, (6,)),))
+    result = pipeline.recognize_page(ocr_capture, plan, ExtractionScope(), stroked_profile=None)
+    assert not len(result.observations)
+
+
+@pytest.mark.parametrize(
+    ("complexity", "expected"), [(0, ("original", "additional text")), (180, ("additional text",))]
+)
+def test_page_augmentation_retains_original_text_except_for_complex_vector_pages(
+    monkeypatch: pytest.MonkeyPatch, ocr_capture, complexity: int, expected: tuple[str, ...]
+) -> None:
+    source = internal_task()
+    original = internal_result("original")
+    extra = internal_result("additional text", box=(40, 0, 80, 10))
+
+    class Session:
+        page_box = source.page_box
+
+        def __init__(self, *args):
+            self.count = 0
+
+        def materialize(self, operation, **kwargs):
+            return internal_OcrPassTasks(operation, (source,))
+
+        def recognize_tasks(self, tasks):
+            self.count += 1
+            return (original if self.count == 1 else extra,)
+
+    monkeypatch.setattr(pipeline, "internal_OcrSession", Session)
+    capture = replace(
+        ocr_capture, evidence=replace(ocr_capture.evidence, vector_complexity=complexity)
+    )
+    plan = WorkPlan(
+        PageRoute.OCR,
+        augment_page_candidates=True,
+        ocr_passes=tuple(
+            OcrPass(name, OcrPassScope.PAGE, 1, (6,)) for name in ("primary", "extra")
+        ),
+    )
+    result = pipeline.recognize_page(capture, plan, ExtractionScope(), stroked_profile=None)
+    assert result.observations.text == expected
