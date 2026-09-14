@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Pdfplumber layout and annotation projections
+
+Added **20 differential cases** against installed pdfplumber, using deterministic
+PDFs and pypdf-authored page boxes/link annotations. They compare layout-object
+text and bounds with layout disabled or enabled, optional art/trim/bleed box values
+(treating absent reference attributes as None), and annotation/link coordinates
+on full and cropped pages. No production changes were needed.
+
+The focused coverage run passed **20 tests in 11.93s**, appended to the existing
+workspace coverage from the verified **7,243-test full run** and subsequent
+focused tests on unchanged production sources. This was not another full-suite
+run. Workspace coverage increased **90.07% → 90.22% statements** and
+**82.09% → 82.26% branches**: **35,066 / 38,868 statements** and
+**12,314 / 14,970 branches**. All four source roots, vendor-only omissions, and
+**554 excluded lines** remain unchanged. Both exact coverage ratchets and all
+pre-push quality gates passed, including both type checkers and import contracts.
+The static unused-symbol scan returned no candidates; that heuristic does not
+prove the absence of unused code.
+The 100% goal remains incomplete: **3,802 statements and 2,656 branches** remain
+uncovered. These are local results.
+
 ## Capture resource identity and recovery transitions
 
 Added **58 deterministic cases** for indirect font identity, sorted subset-font
