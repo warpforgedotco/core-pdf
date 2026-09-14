@@ -36,6 +36,9 @@ uv sync --all-packages --all-groups --extra unstructured
 uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
+See [coverage and unused-code review](docs/coverage.md) for parallel coverage.py runs
+and guidance on distinguishing dead code from missing tests.
+
 ## License
 
 core-pdf uses [Core License version 0.1.0](https://github.com/core-experiments/core-pdf/blob/main/docs/license/VERSION.md).
