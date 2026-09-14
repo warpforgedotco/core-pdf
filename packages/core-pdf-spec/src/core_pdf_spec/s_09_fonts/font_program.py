@@ -66,6 +66,16 @@ CFF_EXPERT_ENCODING_CODES = tuple(
 )
 
 
+def internal_cff_offset(values: list[float] | None, context: str) -> int:
+    """Validate a single DICT offset before conversion or indexing."""
+    if not values or len(values) != 1:
+        raise ValueError(f"invalid CFF {context}")
+    value = values[0]
+    if not isfinite(value) or value < 0 or int(value) != value:
+        raise ValueError(f"invalid CFF {context}")
+    return int(value)
+
+
 def cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
 ) -> Matrix | None:
@@ -147,12 +157,7 @@ class CFFFont:
         values = self.top_dict.get(operator)
         if values is None and default is not None:
             return default
-        if not values or len(values) != 1:
-            raise ValueError("invalid CFF dictionary offset")
-        value = values[0]
-        if not isfinite(value) or value < 0 or int(value) != value:
-            raise ValueError("invalid CFF dictionary offset")
-        return int(value)
+        return internal_cff_offset(values, "dictionary offset")
 
     def read_index(self, pos: int) -> tuple[list[bytes], int]:
         data = memoryview(self.data)
@@ -411,9 +416,7 @@ class CFFFont:
         if not self.is_cid_keyed:
             return (0,) * count
         values = self.top_dict.get((12, 37))
-        if not values or int(values[0]) != values[0]:
-            raise ValueError("missing CFF FDSelect")
-        pos = int(values[0])
+        pos = internal_cff_offset(values, "FDSelect offset")
         if not 0 <= pos < len(self.data):
             raise ValueError("invalid CFF FDSelect offset")
         fmt = self.data[pos]
@@ -448,9 +451,7 @@ class CFFFont:
         if not self.is_cid_keyed:
             return ()
         values = self.top_dict.get((12, 36))
-        if not values or int(values[0]) != values[0]:
-            raise ValueError("missing CFF FDArray")
-        items, _ = self.read_index(int(values[0]))
+        items, _ = self.read_index(internal_cff_offset(values, "FDArray offset"))
         return tuple(self.parse_dict(item) for item in items)
 
     def read_private_subrs(
@@ -459,7 +460,9 @@ class CFFFont:
         private = font_dict.get(18)
         if private is None:
             return []
-        if len(private) != 2 or any(int(value) != value for value in private):
+        if len(private) != 2 or any(
+            not isfinite(value) or int(value) != value for value in private
+        ):
             raise ValueError("invalid CFF Private dictionary")
         size, offset = map(int, private)
         if offset < 0 or size < 0 or offset + size > len(self.data):
@@ -468,9 +471,7 @@ class CFFFont:
         subrs = private_dict.get(19)
         if subrs is None:
             return []
-        if int(subrs[0]) != subrs[0]:
-            raise ValueError("invalid CFF Subrs offset")
-        items, _ = self.read_index(offset + int(subrs[0]))
+        items, _ = self.read_index(offset + internal_cff_offset(subrs, "Subrs offset"))
         return items
 
     def local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:

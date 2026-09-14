@@ -1,5 +1,30 @@
 # Coverage and unused-code findings
 
+## CFF offset validation and table boundaries
+
+Added **54 cases** for FDSelect formats and ranges, FDArray dictionaries, Private/Subrs
+relative offsets, malformed construction, and glyph/font-dictionary bounds. Eight new
+cases initially failed: nonfinite offsets leaked OverflowError, empty Subrs operands
+leaked IndexError, and extra FD table operands were accepted.
+
+Top DICT, FDSelect, FDArray, and Subrs offsets now share finite, nonnegative,
+single-integer validation. Private dictionary validation checks finiteness before integer
+conversion. This preserves the documented ValueError boundary for malformed input and
+keeps valid relative offsets and table projections unchanged. Font-program coverage is
+now **96.22% statements / 93.65% branches** (25 statements and 24 branches remain).
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,766 tests,
+no skips, in 603.37s**. Workspace coverage increased **84.94% → 84.98% statements**
+and **74.60% → 74.68% branches**: **33,067 / 38,912 statements** and
+**11,208 / 15,008 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; exact verified fractions ratchet the baseline.
+
+The isolated spec suite passed **2,798 tests**. All pre-push checks passed, including
+both type checkers and import contracts; the static unused-symbol scan is empty.
+The full 100% goal remains incomplete: **5,845 statements and 3,800 branches** remain
+uncovered. These are local results; elapsed suite time is not a performance benchmark.
+
+
 ## Type 2 interpreter and CFF binary contracts
 
 Added **141 cases** for arithmetic and conditional operators, stack order, shared
