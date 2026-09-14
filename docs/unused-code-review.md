@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Shared lazy font recovery in x-ray inspection
+
+Six initial regression failures showed that both x-ray glyph recovery routes used
+setdefault with an eagerly evaluated _recover_font call, reparsing the raw font even
+when its result was cached. A shared page-local lookup now resolves each font once
+and caches misses as well as successes. Tests cover control-character recovery,
+operand overrides, and mixed routes, checking both lookup counts and recovered text.
+A search found no other obvious recovery calls used as setdefault defaults.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **6,360 tests, no skips, in 462.36s**. Workspace coverage increased
+**88.62% → 88.68% statements** and **80.17% → 80.26% branches**:
+**34,470 / 38,868 statements** and **12,016 / 14,972 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,398 statements and 2,956 branches** remain
+uncovered. These are local results.
+
+
 ## X-ray raw recovery and occlusion contracts
 
 Added **44 deterministic cases** for paint ordering, same-fill exceptions, strict
