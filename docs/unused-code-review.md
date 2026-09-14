@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Retired facade-local snapshot mutation helpers
+
+A manual call/export audit found four unexported, unreferenced StructuredState methods:
+replace_pages, delete_page, update_metadata, and apply_redactions. Removed that orphan
+mutation chain and its unused Sequence import (**44 source lines removed**). The unused
+redaction implementation also incorrectly pooled rectangles across pages; it was not a
+supported facade redaction API. Shared synthetic snapshot construction remains necessary:
+pikepdf imports StructuredState and uses it for new documents and page-list mutations.
+
+Added **34 differential cases** comparing rectangle accessors with installed pypdf and
+synthetic page-list insert/replace/delete/slice behavior with installed pikepdf. These
+verify the retained cross-facade path through real public facade entry points.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,713 tests,
+no skips, in 536.23s**. Workspace coverage increased **86.91% → 87.01% statements**
+and **77.85% → 77.86% branches**: **33,818 / 38,867 statements** and
+**11,659 / 14,974 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The lexical unused-symbol scan remains
+empty; the manual audit found the orphan method chain that it did not identify.
+The full 100% goal remains incomplete: **5,049 statements and 3,315 branches** remain
+uncovered. These are local results.
+
+
 ## Table merge confidence and continuation contracts
 
 Added **32 deterministic cases** for adjacent-table confidence, repeated headers,
