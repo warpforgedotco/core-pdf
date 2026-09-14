@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: parent trees and child references
+
+Added **24 cases** for parent-tree slices and validation, nested child order, marked-content
+page/stream references, strict versus recovery behavior, depth limits, direct and indirect
+annotation references, shared resolved parents, and depth-first searches. An `OBJR` child
+previously rejected an indirect annotation dictionary. It now resolves `Obj` before checking
+the dictionary, with one shared invalid-object path instead of duplicate checks.
+
+All **58 structure tests** passed. The full suite with pinned Tesseract enabled passed
+**3,948 tests**, with **32 veraPDF integration skips**, in **212.45s**. `structure.py`
+reached **96.63% statements / 95.05% branches**. Workspace coverage rose
+**81.76% → 81.99% statements** and **70.56% → 70.98% branches**. Reports describe that
+single completed full-suite run. The structure tests passed again after correcting fixture
+types identified by the hooks (a valid bytes attribute key and an explicitly typed parent).
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,073 statements and 4,409 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: structure metadata and page projections
 
 Added **34 deterministic tests** using the real document resolver for structure content

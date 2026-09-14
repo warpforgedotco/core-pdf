@@ -623,11 +623,7 @@ def make_kids(
                 )
                 continue
             if ktype == "OBJR":
-                obj = current.get("Obj")
-                if obj is None:
-                    if recover_structure:
-                        continue
-                    raise ValueError("invalid structure object reference")
+                obj = document.resolver.resolve(current.get("Obj"))
                 if not isinstance(obj, dict):
                     if recover_structure:
                         continue

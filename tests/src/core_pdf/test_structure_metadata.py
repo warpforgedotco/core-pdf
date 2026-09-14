@@ -2,6 +2,7 @@
 
 import pytest
 
+from core_pdf.impl._impl.document import structure
 from core_pdf.impl._impl.document.document import PdfDocument
 from core_pdf.impl._impl.document.structure import (
     PageStructure,
@@ -14,6 +15,7 @@ from core_pdf.impl._impl.document.structure import (
 )
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.xref import key_for
 
 
 @pytest.fixture
@@ -94,8 +96,8 @@ def test_element_resolves_page_and_rejects_foreign_page_dictionary(document):
 
 
 def test_attributes_normalize_keys_and_cache_result(document):
-    element = StructureElement(document, {"A": {PdfName(b"O"): PdfName(b"Layout"), 42: 3}})
-    assert element.attributes == {"O": PdfName(b"Layout"), "42": 3}
+    element = StructureElement(document, {"A": {PdfName(b"O"): PdfName(b"Layout"), b"Width": 3}})
+    assert element.attributes == {"O": PdfName(b"Layout"), "Width": 3}
     assert element.attributes is element.attributes
 
 
@@ -146,7 +148,7 @@ def test_invalid_class_entries_are_rejected_or_resolve_to_absent(document, value
 
 
 def test_parent_projection_is_cached_and_missing_parent_is_none(document):
-    parent = {"S": PdfName(b"Sect")}
+    parent: PdfDict = {"S": PdfName(b"Sect")}
     element = StructureElement(document, {"P": parent})
     assert isinstance(element.parent, StructureElement)
     assert element.parent.props is parent
@@ -191,3 +193,138 @@ def test_page_structure_preserves_shared_parent_identity_and_sequence_semantics(
         PageStructure(document.pages[0], 5)
     with pytest.raises(ValueError, match="parent entry"):
         _ = PageStructure(document.pages[0], [5])[0]
+
+
+def test_parent_tree_preserves_values_and_caches_number_tree_results(document):
+    parents = [{"S": PdfName(b"P")}, None]
+    tree = StructureTree(document, {"ParentTree": {"Kids": [{"Nums": [4, parents]}]}})
+    assert tree.parent_tree == {4: parents}
+    assert tree.parent_tree[4] is parents
+    assert tree.parent_tree is tree.parent_tree
+    page = document.pages[0]
+    page.page_dict["StructParents"] = 4
+    view = tree.page_structure(page)
+    assert len(view) == 2
+    element = view[0]
+    assert element is not None
+    assert element.role == "P"
+    assert view[1] is None
+
+
+def test_absent_parent_tree_is_cached_and_invalid_tree_rejected(document):
+    tree = StructureTree(document, {})
+    assert tree.parent_tree == {}
+    assert tree.parent_tree is tree.parent_tree
+    with pytest.raises(ValueError, match="parent tree dictionary"):
+        _ = StructureTree(document, {"ParentTree": 5}).parent_tree
+
+
+@pytest.mark.parametrize(
+    ("key", "parents", "message"),
+    [(None, [], "StructParents"), (7, [], "parent tree entry"), (4, {}, "structure parents")],
+)
+def test_page_parent_tree_slice_rejects_invalid_keys_and_values(document, key, parents, message):
+    tree = StructureTree(document, {"ParentTree": {"Nums": [4, parents]}})
+    page = document.pages[0]
+    page.page_dict["StructParents"] = key
+    with pytest.raises(ValueError, match=message):
+        tree.page_structure(page)
+
+
+def test_structure_kids_keep_nested_order_page_and_stream_reference(document):
+    page = document.pages[0]
+    stream = PdfReference(5, 0)
+    kids = [
+        None,
+        2,
+        [3, {"Type": PdfName(b"MCR"), "MCID": 4, "Pg": PdfReference(3, 0), "Stm": stream}],
+        {"S": PdfName(b"P")},
+    ]
+    result = list(structure.make_kids(kids, page, document))
+    for item, mcid in zip(result[:3], (2, 3, 4), strict=True):
+        assert isinstance(item, StructureContentItem)
+        assert item.mcid == mcid
+    assert all(item.page_index == 0 for item in result[:3])
+    marked = result[2]
+    assert isinstance(marked, StructureContentItem)
+    assert marked.stream is stream
+    assert isinstance(result[3], StructureElement)
+    assert result[3].role == "P"
+    assert next(structure.make_kids(8, None, document)).page_index is None
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+@pytest.mark.parametrize(
+    "kid",
+    [
+        True,
+        -1,
+        1.5,
+        {"Type": PdfName(b"MCR")},
+        {"Type": PdfName(b"OBJR")},
+        {"Type": PdfName(b"OBJR"), "Obj": 5},
+    ],
+)
+def test_invalid_children_raise_in_strict_mode_and_skip_in_recovery(document, recovery, kid):
+    document.xref_was_recovered = recovery
+    if recovery:
+        result = list(structure.make_kids([kid, 7], None, document))
+        assert len(result) == 1
+        item = result[0]
+        assert isinstance(item, StructureContentItem)
+        assert item.mcid == 7
+    else:
+        with pytest.raises(ValueError):
+            list(structure.make_kids(kid, None, document))
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+def test_structure_depth_limit_applies_to_nested_children(document, recovery):
+    document.xref_was_recovered = recovery
+    if recovery:
+        assert list(structure.make_kids(0, None, document, structure.MAX_STRUCTURE_DEPTH + 1)) == []
+    else:
+        with pytest.raises(ValueError, match="depth"):
+            list(structure.make_kids(0, None, document, structure.MAX_STRUCTURE_DEPTH + 1))
+
+
+@pytest.mark.parametrize("indirect", [False, True])
+def test_object_reference_children_resolve_annotation_dictionary(document, indirect):
+    annotation: PdfDict = {"Type": PdfName(b"Annot"), "Subtype": PdfName(b"Text")}
+    reference = PdfReference(99, 0)
+    document.resolver.objects[key_for(99, 0)] = annotation
+    kid = {"Type": PdfName(b"OBJR"), "Obj": reference if indirect else annotation}
+    result = list(structure.make_kids(kid, document.pages[0], document))
+    assert len(result) == 1
+    assert isinstance(result[0], StructureContentObject)
+    assert result[0].props is annotation
+    assert result[0].page_index == 0
+
+
+def test_indirect_children_and_page_parents_share_resolved_dictionary(document):
+    parent: PdfDict = {"S": PdfName(b"P")}
+    reference = PdfReference(99, 0)
+    document.resolver.objects[key_for(99, 0)] = parent
+    child = next(structure.make_kids(reference, None, document))
+    assert isinstance(child, StructureElement)
+    assert child.props is parent
+    view = PageStructure(document.pages[0], [reference, reference, parent])
+    assert view[0] is view[1] is view[2]
+    document.resolver.objects[key_for(100, 0)] = 5
+    with pytest.raises(ValueError, match="parent entry"):
+        _ = PageStructure(document.pages[0], [PdfReference(100, 0)])[0]
+
+
+def test_tree_search_is_depth_first_and_ignores_content_items(document):
+    tree = StructureTree(
+        document,
+        {"K": [{"S": PdfName(b"Sect"), "K": [0, {"S": PdfName(b"P")}]}, {"S": PdfName(b"Figure")}]},
+    )
+    found = list(tree.find_all())
+    assert [item.role for item in found] == ["Sect", "P", "Figure"]
+    assert tree.find("P") is found[1]
+    assert tree.find(lambda item: item.role == "Figure") is found[2]
+    assert tree.find("missing") is None
+    assert found[0].find("P") is found[1]
+    assert found[0].find("missing") is None
+    assert list(tree) == list(tree)
