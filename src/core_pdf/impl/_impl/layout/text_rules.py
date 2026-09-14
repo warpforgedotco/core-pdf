@@ -430,9 +430,7 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
 def should_use_estimated_word_spacing(previous: str, current: str) -> bool:
     if not previous or not current:
         return False
-    if previous == "T" and current in {"he", "hes", "hese", "his"}:
-        return True
-    return not (not previous[-1].isalpha() or not current[0].isalpha())
+    return previous[-1].isalpha() and current[0].isalpha()
 
 
 def trailing_alpha_token(text: str) -> str:
@@ -508,7 +506,7 @@ def should_join_plausible_split_word(
         return True
     if head_rank is not None and joined_rank < min(tail_rank, head_rank):
         return True
-    if len(head) <= 3 and joined_rank <= max(tail_rank * 8, 150_000):
+    if len(head) <= 3:
         return True
     return bool(head_rank is None and joined_rank < tail_rank)
 

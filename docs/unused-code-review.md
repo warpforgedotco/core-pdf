@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: lexical joining and spacing
+
+Added **74 deterministic cases** for alphabetic boundaries, phrase continuation, split-word
+visibility/case/geometry gates, whole-word versus fragment ranks, digit joining, frequent-word
+spacing, and hidden-text overlap. Controlled rank mappings keep expectations independent of
+packaged dictionaries. Removed a special `T`-fragment branch already covered by alphabetic
+boundary checks and a short-suffix rank comparison guaranteed by the earlier rank limit.
+
+All **148 targeted word-rank, geometry, and lexical tests** passed. The full suite with
+pinned Tesseract enabled passed **3,800 tests**, with **32 veraPDF integration skips**, in
+**206.63s**. Lexical spacing has full statement and branch coverage. The whole
+`text_rules.py` module reached **86.73% statements / 78.46% branches**; formula handling,
+cleanup, and footer rules remain. Workspace coverage rose **81.03% → 81.17% statements**
+and **69.32% → 69.56% branches**. Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,397 statements and 4,626 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: text geometry and width estimation
 
 Added **49 deterministic cases** for reading direction, stream-order ties, blank-run
