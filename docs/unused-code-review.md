@@ -1,5 +1,50 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: annotations and tables
+
+Source/test commit: `9ff4ed2b`. This checkpoint adds **41 tests** for image annotations,
+explicit table grids, table settings, and invalid configurations. The full suite with
+pinned Tesseract enabled passed **2,954 tests**, with **32 veraPDF integration skips**,
+in **297.64s**. Generated HTML and JSON reports describe this run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| pdfplumber facade module | 61.78% → 74.12% | 44.86% → 61.49% |
+| Entire workspace | 73.39% → 73.83% | 60.07% → 60.61% |
+
+`TableSettings.resolve` and `PageImage._render_drawings`, including its local drawing
+helpers, now have **100% statement and branch coverage**. Serialization and the validation
+package retain full coverage. This does not mean the entire image or table API is complete.
+
+Pixel-level differential checks reproduced and fixed missing rectangle top edges and
+unwanted diagonals, rejected polyline point sequences, ignored circle centers/radii/colors,
+and RGB byte values incorrectly treated as normalized colors. Additional tests cover
+batch annotations, cropped coordinates, RGB/RGBA canvases, file output, debug helpers,
+and invalid channel layouts. The unreachable drawing-kind guard was removed after checking
+that the private drawing list receives only the four kinds emitted by its public helpers.
+
+Table tests reproduced duplicate grid rows, prose incorrectly recognized as tables under
+the default line strategy, and boundary characters copied into adjacent cells. Grid rows
+are emitted once and cell text is selected by character centers. Word-based fallback runs
+only when both requested strategies are text-based. Broader table strategies remain a gap.
+
+Settings now supply the reference defaults, axis fallbacks, and nonnegative measurements.
+Explicit-line validation checks both axes when table finding starts. For omitted line
+sequences, the reference raises TypeError while the facade deliberately raises ValueError;
+tests record this diagnostic difference while verifying both reject the input. Resolved
+settings are passed directly into table finding, preserving text options without converting
+them back to a dictionary. Resolution's unreachable merge fallback was also removed.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+The top-level unused-code scan found no additional candidates. Coverage sources and
+exclusions remain unchanged.
+
+The workspace-wide **100% goal remains active**: **10,291 statements and 5,999 branches**
+are still uncovered. The combined headline is **70.14%**, with 29,035/39,326 statements and
+9,229/15,228 branches covered. Remaining facade work includes native table projection,
+text-based table strategies, layout/search/metadata paths, and fuller annotation styling.
+Fonts, document structure/recovery, rendering, and deeper OCR paths also remain in scope.
+
 ## Workspace coverage completion: first checkpoint
 
 Source commit: `e316dd60`; test commit: `5d1de1c2`. The workspace-wide goal remains
