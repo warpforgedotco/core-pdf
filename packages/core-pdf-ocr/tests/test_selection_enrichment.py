@@ -289,3 +289,126 @@ def test_cancelled_stroke_enrichment_stops_even_with_cached_recognition(
         selection.internal_prepare_document_stroked_mappings(
             cast(Any, extractions), (capture, capture), ExtractionScope(cancelled=lambda: True)
         )
+
+
+def test_unknown_decoder_counts_ignore_unusable_and_already_mapped_glyphs(ocr_capture) -> None:
+    decoder = object()
+    capture = captured_glyphs(ocr_capture, decoder, 1)
+    valid = capture.program.glyphs[0]
+    variants = (
+        valid,
+        replace(valid, font_decoder=None),
+        replace(valid, visible=False),
+        replace(valid, text=""),
+        replace(valid, text=" "),
+        replace(valid, code_bytes=b""),
+        replace(valid, text="A", unicode_source="to_unicode"),
+    )
+    capture = replace(capture, program=PageProgram(CapturedProgram(glyphs=variants)))
+    assert selection.internal_unknown_decoder_counts(capture) == Counter({decoder: 1})
+    assert not selection.internal_unknown_decoder_counts(ocr_capture)
+
+
+def test_small_decoder_samples_do_not_seed_document_learning(ocr_capture) -> None:
+    decoder = object()
+    captures = (captured_glyphs(ocr_capture, decoder, 7), captured_glyphs(ocr_capture, decoder, 24))
+    assert selection.internal_document_font_seed_indexes(captures) == ()
+
+
+def test_font_votes_skip_empty_glyphs_and_nonprintable_predictions(ocr_capture) -> None:
+    assert not selection.internal_font_mapping_votes(ocr_capture, ObservationBatch.empty())
+    decoder = object()
+    capture = captured_glyphs(ocr_capture, decoder, 3)
+    observations = ObservationBatch.from_columns(
+        ("A\x00C",), ((0, 0, 28, 10),), source=1, confidence=(99,)
+    )
+    votes = selection.internal_font_mapping_votes(capture, observations)
+    assert dict(votes[decoder]) == {b"\x00": Counter(A=1), b"\x02": Counter(C=1)}
+
+
+def test_structural_decode_becomes_positioned_recognition_with_shared_alphabet() -> None:
+    from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextDecode, StrokedTextObservation
+
+    alphabet = ((cast(Any, (1, 2)), "A"),)
+    decoded = StrokedTextDecode(
+        observations=(StrokedTextObservation("AB", (10, 20, 30, 40), 7, 8),), alphabet=alphabet
+    )
+    result = selection.internal_document_stroked_recognition(decoded)
+    assert result.observations.text == ("AB",)
+    assert result.observations.bbox.tolist() == [[10, 20, 30, 40]]
+    assert result.observations.sequence.tolist() == [7]
+    assert result.stroked_vector_alphabet is alphabet
+
+
+def test_cached_stroke_results_are_reused_without_recognition(ocr_capture) -> None:
+    capture = replace(
+        ocr_capture,
+        evidence=replace(
+            ocr_capture.evidence,
+            stroked_vector_text=StrokedVectorTextEvidence(trusted=True, candidate_paths=20),
+        ),
+    )
+    recognition = RecognitionResult(ObservationBatch.empty())
+    extractions = tuple(SimpleNamespace(recognition_result=recognition) for _ in range(2))
+    result = selection.internal_prepare_document_stroked_mappings(
+        cast(Any, extractions), (capture, capture), ExtractionScope()
+    )
+    assert result[0] is result[1] is recognition
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_document_selection_captures_only_for_multiple_pages_and_keeps_exact_order(
+    ocr_capture, monkeypatch, count
+) -> None:
+    document = object()
+    pages = tuple(object() for _ in range(count))
+    captures = []
+    assembled = object()
+
+    class Extraction:
+        @property
+        def capture(self):
+            captures.append(self)
+            return ocr_capture
+
+    extractions = tuple(Extraction() for _ in pages)
+    context = ExtractionScope()
+
+    def prepare(actual_document, actual_pages, factory):
+        assert actual_document is document
+        assert actual_pages == pages
+        return extractions
+
+    def assemble(actual_document, actual_extractions, actual_context):
+        assert actual_document is document
+        assert actual_extractions == extractions
+        assert actual_context is context
+        return assembled
+
+    monkeypatch.setattr(selection, "internal_prepare_document_pages", prepare)
+    monkeypatch.setattr(selection, "internal_assemble_document", assemble)
+    assert selection.extract_document(cast(Any, document), context, cast(Any, pages)) is assembled
+    if count == 1:
+        assert captures == []
+    else:
+        assert captures[:2] == list(extractions)
+        assert all(extraction in extractions for extraction in captures)
+
+
+def test_stroked_enrichment_replaces_only_selected_page_and_preserves_context(ocr_capture) -> None:
+    base = SimpleNamespace(
+        page=object(),
+        capture=ocr_capture,
+        plan=WorkPlan(PageRoute.OCR),
+        internal_structure=None,
+        internal_hidden_layers=frozenset(),
+        internal_stroked_profile=None,
+    )
+    recognition = RecognitionResult(ObservationBatch.empty())
+    result = selection.internal_apply_stroked_enrichment(cast(Any, (base, base)), {1: recognition})
+    assert result[0] is base
+    assert result[1].capture.program is ocr_capture.program
+    assert result[1].capture.observations is ocr_capture.observations
+    assert result[1].recognition_result is recognition
+    assert result[1].page is base.page
+    assert result[1].plan is base.plan

@@ -1,5 +1,24 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR layout and selection enrichment
+
+Added **21 deterministic tests** for rotated OCR order, Unicode direction votes, stable
+ties, unchanged native order, word construction, source labels, selection-local font seeds,
+invalid glyph/prediction filtering, structural recognition, cached-result reuse, exact page
+order, and selective enrichment. Rebuilt captures retain their underlying program and
+observations. No production changes were needed.
+
+The full suite with pinned Tesseract enabled passed **3,605 tests**, with **32 veraPDF
+integration skips**, in **201.04s**. OCR block layout and selection enrichment now each
+have **100% statement and branch coverage**. Workspace coverage rose **80.52% → 80.61%
+statements** and **68.53% → 68.68% branches**. Reports describe that single full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,619 statements and 4,760 branches** remain uncovered. Remaining OCR processing, core,
+spec, and compatibility paths remain in scope.
+
 ## Workspace coverage completion: OCR routing and resampling
 
 Added **51 deterministic tests** for resampling shape contracts, identity, noncontiguous
