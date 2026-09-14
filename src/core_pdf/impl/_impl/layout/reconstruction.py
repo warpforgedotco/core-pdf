@@ -47,6 +47,9 @@ class LayoutLineTextAtom:
 def reconstruct_layout_line_text(
     runs: list[TextRun], *, is_all_caps_text: bool | None = None
 ) -> LayoutLineText:
+    # Empty capture records carry no text or glyph geometry. They must not
+    # change the line's direction, heuristics, or choice of assembly path.
+    runs = [run for run in runs if run.text or run.glyph_clusters]
     if not runs:
         return EMPTY_LAYOUT_LINE_TEXT
     if len(runs) == 1:
@@ -59,14 +62,6 @@ def reconstruct_layout_line_text(
         return LayoutLineText(text, (line_text_segment(run, text, ""),))
 
     angle = runs[0].rotation_angle
-    if angle == 0 and len(runs) <= 3:
-        sorted_runs = (
-            runs
-            if rules.runs_are_left_to_right(runs)
-            else sorted(runs, key=lambda r: (r.x0, r.order))
-        )
-        return GlyphLineBuilder(sorted_runs).build()
-
     if angle == 0 and rules.runs_are_left_to_right(runs):
         sorted_runs = runs
     elif rules.runs_are_right_to_left(runs):
@@ -84,10 +79,6 @@ def reconstruct_layout_line_text(
     is_formula_like_line = rules.formula_like_runs(sorted_runs)
     if angle == 0 and is_formula_like_line:
         sorted_runs = rules.reorder_stacked_formula_numerators(sorted_runs)
-        # Reordering rewrites the run sequence, so the classification is re-derived from
-        # it.  Every other line keeps the value computed above rather than rebuilding the
-        # joined line text a second time.
-        is_formula_like_line = rules.formula_like_runs(sorted_runs)
 
     digit_text_runs = 0
     all_text_runs_upper = True if is_all_caps_text is None else is_all_caps_text
