@@ -1,5 +1,34 @@
 # Coverage and unused-code findings
 
+## Navigation recovery and visibility consolidation
+
+Added **74 deterministic cases** for page-label ranges and reader defaults, nested
+and cyclic destination dictionaries, alias identity, unresolved names, outline ordering,
+malformed siblings/children, strict versus recovered traversal, and page lookup by
+identity, structure parents, and source-content references.
+
+Four destination controls initially raised RecursionError: a valid 1,500-level wrapper
+chain and three dictionary cycles. Destination dictionary traversal is now iterative,
+retains the original destination array, and rejects cycles with ValueError. Named-alias
+resolution is unchanged. Optional-content ON/OFF overrides now share one ordered
+validation/update loop, preserving OFF precedence and strict/recovery behavior.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,229 tests,
+no skips, in 433.31s**. A subsequent variable rename resolved a mypy name collision
+without changing behavior or line locations. All **108 navigation/visibility contract
+tests** then passed with coverage appended, including the 33 outline/lookup tests added
+after full-suite collection. Document composition now covers **800/913 statements
+and 344/432 branches**.
+
+Combined workspace coverage increased **85.88% → 86.06% statements** and
+**76.23% → 76.61% branches**: **33,474 / 38,894 statements** and
+**11,483 / 14,988 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,420 statements and 3,505 branches**
+remain uncovered. These are local results.
+
+
 ## OCR image placement and optional-content contracts
 
 Added **16 placement cases** checking all eight affine image orientations in grayscale

@@ -1007,13 +1007,18 @@ class PdfDocument(
         resolve_name: Callable[[str], RawNamedDestination | None],
         internal_lookup: internal_PageLookup[internal_PageT],
     ) -> RawNamedDestination:
+        seen: set[int] = set()
         resolved = self.resolver.resolve(val)
-        if isinstance(resolved, dict):
+        while isinstance(resolved, dict):
+            identity = id(resolved)
+            if identity in seen:
+                raise ValueError("cyclic destination dictionary")
+            seen.add(identity)
             dest_value = resolved.get("D")
-            if dest_value is not None:
-                return self.internal_normalize_destination_value(
-                    dest_value, resolve_name, internal_lookup
-                )
+            if dest_value is None:
+                break
+            val = dest_value
+            resolved = self.resolver.resolve(val)
         resolved_list = val if isinstance(val, list) else resolved
         if isinstance(resolved_list, tuple):
             resolved_list = list(resolved_list)
@@ -1322,31 +1327,19 @@ class PdfDocument(
                     if key is not None:
                         on_layers.add(key)
 
-            on_refs = default_config.get("ON")
-            if not isinstance(on_refs, list):
-                on_refs = []
-            for on_ref in on_refs:
-                ocg_resolved = self.resolver.resolve(on_ref)
-                if not isinstance(ocg_resolved, dict):
-                    if recover:
-                        continue
-                    raise ValueError("invalid OCProperties ON entry")
-                key = self.ocg_key(on_ref, ocg_resolved)
-                if key is not None:
-                    on_layers.add(key)
-
-            off_refs = default_config.get("OFF")
-            if not isinstance(off_refs, list):
-                off_refs = []
-            for off_ref in off_refs:
-                ocg_resolved = self.resolver.resolve(off_ref)
-                if not isinstance(ocg_resolved, dict):
-                    if recover:
-                        continue
-                    raise ValueError("invalid OCProperties OFF entry")
-                key = self.ocg_key(off_ref, ocg_resolved)
-                if key is not None:
-                    on_layers.discard(key)
+            for override_name, update in (("ON", on_layers.add), ("OFF", on_layers.discard)):
+                refs = default_config.get(override_name)
+                if not isinstance(refs, list):
+                    continue
+                for ref in refs:
+                    ocg_resolved = self.resolver.resolve(ref)
+                    if not isinstance(ocg_resolved, dict):
+                        if recover:
+                            continue
+                        raise ValueError(f"invalid OCProperties {override_name} entry")
+                    key = self.ocg_key(ref, ocg_resolved)
+                    if key is not None:
+                        update(key)
 
         hidden_layers: set[str] = set()
         for ocg_ref in ocgs:

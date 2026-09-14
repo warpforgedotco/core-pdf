@@ -6,11 +6,11 @@
     "packages/core-pdf-validate/src/core_pdf_validate"
   ],
   "statements": {
-    "covered": 33404,
-    "total": 38898
+    "covered": 33474,
+    "total": 38894
   },
   "branches": {
-    "covered": 11430,
-    "total": 14994
+    "covered": 11483,
+    "total": 14988
   }
 }
