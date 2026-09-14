@@ -261,8 +261,7 @@ def internal_stroked_vector_text_evidence(
     if not styles:
         return StrokedVectorTextEvidence()
 
-    dominant_style, dominant = max(styles.items(), key=lambda item: item[1][1])
-    del dominant_style
+    dominant = max(styles.values(), key=lambda stats: stats[1])
     dominant_paths = int(dominant[1])
     dominant_ratio = dominant_paths / max(1.0, dominant[0])
     width_coverage = (dominant[3] - dominant[2]) / page_width
@@ -286,8 +285,6 @@ def internal_stroked_vector_text_evidence(
         for index, style, box, maximum_dimension in indexed
         if style in selected_styles and maximum_dimension <= STROKED_VECTOR_RENDER_DIMENSION
     )
-    if len(selected) < STROKED_VECTOR_MIN_DOMINANT_PATHS:
-        return StrokedVectorTextEvidence()
     bbox = bbox_union(box for _, box in selected)
     return StrokedVectorTextEvidence(
         trusted=True,

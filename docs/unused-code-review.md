@@ -1,5 +1,35 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR capture evidence
+
+This checkpoint adds **37 deterministic tests** for capture-time OCR evidence. The full
+suite with pinned Tesseract enabled passed **3,244 tests**, with **32 veraPDF integration
+skips**, in **213.29s**. Reports describe that single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR capture analysis | 25.69% → 67.20% | 4.90% → 51.00% |
+| Entire workspace | 78.11% → 78.38% | 65.70% → 66.01% |
+
+Tests cover eligible stroke styles, compact-path ratios, dominant/secondary styles,
+distribution and rotation gates, vector workload counts, bounded overlap subtraction,
+background/control rejection, high-resolution routing, hidden numeric scan checks, and
+promotion of normalized observation references with preserved geometry. Template-text
+promotion preserves captured drawings and updates native-character and vector evidence.
+
+Dominant-style selection now takes the maximum of the statistics values directly, avoiding
+an unused key binding and deletion. A redundant selected-count guard was removed: a trusted
+dominant style already contains at least 300 compact paths, satisfies the selected-style
+criteria, and all compact paths fit the render-size limit. No thresholds were changed.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No compiled modules shadowed sources, and the unused-symbol scan found no new candidates.
+Coverage source roots and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **8,498 statements and 5,170 branches**
+remain uncovered. Capture analysis still has 82 uncovered statements and 49 branches,
+primarily learned Unicode alignment, replacement-aware glyph evidence, and enrichment paths.
+
 ## Workspace coverage completion: OCR region selection
 
 This checkpoint adds **26 deterministic tests** for OCR region selection. The full suite
