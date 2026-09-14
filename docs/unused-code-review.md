@@ -1,5 +1,34 @@
 # Coverage and unused-code findings
 
+## OCR image placement and optional-content contracts
+
+Added **16 placement cases** checking all eight affine image orientations in grayscale
+and RGB. Four initially failed: the two transpose-plus-single-flip transforms disagreed
+with detection's target-to-source corner mapping. Raster orientation now derives its
+transpose and flips from that same mapping, removing the duplicated seven-case dispatch.
+Existing enum-only expected values for those two transforms were corrected using the
+independent placement tests. Pixels and resolution are preserved. Raster preparation
+now covers **296/296 statements and 74/74 branches**; the OCR package covers
+**4,145/4,145 statements and 1,347/1,350 branches**.
+
+Added **34 document cases** for optional-content base states, ON/OFF precedence, and
+strict versus recovery behavior for malformed configuration dictionaries, arrays,
+base-state values, entries, and names. These use the actual document resolver.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,154 tests,
+no skips, in 545.43s**. With production sources unchanged, the 34 additional document
+tests passed and their coverage was appended to that full-run database. The focused
+OCR suite separately passed **735 tests**, including real-engine cases.
+
+Combined workspace coverage increased **85.79% → 85.88% statements** and
+**75.99% → 76.23% branches**: **33,404 / 38,898 statements** and
+**11,430 / 14,994 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact coverage ratchets pass, as do all pre-push quality
+gates, including both type checkers and import contracts. The static unused-symbol scan
+remains empty. The full 100% goal remains incomplete: **5,494 statements and 3,564
+branches** remain uncovered. These are local results.
+
+
 ## pdfplumber search spans and CSV contracts
 
 Added **56 deterministic cases** for search spans, regex groups, compiled patterns,

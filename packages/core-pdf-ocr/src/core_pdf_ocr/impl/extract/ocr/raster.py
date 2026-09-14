@@ -467,21 +467,15 @@ def internal_orient_direct_image_raster(
     if orientation is None or orientation is DirectImageOrientation.IDENTITY:
         return raster
     samples = raster.image.array()
-    match orientation:
-        case DirectImageOrientation.FLIP_X:
-            oriented = samples[:, ::-1]
-        case DirectImageOrientation.FLIP_Y:
-            oriented = samples[::-1]
-        case DirectImageOrientation.FLIP_XY:
-            oriented = samples[::-1, ::-1]
-        case DirectImageOrientation.TRANSPOSE:
-            oriented = samples.transpose(1, 0, 2)
-        case DirectImageOrientation.TRANSPOSE_FLIP_X:
-            oriented = samples.transpose(1, 0, 2)[::-1]
-        case DirectImageOrientation.TRANSPOSE_FLIP_Y:
-            oriented = samples.transpose(1, 0, 2)[:, ::-1]
-        case DirectImageOrientation.TRANSPOSE_FLIP_XY:
-            oriented = samples.transpose(1, 0, 2)[::-1, ::-1]
+    # The same target-to-source corner mapping drives detection and pixels.
+    # Source corners are TL=0, TR=1, BL=2, BR=3. A target horizontal edge
+    # spanning source rows requires a transpose; descending edges require flips.
+    origin, right, below, _ = internal_DIRECT_IMAGE_ORIENTATIONS[orientation]
+    oriented = samples.transpose(1, 0, 2) if abs(right - origin) == 2 else samples
+    if right < origin:
+        oriented = oriented[:, ::-1]
+    if below < origin:
+        oriented = oriented[::-1]
     height, width, channels = oriented.shape
     return internal_Raster(
         RasterImage(contiguous_bytes(oriented), int(width), int(height), int(channels)),

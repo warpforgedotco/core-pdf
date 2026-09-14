@@ -26,8 +26,8 @@ from core_pdf_ocr.impl.extract.ocr.types import (
         (raster.DirectImageOrientation.FLIP_Y, [[4, 5, 6], [1, 2, 3]]),
         (raster.DirectImageOrientation.FLIP_XY, [[6, 5, 4], [3, 2, 1]]),
         (raster.DirectImageOrientation.TRANSPOSE, [[1, 4], [2, 5], [3, 6]]),
-        (raster.DirectImageOrientation.TRANSPOSE_FLIP_X, [[3, 6], [2, 5], [1, 4]]),
-        (raster.DirectImageOrientation.TRANSPOSE_FLIP_Y, [[4, 1], [5, 2], [6, 3]]),
+        (raster.DirectImageOrientation.TRANSPOSE_FLIP_X, [[4, 1], [5, 2], [6, 3]]),
+        (raster.DirectImageOrientation.TRANSPOSE_FLIP_Y, [[3, 6], [2, 5], [1, 4]]),
         (raster.DirectImageOrientation.TRANSPOSE_FLIP_XY, [[6, 3], [5, 2], [4, 1]]),
     ],
 )
@@ -263,3 +263,33 @@ def test_decoded_array_reduction_preserves_source_buffer(monkeypatch) -> None:
         [70, 72, 75, 77],
     ]
     numpy.testing.assert_array_equal(source, original)
+
+
+@pytest.mark.parametrize(
+    ("quad", "expected"),
+    [
+        (((0, 0), (30, 0), (0, 20), (30, 20)), [[1, 2, 3], [4, 5, 6]]),
+        (((30, 0), (0, 0), (30, 20), (0, 20)), [[3, 2, 1], [6, 5, 4]]),
+        (((0, 20), (30, 20), (0, 0), (30, 0)), [[4, 5, 6], [1, 2, 3]]),
+        (((30, 20), (0, 20), (30, 0), (0, 0)), [[6, 5, 4], [3, 2, 1]]),
+        (((0, 0), (0, 30), (20, 0), (20, 30)), [[1, 4], [2, 5], [3, 6]]),
+        (((20, 0), (20, 30), (0, 0), (0, 30)), [[4, 1], [5, 2], [6, 3]]),
+        (((0, 30), (0, 0), (20, 30), (20, 0)), [[3, 6], [2, 5], [1, 4]]),
+        (((20, 30), (20, 0), (0, 30), (0, 0)), [[6, 3], [5, 2], [4, 1]]),
+    ],
+)
+@pytest.mark.parametrize("channels", [1, 3])
+def test_direct_image_pixels_follow_placed_source_corners(quad, expected, channels):
+    # Quad entries place source TL, TR, BL, BR on the page. Each pixel has a
+    # distinct value, so inversely applying a rotation cannot pass this test.
+    drawing = CapturedDrawing(0, None, None, items=(("quad", quad),))
+    source = internal_Raster(
+        RasterImage(bytes(value for value in range(1, 7) for _ in range(channels)), 3, 2, channels),
+        300,
+    )
+    result = raster.internal_orient_direct_image_raster(drawing, source)
+    assert result.image.array().tolist() == [
+        [[value] * channels for value in row] for row in expected
+    ]
+    assert result.resolution == source.resolution
+    assert source.image.pixels == bytes(value for value in range(1, 7) for _ in range(channels))
