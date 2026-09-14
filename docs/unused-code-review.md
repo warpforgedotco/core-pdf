@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: structure diagnostics and cache consistency
+
+Added **12 cases** for role namespaces, unknown-version recovery, cached role diagnostics,
+stream attributes, repeated invalid class access, root-parent lookup propagation, ancestor
+search, and page lookup. Invalid class names previously raised once, then returned cached
+`None`; validation now precedes caching, using one path for scalar and revision-array names.
+Removed unused `role_value` state and a redundant page bounds check: successful lookup
+indexes come from the page-node sequence used to construct the corresponding pages.
+
+All **70 structure tests** passed. The full suite with pinned Tesseract enabled passed
+**3,960 tests**, with **32 veraPDF integration skips**, in **209.25s**. `structure.py` now
+has **100% statement and branch coverage** (408 statements and 176 branches). Workspace
+coverage rose **81.99% → 82.04% statements** and **70.98% → 71.05% branches**. Reports
+describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,055 statements and 4,397 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: parent trees and child references
 
 Added **24 cases** for parent-tree slices and validation, nested child order, marked-content

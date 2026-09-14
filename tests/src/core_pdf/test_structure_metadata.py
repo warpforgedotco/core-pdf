@@ -3,7 +3,7 @@
 import pytest
 
 from core_pdf.impl._impl.document import structure
-from core_pdf.impl._impl.document.document import PdfDocument
+from core_pdf.impl._impl.document.document import PdfDocument, internal_PageLookup
 from core_pdf.impl._impl.document.structure import (
     PageStructure,
     StructureContentItem,
@@ -14,8 +14,10 @@ from core_pdf.impl._impl.document.structure import (
     structure_key_name,
 )
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 
 @pytest.fixture
@@ -328,3 +330,83 @@ def test_tree_search_is_depth_first_and_ignores_content_items(document):
     assert found[0].find("P") is found[1]
     assert found[0].find("missing") is None
     assert list(tree) == list(tree)
+
+
+def test_standard_role_exposes_namespace_and_cached_resolution(document):
+    element = StructureElement(document, {"S": PdfName(b"P")})
+    assert element.role == "P"
+    assert element.role_namespace == "http://iso.org/pdf/ssn"
+    assert element.role_error is None
+    assert element.role_resolution is element.role_resolution
+
+
+@pytest.mark.parametrize("version", [None, PdfVersion(9, 9)])
+def test_unknown_document_versions_still_resolve_identified_structure_roles(document, version):
+    document.resolver.semantic_context = SemanticContext(version)
+    element = StructureElement(document, {"S": PdfName(b"P")})
+    assert element.role == "P"
+    assert element.role_error is None
+
+
+def test_malformed_namespace_retains_type_and_cached_diagnostic(document):
+    element = StructureElement(document, {"S": PdfName(b"Custom"), "NS": 7})
+    assert element.role == "Custom"
+    assert element.role_namespace is None
+    assert element.role_error
+    diagnostic = element.role_error
+    element.props.pop("NS")
+    assert element.role_resolution is None
+    assert element.role_error == diagnostic
+
+
+def test_stream_attribute_is_rejected_by_dictionary_projection(document):
+    element = StructureElement(document, {"A": [PdfStream({}, b""), 0]})
+    with pytest.raises(ValueError, match="attribute entry"):
+        _ = element.attributes
+
+
+@pytest.mark.parametrize("value", [42, [None]])
+def test_invalid_class_names_keep_failing_on_repeated_access(document, value):
+    element = StructureElement(document, {"C": value})
+    for _ in range(2):
+        with pytest.raises(ValueError, match="class name"):
+            _ = element.class_name
+
+
+@pytest.mark.parametrize("with_lookup", [False, True])
+def test_root_parent_uses_document_tree_and_retains_lookup(document, with_lookup):
+    root: PdfDict = {"Type": PdfName(b"StructTreeRoot")}
+    document.catalog()["StructTreeRoot"] = root
+    lookup = internal_PageLookup(document) if with_lookup else None
+    element = StructureElement(document, {"P": root}, internal_lookup=lookup)
+    parent = element.parent
+    assert isinstance(parent, StructureTree)
+    assert parent.props is root
+    if lookup is not None:
+        assert parent.internal_lookup is lookup
+    assert element.parent is parent
+
+
+def test_page_search_can_find_ancestor_instead_of_immediate_parent(document):
+    ancestor: PdfDict = {"S": PdfName(b"Sect")}
+    child: PdfDict = {"S": PdfName(b"P"), "P": ancestor}
+    view = PageStructure(document.pages[0], [child, None])
+    result = view.find("Sect")
+    assert result is not None
+    assert result.props is ancestor
+    assert view.find("Figure") is None
+
+
+def test_child_page_lookup_rejects_foreign_reference_and_allows_absent_page(document):
+    assert structure.get_kid_page_index(document, None, {}) is None
+    lookup = internal_PageLookup(document)
+    assert structure.get_kid_page_index(document, None, {"Pg": PdfReference(3, 0)}, lookup) == 0
+    with pytest.raises(ValueError, match="page reference"):
+        structure.get_kid_page_index(document, None, {"Pg": 7})
+
+
+def test_element_page_reuses_explicit_lookup_page_wrapper(document):
+    lookup = internal_PageLookup(document)
+    element = StructureElement(document, {"Pg": PdfReference(3, 0)}, internal_lookup=lookup)
+    assert element.page is lookup.pages[0]
+    assert element.page_index == 0

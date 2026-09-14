@@ -152,7 +152,6 @@ class StructureElement(internal_StructureNode):
         "class_name_value",
         "language_value",
         "parent_value",
-        "role_value",
         "role_resolution_value",
         "role_error_value",
         "title_value",
@@ -167,7 +166,6 @@ class StructureElement(internal_StructureNode):
         internal_lookup: internal_PageLookup | None = None,
     ) -> None:
         super().__init__(document, props, internal_lookup=internal_lookup)
-        self.role_value: str | None = None
         self.role_resolution_value: StructureRole | None | object = MISSING
         self.role_error_value: str | None = None
         self.type_value: Any = MISSING
@@ -187,8 +185,6 @@ class StructureElement(internal_StructureNode):
 
     @property
     def role(self) -> str:
-        if self.role_value is not None:
-            return self.role_value
         result = self.role_resolution
         return result.name if result is not None else self.type or ""
 
@@ -254,9 +250,7 @@ class StructureElement(internal_StructureNode):
         if page_index is None:
             return None
         pages = self.document.pages if self.internal_lookup is None else self.internal_lookup.pages
-        if 0 <= page_index < len(pages):
-            return pages[page_index]
-        return None
+        return pages[page_index]
 
     @property
     def title(self) -> str | None:
@@ -326,19 +320,16 @@ class StructureElement(internal_StructureNode):
         if self.class_name_value is not MISSING:
             return self.class_name_value
         classes = self.document.resolver.resolve(self.props.get("C"))
-        if isinstance(classes, list) and classes:
-            latest = classes[-2] if len(classes) >= 2 else classes[-1]
-            self.class_name_value = literal_name(latest)
-            if self.class_name_value is None:
-                raise ValueError("invalid structure class name")
-            return self.class_name_value
         if classes is None:
             self.class_name_value = None
             return None
-        self.class_name_value = literal_name(classes)
-        if self.class_name_value is None:
+        if isinstance(classes, list) and classes:
+            classes = classes[-2] if len(classes) >= 2 else classes[-1]
+        name = literal_name(classes)
+        if name is None:
             raise ValueError("invalid structure class name")
-        return self.class_name_value
+        self.class_name_value = name
+        return name
 
     @property
     def parent(self) -> StructureElement | StructureTree | None:
