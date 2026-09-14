@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Consistent bitmap height across rendering routes
+
+Added **24 deterministic cases** comparing glyph bitmap rendering with explicit
+cell geometry across opaque/partial alpha, integer/fractional placement, missing or
+excess rows, excess column bits, inferred dimensions, and unpaintable inputs.
+Three initial failures showed that fallback routes painted rows beyond the declared
+bitmap height, while aligned opaque rendering already truncated them. Fallback
+iteration now uses the same height bound; tests assert pixel equivalence and no
+paint below the declared glyph box.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **6,384 tests, no skips, in 465.09s**. Workspace coverage increased
+**88.68% → 88.88% statements** and **80.26% → 80.44% branches**:
+**34,547 / 38,868 statements** and **12,043 / 14,972 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,321 statements and 2,929 branches** remain
+uncovered. These are local results.
+
+
 ## Shared lazy font recovery in x-ray inspection
 
 Six initial regression failures showed that both x-ray glyph recovery routes used
