@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## ToUnicode recovery and range expansion
+
+Added **68 deterministic cases** for destination byte recovery, null preservation,
+mapping-length precedence, malformed codespaces, later-definition precedence, partial
+and excessive range arrays, malformed nested delimiters, numeric CID recovery, parent
+inheritance and cycles, range limits, and Unicode replacement behavior.
+
+Removed the redundant one-byte lookup after the decoder's mapping-length loop: constructed
+maps already include every mapping-key length. Range expansion now normalizes its invariant
+prefix once and varies only the final scalar. The full corpus suite preserves existing
+recovery behavior. ToUnicode recovery covers **99.01% statements / 96.25% branches**;
+range expansion covers **100% of both**.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,996 tests,
+no skips, in 357.88s**. Workspace coverage increased **85.23% → 85.47% statements**
+and **75.16% → 75.48% branches**: **33,250 / 38,902 statements** and
+**11,323 / 15,002 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; exact verified fractions ratchet the baseline.
+
+All pre-push quality gates passed, including both type checkers and import contracts.
+The static unused-symbol scan is empty. The full 100% goal remains incomplete:
+**5,652 statements and 3,679 branches** remain uncovered. These are local results.
+
+
 ## Recovered object-stream identity and bounded scanning
 
 Added **39 cases** for embedded-object indexes, existing-entry preservation, recovery
