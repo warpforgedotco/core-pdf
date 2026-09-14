@@ -408,6 +408,11 @@ def translated_command(
             item,
             bbox=internal_translate_rect(item.bbox, tx, ty),
             path=item.path.translated(tx, ty) if isinstance(item.path, CapturedPath) else item.path,
+            edge_array=(
+                item.edge_array + numpy.array((tx, ty, tx, ty))
+                if item.edge_array is not None
+                else None
+            ),
             blend_mode=item.blend_mode or parent_blend_mode,
             graphics_soft_mask=internal_translated_soft_mask(item.graphics_soft_mask, tx, ty),
         )

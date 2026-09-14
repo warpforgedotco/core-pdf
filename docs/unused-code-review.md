@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Pattern command translation keeps cached edges aligned
+
+Added **21 deterministic cases** for translated path geometry and cached edges,
+pixel equivalence with path-derived edges, source immutability, soft-mask offsets,
+explicit blend modes, and axial/radial shading coordinates. Five initial failures
+showed that pattern-cell translation moved a path and its bounds but retained the
+original edge-array coordinates. Translation now produces a translated edge array
+alongside the translated path, preserving the shared capture. Integer, fractional,
+negative, single-axis, and zero translations have explicit controls.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,995 tests,
+no skips, in 441.64s**. Workspace coverage increased **87.74% → 87.80% statements**
+and **78.97% → 79.06% branches**: **34,123 / 38,864 statements** and
+**11,836 / 14,970 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan
+returned no candidates. The 100% goal remains incomplete: **4,741 statements and
+3,134 branches** remain uncovered. These are local results.
+
+
 ## CID Unicode mapping and voting contracts
 
 Added **42 deterministic cases** for effective CMap inversion, later-range and explicit
