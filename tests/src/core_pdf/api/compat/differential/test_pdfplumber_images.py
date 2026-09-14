@@ -254,3 +254,32 @@ def test_debug_tablefinder_draws_edges_and_detected_cells(
             rgb = saved.convert("RGB")
             assert rgb.getpixel((50, 20)) != (255, 255, 255)
             assert rgb.getpixel((50, 40)) == ((0, 0, 255) if tables else (255, 255, 255))
+
+
+def test_show_displays_the_same_annotated_pixels_as_save(text_pdf_bytes, monkeypatch):
+    shown = []
+    monkeypatch.setattr(Image.Image, "show", lambda image: shown.append(image.copy()))
+    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+        image = pdf.pages[0].crop((10, 20, 110, 170)).to_image()
+        image.draw_rect((20, 30, 50, 60), fill="red", stroke="blue")
+        output = BytesIO()
+        image.save(output)
+        assert image.show() is None
+        assert len(shown) == 1
+        with Image.open(BytesIO(output.getvalue())) as saved:
+            assert shown[0].size == saved.size
+            assert shown[0].tobytes() == saved.tobytes()
+        shown[0].close()
+
+
+def test_show_propagates_viewer_errors_without_mutating_annotations(text_pdf_bytes, monkeypatch):
+    def fail(image):
+        raise OSError("viewer failed")
+
+    monkeypatch.setattr(Image.Image, "show", fail)
+    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+        image = pdf.pages[0].to_image().draw_line(((0, 0), (10, 10)))
+        before = image._repr_png_()
+        with pytest.raises(OSError, match="viewer failed"):
+            image.show()
+        assert image._repr_png_() == before

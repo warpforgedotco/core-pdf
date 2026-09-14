@@ -95,6 +95,12 @@ def cluster_by_preserving_order(
 
 
 class TableSettings:
+    snap_x_tolerance: float
+    snap_y_tolerance: float
+    join_x_tolerance: float
+    join_y_tolerance: float
+    edge_min_length: float
+    edge_min_length_prefilter: float
     vertical_strategy: str
     horizontal_strategy: str
     text_settings: dict[str, Any]
@@ -1128,20 +1134,8 @@ class Page:
                     }
                 )
             finder.edges = rotated
-        vertical = sorted(
-            {
-                edge["x0"]
-                for edge in finder.edges
-                if edge["orientation"] == "v" and edge.get("height", 0) >= 20
-            }
-        )
-        horizontal = sorted(
-            {
-                edge["top"]
-                for edge in finder.edges
-                if edge["orientation"] == "h" and edge.get("width", 0) >= 20
-            }
-        )
+        vertical = sorted({edge["x0"] for edge in finder.edges if edge["orientation"] == "v"})
+        horizontal = sorted({edge["top"] for edge in finder.edges if edge["orientation"] == "h"})
         if len(vertical) < 2 or len(horizontal) < 2:
             return []
         grid_rows: list[list[_CompatCell]] = []
@@ -1467,7 +1461,9 @@ class TableFinder:
                 else self.settings.horizontal_strategy
             )
             if strategy.startswith("lines"):
-                minimum = float(getattr(self.settings, "edge_min_length", 0))
+                if strategy == "lines_strict" and edge.get("object_type") != "line":
+                    continue
+                minimum = float(self.settings.edge_min_length_prefilter)
                 length = edge["height"] if orientation == "v" else edge["width"]
                 if length >= minimum:
                     selected.append(edge)
@@ -1540,7 +1536,16 @@ class TableFinder:
                             "orientation": "h",
                         }
                     )
-        return selected
+        return filter_edges(
+            merge_edges(
+                selected,
+                self.settings.snap_x_tolerance,
+                self.settings.snap_y_tolerance,
+                self.settings.join_x_tolerance,
+                self.settings.join_y_tolerance,
+            ),
+            min_length=self.settings.edge_min_length,
+        )
 
     def _intersections(self) -> dict[tuple[float, float], dict[str, Any]]:
         intersections: dict[tuple[float, float], dict[str, Any]] = {}
@@ -1798,7 +1803,11 @@ class PageImage:
         return stream.getvalue()
 
     def show(self) -> None:
-        return None
+        """Show the annotated page through Pillow's platform image viewer."""
+        from PIL import Image
+
+        with Image.open(BytesIO(self._repr_png_())) as image:
+            image.show()
 
 
 class PDF(ClosingMixin):
@@ -2103,8 +2112,44 @@ def filter_edges(
     ]
 
 
-def merge_edges(edges: Iterable[ObjectDict], **_: Any) -> list[ObjectDict]:
-    return list(edges)
+def merge_edges(
+    edges: Iterable[ObjectDict],
+    snap_x_tolerance: float = 3,
+    snap_y_tolerance: float = 3,
+    join_x_tolerance: float = 3,
+    join_y_tolerance: float = 3,
+) -> list[ObjectDict]:
+    """Snap parallel edges, then join collinear intervals without mutating inputs."""
+    values = list(edges)
+    if any(edge["orientation"] not in {"h", "v"} for edge in values):
+        raise ValueError("orientation must be 'h' or 'v'")
+    if snap_x_tolerance > 0 or snap_y_tolerance > 0:
+        values = snap_objects(
+            [edge for edge in values if edge["orientation"] == "v"], "x0", snap_x_tolerance
+        ) + snap_objects(
+            [edge for edge in values if edge["orientation"] == "h"], "top", snap_y_tolerance
+        )
+
+    def group_key(edge: ObjectDict) -> tuple[str, float]:
+        orientation = edge["orientation"]
+        return orientation, edge["top" if orientation == "h" else "x0"]
+
+    result: list[ObjectDict] = []
+    for (orientation, _), group in groupby(sorted(values, key=group_key), group_key):
+        start, end, tolerance = (
+            ("x0", "x1", join_x_tolerance)
+            if orientation == "h"
+            else ("top", "bottom", join_y_tolerance)
+        )
+        joined: list[ObjectDict] = []
+        for edge in sorted(group, key=lambda item: item[start]):
+            if joined and edge[start] <= joined[-1][end] + tolerance:
+                if edge[end] > joined[-1][end]:
+                    joined[-1] = resize_object(joined[-1], end, edge[end])
+            else:
+                joined.append(edge)
+        result.extend(joined)
+    return result
 
 
 def snap_objects(objects: Iterable[ObjectDict], attr: str, tolerance: float) -> list[ObjectDict]:

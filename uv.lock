@@ -492,6 +492,7 @@ dependencies = [
     { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
+    { name = "pillow" },
 ]
 
 [package.optional-dependencies]
@@ -537,7 +538,6 @@ vendor-test = [
     { name = "pdfminer-six" },
     { name = "pdfplumber" },
     { name = "pikepdf" },
-    { name = "pillow" },
     { name = "pymupdf" },
     { name = "pypdf" },
     { name = "pypdfium2" },
@@ -551,6 +551,7 @@ requires-dist = [
     { name = "en-core-web-sm", marker = "extra == 'unstructured'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
+    { name = "pillow", specifier = ">=12.2.0" },
     { name = "spacy", marker = "extra == 'unstructured'", specifier = ">=3.8.15,<3.9.0" },
 ]
 provides-extras = ["unstructured"]
@@ -588,7 +589,6 @@ vendor-test = [
     { name = "pdfminer-six", specifier = ">=20260107" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "pikepdf", specifier = ">=10.11.0" },
-    { name = "pillow", specifier = ">=12.2.0" },
     { name = "pymupdf", specifier = ">=1.28.2" },
     { name = "pypdf", specifier = ">=6.15.0" },
     { name = "pypdfium2", specifier = ">=5.9.0" },

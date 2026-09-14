@@ -170,3 +170,40 @@ def test_unknown_table_settings_are_rejected_as_arguments(settings: dict[str, An
     for settings_class in (ReferenceSettings, compat.TableSettings):
         with pytest.raises(TypeError):
             settings_class.resolve(settings)
+
+
+@pytest.mark.parametrize("join", [0, 1, 3])
+def test_tablefinder_merges_fragments_before_minimum_length_filter(blank_page_pdf, join):
+    from copy import deepcopy
+
+    lines = [
+        {
+            "object_type": "line",
+            "x0": start,
+            "x1": end,
+            "top": 10,
+            "bottom": 10,
+            "width": end - start,
+            "height": 0,
+            "doctop": 10,
+            "y0": 190,
+            "y1": 190,
+        }
+        for start, end in [(10, 13), (14, 17), (18, 21)]
+    ]
+    snapshots = []
+    for library in (reference, compat):
+        with library.open(BytesIO(blank_page_pdf)) as pdf:
+            page = pdf.pages[0]
+            page._objects = {"line": deepcopy(lines)}
+            finder = page.debug_tablefinder(
+                {
+                    "snap_tolerance": 0,
+                    "join_tolerance": join,
+                    "edge_min_length": 6,
+                    "edge_min_length_prefilter": 1,
+                }
+            )
+            snapshots.append(finder.edges)
+            assert page.lines == lines
+    assert snapshots[0] == snapshots[1]

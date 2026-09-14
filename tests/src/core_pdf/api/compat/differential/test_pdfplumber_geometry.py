@@ -112,3 +112,45 @@ def test_edge_filter_honors_type_orientation_and_minimum_length(
     assert compat.utils.filter_edges(edges, **options) == reference.utils.filter_edges(
         edges, **options
     )
+
+
+@pytest.mark.parametrize("orientation", ["h", "v"])
+@pytest.mark.parametrize("snap", [0, 1, 3])
+@pytest.mark.parametrize("join", [0, 1, 3])
+def test_merge_snaps_and_joins_without_mutating_edges(orientation, snap, join):
+    from pdfplumber.table import merge_edges
+
+    edges = []
+    for start, end, offset in [
+        (20, 30, 0),
+        (10, 15, 0),
+        (14, 18, 1),
+        (10, 12, 0),
+        (31, 40, 0),
+        (50, 60, 4),
+    ]:
+        edge = rectangle()
+        edge.update(orientation=orientation, object_type="line")
+        if orientation == "h":
+            edge.update(x0=start, x1=end, top=offset, bottom=offset, width=end - start, height=0)
+        else:
+            edge.update(x0=offset, x1=offset, top=start, bottom=end, width=0, height=end - start)
+        edges.append(edge)
+    original = deepcopy(edges)
+    options = {
+        "snap_x_tolerance": snap,
+        "snap_y_tolerance": snap,
+        "join_x_tolerance": join,
+        "join_y_tolerance": join,
+    }
+    assert compat.merge_edges(iter(edges), **options) == merge_edges(edges, **options)
+    assert edges == original
+
+
+def test_merge_defaults_and_empty_iterators():
+    assert compat.merge_edges(iter(())) == []
+    with pytest.raises(TypeError):
+        options: dict[str, Any] = {"unsupported": True}
+        compat.merge_edges([], **options)
+    with pytest.raises(ValueError, match="orientation"):
+        compat.merge_edges([{"orientation": "diagonal"}])
