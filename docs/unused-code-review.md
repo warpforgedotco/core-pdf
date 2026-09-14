@@ -1,5 +1,20 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: raster preprocessing
+
+Added **33 deterministic tests** for alpha compositing, ink grids, adaptive thresholds,
+image compaction, text signals, and safe crop selection. Transparent black pixels previously
+counted as ink; all preprocessing consumers now share white-background intensity conversion.
+
+The full suite with pinned Tesseract enabled passed **3,337 tests**, with **32 veraPDF
+integration skips**, in **208.01s**. Workspace statement coverage rose **78.88% → 79.14%**
+and branch coverage **66.70% → 66.85%**. Ruff, mypy, ty, all 19 import contracts,
+repository hooks, and diff checks passed. No source-shadowing binaries were found.
+Coverage sources and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **8,199 statements and 5,040 branches**
+remain uncovered. Region-task orchestration and candidate selection are next.
+
 ## Workspace coverage completion: raster OCR grids
 
 This checkpoint adds **31 deterministic tests** for raster ruling detection and cell OCR.

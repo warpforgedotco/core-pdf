@@ -41,6 +41,18 @@ DIRECT_OCR_MIN_UPSCALE = 1.05
 DIRECT_OCR_WHOLE_SCALE_TOLERANCE = 0.06
 
 
+def internal_visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+    """Minimum color intensity after compositing any alpha onto white."""
+    channels = samples.shape[2]
+    if channels == 1:
+        return samples[:, :, 0]
+    if channels in {2, 4}:
+        intensity = numpy.min(samples[:, :, :-1], axis=2).astype(numpy.uint16)
+        alpha = samples[:, :, -1].astype(numpy.uint16)
+        return (255 - ((255 - intensity) * alpha + 127) // 255).astype(numpy.uint8)
+    return numpy.min(samples, axis=2)
+
+
 def internal_raster_ink_grid(
     raster: internal_Raster, rows: int, columns: int
 ) -> numpy.ndarray[Any, Any]:
@@ -51,10 +63,7 @@ def internal_raster_ink_grid(
     y_step = max(1, raster.height // 512)
     x_step = max(1, raster.width // 512)
     sampled = pixels[::y_step, ::x_step]
-    if raster.image.channels == 1:
-        intensity = sampled[:, :, 0]
-    else:
-        intensity = numpy.min(sampled[:, :, :3], axis=2)
+    intensity = internal_visible_intensity(sampled)
     ink = intensity < 245
     integral = numpy.pad(
         ink.cumsum(axis=0, dtype=numpy.int32).cumsum(axis=1, dtype=numpy.int32),
@@ -203,20 +212,7 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
         math.ceil(math.sqrt(image.width * image.height / OCR_IMAGE_TEXT_SAMPLE_PIXELS)),
     )
     sampled = pixels[::sample_step, ::sample_step]
-    if image.channels == 1:
-        gray = sampled[:, :, 0]
-    elif image.channels == 2:
-        source = sampled[:, :, 0].astype(numpy.uint16)
-        alpha = sampled[:, :, 1].astype(numpy.uint16)
-        gray = (255 - ((255 - source) * alpha + 127) // 255).astype(numpy.uint8)
-    else:
-        colour = sampled[:, :, :3]
-        if image.channels == 4:
-            alpha = sampled[:, :, 3:].astype(numpy.uint16)
-            colour = (255 - ((255 - colour.astype(numpy.uint16)) * alpha + 127) // 255).astype(
-                numpy.uint8
-            )
-        gray = numpy.min(colour, axis=2)
+    gray = internal_visible_intensity(sampled)
 
     gray_16 = gray.astype(numpy.int16)
     horizontal_edges = (
@@ -259,9 +255,7 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
 def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
     """Binarize faded scans against their local background for a fallback pass."""
     pixels = raster.image.array()
-    gray = (
-        pixels[:, :, 0] if raster.image.channels == 1 else numpy.min(pixels[:, :, :3], axis=2)
-    ).astype(numpy.float32)
+    gray = internal_visible_intensity(pixels).astype(numpy.float32)
     radius = max(8, min(24, min(raster.width, raster.height) // 80))
     integral = numpy.pad(gray, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
     y = numpy.arange(raster.height)
