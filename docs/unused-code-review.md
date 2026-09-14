@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Content recovery boundaries and lexer resume contracts
+
+Added **63 deterministic cases** for inline-image separators, default/custom
+operator recognition, known-length payload recovery, cursor progress, malformed
+container EOF handling, operand limits, structural tokens, and discarded pending
+operands after broken inline images. Corrected a misleading comment: braces are
+ordinary word tokens, not skipped delimiters. Executable syntax and source
+locations were verified identical before and after this comment-only change.
+No runtime behavior changed.
+
+The focused coverage run passed **63 tests in 5.85s**, appended to workspace
+coverage from the verified **7,485-test full run** and later focused tests; this
+was not another full-suite run. Content recovery now has **94 / 94 statements
+and 44 / 44 branches covered**. Workspace coverage increased
+**90.77% → 90.89% statements** and **83.05% → 83.24% branches**:
+**35,302 / 38,842 statements** and **12,451 / 14,958 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates;
+that heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,540 statements and 2,507 branches** remain
+uncovered. These are local results.
+
 ## Standards declaration recovery and profile-claim identity
 
 Added **36 deterministic cases** for profile revisions, repeated/conflicting
