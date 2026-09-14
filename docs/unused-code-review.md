@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Image preparation and declared-filter routing
+
+Added **59 deterministic cases** for canonical layouts and read-only samples, stencil
+row padding/polarity, malformed masks, 1/2/4/8/16-bit matte alpha decoding, soft-mask
+scaling and color-key precedence, and source dictionary preservation.
+
+A damaged Flate soft mask exposed encoded bytes being interpreted as alpha when their
+length matched the gray/RGB sample-count heuristic. The same shortcut also corrupted
+valid Flate images whose encoded and decoded lengths happened to coincide. Combined
+the raw-byte shortcuts behind an unfiltered-data condition: declared filters now run
+before sample-length recovery. Three valid compressed-image controls verify exact pixels;
+the damaged mask is discarded while its valid parent image remains available.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,575 tests,
+no skips, in 422.51s**. Workspace coverage increased **86.63% → 86.75% statements**
+and **77.46% → 77.63% branches**: **33,726 / 38,878 statements** and
+**11,625 / 14,974 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,152 statements and 3,349 branches**
+remain uncovered. These are local results.
+
+
 ## Attachment projection contracts
 
 Added **39 deterministic cases** for Unicode/legacy filename and stream precedence,

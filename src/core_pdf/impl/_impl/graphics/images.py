@@ -351,9 +351,10 @@ def internal_decode_image_samples(
         expected_source = expected_gray * len(
             parse_color_space(dictionary.get("ColorSpace")).component_ranges
         )
-    if bits_per_component == 8 and dictionary.get("Filter") is None and len(raw) == expected_source:
-        return raw
-    if len(raw) in {expected_gray, expected_rgb}:
+    if dictionary.get("Filter") is None and (
+        len(raw) in {expected_gray, expected_rgb}
+        or (bits_per_component == 8 and len(raw) == expected_source)
+    ):
         return raw
     try:
         decoded = decode_stream_data(raw, dictionary)
