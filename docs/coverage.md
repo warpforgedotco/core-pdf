@@ -1,6 +1,7 @@
 # Coverage and unused-code review
 
-See the [initial findings](unused-code-review.md) for the measured baseline and reviewed candidates.
+See the [review findings](unused-code-review.md) for current results, historical baselines,
+and reviewed candidates.
 
 Run the configured suite from the repository root:
 
@@ -22,8 +23,10 @@ from xdist workers; `coverage run -m pytest -n auto` alone does not provide that
 See the [pytest-cov configuration](https://pytest-cov.readthedocs.io/en/stable/config.html)
 and [xdist documentation](https://pytest-cov.readthedocs.io/en/latest/xdist.html).
 
-The default test paths cover compatibility differentials, strict spec tests, and validation
-tests. They do not exercise every native API, CLI, or OCR workflow. Real veraPDF execution
+The default test paths cover native core tests (including CLI and assembly checks),
+compatibility differentials, focused OCR assembly tests, strict spec tests, and validation
+tests. OCR assembly uses deterministic recognition results rather than an external engine;
+these tests do not exercise every native API or OCR workflow. Real veraPDF execution
 tests require `CORE_PDF_VERAPDF`; otherwise they skip. The default differential matrix also
 omits selected expensive fixtures and uses each facade's own corpus. Prefix the command
 with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run every facade against every fixture.

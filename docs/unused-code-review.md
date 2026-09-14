@@ -1,5 +1,55 @@
 # Coverage and unused-code findings
 
+## Maintenance pass
+
+Source commit: `42fbaae7`. The maintenance pass removed 117 net production source lines:
+
+- The shared core/OCR CLI is Markdown-only, with `--mode`, `--plain`, and the Python
+  helper's format argument removed. Parse-only, stdout, and file-output behavior remains.
+- OCR imports shared contracts and the capture sentinel directly from their core owners.
+  Recognition-specific contracts remain in the companion.
+- OCR table reconciliation runs after layout, so layout still sees every original table
+  obstacle. Core assembles the resulting page directly; the forwarding module and assembly
+  dispatch aliases are gone.
+- Selected-page assembly retains ordering and cancellation checks in one function.
+- PNG prediction attempts the codec directly, retaining fallback and damaged-row behavior.
+
+The audit deliberately retained strict/recovery resolver and predictor adapters: similarly
+shaped code selects different coercion, decoding, or recovery behavior. Duplicate core/spec
+geometry and buffer utilities remain where sharing would violate dependency contracts.
+Validation retains its backend boundary, original-byte snapshots, and result enrichment.
+No supported feature or public spec parsing extension was removed.
+
+The new tests exercise CLI output/error behavior, removed-option rejection, document
+selection/metadata/diagnostic assembly, cancellation, package isolation, predictor fallbacks,
+and native/recognized OCR assembly with deterministic observations. They do not establish
+coverage of real Tesseract execution or all recognition routes.
+
+The expanded suite passed: **2,631 passed, 32 skipped in 198.62s**, adding 23 passing tests
+to the preceding run. All skips are opt-in installed veraPDF checks.
+
+| Package | Statements covered | Statement coverage | Branch coverage |
+| --- | ---: | ---: | ---: |
+| core-pdf | 18,368 / 25,892 | 70.94% | 56.46% |
+| core-pdf-spec | 7,604 / 8,990 | 84.58% | 73.27% |
+| core-pdf-ocr | 748 / 4,174 | 17.92% | 1.60% |
+| core-pdf-validate | 229 / 246 | 93.09% | 80.49% |
+| Total | 26,949 / 39,302 | 68.57% | 55.87% |
+
+The combined statement/branch headline is **65.03%**. Relative to the prior rescan,
+the measured statement count fell by 17 while covered statements increased by 951.
+There are 12,353 missing statements and 16 nonempty files with no executed statements.
+This increase combines newly exercised behavior with module imports; OCR's much lower
+branch coverage makes clear that most recognition paths remain untested.
+The core CLI reached 97.30% statement coverage, output serialization 32.03%, and the OCR
+page pipeline 75.47%. The conservative static rescan found no new top-level definition
+whose identifier occurs only at its definition in authored Python/TOML.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, and diff checks passed. Generated
+`htmlcov/index.html` and `htmlcov/coverage.json` now represent this maintenance pass.
+
+## Original audit history
+
 Baseline: `fdd52fee`, with coverage configuration and test dependencies added in the
 working tree. Run completed September 13, 2026 (America/Bogota), using Python 3.13.14,
 coverage.py 7.16.1, pytest-cov 7.1.0, and eight xdist workers.
