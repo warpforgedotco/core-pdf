@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Raster alpha-domain proof and unreachable guards
+
+Removed three zero-output-alpha guards from generic pixel, normal pixel, and
+scalar span composition. Each path already returns for source alpha ≤ 0;
+destination alpha comes from a byte. Thus `s + d * (1 - s)` is strictly positive
+for the remaining byte-alpha inputs, so the zeroing branches cannot execute.
+
+Added **four exhaustive route contracts**, checking all **65,536 source/destination
+byte-alpha pairs per route** against an independent integer source-over oracle.
+They cover generic pixels, normal pixels, scalar spans, and NumPy spans. Alpha
+and transparent no-op behavior must match exactly; color channels allow one unit
+for floating-point rounding. All four pass before and after the cleanup.
+All pre-push quality gates passed.
+
+The locked full workspace/differential run with real Tesseract and veraPDF
+passed **7,934 tests with no skips in 488.81s**. The cleanup removes **18
+statements and six branches**. Fresh coverage is **35,632 / 38,821 statements
+(91.79%)** and **12,603 / 14,950 branches (84.30%)**. OCR's **4,145 / 4,145
+statements and 1,350 / 1,350 branches** are now verified in this fresh full run.
+The exact baseline is ratcheted to the complete result. All four source roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. The static
+unused-symbol scan returned no candidates. The workspace goal remains incomplete:
+**3,189 statements and 2,347 branches** remain uncovered. These are local results.
+
 ## OCR learned-Unicode attribution completion
 
 Added **five cases** for clusters without observations, leading blank observation

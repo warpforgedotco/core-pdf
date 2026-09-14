@@ -630,12 +630,6 @@ class internal_RasterTarget(
                 dst_b, src_b, component_mode, context=self.semantic_context
             )
         out_a = src_a + dst_a * (1.0 - src_a)
-        if out_a <= 0:
-            pixels[idx] = 0
-            pixels[idx + 1] = 0
-            pixels[idx + 2] = 0
-            pixels[idx + 3] = 0
-            return
         out_r = int(round(((src_r * 255.0) * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
         out_g = int(round(((src_g * 255.0) * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
         out_b = int(round(((src_b * 255.0) * src_a + db * dst_a * (1.0 - src_a)) / out_a))
@@ -673,12 +667,6 @@ class internal_RasterTarget(
         src_a = sa / 255.0
         dst_a = da / 255.0
         out_a = src_a + dst_a * (1.0 - src_a)
-        if out_a <= 0:
-            pixels[idx] = 0
-            pixels[idx + 1] = 0
-            pixels[idx + 2] = 0
-            pixels[idx + 3] = 0
-            return
         out_r = int(round((sr * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
         out_g = int(round((sg * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
         out_b = int(round((sb * src_a + db * dst_a * (1.0 - src_a)) / out_a))
@@ -720,12 +708,6 @@ class internal_RasterTarget(
             da = pixels[idx + 3]
             dst_a = da / 255.0
             out_a = src_a + dst_a * one_minus_src_a
-            if out_a <= 0:
-                pixels[idx] = 0
-                pixels[idx + 1] = 0
-                pixels[idx + 2] = 0
-                pixels[idx + 3] = 0
-                continue
             out_r = int(round((sr * src_a + dr * dst_a * one_minus_src_a) / out_a))
             out_g = int(round((sg * src_a + dg * dst_a * one_minus_src_a) / out_a))
             out_b = int(round((sb * src_a + db * dst_a * one_minus_src_a) / out_a))
