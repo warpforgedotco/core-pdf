@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Formula script geometry and normalization contracts
+
+Added **41 deterministic cases** for letter/digit script atoms and numeric
+subscript runs. The matrix covers raised/lowered geometry, unchanged and
+insufficient shifts, full-sized glyphs, zero context height, exact attachment
+boundaries, distant glyphs, absent baselines/context, and invalid text shapes.
+An assembly check verifies formula context produces `x₂`, ordinary context
+retains `x2`, and source runs stay unchanged. These are reader heuristics,
+not PDF-mandated script classifications. No production change was needed.
+
+The focused reconstruction geometry file passed **81 tests in 6.05s**. Coverage
+was appended to the existing verified workspace database on unchanged production
+sources; this was not another full-suite run. Workspace coverage is now
+**35,373 / 38,842 statements (91.07%)** and
+**12,485 / 14,958 branches (83.47%)**. The committed coverage floor is unchanged.
+All four source roots, vendor-only omissions, and **554 excluded lines** remain
+unchanged. All pre-push quality gates and the coverage check passed; the static
+unused-symbol scan returned no candidates, which does not prove no dead code
+remains. The workspace goal is incomplete: **3,469 statements and 2,473 branches**
+remain uncovered. These are local results.
+
 ## Structured output ownership and immutable view contracts
 
 Added **21 deterministic cases** for shared-object identity, reading-order node

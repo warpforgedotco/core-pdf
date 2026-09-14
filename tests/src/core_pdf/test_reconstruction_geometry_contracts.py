@@ -102,3 +102,105 @@ def test_stacked_fraction_denominator_requires_compatible_geometry(
 
     builder = GlyphLineBuilder([previous, current], is_formula_like_line=True)
     assert builder.is_formula_fraction_denominator(atom(previous), atom(current)) is expected
+
+
+@pytest.mark.parametrize("kind", ["letter", "digit"])
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("raised", True),
+        ("lowered", True),
+        ("unshifted", False),
+        ("small-shift", False),
+        ("full-height", False),
+        ("zero-context-height", False),
+        ("distant", False),
+        ("attachment-boundary", True),
+        ("missing-baseline", False),
+        ("missing-context-baseline", False),
+        ("empty", False),
+        ("multiple-characters", False),
+        ("punctuation", False),
+    ],
+)
+def test_formula_script_atoms_require_shape_shift_and_attachment(kind, case, expected):
+    previous = internal_run("x")
+    current = internal_run("i" if kind == "letter" else "2", x=5, height=6, baseline=12)
+    if case == "lowered":
+        current = internal_run(current.text, x=5, height=6, baseline=8)
+    elif case == "unshifted":
+        current = internal_run(current.text, x=5, height=6, baseline=10)
+    elif case == "small-shift":
+        current = internal_run(current.text, x=5, height=6, baseline=10.1)
+    elif case == "full-height":
+        current = internal_run(current.text, x=5, height=10, baseline=12)
+    elif case == "zero-context-height":
+        previous = internal_run("x", height=0)
+    elif case == "distant":
+        current = internal_run(current.text, x=8, height=6, baseline=12)
+    elif case == "attachment-boundary":
+        current = internal_run(current.text, x=7.5, height=6, baseline=12)
+    elif case == "missing-baseline":
+        current = current.replace(baseline=None)
+    elif case == "missing-context-baseline":
+        previous = previous.replace(baseline=None)
+    elif case in {"empty", "multiple-characters", "punctuation"}:
+        current = current.replace(
+            text={"empty": "", "multiple-characters": "ii", "punctuation": "+"}[case]
+        )
+
+    def atom(run):
+        return LayoutLineTextAtom(run.text, run, run.advance_bbox, run.baseline, True)
+
+    builder = GlyphLineBuilder([previous, current], is_formula_like_line=True)
+    classify = (
+        builder.is_formula_script_atom if kind == "letter" else builder.is_formula_numeric_atom
+    )
+    assert classify(atom(previous), atom(current)) is expected
+
+
+@pytest.mark.parametrize(
+    ("prefix", "text", "height", "baseline", "x", "expected"),
+    [
+        ("x", "2", 6, 9, 5, True),
+        ("x", "123", 6, 9, 5, True),
+        ("x", "1234", 6, 9, 5, False),
+        ("x", "i", 6, 9, 5, False),
+        ("+", "2", 6, 9, 5, False),
+        ("x", "2", 6, 10, 5, False),
+        ("x", "2", 6, 11, 5, False),
+        ("x", "2", 10, 9, 5, False),
+        ("x", "2", 6, 9, 7, True),
+        ("x", "2", 6, 9, 7.1, False),
+    ],
+)
+def test_formula_numeric_subscript_requires_a_lower_attached_small_run(
+    prefix, text, height, baseline, x, expected
+):
+    previous = internal_run(prefix)
+    current = internal_run(text, x=x, height=height, baseline=baseline)
+    builder = GlyphLineBuilder([previous, current], is_formula_like_line=True)
+    assert builder.is_formula_subscript_like_numeric_run(current, 1) is expected
+
+
+@pytest.mark.parametrize("missing", ["previous", "current", "context"])
+def test_formula_numeric_subscript_requires_context_and_baselines(missing):
+    previous = internal_run("x")
+    current = internal_run("2", x=5, height=6, baseline=9)
+    if missing == "previous":
+        previous = previous.replace(baseline=None)
+    elif missing == "current":
+        current = current.replace(baseline=None)
+    runs = [current] if missing == "context" else [previous, current]
+    builder = GlyphLineBuilder(runs, is_formula_like_line=True)
+    assert not builder.is_formula_subscript_like_numeric_run(current, len(runs) - 1)
+
+
+@pytest.mark.parametrize(("formula", "expected"), [(False, "x2"), (True, "x₂")])
+def test_formula_context_controls_numeric_subscript_normalization(formula, expected):
+    previous = internal_run("x")
+    current = internal_run("2", x=5, height=6, baseline=9)
+    builder = GlyphLineBuilder([previous, current], is_formula_like_line=formula)
+    assert builder.build().text == expected
+    assert previous.text == "x"
+    assert current.text == "2"
