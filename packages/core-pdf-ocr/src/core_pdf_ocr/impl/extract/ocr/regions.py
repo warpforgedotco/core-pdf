@@ -253,8 +253,6 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
                 (padded[2] - padded[0]) * (padded[3] - padded[1]) < page_area * 0.45
             ):
                 candidates.append(internal_OcrRegion(padded, 4.0, ("grid",)))
-        if not component_horizontal.size or not component_vertical.size:
-            continue
         component_box = (x0, y0, x1, y1)
         component_area = (x1 - x0) * (y1 - y0)
         if component_area < page_area * 0.45 and native_overlap(component_box) < 0.25:

@@ -1,5 +1,34 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR region selection
+
+This checkpoint adds **26 deterministic tests** for OCR region selection. The full suite
+with pinned Tesseract enabled passed **3,207 tests**, with **32 veraPDF integration skips**,
+in **238.98s**. HTML and JSON reports describe that single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR region selection | 18.10% → 100.00% | 9.62% → 98.04% |
+| Entire workspace | 77.62% → 78.11% | 65.08% → 65.70% |
+
+Tests decode real grayscale image bytes and preserve their page mapping. They reject clipped,
+unoriented, undersized, missing, or ambiguously overlapping direct images. Geometry checks
+cover score-ordered merging and reason deduplication, region count/area limits, page fallback,
+image padding, native-text suppression, header/body density, distributed outlined text,
+compact/large grids, fine label neighborhoods, and off-page components.
+
+A redundant grid-component emptiness guard was removed. The producer only returns components
+with horizontal and vertical members, and this consumer had already evaluated their bounds
+before the guard. Crop rejection checks remain; two such branches are still uncovered.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No compiled modules shadowed sources, and the unused-symbol scan found no new candidates.
+Coverage source roots and exclusions remain unchanged.
+
+The **100% workspace goal remains incomplete**: **8,604 statements and 5,218 branches**
+remain uncovered. OCR capture analysis is now the largest remaining OCR module gap; document
+structure, layout, rendering, and compatibility behavior also remain in scope.
+
 ## Workspace coverage completion: OCR vector raster and remapping
 
 This checkpoint adds **51 deterministic tests** for the vector OCR adapter. The full suite
