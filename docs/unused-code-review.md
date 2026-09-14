@@ -1,5 +1,23 @@
 # Coverage and unused-code findings
 
+## Non-normal pixel blending and independent shape coverage
+
+Added **42 cases** for Multiply, Screen, ColorDodge, and ColorBurn across
+transparent, partial, and opaque source/backdrop alpha. An independent rational
+composition oracle checks RGB within one rounding unit and alpha exactly.
+Repeated-paint tests verify source alpha and geometric shape accumulate
+independently, including zero-opacity paint, and popping a group restores the
+untouched parent buffer. No production change was needed.
+
+The focused file passed **46 tests in 7.40s**, appended to the verified
+**7,934-test full run** on unchanged production sources. This was not another
+full-suite run. Workspace coverage is **35,640 / 38,821 statements (91.81%)**
+and **12,606 / 14,950 branches (84.32%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All quality gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The goal remains incomplete:
+**3,181 statements and 2,344 branches** remain uncovered. These are local results.
+
 ## Raster alpha-domain proof and unreachable guards
 
 Removed three zero-output-alpha guards from generic pixel, normal pixel, and
