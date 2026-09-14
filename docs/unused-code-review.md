@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: structure metadata and page projections
+
+Added **34 deterministic tests** using the real document resolver for structure content
+validation, literal names, decoded metadata caching, page references, normalized attribute
+keys, revision precedence and ties, malformed attribute arrays, class names, parent caching,
+role maps, and per-page sequence behavior. Repeated parent dictionaries preserve shared
+element identity. Page wrappers are compared through their underlying dictionary/document,
+since page access may create a fresh wrapper. No production changes were needed.
+
+The full suite with pinned Tesseract enabled passed **3,924 tests**, with **32 veraPDF
+integration skips**, in **201.30s**. These tests cover **157 additional statements and 96
+branches** across the workspace. `structure.py` reached **74.76% statements / 60.22%
+branches**; parent trees and child content references remain. Workspace coverage rose
+**81.36% → 81.76% statements** and **69.93% → 70.56% branches**. Reports describe that
+single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,165 statements and 4,474 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: formulas, cleanup, and footer rules
 
 Added **90 deterministic cases** for numeric labels, private/control characters, repeated
