@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from math import isfinite
 from types import MappingProxyType
 from typing import cast
 
@@ -36,7 +37,7 @@ def cs_param_floats(params: ColorParams, key: str, count: int, default: list[flo
         result: list[float] = []
         for value in raw[:count]:
             parsed = parse_float(value, None)
-            if parsed is None:
+            if parsed is None or not isfinite(parsed):
                 raise ValueError("invalid color space parameters")
             result.append(parsed)
         return result
@@ -248,13 +249,11 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                     else ((0.0, 1.0),) * (1 if kind == "CalGray" else 3)
                 )
                 return ColorSpace(kind, ranges, MappingProxyType(calibrated_params))
-            if kind == "Pattern" and len(value) in {1, 2}:
-                pattern_base = (
-                    internal_parse_color_space(value[1], active) if len(value) == 2 else None
-                )
+            if kind == "Pattern" and len(value) == 2:
+                pattern_base = internal_parse_color_space(value[1], active)
                 return ColorSpace(
                     kind,
-                    pattern_base.component_ranges if pattern_base is not None else (),
+                    pattern_base.component_ranges,
                     base=pattern_base,
                 )
             if kind in {"Separation", "DeviceN"} and len(value) >= 4:

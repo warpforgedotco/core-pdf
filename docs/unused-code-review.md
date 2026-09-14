@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Color-space recovery and Pattern branch simplification
+
+Added **78 deterministic cases** for nested color descriptions, cyclic bases and
+alternates, built-in singleton forms, indexed palette recovery, ICC component
+counts, calibrated parameter copying, image bit depth, and conservative DeviceN
+paint probing. Three initial failures showed NaN/infinity passing through the
+shared numeric color-parameter parser. That parser now rejects non-finite values,
+covering component ranges and calibrated-image parameters without changing host
+scalar coercion. The later Pattern branch now handles only the two-element form:
+the earlier built-in branch already handles its one-element form. This removes
+redundant optional-base handling.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **7,243 tests, no skips, in 430.15s**. Color-space recovery now has
+**196 / 196 statements and 94 / 94 branches covered**. Workspace coverage increased
+**89.82% → 89.97% statements** and **81.62% → 81.92% branches**:
+**34,971 / 38,868 statements** and **12,264 / 14,970 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates; its
+reference heuristic does not establish that every remaining symbol is necessary.
+The 100% goal remains incomplete: **3,897 statements and 2,706 branches** remain
+uncovered. These are local results.
+
 ## Stream recovery and incomplete compression headers
 
 Added **146 deterministic cases** for ASCIIHex junk/odd nibbles, RunLength
