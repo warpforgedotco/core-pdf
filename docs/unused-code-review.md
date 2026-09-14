@@ -1,5 +1,24 @@
 # Coverage and unused-code findings
 
+## Duplicate capture-layer evidence contracts
+
+Added **24 deterministic cases** for nested-form and clipped-layer deduplication:
+the matching-word threshold, retained unique content, case/punctuation/word-boundary
+differences, spatial separation, longer overlays, glyph multiplicity, changed
+glyph geometry, text/glyph disagreement, and malformed clip bounds. The tests
+verify that removal requires local evidence and preserves the complete overlay
+when it contains a unique suffix. No production change was needed.
+
+The focused run passed **24 tests in 27.95s**, with coverage appended to the
+verified **7,717-test full run** and subsequent focused tests on unchanged
+production sources. This was not another full-suite run. Workspace coverage is
+**35,452 / 38,843 statements (91.27%)** and
+**12,526 / 14,958 branches (83.74%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All pre-push gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The goal remains incomplete:
+**3,391 statements and 2,432 branches** remain uncovered. These are local results.
+
 ## Capture occurrence geometry and hidden-text trust contracts
 
 Added **30 deterministic cases** for inflated font bounds, positive/negative
