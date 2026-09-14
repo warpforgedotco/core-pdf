@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Font geometry cache and no-paint contracts
+
+Added **14 deterministic cases** for negative/missing glyph identities,
+font-matrix recovery, explicit transforms, outline cache identity across code,
+glyph ID and text, cached empty results, per-decoder bounding-box ownership,
+bounded linear-transform eviction, and retry after a failed outline lookup.
+The transform test checks exact coordinate results through 300 cache entries
+and verifies source columns are unchanged. No production change was needed.
+
+The focused run passed **14 tests in 22.03s**, appended to the verified
+**7,717-test full run** and subsequent focused cases on unchanged production
+sources. This was not another full-suite run. Workspace coverage is
+**35,461 / 38,843 statements (91.29%)** and
+**12,534 / 14,958 branches (83.79%)**. The committed full-run baseline remains
+unchanged. All four source roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. All quality gates and the coverage check passed;
+the static scan returned no unused-symbol candidates. The workspace goal remains
+incomplete: **3,382 statements and 2,424 branches** remain uncovered.
+These are local results.
+
 ## Duplicate capture-layer evidence contracts
 
 Added **24 deterministic cases** for nested-form and clipped-layer deduplication:
