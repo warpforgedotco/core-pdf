@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## OCR learned-Unicode attribution completion
+
+Added **five cases** for clusters without observations, leading blank observation
+text, and records whose source text is separate from all-blank observation text.
+They verify spacing/source preservation and that the learned replacement is
+attributed only to the first nonblank observation, once. The all-blank record case
+tests the accepted model boundary, not a claim that ordinary PDF capture emits
+such records. No production change was needed.
+
+The focused learned-Unicode file passed **34 tests in 6.36s**, appended to the
+verified **7,898-test full run** and subsequent focused cases on unchanged
+production sources. OCR now covers **4,145 / 4,145 statements and 1,350 / 1,350
+branches (100% each)**. Workspace coverage is **35,630 / 38,839 statements
+(91.74%)** and **12,605 / 14,956 branches (84.28%)**. This was not another
+full-suite run; the committed full-run baseline remains unchanged. All source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged.
+All quality gates and the coverage check passed; the static unused-symbol scan
+returned no candidates. The workspace goal remains incomplete:
+**3,209 statements and 2,351 branches** remain uncovered. These are local results.
+
 ## pdfplumber structure ownership and recovery contracts
 
 Added **16 deterministic cases** for root page filtering, projected fields,

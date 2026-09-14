@@ -290,3 +290,48 @@ def test_public_capture_entry_point_passes_selection_options(
         "fields": (),
         "annotations": (),
     }
+
+
+def test_cluster_without_observations_preserves_text_beside_a_learned_cluster() -> None:
+    font = object()
+    glyph = internal_glyph("b", font)
+    run = internal_run("ab", internal_cluster("a"), internal_cluster("b", glyph))
+    applied: dict[int, str] = {}
+    result = capture.internal_apply_learned_unicode_to_run(
+        run, {font: {b"a": "B"}}, glyph_replacements=applied
+    )
+    assert result.text == "aB"
+    assert applied == {id(glyph): "B"}
+    assert run.text == "ab"
+    assert result.glyph_clusters is run.glyph_clusters
+
+
+@pytest.mark.parametrize("leading", ["", " ", "\t"])
+def test_learned_cluster_attributes_replacement_to_first_nonblank_observation(leading: str) -> None:
+    font = object()
+    blank = internal_glyph(leading, font)
+    visible = internal_glyph("f", font)
+    trailing = internal_glyph("i", font)
+    run = internal_run("fi", internal_cluster("fi", blank, visible, trailing))
+    applied: dict[int, str] = {}
+    result = capture.internal_apply_learned_unicode_to_run(
+        run, {font: {b"a": "A"}}, glyph_replacements=applied
+    )
+    assert result.text == "A"
+    assert applied == {id(blank): "", id(visible): "A", id(trailing): ""}
+    assert (blank.text, visible.text, trailing.text) == (leading, "f", "i")
+
+
+def test_blank_observations_do_not_receive_invented_text_attribution() -> None:
+    # The record model permits source text separate from observation text.
+    # Learning may replace that source text without selecting a blank observation.
+    font = object()
+    glyphs = (internal_glyph("", font), internal_glyph(" ", font))
+    run = internal_run("a", internal_cluster("a", *glyphs))
+    applied: dict[int, str] = {}
+    result = capture.internal_apply_learned_unicode_to_run(
+        run, {font: {b"a": "A"}}, glyph_replacements=applied
+    )
+    assert result.text == "A"
+    assert applied == {id(glyph): "" for glyph in glyphs}
+    assert run.text == "a"
