@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Host codec and predictor contracts
+
+Added **76 deterministic cases** for sample precision conversion, signed clipping,
+float rounding, contiguous output, preserved uint16 samples, unsupported decoder
+shapes/types, invalid-versus-unsupported errors and exception causes, and bounded
+JPX thread configuration. Real PNG decoding checks exact bytes at 1/2/4/8/16 bits;
+TIFF tests cover per-channel accumulation, modular overflow, row resets, truncation,
+and sub-byte row padding using independently packed expected samples.
+All cases passed without production changes.
+
+The 76 tests passed in **9.55s**, appending coverage to the verified locked
+**5,995-test** full workspace report with real Tesseract and veraPDF and the
+subsequent 69 outline cases. Production sources are unchanged since that full run;
+the full suite was not rerun for this test-only change. Workspace coverage increased
+**87.88% → 88.05% statements** and **79.25% → 79.45% branches**:
+**34,221 / 38,864 statements** and **11,893 / 14,970 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,643 statements and 3,077 branches** remain
+uncovered. These are local results.
+
+
 ## Outline geometry and text paint contracts
 
 Added **69 deterministic cases** comparing scalar and cached-array glyph outlines
