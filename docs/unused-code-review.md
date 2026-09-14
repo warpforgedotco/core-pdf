@@ -1,5 +1,53 @@
 # Coverage and unused-code findings
 
+## OCR and serialization pass
+
+Source commit: `22706f2f`. This pass added deterministic tests for:
+
+- JSON identity interning (shared versus equal objects, page-local IDs), all record kinds,
+  invalid metadata locations, duplicate page IDs, and empty documents.
+- HTML escaping and styled/list text, merged table cells and row bands, plus CSV/TEI
+  escaping, geometry, ordered/deduplicated page selections, and invalid selections.
+- Native/OCR routing and priority, fusion confidence thresholds and duplicates, image
+  supplements, sparse native replacement, and coordinate preservation.
+- Cross-page font votes, confidence and geometric rejection, ambiguous mappings,
+  selection-local immutable overlays, seed recognition reuse, and stroked-alphabet fallback.
+- Engine failure/timeout classification, API cleanup and same-image reuse, invalid or
+  missing language data, probe failures, hOCR filtering, and bounded timeout retries.
+
+A regression test demonstrated that cancelled cross-page stroked-text enrichment could
+continue through cached recognition results. The loop now checks cancellation before each
+selected page, including cached and structural-decode paths. Font enrichment's stored seed
+indexes were redundant with its recognition-map keys and were removed, as was an unused
+engine-loop counter. Markdown now calls the shared HTML table renderer directly, retaining
+merged cells without a forwarding wrapper.
+
+These tests use synthetic captures and a stub engine. They verify policy, integration
+boundaries, and resource ownership, not real-engine recognition accuracy. Full raster/pass
+orchestration and more complex vector-recognition paths remain candidates for further tests.
+
+The full configured suite passed: **2,717 passed, 32 skipped in 201.77s**, adding 86
+passing tests. All skips remain the opt-in installed veraPDF integration checks.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR package | 17.92% → 38.34% | 1.60% → 19.14% |
+| OCR routing/fusion | 19.34% → 77.90% | 3.85% → 66.67% |
+| Cross-page enrichment | 22.28% → 89.58% | 0.00% → 88.64% |
+| Tesseract adapter | 16.07% → 78.21% | 1.33% → 66.67% |
+| Serialization | 32.03% → 98.25% | 17.11% → 93.42% |
+| Entire workspace | 68.57% → 71.35% | 55.87% → 58.06% |
+
+The combined statement/branch headline is **67.64%**. There are 28,037 covered statements
+out of 39,297 and 8,830 covered branches out of 15,208. Compared with the preceding pass,
+the denominator fell by only five statements while covered statements increased by 1,088
+and covered branches by 333. Most of this improvement therefore comes from additional
+execution, rather than deleting uncovered code. Six nonempty files remain wholly unexecuted.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, and diff checks passed. Generated HTML
+and JSON coverage reports now describe this pass. The conservative static scan found no
+new top-level removal candidates.
+
 ## Maintenance pass
 
 Source commit: `42fbaae7`. The maintenance pass removed 117 net production source lines:

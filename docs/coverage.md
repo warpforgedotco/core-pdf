@@ -24,9 +24,11 @@ See the [pytest-cov configuration](https://pytest-cov.readthedocs.io/en/stable/c
 and [xdist documentation](https://pytest-cov.readthedocs.io/en/latest/xdist.html).
 
 The default test paths cover native core tests (including CLI and assembly checks),
-compatibility differentials, focused OCR assembly tests, strict spec tests, and validation
-tests. OCR assembly uses deterministic recognition results rather than an external engine;
-these tests do not exercise every native API or OCR workflow. Real veraPDF execution
+compatibility differentials, deterministic OCR tests, strict spec tests, and validation
+tests. OCR tests cover assembly, routing/fusion, cross-page enrichment, cancellation,
+engine ownership/failures, and timeout recovery using fixed observations and engine stubs.
+Serialization tests cover JSON identity, escaping, merged cells, and CSV/TEI selections.
+These tests do not exercise every native API or real OCR engine workflow. Real veraPDF execution
 tests require `CORE_PDF_VERAPDF`; otherwise they skip. The default differential matrix also
 omits selected expensive fixtures and uses each facade's own corpus. Prefix the command
 with `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run every facade against every fixture.
