@@ -1,5 +1,27 @@
 # Coverage and unused-code findings
 
+## Array compositing and alpha-stage contracts
+
+Added **94 deterministic cases** comparing Normal, Multiply, and Screen array
+compositing against scalar source-over expectations. Coverage includes transparent,
+partial, and opaque source/backdrop pixels, strided destinations and untouched
+neighbors, separate rounding at each group-alpha stage, source immutability,
+normal/general group equivalence, and coverage-alpha caps. Zero coverage preserves
+the destination, including hidden RGB. All cases pass without production changes.
+
+The 94 tests passed in **9.49s**, appending coverage to the verified locked
+**5,995-test** full workspace report with real Tesseract and veraPDF and the
+subsequent 69 outline and 76 codec cases. Production sources are unchanged since
+that full run; the full suite was not rerun for this test-only change. Workspace
+coverage increased **88.05% → 88.20% statements** and **79.45% → 79.57% branches**:
+**34,278 / 38,864 statements** and **11,912 / 14,970 branches**. All four roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged. Both exact
+ratchets and all pre-push quality gates passed, including both type checkers and
+import contracts. The static unused-symbol scan returned no candidates.
+The 100% goal remains incomplete: **4,586 statements and 3,058 branches** remain
+uncovered. These are local results.
+
+
 ## Host codec and predictor contracts
 
 Added **76 deterministic cases** for sample precision conversion, signed clipping,
