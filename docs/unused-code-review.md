@@ -1,5 +1,38 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: CFF recovery and glyph matching
+
+This checkpoint adds **74 deterministic tests** for truncated CFF charsets and encodings,
+FDSelect ranges, private subroutine offsets, glyph geometry, and Unicode repair. The full
+suite with pinned Tesseract enabled passed **3,028 tests**, with **32 veraPDF integration
+skips**, in **707.58s**. The HTML and JSON reports describe this single full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| Core CFF font-program module | 35.28% → 87.44% | 14.23% → 80.49% |
+| Entire workspace | 73.83% → 75.05% | 60.61% → 62.28% |
+
+Malformed-table checks preserve complete entries, bound glyph IDs and ranges, resolve
+encoding supplements through SIDs, and reject predefined charsets for CID fonts. Unicode
+checks protect legitimate letters and ligatures, enforce strict replacement thresholds,
+and compare scalar and matrix matching while retaining aliased content-stream codes.
+Geometry checks cover transformed cubic extrema, rasterized outlines, missing glyphs,
+terminated and unterminated paths, and recovery that retains only completed contours.
+
+The charstring geometry builder now shares its bounds/result construction between normal
+and recovered execution. Only unfinished valid paths flush their current contour; malformed
+partial contours remain discarded. This removes duplicated result construction without
+changing recovery policy. Strict spec parsing remains separate from reader recovery.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing compiled extensions were present, and the top-level unused-symbol scan
+found no new candidates. Coverage sources and exclusions are unchanged.
+
+The workspace-wide **100% goal remains incomplete**: **9,810 statements and 5,744 branches**
+are still uncovered. The CFF module itself has 77 statements and 48 branches remaining,
+including font dictionary recovery, composed accent glyphs, and built-in encodings. Fonts,
+document structure/recovery, rendering, and deeper OCR paths remain in scope.
+
 ## Workspace coverage completion: annotations and tables
 
 Source/test commit: `9ff4ed2b`. This checkpoint adds **41 tests** for image annotations,

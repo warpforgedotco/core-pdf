@@ -798,10 +798,8 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
         )
     except (ArithmeticError, IndexError, ValueError):
         unfinished = False
-    if not unfinished:
-        bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
-        return contours, bbox
-    flush_contour()
+    if unfinished:
+        flush_contour()
     bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
     return contours, bbox
 
