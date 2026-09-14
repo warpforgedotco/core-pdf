@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.capture.records import CapturedPath
+from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl._impl.render import path_stroke_target
 from tests.src.core_pdf.test_pattern_rendering import internal_target
 
@@ -85,3 +85,20 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
     for actual in results[1:]:
         for expected_plane, actual_plane in zip(results[0], actual, strict=True):
             np.testing.assert_allclose(actual_plane, expected_plane, atol=1e-7, rtol=0)
+
+
+@pytest.mark.parametrize("cap", [0, 1, 2])
+@pytest.mark.parametrize("alpha", [128, 255])
+@pytest.mark.parametrize("phase", [0, 1])
+def test_dash_routing_matches_explicit_segments(cap: int, alpha: int, phase: int) -> None:
+    dashed = internal_target(16, 16)
+    explicit = internal_target(16, 16)
+    path = CapturedPath([CapturedSubpath([(2, 8), (14, 8)])])
+    dashed.stroke_path(path, 1, (200, 50, 10, alpha), ([2, 2], phase), line_cap=cap)
+    # A two-on/two-off pattern, starting one unit into the first dash when phase=1.
+    spans = [(2, 4), (6, 8), (10, 12)] if phase == 0 else [(2, 3), (5, 7), (9, 11), (13, 14)]
+    for start, end in spans:
+        segment = CapturedPath([CapturedSubpath([(start, 8), (end, 8)])])
+        explicit.stroke_path(segment, 1, (200, 50, 10, alpha), line_cap=cap)
+    assert any(dashed.pixels)
+    assert dashed.pixels == explicit.pixels

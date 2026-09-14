@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.model import LineCap, LineJoin
 from core_pdf.impl._impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
@@ -35,7 +35,6 @@ class internal_PathStrokeTargetMixin:
         y1: float,
         line_width: float,
         rgba: tuple[int, int, int, int],
-        dash_pattern: tuple[list[float], float] | None = None,
         blend_mode: str | None = None,
         line_cap: int = 0,
     ) -> None:
@@ -54,16 +53,6 @@ class internal_PathStrokeTargetMixin:
         pixels = self.pixels
         scale = self.scale
         width = self.width
-        if dash_pattern and dash_pattern[0]:
-            self.stroke_path(
-                CapturedPath([CapturedSubpath([(x0, y0), (x1, y1)])]),
-                line_width,
-                rgba,
-                dash_pattern,
-                blend_mode,
-                line_cap,
-            )
-            return
         dx = x1 - x0
         dy = y1 - y0
         if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
@@ -331,7 +320,6 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    None,
                     blend_mode,
                     0,
                 )
@@ -349,7 +337,6 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    None,
                     blend_mode,
                     0,
                 )
@@ -363,7 +350,6 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    None,
                     blend_mode,
                     0,
                 )

@@ -1,5 +1,26 @@
 # Coverage and unused-code findings
 
+## Dash expansion has one owner
+
+Removed the private `fill_line(dash_pattern=...)` option and its callback into
+`stroke_path`. Every production caller already expands dashes in `stroke_path`
+and passed `None`; the lower-level option duplicated routing without serving a
+caller. Updated the raster-state protocol and all three call sites together.
+
+Added **12 cases** comparing dashed rendering with explicit segment coordinates
+across two phases, all cap styles, and partial/opaque paint. The focused file
+passed **48 tests**. The fresh locked workspace/differential run, including real
+Tesseract and veraPDF, passed **8,034 tests with no skips in 213.12s**. All
+pre-push quality gates passed and the static scan returned no candidates.
+
+The cleanup removes **three statements and two branches**. Coverage is now
+**35,693 / 38,805 statements (91.98%)** and **12,629 / 14,938 branches (84.54%)**;
+the exact baseline is ratcheted to the full run. All four roots, vendor-only
+omissions, and exclusion rules remain unchanged. Excluded lines fall from 554
+to **553** because a parameter line was removed from an already-excluded
+protocol declaration. The goal remains incomplete: **3,112 statements and
+2,309 branches** remain uncovered. These are local results.
+
 ## Diagonal line routes and square-cap geometry
 
 Added **36 cases** comparing scalar, vectorized, and explicit-Normal line
