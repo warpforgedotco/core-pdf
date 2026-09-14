@@ -1,5 +1,28 @@
 # Coverage and unused-code findings
 
+## Numeric table reading order and large-block repair contracts
+
+Added **24 deterministic cases** covering numeric grids, interleaved magazine
+prose, overlapping scanned-column fragments, heuristic rejection boundaries,
+line identity, and retained block metadata. Four initial grid failures showed
+that the numeric-table repair sorted by x then ascending y, starting at the
+bottom of the first column despite promising row-wise reading order. It now
+uses the existing row-band ordering kernel: top-to-bottom rows, left-to-right
+cells, with tolerance for small vertical differences. Positive controls cover
+both row-major and column-major source sequences and 20/25-column grids.
+
+The locked full workspace and differential suite with real Tesseract and veraPDF
+passed **7,407 tests, no skips, in 430.75s**. Block layout now has **98.23% statement
+and 96.15% branch coverage**. Workspace coverage increased
+**90.34% → 90.50% statements** and **82.43% → 82.60% branches**:
+**35,152 / 38,844 statements** and **12,357 / 14,960 branches**. All four source
+roots, vendor-only omissions, and **554 excluded lines** remain unchanged. Both
+exact coverage ratchets and all pre-push quality gates passed, including mypy, ty,
+and import contracts. The static unused-symbol scan returned no candidates;
+that heuristic does not prove the absence of unused code.
+The 100% goal remains incomplete: **3,692 statements and 2,603 branches** remain
+uncovered. These are local results.
+
 ## LlamaIndex font contracts and shared CMap recovery
 
 Added **62 deterministic cases** for CID width ranges and overrides, malformed
