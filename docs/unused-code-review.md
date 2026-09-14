@@ -1,5 +1,25 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR region boundaries
+
+Added **5 deterministic regression cases** for patterned strokes, off-page grids, and
+zero-width/height pages. Region clipping correctly rejected zero-area crops, but the final
+page fallback recreated an invalid region. The fallback now uses the same clipping
+validation. Removed the unreachable orientation fallback after checking the complete enum
+contract with both type checkers; coverage still reports its implicit match fallthrough.
+
+All **719 OCR tests** passed with pinned Tesseract enabled. The full suite passed
+**3,652 tests**, with **32 veraPDF integration skips**, in **209.36s**. OCR now has
+**100% statement coverage**, with four uncovered branches in learned-Unicode handling and
+the orientation match. Region selection has **100% statement and branch coverage**.
+Workspace coverage rose **80.75% → 80.76% statements** and **68.89% → 68.92% branches**.
+Reports describe that single completed full-suite run.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No source-shadowing binaries or new unused-symbol candidates were found. Coverage sources
+and exclusions remain unchanged. The **100% workspace goal remains incomplete**:
+**7,561 statements and 4,725 branches** remain uncovered across the original scope.
+
 ## Workspace coverage completion: Newstroke recognition boundaries
 
 Added **7 deterministic tests** for barrier handling, missing templates, ambiguous preceding

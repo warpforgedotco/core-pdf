@@ -10,6 +10,7 @@ from core_pdf.impl._impl.capture.records import (
     CapturedLine,
     CapturedPath,
     CapturedSubpath,
+    ShadingPattern,
 )
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract import capture
@@ -28,6 +29,13 @@ def internal_stroke(index: int, *, size: float = 2, spread: bool = True) -> Capt
         line_width=0.5,
         path=CapturedPath([CapturedSubpath([(x, y), (x + size, y + size)])]),
     )
+
+
+def test_patterned_strokes_do_not_supply_solid_vector_text_evidence() -> None:
+    solid = internal_stroke(0)
+    patterned = replace(solid, stroke_pattern=ShadingPattern({}))
+    assert capture.internal_stroked_vector_style(solid) is not None
+    assert capture.internal_stroked_vector_style(patterned) is None
 
 
 def test_vector_complexity_counts_paints_and_segments_but_not_control_records() -> None:

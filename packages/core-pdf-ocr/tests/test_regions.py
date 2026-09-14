@@ -188,6 +188,31 @@ def test_grid_geometry_yields_grid_and_label_regions(ocr_capture: PageAnalysis) 
     assert all(0 <= r.page_box[0] < r.page_box[2] <= 600 for r in selected)
 
 
+def test_off_page_grid_does_not_propose_grid_or_label_crops(ocr_capture: PageAnalysis) -> None:
+    lines = tuple(
+        [CapturedLine(700, y, 780, y) for y in (20, 60, 100)]
+        + [CapturedLine(x, 20, x, 100) for x in (700, 740, 780)]
+    )
+    capture = replace(ocr_capture, program=PageProgram(CapturedProgram(lines=lines)))
+    selected = regions.internal_candidate_ocr_regions(capture)
+    assert not any({"grid", "grid-labels"}.intersection(region.reasons) for region in selected)
+    assert all(0 <= r.page_box[0] < r.page_box[2] <= 600 for r in selected)
+
+
+@pytest.mark.parametrize(("width", "height"), [(0, 800), (600, 0), (0, 0)])
+def test_zero_area_pages_do_not_propose_vector_density_crops(
+    ocr_capture: PageAnalysis, width: float, height: float
+) -> None:
+    drawing = CapturedDrawing(0, None, None, kind="stroke", bbox=(10, 10, 20, 20))
+    capture = replace(
+        ocr_capture,
+        width=width,
+        height=height,
+        program=PageProgram(CapturedProgram(drawings=(drawing,))),
+    )
+    assert regions.internal_candidate_ocr_regions(capture) == ()
+
+
 @pytest.mark.parametrize("large", [False, True])
 def test_dense_vector_pages_propose_fine_label_regions(
     ocr_capture: PageAnalysis, large: bool

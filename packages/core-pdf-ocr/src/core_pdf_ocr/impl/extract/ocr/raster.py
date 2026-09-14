@@ -464,7 +464,7 @@ def internal_orient_direct_image_raster(
     orientation: DirectImageOrientation | None = None,
 ) -> internal_Raster:
     orientation = orientation or internal_direct_image_orientation(image)
-    if orientation in {None, DirectImageOrientation.IDENTITY}:
+    if orientation is None or orientation is DirectImageOrientation.IDENTITY:
         return raster
     samples = raster.image.array()
     match orientation:
@@ -482,8 +482,6 @@ def internal_orient_direct_image_raster(
             oriented = samples.transpose(1, 0, 2)[:, ::-1]
         case DirectImageOrientation.TRANSPOSE_FLIP_XY:
             oriented = samples.transpose(1, 0, 2)[::-1, ::-1]
-        case _:
-            return raster
     height, width, channels = oriented.shape
     return internal_Raster(
         RasterImage(contiguous_bytes(oriented), int(width), int(height), int(channels)),

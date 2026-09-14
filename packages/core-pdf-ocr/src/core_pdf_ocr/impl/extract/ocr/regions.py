@@ -421,13 +421,14 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
 
     regions = internal_merge_ocr_regions(candidates)
     if not regions:
-        regions = (
-            internal_OcrRegion(
-                (0.0, 0.0, page_width, page_height),
-                0.0,
-                ("page-fallback",),
-            ),
+        page_box = internal_ocr_region_box(
+            (0.0, 0.0, page_width, page_height),
+            page_width=page_width,
+            page_height=page_height,
+            padding=0.0,
         )
+        if page_box is not None:
+            regions = (internal_OcrRegion(page_box, 0.0, ("page-fallback",)),)
     return regions
 
 
