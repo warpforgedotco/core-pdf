@@ -1,5 +1,22 @@
 # Coverage and unused-code findings
 
+## PDFMiner startxref boundary contracts
+
+Added eight differential cases for exact offsets, offsets inside the `xref`
+token, zero, EOF, the signed 32-bit boundary, and negative offsets. Seven cases
+preserve the reference library's extracted page text. The negative-offset case
+records a compatibility difference: pdfminer recovers the page, while native
+loading raises `PdfParseError` before the facade's recovery policy runs. This
+needs a scoped reader/facade recovery-policy design; the test does not claim parity.
+No production code changed.
+
+The focused recovery file passed **12 tests in 6.33s**, with coverage appended
+to the existing full-workspace database. The resulting local measurement is
+**35,303 / 38,842 statements (90.89%)** and
+**12,453 / 14,958 branches (83.25%)**. This was not a new full-suite run;
+the committed coverage floor remains unchanged. All four source roots,
+vendor-only omissions, and **554 excluded lines** remain unchanged.
+
 ## Content recovery boundaries and lexer resume contracts
 
 Added **63 deterministic cases** for inline-image separators, default/custom
