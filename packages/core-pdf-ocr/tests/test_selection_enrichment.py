@@ -225,7 +225,6 @@ def test_enrichment_only_rebuilds_changed_pages_and_reuses_seed_recognition(
     monkeypatch.setattr(selection, "internal_PageExtraction", build)
     monkeypatch.setattr(selection, "internal_capture_from_program", recapture)
     font = selection.internal_FontEnrichment(
-        seed_indexes=(0,),
         learned_unicode={decoder: {b"a": "A"}},
         recognition_by_index={0: recognition},
     )

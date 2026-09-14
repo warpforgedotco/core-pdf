@@ -449,7 +449,6 @@ def internal_recognize(
     filtered_line_breaks: list[bool] = []
     pending_line_break = True
     if iterator is not None:
-        sequence = 0
         while True:
             if task.recognize_words:
                 is_at_beginning = getattr(iterator, "IsAtBeginningOf", None)
@@ -491,7 +490,6 @@ def internal_recognize(
                     filtered_confidences.append(confidence)
                     filtered_line_breaks.append(line_breaks[-1])
                 text_heights.append(float(y1 - y0))
-                sequence += 1
             if not iterator.Next(level):
                 break
     symbols = (

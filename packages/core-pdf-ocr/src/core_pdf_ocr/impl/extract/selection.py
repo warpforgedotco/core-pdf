@@ -46,7 +46,6 @@ DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 class internal_FontEnrichment:
     """Immutable learned Unicode overlay for one exact document selection."""
 
-    seed_indexes: tuple[int, ...] = ()
     learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
     recognition_by_index: Mapping[int, RecognitionResult] = field(
         default_factory=lambda: MappingProxyType({})
@@ -226,7 +225,6 @@ def internal_prepare_document_font_mappings(
             internal_font_mapping_votes(captures[page_index], recognition.observations),
         )
     return internal_FontEnrichment(
-        seed_indexes=seed_indexes,
         learned_unicode=internal_resolve_document_font_mappings(votes),
         recognition_by_index=MappingProxyType(recognition_by_index),
     )
@@ -247,11 +245,10 @@ def internal_apply_font_enrichment(
     font: internal_FontEnrichment,
 ) -> tuple[internal_PageExtraction, ...]:
     """Create local pipelines only for non-seed pages changed by the overlay."""
-    seed_indexes = frozenset(font.seed_indexes)
     enriched: list[internal_PageExtraction] = []
     for index, (base, capture) in enumerate(zip(extractions, captures, strict=True)):
         recognition = font.recognition_by_index.get(index)
-        if index in seed_indexes:
+        if recognition is not None:
             enriched.append(
                 internal_PageExtraction(
                     base.page,
