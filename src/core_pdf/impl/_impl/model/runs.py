@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.model.glyphs import GlyphCluster
@@ -32,15 +32,6 @@ Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 @dataclass(slots=True, eq=False, init=False)
 class TextRun:
-    X0: ClassVar[int] = 0
-    Y0: ClassVar[int] = 1
-    X1: ClassVar[int] = 2
-    Y1: ClassVar[int] = 3
-    TX: ClassVar[int] = 4
-    TY: ClassVar[int] = 5
-    FONT_SIZE: ClassVar[int] = 6
-    SPACE_WIDTH: ClassVar[int] = 7
-
     text: str
     x0: float
     y0: float
@@ -67,20 +58,6 @@ class TextRun:
     provenance: Provenance
     confidence: float | None
     glyph_clusters: tuple[GlyphCluster, ...]
-
-    @property
-    def coords(self) -> tuple[float, float, float, float, float, float, float, float]:
-        """Compatibility view of the former packed coordinate storage."""
-        return (
-            self.x0,
-            self.y0,
-            self.x1,
-            self.y1,
-            self.tx,
-            self.ty,
-            self.font_size,
-            self.space_width,
-        )
 
     @property
     def height(self) -> float:

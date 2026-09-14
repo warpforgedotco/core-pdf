@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.render.blend import internal_blend_visible_pixels
+from core_pdf.impl._impl.render.blend import internal_blend_visible_pixels, internal_clamp01
 from core_pdf.impl._impl.runtime.array_views import UInt8Array
 from core_pdf_spec.s_11_transparency.groups import (
     composite_knockout_element,
@@ -32,7 +32,7 @@ def internal_composite_nonisolated_group(
     backdrop. Return the effective source alpha for any enclosing non-isolated
     group. Empty areas must preserve even a transparent backdrop's hidden RGB.
     """
-    opacity = max(0.0, min(1.0, opacity))
+    opacity = internal_clamp01(opacity)
     scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
     if mask_alpha is not None:
         scaled_alpha *= mask_alpha

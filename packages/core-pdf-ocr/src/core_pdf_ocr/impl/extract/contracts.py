@@ -146,11 +146,8 @@ class PageEvidence(NativePageEvidence):
     vector_complexity: int = 0
     image_filters: tuple[str, ...] = ()
     uncovered_vector_area: float | None = None
-    vector_text_characters: int = 0
     vector_text_candidate_segments: int = 0
     vector_text_matched_segments: int = 0
-    vector_text_sequences: int = 0
-    vector_text_maximum_error: float = 0.0
     vector_text_trusted: bool = False
     stroked_vector_text: StrokedVectorTextEvidence = field(
         default_factory=StrokedVectorTextEvidence

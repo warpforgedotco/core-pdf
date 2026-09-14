@@ -15,9 +15,61 @@ from core_pdf.impl._impl.render.blend import internal_color_rgba, internal_const
 from core_pdf.impl._impl.render.kernels import internal_box_downsample
 from core_pdf.impl._impl.render.model import ImagePaintItem
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
+
+# Decoded bytes one render may retain; beyond it the oldest entries are dropped
+# and repainted images decode again rather than holding every raster of a page.
+PREPARED_IMAGE_CACHE_BYTES = 256 << 20
+
+
+def internal_prepared_image_bytes(prepared: PreparedImage | None) -> int:
+    if prepared is None:
+        return 0
+    soft_mask = prepared.soft_mask
+    return prepared.raster.array.nbytes + (0 if soft_mask is None else soft_mask.array.nbytes)
+
+
+class PreparedImageCache:
+    """Decoded images keyed by ``id(source)`` under a byte budget.
+
+    The pinned source keeps its id from being recycled. Entries leave in
+    insertion order once the budget is exceeded, and a single image larger than
+    the budget is never retained.
+    """
+
+    __slots__ = ("budget", "entries", "size")
+
+    def __init__(self, budget: int = PREPARED_IMAGE_CACHE_BYTES) -> None:
+        self.budget = budget
+        self.entries: dict[int, tuple[ImageSource, PreparedImage | None, int]] = {}
+        self.size = 0
+
+    def store(self, source: ImageSource, prepared: PreparedImage | None) -> None:
+        size = internal_prepared_image_bytes(prepared)
+        if size > self.budget:
+            return
+        entries = self.entries
+        while entries and self.size + size > self.budget:
+            oldest = next(iter(entries))
+            self.size -= entries.pop(oldest)[2]
+        entries[id(source)] = (source, prepared, size)
+        self.size += size
+
+
+def internal_prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
+    """Decode an image source once per render; repeated paints reuse the result."""
+    cached = cache.entries.get(id(source))
+    if cached is not None and cached[0] is source:
+        return cached[1]
+    try:
+        prepared = prepare_image(source)
+    except Exception:
+        prepared = None
+    cache.store(source, prepared)
+    return prepared
 
 
 def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float], ...] | None:
@@ -46,10 +98,7 @@ class internal_ImageAxisTargetMixin:
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
-        try:
-            prepared = prepare_image(item.source)
-        except Exception:
-            prepared = None
+        prepared = internal_prepared_image(self.prepared_image_cache, item.source)
         if prepared is None:
             return
         if prepared.is_stencil:

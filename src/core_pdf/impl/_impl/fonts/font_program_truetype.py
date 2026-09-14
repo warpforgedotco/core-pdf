@@ -145,8 +145,9 @@ class internal_FontToolsOutlineAccess:
     def glyph_bitmap_for_gid(
         self, glyph_id: int, *, width: int = 24, height: int = 32
     ) -> tuple[int, ...]:
-        contours = self.normalized_glyph_contours(glyph_id)
-        return rasterize_contours(contours, width=width, height=height) if contours else ()
+        return rasterize_contours(
+            self.normalized_glyph_contours(glyph_id), width=width, height=height
+        )
 
 
 class internal_RecoverableFontTableWarningFilter(logging.Filter):

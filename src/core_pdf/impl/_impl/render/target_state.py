@@ -16,12 +16,14 @@ from core_pdf.impl._impl.capture.records import CapturedPath, TilingPattern
 from core_pdf.impl._impl.graphics.images import PreparedImage
 from core_pdf.impl._impl.graphics.shading import PreparedShading
 from core_pdf.impl._impl.render.clipping import internal_ClipState
+from core_pdf.impl._impl.render.image_axis_target import PreparedImageCache
 from core_pdf.impl._impl.render.model import (
     DisplayItem,
     ImagePaintItem,
     PathPaintItem,
     internal_RasterGroup,
 )
+from core_pdf.impl._impl.render.patterns import TilingCellCache
 from core_pdf.impl._impl.render.soft_masks import SoftMaskCache, SoftMaskKey, SoftMaskPlane
 from core_pdf.impl._impl.runtime.array_views import ByteBuffer, UInt8Array
 from core_pdf_spec.standards import SemanticContext
@@ -44,6 +46,8 @@ class internal_RasterState(Protocol):
     paint_alpha_is_shape: bool
     shape_alpha: float
     soft_mask_cache: SoftMaskCache
+    prepared_image_cache: PreparedImageCache
+    tiling_cell_cache: TilingCellCache
     active_soft_masks: set[SoftMaskKey]
 
     def record_source_shape(
@@ -145,6 +149,16 @@ class internal_RasterState(Protocol):
         rgba: tuple[int, int, int, int],
         line_cap: int,
         blend_mode: str | None = None,
+    ) -> None: ...
+
+    def internal_fill_terminal(
+        self,
+        px: float,
+        py: float,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        round_shape: bool,
+        blend_mode: str | None,
     ) -> None: ...
 
     def fill_circle(

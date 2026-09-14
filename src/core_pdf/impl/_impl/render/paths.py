@@ -9,7 +9,6 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl._impl.model.geometry import RectBox
 from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_view
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
@@ -420,16 +419,6 @@ def internal_intersect_box(
 
 
 def internal_translate_rect(rect: Any, tx: float, ty: float) -> Any:
-    if type(rect) is RectBox:
-        return RectBox(
-            rect.x0 + tx,
-            rect.y0 + ty,
-            rect.x1 + tx,
-            rect.y1 + ty,
-            seqno=rect.seqno,
-            fill=rect.fill,
-            fill_opacity=rect.fill_opacity,
-        )
     rect_type = type(rect)
     if (rect_type is list or rect_type is tuple) and len(rect) == 4:
         return (

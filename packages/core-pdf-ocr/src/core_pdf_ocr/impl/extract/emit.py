@@ -7,7 +7,7 @@ from core_pdf.impl._impl.capture.records import CapturedDrawing
 from core_pdf.impl._impl.extract import emit as native_emit
 from core_pdf.impl._impl.extract.contracts import ParsedBlock
 from core_pdf.impl._impl.output.model import Figure, Page, Table
-from core_pdf_ocr.impl.extract.table_reconcile import internal_project_text_and_tables
+from core_pdf_ocr.impl.extract.table_reconcile import internal_remove_duplicate_tables
 
 
 def assemble_page(
@@ -24,25 +24,17 @@ def assemble_page(
     full_page_image: bool = False,
     drawings: tuple[CapturedDrawing, ...] = (),
 ) -> Page:
-    normalized_blocks = native_emit.internal_normalized_blocks(blocks, drawings)
-    normalized_blocks = native_emit.internal_remove_off_page_blocks(
-        normalized_blocks,
-        width,
-        height,
-    )
-    normalized_blocks, projected_tables = internal_project_text_and_tables(
-        normalized_blocks, tables
-    )
-    return native_emit.internal_compose_page(
+    """Assemble the page natively after removing recognized chart table copies."""
+    return native_emit.assemble_page(
         blocks,
-        normalized_blocks,
-        projected_tables,
         page_number=page_number,
         width=width,
         height=height,
         rotation=rotation,
         route=route,
+        tables=internal_remove_duplicate_tables(tables),
         figures=figures,
         diagnostics=diagnostics,
         full_page_image=full_page_image,
+        drawings=drawings,
     )

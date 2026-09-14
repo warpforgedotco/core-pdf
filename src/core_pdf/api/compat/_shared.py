@@ -11,6 +11,7 @@ from typing import Any, BinaryIO, cast
 from core_pdf.impl._impl.model.geometry import rect_tuple
 
 BBox = tuple[float, float, float, float]
+PdfInput = Any
 
 LIGATURES = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ", "ffi": "ﬃ", "ffl": "ﬄ"}
 

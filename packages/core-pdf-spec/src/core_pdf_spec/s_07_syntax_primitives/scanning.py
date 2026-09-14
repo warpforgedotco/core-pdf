@@ -215,11 +215,18 @@ def read_literal_string(
     data: bytes | memoryview,
     pos: int,
     data_len: int,
+    *,
+    unknown_escape: Callable[[int], bytes] | None = None,
+    eol_pair: Callable[[int, int], bool] | None = None,
 ) -> tuple[bytes | None, int]:
     """Decode a literal string at ``pos``, returning its value and end position.
 
     An unterminated string returns ``None`` and the exhausted position so callers
     can preserve their own error type and cursor semantics.
+
+    ``unknown_escape`` replaces ISO 32000-1, 7.3.4.2's rule that an unrecognised
+    escape yields the escaped byte; ``eol_pair`` replaces the CR LF pairing used
+    when folding end-of-line sequences. Both default to the specified behaviour.
     """
     pos += 1
     if isinstance(data, memoryview) and data.format != "B":
@@ -270,17 +277,27 @@ def read_literal_string(
                     count += 1
                 out.append(oct_val & 0xFF)
             elif esc in (10, 13):
-                if pos < data_len and (esc == 13 and data[pos] == 10):
+                if pos < data_len and (
+                    eol_pair(esc, data[pos])
+                    if eol_pair is not None
+                    else esc == 13 and data[pos] == 10
+                ):
                     pos += 1
             elif (mapped := STRING_ESCAPE.get(esc)) is not None:
                 out.extend(mapped)
+            elif unknown_escape is not None:
+                out.extend(unknown_escape(esc))
             else:
                 out.append(esc)
         elif byte == 13 or byte == 10:
             out.append(10)
             if pos < data_len:
                 next_byte = data[pos]
-                if byte == 13 and next_byte == 10:
+                if (
+                    eol_pair(byte, next_byte)
+                    if eol_pair is not None
+                    else byte == 13 and next_byte == 10
+                ):
                     pos += 1
         else:
             out.append(byte)

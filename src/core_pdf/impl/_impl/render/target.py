@@ -29,7 +29,10 @@ from core_pdf.impl._impl.render.groups import (
     internal_composite_nonisolated_group,
 )
 from core_pdf.impl._impl.render.image_affine_target import internal_ImageAffineTargetMixin
-from core_pdf.impl._impl.render.image_axis_target import internal_ImageAxisTargetMixin
+from core_pdf.impl._impl.render.image_axis_target import (
+    PreparedImageCache,
+    internal_ImageAxisTargetMixin,
+)
 from core_pdf.impl._impl.render.model import (
     DisplayItem,
     ImagePaintItem,
@@ -40,7 +43,7 @@ from core_pdf.impl._impl.render.model import (
 from core_pdf.impl._impl.render.path_fill_target import internal_PathFillTargetMixin
 from core_pdf.impl._impl.render.path_shape_target import internal_PathShapeTargetMixin
 from core_pdf.impl._impl.render.path_stroke_target import internal_PathStrokeTargetMixin
-from core_pdf.impl._impl.render.patterns import internal_PatternTargetMixin
+from core_pdf.impl._impl.render.patterns import TilingCellCache, internal_PatternTargetMixin
 from core_pdf.impl._impl.render.soft_masks import (
     SoftMaskCache,
     SoftMaskKey,
@@ -126,6 +129,8 @@ class internal_RasterTarget(
         "group_floor",
         "scope_stack",
         "soft_mask_cache",
+        "prepared_image_cache",
+        "tiling_cell_cache",
         "active_soft_masks",
         "elementary_scratch",
     )
@@ -166,6 +171,10 @@ class internal_RasterTarget(
         self.group_floor = 1
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
         self.soft_mask_cache: SoftMaskCache = {}
+        # Decoded images and tiling cells keyed by object identity; the value
+        # pins the key object so a recycled id cannot alias a different source.
+        self.prepared_image_cache = PreparedImageCache()
+        self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, internal_ElementaryScratch] = {}
         if group_alpha is not None:
@@ -213,6 +222,8 @@ class internal_RasterTarget(
             semantic_context=self.semantic_context,
         )
         sibling.soft_mask_cache = self.soft_mask_cache
+        sibling.prepared_image_cache = self.prepared_image_cache
+        sibling.tiling_cell_cache = self.tiling_cell_cache
         sibling.active_soft_masks = self.active_soft_masks
         return sibling, view
 
@@ -507,15 +518,8 @@ class internal_RasterTarget(
     ) -> None:
         """Accumulate only paint alpha, excluding the group's initial backdrop."""
         plane = self.group_source_alpha
-        if plane is None:
-            return
-        self.internal_extend_paint_window(rows, columns)
-        previous = plane[rows, columns]
-        source = alpha / 255.0
-        updated = previous + (1.0 - previous) * source
-        plane[rows, columns] = (
-            updated if visible is None else numpy.where(visible, updated, previous)
-        )
+        if plane is not None:
+            self.internal_record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
         """Return an array view for an RGBA byte buffer."""
@@ -531,11 +535,22 @@ class internal_RasterTarget(
     ) -> None:
         """Union geometric coverage independently of opacity, including zero alpha."""
         plane = self.group_source_shape
-        if plane is None:
-            return
+        if plane is not None:
+            self.internal_record_plane(
+                plane, rows, columns, shape / 255.0 * self.shape_alpha, visible
+            )
+
+    def internal_record_plane(
+        self,
+        plane: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+        rows: int | slice,
+        columns: int | slice,
+        source: float | numpy.ndarray[Any, Any],
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
+    ) -> None:
+        """Union one paint's unit coverage into a group plane over its paint window."""
         self.internal_extend_paint_window(rows, columns)
         previous = plane[rows, columns]
-        source = shape / 255.0 * self.shape_alpha
         updated = previous + (1.0 - previous) * source
         plane[rows, columns] = (
             updated if visible is None else numpy.where(visible, updated, previous)

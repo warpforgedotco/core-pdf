@@ -84,18 +84,28 @@ def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | Non
 
 
 class CIDUnicodeMap:
-    __slots__ = ("ordering", "registry", "vertical")
+    __slots__ = ("internal_cache", "ordering", "registry", "vertical")
 
     def __init__(self, registry: str, ordering: str, vertical: bool) -> None:
         self.registry = registry
         self.ordering = ordering
         self.vertical = vertical
+        # The collection tables are immutable, so each CID votes once per map.
+        self.internal_cache: dict[int, str | None] = {}
 
     def get(self, cid: int, default: str | None = None) -> str | None:
         result = self.internal_resolve(cid)
         return default if result is None else result
 
     def internal_resolve(self, cid: int) -> str | None:
+        cache = self.internal_cache
+        try:
+            return cache[cid]
+        except KeyError:
+            text = cache[cid] = self.internal_vote(cid)
+            return text
+
+    def internal_vote(self, cid: int) -> str | None:
         override = CID_COLLECTION_UNICODE_OVERRIDES.get((self.registry, self.ordering), {}).get(cid)
         if override is not None:
             return override
@@ -127,12 +137,14 @@ class CIDUnicodeMap:
                     candidates[text] += 1
         if not candidates:
             return None
-        return max(
-            candidates,
-            key=lambda text: (candidates[text], unicode_candidate_preference(text), -ord(text)),
-        )
+        ranked = {
+            text: (weight, unicode_candidate_preference(text), -ord(text))
+            for text, weight in candidates.items()
+        }
+        return max(ranked, key=ranked.__getitem__)
 
 
+@cache
 def resolve_cid_unicode_map(
     registry: str,
     ordering: str,

@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from html import escape
 from io import BytesIO
-from typing import Any, BinaryIO, TextIO, TypeAlias, cast
+from typing import Any, BinaryIO, TextIO, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.exceptions import PdfError
 
+from .._shared import PdfInput
 from ._layout import (
     LAParams,
     LTComponent,
@@ -22,8 +23,6 @@ from ._pages import (
 from ._projection import (
     internal_project_page,
 )
-
-PdfInput: TypeAlias = Any
 
 
 def extract_pages(

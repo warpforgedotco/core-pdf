@@ -27,18 +27,6 @@ class IccSampleError(ValueError):
     """Raised when sample arrays do not match an ICC transform."""
 
 
-# Rendering intent 1 is relative colorimetric (ICC.1:2010, 6.1.11). With black
-# point compensation it reproduces the in-tree converter this replaced to
-# within 2/255 per channel across the whole 8-bit CMYK cube.
-INTERNAL_RENDERING_INTENT = 1
-
-# cmsFLAGS_BLACKPOINTCOMPENSATION | cmsFLAGS_NOOPTIMIZE (lcms2.h). NOOPTIMIZE is
-# not a quality trade here but the opposite: it stops lcms precomputing a
-# device-link LUT, which is both more faithful (with the LUT the same cube
-# deviates by up to 21/255) and an order of magnitude cheaper to set up. Setup
-# dominates because imagecodecs exposes no reusable transform handle, so every
-# call rebuilds the transform.
-INTERNAL_TRANSFORM_FLAGS = 0x2000 | 0x0100
 internal_INTENT_CODES = {
     "Perceptual": 0,
     "RelativeColorimetric": 1,
@@ -48,7 +36,15 @@ internal_INTENT_CODES = {
 
 
 def internal_cms_options(rendering: ColorRendering) -> tuple[int, int]:
-    # Selected reader Default preserves the existing BPC-on policy.
+    # Flags are cmsFLAGS_NOOPTIMIZE (0x0100) and cmsFLAGS_BLACKPOINTCOMPENSATION
+    # (0x2000) from lcms2.h. NOOPTIMIZE is not a quality trade here but the
+    # opposite: it stops lcms precomputing a device-link LUT, which is both more
+    # faithful (with the LUT the 8-bit CMYK cube deviates by up to 21/255) and an
+    # order of magnitude cheaper to set up. Setup dominates because imagecodecs
+    # exposes no reusable transform handle, so every call rebuilds the transform.
+    # Selected reader Default preserves the existing BPC-on policy; relative
+    # colorimetric with BPC reproduces the converter this replaced to within
+    # 2/255 per channel.
     flags = 0x0100 | (0x2000 if use_black_point_compensation(rendering, default=True) else 0)
     return internal_INTENT_CODES[rendering.intent], flags
 

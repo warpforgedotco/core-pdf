@@ -3,10 +3,9 @@
 
 from __future__ import annotations
 
-from core_pdf.impl._impl.extract import table_reconcile as native_reconcile
 from core_pdf.impl._impl.model.geometry import overlap_ratio_of
 from core_pdf.impl._impl.model.text import complete_text_covered, content_tokens
-from core_pdf.impl._impl.output.model import Block, Table
+from core_pdf.impl._impl.output.model import Table
 
 
 def internal_is_synthetic_chart(table: Table) -> bool:
@@ -56,13 +55,3 @@ def internal_remove_duplicate_tables(
             retained.append(index)
     retained.sort()
     return tuple(tables[index] for index in retained)
-
-
-def internal_project_text_and_tables(
-    blocks: list[Block],
-    parsed_tables: tuple[Table, ...],
-) -> tuple[list[Block], tuple[Table, ...]]:
-    """Select recognition products before applying shared spatial projection."""
-    return native_reconcile.internal_project_text_and_tables(
-        blocks, internal_remove_duplicate_tables(parsed_tables)
-    )

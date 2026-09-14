@@ -22,7 +22,7 @@ from ._elements import (
 
 
 @dataclass(frozen=True, slots=True)
-class internal_LayoutRegion:
+class internal_TextRegion:
     text: str
     bbox: tuple[float, float, float, float]
     element_class: type[Element] | None = None
@@ -40,10 +40,10 @@ def internal_clean_text(text: str) -> str:
     return re.sub(r" {2,}", " ", cleaned).strip()
 
 
-def internal_layout_regions(items: list[LTTextBox]) -> list[internal_LayoutRegion]:
+def internal_layout_regions(items: list[LTTextBox]) -> list[internal_TextRegion]:
     """Project each canonical pdfminer text box to one Unstructured region."""
     return [
-        internal_LayoutRegion(text, item.bbox)
+        internal_TextRegion(text, item.bbox)
         for item in items
         if (text := internal_clean_text(internal_deduplicated_box_text(item)))
     ]
@@ -138,7 +138,7 @@ def internal_recursive_xy_cut(
 
 
 def internal_region_order(
-    regions: list[internal_LayoutRegion],
+    regions: list[internal_TextRegion],
     page_height: float,
 ) -> list[int]:
     # The fast parser applies a stable basic top/left sort before XY-cut to
@@ -183,11 +183,11 @@ def internal_region_order(
 
 
 def internal_combine_list_regions(
-    regions: list[internal_LayoutRegion],
+    regions: list[internal_TextRegion],
     page_height: float,
-) -> list[internal_LayoutRegion]:
+) -> list[internal_TextRegion]:
     """Apply Unstructured's pre-sort continuation merge for list elements."""
-    combined: list[internal_LayoutRegion] = []
+    combined: list[internal_TextRegion] = []
     anchor_text: str | None = None
     anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
@@ -201,7 +201,7 @@ def internal_combine_list_regions(
             anchor_text = internal_BULLET.sub("", text, count=1).strip()
             anchor_bbox = bbox
             active_bbox = bbox
-            combined.append(internal_LayoutRegion(anchor_text, bbox, ListItem))
+            combined.append(internal_TextRegion(anchor_text, bbox, ListItem))
             anchor_position = len(combined) - 1
             continue
         if anchor_text is not None and anchor_bbox is not None and active_bbox is not None:
@@ -223,9 +223,7 @@ def internal_combine_list_regions(
                     max(active_right, current_right),
                     max(active_top, current_top),
                 )
-                merged_region = internal_LayoutRegion(
-                    f"{anchor_text} {text}", merged_bbox, ListItem
-                )
+                merged_region = internal_TextRegion(f"{anchor_text} {text}", merged_bbox, ListItem)
                 if anchor_position is not None:
                     # ``_combine_list_elements`` mutates its retained
                     # ``tmp_element`` before deep-copying it. If another
@@ -243,5 +241,5 @@ def internal_combine_list_regions(
                 combined.append(merged_region)
                 active_bbox = merged_bbox
                 continue
-        combined.append(internal_LayoutRegion(text, bbox, element_class))
+        combined.append(internal_TextRegion(text, bbox, element_class))
     return combined

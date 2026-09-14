@@ -82,18 +82,34 @@ def iter_page_nodes(
     resolve: Callable[[object], object],
     *,
     inherited_keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
+    node_type: Callable[[PdfDict], str | None] | None = None,
+    on_invalid_child: Callable[[object], bool] | None = None,
+    max_depth: int | None = None,
 ) -> Iterator[PageNode]:
-    """Walk Kids in source order and carry each ancestor's inheritable values."""
-    stack: list[tuple[object, tuple[PdfDict, ...], frozenset[int]]] = [(root, (), frozenset())]
+    """Walk Kids in source order and carry each ancestor's inheritable values.
+
+    ``node_type`` replaces reading each node's Type entry; ``on_invalid_child``
+    receives a resolved kid that is not a dictionary and returns whether to skip
+    it instead of raising; ``max_depth`` bounds nesting below the root.
+    """
+    stack: list[tuple[object, int, tuple[PdfDict, ...], frozenset[int]]] = [
+        (root, 0, (), frozenset())
+    ]
     while stack:
-        raw, parents, ancestors = stack.pop()
+        raw, depth, parents, ancestors = stack.pop()
+        if max_depth is not None and depth > max_depth:
+            raise ValueError("invalid page tree depth")
         current = resolve(raw)
         if not isinstance(current, dict):
+            if depth and on_invalid_child is not None and on_invalid_child(current):
+                continue
             raise ValueError("invalid page tree node")
         current = cast(PdfDict, current)
         if id(current) in ancestors:
             raise ValueError("page tree cycle detected")
-        kind = decoded_name(resolve(current.get("Type")))
+        kind = (
+            decoded_name(resolve(current.get("Type"))) if node_type is None else node_type(current)
+        )
         if kind == "Page":
             yield PageNode(
                 current, page_inherited_values((current, *parents), resolve, inherited_keys)
@@ -104,7 +120,7 @@ def iter_page_nodes(
                 raise ValueError("invalid page tree Kids array")
             ancestry = ancestors | {id(current)}
             parent_nodes = (current, *parents)
-            stack.extend((kid, parent_nodes, ancestry) for kid in reversed(kids))
+            stack.extend((kid, depth + 1, parent_nodes, ancestry) for kid in reversed(kids))
         else:
             raise ValueError("invalid page tree node")
 

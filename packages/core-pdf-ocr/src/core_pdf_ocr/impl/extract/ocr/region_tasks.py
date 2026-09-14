@@ -9,12 +9,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl._impl.model.geometry import (
-    overlap_ratio_min_exact as internal_ocr_region_overlap,
-)
-from core_pdf.impl._impl.model.geometry import (
-    overlap_ratio_of as internal_ocr_region_coverage,
-)
+from core_pdf.impl._impl.model.geometry import overlap_ratio_min_exact, overlap_ratio_of
 from core_pdf.impl._impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
@@ -362,11 +357,11 @@ def internal_candidate_region_tasks(
             for candidate in direct_regions
             # Region proposals include padding, so a source image need not cover the
             # entire box. It must still cover most of the requested target.
-            if internal_ocr_region_coverage(region.page_box, candidate.page_box)
+            if overlap_ratio_of(region.page_box, candidate.page_box)
             >= OCR_DIRECT_REGION_MIN_COVERAGE
         )
         layered_scan = any(
-            internal_ocr_region_overlap(left.page_box, right.page_box) >= 0.90
+            overlap_ratio_min_exact(left.page_box, right.page_box) >= 0.90
             for index, left in enumerate(matching_direct)
             for right in matching_direct[:index]
         )
@@ -397,7 +392,7 @@ def internal_candidate_region_tasks(
             ocr_pass.scope is OcrPassScope.PAGE
             and len(regions) == 1
             and region.area >= capture.evidence.page_area * 0.75
-            and internal_ocr_region_coverage(
+            and overlap_ratio_of(
                 region.page_box,
                 (0.0, 0.0, capture.width, capture.height),
             )

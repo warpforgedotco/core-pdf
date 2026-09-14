@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import cache
 from importlib.resources import files
 from typing import Protocol, cast
 
@@ -128,7 +129,9 @@ def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
     return (f"{family}-{style}.ttf",)
 
 
+@cache
 def internal_builtin_font(face_name: str) -> TrueTypeFontProgram:
+    """Parse one bundled face once per process; the file set is fixed."""
     resource = files(__package__).joinpath("data", "raster_fonts", face_name)
     return TrueTypeFontProgram(resource.read_bytes(), use_cmap=True)
 

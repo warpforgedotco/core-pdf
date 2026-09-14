@@ -34,8 +34,7 @@ writing, and inspecting PDF documents.
 ### 4. Compliance and accessibility depth
 
 The version/extension foundation and optional veraPDF companion are implemented.
-The [chapter coverage audit](version-coverage.md) tracks supported differences and
-known gaps; recognizing a version or profile does not establish full support.
+Recognizing a version or profile does not establish full support.
 Historical lexical rules, namespace-aware transitive structure roles, 16-bit image
 processing, and version-sensitive ColorDodge/ColorBurn now use that foundation.
 Page UserUnit now reaches physical rendering and OCR sizing while retaining raw native

@@ -50,8 +50,8 @@ Contact: <turcioskevinr@gmail.com>
 The low-level algorithms are also available as the independently versioned `core-pdf-spec`
 package (`core_pdf_spec`). It contains strict PDF and referenced-standard semantics;
 `core-pdf` composes these with reader recovery, font backends, extraction, and rendering.
-See [the architecture](docs/architecture.md) for the package boundary and
-[the spec package](packages/core-pdf-spec/README.md) for low-level usage.
+See [the spec package](packages/core-pdf-spec/README.md) for the package boundary and
+low-level usage.
 
 `PdfDocument.standards` exposes document versions, extensions, and unverified profile
 claims. The optional [`core-pdf-validate`](packages/core-pdf-validate/README.md) companion
