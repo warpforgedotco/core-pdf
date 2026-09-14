@@ -1,5 +1,40 @@
 # Coverage and unused-code findings
 
+## Workspace coverage completion: OCR Newstroke recognition
+
+This checkpoint adds **43 deterministic tests** for Newstroke vector recognition. The full
+suite with pinned Tesseract enabled passed **3,095 tests**, with **32 veraPDF integration
+skips**, in **601.85s**. HTML and JSON reports come from that full-suite run.
+
+| Area | Statement coverage before → after | Branch coverage before → after |
+| --- | ---: | ---: |
+| OCR Newstroke module | 21.72% → 97.95% | 0.00% → 93.08% |
+| Entire workspace | 75.24% → 76.02% | 62.57% → 63.39% |
+
+Tests render the bundled coordinate strings into independent captured line objects, then
+exercise the actual decoder without an OCR engine. Dense pages exceed the real acceptance
+thresholds in all four right-angle orientations. Assertions cover text, sequence order,
+font size, spacing, color, padded bounds, confidence, and provenance. Separate checks reject
+unrelated geometry, invalid paths, invisible strokes, implausible scales/aspects/shear,
+corrupted glyphs, mixed styles, and ambiguous template labels. Backward decoding preserves
+prefix glyphs, longest-template selection, and one/two-space gaps. Trust checks exercise
+each page-level evidence threshold independently.
+
+Two redundant operations were removed after checking their upstream invariants. The
+positive scale and orthogonality checks already reject singular transforms. Every match
+in a decoded sequence has the same stroke style, including width, so bounds padding uses
+that width directly instead of maintaining a maximum during the bounds scan. Tests verify
+padding on alternating styles and preserve barriers between unrelated drawings.
+
+Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks passed.
+No compiled modules shadowed source files, and the top-level unused-symbol scan found no
+new candidates. Coverage source roots, exclusions, and recognition thresholds are unchanged.
+
+The **100% workspace goal remains incomplete**: **9,426 statements and 5,571 branches**
+remain uncovered. Newstroke still has eight uncovered statements and nine branches. The
+next large OCR target is the separate stroke learner: independent seed votes, conflicting
+labels, anchored-word learning, supplemental seeds, and approximate shape matching.
+
 ## Workspace coverage completion: CFF dictionary recovery and accents
 
 This checkpoint adds **24 tests**, bringing the focused CFF suite to **98 tests**. The
