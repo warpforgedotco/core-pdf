@@ -1,5 +1,29 @@
 # Coverage and unused-code findings
 
+## Path geometry and square-cap coverage
+
+Added **72 deterministic cases** for dash intervals and phase, odd and zero-length
+patterns, duplicate/collinear vertices, closed-path seams, circle geometry, analytic
+rectangle coverage, line caps, supplied array views, zero opacity, and empty targets.
+
+Square caps incorrectly used the round-cap nearest-point distance, clipping their
+corners. Butt and square caps now share rectangular projection coverage, with square
+caps extending by half the line width. Removed the square-cap branch from the round-cap
+loop. An independent convex-rectangle sampler verifies horizontal, vertical, diagonal,
+and reversed square-cap lines. Zero-opacity calls retain their existing None alpha
+return while still recording geometric shape coverage.
+
+The locked full workspace suite with real Tesseract and veraPDF passed **5,477 tests,
+no skips, in 357.60s**. Path kernels now cover **303/332 statements and 99/118 branches**.
+Workspace coverage increased **86.35% → 86.56% statements** and
+**77.03% → 77.37% branches**: **33,657 / 38,881 statements** and
+**11,588 / 14,978 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged. Both exact ratchets and all pre-push quality gates passed,
+including both type checkers and import contracts. The static unused-symbol scan remains
+empty. The full 100% goal remains incomplete: **5,224 statements and 3,390 branches**
+remain uncovered. These are local results.
+
+
 ## Embedded font recovery and encoding contracts
 
 Added **86 deterministic cases** for exact CFF table extraction, absent/truncated
