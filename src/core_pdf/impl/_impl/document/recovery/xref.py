@@ -77,6 +77,13 @@ def parse_object_marker_prefix(
     return obj_start, object_number, generation
 
 
+def internal_validate_xref_numbers(offset: int, generation: int) -> None:
+    if offset < 0:
+        raise PdfParseError("invalid xref table entry")
+    if not 0 <= generation <= 65535:
+        raise PdfParseError("invalid xref generation number")
+
+
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
     """Parse a loosely formatted xref entry.
 
@@ -94,10 +101,7 @@ def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
         generation = int(parts[1])
     except ValueError as exc:
         raise PdfParseError("invalid xref table entry") from exc
-    if offset < 0:
-        raise PdfParseError("invalid xref table entry")
-    if not 0 <= generation <= 65535:
-        raise PdfParseError("invalid xref generation number")
+    internal_validate_xref_numbers(offset, generation)
     if len(parts) == 2:
         # No f/n marker: a zero offset is the free-list head, anything else
         # is an in-use object.
@@ -120,8 +124,7 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
             except ValueError:
                 pass
             else:
-                if not 0 <= generation <= 65535:
-                    raise PdfParseError("invalid xref generation number")
+                internal_validate_xref_numbers(offset, generation)
                 next_pos = pos + 18
                 if next_pos < n:
                     while next_pos < n and data[next_pos] in (9, 32):
@@ -584,7 +587,7 @@ class XRefScanner(SyntaxXRefScanner):
         actual_count = 0
         for i in range(num_objs):
             entry_pos = cls.skip_ws(data, pos)
-            if data[entry_pos : entry_pos + 7] == b"trailer":
+            if data[entry_pos : entry_pos + 7].startswith((b"trailer", b"<<")):
                 pos = entry_pos
                 break
             offset, generation, in_use, pos = parse_xref_entry_at(data, pos)
@@ -592,7 +595,7 @@ class XRefScanner(SyntaxXRefScanner):
             actual_count += 1
         while True:
             entry_pos = cls.skip_ws(data, pos)
-            if data[entry_pos : entry_pos + 7] == b"trailer":
+            if data[entry_pos : entry_pos + 7].startswith((b"trailer", b"<<")):
                 pos = entry_pos
                 break
             line, ignored = cls.read_line(data, entry_pos)

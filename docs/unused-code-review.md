@@ -1,5 +1,30 @@
 # Coverage and unused-code findings
 
+## Cross-reference recovery contracts
+
+Added **123 deterministic cases** across fixed/loose entry formats, line endings,
+missing markers, invalid numbers, subsection-count repair, missing trailer keywords,
+stream widths/indexes/truncation, EOF recovery, nearby sections, compressed stream
+salvage, and object-looking bytes inside valid stream payloads.
+
+Two discrepancies became failing controls: fixed-width rows accepted negative offsets
+that loose rows rejected; an overstated subsection count prevented recovery at a trailer
+dictionary without its keyword. Both row parsers now share numeric validation, and
+subsection parsing recognizes the same dictionary boundary as table parsing. Strict spec
+parsing is unchanged. Recovery xref coverage is **92.41% statements / 88.97% branches**
+(46 statements and 32 branches remain in the module).
+
+The locked full workspace suite with real Tesseract and veraPDF passed **4,889 tests,
+no skips, in 636.95s**. Workspace coverage increased **84.98% → 85.20% statements**
+and **74.68% → 75.11% branches**: **33,155 / 38,913 statements** and
+**11,271 / 15,006 branches**. All four roots, vendor-only omissions, and **554 excluded
+lines** remain unchanged; exact verified fractions ratchet the baseline.
+
+Ruff, formatting, both type checkers, and import contracts passed. The static unused-symbol
+scan is empty. The full 100% goal remains incomplete: **5,758 statements and 3,735 branches**
+remain uncovered. These are local results, including the compatibility corpus suites.
+
+
 ## CFF offset validation and table boundaries
 
 Added **54 cases** for FDSelect formats and ranges, FDArray dictionaries, Private/Subrs
