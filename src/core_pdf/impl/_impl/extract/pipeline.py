@@ -84,7 +84,6 @@ class internal_PageExtraction:
     """Native extraction with reusable metadata and layout orchestration."""
 
     internal_capture_page = staticmethod(capture_page)
-    internal_assemble_page = staticmethod(assemble_page)
 
     @property
     def internal_route(self) -> str:
@@ -180,7 +179,7 @@ class internal_PageExtraction:
                 for index, box in enumerate(capture.evidence.image_boxes)
             )
         )
-        assembled = self.internal_assemble_page(
+        assembled = assemble_page(
             blocks,
             page_number=int(self.page.page_number),
             width=capture.width,

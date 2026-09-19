@@ -231,10 +231,10 @@ def internal_type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
     if font_file is None:
         return None
     length1_value = font_file.dictionary.get("Length1")
-    length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
     try:
+        length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
         return Type1FontProgram(font_file.data, length1=length1)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -1246,9 +1246,9 @@ class FontDecoder:
         if glyphs is None:
             glyphs = self.decode_glyphs(bytes(data))
 
-        # Same arithmetic as glyph_advance_vector, with the per-glyph method
-        # call and its attribute loads hoisted out of the loop. The operation
-        # order is kept exactly so the result stays bit-identical.
+        # Aggregate the same displacement model as glyph_advance_vector while
+        # retaining this path's historical operation order. Floating-point
+        # rounding can differ slightly from summing individual method calls.
         if self.is_vertical:
             total_y = 0.0
             vertical_glyph_metric = self.vertical_glyph_metric

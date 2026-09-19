@@ -446,3 +446,279 @@ def test_cmap_resource_names_are_already_decoded() -> None:
     assert resolve_cmap_decoder("/Identity-H") is None
     assert resolve_cmap_resource("UniJIS-UTF16-H") is not None
     assert resolve_cmap_resource("/UniJIS-UTF16-H") is None
+
+
+def type2_operands(*values: float) -> bytes:
+    """Encode explicit operands without relying on the parser under test."""
+    return b"".join(
+        b"\x1c" + int(value).to_bytes(2, "big", signed=True)
+        if value == int(value)
+        else b"\xff" + int(value * 65536).to_bytes(4, "big", signed=True)
+        for value in values
+    )
+
+
+@pytest.mark.parametrize(
+    ("operator", "operands", "expected"),
+    [
+        (3, (2, 3), 1),
+        (3, (0, 3), 0),
+        (3, (2, 0), 0),
+        (4, (2, 0), 1),
+        (4, (0, 3), 1),
+        (4, (0, 0), 0),
+        (5, (0,), 1),
+        (5, (-2,), 0),
+        (9, (-5,), 5),
+        (10, (4, 7), 11),
+        (11, (4, 7), -3),
+        (12, (3, 2), 1.5),
+        (14, (5,), -5),
+        (15, (3, 3), 1),
+        (15, (3, 2), 0),
+        (22, (7, 9, 1, 2), 7),
+        (22, (7, 9, 2, 1), 9),
+        (22, (7, 9, 2, 2), 7),
+        (23, (), 0.5),
+        (24, (-3, 2), -6),
+        (26, (9,), 3),
+    ],
+)
+def test_type2_arithmetic_and_logic_drive_emitted_geometry(operator, operands, expected):
+    # Adobe Technical Note 5177, sections 4.4 and 4.6.
+    program = type2_operands(*operands) + bytes([12, operator, 22, 14])
+    events = []
+    assert internal_execute_type2(program, events) is False
+    assert events == [("move", (expected, 0)), ("flush", ())]
+
+
+@pytest.mark.parametrize(
+    ("program", "expected"),
+    [
+        (type2_operands(4) + b"\x0c\x1b", (4, 4)),
+        (type2_operands(4, 7) + b"\x0c\x1c", (7, 4)),
+        (type2_operands(4, 7, 8) + b"\x0c\x12", (4, 7)),
+        (type2_operands(4, 7, 0) + b"\x0c\x1d\x0c\x0a", (4, 14)),
+        (type2_operands(4, 7, -1) + b"\x0c\x1d\x0c\x0a", (4, 14)),
+        (type2_operands(4, 7, 1) + b"\x0c\x1d\x0c\x0a", (4, 11)),
+        (type2_operands(4, 7, 2, 1) + b"\x0c\x1e", (7, 4)),
+        (type2_operands(4, 7, 2, -1) + b"\x0c\x1e", (7, 4)),
+        (type2_operands(4, 7, 2, 2) + b"\x0c\x1e", (4, 7)),
+        (type2_operands(4, 7, 0, 1) + b"\x0c\x1e", (4, 7)),
+        (type2_operands(99) + b"\x0c\0" + type2_operands(4, 7), (4, 7)),
+    ],
+)
+def test_type2_stack_operations_preserve_operand_order(program, expected):
+    events = []
+    internal_execute_type2(program + b"\x15\x0e", events)
+    assert events == [("move", expected), ("flush", ())]
+
+
+@pytest.mark.parametrize("index", [0, 31])
+def test_type2_transient_storage_is_shared_with_subroutines_but_reset_per_glyph(index):
+    put = type2_operands(23, index) + b"\x0c\x14\x0b"
+    get = type2_operands(index) + b"\x0c\x15\x16\x0e"
+    events = []
+    internal_execute_type2(type2_operands(-107) + b"\x0a" + get, events, local_subrs=(put,))
+    assert events == [("move", (23, 0)), ("flush", ())]
+    # Uninitialized storage is undefined by 4.5; this implementation starts at zero.
+    # The contractual part is that one glyph cannot retain another glyph's values.
+    events.clear()
+    internal_execute_type2(get, events)
+    assert events == [("move", (0, 0)), ("flush", ())]
+
+
+@pytest.mark.parametrize(
+    ("operator", "operands"),
+    [
+        (12, (1, 0)),
+        (26, (-1,)),
+        (20, (5, -1)),
+        (20, (5, 32)),
+        (20, (5, 1.5)),
+        (21, (-1,)),
+        (21, (32,)),
+        (21, (1.5,)),
+        (29, (5, 1)),
+        (29, (5, 0.5)),
+        (30, (5, -1, 1)),
+        (30, (5, 2, 1)),
+        (30, (5, 1, 0.5)),
+        (99, ()),
+    ],
+)
+def test_type2_invalid_arithmetic_and_indices_raise_before_emitting_geometry(operator, operands):
+    events = []
+    with pytest.raises(ValueError, match="invalid Type 2 charstring"):
+        internal_execute_type2(type2_operands(*operands) + bytes([12, operator]), events)
+    assert events == []
+
+
+@pytest.mark.parametrize(
+    "operator", [3, 4, 5, 9, 10, 11, 12, 14, 15, 18, 20, 21, 22, 24, 26, 27, 28, 29, 30]
+)
+def test_type2_stack_underflow_has_consistent_error_family(operator):
+    with pytest.raises(ValueError, match="invalid Type 2 charstring"):
+        internal_execute_type2(bytes([12, operator]), [])
+
+
+@pytest.mark.parametrize(
+    ("operator", "operands", "curves"),
+    [
+        (34, (1, 2, 3, 4, 5, 6, 7), [(1, 0, 2, 3, 4, 0), (5, 0, 6, -3, 7, 0)]),
+        (35, tuple(range(1, 14)), [(1, 2, 3, 4, 5, 6), (7, 8, 9, 10, 11, 12)]),
+        (36, tuple(range(1, 10)), [(1, 2, 3, 4, 5, 0), (6, 0, 7, 8, 9, -14)]),
+        (37, (5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 7), [(5, 1, 5, 1, 5, 1), (5, 1, 5, 1, 7, -5)]),
+        (37, (1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 7), [(1, 5, 1, 5, 1, 5), (1, 5, 1, 5, -5, 7)]),
+    ],
+)
+def test_type2_flex_emits_two_curves_and_clears_operands(operator, operands, curves):
+    # Adobe Technical Note 5177, 4.1: flex variants constrain the final displacement.
+    events = []
+    program = type2_operands(0, 0) + b"\x15" + type2_operands(*operands) + bytes([12, operator])
+    internal_execute_type2(program + type2_operands(2) + b"\x16\x0e", events)
+    assert events == [
+        ("move", (0, 0)),
+        *(("curve", points) for points in curves),
+        ("move", (2, 0)),
+        ("flush", ()),
+    ]
+
+
+@pytest.mark.parametrize("operator", [34, 35, 36, 37])
+@pytest.mark.parametrize("current_point", [False, True])
+def test_type2_flex_rejects_missing_point_or_wrong_arity(operator, current_point):
+    prefix = type2_operands(0, 0) + b"\x15" if current_point else b""
+    with pytest.raises(ValueError, match="invalid Type 2 charstring"):
+        internal_execute_type2(prefix + type2_operands(1, 2) + bytes([12, operator]), [])
+
+
+@pytest.mark.parametrize("operator", [4, 22])
+@pytest.mark.parametrize("width", [(), (50,)])
+def test_type2_axis_move_consumes_optional_width_only_on_first_move(operator, width):
+    events = []
+    internal_execute_type2(
+        type2_operands(*width, 7) + bytes([operator]) + type2_operands(9) + bytes([operator, 14]),
+        events,
+    )
+    expected = [(0, 7), (0, 9)] if operator == 4 else [(7, 0), (9, 0)]
+    assert events == [("move", expected[0]), ("move", expected[1]), ("flush", ())]
+    with pytest.raises(ValueError, match="invalid Type 2 charstring"):
+        internal_execute_type2(
+            type2_operands(7) + bytes([operator]) + type2_operands(50, 9) + bytes([operator]), []
+        )
+
+
+@pytest.mark.parametrize("operator", [26, 27])
+@pytest.mark.parametrize("offset", [(), (9,)])
+def test_type2_parallel_tangent_curves_apply_optional_offset_to_first_curve(operator, offset):
+    values = (*offset, 1, 2, 3, 4, 5, 6, 7, 8)
+    extra = offset[0] if offset else 0
+    curves = (
+        [(extra, 1, 2, 3, 0, 4), (0, 5, 6, 7, 0, 8)]
+        if operator == 26
+        else [(1, extra, 2, 3, 4, 0), (5, 0, 6, 7, 8, 0)]
+    )
+    events = []
+    internal_execute_type2(
+        type2_operands(0, 0) + b"\x15" + type2_operands(*values) + bytes([operator, 14]), events
+    )
+    assert events == [("move", (0, 0)), *(("curve", points) for points in curves), ("flush", ())]
+
+
+@pytest.mark.parametrize("operator", [4, 22, 26, 27])
+@pytest.mark.parametrize("count", [0, 3, 6])
+def test_type2_axis_operators_reject_wrong_operand_counts(operator, count):
+    with pytest.raises(ValueError, match="invalid Type 2 charstring"):
+        internal_execute_type2(
+            type2_operands(0, 0) + b"\x15" + type2_operands(*range(count)) + bytes([operator]), []
+        )
+
+
+@pytest.mark.parametrize("off_size", [1, 2, 3, 4])
+@pytest.mark.parametrize("buffer_type", [bytes, memoryview])
+def test_cff_index_preserves_empty_entries_and_returns_exact_next_offset(off_size, buffer_type):
+    font = CFFFont.__new__(CFFFont)
+    offsets = b"".join(value.to_bytes(off_size, "big") for value in (1, 3, 3, 6))
+    font.data = buffer_type(b"prefix" + b"\0\3" + bytes([off_size]) + offsets + b"abcdeTAIL")
+    entries, end = font.read_index(6)
+    assert entries == [b"ab", b"", b"cde"]
+    assert all(type(entry) is bytes for entry in entries)
+    assert bytes(font.data[end:]) == b"TAIL"
+
+
+@pytest.mark.parametrize(
+    "encoded",
+    [
+        b"\0",
+        b"\0\1",
+        b"\0\1\0",
+        b"\0\1\5",
+        b"\0\1\1\1",
+        b"\0\1\1\0\1",
+        b"\0\2\1\1\3\2ab",
+        b"\0\1\1\1\3a",
+    ],
+)
+def test_cff_index_rejects_truncation_invalid_offsets_and_sizes(encoded):
+    font = CFFFont.__new__(CFFFont)
+    font.data = encoded
+    with pytest.raises(ValueError, match="CFF INDEX"):
+        font.read_index(0)
+
+
+@pytest.mark.parametrize(
+    ("encoded", "dict_number", "expected"),
+    [
+        (b"\x20", False, -107),
+        (b"\xf6", False, 107),
+        (b"\xf7\0", False, 108),
+        (b"\xfa\xff", False, 1131),
+        (b"\xfb\0", False, -108),
+        (b"\xfe\xff", False, -1131),
+        (b"\x1c\x80\0", False, -32768),
+        (b"\x1c\x7f\xff", True, 32767),
+        (b"\x1d\x80\0\0\0", True, -2147483648),
+        (b"\xff\xff\xff\x80\0", False, -0.5),
+        (b"\x1e\xe1\xa2\x5f", True, -1.25),
+        (b"\x1e\x1b\x3f", True, 1000),
+        (b"\x1e\x1c\x3f", True, 0.001),
+    ],
+)
+def test_cff_number_encodings_preserve_sign_precision_and_consumption(
+    encoded, dict_number, expected
+):
+    value, end = CFFFont.parse_number(b"prefix" + encoded + b"TAIL", 6, dict_number=dict_number)
+    assert value == expected
+    assert end == 6 + len(encoded)
+
+
+@pytest.mark.parametrize(
+    ("encoded", "dict_number"),
+    [
+        (b"", False),
+        (b"\xf7", False),
+        (b"\xfb", False),
+        (b"\x1c\0", False),
+        (b"\x1d\0", True),
+        (b"\xff\0", False),
+        (b"\x1e\x12", True),
+        (b"\x1e\x1d\xff", True),
+        (b"\x1d\0\0\0\0", False),
+        (b"\xff\0\0\0\0", True),
+    ],
+)
+def test_cff_numbers_reject_incomplete_and_wrong_context_encodings(encoded, dict_number):
+    with pytest.raises(ValueError):
+        CFFFont.parse_number(encoded, 0, dict_number=dict_number)
+
+
+@pytest.mark.parametrize("count", [48, 49])
+def test_type2_operand_stack_limit_has_positive_control(count):
+    # Technical Note 5177, Appendix B: 48 operands may be live at once.
+    program = type2_operands(*range(count)) + b"\x0c\0\x0e"
+    if count == 48:
+        assert internal_execute_type2(program, []) is False
+    else:
+        with pytest.raises(ValueError, match="invalid Type 2 charstring"):
+            internal_execute_type2(program, [])

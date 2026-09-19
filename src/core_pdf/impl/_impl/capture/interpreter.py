@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Compose PDF execution with the application's capture and font policies."""
 
+from math import isfinite
 from typing import Any
 
 from core_pdf.impl._impl.capture.recording import RecordingMethods
@@ -90,12 +91,10 @@ class TextState(RecordingMethods):
 
     @staticmethod
     def as_float(value: Any) -> float:
-        value_type = type(value)
-        if value_type is float:
-            return value
-        if value_type is int:
-            return float(value)
-        return parse_float_strict(value, "invalid numeric operand")
+        parsed = parse_float_strict(value, "invalid numeric operand")
+        if not isfinite(parsed):
+            raise ValueError("invalid numeric operand")
+        return parsed
 
     @staticmethod
     def as_int(value: Any) -> int:

@@ -14,6 +14,33 @@ internal_SOURCE_ROOTS = (
 internal_EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
 
 
+@pytest.fixture
+def text_pdf_bytes() -> bytes:
+    """A self-contained page with embedded text, requiring no reference library."""
+    content = b"BT /F1 12 Tf 20 100 Td (Hello maintenance) Tj ET"
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+    )
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, value in enumerate(objects, 1):
+        offsets.append(len(data))
+        data.extend(f"{index} 0 obj\n".encode() + value + b"\nendobj\n")
+    xref = len(data)
+    data.extend(f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode())
+    for offset in offsets[1:]:
+        data.extend(f"{offset:010d} 00000 n \n".encode())
+    data.extend(
+        f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    )
+    return bytes(data)
+
+
 def internal_shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
     """Find compiled extensions that shadow a same-named source module."""
     shadowed: list[tuple[pathlib.Path, pathlib.Path]] = []

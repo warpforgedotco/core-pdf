@@ -9,12 +9,12 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.geometry import overlap_ratio_min_exact, overlap_ratio_of
 from core_pdf.impl._impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
     PRIMARY_OCR_PIXELS,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,
@@ -25,6 +25,7 @@ from core_pdf_ocr.impl.extract.ocr.raster import (
     internal_compact_ocr_image,
     internal_raster_ink_grid,
     internal_rendered_page_raster,
+    internal_visible_intensity,
 )
 from core_pdf_ocr.impl.extract.ocr.regions import (
     OCR_DIRECT_REGION_MIN_COVERAGE,
@@ -140,7 +141,7 @@ def internal_estimated_text_height(raster: internal_Raster) -> float:
     pixels = raster.image.array()
     sample_step = max(1, math.ceil(math.sqrt(raster.width * raster.height / 1_000_000)))
     sampled = pixels[::sample_step, ::sample_step]
-    gray = sampled[:, :, 0] if raster.image.channels == 1 else numpy.min(sampled[:, :, :3], axis=2)
+    gray = internal_visible_intensity(sampled)
     background = float(numpy.percentile(gray, 90.0))
     threshold = max(80.0, min(225.0, background - 24.0))
     ink = gray < threshold

@@ -27,14 +27,11 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.text import collapse_ws
 from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf.impl._impl.runtime.array_views import contiguous_bytes, finite_median
-from core_pdf_ocr.impl.extract.contracts import (
-    PRIMARY_OCR_PIXELS,
-    ObservationBatch,
-    ObservationSource,
-)
+from core_pdf_ocr.impl.extract.contracts import PRIMARY_OCR_PIXELS, ObservationSource
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_smooth
 from core_pdf_ocr.impl.extract.ocr.types import (
     internal_map_ocr_box,
@@ -242,7 +239,7 @@ def internal_hocr_filtered_lines(
 def internal_acceptable_text(
     text: str, confidence: float, minimum_confidence: float = 20.0
 ) -> bool:
-    if confidence < minimum_confidence or not text:
+    if not math.isfinite(confidence) or confidence < minimum_confidence or not text:
         return False
     stripped = collapse_ws(text)
     if not stripped:
@@ -415,11 +412,7 @@ def internal_recognize(
     y0 = max(0, min(task.image.height - 1, int(raw_y)))
     w = max(1, int(right - x0))
     h = max(1, int(bottom - y0))
-    if (
-        w > 0
-        and h > 0
-        and (image_prepared or (x0, y0, w, h) != (0, 0, task.image.width, task.image.height))
-    ):
+    if image_prepared or (x0, y0, w, h) != (0, 0, task.image.width, task.image.height):
         with internal_suppress_c_stderr():
             api.SetRectangle(x0, y0, w, h)
     api.SetSourceResolution(task.resolution)
@@ -452,7 +445,6 @@ def internal_recognize(
     filtered_line_breaks: list[bool] = []
     pending_line_break = True
     if iterator is not None:
-        sequence = 0
         while True:
             if task.recognize_words:
                 is_at_beginning = getattr(iterator, "IsAtBeginningOf", None)
@@ -494,7 +486,6 @@ def internal_recognize(
                     filtered_confidences.append(confidence)
                     filtered_line_breaks.append(line_breaks[-1])
                 text_heights.append(float(y1 - y0))
-                sequence += 1
             if not iterator.Next(level):
                 break
     symbols = (
@@ -543,14 +534,22 @@ def internal_recognize(
     return internal_select_character_filtered_candidate(candidate, filtered_candidate)
 
 
-def internal_recognize_group(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
+def internal_recognize_group(
+    tasks: tuple[internal_OcrTask, ...],
+    *,
+    raise_if_cancelled: Callable[[], None] | None = None,
+) -> tuple[internal_Candidate, ...]:
     """Recognize same-raster tasks while reusing Tesseract image setup."""
     if not tasks:
         return ()
+    if raise_if_cancelled is not None:
+        raise_if_cancelled()
     first = tasks[0]
     with internal_owned_api(first.mode) as api:
         candidates = [internal_recognize(first, api_override=api)]
         for task in tasks[1:]:
+            if raise_if_cancelled is not None:
+                raise_if_cancelled()
             candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
         return tuple(candidates)
 
@@ -567,7 +566,12 @@ def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask |
     pixels = max(1, width * height)
     if pixels <= OCR_TIMEOUT_RETRY_PIXELS:
         return None
-    reduction = math.sqrt(OCR_TIMEOUT_RETRY_PIXELS / pixels)
+    # Clamping a thin axis to one pixel must not let the other exceed the budget.
+    reduction = min(
+        math.sqrt(OCR_TIMEOUT_RETRY_PIXELS / pixels),
+        OCR_TIMEOUT_RETRY_PIXELS / max(1, width),
+        OCR_TIMEOUT_RETRY_PIXELS / max(1, height),
+    )
     target_width = max(1, int(width * reduction))
     target_height = max(1, int(height * reduction))
     source = task.image.array()[y : y + height, x : x + width]

@@ -146,7 +146,6 @@ def rasterize_unclipped_line_normal(
     half_squared = half * half
     cap_extension = half if line_cap == 2 else 0.0
     inv_segment_length_squared = 1.0 / segment_length_squared
-    extension_t = cap_extension / segment_length
     ix0, iy0, ix1, iy1 = pixel_box
     samples = 4
     sample_total = samples * samples
@@ -159,7 +158,7 @@ def rasterize_unclipped_line_normal(
         return None
 
     covered = numpy.zeros((y_coords.size, x_coords.size), dtype=numpy.int16)
-    if line_cap == 0:
+    if line_cap in {0, 2}:
         x_page = crop_x0 + (x_coords + 0.5 / samples) / scale
         y_page = crop_y1 - (y_coords + 0.5 / samples) / scale
         x_offset = x_page - x0
@@ -168,15 +167,18 @@ def rasterize_unclipped_line_normal(
         cross_base = numpy.add.outer(-y_offset * x_delta, x_offset * y_delta)
         sample_step = 1.0 / (samples * scale)
         cross_limit = half * segment_length
+        projection_extension = cap_extension * segment_length
         mask = numpy.empty_like(projection_base, dtype=bool)
         condition = numpy.empty_like(projection_base, dtype=bool)
         for sy in range(samples):
             for sx in range(samples):
                 projection_shift = sample_step * (sx * x_delta - sy * y_delta)
-                numpy.greater_equal(projection_base, -projection_shift, out=mask)
+                numpy.greater_equal(
+                    projection_base, -projection_extension - projection_shift, out=mask
+                )
                 numpy.less_equal(
                     projection_base,
-                    segment_length_squared - projection_shift,
+                    segment_length_squared + projection_extension - projection_shift,
                     out=condition,
                 )
                 numpy.logical_and(mask, condition, out=mask)
@@ -207,8 +209,6 @@ def rasterize_unclipped_line_normal(
                 distance_x = base_page_x + sx * sample_step - (x0 + x_delta * closest_t)
                 distance_y = base_page_y[:, None] - sy * sample_step - (y0 + y_delta * closest_t)
                 inside = distance_x * distance_x + distance_y * distance_y <= half_squared
-                if line_cap == 2:
-                    inside &= (t >= -extension_t) & (t <= 1.0 + extension_t)
                 covered += inside
 
     if not numpy.any(covered):

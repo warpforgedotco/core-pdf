@@ -193,10 +193,14 @@ class internal_RasterTarget(
             )
         )
         self.clip_stack = []
-        if clip_path is not None:
-            self.clip.push(clip_path, "nonzero")
-        self.clip_floor = self.clip.depth
-        self.group_floor = len(self.buffer_stack)
+        try:
+            if clip_path is not None:
+                self.clip.push(clip_path, "nonzero")
+            self.clip_floor = self.clip.depth
+            self.group_floor = len(self.buffer_stack)
+        except BaseException:
+            self.pop_scope()
+            raise
 
     def blank_sibling(self) -> tuple[internal_RasterTarget, UInt8Array]:
         """A transparent target with this device geometry, sharing mask caches and guards."""
@@ -231,12 +235,17 @@ class internal_RasterTarget(
         if not self.scope_stack:
             return
         clip_depth, clip_stack, clip_floor, buffer_depth, group_floor = self.scope_stack.pop()
-        while len(self.buffer_stack) > buffer_depth:
-            self.composite_group(self.pop_group())
-        self.clip.restore(clip_depth)
-        self.clip_stack = clip_stack
-        self.clip_floor = clip_floor
-        self.group_floor = group_floor
+        try:
+            while len(self.buffer_stack) > buffer_depth:
+                self.composite_group(self.pop_group())
+        finally:
+            # Failed composition must not strand the remaining suspended buffers.
+            while len(self.buffer_stack) > buffer_depth:
+                self.pop_group()
+            self.clip.restore(clip_depth)
+            self.clip_stack = clip_stack
+            self.clip_floor = clip_floor
+            self.group_floor = group_floor
 
     def paint_items(
         self,
@@ -268,30 +277,34 @@ class internal_RasterTarget(
                 else item.data.get("alpha_is_shape") is True
             )
             self.shape_alpha = 1.0
-            knockout = self.buffer_stack[-1].knockout
-            mask = internal_graphics_soft_mask(item)
-            mask_alpha = internal_resolve_soft_mask(self, mask) if mask is not None else None
-            fillstroke = (
-                isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
-            )
-            elementary_group = knockout or mask_alpha is not None
-            if elementary_group:
-                # An elementary object blends with the initial backdrop. Its
-                # completed shape then replaces preceding group contributions.
-                self.push_elementary_group(
-                    track_shape=mask_alpha is not None,
-                    # Combined fill/stroke inherits the mask on its children
-                    # inside its implicit knockout group, including AIS shape.
-                    mask_alpha=None if fillstroke else mask_alpha,
-                    alpha_is_shape=self.paint_alpha_is_shape,
-                )
             try:
-                self.internal_paint_item(item)
-            finally:
+                knockout = self.buffer_stack[-1].knockout
+                mask = internal_graphics_soft_mask(item)
+                mask_alpha = internal_resolve_soft_mask(self, mask) if mask is not None else None
+                fillstroke = (
+                    isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
+                )
+                elementary_group = knockout or mask_alpha is not None
                 if elementary_group:
-                    child = self.pop_group()
-                    self.composite_group(child)
-                    self.internal_release_elementary_group(child)
+                    # An elementary object blends with the initial backdrop. Its
+                    # completed shape then replaces preceding group contributions.
+                    self.push_elementary_group(
+                        track_shape=mask_alpha is not None,
+                        # Combined fill/stroke inherits the mask on its children
+                        # inside its implicit knockout group, including AIS shape.
+                        mask_alpha=None if fillstroke else mask_alpha,
+                        alpha_is_shape=self.paint_alpha_is_shape,
+                    )
+                try:
+                    self.internal_paint_item(item)
+                finally:
+                    if elementary_group:
+                        child = self.pop_group()
+                        try:
+                            self.composite_group(child)
+                        finally:
+                            self.internal_release_elementary_group(child)
+            finally:
                 self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
             return
         self.internal_paint_item(item)
@@ -617,12 +630,6 @@ class internal_RasterTarget(
                 dst_b, src_b, component_mode, context=self.semantic_context
             )
         out_a = src_a + dst_a * (1.0 - src_a)
-        if out_a <= 0:
-            pixels[idx] = 0
-            pixels[idx + 1] = 0
-            pixels[idx + 2] = 0
-            pixels[idx + 3] = 0
-            return
         out_r = int(round(((src_r * 255.0) * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
         out_g = int(round(((src_g * 255.0) * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
         out_b = int(round(((src_b * 255.0) * src_a + db * dst_a * (1.0 - src_a)) / out_a))
@@ -660,12 +667,6 @@ class internal_RasterTarget(
         src_a = sa / 255.0
         dst_a = da / 255.0
         out_a = src_a + dst_a * (1.0 - src_a)
-        if out_a <= 0:
-            pixels[idx] = 0
-            pixels[idx + 1] = 0
-            pixels[idx + 2] = 0
-            pixels[idx + 3] = 0
-            return
         out_r = int(round((sr * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
         out_g = int(round((sg * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
         out_b = int(round((sb * src_a + db * dst_a * (1.0 - src_a)) / out_a))
@@ -707,12 +708,6 @@ class internal_RasterTarget(
             da = pixels[idx + 3]
             dst_a = da / 255.0
             out_a = src_a + dst_a * one_minus_src_a
-            if out_a <= 0:
-                pixels[idx] = 0
-                pixels[idx + 1] = 0
-                pixels[idx + 2] = 0
-                pixels[idx + 3] = 0
-                continue
             out_r = int(round((sr * src_a + dr * dst_a * one_minus_src_a) / out_a))
             out_g = int(round((sg * src_a + dg * dst_a * one_minus_src_a) / out_a))
             out_b = int(round((sb * src_a + db * dst_a * one_minus_src_a) / out_a))

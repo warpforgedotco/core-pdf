@@ -17,18 +17,15 @@ from typing import Any
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing
+from core_pdf.impl._impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
 from core_pdf.impl._impl.graphics.images import decode_image, decode_pdf_image
-from core_pdf.impl._impl.model.geometry import bbox_union, points_bbox
+from core_pdf.impl._impl.model.geometry import bbox_union
 from core_pdf.impl._impl.render.model import RasterImage
 from core_pdf.impl._impl.runtime.array_views import (
     contiguous_bytes,
     uint8_image_view,
 )
-from core_pdf_ocr.impl.extract.contracts import (
-    FULL_PAGE_IMAGE_COVERAGE,
-    MAX_OCR_PIXELS,
-    PageAnalysis,
-)
+from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import internal_Raster
 
@@ -44,6 +41,18 @@ DIRECT_OCR_MIN_UPSCALE = 1.05
 DIRECT_OCR_WHOLE_SCALE_TOLERANCE = 0.06
 
 
+def internal_visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+    """Minimum color intensity after compositing any alpha onto white."""
+    channels = samples.shape[2]
+    if channels == 1:
+        return samples[:, :, 0]
+    if channels in {2, 4}:
+        intensity = numpy.min(samples[:, :, :-1], axis=2).astype(numpy.uint16)
+        alpha = samples[:, :, -1].astype(numpy.uint16)
+        return (255 - ((255 - intensity) * alpha + 127) // 255).astype(numpy.uint8)
+    return numpy.min(samples, axis=2)
+
+
 def internal_raster_ink_grid(
     raster: internal_Raster, rows: int, columns: int
 ) -> numpy.ndarray[Any, Any]:
@@ -54,10 +63,7 @@ def internal_raster_ink_grid(
     y_step = max(1, raster.height // 512)
     x_step = max(1, raster.width // 512)
     sampled = pixels[::y_step, ::x_step]
-    if raster.image.channels == 1:
-        intensity = sampled[:, :, 0]
-    else:
-        intensity = numpy.min(sampled[:, :, :3], axis=2)
+    intensity = internal_visible_intensity(sampled)
     ink = intensity < 245
     integral = numpy.pad(
         ink.cumsum(axis=0, dtype=numpy.int32).cumsum(axis=1, dtype=numpy.int32),
@@ -206,20 +212,7 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
         math.ceil(math.sqrt(image.width * image.height / OCR_IMAGE_TEXT_SAMPLE_PIXELS)),
     )
     sampled = pixels[::sample_step, ::sample_step]
-    if image.channels == 1:
-        gray = sampled[:, :, 0]
-    elif image.channels == 2:
-        source = sampled[:, :, 0].astype(numpy.uint16)
-        alpha = sampled[:, :, 1].astype(numpy.uint16)
-        gray = (255 - ((255 - source) * alpha + 127) // 255).astype(numpy.uint8)
-    else:
-        colour = sampled[:, :, :3]
-        if image.channels == 4:
-            alpha = sampled[:, :, 3:].astype(numpy.uint16)
-            colour = (255 - ((255 - colour.astype(numpy.uint16)) * alpha + 127) // 255).astype(
-                numpy.uint8
-            )
-        gray = numpy.min(colour, axis=2)
+    gray = internal_visible_intensity(sampled)
 
     gray_16 = gray.astype(numpy.int16)
     horizontal_edges = (
@@ -262,9 +255,7 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
 def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
     """Binarize faded scans against their local background for a fallback pass."""
     pixels = raster.image.array()
-    gray = (
-        pixels[:, :, 0] if raster.image.channels == 1 else numpy.min(pixels[:, :, :3], axis=2)
-    ).astype(numpy.float32)
+    gray = internal_visible_intensity(pixels).astype(numpy.float32)
     radius = max(8, min(24, min(raster.width, raster.height) // 80))
     integral = numpy.pad(gray, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
     y = numpy.arange(raster.height)
@@ -337,7 +328,16 @@ def internal_decoded_image_raster(
     height = decoded_height
     channels = decoded_channels
     if width * height > max_pixels:
-        reduction = math.sqrt(max_pixels / (width * height)) * 0.999
+        # Either dimension can bottom out at one pixel on a narrow image.
+        # Bound the other dimension as well as the estimated area.
+        reduction = (
+            min(
+                math.sqrt(max_pixels / (width * height)),
+                max_pixels / width,
+                max_pixels / height,
+            )
+            * 0.999
+        )
         target_width = max(1, int(width * reduction))
         target_height = max(1, int(height * reduction))
         if samples is None:
@@ -360,7 +360,10 @@ def internal_decoded_image_raster(
         # them. Fractional factors have no such option, and there replication
         # staircases the strokes badly enough to change which glyph is read.
         whole_factor = round(scale)
-        if whole_factor >= 1 and abs(scale - whole_factor) <= DIRECT_OCR_WHOLE_SCALE_TOLERANCE:
+        if (
+            1 <= whole_factor <= headroom
+            and abs(scale - whole_factor) <= DIRECT_OCR_WHOLE_SCALE_TOLERANCE
+        ):
             target_width = width * whole_factor
             target_height = height * whole_factor
             samples = resample_nearest(samples, target_height, target_width)
@@ -421,10 +424,10 @@ def internal_direct_image_orientation(
         points = tuple((float(point[0]), float(point[1])) for point in quad)
     except (IndexError, TypeError, ValueError):
         return None
-    bounds = points_bbox(points)
-    if bounds is None:
+    if not all(math.isfinite(value) for point in points for value in point):
         return None
-    x0, y0, x1, y1 = bounds
+    xs, ys = zip(*points, strict=True)
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
     if x1 <= x0 or y1 <= y0:
         return None
     target_corners = ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
@@ -461,31 +464,40 @@ def internal_orient_direct_image_raster(
     orientation: DirectImageOrientation | None = None,
 ) -> internal_Raster:
     orientation = orientation or internal_direct_image_orientation(image)
-    if orientation in {None, DirectImageOrientation.IDENTITY}:
+    if orientation is None or orientation is DirectImageOrientation.IDENTITY:
         return raster
     samples = raster.image.array()
-    match orientation:
-        case DirectImageOrientation.FLIP_X:
-            oriented = samples[:, ::-1]
-        case DirectImageOrientation.FLIP_Y:
-            oriented = samples[::-1]
-        case DirectImageOrientation.FLIP_XY:
-            oriented = samples[::-1, ::-1]
-        case DirectImageOrientation.TRANSPOSE:
-            oriented = samples.transpose(1, 0, 2)
-        case DirectImageOrientation.TRANSPOSE_FLIP_X:
-            oriented = samples.transpose(1, 0, 2)[::-1]
-        case DirectImageOrientation.TRANSPOSE_FLIP_Y:
-            oriented = samples.transpose(1, 0, 2)[:, ::-1]
-        case DirectImageOrientation.TRANSPOSE_FLIP_XY:
-            oriented = samples.transpose(1, 0, 2)[::-1, ::-1]
-        case _:
-            return raster
+    # The same target-to-source corner mapping drives detection and pixels.
+    # Source corners are TL=0, TR=1, BL=2, BR=3. A target horizontal edge
+    # spanning source rows requires a transpose; descending edges require flips.
+    origin, right, below, _ = internal_DIRECT_IMAGE_ORIENTATIONS[orientation]
+    oriented = samples.transpose(1, 0, 2) if abs(right - origin) == 2 else samples
+    if right < origin:
+        oriented = oriented[:, ::-1]
+    if below < origin:
+        oriented = oriented[::-1]
     height, width, channels = oriented.shape
     return internal_Raster(
         RasterImage(contiguous_bytes(oriented), int(width), int(height), int(channels)),
         raster.resolution,
     )
+
+
+def internal_fit_raster_scale(
+    rendered: Any,
+    scale: float,
+    max_pixels: int,
+    *,
+    crop: tuple[float, float, float, float] | None = None,
+) -> float:
+    """Fit rounded pixel dimensions inside the allocation budget."""
+    if max_pixels < 1:
+        raise ValueError("OCR raster pixel budget must be positive")
+    width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    while width * height > max_pixels:
+        scale *= min(max(1, width - 1) / width, max(1, height - 1) / height)
+        width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    return scale
 
 
 def internal_rendered_page_raster(
@@ -504,11 +516,7 @@ def internal_rendered_page_raster(
     user_unit = float(getattr(page, "user_unit", 1.0))
     safe_scale = math.sqrt(max_pixels / raster_area) * 0.999 / user_unit
     scale = min(requested_scale, safe_scale)
-    # Integer pixel rounding can still exceed the area estimate on small crops.
-    width, height = rendered.unrotated_raster_size(scale, crop=crop)
-    while width * height > max_pixels:
-        scale *= min(max(1, width - 1) / width, max(1, height - 1) / height)
-        width, height = rendered.unrotated_raster_size(scale, crop=crop)
+    scale = internal_fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     try:
         data = rendered.rasterize(
             background=(255, 255, 255, 255),

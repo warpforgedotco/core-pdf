@@ -248,7 +248,7 @@ class internal_PathShapeTargetMixin:
                     slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=expanded
                 )
                 return
-        for row_index, row in enumerate(rows):
+        for row_index, row in enumerate(rows[:bitmap_h]):
             cell_y1 = y1 - row_index * cell_h
             cell_y0 = y1 - (row_index + 1) * cell_h
             if opaque_glyph:

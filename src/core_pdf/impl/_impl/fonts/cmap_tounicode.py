@@ -279,13 +279,6 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
             if match_found:
                 continue
 
-            chunk1 = bytes((data[pos],))
-            mapped1 = mappings_get(chunk1)
-            if mapped1 is not None:
-                out_append(mapped1)
-                pos += 1
-                continue
-
             if 1 not in lengths and n - pos >= 2:
                 cid = (data[pos] << 8) | data[pos + 1]
                 pos += 2

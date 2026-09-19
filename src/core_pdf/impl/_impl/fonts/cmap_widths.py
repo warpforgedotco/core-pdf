@@ -52,9 +52,7 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
         raise ValueError("invalid CID widths array")
     if len(value) == 2 and type(value[0]) is int:
         contiguous_widths = value[1]
-        if isinstance(contiguous_widths, (list, tuple)) and set(
-            map(type, contiguous_widths)
-        ).issubset({int, float}):
+        if isinstance(contiguous_widths, (list, tuple)):
             first = value[0]
             bounds = internal_clipped_cid_bounds(
                 first,
@@ -65,10 +63,16 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
             clipped_first, clipped_last = bounds
             offset = clipped_first - first
             count = clipped_last - clipped_first + 1
-            return CompactCIDWidthMap(
-                clipped_first,
-                tuple(contiguous_widths[offset : offset + count]),
-            )
+            # Compact storage is valid only when every retained width is usable.
+            # Otherwise recover individual entries through the sparse path below.
+            with suppress(ValueError):
+                return CompactCIDWidthMap(
+                    clipped_first,
+                    tuple(
+                        parse_float_strict(width, "invalid CID widths array")
+                        for width in contiguous_widths[offset : offset + count]
+                    ),
+                )
     widths: dict[int, float] = {}
     index = 0
     while index < len(value):
@@ -85,13 +89,8 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
             code = first
             for w in nxt:
                 if MIN_CID <= code <= MAX_CID:
-                    if type(w) is int:
-                        widths[code] = float(w)
-                    elif type(w) is float:
-                        widths[code] = w
-                    else:
-                        with suppress(ValueError):
-                            widths[code] = parse_float_strict(w, "invalid CID widths array")
+                    with suppress(ValueError):
+                        widths[code] = parse_float_strict(w, "invalid CID widths array")
                 code += 1
             index += 1
         else:

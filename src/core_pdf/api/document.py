@@ -19,11 +19,9 @@ from core_pdf.impl._impl.layout.lines import (
     LayoutLine,
     page_layout_geometry_issues,
     page_layout_geometry_summary,
-    text_run_geometry_issues,
 )
 from core_pdf.impl._impl.model.geometry import rect_tuple
 from core_pdf.impl._impl.model.page_selection import PageSelection
-from core_pdf.impl._impl.output.model import DiagnosticTextRun, TextDiagnostics
 from core_pdf.impl._impl.output.model import Document as StructuredDocument
 from core_pdf.impl._impl.output.model import Page as StructuredPage
 from core_pdf.impl._impl.render.model import RenderOptions
@@ -67,25 +65,6 @@ class PdfPage(EnginePdfPage):
 
     def internal_extract_page(self, context: ExtractionScope) -> StructuredPage:
         return extract_page(self, context)
-
-    def text_diagnostics(self, *, include_invisible: bool = True) -> TextDiagnostics:
-        return TextDiagnostics(
-            runs=tuple(
-                DiagnosticTextRun(
-                    text=run.text,
-                    bbox=(run.x0, run.y0, run.x1, run.y1),
-                    font_name=run.font_name,
-                    font_size=run.font_size,
-                    is_vertical=run.is_vertical,
-                    visible=run.visible,
-                    rotation=run.rotation_angle,
-                    seqno=run.seqno,
-                    geometry_issues=text_run_geometry_issues(run),
-                )
-                for run in self.get_page_program().runs
-                if include_invisible or run.visible
-            )
-        )
 
     def get_text_lines(self) -> list[LayoutLine]:
         return [LayoutLine([run]) for run in self.chars if run.text]

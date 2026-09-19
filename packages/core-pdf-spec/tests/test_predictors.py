@@ -118,3 +118,78 @@ def test_png_invalid_depth_error_is_translated_at_the_wrapper() -> None:
         png_predict(b"", columns=1, colors=1, bits_per_component=3)
     with pytest.raises(FilterParseError, match="^invalid PNG predictor bits 3$"):
         apply_png_predictor(b"", FilterParams(bits_per_component=3))
+
+
+def pack_samples(rows, bits):
+    packed = bytearray()
+    for row in rows:
+        binary = "".join(f"{sample:0{bits}b}" for sample in row)
+        binary += "0" * (-len(binary) % 8)
+        packed.extend(int(binary, 2).to_bytes(len(binary) // 8, "big"))
+    return bytes(packed)
+
+
+@pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
+@pytest.mark.parametrize("colors", [1, 3])
+@pytest.mark.parametrize("columns", [1, 3, 8, 129])
+def test_tiff_differences_wrap_per_component_and_restart_each_row(bits, colors, columns):
+    from core_pdf_spec.s_07_filters.predictors import apply_tiff_predictor, tiff_predict
+
+    modulus = 1 << bits
+    rows = [
+        [(modulus - 1 - index * 3 + row * 7) % modulus for index in range(columns * colors)]
+        for row in range(3)
+    ]
+    differences = [
+        [
+            value if index < colors else (value - row[index - colors]) % modulus
+            for index, value in enumerate(row)
+        ]
+        for row in rows
+    ]
+    encoded, expected = pack_samples(differences, bits), pack_samples(rows, bits)
+    assert (
+        tiff_predict(memoryview(encoded), columns=columns, colors=colors, bits_per_component=bits)
+        == expected
+    )
+    assert (
+        apply_tiff_predictor(
+            encoded, FilterParams(columns=columns, colors=colors, bits_per_component=bits)
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
+def test_tiff_wrapper_rejects_partial_rows_but_kernel_keeps_complete_rows(bits):
+    from core_pdf_spec.s_07_filters.predictors import apply_tiff_predictor, tiff_predict
+
+    params = FilterParams(columns=9, colors=3, bits_per_component=bits)
+    row_size = (27 * bits + 7) // 8
+    assert apply_tiff_predictor(b"", params) == b""
+    assert tiff_predict(b"", columns=9, colors=3, bits_per_component=bits) == b""
+    data = bytes(row_size + 1)
+    with pytest.raises(FilterParseError, match="truncated TIFF"):
+        apply_tiff_predictor(data, params)
+    assert tiff_predict(data, columns=9, colors=3, bits_per_component=bits) == bytes(row_size)
+
+
+@pytest.mark.parametrize("bits", [8, 16])
+def test_tiff_word_kernels_preserve_empty_dimensions(bits):
+    from core_pdf_spec.s_07_filters.predictors import tiff_predict
+
+    assert tiff_predict(b"abcd", columns=0, colors=1, bits_per_component=bits) == b""
+
+
+def test_predictor_dispatch_preserves_passthrough_and_error_families():
+    from core_pdf_spec.s_07_filters.predictors import apply_predictor, apply_tiff_predictor
+
+    for params in (None, {}, FilterParams(), {"Predictor": 1}):
+        assert apply_predictor(memoryview(b"payload"), params) == b"payload"
+    assert apply_predictor(b"\x01\x02", {"Predictor": 2, "Columns": 2}) == b"\x01\x03"
+    assert apply_predictor(b"\0\x01", {"Predictor": 15}) == b"\x01"
+    with pytest.raises(FilterParseError, match="invalid stream predictor"):
+        apply_predictor(b"", FilterParams(predictor=3))
+    with pytest.raises(FilterParseError, match="invalid TIFF predictor bits"):
+        apply_tiff_predictor(b"", FilterParams(bits_per_component=3))
+    assert apply_png_predictor(b"", FilterParams()) == b""

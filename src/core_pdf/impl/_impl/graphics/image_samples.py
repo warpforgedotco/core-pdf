@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""High-depth PDF image colour conversion with quantization at the output boundary."""
+"""Shared natural-component conversion and integer image sample decoding."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from core_pdf.impl._impl.graphics.color_spec import (
     internal_nchannel_process,
     parse_color_space,
 )
-from core_pdf.impl._impl.graphics.device_profiles import default_cmyk_transform
+from core_pdf.impl._impl.graphics.device_profiles import cmyk_components_to_srgb
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
 from core_pdf.impl._impl.graphics.icc_profiles import (
     IccProfileError,
@@ -84,21 +84,15 @@ def internal_convert_components(
             return mixed
     if kind in {"DeviceGray", "DeviceRGB"}:
         return internal_quantize(values)
-    if kind in {"DeviceCMYK", "ICCBased"}:
+    if kind == "DeviceCMYK":
+        return cmyk_components_to_srgb(values, rendering=rendering)
+    if kind == "ICCBased":
         try:
-            transform = (
-                default_cmyk_transform()
-                if kind == "DeviceCMYK"
-                else parse_icc_transform(space.icc_profile)
-                if space.icc_profile
-                else None
-            )
+            transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
             if transform is not None and transform.input_channels == values.shape[1]:
                 return transform.apply_uint16(internal_quantize(values, 65535), rendering=rendering)
         except (IccProfileError, IccSampleError):
             pass
-        if kind == "DeviceCMYK":
-            return internal_quantize((1 - values[:, :3]) * (1 - values[:, 3:]))
         if space.alternate is not None:
             return internal_convert_components(
                 values, space.alternate, depth + 1, rendering=rendering
@@ -114,20 +108,29 @@ def internal_convert_components(
         return internal_convert_components(
             base, space.base, depth + 1, matte=matte, alpha=alpha, rendering=rendering
         )
-    if kind in {"Separation", "DeviceN"} and space.alternate is not None:
-        function = internal_compile_pdf_function(space.tint_fn)
-        distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
-        # Decoded image samples are NumPy scalars; shared function evaluators
-        # accept ordinary Python numbers at their numeric boundary.
-        tinted = numpy.asarray(
-            [function(*(float(component) for component in row)) for row in distinct],
-            dtype=numpy.float64,
-        )
-        if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
-            raise ValueError("invalid tint transform output count")
-        return internal_convert_components(tinted, space.alternate, depth + 1, rendering=rendering)[
-            inverse
-        ]
+    if kind in {"Separation", "DeviceN"}:
+        # Reader recovery for missing/unusable tint transforms is subtractive:
+        # zero tint is unpainted, full tint is the darkest approximation.
+        # Keep this policy identical for vector, low- and high-depth samples.
+        try:
+            if space.alternate is None:
+                raise ValueError("missing tint alternate")
+            function = internal_compile_pdf_function(space.tint_fn)
+            distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
+            tinted = numpy.asarray(
+                [function(*(float(component) for component in row)) for row in distinct],
+                dtype=numpy.float64,
+            )
+            if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
+                raise ValueError("invalid tint transform output count")
+            if not numpy.isfinite(tinted).all():
+                raise ValueError("nonfinite tint transform output")
+            return internal_convert_components(
+                tinted, space.alternate, depth + 1, rendering=rendering
+            )[inverse]
+        except (TypeError, ValueError, ArithmeticError):
+            gray = internal_quantize(1 - numpy.max(values, axis=1, keepdims=True))
+            return numpy.repeat(gray, 3, axis=1)
     if kind in {"Lab", "CalGray", "CalRGB"}:
         white = cs_param_floats(space.params, "WhitePoint", 3, [0.9642, 1, 0.8249])
         if kind == "Lab":

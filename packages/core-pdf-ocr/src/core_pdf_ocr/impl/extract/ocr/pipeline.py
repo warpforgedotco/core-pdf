@@ -8,6 +8,7 @@ from typing import Self
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.capture import internal_promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
@@ -15,7 +16,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_PIXELS,
     MAX_OCR_PIXELS,
     PSM_SPARSE_TEXT,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,
@@ -143,11 +143,11 @@ class internal_OcrPassState:
                 )
             else:
                 additions = len(candidate.observations)
-            next_state = replace(self, previous_region_additions=additions)
             if not additions:
-                return next_state
+                return replace(self, previous_region_additions=0)
             return replace(
-                next_state,
+                self,
+                previous_region_additions=additions,
                 selected=candidate,
                 selected_tasks=(*self.selected_tasks, *candidate_source_tasks),
                 seeded_region_selected=used_native_seed and ocr_pass.seed_with_native,
@@ -418,51 +418,47 @@ def internal_recognize_page_with_reserved_raster(
     if selected is None:
         return ObservationBatch.empty()
     selected_tasks = pass_state.selected_tasks
-    if selected_tasks:
-        # Ruled scanned tables defeat Tesseract's page segmentation; when the
-        # page raster shows a full ruling grid, re-recognize cell by cell and
-        # let the grid text replace the page-segmented text inside the grid.
-        source_task = max(
-            selected_tasks,
-            key=lambda task: task.rectangle[2] * task.rectangle[3],
-        )
-        grid = internal_detect_ruling_grid(source_task.image)
-        if grid is not None and internal_grid_is_regular_table(
-            grid, selected.observations, source_task
-        ):
-            x_lines, y_lines, source_samples, slope = grid
-            cell_tasks = internal_grid_cell_tasks(
-                source_task, x_lines, y_lines, source_samples, slope
-            )
-            if len(cell_tasks) >= internal_GRID_MIN_CELLS:
-                cell_candidate = internal_merge_candidate_batches(
-                    session.recognize_tasks(cell_tasks)
+    # Selection only occurs after a nonempty task batch completes.
+    # Ruled scanned tables defeat Tesseract's page segmentation; when the
+    # page raster shows a full ruling grid, re-recognize cell by cell and
+    # let the grid text replace the page-segmented text inside the grid.
+    source_task = max(
+        selected_tasks,
+        key=lambda task: task.rectangle[2] * task.rectangle[3],
+    )
+    grid = internal_detect_ruling_grid(source_task.image)
+    if grid is not None and internal_grid_is_regular_table(
+        grid, selected.observations, source_task
+    ):
+        x_lines, y_lines, source_samples, slope = grid
+        cell_tasks = internal_grid_cell_tasks(source_task, x_lines, y_lines, source_samples, slope)
+        if len(cell_tasks) >= internal_GRID_MIN_CELLS:
+            cell_candidate = internal_merge_candidate_batches(session.recognize_tasks(cell_tasks))
+            cell_observations = internal_grid_row_observations(cell_candidate.observations)
+            if len(cell_observations):
+                grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)
+                prior = selected.observations
+                centers_x = (prior.bbox[:, 0] + prior.bbox[:, 2]) * 0.5
+                centers_y = (prior.bbox[:, 1] + prior.bbox[:, 3]) * 0.5
+                outside = ~(
+                    (centers_x >= grid_box[0])
+                    & (centers_x <= grid_box[2])
+                    & (centers_y >= grid_box[1])
+                    & (centers_y <= grid_box[3])
                 )
-                cell_observations = internal_grid_row_observations(cell_candidate.observations)
-                if len(cell_observations):
-                    grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)
-                    prior = selected.observations
-                    centers_x = (prior.bbox[:, 0] + prior.bbox[:, 2]) * 0.5
-                    centers_y = (prior.bbox[:, 1] + prior.bbox[:, 3]) * 0.5
-                    outside = ~(
-                        (centers_x >= grid_box[0])
-                        & (centers_x <= grid_box[2])
-                        & (centers_y >= grid_box[1])
-                        & (centers_y <= grid_box[3])
-                    )
-                    replaced_alnum = sum(
-                        sum(character.isalnum() for character in prior.text[index])
-                        for index in numpy.flatnonzero(~outside)
-                    )
-                    cell_alnum = sum(
-                        sum(character.isalnum() for character in text)
-                        for text in cell_observations.text
-                    )
-                    if cell_alnum < replaced_alnum * 0.8:
-                        # The page-segmented reads carried more content than
-                        # the cell reads; this grid's cells recognize worse
-                        # than whole-page OCR, so keep the original.
-                        return selected.observations
-                    retained = prior.take(numpy.flatnonzero(outside))
-                    return ObservationBatch.concatenate(retained, cell_observations)
+                replaced_alnum = sum(
+                    sum(character.isalnum() for character in prior.text[index])
+                    for index in numpy.flatnonzero(~outside)
+                )
+                cell_alnum = sum(
+                    sum(character.isalnum() for character in text)
+                    for text in cell_observations.text
+                )
+                if cell_alnum < replaced_alnum * 0.8:
+                    # The page-segmented reads carried more content than
+                    # the cell reads; this grid's cells recognize worse
+                    # than whole-page OCR, so keep the original.
+                    return selected.observations
+                retained = prior.take(numpy.flatnonzero(outside))
+                return ObservationBatch.concatenate(retained, cell_observations)
     return selected.observations

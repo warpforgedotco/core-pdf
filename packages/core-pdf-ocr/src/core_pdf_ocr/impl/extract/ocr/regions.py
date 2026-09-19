@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy
 
+from core_pdf.impl._impl.extract.contracts import internal_bbox_tuple
 from core_pdf.impl._impl.extract.grids import (
     internal_axis_segments,
     internal_grid_components,
@@ -22,7 +23,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     OcrPass,
     PageAnalysis,
-    internal_bbox_tuple,
 )
 from core_pdf_ocr.impl.extract.ocr.raster import (
     internal_decoded_image_raster,
@@ -253,8 +253,6 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
                 (padded[2] - padded[0]) * (padded[3] - padded[1]) < page_area * 0.45
             ):
                 candidates.append(internal_OcrRegion(padded, 4.0, ("grid",)))
-        if not component_horizontal.size or not component_vertical.size:
-            continue
         component_box = (x0, y0, x1, y1)
         component_area = (x1 - x0) * (y1 - y0)
         if component_area < page_area * 0.45 and native_overlap(component_box) < 0.25:
@@ -423,13 +421,14 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
 
     regions = internal_merge_ocr_regions(candidates)
     if not regions:
-        regions = (
-            internal_OcrRegion(
-                (0.0, 0.0, page_width, page_height),
-                0.0,
-                ("page-fallback",),
-            ),
+        page_box = internal_ocr_region_box(
+            (0.0, 0.0, page_width, page_height),
+            page_width=page_width,
+            page_height=page_height,
+            padding=0.0,
         )
+        if page_box is not None:
+            regions = (internal_OcrRegion(page_box, 0.0, ("page-fallback",)),)
     return regions
 
 

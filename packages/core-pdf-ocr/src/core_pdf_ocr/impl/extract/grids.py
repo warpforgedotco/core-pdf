@@ -31,20 +31,17 @@ def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
     """Bridge horizontal gaps up to ``gap`` pixels inside each row.
 
     Scanned rulings drop out along their length, so a rule reads as many
-    short runs. Closing (dilate then erode along the row) reconnects them
-    without thickening genuine text into false rules.
+    short runs. Only bounded gaps within the limit are filled; existing ink
+    and unbounded row margins remain unchanged.
     """
     if gap <= 0:
         return mask
-    window = gap + 1
-    padded = numpy.zeros((mask.shape[0], mask.shape[1] + 2 * window), dtype=numpy.int32)
-    padded[:, window:-window] = mask
-    sums = numpy.cumsum(padded, axis=1)
-    dilated = (sums[:, 2 * window :] - sums[:, : -2 * window]) > 0
-    padded2 = numpy.zeros_like(padded)
-    padded2[:, window:-window] = dilated
-    sums2 = numpy.cumsum(padded2, axis=1)
-    return (sums2[:, 2 * window :] - sums2[:, : -2 * window]) >= (2 * window)
+    width = mask.shape[1]
+    positions = numpy.arange(width)
+    left = numpy.maximum.accumulate(numpy.where(mask, positions, -1), axis=1)
+    right = numpy.minimum.accumulate(numpy.where(mask, positions, width)[:, ::-1], axis=1)[:, ::-1]
+    bounded_gap = (left >= 0) & (right < width) & (right - left - 1 <= gap)
+    return mask | bounded_gap
 
 
 def internal_longest_true_runs(mask: numpy.ndarray) -> numpy.ndarray:
@@ -120,12 +117,10 @@ def internal_detect_ruling_grid(
 ) -> tuple[list[int], list[int], numpy.ndarray, float] | None:
     """Find a ruled table grid; return edges, source samples, and measured skew."""
     array = numpy.asarray(image.array())
-    if array.ndim == 3 and array.shape[2] >= 3:
+    if array.shape[2] >= 3:
         color = array[:, :, :3]
-    elif array.ndim == 3 and array.shape[2] == 1:
+    elif array.shape[2] == 1:
         color = array[:, :, 0]
-    elif array.ndim == 2:
-        color = array
     else:
         return None
     height, width = color.shape[:2]
@@ -268,8 +263,6 @@ def internal_grid_is_regular_table(
     page_width = page_x1 - page_x0
     scale = task.image.width / max(1e-6, page_width)
     interior = x_lines[1:-1]
-    if not interior:
-        return True
     grid_box = internal_grid_region_page_box(task, x_lines, y_lines)
     inside = 0
     straddling = 0

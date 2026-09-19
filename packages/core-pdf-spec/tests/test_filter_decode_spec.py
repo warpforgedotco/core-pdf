@@ -114,3 +114,8 @@ def test_filter_names_preserve_decoded_leading_slashes(value: object) -> None:
     assert normalize_stream_decode_spec({"Filter": value}).steps == (FilterStep("/FlateDecode"),)
     with pytest.raises(FilterUnsupportedError, match="not implemented"):
         decode_stream_data(b"", {"Filter": value})
+
+
+def test_stream_decode_spec_requires_dictionary():
+    with pytest.raises(FilterParseError, match="invalid stream dictionary"):
+        normalize_stream_decode_spec([])

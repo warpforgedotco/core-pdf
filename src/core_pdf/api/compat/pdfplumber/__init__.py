@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import builtins
 import math
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from copy import copy
 from dataclasses import dataclass
 from io import BytesIO
 from itertools import groupby
@@ -15,7 +17,6 @@ from typing import Any, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf.impl._impl.model.geometry import (
     bbox_contains,
-    bbox_intersects,
     bbox_union,
     flip_rect_vertical,
 )
@@ -95,51 +96,59 @@ def cluster_by_preserving_order(
 
 
 class TableSettings:
+    snap_x_tolerance: float
+    snap_y_tolerance: float
+    join_x_tolerance: float
+    join_y_tolerance: float
+    edge_min_length: float
+    edge_min_length_prefilter: float
+    vertical_strategy: str
+    horizontal_strategy: str
+    text_settings: dict[str, Any]
+
     def __init__(self, **values: Any) -> None:
-        allowed = {
-            "vertical_strategy",
-            "horizontal_strategy",
-            "explicit_vertical_lines",
-            "explicit_horizontal_lines",
-            "text_settings",
-            "text_layout",
-            "snap_tolerance",
-            "snap_x_tolerance",
-            "snap_y_tolerance",
-            "join_tolerance",
-            "join_x_tolerance",
-            "join_y_tolerance",
-            "edge_min_length",
-            "edge_min_length_prefilter",
-            "min_words_vertical",
-            "min_words_horizontal",
-            "intersection_tolerance",
-            "intersection_x_tolerance",
-            "intersection_y_tolerance",
+        defaults = {
+            "vertical_strategy": "lines",
+            "horizontal_strategy": "lines",
+            "explicit_vertical_lines": None,
+            "explicit_horizontal_lines": None,
+            "snap_tolerance": 3,
+            "snap_x_tolerance": None,
+            "snap_y_tolerance": None,
+            "join_tolerance": 3,
+            "join_x_tolerance": None,
+            "join_y_tolerance": None,
+            "edge_min_length": 3,
+            "edge_min_length_prefilter": 1,
+            "min_words_vertical": 3,
+            "min_words_horizontal": 1,
+            "intersection_tolerance": 3,
+            "intersection_x_tolerance": None,
+            "intersection_y_tolerance": None,
+            "text_settings": None,
         }
-        unknown = set(values) - allowed
+        unknown = set(values) - defaults.keys() - {"text_layout"}
         if unknown:
-            if "strategy" in unknown:
-                raise TypeError("strategy is not a valid table setting")
-            raise ValueError(f"Unknown table setting: {sorted(unknown)[0]}")
-        self.vertical_strategy = values.pop("vertical_strategy", "lines")
-        self.horizontal_strategy = values.pop("horizontal_strategy", "lines")
-        self.text_settings = values.pop("text_settings", {})
-        self.__dict__.update(values)
+            raise TypeError(f"Unknown table setting: {sorted(unknown)[0]}")
+        self.__dict__.update(defaults | values)
+        self.text_settings = dict(self.text_settings or {})
+        text_tolerance = self.text_settings.pop("tolerance", 3)
+        for axis in ("x", "y"):
+            self.text_settings.setdefault(f"{axis}_tolerance", text_tolerance)
+            for family in ("snap", "join", "intersection"):
+                name = f"{family}_{axis}_tolerance"
+                if name not in values:
+                    setattr(self, name, getattr(self, f"{family}_tolerance"))
         for name, value in self.__dict__.items():
-            if name.endswith("tolerance") and isinstance(value, (int, float)) and value < 0:
+            if (
+                (name.endswith("tolerance") or name.startswith(("edge_min_length", "min_words")))
+                and isinstance(value, (int, float))
+                and value < 0
+            ):
                 raise ValueError(f"{name} must be non-negative")
         for strategy in (self.vertical_strategy, self.horizontal_strategy):
             if strategy not in {"lines", "lines_strict", "text", "explicit"}:
                 raise ValueError(f"unknown table strategy: {strategy}")
-            if strategy == "explicit" and not getattr(
-                self,
-                "explicit_vertical_lines"
-                if strategy == self.vertical_strategy
-                else "explicit_horizontal_lines",
-                None,
-            ):
-                raise ValueError("explicit table strategy requires explicit lines")
 
     @classmethod
     def resolve(cls, settings: Mapping[str, Any] | "TableSettings" | None) -> "TableSettings":
@@ -153,11 +162,7 @@ class TableSettings:
         text_values = {key[5:]: value for key, value in raw.items() if key.startswith("text_")}
         values = {key: value for key, value in raw.items() if not key.startswith("text_")}
         if text_values:
-            existing = values.get("text_settings", {})
-            values["text_settings"] = {
-                **(existing if isinstance(existing, Mapping) else {}),
-                **text_values,
-            }
+            values["text_settings"] = text_values
         return cls(**values)
 
 
@@ -378,13 +383,29 @@ class EnginePageAdapter:
             program = self.page_program()
         return self.page.internal_extract_program_images(program)
 
-    def render(self, *, dpi: float) -> Any:
+    def render(self, *, dpi: float, antialias: bool = False) -> Any:
         # PDFium, used by pdfplumber's image API, leaves UserUnit unapplied.
         rendered = self.page.render()
         rendered.width = rendered.display_list.width
         rendered.height = rendered.display_list.height
         rendered.user_unit = 1.0
-        raster = rendered.rasterize(scale=max(0.01, dpi / 72.0))
+        raster = rendered.rasterize(scale=max(0.01, dpi / 72.0) * (2 if antialias else 1))
+        if antialias:
+            import numpy
+
+            samples = raster.array()
+            height, width = (raster.height + 1) // 2, (raster.width + 1) // 2
+            samples = numpy.pad(
+                samples, ((0, raster.height % 2), (0, raster.width % 2), (0, 0)), mode="edge"
+            )
+            reduced = samples.reshape(height, 2, width, 2, raster.channels).mean(axis=(1, 3))
+            return SimpleNamespace(
+                data=numpy.rint(reduced).astype(numpy.uint8).tobytes(),
+                width=width,
+                height=height,
+                channels=raster.channels,
+                dpi=dpi,
+            )
         return SimpleNamespace(
             data=raster.pixels,
             width=raster.width,
@@ -418,13 +439,15 @@ def _envelope(
 
 
 def _filter_objects(
-    value: Mapping[str, Any], include: Iterable[str] | None, exclude: Iterable[str]
+    value: dict[str, Any], include: Iterable[str] | None, exclude: Iterable[str]
 ) -> None:
     """Apply pdfplumber's include/exclude attribute filters to a page dict in place."""
     allowed = set(include) | {"object_type"} if include is not None else None
-    for objects in value.values():
+    for kind, objects in value.items():
         if not isinstance(objects, list):
             continue
+        objects = [dict(obj) if isinstance(obj, dict) else obj for obj in objects]
+        value[kind] = objects
         for obj in objects:
             if not isinstance(obj, dict):
                 continue
@@ -928,10 +951,7 @@ class Page:
                 width_chars=int(kwargs.get("layout_width_chars", 80)),
                 height_chars=kwargs.get("layout_height_chars"),
             )
-        y_tolerance = float(kwargs.get("y_tolerance", 3))
-        words = _words(self.chars, **kwargs)
-        lines = cluster_by_preserving_order(words, "top", y_tolerance)
-        return "\n".join(" ".join(word["text"] for word in line) for line in lines)
+        return internal_plain_text(self.chars, **kwargs)
 
     def extract_text_simple(self, **kwargs: Any) -> str:
         return self.extract_text(**kwargs)
@@ -969,8 +989,16 @@ class Page:
                 raise ValueError(f"{name} must be a boolean")
         return _words(self.chars, **kwargs)
 
-    def find_tables(self, table_settings: Mapping[str, Any] | None = None) -> list["Table"]:
+    def find_tables(
+        self, table_settings: Mapping[str, Any] | TableSettings | None = None
+    ) -> list["Table"]:
         settings = TableSettings.resolve(table_settings)
+        for axis in ("vertical", "horizontal"):
+            if (
+                getattr(settings, f"{axis}_strategy") == "explicit"
+                and len(getattr(settings, f"explicit_{axis}_lines") or []) < 2
+            ):
+                raise ValueError(f"explicit {axis} strategy requires at least two lines")
         result = self.pdf._document.extract(pages=(self.page_number,))
         page = result.pages[0]
         tables: tuple[StructuredTable | _CompatNativeTable, ...] = page.tables
@@ -1027,8 +1055,19 @@ class Page:
         return self._fallback_tables(settings)
 
     def _fallback_tables(self, settings: TableSettings) -> list["Table"]:
-        words = self.extract_words(return_chars=False)
-        if words:
+        def cell_text(bbox: BBox) -> str:
+            left, top, right, bottom = bbox
+            selected = self.filter(
+                lambda obj: (
+                    obj.get("object_type") == "char"
+                    and left <= (obj["x0"] + obj["x1"]) / 2 < right
+                    and top <= (obj["top"] + obj["bottom"]) / 2 < bottom
+                )
+            )
+            return selected.extract_text(**settings.text_settings)
+
+        words = self.extract_words(return_chars=False, **settings.text_settings)
+        if words and settings.vertical_strategy == settings.horizontal_strategy == "text":
             lines: list[list[ObjectDict]] = []
             for word in words:
                 if not lines or abs(word["top"] - lines[-1][0]["top"]) > 5:
@@ -1062,9 +1101,7 @@ class Page:
                     cell_row: list[_CompatCell] = []
                     for left, right in zip(boundaries, boundaries[1:]):
                         bbox = (left, top, right, bottom)
-                        cell_row.append(
-                            _CompatCell(bbox, self.crop(bbox, strict=False).extract_text())
-                        )
+                        cell_row.append(_CompatCell(bbox, cell_text(bbox)))
                     rows.append(cell_row)
                 table = Table(
                     _CompatNativeTable(
@@ -1095,20 +1132,8 @@ class Page:
                     }
                 )
             finder.edges = rotated
-        vertical = sorted(
-            {
-                edge["x0"]
-                for edge in finder.edges
-                if edge["orientation"] == "v" and edge.get("height", 0) >= 20
-            }
-        )
-        horizontal = sorted(
-            {
-                edge["top"]
-                for edge in finder.edges
-                if edge["orientation"] == "h" and edge.get("width", 0) >= 20
-            }
-        )
+        vertical = sorted({edge["x0"] for edge in finder.edges if edge["orientation"] == "v"})
+        horizontal = sorted({edge["top"] for edge in finder.edges if edge["orientation"] == "h"})
         if len(vertical) < 2 or len(horizontal) < 2:
             return []
         grid_rows: list[list[_CompatCell]] = []
@@ -1123,9 +1148,7 @@ class Page:
                 )
                 if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
                     continue
-                text = self.crop(bbox, strict=False).extract_text()
-                grid_row.append(_CompatCell(bbox, text))
-            grid_rows.append(grid_row)
+                grid_row.append(_CompatCell(bbox, cell_text(bbox)))
             grid_rows.append(grid_row)
         if not grid_rows:
             return []
@@ -1167,75 +1190,63 @@ class Page:
         antialias: bool = False,
         force_mediabox: bool = False,
     ) -> "PageImage":
-        if width is not None and height is not None:
-            raise ValueError("cannot specify both width and height")
-        if resolution is None and width is not None:
+        if sum(value is not None for value in (resolution, width, height)) > 1:
+            raise ValueError("specify only one of resolution, width, or height")
+        if width is not None:
             resolution = width / max(self.width, 1e-9) * 72.0
-        if resolution is not None and height is not None:
-            raise ValueError("cannot specify resolution with height")
-        if resolution is None and height is not None:
+        elif height is not None:
             resolution = height / max(self.height, 1e-9) * 72.0
-        dpi = (resolution or 72.0) * (2.0 if antialias else 1.0)
-        raster = self._adapter.render(dpi=dpi)
-        box_name = "media_box" if force_mediabox else "crop_box"
-        box = getattr(self._adapter.page, box_name, None)
-        if width is not None or height is not None or force_mediabox:
-            original_size = (
-                (raster.width + 2, raster.height + 3)
-                if force_mediabox
-                else (raster.width, raster.height)
-            )
-        elif box is not None and not isinstance(self, CroppedPage):
-            box_width = abs(float(box[2]) - float(box[0]))
-            box_height = abs(float(box[3]) - float(box[1]))
-            if self.rotation % 180:
-                box_width, box_height = box_height, box_width
-            original_size = (math.ceil(box_width), math.ceil(box_height))
-        else:
-            original_size = (round(self.width), round(self.height))
-        return PageImage(self, raster, original_size)
+        raster = self._adapter.render(dpi=resolution or 72.0, antialias=antialias)
+        bbox = (
+            self.bbox
+            if self.bbox != self.mediabox
+            else (self.mediabox if force_mediabox else self.cropbox)
+        )
+        return PageImage(self, raster, bbox=bbox)
 
     def search(
-        self, pattern: str, regex: bool = True, case: bool = True, **kwargs: Any
+        self, pattern: str | re.Pattern[str], regex: bool = True, case: bool = True, **kwargs: Any
     ) -> list[ObjectDict]:
         if isinstance(pattern, str) and (not pattern or pattern.isspace()):
             return []
-        if not regex and hasattr(pattern, "pattern"):
-            raise ValueError("Cannot pass compiled regex with regex=False")
-        import re
-
-        text = "".join(char["text"] for char in self.chars)
+        if isinstance(pattern, re.Pattern) and (not regex or not case):
+            raise ValueError("Cannot combine a compiled regex with regex=False or case=False")
+        main_group = kwargs.get("main_group", 0)
+        characters = self.chars
+        text = "".join(char["text"] for char in characters)
+        source_chars = [char for char in characters for _ in char["text"]]
         expression = (
             re.sub(r"\\ +", r"\\s+", re.escape(pattern))
             if regex and isinstance(pattern, str) and " " in pattern
             else pattern
             if regex
-            else re.escape(pattern)
+            else re.escape(cast(str, pattern))
         )
         flags = 0 if case else re.IGNORECASE
 
         def build_result(match: Any, chars: list[ObjectDict]) -> ObjectDict:
             x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in chars)
             result: ObjectDict = {
-                "text": match.group(0),
-                "groups": match.groups(),
+                "text": match.group(main_group),
                 "x0": x0,
                 "top": top,
                 "x1": x1,
                 "bottom": bottom,
                 "doctop": min(char["doctop"] for char in chars),
             }
+            if kwargs.get("return_groups", True):
+                result["groups"] = match.groups()
             if kwargs.get("return_chars", True):
                 result["chars"] = chars
             return result
 
         results: list[ObjectDict] = []
         for match in re.finditer(expression, text, flags):
-            chars = self.chars[match.start() : match.end()]
-            if not chars:
+            if not match.group(main_group).strip():
                 continue
+            chars = source_chars[match.start(main_group) : match.end(main_group)]
             results.append(build_result(match, chars))
-        if not results and regex and not kwargs.get("layout"):
+        if not results and regex and isinstance(pattern, str) and not kwargs.get("layout"):
             formatted = self.extract_text()
             fallback_expression = re.sub(r"\\ +", r"\\s+", re.escape(pattern))
             for match in re.finditer(fallback_expression, formatted, flags):
@@ -1259,44 +1270,25 @@ class Page:
 
     def dedupe_chars(self, **kwargs: Any) -> "FilteredPage":
         tolerance = float(kwargs.get("tolerance", 1))
-        extra_attrs = tuple(kwargs.get("extra_attrs", ()))
-        # Bucket kept chars by (text, tolerance grid cell) so each candidate
-        # only compares against near-coincident neighbours instead of every
-        # previously kept char on the page.
-        buckets: dict[tuple[Any, Any, Any], list[ObjectDict]] = {}
+        attributes = ("upright", "text", *(kwargs.get("extra_attrs", ("fontname", "size")) or ()))
+        chars = self.chars
+        groups: dict[tuple[Any, ...], list[int]] = {}
+        for index, char in enumerate(chars):
+            groups.setdefault(tuple(char.get(name) for name in attributes), []).append(index)
+        retained = []
 
-        def keep(char: ObjectDict) -> bool:
-            if char.get("object_type") != "char":
-                return True
-            text = char.get("text")
-            x0 = char.get("x0", 0)
-            top = char.get("top", 0)
-            if tolerance > 0:
-                cell_x = math.floor(x0 / tolerance)
-                cell_y = math.floor(top / tolerance)
-                candidate_keys = [
-                    (text, cell_x + dx, cell_y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
-                ]
-                home_key = (text, cell_x, cell_y)
-            else:
-                home_key = (text, x0, top)
-                candidate_keys = [home_key]
-            for key in candidate_keys:
-                for previous in buckets.get(key, ()):
-                    if abs(x0 - previous.get("x0", 0)) > tolerance:
-                        continue
-                    if abs(top - previous.get("top", 0)) > tolerance:
-                        continue
-                    if any(char.get(name) != previous.get(name) for name in extra_attrs):
-                        continue
-                    return False
-            buckets.setdefault(home_key, []).append(char)
-            return True
+        # Cluster transitively in each axis, then keep the earliest positioned
+        # character in each group. Restore source order after selection.
+        def position(index: int) -> tuple[float, float]:
+            return chars[index]["doctop"], chars[index]["x0"]
 
-        return FilteredPage(
-            self,
-            keep,
-        )
+        for indexes in groups.values():
+            for line in cluster_by(indexes, lambda index: chars[index]["doctop"], tolerance):
+                for cluster in cluster_by(line, lambda index: chars[index]["x0"], tolerance):
+                    retained.append(min(cluster, key=position))
+        result = FilteredPage(self, lambda obj: True)
+        result._objects = {**self.objects, "char": [chars[index] for index in sorted(retained)]}
+        return result
 
     def _document_source(self) -> PdfInput:
         return self.pdf.source
@@ -1324,7 +1316,9 @@ class CroppedPage(Page):
         ):
             raise ValueError("Bounding box is outside the page")
         self.__dict__.update(parent.__dict__)
-        self.root_page = parent
+        self.root_page = parent.root_page
+        self.parent_page = parent
+        self.is_original = False
         self.bbox = parent.bbox if mode == "outside" else target
         self._filter_bbox = target
         self._crop_mode = mode
@@ -1334,20 +1328,14 @@ class CroppedPage(Page):
     def objects(self) -> dict[str, list[ObjectDict]]:
         if self._objects is not None:
             return self._objects
-        objects = super().objects
-
-        def keep(obj: ObjectDict) -> bool:
-            obj_bbox = obj_to_bbox(obj)
-            inside = bbox_contains(self._filter_bbox, obj_bbox)
-            intersects = bbox_intersects(self._filter_bbox, obj_bbox)
-            return (
-                inside
-                if self._crop_mode == "within"
-                else (not intersects if self._crop_mode == "outside" else intersects)
-            )
-
+        select = {
+            "within": within_bbox,
+            "outside": outside_bbox,
+            "intersects": crop_to_bbox,
+        }[self._crop_mode]
         self._objects = {
-            kind: [obj for obj in values if keep(obj)] for kind, values in objects.items()
+            kind: select(values, self._filter_bbox)
+            for kind, values in self.parent_page.objects.items()
         }
         return self._objects
 
@@ -1356,6 +1344,7 @@ class FilteredPage(Page):
     def __init__(self, parent: Page, test: Callable[[ObjectDict], bool]) -> None:
         self.__dict__.update(parent.__dict__)
         self._parent = parent
+        self.is_original = False
         self._test = test
         self._objects = None
 
@@ -1453,7 +1442,7 @@ class TableFinder:
         self.settings = TableSettings.resolve(settings)
         self.edges = self._select_edges()
         self.intersections = self._intersections()
-        self.tables = page.find_tables(self.settings.__dict__)
+        self.tables = page.find_tables(self.settings)
         self.cells = [cell for table in self.tables for cell in table.cells]
 
     def get_edges(self) -> list[ObjectDict]:
@@ -1472,7 +1461,9 @@ class TableFinder:
                 else self.settings.horizontal_strategy
             )
             if strategy.startswith("lines"):
-                minimum = float(getattr(self.settings, "edge_min_length", 0))
+                if strategy == "lines_strict" and edge.get("object_type") != "line":
+                    continue
+                minimum = float(self.settings.edge_min_length_prefilter)
                 length = edge["height"] if orientation == "v" else edge["width"]
                 if length >= minimum:
                     selected.append(edge)
@@ -1545,7 +1536,16 @@ class TableFinder:
                             "orientation": "h",
                         }
                     )
-        return selected
+        return filter_edges(
+            merge_edges(
+                selected,
+                self.settings.snap_x_tolerance,
+                self.settings.snap_y_tolerance,
+                self.settings.join_x_tolerance,
+                self.settings.join_y_tolerance,
+            ),
+            min_length=self.settings.edge_min_length,
+        )
 
     def _intersections(self) -> dict[tuple[float, float], dict[str, Any]]:
         intersections: dict[tuple[float, float], dict[str, Any]] = {}
@@ -1575,11 +1575,17 @@ class _ImageOriginal:
 
 class PageImage:
     def __init__(
-        self, page: Page, raster: Any, original_size: tuple[int, int] | None = None
+        self,
+        page: Page,
+        raster: Any,
+        original_size: tuple[int, int] | None = None,
+        *,
+        bbox: BBox | None = None,
     ) -> None:
         self.page = page
-        if getattr(page, "_crop_mode", None) in {"intersects", "within"}:
-            x0, top, x1, bottom = page.bbox
+        self.bbox = bbox if bbox is not None else page.bbox
+        if self.bbox != page.root_page.bbox:
+            x0, top, x1, bottom = self.bbox
             source_width, source_height = raster.width, raster.height
             left = max(0, round(x0 / max(page.root_page.width, 1e-9) * source_width))
             right = min(source_width, round(x1 / max(page.root_page.width, 1e-9) * source_width))
@@ -1614,7 +1620,7 @@ class PageImage:
         return self
 
     def copy(self) -> "PageImage":
-        result = PageImage(self.page, self.raster, self.original.size)
+        result = copy(self)
         result._drawings = list(self._drawings)
         return result
 
@@ -1699,11 +1705,14 @@ class PageImage:
         if not self._drawings:
             return
         channels = self.raster.channels
-        scale_x = self.width / max(self.page.width, 1e-9)
-        scale_y = self.height / max(self.page.height, 1e-9)
+        scale_x = self.width / max(self.bbox[2] - self.bbox[0], 1e-9)
+        scale_y = self.height / max(self.bbox[3] - self.bbox[1], 1e-9)
 
         def point(x: float, y: float) -> tuple[int, int]:
-            return (round(x * scale_x), round(y * scale_y))
+            return (
+                round((x - self.bbox[0]) * scale_x),
+                round((y - self.bbox[1]) * scale_y),
+            )
 
         def set_pixel(x: int, y: int, color: tuple[int, int, int]) -> None:
             if not (0 <= x < self.width and 0 <= y < self.height):
@@ -1724,8 +1733,6 @@ class PageImage:
                 }.get(value.lower(), default)
             if isinstance(value, (tuple, list)) and len(value) >= 3:
                 values = tuple(float(item) for item in value[:3])
-                if max(values) <= 1:
-                    values = tuple(item * 255 for item in values)
                 return (
                     max(0, min(255, round(values[0]))),
                     max(0, min(255, round(values[1]))),
@@ -1746,10 +1753,17 @@ class PageImage:
         for kind, (value, options) in self._drawings:
             if kind in {"line", "rect", "word"}:
                 ink = color(options.get("stroke"), (255, 0, 0))
-                if isinstance(value, Mapping):
+                if kind == "line" and isinstance(value, Mapping) and "pts" in value:
+                    coords = tuple(value["pts"])
+                elif isinstance(value, Mapping):
                     coords = (value["x0"], value["top"], value["x1"], value["bottom"])
                 else:
                     coords = tuple(value)
+                if kind == "line" and coords and isinstance(coords[0], (tuple, list)):
+                    points = [point(float(x), float(y)) for x, y in coords]
+                    for first, last in zip(points, points[1:], strict=False):
+                        line(*first, *last, ink)
+                    continue
                 x0, y0 = point(float(coords[0]), float(coords[1]))
                 x1, y1 = point(float(coords[2]), float(coords[3]))
                 if kind in {"rect", "word"} and options.get("fill") is not None:
@@ -1757,20 +1771,30 @@ class PageImage:
                     for y in range(min(y0, y1), max(y0, y1) + 1):
                         for x in range(min(x0, x1), max(x0, x1) + 1):
                             set_pixel(x, y, fill)
-                line(x0, y0, x1, y1, ink)
-                if kind in {"rect", "word"}:
+                if kind == "line":
+                    line(x0, y0, x1, y1, ink)
+                else:
+                    line(x0, y0, x1, y0, ink)
                     line(x0, y0, x0, y1, ink)
                     line(x1, y0, x1, y1, ink)
                     line(x0, y1, x1, y1, ink)
-            elif kind == "circle" and isinstance(value, Mapping):
-                center = point(float(value["x0"]), float(value["top"]))
-                radius = round(float(value.get("radius", value.get("r", 1))) * scale_x)
+            else:  # The remaining entries are circles emitted by draw_circle().
+                if isinstance(value, Mapping):
+                    cx = (float(value["x0"]) + float(value.get("x1", value["x0"]))) / 2
+                    cy = (float(value["top"]) + float(value.get("bottom", value["top"]))) / 2
+                    default_radius = value.get("radius", value.get("r", 5))
+                else:
+                    cx, cy = value
+                    default_radius = 5
+                center = point(float(cx), float(cy))
+                radius = float(options.get("radius", default_radius))
+                ink = color(options.get("stroke"), (255, 0, 0))
                 for angle in range(360):
                     radians = math.radians(angle)
                     set_pixel(
-                        round(center[0] + radius * math.cos(radians)),
-                        round(center[1] + radius * math.sin(radians)),
-                        (255, 0, 0),
+                        round(center[0] + radius * scale_x * math.cos(radians)),
+                        round(center[1] + radius * scale_y * math.sin(radians)),
+                        ink,
                     )
 
     def _repr_png_(self) -> bytes:
@@ -1779,7 +1803,11 @@ class PageImage:
         return stream.getvalue()
 
     def show(self) -> None:
-        return None
+        """Show the annotated page through Pillow's platform image viewer."""
+        from PIL import Image
+
+        with Image.open(BytesIO(self._repr_png_())) as image:
+            image.show()
 
 
 class PDF(ClosingMixin):
@@ -1964,21 +1992,20 @@ def extract_words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict
 
 
 def within_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
-    x0, top, x1, bottom = bbox
-    return [
-        obj
-        for obj in objs
-        if obj["x0"] >= x0 and obj["x1"] <= x1 and obj["top"] >= top and obj["bottom"] <= bottom
-    ]
+    return [obj for obj in objs if bbox_contains(bbox, obj_to_bbox(obj))]
 
 
 def outside_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
-    x0, top, x1, bottom = bbox
-    return [
-        obj
-        for obj in objs
-        if obj["x1"] <= x0 or obj["x0"] >= x1 or obj["bottom"] <= top or obj["top"] >= bottom
-    ]
+    return [obj for obj in objs if internal_bbox_overlap(obj_to_bbox(obj), bbox) is None]
+
+
+def internal_bbox_overlap(left: BBox, right: BBox) -> BBox | None:
+    """pdfplumber retains shared edges, but excludes a corner-only intersection."""
+    x0, top = max(left[0], right[0]), max(left[1], right[1])
+    x1, bottom = min(left[2], right[2]), min(left[3], right[3])
+    if x1 < x0 or bottom < top or (x1 == x0 and bottom == top):
+        return None
+    return (x0, top, x1, bottom)
 
 
 def obj_to_bbox(obj: ObjectDict) -> BBox:
@@ -1989,15 +2016,36 @@ def intersects_bbox(obj: ObjectDict | Iterable[ObjectDict], bbox: BBox) -> bool 
     if not isinstance(obj, Mapping):
         return [item for item in obj if intersects_bbox(item, bbox)]
     obj = cast(ObjectDict, obj)
-    return bbox_intersects(bbox, obj_to_bbox(obj))
+    return internal_bbox_overlap(bbox, obj_to_bbox(obj)) is not None
 
 
 def crop_to_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
-    return [obj for obj in objs if intersects_bbox(obj, bbox)]
+    clipped = []
+    for obj in objs:
+        overlap = internal_bbox_overlap(obj_to_bbox(obj), bbox)
+        if overlap is None:
+            continue
+        x0, top, x1, bottom = overlap
+        result = {
+            **obj,
+            "x0": x0,
+            "top": top,
+            "x1": x1,
+            "bottom": bottom,
+            "width": x1 - x0,
+            "height": bottom - top,
+        }
+        if "doctop" in obj:
+            result["doctop"] += top - obj["top"]
+        clipped.append(result)
+    return clipped
 
 
 def cluster_list(values: Iterable[float], tolerance: float = 0) -> list[list[float]]:
-    return cluster_by(values, lambda value: value, tolerance)
+    ordered = sorted(values)
+    if tolerance == 0:
+        return [[value] for value in ordered]
+    return cluster_by(ordered, lambda value: value, tolerance)
 
 
 def cluster_objects(values: Iterable[Any], key: Any, tolerance: float = 0) -> list[list[Any]]:
@@ -2020,9 +2068,11 @@ def move_object(obj: ObjectDict, axis: str, value: float) -> ObjectDict:
     elif axis == "v":
         result["top"] += value
         result["bottom"] += value
-        result["doctop"] += value
-        result["y0"] -= value
-        result["y1"] -= value
+        if "doctop" in result:
+            result["doctop"] += value
+        if "y0" in result:
+            result["y0"] -= value
+            result["y1"] -= value
     else:
         raise ValueError("axis must be 'h' or 'v'")
     return result
@@ -2038,30 +2088,77 @@ def resize_object(obj: ObjectDict, key: str, value: float) -> ObjectDict:
         result["height"] = result["bottom"] - result["top"]
         if key == "top":
             result["doctop"] += value - old
-            result["y1"] += old - value
-        elif key == "bottom":
+            if "y1" in result:
+                result["y1"] += old - value
+        elif key == "bottom" and "y0" in result:
             result["y0"] += old - value
     return result
 
 
-def filter_edges(edges: Iterable[ObjectDict], orientation: str, **_: Any) -> list[ObjectDict]:
-    if orientation not in {"h", "v"}:
+def filter_edges(
+    edges: Iterable[ObjectDict],
+    orientation: str | None = None,
+    edge_type: str | None = None,
+    min_length: float = 1,
+) -> list[ObjectDict]:
+    if orientation not in {"h", "v", None}:
         raise ValueError("orientation must be 'h' or 'v'")
-    return [edge for edge in edges if edge.get("orientation") == orientation]
+    return [
+        edge
+        for edge in edges
+        if (orientation is None or edge.get("orientation") == orientation)
+        and (edge_type is None or edge.get("object_type") == edge_type)
+        and edge["height" if edge["orientation"] == "v" else "width"] >= min_length
+    ]
 
 
-def merge_edges(edges: Iterable[ObjectDict], **_: Any) -> list[ObjectDict]:
-    return list(edges)
+def merge_edges(
+    edges: Iterable[ObjectDict],
+    snap_x_tolerance: float = 3,
+    snap_y_tolerance: float = 3,
+    join_x_tolerance: float = 3,
+    join_y_tolerance: float = 3,
+) -> list[ObjectDict]:
+    """Snap parallel edges, then join collinear intervals without mutating inputs."""
+    values = list(edges)
+    if any(edge["orientation"] not in {"h", "v"} for edge in values):
+        raise ValueError("orientation must be 'h' or 'v'")
+    if snap_x_tolerance > 0 or snap_y_tolerance > 0:
+        values = snap_objects(
+            [edge for edge in values if edge["orientation"] == "v"], "x0", snap_x_tolerance
+        ) + snap_objects(
+            [edge for edge in values if edge["orientation"] == "h"], "top", snap_y_tolerance
+        )
+
+    def group_key(edge: ObjectDict) -> tuple[str, float]:
+        orientation = edge["orientation"]
+        return orientation, edge["top" if orientation == "h" else "x0"]
+
+    result: list[ObjectDict] = []
+    for (orientation, _), group in groupby(sorted(values, key=group_key), group_key):
+        start, end, tolerance = (
+            ("x0", "x1", join_x_tolerance)
+            if orientation == "h"
+            else ("top", "bottom", join_y_tolerance)
+        )
+        joined: list[ObjectDict] = []
+        for edge in sorted(group, key=lambda item: item[start]):
+            if joined and edge[start] <= joined[-1][end] + tolerance:
+                if edge[end] > joined[-1][end]:
+                    joined[-1] = resize_object(joined[-1], end, edge[end])
+            else:
+                joined.append(edge)
+        result.extend(joined)
+    return result
 
 
 def snap_objects(objects: Iterable[ObjectDict], attr: str, tolerance: float) -> list[ObjectDict]:
-    values = list(objects)
-    clusters = cluster_list((float(item[attr]) for item in values), tolerance)
-    targets = [sum(cluster) / len(cluster) for cluster in clusters]
-    return [
-        resize_object(item, attr, min(targets, key=lambda target: abs(target - float(item[attr]))))
-        for item in values
-    ]
+    axis = {"x0": "h", "x1": "h", "top": "v", "bottom": "v"}[attr]
+    result: list[ObjectDict] = []
+    for cluster in cluster_objects(objects, attr, tolerance):
+        target = sum(item[attr] for item in cluster) / len(cluster)
+        result.extend(move_object(item, axis, target - item[attr]) for item in cluster)
+    return result
 
 
 def decode_psl_list(values: Iterable[Any]) -> list[Any]:
@@ -2085,11 +2182,15 @@ def to_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [value]
 
 
+def internal_plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
+    words = _words(chars, **kwargs)
+    lines = cluster_by_preserving_order(words, "top", float(kwargs.get("y_tolerance", 3)))
+    return "\n".join(" ".join(word["text"] for word in line) for line in lines)
+
+
 class _TextUtils:
     extract_words = staticmethod(extract_words)
-    extract_text = staticmethod(
-        lambda chars, **kwargs: "\n".join(line["text"] for line in _lines(chars))
-    )
+    extract_text = staticmethod(internal_plain_text)
     extract_text_simple = extract_text
 
 
@@ -2104,7 +2205,7 @@ class _Utils:
                 height_chars=kwargs.get("layout_height_chars"),
             )
             if kwargs.get("layout")
-            else "\n".join(line["text"] for line in _lines(chars))
+            else internal_plain_text(chars, **kwargs)
         )
     )
     extract_text_simple = extract_text
@@ -2300,14 +2401,14 @@ def _lines(chars: Iterable[ObjectDict], return_chars: bool = True) -> list[Objec
     return lines
 
 
-def _group_chars(chars: Iterable[ObjectDict], tolerance: float = 3) -> list[list[ObjectDict]]:
+def _group_chars(chars: Iterable[ObjectDict]) -> list[list[ObjectDict]]:
     # pdfplumber's text map uses whitespace to separate words but does not let
     # standalone space glyphs create layout lines of their own.  Keeping them
     # in the clustering input produced empty lines whenever a space's nominal
     # top differed slightly from the surrounding visible glyphs.
     ordered = sorted(chars, key=lambda item: (item["top"], item["x0"]))
     tiny_font = ordered and max(float(item.get("size", 1)) for item in ordered) <= 1
-    line_tolerance = 25 if tiny_font else tolerance
+    line_tolerance = 25 if tiny_font else 3
     return [
         group
         for group in cluster_by(ordered, "top", line_tolerance)
@@ -2315,14 +2416,8 @@ def _group_chars(chars: Iterable[ObjectDict], tolerance: float = 3) -> list[list
     ]
 
 
-def _line_text(
-    chars: Iterable[ObjectDict],
-    tolerance: float = 3,
-    ratio: float | None = None,
-    extra_attrs: Iterable[str] = (),
-) -> str:
+def _line_text(chars: Iterable[ObjectDict]) -> str:
     ordered = sorted(chars, key=lambda item: item["x0"])
-    attrs = tuple(extra_attrs)
     result: list[str] = []
     previous: ObjectDict | None = None
     pending_space = False
@@ -2332,17 +2427,7 @@ def _line_text(
             pending_space = True
             continue
         gap = char["x0"] - previous["x1"] if previous is not None else 0
-        threshold = tolerance
-        if ratio is not None and previous is not None:
-            threshold = max(tolerance, float(previous.get("size", 0)) * ratio)
-        attrs_changed = previous is not None and any(
-            char.get(attr) != previous.get(attr) for attr in attrs
-        )
-        insert_space = (
-            previous is not None
-            and (pending_space or gap > threshold or attrs_changed)
-            and not punctuation_only
-        )
+        insert_space = previous is not None and (pending_space or gap > 3) and not punctuation_only
         if insert_space:
             result.append(" ")
         char_text = str(char["text"] or "")

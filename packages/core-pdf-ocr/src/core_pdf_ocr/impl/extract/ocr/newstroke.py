@@ -292,8 +292,7 @@ def internal_fit_match(
     if error > FIT_ERROR:
         return None
     determinant = a * d - b * c
-    if determinant == 0.0:
-        return None
+    # Positive axis scales and the orthogonality bound above exclude singular matrices.
     inverse = numpy.asarray(((d, -b), (-c, a)), dtype=numpy.float64) / determinant
     transform = internal_Transform(matrix, inverse, scale, x_scale, y_scale)
     return internal_Match(
@@ -530,15 +529,13 @@ def internal_sequence_run(
     concrete = tuple(
         segment for segment in segments[matches[0].start : matches[-1].stop] if segment is not None
     )
-    # Single pass instead of 5 separate generator passes over `concrete`.
-    max_line_width = concrete[0].line_width
+    # Every match in a sequence shares one stroke style, including line width.
+    padding = concrete[0].line_width * 0.5
     min_x = min(concrete[0].x0, concrete[0].x1)
     max_x = max(concrete[0].x0, concrete[0].x1)
     min_y = min(concrete[0].y0, concrete[0].y1)
     max_y = max(concrete[0].y0, concrete[0].y1)
     for segment in concrete[1:]:
-        if segment.line_width > max_line_width:
-            max_line_width = segment.line_width
         sx0 = segment.x0
         sx1 = segment.x1
         seg_min_x = sx0 if sx0 < sx1 else sx1
@@ -555,7 +552,6 @@ def internal_sequence_run(
             min_y = seg_min_y
         if seg_max_y > max_y:
             max_y = seg_max_y
-    padding = max_line_width * 0.5
     x0 = min_x - padding
     y0 = min_y - padding
     x1 = max_x + padding

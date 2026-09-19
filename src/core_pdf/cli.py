@@ -21,12 +21,6 @@ def build_parser(program_name: str = "core-pdf") -> argparse.ArgumentParser:
         help="Path to PDF file(s) or directory containing PDF files",
     )
     parser.add_argument(
-        "--mode",
-        choices=("markdown",),
-        default="markdown",
-        help="Output format",
-    )
-    parser.add_argument(
         "-r",
         "--recursive",
         action="store_true",
@@ -52,11 +46,6 @@ def build_parser(program_name: str = "core-pdf") -> argparse.ArgumentParser:
         default=None,
         help="Directory to save output files (implies --write)",
     )
-    parser.add_argument(
-        "--plain",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
     return parser
 
 
@@ -76,7 +65,6 @@ def resolve_pdf_paths(paths: Sequence[Path], *, recursive: bool = False) -> list
 
 def process_pdf(
     path: Path,
-    output_format: str,
     *,
     print_content: bool = False,
     write_files: bool = False,
@@ -89,8 +77,6 @@ def process_pdf(
             document.extract()
             return None
 
-        if output_format != "markdown":
-            raise ValueError(f"unsupported output format: {output_format}")
         content = document.extract().to_markdown()
 
     if print_content:
@@ -99,12 +85,11 @@ def process_pdf(
             sys.stdout.write("\n")
         return None
 
-    ext = ".md" if output_format == "markdown" else ".txt"
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        target = output_dir / f"{path.stem}{ext}"
+        target = output_dir / f"{path.stem}.md"
     else:
-        target = path.with_suffix(ext)
+        target = path.with_suffix(".md")
 
     target.write_text(content, encoding="utf-8")
     return target
@@ -134,7 +119,6 @@ def run(
             try:
                 written = process_pdf(
                     path,
-                    args.mode,
                     print_content=args.print_content,
                     write_files=args.write,
                     output_dir=args.output_dir,

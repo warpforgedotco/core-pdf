@@ -439,7 +439,7 @@ def page_to_markdown(page: Page) -> str:
         internal_map_page_element(
             element,
             block=block_to_markdown,
-            table=table_to_markdown,
+            table=table_to_html,
             figure=lambda figure: f"> [Figure: {figure.kind}]",
         )
         for element in page.elements
@@ -560,18 +560,8 @@ def block_to_html(block: Block) -> str:
     return f"<p{attributes}>{text}</p>"
 
 
-def table_to_markdown(table: Table) -> str:
-    """Render a structured table as HTML embedded in Markdown.
-
-    Pipe-table syntax cannot represent merged cells, so using it here discarded
-    row and column spans already recovered by the extraction pipeline.  HTML is
-    valid inline Markdown and preserves the complete table structure for both
-    renderers and downstream document consumers.
-    """
-    return table_to_html(table)
-
-
 def table_to_html(table: Table) -> str:
+    """Preserve merged cells in HTML, also embedded directly in Markdown output."""
     if not table.rows:
         return "<table></table>"
     associated_text = tuple(value for value in (table.title, table.caption) if value is not None)
@@ -656,6 +646,5 @@ __all__ = (
     "page_to_markdown",
     "table_cell_to_json_dict",
     "table_to_html",
-    "table_to_markdown",
     "table_to_json_dict",
 )

@@ -19,34 +19,31 @@ class UnsupportedPngFilterError(PredictorError):
     """Unsupported PNG predictor row filter."""
 
 
-def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    bytes_per_row = colors * columns
+def internal_tiff_predict_words(
+    data: bytes | memoryview, columns: int, colors: int, dtype: numpy.dtype
+) -> bytes:
+    bytes_per_row = colors * columns * dtype.itemsize
     if bytes_per_row <= 0:
         return b""
     complete = (len(data) // bytes_per_row) * bytes_per_row
     if complete == 0:
         return b""
-    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=complete).reshape(
-        -1,
-        columns,
-        colors,
+    rows = numpy.frombuffer(data, dtype=dtype, count=complete // dtype.itemsize).reshape(
+        -1, columns, colors
     )
-    return numpy.cumsum(rows, axis=1, dtype=numpy.uint8).tobytes()
+    return (
+        numpy.cumsum(rows, axis=1, dtype=dtype.newbyteorder("="))
+        .astype(dtype, copy=False)
+        .tobytes()
+    )
+
+
+def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
+    return internal_tiff_predict_words(data, columns, colors, numpy.dtype("u1"))
 
 
 def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    bytes_per_row = colors * columns * 2
-    if bytes_per_row <= 0:
-        return b""
-    complete = (len(data) // bytes_per_row) * bytes_per_row
-    if complete == 0:
-        return b""
-    rows = numpy.frombuffer(data, dtype=">u2", count=complete // 2).reshape(
-        -1,
-        columns,
-        colors,
-    )
-    return numpy.cumsum(rows, axis=1, dtype=numpy.uint16).astype(">u2").tobytes()
+    return internal_tiff_predict_words(data, columns, colors, numpy.dtype(">u2"))
 
 
 def internal_unpack_subbyte_rows(
@@ -126,7 +123,7 @@ def png_predict(
         raise PredictorError("truncated PNG predictor row")
     out = bytearray((n // (row_length + 1)) * row_length)
     out_view = numpy.frombuffer(out, dtype=numpy.uint8)
-    previous: bytes | bytearray | memoryview | numpy.ndarray = bytearray(row_length)
+    previous = memoryview(bytes(row_length))
     bpp = bytes_per_pixel
     rl = row_length
     for row_index, start in enumerate(range(0, n, rl + 1)):
@@ -155,27 +152,23 @@ def png_predict(
         elif filter_type == 3:
             row_bytes = bytearray(data[pos : pos + rl])
             n_row = len(row_bytes)
-            previous_array = previous.tobytes() if isinstance(previous, numpy.ndarray) else previous
             first = min(bpp, n_row)
             for i in range(first):
-                row_bytes[i] = (row_bytes[i] + (previous_array[i] >> 1)) & 0xFF
+                row_bytes[i] = (row_bytes[i] + (previous[i] >> 1)) & 0xFF
             for i in range(bpp, n_row):
-                row_bytes[i] = (
-                    row_bytes[i] + ((row_bytes[i - bpp] + previous_array[i]) >> 1)
-                ) & 0xFF
+                row_bytes[i] = (row_bytes[i] + ((row_bytes[i - bpp] + previous[i]) >> 1)) & 0xFF
             row = row_bytes
         elif filter_type == 4:
             row_bytes = bytearray(data[pos : pos + rl])
             n_row = len(row_bytes)
-            previous_array = previous.tobytes() if isinstance(previous, numpy.ndarray) else previous
             first = min(bpp, n_row)
             for i in range(first):
-                row_bytes[i] = (row_bytes[i] + previous_array[i]) & 0xFF
+                row_bytes[i] = (row_bytes[i] + previous[i]) & 0xFF
             for i in range(bpp, n_row):
                 left, up, up_left = (
                     row_bytes[i - bpp],
-                    previous_array[i],
-                    previous_array[i - bpp],
+                    previous[i],
+                    previous[i - bpp],
                 )
                 p = left + up - up_left
                 pa, pb, pc = abs(p - left), abs(p - up), abs(p - up_left)
@@ -189,7 +182,7 @@ def png_predict(
         else:
             raise UnsupportedPngFilterError(f"Unsupported PNG predictor filter {filter_type}")
         out_view[out_pos : out_pos + rl] = row
-        previous = row
+        previous = memoryview(out)[out_pos : out_pos + rl]
     return bytes(out)
 
 

@@ -188,7 +188,6 @@ class internal_RasterState(Protocol):
         y1: float,
         line_width: float,
         rgba: tuple[int, int, int, int],
-        dash_pattern: tuple[list[float], float] | None = None,
         blend_mode: str | None = None,
         line_cap: int = 0,
     ) -> None: ...

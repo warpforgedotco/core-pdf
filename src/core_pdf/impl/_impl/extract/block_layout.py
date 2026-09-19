@@ -815,7 +815,9 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
         if numeric / max(1, alphanumeric) < 0.25 or len(columns) < 20:
             output.append(block)
             continue
-        ordered = tuple(sorted(block.lines, key=lambda line: internal_line_bbox(line)[:2]))
+        boxes = numpy.asarray(tuple(internal_line_bbox(line) for line in block.lines))
+        indexes = extract_regions.internal_row_order_indexes(numpy.arange(len(block.lines)), boxes)
+        ordered = tuple(block.lines[int(index)] for index in indexes)
         output.append(replace(block, lines=ordered))
     return output
 

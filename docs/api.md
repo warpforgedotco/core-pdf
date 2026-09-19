@@ -107,8 +107,23 @@ with open_pdf("document.pdf") as pdf:
 findings = inspect_xray("document.pdf")  # redaction inspection from engine evidence
 ```
 
-An experimental PyMuPDF facade under `core_pdf.api.compat._unsupported.pymupdf` is not
-part of the supported surface.
+### pdfplumber geometry and image display
+
+`merge_edges` snaps parallel edges and joins collinear intervals using independent
+`snap_x_tolerance`, `snap_y_tolerance`, `join_x_tolerance`, and `join_y_tolerance`
+arguments (each defaults to 3). It accepts iterables, leaves input dictionaries unchanged,
+and rejects unknown options. Table discovery and debugging share this normalization;
+`edge_min_length_prefilter` applies before merging and `edge_min_length` afterward.
+
+`PageImage.show()` displays the current annotated page through Pillow's platform viewer.
+It uses the same PNG pixels as `save()` and `_repr_png_()`; viewer exceptions propagate.
+Pillow is a declared core dependency and is imported when display is requested. Display
+integration tests intercept the viewer call and verify image contents without opening windows.
+
+Method-level differential tests cover geometry, cropping, shared object caches, attribute
+selection, basic table grids, image sizing, annotations, merging, and display routing.
+PDFMiner's stale-reference and malformed-xref recovery remains facade policy, including
+its distinct page selection and lazy iterator/resource lifetime.
 
 ### Unstructured NLP requirements
 

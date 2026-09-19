@@ -55,17 +55,22 @@ def cmyk_bytes_to_srgb(
     samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> ByteSamples:
     """Convert an (n, 4) block of 8-bit DeviceCMYK samples to (n, 3) sRGB."""
+    return cmyk_components_to_srgb(samples.astype(numpy.float64) / 255, rendering=rendering)
+
+
+def cmyk_components_to_srgb(
+    values: numpy.ndarray, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+) -> ByteSamples:
+    """One profile and subtractive fallback policy for all source sample depths."""
+    values = numpy.clip(values, 0, 1)
     transform = default_cmyk_transform()
     if transform is not None:
         try:
-            return transform.apply_uint8(samples, rendering=rendering)
+            words = numpy.rint(values * 65535).astype(numpy.uint16)
+            return transform.apply_uint16(words, rendering=rendering)
         except (IccProfileError, IccSampleError):
             pass
-    # Keep the uncalibrated ink formula as a direct fallback for a damaged or
-    # stripped installation. There is no retained channel table to manage.
-    inks = samples[:, :3].astype(numpy.float64) / 255.0
-    black = samples[:, 3:].astype(numpy.float64) / 255.0
-    return numpy.floor(255.0 * (1.0 - inks) * (1.0 - black)).astype(numpy.uint8)
+    return numpy.rint(255 * (1 - values[:, :3]) * (1 - values[:, 3:])).astype(numpy.uint8)
 
 
 def cmyk_floats_to_srgb(

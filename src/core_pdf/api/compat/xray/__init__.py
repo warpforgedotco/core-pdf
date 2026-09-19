@@ -277,6 +277,12 @@ def _page_redactions(
     ]
     recovered_fonts: dict[str, _RecoveredFont | None] = {}
     recovered_positions: dict[tuple[str, int], float] = {}
+
+    def recover_font(font_name: str) -> _RecoveredFont | None:
+        if font_name not in recovered_fonts:
+            recovered_fonts[font_name] = _recover_font(page, font_name)
+        return recovered_fonts[font_name]
+
     if "overrides" not in override_cache:
         override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
     operand_overrides = override_cache["overrides"]
@@ -301,10 +307,7 @@ def _page_redactions(
             if glyph.seqno in emitted_overrides:
                 continue
             emitted_overrides.add(glyph.seqno)
-            recovered_font = recovered_fonts.setdefault(
-                glyph.font_name,
-                _recover_font(page, glyph.font_name),
-            )
+            recovered_font = recover_font(glyph.font_name)
             if recovered_font is not None:
                 x0 = glyph.advance_bbox[0]
                 for code in override:
@@ -324,10 +327,7 @@ def _page_redactions(
                 continue
         text = glyph.text
         if any(ord(character) < 32 for character in text):
-            recovered_font = recovered_fonts.setdefault(
-                glyph.font_name,
-                _recover_font(page, glyph.font_name),
-            )
+            recovered_font = recover_font(glyph.font_name)
             if recovered_font is not None:
                 text = recovered_font.cmap.decode(glyph.code_bytes)
                 code = glyph.char_code

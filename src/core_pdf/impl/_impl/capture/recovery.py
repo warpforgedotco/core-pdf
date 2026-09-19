@@ -130,7 +130,7 @@ def iter_content_operations(
             prefix = bytes(lexer.raw_data[start : start + 2])
             if str(error) == "unexpected delimiter in content stream":
                 # The reader historically skips all standalone delimiters,
-                # including stray closing strings and PostScript braces.
+                # including stray closing strings. Braces remain ordinary word tokens.
                 lexer.pos = start + (2 if prefix == b">>" else 1)
                 continue
             kind = (

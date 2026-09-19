@@ -108,6 +108,7 @@ def internal_compose_packed_bitmap_numpy(
         offset=first_row * row_byte_length,
     ).reshape(last_row - first_row, row_byte_length)
 
+    combine = numpy.bitwise_or if operator == 0 else numpy.bitwise_xor
     bit_count = last_col - first_col
     destination_x = region_x + first_col
     if first_col & 7 == 0 and destination_x & 7 == 0:
@@ -122,16 +123,10 @@ def internal_compose_packed_bitmap_numpy(
         ]
         if bit_count & 7:
             last_mask = numpy.uint8((0xFF << (8 - (bit_count & 7))) & 0xFF)
-            if operator == 0:
-                destination[:, :-1] |= source_bytes[:, :-1]
-                destination[:, -1] |= source_bytes[:, -1] & last_mask
-            else:
-                destination[:, :-1] ^= source_bytes[:, :-1]
-                destination[:, -1] ^= source_bytes[:, -1] & last_mask
-        elif operator == 0:
-            destination |= source_bytes
+            combine(destination[:, :-1], source_bytes[:, :-1], out=destination[:, :-1])
+            combine(destination[:, -1], source_bytes[:, -1] & last_mask, out=destination[:, -1])
         else:
-            destination ^= source_bytes
+            combine(destination, source_bytes, out=destination)
         return
 
     source_bits = numpy.unpackbits(source, axis=1, bitorder="big")
@@ -147,10 +142,7 @@ def internal_compose_packed_bitmap_numpy(
     destination_bits = numpy.unpackbits(destination, axis=1, bitorder="big")
     bit_offset = destination_x & 7
     target_bits = destination_bits[:, bit_offset : bit_offset + source_bits.shape[1]]
-    if operator == 0:
-        target_bits |= source_bits
-    else:
-        target_bits ^= source_bits
+    combine(target_bits, source_bits, out=target_bits)
     destination[:] = numpy.packbits(destination_bits, axis=1, bitorder="big")
 
 
@@ -171,7 +163,7 @@ def compose_packed_bitmap_data(
         return
     row_byte_length = max(1, (region_width + 7) // 8)
     packed_bytes = (
-        packed_bitmap.nbytes if isinstance(packed_bitmap, numpy.ndarray) else len(packed_bitmap)
+        packed_bitmap.size if isinstance(packed_bitmap, numpy.ndarray) else len(packed_bitmap)
     )
     available_rows = min(row_count, packed_bytes // row_byte_length)
     if available_rows <= 0:

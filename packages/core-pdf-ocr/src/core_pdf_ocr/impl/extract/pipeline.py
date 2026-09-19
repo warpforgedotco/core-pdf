@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
+from core_pdf.impl._impl.extract.capture import internal_STRUCTURE_UNSET
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.extract.pipeline import (
     internal_PageExtraction as NativePageExtraction,
@@ -16,11 +18,11 @@ from core_pdf.impl._impl.extract.pipeline import (
 from core_pdf.impl._impl.output.model import Page
 from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
-from core_pdf_ocr.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
+from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan
-from core_pdf_ocr.impl.extract.emit import assemble_page
 from core_pdf_ocr.impl.extract.observations import fuse_observations, plan_page
 from core_pdf_ocr.impl.extract.table_detection import extract_tables
+from core_pdf_ocr.impl.extract.table_reconcile import internal_remove_duplicate_tables
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.document.page import PdfPage
@@ -34,7 +36,6 @@ class internal_PageExtraction(NativePageExtraction):
     """Selection-local recognition policy over native capture and metadata assembly."""
 
     internal_capture_page = staticmethod(capture_page)
-    internal_assemble_page = staticmethod(assemble_page)
 
     @property
     def capture(self) -> PageAnalysis:
@@ -98,11 +99,13 @@ class internal_PageExtraction(NativePageExtraction):
             self.recognize(context).observations,
             self.plan,
         )
-        return self.internal_layout_products(
+        products = self.internal_layout_products(
             observations,
             extract_tables(self.capture, observations),
             layout=layout_blocks_with_evidence,
         )
+        # Layout must see all detected table obstacles before chart copies are removed.
+        return replace(products, tables=internal_remove_duplicate_tables(products.tables))
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:

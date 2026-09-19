@@ -96,17 +96,27 @@ jobs:
         env:
           CORE_PDF_VERAPDF: ${{ runner.temp }}/verapdf/verapdf
           CORE_PDF_REQUIRE_VERAPDF: "1"
+          COVERAGE_FILE: .coverage.verapdf
           JAVA_TOOL_OPTIONS: -Duser.home=${{ runner.temp }}/verapdf
         run: >-
           uv run --locked --no-sync pytest
-          packages/core-pdf-validate/tests/test_verapdf_integration.py -ra
+          packages/core-pdf-validate/tests/test_verapdf_integration.py
+          --cov --cov-config=pyproject.toml --cov-report=term -ra
+
+      - name: Upload validator coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-verapdf
+          path: .coverage.verapdf
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
-  differential:
-    name: Differential / Python 3.13
+  workspace:
+    name: Workspace suite / Python 3.13
     runs-on: ubuntu-latest
 
     steps:
@@ -124,14 +134,77 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install core-pdf and reference libraries
-        run: uv sync --locked --package core-pdf --extra unstructured --group test --group vendor-test
+      - name: Install workspace and reference libraries
+        run: uv sync --locked --all-packages --extra unstructured --group test --group vendor-test
 
-      - name: Run differential tests
+      - name: Install pinned OCR test model and verify linked engine
+        run: uv run --locked --no-sync python scripts/install_ocr_ci.py "$RUNNER_TEMP/tessdata"
+
+      - name: Run complete workspace with coverage
+        env:
+          CORE_PDF_TESSERACT_TESTS: "1"
+          TESSDATA_PREFIX: ${{ runner.temp }}/tessdata
+          COVERAGE_FILE: .coverage.workspace
         run: >-
-          uv run --locked --package core-pdf --extra unstructured --group test --group vendor-test pytest
-          tests/src/core_pdf/api/compat/differential/ -n 2
+          uv run --locked --no-sync pytest -n 2
+          --cov --cov-config=pyproject.toml --cov-report=term -ra
+
+      - name: Upload workspace coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-workspace
+          path: .coverage.workspace
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
+
+  differential:
+    # Preserve the existing required status name while gating the complete suite.
+    name: Differential / Python 3.13
+    needs: [workspace, verapdf]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both test jobs to pass
+        env:
+          WORKSPACE_RESULT: ${{ needs.workspace.result }}
+          VALIDATOR_RESULT: ${{ needs.verapdf.result }}
+        run: test "$WORKSPACE_RESULT" = success && test "$VALIDATOR_RESULT" = success
+
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+
+      - name: Install coverage tools
+        run: uv sync --locked --only-group test
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+          path: coverage-data
+
+      - name: Combine and report complete coverage
+        run: |
+          uv run --locked --no-sync coverage combine coverage-data
+          uv run --locked --no-sync coverage html
+          uv run --locked --no-sync coverage json
+          uv run --locked --no-sync coverage report
+
+      - name: Publish coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-coverage
+          path: |
+            htmlcov/
+            .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Enforce statement and branch ratchets
+        run: uv run --locked --no-sync python scripts/check_coverage.py

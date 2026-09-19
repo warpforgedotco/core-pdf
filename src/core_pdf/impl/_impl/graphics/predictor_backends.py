@@ -13,8 +13,6 @@ from core_pdf_spec.s_07_filters.predictors import (
     UnsupportedPngFilterError,
 )
 
-PNG_CODEC_THRESHOLD = 0
-
 
 def png_predict(
     data: bytes | memoryview,
@@ -24,17 +22,16 @@ def png_predict(
     bits_per_component: int,
     damaged_rows_before_error: int = 0,
 ) -> bytes:
-    if bits_per_component not in {1, 2, 4, 8, 16}:
+    if bits_per_component not in SUPPORTED_PREDICTOR_BITS:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")
-    if len(data) >= PNG_CODEC_THRESHOLD:
-        try:
-            decoded = internal_png_predict_codec(
-                data, columns=columns, colors=colors, bits_per_component=bits_per_component
-            )
-        except Exception:
-            decoded = None
-        if decoded is not None:
-            return decoded
+    try:
+        decoded = internal_png_predict_codec(
+            data, columns=columns, colors=colors, bits_per_component=bits_per_component
+        )
+    except Exception:
+        decoded = None
+    if decoded is not None:
+        return decoded
     stride = max(1, (colors * columns * bits_per_component + 7) // 8) + 1
     # The historical direct helper retains complete rows from a truncated stream.
     stop = len(data) // stride * stride

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
+from core_pdf.impl._impl.extract.contracts import ObservationBatch, internal_bbox_tuple
 from core_pdf.impl._impl.extract.selection import (
     internal_assemble_document,
     internal_prepare_document_pages,
@@ -22,12 +23,7 @@ from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     internal_capture_from_program,
 )
-from core_pdf_ocr.impl.extract.contracts import (
-    ObservationBatch,
-    PageAnalysis,
-    RecognitionResult,
-    internal_bbox_tuple,
-)
+from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult
 from core_pdf_ocr.impl.extract.ocr.strokes import (
     GlyphSignature,
     StrokedTextDecode,
@@ -50,7 +46,6 @@ DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 class internal_FontEnrichment:
     """Immutable learned Unicode overlay for one exact document selection."""
 
-    seed_indexes: tuple[int, ...] = ()
     learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
     recognition_by_index: Mapping[int, RecognitionResult] = field(
         default_factory=lambda: MappingProxyType({})
@@ -230,7 +225,6 @@ def internal_prepare_document_font_mappings(
             internal_font_mapping_votes(captures[page_index], recognition.observations),
         )
     return internal_FontEnrichment(
-        seed_indexes=seed_indexes,
         learned_unicode=internal_resolve_document_font_mappings(votes),
         recognition_by_index=MappingProxyType(recognition_by_index),
     )
@@ -251,11 +245,10 @@ def internal_apply_font_enrichment(
     font: internal_FontEnrichment,
 ) -> tuple[internal_PageExtraction, ...]:
     """Create local pipelines only for non-seed pages changed by the overlay."""
-    seed_indexes = frozenset(font.seed_indexes)
     enriched: list[internal_PageExtraction] = []
     for index, (base, capture) in enumerate(zip(extractions, captures, strict=True)):
         recognition = font.recognition_by_index.get(index)
-        if index in seed_indexes:
+        if recognition is not None:
             enriched.append(
                 internal_PageExtraction(
                     base.page,
@@ -356,6 +349,7 @@ def internal_prepare_document_stroked_mappings(
     ambiguous: set[GlyphSignature] = set()
     recognition_by_index: dict[int, RecognitionResult] = {}
     for page_index in ordered:
+        context.raise_if_cancelled()
         extraction = extractions[page_index]
         recognition = extraction.recognition_result
         if recognition is None and alphabet and (profile := extraction.stroked_profile) is not None:

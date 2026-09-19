@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing
+from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.text import compact_text, text_tokens
 from core_pdf_ocr.impl.extract.capture import (
     internal_hidden_text_needs_verification,
@@ -18,7 +19,6 @@ from core_pdf_ocr.impl.extract.contracts import (
     PSM_SPARSE_TEXT,
     PSM_SPARSE_TEXT_OSD,
     FusionPolicy,
-    ObservationBatch,
     OcrPass,
     OcrPassScope,
     PageAnalysis,
@@ -433,20 +433,6 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                     run_if_additions_below=4,
                     adaptive_scale=True,
                     character_confidence_threshold=55.0,
-                    region_first=True,
-                    include_native_text=True,
-                ),
-                OcrPass(
-                    "schematic-regions-fallback",
-                    OcrPassScope.WEAK_REGIONS,
-                    internal_vector_text_scale(capture, vector_complexity),
-                    (6,),
-                    tiles=8,
-                    region_columns=4,
-                    max_regions=8,
-                    minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
-                    run_if_additions_below=0,
-                    seed_with_native=True,
                     region_first=True,
                     include_native_text=True,
                 ),

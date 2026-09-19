@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
+from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.model import LineCap, LineJoin
 from core_pdf.impl._impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
@@ -35,7 +35,6 @@ class internal_PathStrokeTargetMixin:
         y1: float,
         line_width: float,
         rgba: tuple[int, int, int, int],
-        dash_pattern: tuple[list[float], float] | None = None,
         blend_mode: str | None = None,
         line_cap: int = 0,
     ) -> None:
@@ -54,16 +53,6 @@ class internal_PathStrokeTargetMixin:
         pixels = self.pixels
         scale = self.scale
         width = self.width
-        if dash_pattern and dash_pattern[0]:
-            self.stroke_path(
-                CapturedPath([CapturedSubpath([(x0, y0), (x1, y1)])]),
-                line_width,
-                rgba,
-                dash_pattern,
-                blend_mode,
-                line_cap,
-            )
-            return
         dx = x1 - x0
         dy = y1 - y0
         if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
@@ -130,7 +119,7 @@ class internal_PathStrokeTargetMixin:
         sample_total = samples * samples
         half2 = half * half
         inv_seg_len2 = 1.0 / seg_len2
-        extension_t = cap_extension / seg_len
+        projection_extension = cap_extension * seg_len
         normal_fast = blend_mode is None
         track_shape = self.group_source_shape is not None
         if (
@@ -183,19 +172,22 @@ class internal_PathStrokeTargetMixin:
                     for sample_offset in RASTER_SAMPLE_OFFSETS
                 )
                 covered = 0
-                if line_cap == 0:
+                if line_cap in {0, 2}:
                     cross_limit = half2 * seg_len2
                     for page_y in page_y_samples:
                         offset_y = page_y - y0
                         for page_x in page_x_samples:
                             offset_x = page_x - x0
                             projection = offset_x * dx + offset_y * dy
-                            if projection < 0.0 or projection > seg_len2:
+                            if (
+                                projection < -projection_extension
+                                or projection > seg_len2 + projection_extension
+                            ):
                                 continue
                             cross = offset_x * dy - offset_y * dx
                             if cross * cross <= cross_limit:
                                 covered += 1
-                elif line_cap == 1:
+                else:
                     cross_limit = half2 * seg_len2
                     for page_y in page_y_samples:
                         offset_y = page_y - y0
@@ -214,19 +206,6 @@ class internal_PathStrokeTargetMixin:
                                 end_y = page_y - y1
                                 if end_x * end_x + end_y * end_y <= half2:
                                     covered += 1
-                else:
-                    for page_y in page_y_samples:
-                        for page_x in page_x_samples:
-                            t = ((page_x - x0) * dx + (page_y - y0) * dy) * inv_seg_len2
-                            if line_cap == 2 and (t < -extension_t or t > 1.0 + extension_t):
-                                continue
-                            closest_t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
-                            qx = x0 + dx * closest_t
-                            qy = y0 + dy * closest_t
-                            dist_x = page_x - qx
-                            dist_y = page_y - qy
-                            if dist_x * dist_x + dist_y * dist_y <= half2:
-                                covered += 1
                 if covered:
                     alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
                     shape = round(255 * covered / sample_total) if track_shape else 255
@@ -341,7 +320,6 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    None,
                     blend_mode,
                     0,
                 )
@@ -359,7 +337,6 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    None,
                     blend_mode,
                     0,
                 )
@@ -373,7 +350,6 @@ class internal_PathStrokeTargetMixin:
                     y1,
                     line_width,
                     rgba,
-                    None,
                     blend_mode,
                     0,
                 )

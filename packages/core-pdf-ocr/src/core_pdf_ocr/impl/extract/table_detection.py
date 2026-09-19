@@ -76,7 +76,6 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         chart_observations.append((text, box))
 
     seen: dict[str, list[Rectangle]] = {}
-    column = 0
     for text, box in sorted(chart_observations, key=lambda item: item[1][0]):
         matching_boxes = seen.setdefault(text.casefold(), [])
         # Repeated values belong to distinct chart positions; suppress only
@@ -90,16 +89,14 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         parts = internal_chart_cell_texts(text)
         if len(parts) == 1:
             boxes.append(box)
-            cells.append(TableCell(row=0, column=column, text=text, bbox=box))
-            column += 1
+            cells.append(TableCell(row=0, column=len(cells), text=text, bbox=box))
             continue
         width = (box[2] - box[0]) / len(parts)
         for offset, part in enumerate(parts):
             part_box = (box[0] + width * offset, box[1], box[0] + width * (offset + 1), box[3])
             boxes.append(part_box)
-            cells.append(TableCell(row=0, column=column, text=part, bbox=part_box))
-            column += 1
-    if len(cells) < 3 or not boxes:
+            cells.append(TableCell(row=0, column=len(cells), text=part, bbox=part_box))
+    if len(cells) < 3:
         return None
     row_tolerance = max(6.0, capture.height * 0.008)
     row_groups: list[tuple[float, list[TableCell]]] = []

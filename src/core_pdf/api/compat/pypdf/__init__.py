@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import replace
 from io import BytesIO
 from os import PathLike
@@ -107,49 +107,6 @@ class StructuredState(ClosingMixin):
 
     def capability_page(self, page_number: int) -> Any:
         return self.capability_document().pages[page_number - 1]
-
-    def replace_pages(self, pages: Sequence[Page]) -> "StructuredState":
-        return StructuredState.synthetic(replace(self.structured, pages=tuple(pages)))
-
-    def delete_page(self, page_number: int) -> "StructuredState":
-        return self.replace_pages(
-            tuple(page for index, page in enumerate(self.pages, 1) if index != page_number)
-        )
-
-    def update_metadata(self, values: Mapping[str, Any]) -> "StructuredState":
-        return StructuredState.synthetic(
-            replace(self.structured, metadata={**self.structured.metadata, **values})
-        )
-
-    def apply_redactions(self) -> "StructuredState":
-        redactions = tuple(
-            annotation.bbox
-            for page in self.pages
-            for annotation in page.annotations
-            if (annotation.subtype or "").casefold() == "redact" and annotation.bbox
-        )
-
-        def covered(box: tuple[float, float, float, float] | None) -> bool:
-            return bool(
-                box
-                and any(
-                    box[0] >= redaction[0]
-                    and box[1] >= redaction[1]
-                    and box[2] <= redaction[2]
-                    and box[3] <= redaction[3]
-                    for redaction in redactions
-                )
-            )
-
-        return self.replace_pages(
-            tuple(
-                replace(
-                    page,
-                    blocks=tuple(block for block in page.blocks if not covered(block.bbox)),
-                )
-                for page in self.pages
-            )
-        )
 
     def close(self) -> None:
         if self.pdf is not None:
@@ -371,15 +328,16 @@ class PdfReader(ClosingMixin):
         raise AttributeError(name)
 
     def _materialize(self) -> None:
-        """Materialize page objects and merge engine info metadata lazily."""
+        """Materialize page objects and project PDF Info names lazily."""
         document = self._document
         self.pages = tuple(PdfPageObject(document, page) for page in document.pages)
         raw_metadata = document.source_pdf.get_metadata()
-        metadata: dict[str, Any] = (
-            dict(cast(Any, raw_metadata.get("info", {}))) if isinstance(raw_metadata, dict) else {}
+        info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}
+        self.metadata = (
+            {f"/{str(key).lstrip('/')}": value for key, value in info.items()}
+            if isinstance(info, Mapping)
+            else {}
         )
-        metadata.update(document.metadata)
-        self.metadata = metadata
 
     @property
     def num_pages(self) -> int:

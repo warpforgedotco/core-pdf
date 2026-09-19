@@ -400,7 +400,7 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
         if width <= 0.0:
             suspect_runs += 1
             continue
-        if abs((width / max(1, text_len)) - run.space_width) <= max(1.0, run.space_width * 0.05):
+        if abs((width / text_len) - run.space_width) <= max(1.0, run.space_width * 0.05):
             suspect_runs += 1
     if suspect_runs < max(3, len(non_space_runs) // 3):
         return None
@@ -410,29 +410,27 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
     for run in non_space_runs:
         if previous is not None:
             prev_len = len(previous.stripped_text)
-            if prev_len > 0:
-                delta = run.x0 - previous.x0
-                ratio = delta / prev_len
-                space_width = max(1.0, min(previous.space_width, run.space_width))
-                if space_width * 0.18 <= ratio <= space_width * 0.95:
-                    ratios.append(ratio)
+            delta = run.x0 - previous.x0
+            ratio = delta / prev_len
+            space_width = max(1.0, min(previous.space_width, run.space_width))
+            if space_width * 0.18 <= ratio <= space_width * 0.95:
+                ratios.append(ratio)
         previous = run
     if len(ratios) < 3:
         return None
     ratios.sort()
     median_ratio = ratios[len(ratios) // 2]
-    typical_space = median_low([run.space_width for run in non_space_runs if run.space_width > 0.0])
-    if typical_space <= 0.0:
+    spaces = [run.space_width for run in non_space_runs if run.space_width > 0.0]
+    if not spaces:
         return median_ratio
+    typical_space = median_low(spaces)
     return min(median_ratio, typical_space * 0.48)
 
 
 def should_use_estimated_word_spacing(previous: str, current: str) -> bool:
     if not previous or not current:
         return False
-    if previous == "T" and current in {"he", "hes", "hese", "his"}:
-        return True
-    return not (not previous[-1].isalpha() or not current[0].isalpha())
+    return previous[-1].isalpha() and current[0].isalpha()
 
 
 def trailing_alpha_token(text: str) -> str:
@@ -508,7 +506,7 @@ def should_join_plausible_split_word(
         return True
     if head_rank is not None and joined_rank < min(tail_rank, head_rank):
         return True
-    if len(head) <= 3 and joined_rank <= max(tail_rank * 8, 150_000):
+    if len(head) <= 3:
         return True
     return bool(head_rank is None and joined_rank < tail_rank)
 
@@ -681,9 +679,7 @@ def reorder_stacked_formula_numerators(runs: list[TextRun]) -> list[TextRun]:
         )
         if denominator_index is None:
             continue
-        denominator = reordered[denominator_index]
-        reordered[denominator_index:index] = [numerator, *reordered[denominator_index:index]]
-        reordered[index] = denominator
+        reordered.insert(denominator_index, reordered.pop(index))
     return reordered
 
 
@@ -701,7 +697,7 @@ def stacked_formula_denominator(
         return False
     numerator_text = numerator.stripped_text
     if denominator.stripped_text[:1] == "T" and numerator_text in {"t", "s"}:
-        if following is None or following.stripped_text[:1] not in ",;:)]}]:":
+        if following is None or following.stripped_text[:1] not in {",", ";", ":", ")", "]", "}"}:
             return False
     elif not numerator_text.isdigit():
         return False
