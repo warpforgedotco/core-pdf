@@ -120,7 +120,12 @@ class PdfPage:
         results = []
         for annot in self._annotation_dicts(strict=True):
             subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
-            rect = self.document.resolver.resolve_box(annot.get("Rect"))
+            try:
+                rect = self.document.resolver.resolve_box(annot.get("Rect"))
+            except ValueError:
+                if recover_annotations:
+                    continue
+                raise ValueError("invalid page annotation rectangle") from None
             if rect is None:
                 if recover_annotations:
                     continue
