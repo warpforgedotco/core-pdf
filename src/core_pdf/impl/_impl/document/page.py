@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, cast
+from contextlib import suppress
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl._impl.capture.page import (
@@ -19,8 +21,21 @@ from core_pdf.impl._impl.document.page_links import (
 from core_pdf.impl._impl.document.records import RawAnnotation, RawLink
 from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dict
 from core_pdf.impl._impl.document.structure import PageStructure
+from core_pdf.impl._impl.extract.pipeline import extract_page
+from core_pdf.impl._impl.graphics.images import decode_image
+from core_pdf.impl._impl.layout.lines import (
+    LayoutGeometrySummary,
+    LayoutLine,
+    page_layout_geometry_issues,
+    page_layout_geometry_summary,
+)
+from core_pdf.impl._impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.output.model import Page as StructuredPage
+from core_pdf.impl._impl.render.model import RenderOptions
+from core_pdf.impl._impl.render.page import compose_page
+from core_pdf.impl._impl.runtime.execution import ExtractionScope
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import DrawingRecord, ImageMetadata, ImageRecord, PdfReference
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -31,6 +46,7 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfObject,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -51,7 +67,7 @@ if TYPE_CHECKING:
 
 
 class PdfPage:
-    document: PdfDocument
+    document: PdfDocument[Any]
     page_dict: PdfDict
     page_number: int
     contents: CachedPdfObject | None
@@ -59,7 +75,7 @@ class PdfPage:
 
     def __init__(
         self,
-        document: PdfDocument,
+        document: PdfDocument[Any],
         page_dict: PdfDict,
         page_number: int,
         *,
@@ -369,3 +385,134 @@ class PdfPage:
     @property
     def chars(self) -> list[TextRun]:
         return list(self.get_page_program().runs)
+
+    @property
+    def structured_view(self) -> StructuredPage:
+        return self.extract()
+
+    def extract(self) -> StructuredPage:
+        with self.document.acquire_operation() as operation:
+            context = ExtractionScope(cancelled=lambda: operation.cancelled)
+            return self.internal_extract_page(context)
+
+    def internal_extract_page(self, context: ExtractionScope) -> StructuredPage:
+        return extract_page(self, context)
+
+    def get_text_lines(self) -> list[LayoutLine]:
+        return [LayoutLine([run]) for run in self.chars if run.text]
+
+    def extract_geometry_issues(self) -> tuple[object, ...]:
+        return page_layout_geometry_issues(self.get_text_lines())
+
+    def extract_geometry_summary(self) -> LayoutGeometrySummary:
+        return page_layout_geometry_summary(self.get_text_lines())
+
+    @staticmethod
+    def internal_drawing_records(drawings: Iterable[Any]) -> tuple[DrawingRecord, ...]:
+        return tuple(
+            DrawingRecord.from_captured(
+                drawing,
+                raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
+                image_clip=rect_tuple(drawing.image_clip),
+                items=tuple(drawing.items),
+                rect=rect_tuple(drawing.rect),
+            )
+            for drawing in drawings
+            if drawing.kind not in {"scope-begin", "scope-end"}
+        )
+
+    def get_drawings(self) -> tuple[DrawingRecord, ...]:
+        return self.internal_drawing_records(self.get_page_program().drawings)
+
+    def extract_images(
+        self,
+        *,
+        include_inline: bool = True,
+        include_xobjects: bool = True,
+    ) -> tuple[ImageRecord, ...]:
+        if not include_inline and not include_xobjects:
+            return ()
+        return self.internal_extract_program_images(
+            self.get_page_program(),
+            include_inline=include_inline,
+            include_xobjects=include_xobjects,
+        )
+
+    def internal_extract_program_images(
+        self,
+        program: PageProgram,
+        *,
+        include_inline: bool = True,
+        include_xobjects: bool = True,
+    ) -> tuple[ImageRecord, ...]:
+        images: list[ImageRecord] = []
+        if include_xobjects:
+            images.extend(
+                ImageRecord.from_captured(drawing)
+                for drawing in self.internal_drawing_records(program.drawings)
+                if drawing.kind == "image"
+            )
+        if include_inline:
+            images.extend(
+                ImageRecord(
+                    kind="inline-image",
+                    seqno=image.seqno,
+                    fill=image.fill,
+                    fill_pattern=None,
+                    fill_opacity=image.fill_opacity,
+                    stroke_color=None,
+                    stroke_pattern=None,
+                    stroke_opacity=None,
+                    line_width=1.0,
+                    line_cap=0,
+                    line_join=0,
+                    dash_pattern=None,
+                    fill_rule="nonzero",
+                    blend_mode=image.blend_mode,
+                    soft_mask_alpha=image.soft_mask_alpha,
+                    raw_data=image.data,
+                    dictionary=image.dictionary,
+                    image_source=image.image_source,
+                    image_clip=image.image_clip,
+                    path=None,
+                    items=(),
+                    rect=None,
+                )
+                for image in program.inline_images
+            )
+        for index, image in enumerate(images):
+            source = cast(ImageSource | None, image.image_source)
+            raster = decode_image(source) if source is not None else None
+            if raster is not None:
+                images[index] = replace(
+                    image,
+                    data=raster,
+                    image_metadata=ImageMetadata(
+                        width=raster.width,
+                        height=raster.height,
+                        channels=raster.channels,
+                        color_model=raster.color_model,
+                        alpha=raster.has_alpha,
+                        stride=raster.stride,
+                        source_rect=(0.0, 0.0, raster.width, raster.height),
+                        transform=None,
+                        clipping=rect_tuple(image.image_clip),
+                    ),
+                )
+        return tuple(images)
+
+    def render(self, options: RenderOptions | None = None) -> Any:
+        options = options or RenderOptions()
+        fields: tuple[RawFormField, ...] = ()
+        if options.include_layers:
+            with suppress(ValueError):
+                fields = tuple(self.get_fields())
+        annotations = tuple(self.get_annotations()) if options.include_annotations else None
+        return compose_page(
+            self,
+            options,
+            page_program=self.get_page_program(fields=fields, annotations=annotations or None),
+            fields=fields,
+            annotations=annotations,
+            semantic_context=self.document.resolver.semantic_context,
+        )

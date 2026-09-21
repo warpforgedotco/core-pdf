@@ -109,10 +109,10 @@ class internal_StructureNode:
 
     def __init__(
         self,
-        document: PdfDocument,
+        document: PdfDocument[Any],
         props: PdfDict,
         *,
-        internal_lookup: internal_PageLookup | None = None,
+        internal_lookup: internal_PageLookup[Any] | None = None,
     ) -> None:
         self.document = document
         self.internal_lookup = internal_lookup
@@ -151,10 +151,10 @@ class StructureElement(internal_StructureNode):
 
     def __init__(
         self,
-        document: PdfDocument,
+        document: PdfDocument[Any],
         props: PdfDict,
         *,
-        internal_lookup: internal_PageLookup | None = None,
+        internal_lookup: internal_PageLookup[Any] | None = None,
     ) -> None:
         super().__init__(document, props, internal_lookup=internal_lookup)
         self.role_resolution_value: StructureRole | None | object = MISSING
@@ -356,10 +356,10 @@ class StructureTree(internal_StructureNode):
 
     def __init__(
         self,
-        document: PdfDocument,
+        document: PdfDocument[Any],
         props: PdfDict,
         *,
-        internal_lookup: internal_PageLookup | None = None,
+        internal_lookup: internal_PageLookup[Any] | None = None,
     ) -> None:
         super().__init__(document, props, internal_lookup=internal_lookup)
         self.role_map_value: dict[str, str] | None = None
@@ -445,7 +445,11 @@ class PageStructure(Sequence[StructureElement | None]):
     elements: dict[int, StructureElement]
 
     def __init__(
-        self, page: PdfPage, parents: Any, *, internal_lookup: internal_PageLookup | None = None
+        self,
+        page: PdfPage,
+        parents: Any,
+        *,
+        internal_lookup: internal_PageLookup[Any] | None = None,
     ) -> None:
         self.page = page
         self.internal_lookup = internal_lookup
@@ -518,10 +522,10 @@ StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureC
 
 
 def get_kid_page_index(
-    document: PdfDocument,
+    document: PdfDocument[Any],
     page: PdfPage | None,
     kid: PdfDict,
-    internal_lookup: internal_PageLookup | None = None,
+    internal_lookup: internal_PageLookup[Any] | None = None,
 ) -> int | None:
     pg = kid.get("Pg")
     if pg is not None:
@@ -542,10 +546,10 @@ def get_kid_page_index(
 def make_kids(
     kid: Any,
     page: PdfPage | None,
-    document: PdfDocument,
+    document: PdfDocument[Any],
     depth: int = 0,
     *,
-    internal_lookup: internal_PageLookup | None = None,
+    internal_lookup: internal_PageLookup[Any] | None = None,
 ) -> Iterator[StructureChild]:
     recover_structure = document.recovery_enabled
     stack: list[tuple[Any, int]] = [(kid, depth)]

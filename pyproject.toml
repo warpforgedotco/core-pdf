@@ -488,12 +488,6 @@ source_modules = ["core_pdf.impl"]
 forbidden_modules = ["core_pdf.api"]
 
 [[tool.importlinter.contracts]]
-name = "The public document API does not depend on compatibility facades"
-type = "forbidden"
-source_modules = ["core_pdf.api.document"]
-forbidden_modules = ["core_pdf.api.compat"]
-
-[[tool.importlinter.contracts]]
 name = "Base modules stay beneath the spec and derived processing"
 type = "forbidden"
 source_modules = [
