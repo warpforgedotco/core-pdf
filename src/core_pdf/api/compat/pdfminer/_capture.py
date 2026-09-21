@@ -1,5 +1,3 @@
-"""Capture PDF page evidence with PDFMiner parsing and cursor semantics."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -27,8 +25,6 @@ from ._fonts import (
 
 
 class internal_PdfminerContentLexer(PdfLexer):
-    """Keep PDFMiner's string and content-container parsing at the facade boundary."""
-
     def read_string(
         self,
         *,
@@ -43,7 +39,6 @@ class internal_PdfminerContentLexer(PdfLexer):
         )
 
     def parse_dictionary_or_stream(self) -> PdfDict:
-        # A content parser never switches into indirect-object stream parsing.
         return self.parse_dictionary()
 
     def handle_dictionary_key_error(self) -> bool:
@@ -68,12 +63,7 @@ class internal_PdfminerRecovery(CaptureRecovery):
 
 
 class internal_PdfminerTextState(TextState):
-    """Capture literal text with PDFMiner's per-character cursor arithmetic."""
-
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
-        # PDFMiner layout uses advance boxes and font metrics, never ink bounds.
-        # Avoid executing each embedded glyph outline for an unused capture product.
-        # Glyphs also carry their own provenance, so layout does not need text runs.
         super().__init__(
             document, page_clip=page_clip, capture_ink_bounds=False, capture_text_runs=False
         )
@@ -91,7 +81,6 @@ class internal_PdfminerTextState(TextState):
         super().exit_stream(state, frame)
 
     def current_capture_actual_text_span(self) -> None:
-        # PDFMiner exposes encoded glyphs, ignoring marked-content replacement text.
         return None
 
     def text_boundary(self, state: object, kind: str) -> None:
@@ -114,9 +103,6 @@ class internal_PdfminerTextState(TextState):
         adjustment_scale = 0.001 * self.graphics.font_size * scale
         char_space = self.graphics.char_space * scale
         word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale
-        # Spacing precedes each subsequent glyph in one show operation. Keep
-        # advances in text space until projection, including across TJ strings.
-        # Adding them to the page origin first changes exact line-margin ties.
         needs_spacing = False
         paint: GlyphPaint | None = None
         for value in array:
@@ -187,7 +173,6 @@ def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
 
 
 def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
-    """Apply failures raised while pdfminer constructs a page resource map."""
     resources = page.resources
     fonts = page.document.resolver.resolve(resources.get("Font"))
     if isinstance(fonts, dict):

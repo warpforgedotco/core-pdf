@@ -13,13 +13,6 @@ from core_pdf_spec.s_09_fonts.widths import (
 
 
 def internal_clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None:
-    """Return the valid part of a recovery-parsed CID range.
-
-    PDF CIDs are limited to 0 through 65535. Width arrays are parsed
-    tolerantly elsewhere in this module, so a partially overlapping range
-    keeps its valid portion while a reversed or wholly invalid range is
-    ignored.
-    """
     if last < first or last < MIN_CID or first > MAX_CID:
         return None
     return (max(first, MIN_CID), min(last, MAX_CID))
@@ -63,8 +56,6 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
             clipped_first, clipped_last = bounds
             offset = clipped_first - first
             count = clipped_last - clipped_first + 1
-            # Compact storage is valid only when every retained width is usable.
-            # Otherwise recover individual entries through the sparse path below.
             with suppress(ValueError):
                 return CompactCIDWidthMap(
                     clipped_first,

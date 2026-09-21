@@ -1,5 +1,3 @@
-"""Packed stroke rasterization handles clipping, closure, and degenerate geometry."""
-
 from dataclasses import replace
 
 import numpy

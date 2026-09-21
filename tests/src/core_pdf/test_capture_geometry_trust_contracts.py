@@ -1,5 +1,3 @@
-"""Occurrence geometry and evidence thresholds for extraction-only hidden text."""
-
 from dataclasses import replace
 
 import pytest

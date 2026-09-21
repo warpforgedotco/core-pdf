@@ -1,5 +1,3 @@
-"""Equivalent raster paths and recoverable graphics-state boundaries."""
-
 import numpy as np
 import pytest
 

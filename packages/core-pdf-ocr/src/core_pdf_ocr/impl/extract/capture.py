@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Enrich native captures with selection-local Unicode and vector recognition evidence."""
 
 from __future__ import annotations
 
@@ -65,14 +64,6 @@ STROKED_VECTOR_MIN_AXIS_COVERAGE = 0.35
 
 
 def internal_hidden_text_needs_verification(evidence: PageEvidence) -> bool:
-    """Select dense numeric scan layers for a cheap raster-to-text consistency check.
-
-    Clean prose layers can be trusted directly. Numeric tables and indexes do not
-    satisfy that language-shaped rule even when their embedded OCR text is accurate.
-    Restricting the probe to clean, mapped, image-backed layers avoids spending another
-    OCR pass on obviously corrupt encodings and on prose pages where native text can
-    omit material visible content.
-    """
     quality = evidence.all_text_quality
     glyphs = evidence.glyphs
     return (
@@ -92,9 +83,6 @@ def internal_hidden_text_needs_verification(evidence: PageEvidence) -> bool:
 
 
 def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
-    """Expose a verified hidden layer while preserving its original geometry and ordering."""
-    # The observation references carry the extractable runs after ActualText and
-    # learned-Unicode normalization; the raw program runs predate both.
     references = capture.observations.references
     runs = (
         cast("tuple[TextRun, ...]", references)
@@ -123,9 +111,6 @@ def internal_apply_learned_unicode_to_run(
         if cluster.glyphs:
             seqno = cluster.glyphs[0].seqno
             x = cluster.advance_bbox[0]
-            # Run accumulation can prepend a later text-show operation while
-            # retaining cluster emission order. Identical text conceals that
-            # mismatch, so decline the overlay when geometry proves a reversal.
             if previous_seqno != seqno and previous_x is not None:
                 if run.rotation_angle == 0 and x < previous_x:
                     return run
@@ -137,9 +122,6 @@ def internal_apply_learned_unicode_to_run(
         if not original:
             continue
         position = source.find(original, cursor)
-        # Consume every cluster, including unmapped glyphs. Only spacing inserted
-        # by run accumulation may lie between them; other gaps mean that this
-        # run no longer has a reliable alignment with its captured glyphs.
         if position < 0 or source[cursor:position].strip():
             return run
         output.append(source[cursor:position])
@@ -163,8 +145,6 @@ def internal_apply_learned_unicode_to_run(
                 )
             ):
                 replacement = candidate
-                # A ligature may have several observations for one source code.
-                # Its learned text replaces that source glyph exactly once.
                 applied.update((id(glyph), "") for glyph in cluster.glyphs)
                 for glyph in cluster.glyphs:
                     if glyph.text and not glyph.text.isspace():
@@ -189,18 +169,11 @@ def internal_apply_learned_unicode_to_run(
 def internal_vector_complexity(
     drawings: tuple[CapturedDrawing, ...], grid_lines: tuple[CapturedLine, ...]
 ) -> int:
-    """Estimate vector workload without depending on graphics-state bookkeeping.
-
-    Every derived segment contributes geometric work. Paint operations carry a larger
-    fixed dispatch and raster cost, while clips, groups, and state markers are control
-    records rather than visible vector content.
-    """
     paint_operations = sum(drawing.kind in VECTOR_PAINT_KINDS for drawing in drawings)
     return len(grid_lines) + paint_operations * VECTOR_PAINT_OPERATION_WEIGHT
 
 
 def internal_stroked_vector_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
-    """Return a stable paint-style key for an opaque, solid, thin stroked path."""
     if (
         drawing.kind not in {"stroke", "fillstroke"}
         or drawing.path is None
@@ -223,17 +196,9 @@ def internal_stroked_vector_text_evidence(
     page_height: float,
     rotation: int = 0,
 ) -> StrokedVectorTextEvidence:
-    """Detect distributed single-line fonts from repeated compact path styles.
-
-    Flattened CAD exports typically paint every glyph stroke as a tiny path with
-    one of a few repeated styles.  Wires, frames, and component outlines are much
-    larger in at least one axis.  Retaining the qualifying drawing indexes lets
-    OCR rasterize only the likely text layer instead of recomposing the page.
-    """
     if len(drawings) < 180 or rotation % 360 or page_width <= 0.0 or page_height <= 0.0:
         return StrokedVectorTextEvidence()
 
-    # Values are total paths, compact paths, and compact-path bounds.
     styles: dict[tuple[object, ...], list[float]] = {}
     indexed: list[tuple[int, tuple[object, ...], tuple[float, float, float, float], float]] = []
     for index, drawing in enumerate(drawings):
@@ -300,13 +265,6 @@ def internal_uncovered_vector_area(
     *,
     page_area: float | None = None,
 ) -> float | None:
-    """Estimate filled vector area not represented by native text.
-
-    This expensive signal is only used on text-bearing, vector-heavy pages. It
-    is intentionally conservative: overlap with any native text subtracts from
-    the filled path, so false OCR escalation is preferred over missing vector
-    text.
-    """
     if not drawings or not len(observations):
         return None
     if (
@@ -324,18 +282,12 @@ def internal_uncovered_vector_area(
             continue
         x0, y0, x1, y1 = rect
         area = max(0.0, x1 - x0) * max(0.0, y1 - y0)
-        # Page backgrounds and exporter-generated white canvases are not text.
-        # Charging their bounding boxes as filled glyph area forces otherwise
-        # sparse vector documents into a full-page OCR route.
         if page_area is not None and area >= max(1.0, page_area) * 0.80:
             continue
         if area > 0.0:
             rectangles.append((x0, y0, x1, y1, area))
     if not rectangles:
         return 0.0
-    # Evaluate a bounded batch at a time. This keeps the overlap calculation
-    # vectorized without allocating a drawings-by-observations matrix for the
-    # entire page.
     uncovered = 0.0
     for offset in range(0, len(rectangles), 64):
         batch = numpy.asarray(rectangles[offset : offset + 64], dtype=numpy.float32)
@@ -365,7 +317,6 @@ def internal_capture_with_newstroke_text(
     capture: PageAnalysis,
     decoded: NewstrokeDecode,
 ) -> PageAnalysis:
-    """Promote a page-level, template-verified vector font into native observations."""
     runs = decoded.runs
     observations = internal_observations_from_runs(runs)
     text = "".join(run.text for run in runs)
@@ -406,7 +357,6 @@ def internal_capture_with_newstroke_text(
 
 
 def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
-    """Identify pure-vector diagrams whose tiny stroked labels need the maximum raster."""
     evidence = capture.evidence
     if not (
         evidence.image_count == 0
@@ -440,7 +390,6 @@ def internal_glyph_evidence_fields(
     runs: tuple[TextRun, ...],
     replacements: Mapping[int, str],
 ) -> GlyphEvidence:
-    """Adjust native evidence only for learned substitutions aligned with emitted runs."""
     evidence = native_glyph_evidence_fields(
         (
             (
@@ -492,7 +441,6 @@ def internal_glyph_evidence_fields(
 
 
 def internal_enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
-    """Add recognition-only geometry without changing the native page program."""
     program = native.program
     image_filters = tuple(
         filter_name

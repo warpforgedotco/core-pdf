@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared traversal kernels for PDF name and number trees."""
 
 from __future__ import annotations
 
@@ -15,7 +14,6 @@ TreeKeyT = TypeVar("TreeKeyT")
 
 
 def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> dict:
-    """Resolve one tree dictionary; malformed nodes raise ValueError."""
     return internal_tree_node(resolve(value), tree_name)
 
 
@@ -26,7 +24,6 @@ def internal_tree_node(current: object, tree_name: str) -> dict:
 
 
 def tree_array(node: dict, field: str, resolve: ResolveFn, tree_name: str) -> list | None:
-    """Resolve a node array while leaving its entries indirect."""
     value = resolve(node.get(field))
     if value is not None and not isinstance(value, list):
         raise ValueError(f"invalid {tree_name} tree {field} array")
@@ -36,7 +33,6 @@ def tree_array(node: dict, field: str, resolve: ResolveFn, tree_name: str) -> li
 def tree_entry(
     entries: list, index: int, key: TreeKeyT | None, key_error: str
 ) -> tuple[TreeKeyT, object]:
-    """Validate one key/value pair; no malformed pair is silently discarded."""
     if index + 1 >= len(entries):
         raise ValueError(key_error)
     if key is None:

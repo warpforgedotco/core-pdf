@@ -1,5 +1,3 @@
-"""Layout diagnostics distinguish malformed geometry from valid text controls."""
-
 import pytest
 
 from core_pdf.impl._impl.layout.lines import (

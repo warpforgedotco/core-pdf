@@ -1,5 +1,3 @@
-"""A page's recovery cache resolves each damaged font once, including misses."""
-
 from types import SimpleNamespace
 
 import pytest

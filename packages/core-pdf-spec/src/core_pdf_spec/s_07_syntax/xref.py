@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF cross-reference entries, streams, and revision precedence."""
 
 from __future__ import annotations
 
@@ -50,8 +49,6 @@ XRefTable = dict[int, PdfXRefEntry]
 
 @dataclass(frozen=True, slots=True)
 class ParsedXRefSection:
-    """One physical section, without interpreting its revision-chain pointers."""
-
     offset: int
     kind: Literal["table", "stream"]
     entries: XRefTable
@@ -60,17 +57,13 @@ class ParsedXRefSection:
 
 @dataclass(frozen=True, slots=True)
 class XRefRevision:
-    """A primary section combined with its optional supplemental stream."""
-
     offset: int
     entries: XRefTable
     trailer: PdfDict
 
 
 class XRefSectionReader(Protocol):
-    def __call__(self, offset: int, /, *, stream_only: bool = False) -> ParsedXRefSection:
-        """Parse one section and report its actual offset, enforcing stream_only."""
-        ...
+    def __call__(self, offset: int, /, *, stream_only: bool = False) -> ParsedXRefSection: ...
 
 
 def key_for(obj_num: int, gen_num: int = 0) -> int:
@@ -227,8 +220,6 @@ class XRefScanner:
                 if num_objs > 0:
                     max_object_number = max(max_object_number, start_obj + num_objs - 1)
                 subsection, pos, maximum = cls.read_subsection(data, pos, start_obj, num_objs)
-                # ISO 32000-1/2, 7.5.4 permits any subsection order, but no
-                # repeated object numbers, including across generations.
                 numbers = {key >> 16 for key in subsection}
                 if not object_numbers.isdisjoint(numbers):
                     raise PdfParseError("overlapping xref table subsections")
@@ -325,8 +316,6 @@ class XRefScanner:
 def internal_validate_xref_widths(widths: list[int]) -> int:
     if len(widths) != 3 or any(type(width) is not int or width < 0 for width in widths):
         raise PdfParseError("invalid xref stream W")
-    # ISO 32000-1, Tables 17-18 provide no default for a second field;
-    # ISO 32000-2, Table 17 explicitly prohibits a zero second width.
     if widths[1] == 0:
         raise PdfParseError("invalid xref stream W")
     return sum(widths)
@@ -353,7 +342,6 @@ def internal_validate_xref_index(index: list[int], size: int) -> int:
 def decode_xref_row(
     data: bytes, pos: int, widths: list[int], object_number: int
 ) -> tuple[int, PdfXRefEntry, int]:
-    """Decode one xref-stream row and return its key, entry, and next offset."""
     row_size = internal_validate_xref_widths(widths)
     if object_number < 0:
         raise PdfParseError("invalid xref stream Index")
@@ -366,7 +354,6 @@ def decode_xref_row(
 def internal_decode_xref_row(
     data: bytes, pos: int, widths: list[int], object_number: int, row_size: int
 ) -> tuple[int, PdfXRefEntry, int]:
-    """Decode a bounded row using an already validated field layout."""
     end = pos + row_size
     type_end = pos + widths[0]
     offset_end = type_end + widths[1]
@@ -383,12 +370,10 @@ def internal_decode_xref_row(
             PdfXRefEntry(0, 0, True, object_stream=value, index_in_stream=generation),
             end,
         )
-    # ISO 32000-1 7.5.8.3 prescribes null for future entry types.
     return key_for(object_number), PdfXRefEntry(0, 0, False), end
 
 
 def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> XRefTable:
-    """Validate an entire xref-stream layout and decode its rows in order."""
     row_count = internal_validate_xref_index(index, size)
     row_size = internal_validate_xref_widths(w)
     return internal_decode_xref_rows(data, w, index, row_size, row_count)
@@ -429,7 +414,6 @@ def parse_object_marker_prefix(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> tuple[int, int, int] | None:
-    """Return ``(offset, object number, generation)`` for the header at ``marker``."""
     rules = lexical_rules(semantic_context)
     ws = rules.whitespace_table
     if marker < 0 or data[marker : marker + 3] != b"obj":
@@ -472,12 +456,6 @@ def internal_xref_pointer(trailer: PdfDict, name: str) -> int | None:
 
 
 def iter_xref_revisions(start: int, read_section: XRefSectionReader) -> Iterator[XRefRevision]:
-    """Yield newest-first revisions; parsing and recovery belong to the callback.
-
-    The callback reports the actual parsed offset and must honor ``stream_only``.
-    Only primary /Prev edges form the revision chain; a hybrid stream is a leaf.
-    Errors propagate without returning a repaired or truncated chain.
-    """
     seen: set[int] = set()
     position: int | None = start
     while position is not None:
@@ -499,9 +477,6 @@ def iter_xref_revisions(start: int, read_section: XRefSectionReader) -> Iterator
                 supplemental = read_section(supplemental_offset, stream_only=True)
                 if supplemental.kind != "stream":
                     raise PdfParseError("expected xref stream")
-                # ISO 32000-1/2, 7.5.8.4: the primary classic section wins
-                # over its supplemental stream, then the preceding revision.
-                # Table 17 says a hybrid stream's /Prev has no meaning.
                 entries = dict(supplemental.entries)
                 overlay_xref_entries(entries, section.entries)
         yield XRefRevision(section.offset, entries, section.trailer)
@@ -509,12 +484,8 @@ def iter_xref_revisions(start: int, read_section: XRefSectionReader) -> Iterator
 
 
 def overlay_xref_entries(destination: XRefTable, newer: XRefTable) -> None:
-    """Apply a newer section, replacing older generations of its object numbers."""
     if not newer or destination is newer:
         return
-    # ISO 32000-1/2, 7.5.4 and 7.5.6: an update replaces an object's earlier
-    # entry; a free entry stores the generation for the object's next reuse,
-    # rather than the generation that was deleted.
     replaced = {key >> 16 for key in newer}
     for key in [key for key in destination if key >> 16 in replaced]:
         del destination[key]
@@ -522,7 +493,6 @@ def overlay_xref_entries(destination: XRefTable, newer: XRefTable) -> None:
 
 
 def merge_xref_sections(sections: Iterable[XRefTable]) -> XRefTable:
-    """Merge newest-first sections, visiting each entry once without copying revisions."""
     merged: XRefTable = {}
     claimed: set[int] = set()
     for section in sections:

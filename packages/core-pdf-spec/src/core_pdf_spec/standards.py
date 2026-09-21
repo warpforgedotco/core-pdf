@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Neutral standards identities, provenance, and explicitly recorded coverage.
-
-Recognizing a version, extension, or profile is not a conformance or complete
-implementation claim. This module deliberately imports no chapter algorithms.
-"""
 
 from __future__ import annotations
 
@@ -13,8 +8,6 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, order=True, slots=True)
 class PdfVersion:
-    """A numeric PDF version; unknown versions retain their numeric identity."""
-
     major: int
     minor: int
 
@@ -26,14 +19,12 @@ class PdfVersion:
 
     @classmethod
     def parse(cls, value: str) -> PdfVersion:
-        """Parse the single-digit major/minor syntax used by PDF declarations."""
         if not isinstance(value, str) or re.fullmatch(r"[0-9]\.[0-9]", value) is None:
             raise ValueError("invalid PDF version; expected a single-digit major.minor")
         return cls(int(value[0]), int(value[2]))
 
     @property
     def recognized(self) -> bool:
-        """Whether the version identifies a published PDF format in this catalog."""
         return (self.major == 1 and self.minor <= 7) or (self.major == 2 and self.minor == 0)
 
     def __str__(self) -> str:
@@ -42,15 +33,12 @@ class PdfVersion:
 
 @dataclass(frozen=True, slots=True)
 class SpecificationBaseline:
-    """Implementation reference provenance, independent of document version."""
-
     edition: str
     reference_url: str
     errata_revision: str | None = None
     errata_url: str | None = None
 
 
-# A pinned reference, not a claim that every issue in this snapshot is implemented.
 PDF_2_0_BASELINE = SpecificationBaseline(
     edition="ISO 32000-2:2020",
     reference_url="https://pdfa.org/resource/iso-32000-2/",
@@ -64,8 +52,6 @@ PDF_2_0_BASELINE = SpecificationBaseline(
 
 @dataclass(frozen=True, slots=True)
 class PdfExtension:
-    """One developer declaration; levels are meaningful only within its prefix/base."""
-
     prefix: str
     base_version: PdfVersion
     extension_level: int
@@ -75,12 +61,6 @@ class PdfExtension:
 
 @dataclass(frozen=True, slots=True)
 class ProfileClaim:
-    """An unverified claim with preserved source properties (including namespaces).
-
-    ``identifier`` is None for claims whose precise target is not recognized.
-    Repeated properties remain repeated; callers must not collapse conflicting claims.
-    """
-
     identifier: str | None
     family: str
     source: str
@@ -96,8 +76,6 @@ class StandardsDiagnostic:
 
 @dataclass(frozen=True, slots=True)
 class SemanticContext:
-    """Effective document declarations supplied to version-sensitive algorithms."""
-
     version: PdfVersion | None
     extensions: tuple[PdfExtension, ...] = ()
     baseline: SpecificationBaseline = PDF_2_0_BASELINE
@@ -105,8 +83,6 @@ class SemanticContext:
 
 @dataclass(frozen=True, slots=True)
 class DocumentStandards:
-    """Passive document declaration projection, not a document facade or validator."""
-
     header_version: PdfVersion | None = None
     catalog_version: PdfVersion | None = None
     effective_version: PdfVersion | None = None
@@ -123,13 +99,6 @@ class DocumentStandards:
 
 @dataclass(frozen=True, slots=True)
 class StandardProfile:
-    """Known profile identity and its base reference, without validation capability.
-
-    ``base_version`` identifies the referenced PDF specification. It is not an
-    exhaustive set or minimum of allowed document/header versions; profiles can
-    impose additional rules, such as PDF/R-1's conditional PDF 2.0 encryption.
-    """
-
     identifier: str
     family: str
     edition: str
@@ -137,12 +106,6 @@ class StandardProfile:
     reference_url: str
 
 
-# Profile parts and published editions: PDF Association's ISO standards catalog.
-# https://pdfa.org/resource/iso-19005-pdfa/
-# https://pdfa.org/resource/iso-14289-pdfua/
-# https://pdfa.org/resource/iso-15930-pdfx/
-# https://pdfa.org/wtpdf/
-# https://pdfa.org/pdf-standards/
 STANDARD_PROFILES: tuple[StandardProfile, ...] = (
     *(
         StandardProfile(f"pdfa-{part}{level}", "PDF/A", edition, base, url)
@@ -241,9 +204,6 @@ STANDARD_PROFILES: tuple[StandardProfile, ...] = (
         PdfVersion(2, 0),
         "https://www.iso.org/standard/75218.html",
     ),
-    # ISO 23504-1:2020, 6.2: the baseline is ISO 32000-1, but unencrypted
-    # files can have headers 1.4--1.7; encrypted files use 2.0 and its security
-    # rules. A single base reference therefore is not a header restriction.
     StandardProfile(
         "pdfr-1",
         "PDF/R",
@@ -255,7 +215,6 @@ STANDARD_PROFILES: tuple[StandardProfile, ...] = (
 
 
 def get_standard_profile(identifier: str) -> StandardProfile | None:
-    """Look up an exact canonical identifier; unknown names are not guessed."""
     return next(
         (profile for profile in STANDARD_PROFILES if profile.identifier == identifier), None
     )
@@ -263,8 +222,6 @@ def get_standard_profile(identifier: str) -> StandardProfile | None:
 
 @dataclass(frozen=True, slots=True)
 class ExtensionCoverage:
-    """Audited implemented functionality for one exact declaration identity."""
-
     prefix: str
     base_version: PdfVersion
     extension_level: int
@@ -310,7 +267,6 @@ IMPLEMENTED_EXTENSIONS = (
 
 
 def get_extension_coverage(extension: PdfExtension) -> ExtensionCoverage | None:
-    """Match exact identities; larger levels never imply support for other extensions."""
     return next(
         (
             coverage

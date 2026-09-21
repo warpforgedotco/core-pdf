@@ -1,5 +1,3 @@
-"""Form XObject layout preserves page transforms and nested character ownership."""
-
 from io import BytesIO
 
 import pytest

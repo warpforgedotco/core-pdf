@@ -1,5 +1,3 @@
-"""Utility and page text extraction must honor the same word options."""
-
 from io import BytesIO
 
 import pytest

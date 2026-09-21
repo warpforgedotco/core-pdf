@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adobe Glyph List name-to-Unicode mapping, without application repairs."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from core_adobe_fonts.agl.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
 
 
 def glyph_name_to_unicode(name: str, *, zapf_dingbats: bool = False) -> str:
-    """Apply AGL section 2, including empty results for unknown components."""
     name = name.partition(".")[0]
     return "".join(
         glyph_component_to_unicode(part, zapf_dingbats=zapf_dingbats) for part in name.split("_")

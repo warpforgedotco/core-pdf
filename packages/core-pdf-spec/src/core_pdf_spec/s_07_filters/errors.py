@@ -3,15 +3,15 @@ from __future__ import annotations
 
 
 class FilterError(Exception):
-    """Base error raised by core-filters."""
+    pass
 
 
 class FilterParseError(FilterError, ValueError):
-    """The encoded stream or its parameters are malformed."""
+    pass
 
 
 class FilterUnsupportedError(FilterError):
-    """The stream uses a valid but unsupported feature."""
+    pass
 
 
 __all__ = (

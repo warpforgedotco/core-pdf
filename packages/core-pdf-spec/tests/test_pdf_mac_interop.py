@@ -1,5 +1,3 @@
-"""ISO/TS 32004:2024 integrity checks using independently generated fixtures."""
-
 import hashlib
 import json
 import re
@@ -59,7 +57,6 @@ def test_tampered_file_never_installs_decipher(fixture, change):
     else:
         damaged = bytearray(raw)
         if change == "covered-document-byte":
-            # Change only the binary header comment; parsing still succeeds.
             offset = raw.index(b"%\xc2") + 1
         elif change == "mac-byte":
             offset = auth["ByteRange"][2] - 2
@@ -71,7 +68,6 @@ def test_tampered_file_never_installs_decipher(fixture, change):
             offset = match.start(1)
         damaged[offset] = ord("1") if damaged[offset] != ord("1") else ord("2")
         damaged = bytes(damaged)
-    # Parse the modified trailer too: AuthCode must reflect the actual bytes.
     updated = XRefScanner.parse_section_at(damaged, section.offset)
     resolver = ObjectResolver(damaged, updated.entries)
     try:

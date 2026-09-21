@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Models shared by PDF stream filters and image consumers."""
 
 from __future__ import annotations
 
@@ -11,8 +10,6 @@ import numpy
 
 @dataclass(frozen=True, slots=True)
 class DecodedImage:
-    """Native decoded image samples produced by an image filter."""
-
     array: numpy.ndarray[Any, Any]
     source: str
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compile PDF functions into reusable numeric evaluators."""
 
 from __future__ import annotations
 
@@ -24,13 +23,6 @@ def with_pdf_function_range(
     *,
     output_count: int | None = None,
 ) -> PdfFunctionEvaluator:
-    """Apply optional output clipping from ISO 32000-1 Table 38.
-
-    ``None`` denotes an absent Range and leaves the evaluator unchanged.
-    Declared bounds must be finite, ordered number pairs. When the output
-    count is known, validate it immediately; otherwise check the result count
-    on evaluation, including for externally compiled stitching children.
-    """
     if range_values is None:
         return evaluate
     values = require_pdf_number_array(range_values, "invalid PDF function range")
@@ -55,7 +47,6 @@ def with_pdf_function_range(
 
 
 def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
-    """Return the one-input domain used by Type 2 and Type 3 functions."""
     domain_obj = dictionary.get("Domain")
     if domain_obj is None:
         raise ValueError("missing PDF function domain")
@@ -66,7 +57,6 @@ def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
 
 
 def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
-    """Compile an 8-bit sampled function, decoding its stream exactly once."""
     dictionary = function.dictionary
     if internal_function_type(dictionary) != 0:
         raise ValueError("invalid sampled function")
@@ -83,7 +73,6 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
     sizes = tuple(cast(int, value) for value in size_obj)
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")
-    # ISO 32000-1, Tables 38/39: dimensions determine exact array lengths.
     domain_values = require_pdf_number_array(domain_obj, "invalid PDF function domain")
     if len(domain_values) != len(sizes) * 2:
         raise ValueError("invalid sampled function domain")
@@ -103,7 +92,6 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
         order = 1
     if type(order) is not int or order not in {1, 3}:
         raise ValueError("invalid sampled function interpolation order")
-    # Section 7.10.2 prescribes ignoring Order 3 where Size is less than 4.
     if order == 3 and any(size >= 4 for size in sizes):
         raise ValueError("unsupported cubic sampled function interpolation")
 
@@ -201,7 +189,6 @@ def internal_function_type(dictionary: dict[Any, Any]) -> int:
 def compile_pdf_function(
     function: Any, *, compile_nested: Callable[[Any], PdfFunctionEvaluator] | None = None
 ) -> PdfFunctionEvaluator:
-    """Normalize a supported PDF Function into a reusable evaluator."""
     compile_child = compile_nested or compile_pdf_function
     if isinstance(function, (list, tuple)):
         if function and all(isinstance(part, (dict, PdfStream)) for part in function):
@@ -282,8 +269,6 @@ def compile_pdf_function(
         parts = tuple(compile_child(entry) for entry in functions)
         if len(bounds) != len(parts) - 1 or len(encode) != len(parts) * 2:
             raise ValueError("invalid stitching function parameters")
-        # ISO 32000-1, 7.10.4: strictly increasing intervals, except that the
-        # final bound may equal Domain1 and maps that endpoint to Encode2i.
         previous = domain_min
         for bound in bounds:
             if not previous < bound <= domain_max:

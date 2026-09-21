@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize stream dictionaries into a decode specification."""
 
 from __future__ import annotations
 
@@ -18,18 +17,12 @@ DecodeParam: TypeAlias = object
 
 @dataclass(frozen=True, slots=True)
 class FilterParams:
-    """Decode parameters associated with a PDF stream filter."""
-
     early_change: int = 1
     predictor: int = 1
     columns: int = 1
     colors: int = 1
     bits_per_component: int = 8
     k: int = 0
-    # ISO 32000-1 Table 11 types this as an integer ("The number of damaged
-    # rows of data that shall be tolerated before an error occurs"), not a
-    # boolean. Parsing it as a boolean refused every conforming file that
-    # states a tolerance above 1.
     damaged_rows_before_error: int = 0
     black_is_1: bool = False
     rows: int = 0
@@ -108,16 +101,12 @@ class FilterParams:
 
 @dataclass(frozen=True, slots=True)
 class FilterStep:
-    """One declared filter and its associated, unmodified decode parameters."""
-
     name: str
     params: DecodeParam = None
 
 
 @dataclass(frozen=True, slots=True)
 class StreamDecodeSpec:
-    """Normalized stream filter pipeline and per-filter parameters."""
-
     steps: tuple[FilterStep, ...]
 
 
@@ -158,8 +147,6 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
 
 
 class StreamDecoder(Protocol):
-    """Document-supplied stream decoding service, independent of its policy."""
-
     def __call__(
         self,
         data: bytes | memoryview,

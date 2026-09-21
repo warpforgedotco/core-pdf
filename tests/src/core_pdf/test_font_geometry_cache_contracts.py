@@ -1,5 +1,3 @@
-"""Glyph geometry caches retain missing results and distinguish glyph identity."""
-
 import numpy
 import pytest
 

@@ -1,5 +1,3 @@
-"""Shared resource preparation preserves strict content application semantics."""
-
 from __future__ import annotations
 
 from typing import Any, cast

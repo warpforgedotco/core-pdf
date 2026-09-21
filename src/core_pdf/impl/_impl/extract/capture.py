@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Run the content stream and turn it into page evidence."""
 
 from __future__ import annotations
 
@@ -47,8 +46,6 @@ class internal_StructureUnset:
 internal_STRUCTURE_UNSET = internal_StructureUnset()
 WORD_TOKEN_RE = re.compile(r"\w+")
 
-# Require enough locally matched text to distinguish a duplicate layer from
-# incidental repetition. Neither form identity nor a shared clip proves duplication.
 DUPLICATE_LAYER_MIN_TOKENS = 24
 
 
@@ -62,18 +59,15 @@ def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None
             continue
         try:
             x0, y0, x1, y1 = (float(cast(Any, part)) for part in value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
     return None
 
 
 def internal_glyphs_covered_by_extended_run(run: TextRun, extended: TextRun) -> bool:
-    """Require exact glyph evidence before preferring an overlay with extra text."""
     if not run.glyph_clusters or len(extended.text) <= len(run.text):
         return False
-    # ActualText and inferred spaces can differ from the captured glyph text.
-    # Such runs cannot be safely compared using source glyphs alone.
     if "".join(cluster.text for cluster in run.glyph_clusters) != run.text:
         return False
     if "".join(cluster.text for cluster in extended.glyph_clusters) != extended.text:
@@ -114,8 +108,6 @@ def internal_discard_duplicate_layer_runs(
             )
             nearby = numpy.flatnonzero(intersects)
             local_text = " ".join(primary_text[int(position)] for position in nearby)
-            # Punctuation, case, and word boundaries are content too. Never
-            # equate "now here" with "nowhere", or a word with part of another.
             candidate_text = collapse_ws(run.text)
             if f" {candidate_text} " in f" {local_text} ":
                 matched_indices.append(index)
@@ -126,11 +118,8 @@ def internal_discard_duplicate_layer_runs(
                     for position in nearby
                     if internal_glyphs_covered_by_extended_run(primary_runs[int(position)], run)
                 )
-        # Discard only locally matched runs, never a whole form or clip group.
         if matched_tokens >= DUPLICATE_LAYER_MIN_TOKENS:
             duplicate_indices.update(matched_indices)
-        # An overlay may contain the same glyphs followed by a unique suffix.
-        # Keep that complete run and remove the shorter copy when proven identical.
         if sum(len(primary_tokens[position]) for position in covered_primary) >= (
             DUPLICATE_LAYER_MIN_TOKENS
         ):
@@ -149,8 +138,6 @@ def internal_discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple
                 (value for key, value in reversed(run.provenance) if key == "layout_form_id"),
                 None,
             )
-            # The form path and transformed bounds survive child invocations;
-            # stream_order advances when entering a child and is not restored.
             group = cast(LayoutFormId, form_id) if isinstance(form_id, tuple) else run.stream_order
             by_form.setdefault((run.xobject_depth, group), []).append(index)
     if not page_indices or not by_form:
@@ -196,7 +183,6 @@ def internal_run_mcid(run: TextRun) -> int | None:
 
 
 def internal_structure_actual_text_owner(element: Any) -> tuple[int, str] | None:
-    """Find the enclosing replacement, sharing owners across parent wrappers."""
     owner: tuple[int, str] | None = None
     visited: set[int] = set()
     while element is not None:
@@ -208,11 +194,9 @@ def internal_structure_actual_text_owner(element: Any) -> tuple[int, str] | None
             visited.add(marker)
             actual_text = getattr(element, "actual_text", None)
             if isinstance(actual_text, str):
-                # An enclosing element replaces all of its descendants, even
-                # when a child provides another replacement or an empty string.
                 owner = (marker, actual_text)
             element = getattr(element, "parent", None)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             break
     return owner
 
@@ -227,7 +211,7 @@ def internal_apply_structure_actual_text(
     if structure is internal_STRUCTURE_UNSET:
         try:
             structure = page.structure
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return runs
     if structure is None:
         return runs
@@ -240,14 +224,12 @@ def internal_apply_structure_actual_text(
             continue
         try:
             element = structure[mcid] if 0 <= mcid < len(structure) else None
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             element = None
         owner = internal_structure_actual_text_owner(element)
         if owner is None:
             output.append(run)
             continue
-        # Several MCIDs may share an ancestor. Its ActualText replaces the
-        # entire element, and an empty string deliberately removes it.
         marker, actual_text = owner
         replacement = replacements.get(marker)
         if replacement is None:
@@ -362,7 +344,6 @@ def internal_hidden_text_is_trusted(
 
 
 def internal_layout_bbox_for_run(run: TextRun) -> tuple[float, float, float, float]:
-    """Choose geometry that describes this occurrence rather than every font glyph."""
     bbox = (run.x0, run.y0, run.x1, run.y1)
     if run.is_vertical or run.rotation_angle % 180:
         return bbox
@@ -378,11 +359,6 @@ def internal_layout_bbox_for_run(run: TextRun) -> tuple[float, float, float, flo
     if ink_height <= 0.0 or advance_height <= ink_height * 2.5:
         return bbox
 
-    # ISO 32000-1:2008 and ISO 32000-2:2020, 9.8.1 define Ascent and
-    # Descent over the entire font. A rare outlier glyph can therefore make a
-    # valid descriptor box several lines tall. When actual ink proves that
-    # happened, use a conventional one-em line box around the captured
-    # baseline while retaining any ink that extends beyond it.
     baseline = run.baseline
     if baseline is None:
         return (run.x0, ink_y0, run.x1, ink_y1)
@@ -396,7 +372,6 @@ def internal_layout_bbox_for_run(run: TextRun) -> tuple[float, float, float, flo
 
 
 def internal_promote_hidden_run(run: TextRun) -> TextRun:
-    """Create an extraction-only view without changing PDF paint visibility."""
     return run.replace(
         visible=True,
         provenance=(*run.provenance, ("extraction_visibility", "trusted-hidden-layer")),
@@ -404,15 +379,12 @@ def internal_promote_hidden_run(run: TextRun) -> TextRun:
 
 
 def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBatch:
-    """Build the native observation columns shared by capture and hidden-layer promotion."""
     if not runs:
         return ObservationBatch.empty()
     n = len(runs)
     texts = [run.text for run in runs]
     source = numpy.full(n, int(ObservationSource.NATIVE), dtype=numpy.uint8)
 
-    # Build columns from Python lists in one pass; per-element numpy stores
-    # cost a dispatch each.
     box_rows: list[tuple[float, float, float, float]] = []
     confidence_values: list[float] = []
     sequence_values: list[int] = []
@@ -462,7 +434,6 @@ def internal_capture_runs(
     program: PageProgram,
     structure: Any = internal_STRUCTURE_UNSET,
 ) -> tuple[TextRun, ...]:
-    """Normalize captured PDF runs before any optional extraction enrichment."""
     program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
     for glyph in program.glyphs:
@@ -476,9 +447,6 @@ def internal_capture_runs(
         )
         lo = bisect_left(glyph_seqnos, run.seqno)
         hi = bisect_left(glyph_seqnos, next_seqno)
-        # Runs are overwhelmingly single-font: find the majority name without
-        # a Counter unless a second distinct name actually appears, and skip
-        # the run copy when the name would not change.
         majority: str | None = None
         mixed = False
         for glyph_position in range(lo, hi):
@@ -664,7 +632,6 @@ def capture_page(
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
 ) -> PageAnalysis:
-    """Build the canonical page products once and derive routing evidence from them."""
     capture_options: dict[str, object] = {}
     if hidden_layers is not None:
         capture_options["hidden_layers"] = hidden_layers

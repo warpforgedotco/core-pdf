@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Internal records retaining references to source PDF objects."""
 
 from __future__ import annotations
 

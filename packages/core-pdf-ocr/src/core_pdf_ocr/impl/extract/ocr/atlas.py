@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Packed stroke-atlas rasterization for vector-text recognition."""
 
 from __future__ import annotations
 
@@ -18,19 +17,9 @@ def rasterize_packed_stroked_paths(
     height: float,
     scale: float,
 ) -> RasterImage:
-    """Rasterize the opaque packed OCR atlas with a lightweight line kernel.
-
-    Packed vector text is a deliberately narrow rendering mode: every item is a
-    solid black stroke, there are no clips or blend modes, and OCR benefits more
-    from a clean one-pixel antialiased skeleton than from the general renderer's
-    full 4x supersampling.  Xiaolin-Wu coverage keeps diagonal glyph strokes
-    legible while avoiding one Python pixel loop per 4x4 sample.
-    """
     raster_scale = max(0.01, float(scale))
     raster_width = max(1, int(round(width * raster_scale)))
     raster_height = max(1, int(round(height * raster_scale)))
-    # Flat bytearray while plotting: per-pixel numpy scalar reads/writes are far
-    # slower than plain byte indexing; the buffer becomes an array once at the end.
     gray = bytearray(b"\xff" * (raster_height * raster_width))
     page_height = float(height)
 

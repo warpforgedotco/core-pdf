@@ -1,5 +1,3 @@
-"""Native TrueType recovery preserves cmap precedence and usable glyph evidence."""
-
 import struct
 from types import SimpleNamespace
 from typing import Any

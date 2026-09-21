@@ -1,5 +1,3 @@
-"""Unstructured text regions, list continuation, and reading order."""
-
 from __future__ import annotations
 
 import re
@@ -29,8 +27,6 @@ class internal_TextRegion:
 
 
 def internal_clean_text(text: str) -> str:
-    # Match Unstructured's whitespace cleanup. Tabs and Unicode spacing
-    # characters other than NBSP remain meaningful.
     cleaned = text.translate(
         {
             ord("\n"): ord(" "),
@@ -41,7 +37,6 @@ def internal_clean_text(text: str) -> str:
 
 
 def internal_layout_regions(items: list[LTTextBox]) -> list[internal_TextRegion]:
-    """Project each canonical pdfminer text box to one Unstructured region."""
     return [
         internal_TextRegion(text, item.bbox)
         for item in items
@@ -77,7 +72,6 @@ def internal_deduplicated_box_text(box: LTTextBox) -> str:
 
 
 def internal_figure_text_snippets(figure: LTFigure) -> list[str]:
-    """Return drawing-delimited text while preserving nested figure concatenation."""
     snippets = list(figure.text_snippets)
     for child in figure:
         if not isinstance(child, LTFigure):
@@ -97,8 +91,6 @@ def internal_projection_segments(
     length = max(0, int(numpy.max(boxes[:, axis::2])))
     intervals: list[tuple[int, int]] = []
     for box in boxes:
-        # Preserve NumPy's slice clipping and negative-index behavior without
-        # allocating one counter per coordinate. Only occupied spans matter.
         start, end, _step = slice(int(box[axis]), int(box[axis + 2])).indices(length)
         if start < end:
             intervals.append((start, end))
@@ -121,8 +113,6 @@ def internal_recursive_xy_cut(
     x_boxes = boxes[x_order]
     x_indices = indices[x_order]
     x_segments = internal_projection_segments(x_boxes, 0)
-    # Starts are sorted and occupied segments do not overlap. Locate all
-    # ranges together instead of rescanning the full array for each segment.
     for start, end in numpy.searchsorted(x_boxes[:, 0], x_segments):
         chunk = x_boxes[start:end]
         chunk_indices = x_indices[start:end]
@@ -141,8 +131,6 @@ def internal_region_order(
     regions: list[internal_TextRegion],
     page_height: float,
 ) -> list[int]:
-    # The fast parser applies a stable basic top/left sort before XY-cut to
-    # make tie behavior deterministic across Python versions.
     basic_order = sorted(
         range(len(regions)),
         key=lambda index: (page_height - regions[index].bbox[3], regions[index].bbox[0]),
@@ -155,9 +143,6 @@ def internal_region_order(
             coordinate < 0 or coordinate > coordinate_limit
             for coordinate in (left, top, right, bottom)
         ):
-            # Unstructured validates the floating-point coordinates before
-            # casting them for XY-cut. On invalid geometry it preserves the
-            # PDFMiner layout iteration order verbatim.
             return basic_order
         left_int = int(left)
         top_int = int(top)
@@ -186,7 +171,6 @@ def internal_combine_list_regions(
     regions: list[internal_TextRegion],
     page_height: float,
 ) -> list[internal_TextRegion]:
-    """Apply Unstructured's pre-sort continuation merge for list elements."""
     combined: list[internal_TextRegion] = []
     anchor_text: str | None = None
     anchor_bbox: tuple[float, float, float, float] | None = None
@@ -225,15 +209,7 @@ def internal_combine_list_regions(
                 )
                 merged_region = internal_TextRegion(f"{anchor_text} {text}", merged_bbox, ListItem)
                 if anchor_position is not None:
-                    # ``_combine_list_elements`` mutates its retained
-                    # ``tmp_element`` before deep-copying it. If another
-                    # element was emitted since the list anchor, that earlier
-                    # list entry therefore changes as well.
                     combined[anchor_position] = merged_region
-                # Mirror the reference continuation loop exactly: it removes
-                # the most recently emitted element, which need not be the
-                # active list item when intervening columns were encountered,
-                # then appends a merged copy of that list item.
                 if combined:
                     if anchor_position == len(combined) - 1:
                         anchor_position = None

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reconcile recognized chart tables through shared spatial text projection."""
 
 from __future__ import annotations
 
@@ -15,15 +14,11 @@ def internal_is_synthetic_chart(table: Table) -> bool:
 def internal_remove_duplicate_tables(
     tables: tuple[Table, ...],
 ) -> tuple[Table, ...]:
-    """Keep complete table references when removing recognized chart copies."""
     text_tokens = tuple(
         content_tokens(" ".join(cell.text for row in table.rows for cell in row))
         for table in tables
     )
     synthetic = tuple(internal_is_synthetic_chart(table) for table in tables)
-    # Consider complete references first, with real tables preferred on ties.
-    # Only retained tables may cover another candidate, so equal charts cannot
-    # reject each other and every discarded copy has a surviving replacement.
     ranked = sorted(
         range(len(tables)),
         key=lambda index: (

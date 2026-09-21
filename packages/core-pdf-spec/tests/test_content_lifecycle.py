@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Path completion and nested-stream event ordering defined by PDF."""
 
 from typing import Any, cast
 
@@ -85,7 +84,6 @@ def test_path_paints_before_installing_clip_and_retains_geometry(
     fill_rule: str | None,
     closed: bool,
 ) -> None:
-    # ISO 32000-1 8.5.4: W/W* modify clipping after the terminating paint or n.
     state, sink = new_state()
     for name, operands in iter_content_operations(PdfLexer(b"0 0 m 10 0 l 0 10 l " + clip)):
         state.execute_operation(name, operands, 0)
@@ -119,7 +117,6 @@ def test_empty_completion_and_stroke_clear_the_current_point() -> None:
 
 
 def test_pending_clip_is_path_state_and_not_a_graphics_save() -> None:
-    # ISO 32000-1 8.5.2.1 excludes the current path from q/Q graphics state.
     state, sink = new_state()
     state.op_q((), 0)
     for name, operands in iter_content_operations(PdfLexer(b"0 0 2 2 re W*")):
@@ -131,7 +128,6 @@ def test_pending_clip_is_path_state_and_not_a_graphics_save() -> None:
 
 @pytest.mark.parametrize("flatness", [0.0, 0.5, 1.75, 100.0])
 def test_flatness_defaults_fractions_and_graphics_restore(flatness: float) -> None:
-    # ISO 32000-1 Tables 54 and 57: initial 1.0; i accepts a number in [0, 100].
     state, _ = new_state()
     assert state.graphics.flatness == 1.0
     state.execute_operation("q", (), 0)

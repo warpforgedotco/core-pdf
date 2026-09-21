@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Apply recognition source labels and geometric order to shared block layout."""
 
 from __future__ import annotations
 
@@ -36,8 +35,6 @@ def internal_group_order(observations: ObservationBatch, indexes: numpy.ndarray)
         positions = -(boxes[:, 1] + boxes[:, 3]) * 0.5
     else:
         positions = (boxes[:, 0] + boxes[:, 2]) * 0.5
-    # One pass over the text counts both directions; ASCII text can only
-    # contribute L characters, and only letters carry a strong class.
     rtl = 0
     ltr = 0
     bidirectional = unicodedata.bidirectional

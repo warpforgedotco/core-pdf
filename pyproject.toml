@@ -10,7 +10,7 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "numpy>=2.5.1",
@@ -194,7 +194,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-predictors/src/core_predictors", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts"]
 mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-predictors/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]

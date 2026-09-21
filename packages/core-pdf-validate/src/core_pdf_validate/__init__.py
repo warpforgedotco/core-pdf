@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Optional local standards validation for original PDF documents."""
 
 from core_pdf_validate.models import (
     Conformance,

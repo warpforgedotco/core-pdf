@@ -1,5 +1,3 @@
-"""TrueType font program parsing: cmap, glyf outlines, and metrics."""
-
 from __future__ import annotations
 
 import logging
@@ -62,12 +60,6 @@ internal_GLYPH_HEADER = struct.Struct(">hhhhh")
 
 
 def internal_raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
-    """Return the decoded ``loca`` offsets and the undecoded ``glyf`` bytes.
-
-    Only the header of a glyph record is needed for its bounding box, so the
-    glyph table stays as raw bytes; decompiling every glyph record costs time
-    proportional to the whole font for each lookup.
-    """
     try:
         locations = font["loca"]
         reader = font.reader
@@ -80,14 +72,11 @@ def internal_raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
 def internal_glyph_header_bbox(
     locations: Any, glyph_data: bytes, gid: int
 ) -> tuple[float, float, float, float] | None:
-    """Read one glyph's stored bounds straight from its ``glyf`` record header."""
     if gid < 0 or gid + 1 >= len(locations):
         return None
     start = locations[gid]
     end = locations[gid + 1]
     if end - start < internal_GLYPH_HEADER.size or end > len(glyph_data):
-        # An empty record is a glyph without contours; a truncated one is
-        # unusable, matching a failed record decompile.
         return None
     contours, x_min, y_min, x_max, y_max = internal_GLYPH_HEADER.unpack_from(glyph_data, start)
     if contours == 0:
@@ -95,11 +84,6 @@ def internal_glyph_header_bbox(
     return (float(x_min), float(y_min), float(x_max), float(y_max))
 
 
-# fontTools validates malformed tables with bare `assert` as well as by raising,
-# and it decompiles lazily, so a damaged table surfaces late and as almost any
-# exception type. Embedded font programs are untrusted input, so treat every
-# failure from the parser as "this font program is unusable" instead of trying
-# to enumerate what a corrupt one can raise.
 FONT_PROGRAM_ERRORS = Exception
 
 
@@ -112,8 +96,6 @@ def internal_fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, 
 
 
 class internal_FontToolsOutlineAccess:
-    """Common normalized outline access for every sfnt-wrapped font."""
-
     __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
 
     def __init__(self, font: TTFont) -> None:
@@ -151,8 +133,6 @@ class internal_FontToolsOutlineAccess:
 
 
 class internal_RecoverableFontTableWarningFilter(logging.Filter):
-    """Hide fontTools warnings for malformed fields it already repairs safely."""
-
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
         return not (
@@ -213,7 +193,6 @@ class TrueTypeFontProgram:
             self.cmap = {}
 
     def internal_variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
-        """A program over the same parsed tables with a different code mapping."""
         variant = object.__new__(TrueTypeFontProgram)
         for name in TrueTypeFontProgram.__slots__:
             setattr(variant, name, getattr(self, name))
@@ -235,7 +214,6 @@ class TrueTypeFontProgram:
         return code
 
     def glyph_id_for_unicode(self, codepoint: int) -> int:
-        """Resolve a simple-font character through the embedded TrueType cmap."""
         if self.cmap:
             return self.cmap.get(codepoint, 0)
         return 0
@@ -271,7 +249,6 @@ class TrueTypeFontProgram:
         return [list(contour) for contour in self.internal_glyph_contours_for_gid(gid)]
 
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
-        """Return an immutable outline in PDF's 1000-unit glyph space."""
         return self.outlines.normalized_glyph_contours(gid)
 
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
@@ -325,14 +302,6 @@ internal_program_cache = threading.local()
 def cached_truetype_program(
     data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
 ) -> TrueTypeFontProgram:
-    """Return a parsed program for these bytes, sharing one per thread.
-
-    Every page builds its own font decoders, and ligature detection parses the
-    same program again to inspect its composites. Parsing is by far the most
-    expensive step of decoder construction, and the program is read-only after
-    construction, so equal inputs within a thread share one instance. The
-    cache is per thread because fontTools loads tables lazily on first use.
-    """
     programs: dict[object, TrueTypeFontProgram] | None = getattr(
         internal_program_cache, "programs", None
     )
@@ -341,8 +310,6 @@ def cached_truetype_program(
     key: object = (data, cid_to_gid, use_cmap)
     program = programs.get(key)
     if program is None:
-        # Parse each distinct font program once; code mappings are cheap
-        # variants over the same tables.
         base = programs.get(data)
         if base is None:
             if len(programs) >= internal_PROGRAM_CACHE_LIMIT:
@@ -365,7 +332,6 @@ def internal_tt_font_from_data(data: bytes) -> TTFont:
 
 
 def internal_ensure_glyph_order(font: TTFont) -> None:
-    """Recover a stable glyph order when an embedded ``post`` table is corrupt."""
     try:
         font.getGlyphOrder()
         return
@@ -408,27 +374,11 @@ def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
         if gid > 0:
             mapping[codepoint] = gid
             if symbol_fallback and 0xF000 <= codepoint <= 0xF2FF:
-                # ISO 32000-1 9.6.6.4: with a (3, 0) subtable the codes live in
-                # 0x0000-0x00FF, 0xF000-0xF0FF, 0xF100-0xF1FF or 0xF200-0xF2FF,
-                # and "each byte from the string shall be prepended with the
-                # high byte of the range". Its keys are not Unicode scalars, so
-                # register the single-byte code that selects each glyph;
-                # otherwise every code missed and resolved to GID 0.
                 mapping.setdefault(symbol_character_code(codepoint), gid)
     return mapping
 
 
 def internal_code_gid_cmap(font: TTFont) -> dict[int, int]:
-    """Map raw character codes to glyphs through non-Unicode cmap subtables.
-
-    Simple TrueType fonts written by macOS carry only a Macintosh (1,0)
-    subtable — often format 6 — and symbol fonts carry (3,0) with codes
-    offset into the 0xF000 private-use range. Neither is a Unicode table,
-    so the best-cmap lookup finds nothing and character codes would fall
-    through as glyph ids, which draws garbage from a subset. Per the PDF
-    text-showing rules for symbolic TrueType fonts, resolve the raw code
-    through (3,0) and then (1,0) directly.
-    """
     try:
         cmap_table = font["cmap"]
         reverse_glyph_map = font.getReverseGlyphMap()

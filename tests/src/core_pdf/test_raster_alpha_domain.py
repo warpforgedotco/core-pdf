@@ -1,5 +1,3 @@
-"""All byte-alpha pairs preserve source-over behavior across raster routes."""
-
 import numpy as np
 import pytest
 
@@ -65,8 +63,6 @@ def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
             )
             expected.append((*colors, rounded_ratio(denominator, 255)))
         expected_array = np.asarray(expected)
-        # Floating implementations can differ from exact rational rounding by
-        # one channel unit at ties; alpha and transparent no-op remain exact.
         assert np.max(np.abs(view[0, :, :3].astype(int) - expected_array[:, :3])) <= 1
         np.testing.assert_array_equal(view[0, :, 3], expected_array[:, 3])
         if source_alpha == 0:

@@ -1,9 +1,3 @@
-"""Font contracts consumed by PDF text-state execution.
-
-Font selection and Unicode recovery are provided by the caller. The execution
-contract contains character evidence and PDF metrics, never captured runs or rasters.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable

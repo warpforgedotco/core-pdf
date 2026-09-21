@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Read cross-reference tables and streams, with recovery scanning for damaged files."""
 
 from __future__ import annotations
 
@@ -43,9 +42,6 @@ def parse_object_marker_prefix(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> tuple[int, int, int] | None:
-    # Reader discovery retains modern whitespace and padded/zero object
-    # numbers regardless of the declared version. The strict parser uses the
-    # selected identifier grammar instead.
     if marker < 0 or data[marker : marker + 3] != b"obj":
         return None
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
@@ -85,12 +81,6 @@ def internal_validate_xref_numbers(offset: int, generation: int) -> None:
 
 
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
-    """Parse a loosely formatted xref entry.
-
-    Only reached once parse_xref_entry_at's fixed-width form has failed on
-    these same bytes, so this does not retry it -- the entry is malformed in
-    some way and the whitespace-split form is what is left.
-    """
     if 11 in line:
         raise PdfParseError("invalid xref table entry")
     parts = line.strip().split()
@@ -103,8 +93,6 @@ def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
         raise PdfParseError("invalid xref table entry") from exc
     internal_validate_xref_numbers(offset, generation)
     if len(parts) == 2:
-        # No f/n marker: a zero offset is the free-list head, anything else
-        # is an in-use object.
         return offset, generation, offset != 0
     if parts[2] == b"n":
         return offset, generation, True
@@ -547,15 +535,7 @@ class XRefScanner(SyntaxXRefScanner):
                     uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
                     endstream = data.find(b"endstream", stream_marker + 6, scan_end)
                     if not uncommented.strip() and endstream < 0:
-                        # pdfminer's fallback parser treats the remainder of an
-                        # unterminated, dictionary-less stream as that object's
-                        # payload; later object-looking bytes are not xref entries.
                         break
-            # A damaged stream /Length can carry the lexer past an earlier
-            # endstream/endobj pair and over later, valid indirect objects. In
-            # that case keep scanning from the current marker. Otherwise skip
-            # the stream payload so object-like binary data cannot replace a
-            # genuine xref entry.
             early_stream_end = (
                 isinstance(obj, PdfStream)
                 and data.find(b"endstream", offset, max(offset, lexer.pos - 9)) >= 0
@@ -697,7 +677,6 @@ class XRefScanner(SyntaxXRefScanner):
         recover_malformed_objects: bool = True,
         semantic_context: SemanticContext | None = None,
     ) -> ParsedXRefSection:
-        """Read one section, trying nearby offsets after a parsing failure."""
         try:
             return cls.parse_section_at(
                 data,
@@ -784,17 +763,12 @@ class XRefScanner(SyntaxXRefScanner):
                     continue
                 try:
                     if w[1] == 0:
-                        # Damaged streams sometimes omit the required second
-                        # field. The reader supplies zero; strict row decoding
-                        # never invents a field absent from the PDF layout.
                         split = row_pos + w[0]
                         row = data[row_pos:split] + b"\x00" + data[split:pos]
                         key, entry, _ = decode_xref_row(row, 0, [w[0], 1, w[2]], object_number)
                     else:
                         key, entry, _ = decode_xref_row(data, row_pos, w, object_number)
                 except PdfParseError:
-                    # The stream shape and available rows were validated above;
-                    # a row failure here is an invalid generation number.
                     continue
                 entries[key] = entry
         return entries, typing.cast(PdfDict, dict_obj)
@@ -855,12 +829,6 @@ def iter_indirect_object_headers(
     allow_prefix_before_start: bool = False,
     semantic_context: SemanticContext | None = None,
 ) -> Iterator[tuple[int, int, int]]:
-    """Yield validated headers in marker order within a bounded search window.
-
-    Approximate document offsets may admit a prefix before the marker window;
-    object-level recovery requires the entire header to start inside it. The
-    keyword is validated against the full data, not a truncated search slice.
-    """
     search_start = max(0, search_start)
     search_end = min(len(data), search_end)
     source = source_buffer

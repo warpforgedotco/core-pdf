@@ -1,5 +1,3 @@
-"""Packed image samples and TIFF differences retain independent byte-aligned rows."""
-
 import numpy
 import pytest
 
@@ -27,7 +25,6 @@ def test_color_key_rejects_invalid_source_ranges(mask: tuple[int, ...]) -> None:
 
 @pytest.mark.parametrize("buffer_kind", ["bytes", "memoryview", "ndarray"])
 def test_sixteen_bit_words_keep_byte_order_low_bits_and_interleaved_rows(buffer_kind: str) -> None:
-    # ISO 32000-1 8.9.3 prescribes MSB first for both bytes and 16-bit units.
     packed = b"\x00\x00\x00\xff\x01\x00\x7f\xff\x80\x00\xff\xff"
     data = (
         memoryview(packed)
@@ -66,7 +63,6 @@ def test_image_samples_ignore_padding_at_each_row_boundary(
     expected: list[int],
     buffer_kind: str,
 ) -> None:
-    # ISO 32000-1, 8.9.3: image rows begin on byte boundaries, MSB sample first.
     data = (
         memoryview(packed)
         if buffer_kind == "memoryview"
@@ -112,7 +108,6 @@ def test_image_sample_layout_validation_stays_at_the_public_boundary(
 def test_tiff_differences_wrap_per_component_and_reset_each_row(
     bits: int, columns: int, colors: int, encoded: bytes, decoded: bytes
 ) -> None:
-    # ISO 32000-1, 7.4.4.4: differencing uses the previous pixel's same component.
     assert tiff_predict_bits(memoryview(encoded), columns, colors, bits) == decoded
     params = FilterParams(columns=columns, colors=colors, bits_per_component=bits)
     assert apply_tiff_predictor(encoded, params) == decoded

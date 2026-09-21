@@ -1,5 +1,3 @@
-"""PDFMiner's recovery policy remains owned by its compatibility facade."""
-
 import re
 from io import BytesIO
 from typing import Any
@@ -23,7 +21,6 @@ def test_recovered_page_selection_matches_pdfminer(text_pdf_bytes, damage):
     elif damage == "stale-page":
         xref = data.index(b"\nxref\n") + 1
         lines = data[xref:].splitlines(keepends=True)
-        # The fourth entry names page object 3; redirect it to catalog object 1.
         lines[5] = lines[3]
         data = data[:xref] + b"".join(lines)
 
@@ -51,7 +48,6 @@ def test_recovered_page_selection_matches_pdfminer(text_pdf_bytes, damage):
     ["exact", "inside-1", "inside-2", "inside-3", "zero", "overflow", "eof"],
 )
 def test_startxref_boundaries_preserve_page_content(text_pdf_bytes: bytes, offset: str) -> None:
-    """Distinguish entering the xref token from falling back to object scanning."""
     xref = text_pdf_bytes.index(b"\nxref\n") + 1
     offsets = {
         "exact": xref,
@@ -77,7 +73,6 @@ def test_startxref_boundaries_preserve_page_content(text_pdf_bytes: bytes, offse
 
 
 def test_negative_startxref_records_native_rejection(text_pdf_bytes: bytes) -> None:
-    """Native loading rejects a negative offset before facade recovery can run."""
     data = re.sub(rb"(startxref\s+)\d+", rb"\g<1>-1", text_pdf_bytes)
     pages = list(reference.extract_pages(BytesIO(data)))
     assert len(pages) == 1

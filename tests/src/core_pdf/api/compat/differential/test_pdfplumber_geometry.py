@@ -1,5 +1,3 @@
-"""Method-level geometry contracts against the installed pdfplumber reference."""
-
 from copy import deepcopy
 from typing import Any
 

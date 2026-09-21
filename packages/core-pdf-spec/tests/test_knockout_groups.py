@@ -9,7 +9,6 @@ from core_pdf_spec.s_11_transparency.groups import composite_knockout_element
 
 
 def internal_samples() -> dict[str, Any]:
-    """An opaque gray initial backdrop and two partly transparent marks."""
     return {
         "components": numpy.asarray([[0.9, 0.1, 0.1]]),
         "alpha": numpy.asarray([1.0]),
@@ -33,7 +32,6 @@ def test_full_shape_knocks_out_earlier_color_and_opacity() -> None:
 
 @pytest.mark.parametrize("shape", [0.0, 0.25, 1.0])
 def test_zero_opacity_still_knocks_out_according_to_shape(shape: float) -> None:
-    # ISO 32000-1/2 11.4.6: source shape and source opacity are independent.
     samples = internal_samples()
     samples["shape"][...] = shape
     samples["element_group_alpha"][...] = 0.0
@@ -58,7 +56,6 @@ def test_fractional_shape_in_isolated_group_preserves_uncovered_previous_element
         group_alpha=numpy.asarray([0.8]),
         element_group_alpha=numpy.asarray([0.125]),
     )
-    # 75% of the red source remains; the blue mark contributes 25% * 50%.
     numpy.testing.assert_allclose(color, [[24.0 / 29.0, 0.0, 5.0 / 29.0]])
     numpy.testing.assert_allclose(alpha, [0.725])
     numpy.testing.assert_allclose(group_alpha, [0.725])
@@ -73,9 +70,6 @@ def test_knockout_matches_specification_two_stage_shape_average(
     opacity: float,
     mode: Literal["Normal", "Multiply", "Screen"],
 ) -> None:
-    # Independent §11.4.6 construction: composite with shape 1, then average
-    # premultiplied results using shape. The helper consumes an element that
-    # has instead already incorporated shape into ordinary alpha compositing.
     initial = numpy.asarray([[0.2, 0.7, 0.5]])
     previous_source = numpy.asarray([[0.9, 0.1, 0.3]])
     previous_group_alpha = 0.6
@@ -92,7 +86,6 @@ def test_knockout_matches_specification_two_stage_shape_average(
         blended = initial + source - initial * source
     else:
         blended = source
-    # Temporary result with the source's shape disregarded, as in §11.4.6(a).
     temporary = (1.0 - opacity) * initial_alpha * initial + opacity * (
         (1.0 - initial_alpha) * source + initial_alpha * blended
     )
@@ -154,7 +147,6 @@ def test_knockout_outputs_are_new_arrays_with_color_space_dimensions(
 
 
 def test_knockout_allows_independently_rounded_alpha_without_clipping_output() -> None:
-    # Raster rounding in complete alpha must not silently quantize group alpha.
     color, alpha, group_alpha = composite_knockout_element(
         numpy.asarray([[1.0]]),
         numpy.asarray([0.8]),

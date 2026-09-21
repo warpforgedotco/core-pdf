@@ -1,5 +1,3 @@
-"""PDF text-operator projection for the LlamaIndex compatibility facade."""
-
 from __future__ import annotations
 
 import math
@@ -31,9 +29,6 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
 
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
-# Names whose engine translation differs from this facade's projection: the
-# underscore ligature names would fall through untranslated, and negationslash
-# is projected as the fraction slash.
 internal_LEGACY_GLYPH_ALIASES = {
     "f_f": "ﬀ",
     "f_f_i": "ﬃ",
@@ -52,7 +47,6 @@ def internal_glyph_name_to_unicode(name: str) -> str:
 
 
 def internal_difference_text(glyph_name: str, code: int) -> str:
-    """Translate one PDF Encoding Differences name using Adobe semantics."""
     if glyph_name == ".notdef":
         return "□"
     if glyph_name.startswith("a") and glyph_name[1:].isdigit():
@@ -86,7 +80,7 @@ class internal_Font:
         if isinstance(self.encoding, str):
             try:
                 return data.decode(self.encoding, errors="surrogatepass")
-            except (LookupError, UnicodeDecodeError):
+            except LookupError, UnicodeDecodeError:
                 return data.decode(
                     "utf-16-be" if self.encoding == "charmap" else "latin-1",
                     errors="surrogatepass",
@@ -118,8 +112,6 @@ class internal_TextState:
         self.previous_tm = self.tm.copy()
         self.stack: list[tuple[list[float], internal_Font | None, float, float]] = []
         self.text = ""
-        # Accumulated output as parts plus its trailing character; joining or
-        # copying the whole output per operator is quadratic.
         self.output_parts: list[str] = []
         self.output_last = ""
         self.width = 0.0
@@ -161,7 +153,6 @@ class internal_TextState:
         self.positioned(0.0)
 
     def insert_space(self) -> None:
-        """Insert layout whitespace without passing it through the active font CMap."""
         self.text += " "
         width = (
             self.font.space_width
@@ -175,7 +166,6 @@ class internal_TextState:
         self.positioned(0.0)
 
     def show_name(self, value: PdfName) -> None:
-        """Preserve a malformed name operand as its lexical PDF spelling."""
         text = f"/{value.value}"
         self.text += text
         self.width += 250.0 * len(text) * self.font_size
@@ -184,8 +174,6 @@ class internal_TextState:
 
 
 class OperatorTextProjection:
-    """Interpret page and form text operators using core-pdf's object and font engines."""
-
     def __init__(self, page: Any) -> None:
         self.page = page
         self.resolver = page.document.resolver
@@ -208,8 +196,6 @@ class OperatorTextProjection:
             ):
                 raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
-            # LlamaIndex's pypdf reader uses modern font encoding tables even
-            # under old PDF headers, so this projection omits font context.
             decoder = FontDecoder(cast(dict[str, object], resolved))
             to_unicode = self.internal_to_unicode(resolved, decoder)
             widths, default_width = self.internal_widths(font, decoder)
@@ -222,9 +208,6 @@ class OperatorTextProjection:
                 if subtype == "Type1" and to_unicode is None
                 else {}
             )
-            # Preserve the raw space identity before Type 1 recovery rewrites the
-            # expanded extraction encoding. Explicit encodings take precedence;
-            # otherwise ToUnicode identifies the encoded glyph most precisely.
             space_code: int | None = None
             has_explicit_encoding = self.resolver.resolve(font.get("Encoding")) is not None
             if has_explicit_encoding and not isinstance(encoding, str):
@@ -271,10 +254,6 @@ class OperatorTextProjection:
                     else 32
                 )
             if subtype == "Type1" and to_unicode is None:
-                # Many subset Type 1 fonts retain an explicit generic PDF encoding
-                # while their embedded program carries the actual subset code map.
-                # The program mapping describes the glyphs that will really render;
-                # explicit /Differences remain the final PDF-level override.
                 character_map = {}
                 if not isinstance(encoding, str):
                     encoding_table = list(encoding)
@@ -314,7 +293,6 @@ class OperatorTextProjection:
         return result
 
     def internal_type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
-        """Read the conservative clear-text Type 1 encoding used by PDF readers."""
         descriptor = self.resolver.resolve(font.get("FontDescriptor"))
         if not isinstance(descriptor, dict):
             return {}
@@ -369,16 +347,10 @@ class OperatorTextProjection:
         try:
             data = raw_cmap.data
         except FilterParseError:
-            # A malformed optional ToUnicode map does not make the font unusable.
-            # Continue with its declared/base encoding, as ISO 32000 requires readers
-            # to do when this supplementary mapping cannot be interpreted.
             return None
         try:
             return ToUnicodeCMap(data)
         except ValueError:
-            # The shared reader parser already preserves usable mappings when
-            # codespace metadata is malformed. An invalid map with no usable
-            # mappings must not override the font's declared/base encoding.
             return None
 
     def internal_validate_font_files(self, font: Mapping[object, object]) -> None:
@@ -557,11 +529,8 @@ class OperatorTextProjection:
             try:
                 decoded_streams.append(stream.data)
             except FilterParseError:
-                # An undecodable content stream contributes no operators.  Other page
-                # streams remain independently usable and must still be projected.
                 continue
         content = b"\n".join(decoded_streams)
-        # Preserve complete parsing before mutating the projection's text state.
         parsed = list(iter_content_operations(PdfLexer(content)))
         for operator, raw_operands in parsed:
             operands = list(raw_operands)
@@ -581,7 +550,7 @@ class OperatorTextProjection:
                 state.flush()
                 try:
                     matrix = [float(cast(Any, value)) for value in operands[:6]]
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     matrix = []
                 state.cm = (
                     list(multiply_affine(matrix, state.cm))
@@ -615,7 +584,7 @@ class OperatorTextProjection:
             elif operator == "Tm":
                 try:
                     matrix = [float(cast(Any, value)) for value in operands[:6]]
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     matrix = []
                 state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 state.positioned(state.width / 1000.0)

@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Local veraPDF adapter for the pinned 1.30.2 XML machine-readable report.
-
-CLI contract: https://docs.verapdf.org/cli/validation/
-Report contract: veraPDF/veraPDF-library tag v1.30.2, core/src/main/java/
-org/verapdf/processor/reports/{ValidationReportImpl,ValidationDetailsImpl}.java.
-Exit status contract: veraPDF/veraPDF-apps tag v1.30.2, tests/exit-status.sh.
-"""
 
 from __future__ import annotations
 
@@ -215,13 +208,6 @@ def internal_parse_report(
 
 @dataclass(frozen=True, slots=True)
 class VeraPdfBackend:
-    """Run a locally installed veraPDF 1.30.2; never install or fetch an engine.
-
-    ``executable`` is one executable path or command name, not a shell command.
-    ``timeout`` limits each target independently. Custom engine versions require
-    a separately tested adapter, not a version-check override.
-    """
-
     executable: str | os.PathLike[str] = "verapdf"
     timeout: float = 60.0
 
@@ -272,8 +258,6 @@ class VeraPdfBackend:
                 try:
                     stdout, stderr = process.communicate(timeout=self.timeout)
                 except subprocess.TimeoutExpired:
-                    # veraPDF's launcher can spawn Java. On POSIX terminate the
-                    # whole new process group, including children holding pipes.
                     if os.name == "posix":
                         with suppress(ProcessLookupError):
                             os.killpg(process.pid, signal.SIGKILL)

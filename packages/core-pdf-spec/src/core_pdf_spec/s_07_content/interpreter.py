@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF content operators and their graphics/text state transitions."""
 
 from __future__ import annotations
 
@@ -65,8 +64,6 @@ if TYPE_CHECKING:
 
 
 class ContentInterpreter:
-    """Execute PDF content with strict operands and an explicit graphics state."""
-
     def __init__(
         self,
         resolver: PdfValueResolver,
@@ -105,11 +102,6 @@ class ContentInterpreter:
         self.stream_executor = ContentStreamExecutor(self)
 
     def create_lexer(self, data: bytes | memoryview) -> PdfLexer:
-        """Create a content parser carrying the selected document semantics.
-
-        A supplied context applies to every nested stream. Without one, retain
-        any context explicitly supplied by a custom lexer factory.
-        """
         lexer = self.lexer_factory(data)
         if self.semantic_context is not None:
             try:
@@ -166,7 +158,6 @@ class ContentInterpreter:
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
     ) -> ContentStreamFrame | None:
-        """Validate before mutation, then execute in the active stream's scope."""
         if name not in CONTENT_OPERATOR_HANDLERS:
             if self.compatibility_depth:
                 return None
@@ -220,7 +211,6 @@ class ContentInterpreter:
         return self.normalize_color_components(space, operands)
 
     def lookup_page_resource(self, category: str, name: str) -> object:
-        """Return the raw selected entry; its consumer chooses how far to resolve it."""
         entries = self.resolve_resources(self.resources.get(category))
         return entries.get(name) if entries is not None else None
 
@@ -228,7 +218,6 @@ class ContentInterpreter:
         return resolve_resource_dict(value, self.resolver)
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
-        """Resolve an optional six-number matrix; readers may recover by context."""
         value = self.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
@@ -279,12 +268,10 @@ class ContentInterpreter:
         return self.append_form_xobject(xobj, depth, stream_key=stream_key)
 
     def resolve_form_resources(self, value: object) -> PdfDict:
-        """Resolve Form resources, inheriting only an absent dictionary."""
         resources = self.resolve_resources(value)
         return self.resources if resources is None else resources
 
     def resolve_form_bbox(self, value: object) -> tuple[float, float, float, float] | None:
-        """Require a Form BBox; readers may return None for a missing box."""
         bbox = self.resolver.resolve_box(value)
         if bbox is None:
             raise PdfParseError("Form XObject requires a BBox")
@@ -293,12 +280,6 @@ class ContentInterpreter:
     def append_form_xobject(
         self, xobj: PdfStream, depth: int, *, stream_key: StreamKey | None = None
     ) -> ContentStreamFrame | None:
-        """Queue a Form using its transparency, resources, matrix, and bounds.
-
-        Callers select the Form stream and retain its source reference key.
-        Reader extensions own resource and BBox recovery through the resolution
-        methods; the state transition and frame construction remain shared.
-        """
         xobj_dict = xobj.dictionary
         group_alpha = None
         group_isolated = True
@@ -310,12 +291,8 @@ class ContentInterpreter:
                 isinstance(group_dict, dict)
                 and self.resolver.resolve_name(group_dict.get("S")) == "Transparency"
             ):
-                # ISO 32000-1 Table 147 and 11.6.6: every transparency Form is
-                # a group, including opaque non-isolated groups. Its children
-                # may choose blend modes that require the group's backdrop.
                 group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
                 group_isolated = self.resolver.resolve(group_dict.get("I")) is True
-                # ISO 32000-2 Table 145: /K is independent of isolation.
                 group_knockout = self.resolver.resolve(group_dict.get("K")) is True
         resources = self.resolve_form_resources(xobj_dict.get("Resources"))
         xobj_matrix = xobj_dict.get("Matrix")
@@ -339,7 +316,6 @@ class ContentInterpreter:
             stream_key=stream_key,
         )
         if frame is not None:
-            # Assign after queueing to retain existing reader queue overrides.
             frame.form_bbox = form_bbox
             if group_alpha is not None:
                 frame.group_isolated = group_isolated
@@ -347,7 +323,6 @@ class ContentInterpreter:
         return frame
 
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
-        """Decode bytes once, then execute their glyphs and text advance."""
         decoder = decoder if decoder is not None else self.get_decoder()
         glyphs = decoder.decode_glyphs(data if isinstance(data, bytes) else bytes(data))
         text = "".join(glyph.unicode for glyph in glyphs)
@@ -360,7 +335,6 @@ class ContentInterpreter:
         glyphs: tuple[DecodedFontGlyph, ...],
         decoder: FontService,
     ) -> None:
-        """Execute decoded text, retaining painted glyphs even without Unicode."""
         if decoder.is_type3 and data:
             text_matrix = self.text_matrix
             line_matrix = self.line_matrix
@@ -393,10 +367,6 @@ class ContentInterpreter:
         self.sink.text_boundary(self, "shown")
 
     def internal_render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
-        # ISO 32000-2 9.3.6 suppresses Type 3 painting for modes 3 and 7.
-        # Follow this contemporary correction to ISO 32000-1's mode-3-only
-        # wording across PDF versions; no legacy interpretation is selected
-        # by a document header. append_decoded_text still applies the advance.
         if self.graphics.render_mode in {3, 7}:
             return
         font = decoder.font
@@ -412,17 +382,6 @@ class ContentInterpreter:
             glyph_name = decoder.glyph_name(code)
             char_proc = self.resolver.resolve(char_procs.get(glyph_name) if glyph_name else None)
             if isinstance(char_proc, PdfStream):
-                # ISO 32000-1 9.6.5: when the glyph description begins, the CTM
-                # is "the concatenation of the font matrix ... and the text space
-                # that was in effect at the time the text-showing operator was
-                # invoked". Text space is Trm from 9.4.4 NOTE 2:
-                #
-                #   Trm = [Tfs x Th, 0, 0; 0, Tfs, 0; 0, Trise, 1] x Tm x CTM
-                #
-                # `multiply` applies the receiver first, so the font matrix has
-                # to lead. It was trailing, and the Tfs/Th/Trise factor was
-                # missing entirely, which left every Type 3 glyph painted at
-                # FontMatrix scale near the origin and independent of font size.
                 text_space = self.text_matrix.multiply(self.graphics.ctm)
                 font_size = self.graphics.font_size
                 glyph_ctm = font_matrix.multiply(
@@ -436,8 +395,6 @@ class ContentInterpreter:
                     ).multiply(text_space)
                 )
                 previous_type3_uncolored = self.type3_uncolored
-                # 9.3.8 applies text knockout to Type 3 too: all the marks in
-                # one CharProc are one glyph element of the enclosing text.
                 self.sink.text_boundary(self, "type3-glyph-begin")
                 self.type3_uncolored = False
                 try:
@@ -463,12 +420,6 @@ class ContentInterpreter:
             )
 
     def tj_array_extra_bytes(self, item: object) -> bytes:
-        """Reject a TJ entry outside the exact PDF string and number types.
-
-        Parsing extensions may override this method to supply bytes for an
-        otherwise unsupported entry. It is called during array execution,
-        preserving the order of text emission, adjustments, and failures.
-        """
         raise PdfParseError("TJ array entries must be strings or numbers")
 
     def append_tj_array(self, array: Any) -> None:
@@ -543,8 +494,6 @@ class ContentInterpreter:
 
     def move_text(self, tx: float, ty: float) -> None:
         self.sink.text_boundary(self, "move")
-        # Keep the affine operation order: exact layout grouping can hinge on
-        # the final ULP at a character-margin boundary.
         lm = self.line_matrix
         e = tx * lm.a + ty * lm.c + lm.e
         f = tx * lm.b + ty * lm.d + lm.f
@@ -587,14 +536,12 @@ class ContentInterpreter:
         self.text_matrix = self.line_matrix = Matrix(*values)
 
     def resolve_font_name(self, value: object) -> str | None:
-        """Resolve a Tf name; parsing extensions may return None to skip selection."""
         name = self.resolver.resolve_name(value)
         if name is None:
             raise PdfParseError("Tf requires a font name")
         return name
 
     def parse_font_size(self, value: object) -> float | None:
-        """Parse a Tf size; parsing extensions may return None to skip selection."""
         try:
             return self.as_float(value)
         except (TypeError, ValueError) as error:
@@ -668,8 +615,6 @@ class ContentInterpreter:
             self.sink.paint_inline_image(self, cast("InlineImage", operands[0]))
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
-        # A run owns one marked-content context. Finish neighboring text before
-        # changing that context so ActualText cannot replace unrelated glyphs.
         self.sink.text_boundary(self, "marked")
         tag = self.resolver.resolve_name(operands[0]) if operands else None
         layer: str | None = None
@@ -679,8 +624,6 @@ class ContentInterpreter:
             properties = operands[1]
             if tag == "OC":
                 layer = self.resolve_marked_content_layer(properties)
-            # ActualText and MCID both live in this dictionary; resolving it
-            # once can mean one fewer page-resource lookup per BDC.
             props = self.resolve_marked_content_properties(properties)
             if props is not None:
                 resolver = self.resolver
@@ -793,8 +736,6 @@ class ContentInterpreter:
         if (values := self.as_floats(operands, 4)) is None:
             return
         x1, y1, x3, y3 = values
-        # `y` doubles the endpoint as the second control point, unlike `v`,
-        # which uses the current point as the first one.
         self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
     def internal_close_current_subpath(self) -> None:
@@ -804,11 +745,6 @@ class ContentInterpreter:
     def internal_complete_path(
         self, kind: str | None, fill_rule: str = "nonzero", *, close: bool = False
     ) -> None:
-        """Paint, install the pending clip, and discard the completed path.
-
-        ISO 32000-1 8.5.4: W/W* affect the clipping path only after the path
-        has been painted. The n operator completes a path without painting it.
-        """
         if close:
             self.internal_close_current_subpath()
         if kind is not None:
@@ -892,7 +828,6 @@ class ContentInterpreter:
     def normalize_color_components(
         self, spec: ColorSpace, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
-        """Normalize one PDF color; readers may recover malformed components here."""
         try:
             return normalize_color_components(spec, components)
         except ValueError as error:
@@ -901,7 +836,6 @@ class ContentInterpreter:
     def initial_color_components(
         self, spec: ColorSpace, *, stroke: bool
     ) -> tuple[float, ...] | None:
-        """Initialize a selected space; readers may retain color for invalid spaces."""
         try:
             return initial_color_components(spec)
         except ValueError as error:
@@ -909,10 +843,6 @@ class ContentInterpreter:
 
     def internal_set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
         if self.type3_uncolored:
-            # 9.6.5.2: every colour operator is ignored inside an uncoloured
-            # Type 3 glyph, `cs`/`CS` included. The colour setters already
-            # refuse to move the colour, so without this the glyph would carry
-            # a colour space describing a colour it was not allowed to set.
             return
         if operands:
             space = self.resolve_color_space(operands[0])
@@ -984,15 +914,12 @@ class ContentInterpreter:
             raise PdfParseError(str(error)) from error
 
     def op_MP(self, operands: ContentOperands, depth: int) -> None:
-        # A marked-content point is not a scope. Only BMC/BDC push and EMC pops.
         return
 
     def op_DP(self, operands: ContentOperands, depth: int) -> None:
-        # A property-bearing marked-content point likewise has no lasting state.
         return
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
-        """Resolve a PDF name, or a text string where the grammar allows it."""
         name = self.resolver.resolve_name(value)
         if name is not None or not allow_text:
             return name
@@ -1023,10 +950,10 @@ class ContentInterpreter:
         return self.named_value(value, allow_text=True)
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
-        """Observe BX after the validated executor has entered its scope."""
+        pass
 
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
-        """Observe EX after the validated executor has left its scope."""
+        pass
 
     def op_d0(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = False
@@ -1054,7 +981,6 @@ class ContentInterpreter:
         raise PdfParseError("numeric operand must be a PDF number")
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
-        """Return numeric operands, raising without changing state if invalid."""
         if len(operands) < count:
             raise PdfParseError("missing numeric operand")
         return tuple(self.as_float(operand) for operand in operands[:count])
@@ -1071,14 +997,10 @@ class ContentInterpreter:
         return self.as_int(operands[0])
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
-        """Resolve selected state without traversing a soft mask's group graph."""
         extgstate = self.resolver.resolve(self.lookup_page_resource("ExtGState", name))
         if not isinstance(extgstate, dict):
             return None
         source = cast(PdfDict, extgstate)
-        # G can point back to its own mask through Resources. Preserve that
-        # identity; only the mask parser should resolve the selected entries.
-        # TK is entirely ignored inside BT..ET, even during resolution.
         values = {
             key: value
             for key, value in source.items()
@@ -1092,7 +1014,6 @@ class ContentInterpreter:
         return cast("dict[str, Any]", resolved)
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
-        """Parse SMask at the current CTM; readers may supply function recovery."""
         return parse_soft_mask(value, self.resolver, ctm=self.graphics.ctm)
 
     def op_q(self, operands: ContentOperands, depth: int) -> None:
@@ -1138,13 +1059,6 @@ class ContentInterpreter:
             raise PdfParseError(str(error)) from error
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
-        """Apply supported fields in order through the state's coercion hooks.
-
-        Earlier changes remain applied if a later field raises. Reader callers
-        own resource recovery and exception handling around this shared step.
-        """
-        # Absent keys preserve state (8.4.5; Table 57 errata removes a
-        # misleading per-dictionary Default for UseBlackPtComp).
         intent = self.resolver.resolve(extgstate.get("RI"))
         if intent is not None:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
@@ -1170,8 +1084,6 @@ class ContentInterpreter:
             if not isinstance(alpha_is_shape, bool):
                 raise ValueError("invalid alpha source flag")
             self.graphics.alpha_is_shape = alpha_is_shape
-        # ISO 32000-2 9.3.8: TK applies to whole text objects. Inside BT..ET
-        # even an invalid value is ignored, without resolving its reference.
         if not self.in_text_object:
             text_knockout = self.resolver.resolve(extgstate.get("TK"))
             if text_knockout is not None:
@@ -1183,11 +1095,6 @@ class ContentInterpreter:
             self.graphics.soft_mask = self.resolve_soft_mask(soft_mask)
 
     def resolve_pattern_resource(self, name_operand: object) -> tuple[object, PdfDict] | None:
-        """Look up a selected pattern source and its dictionary without decoding it.
-
-        An absent name or dictionary returns None; the selection caller decides
-        whether to reject it. Resolver failures propagate to the caller.
-        """
         pattern_name = self.resolver.resolve_name(name_operand)
         if not pattern_name:
             return None

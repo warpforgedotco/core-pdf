@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Generate the ISO/TS 32003 AES-GCM interoperability fixture with pyHanko.
-
-pyHanko is an offline fixture generator, not a project or test dependency. The
-fixed byte source below makes the committed artifact reproducible; predictable
-keys, salts, and nonces are safe only because this PDF contains public test data.
-"""
 
 from __future__ import annotations
 
@@ -35,8 +29,6 @@ internal_RANDOM_SEED = b"core-pdf ISO/TS 32003:2023 fixture v1"
 
 
 class internal_DeterministicTokenBytes:
-    """Provide distinct reproducible bytes to pyHanko's fixture-only writer."""
-
     def __init__(self, seed: bytes) -> None:
         self.seed = seed
         self.counter = 0
@@ -107,9 +99,6 @@ def internal_generate(source: Path, output_directory: Path) -> None:
     destination = output_directory / internal_FIXTURE_NAME
     deterministic_bytes = internal_DeterministicTokenBytes(internal_RANDOM_SEED)
 
-    # pyHanko v0.37.0 is the independent PDF implementation under test here.
-    # Its AESGCM primitive is PyCA, while all PDF object selection, R7 password
-    # handling, extension declaration, and serialization belong to pyHanko.
     with (
         patch.object(os, "urandom", deterministic_bytes),
         patch.object(secrets, "token_bytes", deterministic_bytes),
@@ -117,18 +106,12 @@ def internal_generate(source: Path, output_directory: Path) -> None:
         destination.open("wb") as output_stream,
     ):
         output = writer.copy_into_new_writer(pdf_reader(input_stream))
-        # Keep this fixture scoped to ISO/TS 32003:2023. PDF MAC belongs to
-        # ISO/TS 32004:2024, which core-pdf currently rejects rather than
-        # treating its AuthCode-protected documents as verified.
         output.encrypt(
             internal_OWNER_PASSWORD,
             internal_USER_PASSWORD,
             pdf_mac=False,
             use_gcm=True,
         )
-        # Preserve the deliberately minimal XMP packet byte-for-byte. Its XML
-        # declaration is legal PDF metadata but pyHanko's optional updater
-        # expects an XML fragment when it receives an already-decoded string.
         output._update_meta = lambda: None
         output.write(output_stream)
 

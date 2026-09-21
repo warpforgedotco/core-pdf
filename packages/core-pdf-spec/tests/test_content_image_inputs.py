@@ -1,5 +1,3 @@
-"""Image capture resolves decoder inputs while preserving unrelated objects."""
-
 import zlib
 
 import pytest
@@ -89,8 +87,6 @@ def test_main_and_soft_mask_share_selected_resolution(
                 "BitsPerComponent": 8,
             }
             assert resolved["Unrelated"] is unrelated
-            # Abbreviations are normalized by the inline-image parser. Check
-            # these resolved decoder inputs independently of that parser.
             assert (
                 decode_stream_data(
                     raw, {"Filter": resolved[filter_key], "DecodeParms": resolved[params_key]}

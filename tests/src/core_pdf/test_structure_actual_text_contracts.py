@@ -1,5 +1,3 @@
-"""Structure replacement ownership, geometry, and malformed-tree recovery."""
-
 from types import SimpleNamespace
 
 import pytest

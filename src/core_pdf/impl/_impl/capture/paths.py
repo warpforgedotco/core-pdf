@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Project PDF paths using the capture pipeline's established flatness policy."""
 
 from math import ceil, hypot
 

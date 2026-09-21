@@ -1,5 +1,3 @@
-"""Structured table projections retain row order, geometry, and page ownership."""
-
 from io import BytesIO
 from types import SimpleNamespace
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Immutable products emitted by one page content interpretation."""
 
 from __future__ import annotations
 
@@ -23,13 +22,6 @@ PageCommand: TypeAlias = (
 
 @dataclass(frozen=True, slots=True)
 class CapturedProgram:
-    """One capture scope, shared by page bodies, appearances, and pattern cells.
-
-    The typed projections are the source of truth. ``commands`` is derived from
-    them once, in content-stream order, so every construction path produces the
-    same program.
-    """
-
     runs: tuple[TextRun, ...] = ()
     glyphs: tuple[GlyphObservation, ...] = ()
     drawings: tuple[CapturedDrawing, ...] = ()
@@ -57,8 +49,6 @@ class CapturedProgram:
             if not all(isinstance(product, product_type) for product in products):
                 raise PdfContractError(f"page program contains an invalid {name} product")
 
-        # Boundaries describe the cursor before the next paint; they never
-        # consume extraction sequence numbers. Stable ties retain empty scopes.
         commands: list[PageCommand] = [*text_boundaries, *runs]
         commands.extend(glyph for glyph in glyphs if glyph.has_paint)
         commands.extend(drawings)
@@ -76,8 +66,6 @@ class CapturedProgram:
 
 @dataclass(frozen=True, slots=True)
 class AppearanceProgram:
-    """An already-interpreted appearance and the source that owns its paint."""
-
     kind: Literal["widget", "annotation"]
     source: object
     clip_bbox: tuple[float, float, float, float]
@@ -86,12 +74,6 @@ class AppearanceProgram:
 
 @dataclass(frozen=True, slots=True)
 class PageProgram:
-    """A body and ordered appearance scopes, with flattened extraction views.
-
-    Renderers select whole appearance scopes rather than filtering sequence
-    numbers, which may tie across paints and graphics-state boundaries.
-    """
-
     body: CapturedProgram = field(default_factory=CapturedProgram)
     appearances: tuple[AppearanceProgram, ...] = ()
 

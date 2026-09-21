@@ -1,5 +1,3 @@
-"""Spatial coverage and deterministic boundaries for adaptive OCR retries."""
-
 from dataclasses import replace
 
 import numpy

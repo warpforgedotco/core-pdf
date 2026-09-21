@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Device-independent PDF color equations."""
 
 from __future__ import annotations
 
@@ -14,11 +13,6 @@ def lab_to_xyz(
     values: ColorSamples,
     white_point: tuple[float, float, float],
 ) -> ColorSamples:
-    """Convert normalized Lab values using the original scaling convention.
-
-    Each row encodes L* as L*/100 and a*/b* as (component + 128)/255.
-    Use ``lab_components_to_xyz`` for actual PDF Lab components.
-    """
     components = numpy.column_stack(
         (values[:, 0] * 100.0, values[:, 1] * 255.0 - 128.0, values[:, 2] * 255.0 - 128.0)
     )
@@ -29,13 +23,6 @@ def lab_components_to_xyz(
     values: ColorSamples,
     white_point: tuple[float, float, float],
 ) -> ColorSamples:
-    """Convert rows of actual L*, a*, b* components to CIE XYZ.
-
-    ISO 32000-1, 8.6.5.4 defines the Lab transformation relative to WhitePoint.
-    ``values`` has shape (n, 3); L* spans 0 to 100 and a*/b* use the color
-    space's component ranges. Callers decode samples and enforce those ranges
-    before conversion. The input is unchanged and the result is float32.
-    """
     l_star = values[:, 0]
     a_star = values[:, 1]
     b_star = values[:, 2]
@@ -56,7 +43,6 @@ def lab_components_to_xyz(
 def xyz_to_lab_components(
     values: numpy.ndarray[Any, Any], white_point: tuple[float, float, float]
 ) -> numpy.ndarray[Any, Any]:
-    """CIE 1976 L*a*b*: the inverse of lab_components_to_xyz."""
     white = numpy.asarray(white_point, dtype=numpy.float64)
     xyz = numpy.asarray(values, dtype=numpy.float64)
     if white.shape != (3,) or numpy.any(white <= 0) or not numpy.isfinite(white).all():
@@ -79,11 +65,6 @@ def compensate_black_point_xyz(
     source_black: tuple[float, float, float],
     destination_black: tuple[float, float, float],
 ) -> numpy.ndarray[Any, Any]:
-    """ISO 18619: scale/offset XYZ to map black endpoints while fixing white.
-
-    Black-point determination and any required PCS adaptation precede this
-    calculation. The caller supplies endpoints in the same XYZ coordinates.
-    """
     white = numpy.asarray(white_point, dtype=numpy.float64)
     source = numpy.asarray(source_black, dtype=numpy.float64)
     destination = numpy.asarray(destination_black, dtype=numpy.float64)

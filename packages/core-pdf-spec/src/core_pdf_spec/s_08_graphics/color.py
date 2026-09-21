@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF color-space semantics, independent of an output device."""
 
 from __future__ import annotations
 
@@ -11,13 +10,6 @@ from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 
 
 def color_space_paints(spec: ColorSpace) -> bool:
-    """Whether this space can paint any colorant (ISO 32000-2, 8.6.6.4-5).
-
-    Separation None and nonempty all-None DeviceN spaces discard their output,
-    including through an Indexed palette or an uncolored Pattern. The tint
-    function is irrelevant in these cases. A mixed DeviceN space still passes
-    every component, including None components, to its alternate tint function.
-    """
     while spec.kind in {"Indexed", "Pattern"} and spec.base is not None:
         spec = spec.base
     if spec.kind == "Separation":
@@ -28,10 +20,6 @@ def color_space_paints(spec: ColorSpace) -> bool:
 
 
 def normalize_color_components(spec: ColorSpace, components: Sequence[object]) -> tuple[float, ...]:
-    """Validate component types/counts and apply their PDF-defined limits.
-
-    Pattern selection is separate; pass its underlying space for stencil colors.
-    """
     if spec.kind == "Pattern":
         raise ValueError("Pattern color requires a pattern selection")
     count = len(spec.component_ranges)
@@ -52,10 +40,6 @@ def normalize_color_components(spec: ColorSpace, components: Sequence[object]) -
 
 
 def initial_color_components(spec: ColorSpace) -> tuple[float, ...] | None:
-    """ISO 32000-1 Table 74: the color established by CS/cs.
-
-    None represents the initial Pattern selection, which paints nothing.
-    """
     count = len(spec.component_ranges)
     if count == 0 and spec.kind != "Pattern":
         raise ValueError("unsupported color space")
@@ -68,7 +52,6 @@ def initial_color_components(spec: ColorSpace) -> tuple[float, ...] | None:
 
 
 def internal_indexed_color_index(value: float, hival: int) -> int:
-    """Round an Indexed component half up, then clamp it to the palette bounds."""
     return max(0, min(hival, int(value + 0.5)))
 
 

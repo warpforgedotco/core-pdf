@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shallow reference chains and identity-preserving PDF object graph resolution."""
 
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ internal_CONTAINER_TYPES = (dict, list, tuple, PdfStream)
 
 
 def resolve_reference_chain(value: object, resolve: Callable[[object], object]) -> object:
-    """Follow scalar references, retaining a repeated reference or terminal object."""
     if type(value) is not PdfReference:
         return value
     seen: set[tuple[int, int]] = set()
@@ -37,12 +35,6 @@ class internal_ResolutionNode:
 
 
 def internal_resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:
-    """Copy exactly the containers affected by resolution, including whole cycles.
-
-    Reverse-edge propagation marks every ancestor of a changed slot. In a cycle,
-    this marks the complete component before any result is populated, so mutable
-    placeholders can retain both sharing and backedges without changing the input.
-    """
     reference_values: dict[tuple[int, int], object] = {}
 
     def resolve_once(reference: object) -> object:
@@ -99,8 +91,6 @@ def internal_resolve_object_graph(value: object, resolve: Callable[[object], obj
         else:
             results[marker] = {} if type(node.original) is dict else []
 
-    # Stream dictionaries are already allocated, including dictionaries which
-    # refer back to the stream. replace preserves source bytes and decoder state.
     for marker, node in nodes.items():
         if node.changed and type(node.original) is PdfStream:
             results[marker] = node.original.replace(

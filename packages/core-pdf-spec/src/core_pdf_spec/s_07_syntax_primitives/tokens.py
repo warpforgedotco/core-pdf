@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared PDF lexical tokens and compact syntax aliases."""
 
 from __future__ import annotations
 
@@ -19,8 +18,6 @@ WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
 @dataclass(frozen=True, slots=True)
 class LexicalRules:
-    """Immutable token rules; readers may construct an explicit recovery policy."""
-
     whitespace: bytes
     name_escapes: bool
     delimiters: bytes = DELIMITERS
@@ -61,10 +58,6 @@ class LexicalRules:
                 b"(?:[" + re.escape(self.whitespace) + b"]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*"
             ),
         )
-        # One match classifies the common content-stream tokens -- numbers, plain
-        # names and operators -- in C. Anything else (strings, arrays,
-        # dictionaries, escaped names, malformed numbers) is left to the
-        # byte-by-byte scanner so its diagnostics and recovery are unchanged.
         separator = b"[" + re.escape(self.whitespace + self.delimiters) + b"]"
         boundary = b"(?=" + separator + b"|$)"
         name_body = b"[^" + re.escape(self.whitespace + self.delimiters)
@@ -106,17 +99,6 @@ internal_CURRENT_RULES = LexicalRules(WHITESPACE, name_escapes=True)
 
 
 def lexical_rules(context: SemanticContext | None = None) -> LexicalRules:
-    """Select PDF lexical rules without assuming an unknown document version.
-
-    Adobe PDF Reference 1.2, 4.5 introduces hexadecimal escapes in names.
-    Its 4.4 whitespace list lacks NUL, which appears in PDF 1.3, Table 3.1.
-    The PDF Association confirms the boundary in "PDF malformations and more":
-    https://pdfa.org/pdf-malformations-and-more/ (2023-09-06).
-    ISO 32000-2:2020, 7.2.3 limits brace delimiters to Type 4 calculators;
-    its corrected 7.3.10 defines canonical object identifiers. Earlier editions
-    include braces among ordinary delimiters and specify integer identifiers.
-    Omitting context selects the corrected PDF 2.0 grammar.
-    """
     if context is None:
         return internal_CURRENT_RULES
     version = context.version

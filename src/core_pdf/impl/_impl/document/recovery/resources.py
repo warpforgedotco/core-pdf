@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader handling of malformed resource dictionaries."""
 
 from __future__ import annotations
 

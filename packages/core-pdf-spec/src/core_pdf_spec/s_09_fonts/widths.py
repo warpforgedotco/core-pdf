@@ -1,5 +1,3 @@
-"""PDF font width and vertical-metric dictionary semantics."""
-
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
@@ -85,10 +83,6 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
 class FontMetrics:
     widths: Mapping[int, float]
     default_width: float
-    # Whether the document actually stated the default (MissingWidth, or DW for
-    # a CIDFont). ISO 32000-1 Table 122 defaults MissingWidth to 0, so a stated
-    # 0 must survive: it means unlisted codes have no advance, and substituting
-    # a full em for it shifts every following glyph on the line.
     default_width_explicit: bool
     default_vertical_displacement_y: float
     default_vertical_origin_y: float

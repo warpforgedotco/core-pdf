@@ -1,5 +1,3 @@
-"""Filter and DecodeParms association preserves PDF stream pipeline order."""
-
 import pytest
 
 from core_pdf_spec.s_07_filters.decode_spec import (
@@ -67,7 +65,6 @@ def test_parameter_arrays_preserve_null_slots_and_object_identity(array_type: ty
 def test_decode_parameters_require_exact_filter_cardinality(
     filters: object, params: object
 ) -> None:
-    # ISO 32000-1, Table 5: a DecodeParms array corresponds to the Filter array.
     with pytest.raises(FilterParseError, match="^invalid stream decode parameters$"):
         normalize_stream_decode_spec({"Filter": filters, "DecodeParms": params})
 

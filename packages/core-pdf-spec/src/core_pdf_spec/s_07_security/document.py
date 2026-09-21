@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Document security initialization and authenticated extension validation."""
 
 from __future__ import annotations
 
@@ -31,8 +30,6 @@ def initialize_document_security(
 ) -> Decipher | None:
     encrypt_ref = trailer.get("Encrypt")
     if encrypt_ref is None:
-        # ISO/TS 32004:2024, Table 5 defines AuthCode only for encrypted
-        # documents whose Encrypt dictionary has V >= 5.
         if "AuthCode" in trailer:
             raise PdfUnsupportedError("AuthCode requires an encrypted document")
         return None
@@ -49,9 +46,6 @@ def initialize_document_security(
     docid_list: Sequence[object] = docid
 
     security_handler = handler_factory(docid_list, encrypt_dict, password)
-    # ISO/TS 32004:2024 integrity validation authenticates the complete
-    # serialized file. Perform it before installing the object decipher so
-    # no decrypted string, stream, catalog, or page can be exposed first.
     has_pdf_mac = validate_pdf_mac_if_present(
         data,
         trailer,
@@ -59,10 +53,6 @@ def initialize_document_security(
     )
     decipher = security_handler.decrypt
     if has_pdf_mac:
-        # ISO/TS 32004:2024, clause 4 and Table 1 require this exact
-        # declaration. Its text-string fields are encrypted, so resolve it
-        # only after authenticating the complete file and installing the
-        # decipher, but still before returning the document to the caller.
         resolver.decipher = decipher
         catalog = resolver.resolve(trailer.get("Root"))
         if not isinstance(catalog, dict):

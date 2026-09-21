@@ -1,5 +1,3 @@
-"""Dash and analytic-coverage geometry agree with explicit interval areas."""
-
 import numpy as np
 import pytest
 

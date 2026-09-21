@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""OCR document and page APIs sharing core-pdf's operation lifecycle."""
 
 from __future__ import annotations
 
@@ -14,20 +13,15 @@ from core_pdf_ocr.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
 from core_pdf_ocr.impl.extract.pipeline import extract_page
 from core_pdf_ocr.impl.extract.selection import extract_document
 
-# Recognition owns process signal preparation; importing core-pdf is side-effect free.
 internal_prepare_ocr_signals()
 
 
 class PdfPage(CorePdfPage):
-    """A PDF page whose structured extraction can recover recognized text."""
-
     def internal_extract_page(self, context: ExtractionScope) -> Page:
         return extract_page(self, context)
 
 
 class PdfDocument(CorePdfDocument):
-    """A PDF document with native, hybrid, and recognized extraction routes."""
-
     page_class = PdfPage
 
     def internal_extract_document(

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compose PDF image-filter parameters with the installed codec backend."""
 
 from __future__ import annotations
 
@@ -78,9 +77,6 @@ def decode_ccitt_fax(data: bytes, parms: object) -> bytes:
 
 
 def decode_crypt(data: bytes, parms: object) -> bytes:
-    # Stream cryptography is applied by the document security handler before
-    # ordinary filters.  /Crypt remains in the decode pipeline only to retain
-    # the original dictionary and filter ordering.
     if is_pdf_null(parms):
         return data
     if not isinstance(parms, dict):

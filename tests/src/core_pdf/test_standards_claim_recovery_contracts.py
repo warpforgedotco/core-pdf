@@ -1,5 +1,3 @@
-"""Declaration discovery preserves claims and diagnoses malformed metadata."""
-
 import pytest
 
 from core_pdf.impl._impl.document.standards import (

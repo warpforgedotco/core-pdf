@@ -72,7 +72,6 @@ def test_json_exports_tables_and_nontext_records() -> None:
         diagnostics=(Diagnostic("page", "warning"),),
     )
     result = Document((page,), diagnostics=(Diagnostic("document", "warning"),)).to_json_dict()
-    # Decode the public JSON representation to narrow the heterogeneous payload for assertions.
     data = json.loads(json.dumps(result))
     assert len(data["tables"]) == 1
     assert data["tables"][0]["rows"][0][0]["row_span"] == 2

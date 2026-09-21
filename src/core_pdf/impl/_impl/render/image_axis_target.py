@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Prepare image color and alpha for the common affine raster sampler."""
 
 from __future__ import annotations
 
@@ -20,8 +19,6 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 if TYPE_CHECKING:
     from core_pdf.impl._impl.render.target_state import internal_RasterState
 
-# Decoded bytes one render may retain; beyond it the oldest entries are dropped
-# and repainted images decode again rather than holding every raster of a page.
 PREPARED_IMAGE_CACHE_BYTES = 256 << 20
 
 
@@ -33,13 +30,6 @@ def internal_prepared_image_bytes(prepared: PreparedImage | None) -> int:
 
 
 class PreparedImageCache:
-    """Decoded images keyed by ``id(source)`` under a byte budget.
-
-    The pinned source keeps its id from being recycled. Entries leave in
-    insertion order once the budget is exceeded, and a single image larger than
-    the budget is never retained.
-    """
-
     __slots__ = ("budget", "entries", "size")
 
     def __init__(self, budget: int = PREPARED_IMAGE_CACHE_BYTES) -> None:
@@ -60,7 +50,6 @@ class PreparedImageCache:
 
 
 def internal_prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
-    """Decode an image source once per render; repeated paints reuse the result."""
     cached = cache.entries.get(id(source))
     if cached is not None and cached[0] is source:
         return cached[1]
@@ -73,7 +62,6 @@ def internal_prepared_image(cache: PreparedImageCache, source: ImageSource) -> P
 
 
 def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float], ...] | None:
-    """Keep the captured placement; synthesize a unit-square map only if absent."""
     if item.quad is not None:
         return item.quad
     box = rect_tuple(item.bbox)
@@ -84,8 +72,6 @@ def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float],
 
 
 class internal_ImageAxisTargetMixin:
-    """Image preparation shared by opaque, masked and stencil painting."""
-
     __slots__ = ()
 
     def blit_image(self: internal_RasterState, item: ImagePaintItem) -> None:
@@ -110,14 +96,9 @@ class internal_ImageAxisTargetMixin:
         converted = raster.array[:, :, :components].reshape(-1)
         native_soft_mask = prepared.soft_mask
         soft_mask = native_soft_mask.array[:, :, 0] if native_soft_mask is not None else None
-        # The prepared raster already contains a resized copy of the native
-        # mask. Use the native plane in its own coordinates instead of applying
-        # that derived alpha a second time or binding it to the color size.
         source_alpha: numpy.ndarray[Any, Any] | None = None
         if raster.has_alpha and soft_mask is None:
             source_alpha = raster.array[:, :, components].reshape(-1)
-        # Retain the existing color/embedded-alpha reduction policy. A native
-        # soft mask stays at its own resolution and uses the same image UVs.
         device_extent = max(
             1,
             int(math.ceil((box[2] - box[0]) * self.scale)),
@@ -138,8 +119,6 @@ class internal_ImageAxisTargetMixin:
         source_shape = (
             source_alpha if image_color_key_mask_is_shape(item.source.dictionary) else None
         )
-        # The captured mean of a native mask is diagnostic metadata, not an
-        # additional paint opacity. Its actual sample is applied by the sampler.
         scalar_mask = item.soft_mask_alpha if native_soft_mask is None else None
         opacity = item.fill_opacity
         constant_alpha = (
@@ -168,7 +147,6 @@ class internal_ImageAxisTargetMixin:
         prepared: PreparedImage,
         blend_mode: str | None,
     ) -> None:
-        """Sample a stencil's marking plane with its original image transform."""
         quad = internal_image_placement(item)
         raster = prepared.raster
         if quad is None or not raster.has_alpha:
@@ -179,8 +157,6 @@ class internal_ImageAxisTargetMixin:
         self.set_shape_alpha(alpha / 255.0)
         if alpha <= 0 and self.group_source_shape is None:
             return
-        # A stencil has one constant color; only its alpha plane has the image's
-        # dimensions. Both are sampled by the same original unit-square map.
         self.blit_affine_image(
             quad,
             bytes((red, green, blue)),

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native font encoding and differences helpers."""
 
 from __future__ import annotations
 
@@ -25,7 +24,6 @@ from core_pdf_spec.standards import SemanticContext
 
 
 def strip_subset_tag(font_name: str) -> str:
-    """Drop the ``ABCDEF+`` subset prefix (9.6.4) from a base font name."""
     return font_name.split("+", 1)[-1]
 
 
@@ -43,7 +41,6 @@ def normalize_ligature_text(text: str) -> str:
 
 
 def unicode_for_glyph_name(glyph_name: str) -> str | None:
-    """Resolve a glyph name, distinguishing an unknown name from valid text."""
     mapped = glyph_name_to_unicode(glyph_name)
     if not mapped or (mapped == glyph_name and len(glyph_name) != 1):
         return None
@@ -51,12 +48,6 @@ def unicode_for_glyph_name(glyph_name: str) -> str | None:
 
 
 def internal_resolve_base_encoding(table: tuple[str, ...]) -> tuple[str, ...]:
-    """Turn an Annex D.2 table into a decode table.
-
-    Undefined codes below 040 keep their raw value, matching how the control
-    range is treated everywhere else; above that they decode to nothing, since
-    the encoding genuinely assigns them no glyph.
-    """
     return tuple(
         normalize_ligature_text(text) if text else (chr(code) if code < 32 else "")
         for code, text in enumerate(table)
@@ -79,8 +70,6 @@ def build_decode_table(
         names = get_base_encoding_glyph_names(key, context=internal_encoding_context(context))
         modern_names = BASE_ENCODING_GLYPH_NAMES[key]
         if names is not modern_names:
-            # Only the version-dependent assignments replace the reader's
-            # existing Unicode normalization and undefined-code recovery.
             base = tuple(
                 (unicode_for_glyph_name(name) or "") if name != modern_names[code] else base[code]
                 for code, name in enumerate(names)
@@ -93,16 +82,9 @@ def build_decode_table(
         mapped = unicode_for_glyph_name(glyph_name)
         if mapped is None:
             if glyph_name.isdecimal():
-                # Producer-made Type 3 encodings commonly use the character
-                # code (or a producer's neighboring internal identifier) as
-                # the CharProc name. It has no AGL meaning; PDF readers ignore
-                # that failed difference and retain the inherited encoding.
                 continue
             table[code] = ""
             continue
-        # Expand ligatures here too, so a glyph reached through /Differences
-        # or a built-in encoding reads the same as one reached through a base
-        # encoding table.
         table[code] = mapped
     return tuple(table)
 
@@ -135,17 +117,12 @@ def parse_differences(
     return differences
 
 
-# PDFDocEncoding is the only base whose entries need ligature expansion, so it
-# is normalized once here rather than per lookup.
 internal_PDFDOC_FALLBACK_TABLE: tuple[str, ...] = tuple(
     normalize_ligature_text(text) for text in PDFDOC_ENCODING_TABLE
 )
 
 ENCODING_FALLBACKS: dict[str, tuple[str, ...]] = {
     "StandardEncoding": STANDARD_ENCODING_TABLE,
-    # Type3 fonts use StandardEncoding when /Encoding is omitted.  Keep this
-    # fallback separate from the parser's default so explicitly supplied
-    # Differences can still override individual character codes.
     "Type3": STANDARD_ENCODING_TABLE,
     "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE,
@@ -160,7 +137,6 @@ def build_simple_encoding_glyph_names(
     authoritative_builtin: bool,
     context: SemanticContext | None = None,
 ) -> tuple[str, ...]:
-    """Keep the reader's out-of-range skipping and empty-name substitution."""
     return spec_simple_encoding_glyph_names(
         base_encoding,
         {
@@ -175,7 +151,6 @@ def build_simple_encoding_glyph_names(
 
 
 def internal_encoding_context(context: SemanticContext | None) -> SemanticContext | None:
-    """Keep modern font recovery for documents without a recognized version."""
     if context is not None and (context.version is None or not context.version.recognized):
         return None
     return context

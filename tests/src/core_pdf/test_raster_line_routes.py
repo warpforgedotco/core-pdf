@@ -1,5 +1,3 @@
-"""Equivalent line raster routes must preserve coverage and group attribution."""
-
 import numpy as np
 import pytest
 
@@ -9,7 +7,6 @@ from tests.src.core_pdf.test_pattern_rendering import internal_target
 
 
 def internal_expected_coverage(cap: int, clipped: bool) -> np.ndarray:
-    """Sample a width-three rectangle or capsule in line-local coordinates."""
     length = np.hypot(9, 7)
     tangent = np.array([9, 7]) / length
     normal = np.array([-7, 9]) / length
@@ -28,7 +25,6 @@ def internal_expected_coverage(cap: int, clipped: bool) -> np.ndarray:
                         inside = np.hypot(beyond, across) <= 1.5
                     else:
                         extension = 1.5 if cap == 2 else 0
-                        # Normalizing the tangent can move exact endpoint samples by an ULP.
                         inside = (
                             -extension - 1e-12 <= along <= length + extension + 1e-12
                             and abs(across) <= 1.5
@@ -95,7 +91,6 @@ def test_dash_routing_matches_explicit_segments(cap: int, alpha: int, phase: int
     explicit = internal_target(16, 16)
     path = CapturedPath([CapturedSubpath([(2, 8), (14, 8)])])
     dashed.stroke_path(path, 1, (200, 50, 10, alpha), ([2, 2], phase), line_cap=cap)
-    # A two-on/two-off pattern, starting one unit into the first dash when phase=1.
     spans = [(2, 4), (6, 8), (10, 12)] if phase == 0 else [(2, 3), (5, 7), (9, 11), (13, 14)]
     for start, end in spans:
         segment = CapturedPath([CapturedSubpath([(start, 8), (end, 8)])])

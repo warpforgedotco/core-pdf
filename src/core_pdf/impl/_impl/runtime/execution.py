@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Operation-local extraction cancellation.
-
-Extraction deliberately runs on the calling thread. Keeping cancellation in a
-small scope object preserves cooperative document shutdown without retaining a
-process-wide executor, worker queues, or reusable resource pools.
-"""
 
 from __future__ import annotations
 
@@ -17,8 +11,6 @@ class internal_ExtractionCancelled(RuntimeError):
 
 
 class ExtractionScope:
-    """Cancellation check shared by one synchronous extraction."""
-
     __slots__ = ("internal_cancelled",)
 
     def __init__(

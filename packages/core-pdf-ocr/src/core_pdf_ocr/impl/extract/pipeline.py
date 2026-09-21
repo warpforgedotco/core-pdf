@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recognize and fuse page text through the shared native extraction stages."""
 
 from __future__ import annotations
 
@@ -33,8 +32,6 @@ if TYPE_CHECKING:
 
 
 class internal_PageExtraction(NativePageExtraction):
-    """Selection-local recognition policy over native capture and metadata assembly."""
-
     internal_capture_page = staticmethod(capture_page)
 
     @property
@@ -70,7 +67,6 @@ class internal_PageExtraction(NativePageExtraction):
 
     @property
     def stroked_profile(self) -> StrokedTextProfile | None:
-        """Materialize the immutable stroke geometry only for a trusted vector-text layer."""
         evidence = self.capture.evidence.stroked_vector_text
         if not evidence.trusted or not evidence.drawing_indexes:
             return None
@@ -104,10 +100,8 @@ class internal_PageExtraction(NativePageExtraction):
             extract_tables(self.capture, observations),
             layout=layout_blocks_with_evidence,
         )
-        # Layout must see all detected table obstacles before chart copies are removed.
         return replace(products, tables=internal_remove_duplicate_tables(products.tables))
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
-    """Extract one page, recognizing missing or untrusted native text when needed."""
     return internal_PageExtraction(page).assembled_page(context)

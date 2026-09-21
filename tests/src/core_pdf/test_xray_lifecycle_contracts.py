@@ -1,5 +1,3 @@
-"""X-ray orchestration closes documents across recoverable and fatal failures."""
-
 from types import SimpleNamespace
 from typing import Any
 

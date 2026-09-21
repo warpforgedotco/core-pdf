@@ -1,5 +1,3 @@
-"""Reader function adapters retain documented numeric and failure boundaries."""
-
 import pytest
 
 from core_pdf.impl._impl.graphics.functions import internal_compile_pdf_function
@@ -74,7 +72,6 @@ def test_unordered_stitching_preserves_first_match_and_degenerate_intervals(boun
 def test_stitching_repeats_missing_parts_and_defaults_missing_encode_values(x):
     part = {"FunctionType": 2, "C0": [0], "C1": [1]}
     function = {"FunctionType": 3, "Bounds": [0.5], "Functions": [part], "Encode": [1, 0]}
-    # First interval is reversed, second defaults to [0, 1]; inputs clamp to domain.
     expected = 1 - 2 * max(0, x) if x < 0.5 else 2 * min(1, x) - 1
     assert internal_compile_pdf_function(function)(x) == pytest.approx((expected,))
     assert function["Functions"] == [part]

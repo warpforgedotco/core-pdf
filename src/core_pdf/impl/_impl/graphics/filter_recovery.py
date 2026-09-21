@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compatibility decoding for malformed and mislabeled PDF stream data."""
 
 from __future__ import annotations
 
@@ -112,8 +111,6 @@ def apply_flate(data: bytes, parms: object) -> bytes:
         try:
             return bytes(imagecodecs.zlib_decode(data))
         except Exception:
-            # imagecodecs raises its own error types; any failure here just means
-            # this decoder cannot handle the stream, so try the wbits candidates.
             pass
 
     for wbits in candidates:

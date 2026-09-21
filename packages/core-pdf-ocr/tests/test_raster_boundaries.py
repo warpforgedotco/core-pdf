@@ -280,8 +280,6 @@ def test_decoded_array_reduction_preserves_source_buffer(monkeypatch) -> None:
 )
 @pytest.mark.parametrize("channels", [1, 3])
 def test_direct_image_pixels_follow_placed_source_corners(quad, expected, channels):
-    # Quad entries place source TL, TR, BL, BR on the page. Each pixel has a
-    # distinct value, so inversely applying a rotation cannot pass this test.
     drawing = CapturedDrawing(0, None, None, items=(("quad", quad),))
     source = internal_Raster(
         RasterImage(bytes(value for value in range(1, 7) for _ in range(channels)), 3, 2, channels),

@@ -98,7 +98,6 @@ def test_tj_array_preserves_text_chunks_and_numeric_adjustments(
     positions: list[tuple[float, float]],
     final: tuple[float, float],
 ) -> None:
-    # ISO 32000-1 Table 109: TJ numbers adjust the current writing direction.
     state, shown = tj_state_with_recording(monkeypatch, vertical=vertical)
     state.append_tj_array([PdfString(b"a"), b"b", 10, b"c", -2.5, b"d"])
     assert [data for data, _, _ in shown] == [b"ab", b"c", b"d"]
@@ -128,7 +127,6 @@ def test_tj_rejects_non_pdf_entries_after_prior_text(
     with pytest.raises(PdfParseError, match="TJ array entries must be strings or numbers"):
         state.append_tj_array([b"a", 10, b"b", item])
     assert shown == [(b"a", 11, 13)]
-    # The pending adjustment and unflushed b have not yet committed their position.
     assert (state.text_matrix.e, state.text_matrix.f) == (12, 15)
 
 
@@ -205,7 +203,6 @@ def test_compatibility_scope_survives_nested_stream_suspension() -> None:
     "content", [b"q BX Q extension EX", b"BX q extension EX Q", b"BX BX EX EX"]
 )
 def test_compatibility_sections_are_independent_of_graphics_saves(content: bytes) -> None:
-    # ISO 32000-1 7.8.2: compatibility sections are not graphics state.
     list(iter_content_operations(PdfLexer(content)))
     state, sink = state_with_sink()
     original = state.capture_stream_state()
@@ -637,7 +634,6 @@ def test_operation_iterator_resumes_at_next_operation_without_prior_operands() -
 
 @pytest.mark.parametrize("suffix", [b"", b" BI /W 3 /H 1 /BPC 8 /CS /G ID a EI"])
 def test_inline_only_validator_ignores_unrelated_content(suffix: bytes) -> None:
-    # The invalid BI text in comments, names, strings, and containers is inert.
     prefix = b"% BI invalid\n /BI (BI invalid) <4249> [(BI) /BI] << /Key (BI) >> ] 1 unknown 1 2 cm"
     if suffix:
         with pytest.raises(PdfParseError, match="data length"):

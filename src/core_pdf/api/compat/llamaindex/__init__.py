@@ -1,5 +1,3 @@
-"""Local LlamaIndex-style document and node conversion APIs."""
-
 from __future__ import annotations
 
 import contextlib
@@ -35,8 +33,6 @@ def _metadata_text(metadata: dict[str, Any], excluded: frozenset[str], template:
 
 
 class _MetadataMixin:
-    """Shared ``get_content``/``get_metadata_str`` for the Document and Node facades."""
-
     __slots__ = ()
 
     text: str

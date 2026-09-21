@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO 32000-2:2020, 8.6.6.5 and Tables 70-71: DeviceN process/spot metadata."""
 
 from dataclasses import FrozenInstanceError
 from typing import Any, cast
@@ -57,8 +56,6 @@ def test_nchannel_rgb_preserves_process_space_order_and_raw_attributes() -> None
     assert attributes.process.component_indices == (0, 1, 2)
     assert not attributes.colorants
     assert space.params["Attributes"] == raw
-    # The typed model copies arrays; raw Attributes deliberately retain opaque
-    # optional hints without claiming a mixing algorithm or full Table 72 check.
     cast(dict[str, Any], raw["Process"])["Components"][0] = "Changed"
     assert attributes.process.components == ("R", "G", "B")
     assert cast(dict[str, object], space.params["Attributes"])["MixingHints"] is hints
@@ -70,8 +67,6 @@ def test_nchannel_rgb_preserves_process_space_order_and_raw_attributes() -> None
 
 @pytest.mark.parametrize("version", [None, PdfVersion(1, 3), PdfVersion(1, 6), PdfVersion(2, 0)])
 def test_colorants_metadata_is_not_gated_at_pdf_16(version: PdfVersion | None) -> None:
-    # Adobe PDF Reference 1.3, Table 4.20 (p.189) already defines Colorants,
-    # including additional unused names. Table 70's PDF 1.6 tag is not a gate.
     raw = {"Colorants": {"Spot": internal_spot("Spot"), "Unused": internal_spot("Unused")}}
     space = parse_color_space(
         internal_space(("Spot", "Other"), raw),
@@ -109,7 +104,6 @@ def test_devicen_rejects_all_and_duplicate_actual_colorants(
         raw.pop()
     with pytest.raises(ValueError, match="DeviceN colorant names"):
         parse_color_space(raw)
-    # All remains the prescribed special Separation name.
     assert parse_color_space(internal_spot("All")).colorants == ("All",)
 
 
@@ -148,8 +142,6 @@ def test_cmyk_process_components_may_be_subset_and_reordered(
 
 def test_cmyk_reserved_names_and_arbitrary_aliases_both_identify_process_components() -> None:
     raw = internal_attributes("DeviceCMYK", ("C", "M", "Y", "K"))
-    # Reserved names remain CMYK process colours even without matching aliases
-    # in Components. A process Colorants value is ignored before validation.
     raw["Colorants"] = {"Cyan": 42, "K": ["not a Separation"], "Unused": internal_spot("Unused")}
     attributes = parse_device_n_attributes(raw, ("K", "Cyan", "Yellow"))
     assert attributes.process is not None
@@ -196,8 +188,6 @@ def test_non_cmyk_process_components_must_be_complete_contiguous_and_ordered(
     ],
 )
 def test_non_cmyk_process_can_use_aliases_and_have_adjacent_spots(process_space: object) -> None:
-    # ISO 32000-2:2020, 8.6.6.5 Example 4 distinguishes an RGB process alias
-    # ProcessRed from a separate spot colourant named Red.
     raw = internal_attributes(process_space, ("ProcessRed", "ProcessGreen", "ProcessBlue"))
     raw["Colorants"] = {"Red": internal_spot("Red"), "Other": internal_spot("Other")}
     attributes = parse_device_n_attributes(

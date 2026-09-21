@@ -46,7 +46,6 @@ FULL_ONLY_PATHS = frozenset(
 
 
 def differential_pdfs(facade: FacadeName) -> tuple[Path, ...]:
-    """Return the facade-owned corpus, or the exhaustive corpus when explicitly requested."""
     if os.environ.get(FULL_ENV) == "1":
         return tuple(sorted(path for path in FIXTURES_ROOT.rglob("*.pdf") if path.is_file()))
 
@@ -119,7 +118,6 @@ def metadata(value: Any) -> dict[str, str]:
 
 
 def words(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Compare geometry at five-decimal precision without quantization-boundary noise."""
     return [
         {
             key: pytest.approx(value, rel=0, abs=1e-5) if isinstance(value, float) else value

@@ -1,5 +1,3 @@
-"""Bitmap paint routes honor declared dimensions and preserve empty cells."""
-
 import numpy as np
 import pytest
 

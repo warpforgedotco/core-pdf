@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""CMap programs (TN 5014) tokenize, inherit, and resolve bundled resources strictly."""
 
 from __future__ import annotations
 

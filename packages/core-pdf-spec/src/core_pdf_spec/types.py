@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Foundational PDF object identities and byte/geometry types."""
 
 from __future__ import annotations
 
@@ -20,13 +19,6 @@ MISSING: Final = MissingObject()
 
 
 class PdfName:
-    """PDF name object.
-
-    Names are atomic identifiers in PDF syntax. This implementation stores the
-    decoded Latin-1 value for fast dictionary lookup while preserving equality
-    with raw bytes and strings used by recovery paths.
-    """
-
     __slots__ = ("value_bytes", "str_value")
 
     value_bytes: bytes
@@ -42,12 +34,6 @@ class PdfName:
 
     @classmethod
     def of(cls, value: str | bytes | memoryview | "PdfName") -> "PdfName":
-        """Return the shared instance for a name; names are immutable and atomic.
-
-        A document repeats a few thousand distinct names millions of times.
-        Interning them makes dictionary keys compare by identity first and
-        skips a decode per occurrence.
-        """
         if type(value) is PdfName:
             return value
         if type(value) is str:
@@ -94,8 +80,6 @@ internal_INTERNED_NAMES: dict[bytes, PdfName] = {}
 
 
 class PdfReference:
-    """Indirect object reference: object number plus generation number."""
-
     __slots__ = ("object_number", "generation_number")
 
     object_number: int
@@ -126,8 +110,6 @@ class PdfReference:
 
 
 class PdfString:
-    """PDF string object containing the raw byte representation."""
-
     __slots__ = ("data", "is_literal")
 
     data: bytes

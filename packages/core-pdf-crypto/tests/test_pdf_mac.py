@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO/TS 32004:2024 token primitives: digests, DER strictness, and algorithm gates."""
 
 import hashlib
 
@@ -21,7 +20,6 @@ from core_pdf_crypto.pdf_mac import (
     "algorithm", ["sha256", "sha384", "sha512", "sha3_256", "sha3_384", "sha3_512"]
 )
 def test_standard_digest_algorithms_have_positive_controls(algorithm: str) -> None:
-    # ISO/TS 32004:2024 Table 8; SHA-3 requires absent parameters.
     identifier = algos.DigestAlgorithm({"algorithm": algorithm})
     assert (
         digest(b"contract", digest_algorithm(identifier))

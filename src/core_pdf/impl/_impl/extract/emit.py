@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize extracted products and produce the final page."""
 
 from __future__ import annotations
 
@@ -116,7 +115,6 @@ def internal_line_decoration_flags(
     *,
     decoration_boxes: tuple[tuple[float, float, float, float], ...] | None = None,
 ) -> dict[str, bool]:
-    """Infer simple text decorations from nearby, thin PDF paths."""
     if line.bbox is None:
         return {}
     x0, y0, x1, y1 = line.bbox
@@ -152,7 +150,6 @@ def internal_line_decoration_flags(
 def internal_line_decoration_bbox(
     drawing: CapturedDrawing,
 ) -> tuple[float, float, float, float] | None:
-    """Return a drawing bbox, materializing path geometry at most once."""
     bbox = drawing.bbox if drawing.bbox is not None else drawing.rect
     return rect_tuple(bbox)
 
@@ -161,7 +158,6 @@ def internal_normalized_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
-    """Build the normalized text candidate projection from parsed lines."""
     decoration_boxes = tuple(
         bbox
         for drawing in drawings
@@ -259,7 +255,6 @@ def internal_compose_page(
     diagnostics: tuple[str, ...] = (),
     full_page_image: bool = False,
 ) -> Page:
-    """Order projected products and attach semantic page context."""
     elements: list[tuple[str, object, tuple[float, float, float, float]]] = [
         ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in normalized_blocks
     ]

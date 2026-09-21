@@ -1,5 +1,3 @@
-"""PDFMiner extraction entry points and document lifetime management."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
@@ -34,13 +32,9 @@ def extract_pages(
     laparams: LAParams | None = None,
     _unstructured_mode: bool = False,
 ) -> Iterator[LTPage]:
-    """Yield pdfminer.six-shaped pages using core-pdf extraction evidence."""
     del caching
     params = laparams or LAParams()
     selected = set(page_numbers) if page_numbers is not None else None
-    # pdfminer's fallback xref loader stops at the first trailer it encounters.
-    # Keep the engine's default all-revision recovery for native callers, while
-    # selecting the legacy recovery policy for this compatibility projection.
     document = PdfDocument.open(
         pdf_file,
         password=password,
@@ -62,17 +56,12 @@ def internal_extract_document_pages(
     *,
     unstructured_mode: bool = False,
 ) -> Iterator[LTPage]:
-    """Project a borrowed document; its caller retains ownership and closes it."""
     yielded = 0
     page_source: Iterable[tuple[int, PdfPage]]
     if unstructured_mode:
         try:
             page_source = tuple(internal_pdfminer_resolvable_pages(document))
         except PdfError:
-            # Unstructured's fast path inherits pdfminer's object-scan
-            # recovery for documents without a usable catalog.  Prefer
-            # the declared tree when it exists so stale incremental
-            # revisions do not appear as duplicate pages.
             page_source = tuple(enumerate(document.pages))
     else:
         page_source = internal_pdfminer_resolvable_pages(document)
@@ -94,7 +83,6 @@ def extract_text(
     codec: str = "utf-8",
     laparams: LAParams | None = None,
 ) -> str:
-    """Return text with pdfminer.six-compatible high-level semantics."""
     del codec
     pages = [
         "\n".join(item.get_text() for item in page if isinstance(item, LTText))
@@ -114,12 +102,6 @@ def extract_text_to_fp(
     password: str = "",
     **kwargs: Any,
 ) -> None:
-    """Write locally extracted text to a file-like object.
-
-    Text, XML, and HTML output are supported locally. HOCR and tag output are
-    intentionally rejected until their accessibility-specific semantics are
-    mapped to core-pdf's structured serializers.
-    """
     del kwargs
     if output_type == "text":
         output = extract_text(inf, password, page_numbers, maxpages, True, codec, laparams)

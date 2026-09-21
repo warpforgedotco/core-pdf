@@ -1,5 +1,3 @@
-"""Canonical image layouts, packed stencils, and matte alpha decoding."""
-
 import zlib
 
 import numpy as np

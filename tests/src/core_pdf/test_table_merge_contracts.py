@@ -1,5 +1,3 @@
-"""Adjacent table merges preserve confidence, geometry, and source metadata."""
-
 from dataclasses import replace
 
 import pytest

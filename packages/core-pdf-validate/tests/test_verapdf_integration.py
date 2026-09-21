@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Opt-in real-engine checks; the dedicated CI job requires every check to run."""
 
 from __future__ import annotations
 
@@ -63,8 +62,6 @@ def installed_backend() -> VeraPdfBackend:
 def internal_fixture(relative: str) -> Path:
     root = Path(__file__).resolve().parents[3]
     source = root / "tests/fixtures" / relative
-    # An explicit opt-in promises a complete setup: missing corpora must fail,
-    # especially in CI, rather than turn a broken smoke job green through skips.
     assert source.is_file(), f"Initialize reference submodules: missing {source}"
     return source
 
@@ -128,9 +125,6 @@ def test_installed_engine_passes_all_three_original_accessibility_declarations(
 def test_installed_engine_recognizes_every_advertised_profile(
     installed_backend: VeraPdfBackend, profile: str
 ) -> None:
-    # This ordinary PDF 2.0 file does not conform to any advertised profile.
-    # A failure result still proves the actual CLI flavour, report profile name,
-    # edition and report schema agree with the adapter for every supported target.
     source = internal_fixture("pdf20examples/Simple PDF 2.0 file.pdf")
     result = validate(source, profiles=profile, backend=installed_backend).results[0]
     assert result.execution_status == "completed", result.diagnostics

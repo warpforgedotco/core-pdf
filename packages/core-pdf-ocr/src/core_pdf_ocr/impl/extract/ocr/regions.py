@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Propose, merge, and classify OCR regions from captured page evidence."""
 
 from __future__ import annotations
 
@@ -66,9 +65,6 @@ def internal_page_image_regions(
             min(page_width, box[2]),
             min(page_height, box[3]),
         )
-        # A decoded source raster represents the full image. If the image is clipped by
-        # the page, mapping that full raster onto the clipped rectangle would compress
-        # its OCR coordinates. Let the page compositor produce the correct crop instead.
         clip_tolerance = max(2.0, max(page_width, page_height) * 0.005)
         if any(
             abs(float(original) - clipped_value) > clip_tolerance
@@ -170,11 +166,6 @@ def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[inter
 
 
 def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrRegion, ...]:
-    """Select likely OCR areas using capture-time geometry only.
-
-    This deliberately does not render a preview image.  Native text, image bounds,
-    captured paths, and grid lines are already available from the canonical page IR.
-    """
     page_width = capture.width
     page_height = capture.height
     page_area = max(1.0, page_width * page_height)
@@ -281,7 +272,6 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         vector_density[row * columns + column] += 1.0
     grid_lines = capture.program.lines
     if len(grid_lines):
-        # Bin every grid line at once.
         line_x0, line_y0, line_x1, line_y1 = internal_line_coordinate_columns(grid_lines)
         line_columns = numpy.clip(
             ((line_x0 + line_x1) * 0.5 * columns / max(1.0, page_width)).astype(numpy.int64),
@@ -349,11 +339,6 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
         and capture.evidence.text_coverage < 0.05
         and (len(native_boxes) == 0 or len(native_boxes) >= 8)
     ):
-        # Component labels are often isolated from the larger paths they
-        # annotate. Use finer cells for these vector-only pages so the region
-        # budget can select several label clusters instead of one broad artwork
-        # box. The existing coarse density pass remains responsible for larger
-        # diagram areas.
         label_columns = 12
         label_rows = max(
             4,
@@ -433,7 +418,6 @@ def internal_candidate_ocr_regions(capture: PageAnalysis) -> tuple[internal_OcrR
 
 
 def internal_has_distributed_outline_text(capture: PageAnalysis) -> bool:
-    """Detect pages whose text was converted into many small filled vector paths."""
     page_width = capture.width
     page_height = capture.height
     max_width = max(24.0, page_width * 0.04)

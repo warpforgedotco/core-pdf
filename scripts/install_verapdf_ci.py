@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Install the checksum-pinned CI engine into a new private directory.
-
-This maintenance script is never imported or run by core-pdf-validate.
-Installer format: https://docs.verapdf.org/install/#automated-installation
-"""
 
 from __future__ import annotations
 
@@ -19,7 +14,6 @@ from zipfile import ZipFile
 
 internal_VERSION = "1.30.2"
 internal_URL = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.2-installer.zip"
-# Downloaded from the exact official release URL above and checked on 2026-09-11.
 internal_SHA256 = "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838"
 
 
@@ -39,7 +33,6 @@ def internal_configuration(destination: Path) -> bytes:
             "veraPDF Sample Plugins",
         )
     ):
-        # The GUI pack also contains the CLI binaries; the other packs are optional.
         ElementTree.SubElement(
             packs, "pack", index=str(index), name=name, selected=str(index < 2).lower()
         )

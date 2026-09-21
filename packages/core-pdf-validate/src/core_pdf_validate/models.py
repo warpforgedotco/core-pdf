@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Immutable validator capabilities and machine-check reports."""
 
 from __future__ import annotations
 
@@ -32,16 +31,12 @@ type ExecutionStatus = Literal[
 
 @dataclass(frozen=True, slots=True)
 class ProfileSupport:
-    """One exact target and its standards edition understood by an adapter."""
-
     identifier: str
     edition: str
 
 
 @dataclass(frozen=True, slots=True)
 class RuleResult:
-    """A rule summary; locations retain the validator's original context syntax."""
-
     specification: str
     clause: str
     test_number: str
@@ -52,12 +47,6 @@ class RuleResult:
 
 @dataclass(frozen=True, slots=True)
 class ProfileResult:
-    """Execution and machine conformance for a single requested profile.
-
-    ``pass`` means the engine's machine checks passed, not that requirements
-    outside the engine's coverage or requiring human review were satisfied.
-    """
-
     profile: str
     execution_status: ExecutionStatus
     conformance: Conformance
@@ -73,8 +62,6 @@ class ProfileResult:
 
 @dataclass(frozen=True, slots=True)
 class ValidationReport:
-    """Independent results for an immutable snapshot of the original input."""
-
     source_sha256: str
     targets: tuple[str, ...]
     results: tuple[ProfileResult, ...]
@@ -82,8 +69,6 @@ class ValidationReport:
 
 
 class ValidationBackend(Protocol):
-    """Local adapters advertise exact capabilities and never repair the source."""
-
     @property
     def name(self) -> str: ...
 

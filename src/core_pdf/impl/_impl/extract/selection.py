@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared selected-page metadata and native document extraction."""
 
 from __future__ import annotations
 
@@ -36,7 +35,6 @@ def internal_prepare_document_pages(
     pages: Sequence[PdfPage],
     build: internal_ExtractionBuilder[internal_Extraction],
 ) -> tuple[internal_Extraction, ...]:
-    """Collect one selection's metadata and construct its independent page pipelines."""
     hidden_layers = document.oc_hidden_layers() if pages else frozenset()
     structure_tree = None
     with suppress(IndexError, TypeError, ValueError):
@@ -47,7 +45,7 @@ def internal_prepare_document_pages(
             return None
         try:
             return structure_tree.page_structure(page)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return None
 
     fields_by_page: dict[int, list[RawFormField]] = {}
@@ -87,6 +85,5 @@ def internal_assemble_document(
 def extract_document(
     document: PdfDocument, context: ExtractionScope, pages: Sequence[PdfPage]
 ) -> Document:
-    """Extract exactly the requested pages from native PDF content."""
     extractions = internal_prepare_document_pages(document, tuple(pages), internal_PageExtraction)
     return internal_assemble_document(document, extractions, context)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Raster resampling for recognition inputs."""
 
 from __future__ import annotations
 
@@ -25,7 +24,6 @@ def internal_validate_resampling_shape(
 def resample_nearest(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    """Resize a 2D or 3D sample array with bounded nearest-neighbour lookup."""
     internal_validate_resampling_shape(samples, height, width)
     if samples.shape[:2] == (height, width) and samples.flags.c_contiguous:
         return samples
@@ -36,10 +34,7 @@ def resample_nearest(
 
 
 def internal_box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]:
-    """Return per-output bin start offsets and sample counts for one axis."""
     edges = numpy.arange(output_count + 1, dtype=numpy.intp) * source_count // output_count
-    # A bin can collapse to zero samples when the ratio is close to 1. Widen it by
-    # one sample so ``reduceat`` never reads a reversed slice.
     starts = numpy.minimum(edges[:-1], source_count - 1)
     stops = numpy.maximum(edges[1:], starts + 1)
     counts = (stops - starts).astype(numpy.float32)
@@ -49,7 +44,6 @@ def internal_box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]
 def internal_box_axis(
     samples: numpy.ndarray[Any, Any], output_count: int, axis: int
 ) -> numpy.ndarray[Any, Any]:
-    """Average one axis into ``output_count`` bins without materializing a cast copy."""
     starts, counts = internal_box_bounds(output_count, samples.shape[axis])
     totals = numpy.add.reduceat(samples, starts, axis=axis, dtype=numpy.float32)
     shape = [1] * totals.ndim
@@ -63,8 +57,6 @@ def internal_resample_separable(
     width: int,
     resample_axis: Callable[[numpy.ndarray[Any, Any], int, int], numpy.ndarray[Any, Any]],
 ) -> numpy.ndarray[Any, Any]:
-    """Apply two axis passes, keeping float intermediates until the final rounding."""
-    # Shrink the most (or enlarge the least) first to keep the intermediate small.
     axes = (0, 1) if height - samples.shape[0] <= width - samples.shape[1] else (1, 0)
     dimensions = (height, width)
     resized = samples
@@ -79,13 +71,6 @@ def internal_resample_separable(
 def resample_box(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    """Resize by averaging each output pixel's source area.
-
-    Point sampling a 300 DPI scan down to a pixel budget drops whole stroke rows,
-    which is how ``lbs`` becomes ``ibs``. Averaging the covered area keeps the
-    stroke energy that Tesseract's classifier needs. Only used for reductions;
-    callers upscale with :func:`resample_bilinear`.
-    """
     internal_validate_resampling_shape(samples, height, width)
     if height > samples.shape[0] or width > samples.shape[1]:
         raise ValueError("resample_box only reduces; use resample_bilinear to enlarge")
@@ -93,7 +78,6 @@ def resample_box(
 
 
 def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, Any, Any]:
-    """Return lower/upper source indexes and blend weights for one axis."""
     if source_count == 1:
         zeros = readonly(numpy.zeros(output_count, dtype=numpy.intp))
         weights = readonly(numpy.zeros(output_count, dtype=numpy.float32))
@@ -112,7 +96,6 @@ def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, A
 def internal_bilinear_axis(
     samples: numpy.ndarray[Any, Any], output_count: int, axis: int
 ) -> numpy.ndarray[Any, Any]:
-    """Linearly interpolate one axis to ``output_count`` samples."""
     lower, upper, weights = internal_bilinear_taps(output_count, samples.shape[axis])
     shape = [1] * samples.ndim
     shape[axis] = output_count
@@ -125,11 +108,6 @@ def internal_bilinear_axis(
 def resample_bilinear(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    """Resize with separable linear interpolation.
-
-    Replicating pixels to enlarge a scan gives Tesseract staircased stems; blending
-    neighbours preserves the smooth edges its line classifier was trained on.
-    """
     internal_validate_resampling_shape(samples, height, width)
     return internal_resample_separable(samples, height, width, internal_bilinear_axis)
 
@@ -137,7 +115,6 @@ def resample_bilinear(
 def resample_smooth(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    """Resize using the filter that suits the direction of each axis change."""
     internal_validate_resampling_shape(samples, height, width)
     if height <= samples.shape[0] and width <= samples.shape[1]:
         return resample_box(samples, height, width)

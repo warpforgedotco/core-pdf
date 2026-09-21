@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO/TS 32004:2024 AuthCode dictionary rules over the PDF MAC token kernel.
-
-Token parsing and cryptographic validation live in ``core_pdf_crypto.pdf_mac``.
-This module keeps the trailer, AuthCode, ByteRange, and serialization rules
-and maps kernel failures onto PDF exceptions.
-"""
 
 from __future__ import annotations
 
@@ -25,15 +19,10 @@ def validate_pdf_mac_if_present(
     trailer: PdfDict,
     handler: StandardSecurityHandler,
 ) -> bool:
-    """Validate ISO/TS 32004:2024 AuthCode and report whether PDF MAC is in use."""
     raw_auth_code = trailer.get("AuthCode", MISSING)
     has_auth_code = raw_auth_code is not MISSING
     has_kdf_salt = handler.config.kdf_salt is not None
 
-    # ISO/TS 32004:2024, Table 2 requires KDFSalt in documents using PDF
-    # MAC, and Tables 3 and 5 require AuthCode whenever permission bit 13 is
-    # zero. Validate either trace even when bit 13 is one so stripping only
-    # one of the two signals cannot silently disable integrity protection.
     if not (handler.config.pdf_mac_required or has_auth_code or has_kdf_salt):
         return False
     if handler.config.version < 5:
@@ -58,7 +47,6 @@ def validate_pdf_mac_if_present(
 
 
 def validate_pdf_mac_extension(declarations: object) -> None:
-    """Require the developer-extension declaration from ISO/TS 32004:2024, Table 1."""
     if not isinstance(declarations, list):
         raise PdfDecryptionError("Invalid PDF MAC extension declaration")
 
@@ -89,8 +77,6 @@ def internal_validate_standalone_pdf_mac(
     file_key: bytes,
     kdf_salt: bytes,
 ) -> None:
-    """Validate an ISO/TS 32004:2024 standalone AuthCode dictionary and token."""
-    # ISO/TS 32004:2024, Table 6 requires MACLocation to be a direct name.
     raw_location = auth_code.get("MACLocation", MISSING)
     if not isinstance(raw_location, PdfName):
         raise ValueError("invalid PDF MAC location")
@@ -110,7 +96,6 @@ def internal_extract_standalone_token(
     raw_data: PdfByteBuffer,
     auth_code: PdfDict,
 ) -> tuple[tuple[int, int, int, int], bytes]:
-    """Apply ISO/TS 32004:2024, Table 6 and 6.5.1 byte-coverage rules."""
     raw_byte_range = auth_code.get("ByteRange", MISSING)
     if not isinstance(raw_byte_range, list) or len(raw_byte_range) != 4:
         raise ValueError("invalid PDF MAC ByteRange")
@@ -121,9 +106,6 @@ def internal_extract_standalone_token(
         tuple(raw_byte_range),
     )
 
-    # ISO/TS 32004:2024, Table 6 requires [0, L1, S, L2], and 6.5.1
-    # requires the latest standalone token to cover the entire file except
-    # the MAC string value itself.
     if (
         first_start != 0
         or second_start <= first_length
@@ -136,9 +118,6 @@ def internal_extract_standalone_token(
     if not isinstance(raw_mac, PdfString) or raw_mac.is_literal is not False:
         raise ValueError("standalone PDF MAC must be a hexadecimal string")
 
-    # ISO/TS 32004:2024, Table 6 is stricter than ordinary PDF hexadecimal
-    # strings: the excluded region is exactly '<' + two hex digits per DER
-    # byte + '>', with no whitespace, missing nibble, padding, or trailing data.
     serialized_mac = bytes(raw_data[first_length:second_start])
     encoded_token = serialized_mac[1:-1]
     if (

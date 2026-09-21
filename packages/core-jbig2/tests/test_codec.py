@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""T.88 page decoding keeps a growing canvas and reports its native polarity."""
 
 import pytest
 

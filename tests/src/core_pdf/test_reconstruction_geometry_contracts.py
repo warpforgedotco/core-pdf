@@ -1,5 +1,3 @@
-"""Text atom and script geometry contracts for line reconstruction."""
-
 import pytest
 
 from core_pdf.impl._impl.layout.reconstruction import (

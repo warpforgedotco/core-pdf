@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recovering text from stroked vector outlines.
-
-Some documents draw their text as vector strokes rather than glyphs, so there is
-nothing for a font decoder to read. This module rasterizes those strokes, packs the
-isolated runs into a compact sheet Tesseract can recognize in one pass, and maps the
-recognized characters back onto the original runs.
-"""
 
 from __future__ import annotations
 
@@ -80,7 +73,6 @@ def internal_pack_stroked_text_runs(
     horizontal_padding: float = STROKED_VECTOR_PACK_HORIZONTAL_PADDING,
     vertical_padding: float = STROKED_VECTOR_PACK_VERTICAL_PADDING,
 ) -> tuple[tuple[internal_StrokedTextCell, ...], float]:
-    """Shelf-pack vector words without scaling their glyph geometry."""
     if not runs:
         return (), 0.0
     ordered = sorted(
@@ -131,15 +123,11 @@ def internal_stroked_vector_text_raster(
     max_pixels: int = MAX_OCR_PIXELS,
     variant: str = "seed",
 ) -> internal_PackedStrokedTextRaster | None:
-    """Pack vector words into a compact seed raster with piecewise page mapping."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or profile is None:
         return None
     runs = stroked_text_isolated_runs(profile) if variant == "isolated" else profile.seed_runs
     if variant == "isolated":
-        # Glyph-sized cells sit closer together than the remap tolerance, so
-        # observation centres would match several cells and be dropped. Keep
-        # the cell separation comfortably above the tolerance.
         horizontal_padding = STROKED_VECTOR_PACK_REMAP_TOLERANCE * 1.5
         vertical_padding = STROKED_VECTOR_PACK_REMAP_TOLERANCE * 1.5
     else:
@@ -161,10 +149,6 @@ def internal_stroked_vector_text_raster(
     safe_scale = math.sqrt(max_pixels / area) * 0.999
     scale = min(requested_scale, safe_scale)
     if variant == "isolated":
-        # Isolated glyphs are the smallest text on the sheet (pin numbers run
-        # 1-2pt tall); at the seed scale they raster below OCR's working size.
-        # The montage area is tiny, so trade unused pixel budget for scale
-        # until the median glyph is comfortably readable.
         median_height = finite_median(
             numpy.asarray([run.bbox[3] - run.bbox[1] for run in runs], dtype=numpy.float64)
         )
@@ -176,12 +160,6 @@ def internal_stroked_vector_text_raster(
     for cell in cells:
         tx = cell.packed_box[0] - cell.source_box[0]
         ty = cell.packed_box[1] - cell.source_box[1]
-        # Hairline strokes raster as one-pixel skeletons, which OCR reads
-        # confidently inside a word but misclassifies on a lone character.
-        # Give isolated glyphs a stroke proportional to their own size so
-        # they render solid at the boosted montage scale, and stand rotated
-        # glyphs upright: pin numbers beside vertical wires are drawn
-        # sideways, and OCR cannot classify a lone rotated character.
         rotation_matrix = None
         line_width_floor = 0.0
         if variant == "isolated":
@@ -207,9 +185,6 @@ def internal_stroked_vector_text_raster(
                 continue
             if rotation_matrix is not None:
                 path = path.transformed(rotation_matrix)
-            # Packed cells preserve capture order and paint style. Reuse the
-            # display-list stroke coalescer so thousands of tiny glyph paths do
-            # not become thousands of renderer dispatches.
             display_list.append_captured_drawing(
                 replace(
                     drawing,
@@ -230,9 +205,6 @@ def internal_stroked_vector_text_raster(
         display_list=display_list,
     )
     scale = internal_fit_raster_scale(rendered, scale, max_pixels)
-    # The Wu kernel draws one-pixel skeletons regardless of stroke width, so
-    # the isolated variant must use the general renderer to honour the widened
-    # strokes it just requested.
     fast_path = (
         variant != "isolated"
         and bool(display_list.items)
@@ -279,7 +251,6 @@ def internal_full_stroked_vector_text_raster(
     *,
     max_pixels: int = MAX_OCR_PIXELS,
 ) -> internal_RasterRegion | None:
-    """Render the full compact-stroke layer when packed seed OCR is insufficient."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or evidence.bbox is None or not evidence.drawing_indexes:
         return None
@@ -342,7 +313,6 @@ def internal_remap_stroked_vector_observations(
     observations: ObservationBatch,
     packed: internal_PackedStrokedTextRaster,
 ) -> tuple[ObservationBatch, int]:
-    """Translate montage observations back through their containing cells."""
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     confidences: list[float] = []
@@ -390,13 +360,6 @@ def internal_remap_stroked_vector_observations(
 
 
 def internal_isolated_pin_label(text: str) -> bool:
-    """Report whether an isolated-glyph OCR read looks like a pin label.
-
-    The isolated montage inevitably contains junction dots and wire stubs
-    alongside the real lone glyphs, and OCR renders those as stray letters
-    and slashes. Genuine isolated labels on a schematic are short and carry
-    a digit -- pin numbers, reference suffixes -- so keep only those.
-    """
     stripped = text.strip()
     return 1 <= len(stripped) <= 4 and any(character.isdigit() for character in stripped)
 
@@ -407,7 +370,6 @@ def internal_remap_stroked_vector_candidate(
     *,
     digit_bearing_only: bool = False,
 ) -> tuple[internal_Candidate, int]:
-    """Translate montage OCR words and symbols into their source page cells."""
     remapped, unmapped = internal_remap_stroked_vector_observations(
         candidate.observations,
         packed,
@@ -466,7 +428,6 @@ def internal_single_character_substitution(left: str, right: str) -> bool:
 
 
 def internal_bounded_edit_distance(left: str, right: str, maximum: int) -> int:
-    """Return a small Levenshtein distance, stopping once the bound is exceeded."""
     if abs(len(left) - len(right)) > maximum:
         return maximum + 1
     previous = list(range(len(right) + 1))
@@ -514,7 +475,6 @@ def internal_stroked_vector_symbol_seeds(
     profile: StrokedTextProfile,
     symbols: ObservationBatch,
 ) -> tuple[StrokedTextSeed, ...]:
-    """Join character boxes only when they exactly fill one known vector run."""
     if not len(symbols):
         return ()
     runs_by_sequence = {run.drawing_indexes[0]: run for run in profile.seed_runs}
@@ -591,7 +551,6 @@ def internal_packed_stroked_vector_decode_gate(
     decoded: StrokedTextDecode,
     cell_count: int,
 ) -> bool:
-    """Require enough learned geometry before skipping the full-layer OCR fallback."""
     aligned_required = min(
         STROKED_VECTOR_PACK_MIN_ALIGNED_SEEDS,
         max(4, cell_count // 4),
@@ -615,7 +574,6 @@ def internal_recover_stroked_vector_text(
     profile: StrokedTextProfile | None,
     ocr: ObservationBatch,
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
-    """Augment one OCR pass with text decoded from repeated vector glyphs."""
     if profile is None or not len(ocr):
         return ocr, ()
     decoded = internal_decode_stroked_vector_text(profile, ocr)

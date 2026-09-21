@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Strict PDF 7.5, 7.7, and 7.12 document version and extension declarations.
-
-These helpers do not resolve references or recover damaged declarations. They
-can be composed by a reader without making whole-document parsing a prerequisite.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from core_pdf_spec.types import PdfName, PdfString
 
 
 def parse_header_version(data: bytes | memoryview) -> PdfVersion:
-    """Read the version from an offset-zero, terminated PDF header (7.5.2)."""
     header = bytes(data[:9])
     if len(header) < 9 or header[:5] != b"%PDF-" or header[8:9] not in (b"\r", b"\n"):
         raise ValueError("invalid PDF header")
@@ -24,7 +18,6 @@ def parse_header_version(data: bytes | memoryview) -> PdfVersion:
 
 
 def parse_catalog_version(value: object) -> PdfVersion:
-    """Parse a resolved catalog Version name (ISO 32000-2, Table 29)."""
     if not isinstance(value, PdfName):
         raise ValueError("catalog Version must be a PDF name")
     return PdfVersion.parse(value.value)
@@ -36,12 +29,6 @@ def effective_pdf_version(
     *,
     previous: PdfVersion | None = None,
 ) -> PdfVersion | None:
-    """Apply a catalog upgrade, preserving the version of any preceding revision.
-
-    ISO 32000-2:2020, 7.5.6 and Table 29 (PDF Association errata): a
-    catalog Version cannot downgrade either the header or a previous revision.
-    ``previous`` is the preceding revision's effective version, when known.
-    """
     return max(
         (version for version in (header, catalog, previous) if version is not None), default=None
     )
@@ -57,11 +44,6 @@ def internal_optional_string(dictionary: dict, key: str) -> str | None:
 
 
 def parse_extension(prefix: str, value: object) -> PdfExtension:
-    """Parse one direct developer dictionary without document-dependent checks.
-
-    The caller can preserve independent valid declarations when another entry
-    is malformed. ExtensionRevision is retained for ISO extension identities.
-    """
     if not isinstance(prefix, str) or not prefix or prefix == "Type":
         raise ValueError("invalid developer extension prefix")
     if not isinstance(value, dict):
@@ -87,12 +69,6 @@ def parse_extension(prefix: str, value: object) -> PdfExtension:
 def parse_extensions(
     value: object, *, context: SemanticContext | None = None
 ) -> tuple[PdfExtension, ...]:
-    """Parse an entire Extensions dictionary, including PDF 2.0 declaration arrays.
-
-    ``None`` is the specified absence of optional Extensions. All contained
-    values must be direct. With context, also enforce BaseVersion and the
-    PDF 2.0 URL requirement (ISO 32000-2:2020, 7.12 and Table 49, errata).
-    """
     if value is None:
         return ()
     if not isinstance(value, dict):

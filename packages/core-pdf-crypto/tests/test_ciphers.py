@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cipher primitives authenticate, pad, and frame exactly as their standards require."""
 
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -20,7 +19,6 @@ internal_IV = bytes(range(16))
 
 
 def test_aes_gcm_decrypts_the_iso_32003_serialized_form() -> None:
-    # ISO/TS 32003:2023, 5.2: <12-byte IV><ciphertext><16-byte tag>, nil AAD.
     nonce = b"\x07" * AES_GCM_IV_BYTES
     ciphertext_and_tag = AESGCM(internal_KEY).encrypt(nonce, b"plain text", None)
     assert len(ciphertext_and_tag) == len(b"plain text") + AES_GCM_TAG_BYTES
@@ -61,7 +59,6 @@ def test_aes_ecb_rejects_partial_blocks() -> None:
 
 
 def test_rc4_is_an_involution_with_a_known_vector() -> None:
-    # RFC 6229, 40-bit key 0102030405: the first keystream bytes.
     key = bytes.fromhex("0102030405")
     keystream = bytes.fromhex("b2396305f03dc027ccc3524a0a1118a8")
     assert rc4_crypt(key, bytes(16)) == keystream

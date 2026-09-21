@@ -1,5 +1,3 @@
-"""Strict object-type validation at graphics/filter boundaries."""
-
 import zlib
 
 import pytest
@@ -37,7 +35,6 @@ def test_filter_pipeline_decodes_valid_data_and_rejects_bad_names() -> None:
 
 @pytest.mark.parametrize("hival", ["1", b"1", 1.0, True, -1, 256])
 def test_indexed_color_requires_a_pdf_integer(hival: object) -> None:
-    # ISO 32000-1, 8.6.6.3: hival is an integer in the range 0..255.
     with pytest.raises(ValueError, match="invalid hival"):
         parse_color_space(["Indexed", "DeviceRGB", hival, b"\x00" * 6])
 
@@ -57,7 +54,6 @@ def test_shading_requires_a_pdf_integer_type() -> None:
 
 
 def test_exponential_function_clips_each_output_to_declared_range() -> None:
-    # ISO 32000-1, Table 38: optional Range clips output values when present.
     dictionary = {
         "FunctionType": 2,
         "Domain": [0, 1],

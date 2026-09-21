@@ -1,5 +1,3 @@
-"""Literal-string recovery selected by application CMap readers."""
-
 from __future__ import annotations
 
 import re
@@ -24,7 +22,6 @@ internal_LEGACY_EOL_PAIR = re.compile(rb"\r\n|\n\r")
 
 
 def decode_cmap_hex_token(token: bytes) -> bytes:
-    """Retain the reader's legacy delimiter stripping for malformed operands."""
     if not token.startswith(b"<") or not token.endswith(b">"):
         token = b"<" + token[1:-1] + b">"
     return decode_spec_cmap_hex_token(token)
@@ -35,8 +32,6 @@ def decode_cmap_token(token: bytes) -> bytes:
         return decode_cmap_hex_token(token)
     if not token.startswith(b"("):
         return decode_spec_cmap_token(token)
-    # Pair greedily so CRLFCRLF remains two breaks, while accepting the
-    # legacy LFCR spelling for both literal and escaped line endings.
     raw = memoryview(internal_LEGACY_EOL_PAIR.sub(b"\r\n", token))
     if len(raw) < 2:
         raise ValueError("invalid PDF literal string")
@@ -47,8 +42,6 @@ def decode_cmap_token(token: bytes) -> bytes:
 
 
 class CMapProgram(PdfCMapProgram):
-    """Reader policy: retain complete tokens and ignore unterminated blocks."""
-
     @classmethod
     def parse(cls, data: bytes | bytearray | memoryview) -> "CMapProgram":
         source = bytes(data)
@@ -63,7 +56,6 @@ class CMapProgram(PdfCMapProgram):
     def blocks_in_order(
         self, delimiters: dict[bytes, bytes]
     ) -> typing.Iterator[tuple[bytes, CMapBlock]]:
-        """Yield selected block kinds in their original program order."""
         begin_keyword: bytes | None = None
         end_keyword: bytes | None = None
         block_start: int | None = None

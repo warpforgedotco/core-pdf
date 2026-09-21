@@ -1,5 +1,3 @@
-"""PDF Lab components and the normalized compatibility interface share XYZ semantics."""
-
 from collections.abc import Callable
 
 import numpy
@@ -18,7 +16,6 @@ from core_pdf_spec.s_08_graphics.color_math import (
 def test_neutral_lab_preserves_black_white_and_gray_luminance(
     white_point: tuple[float, float, float],
 ) -> None:
-    # ISO 32000-1, 8.6.5.4, pp. 148–149: neutral Lab scales the supplied white point.
     values = numpy.array([[0, 0, 0], [4, 0, 0], [50, 0, 0], [100, 0, 0]], dtype=numpy.float32)
     luminance = numpy.array([0.0, 108 / 24389, 0.18418651851244416, 1.0])
     expected = luminance[:, None] * numpy.array(white_point)
@@ -32,9 +29,6 @@ def test_neutral_lab_preserves_black_white_and_gray_luminance(
 def test_colored_lab_matches_independent_xyz_vectors(
     white_point: tuple[float, float, float],
 ) -> None:
-    # Forward Lab conversion of XYZ cube roots (.5,.6,.7), (.7,.5,.3), and
-    # (.55,.75,.35), using ISO 32000-1 8.6.5.4, gives the Lab inputs below.
-    # Fixed XYZ targets check channel order and signs without repeating the inverse.
     values = numpy.array([[53.6, -50, -20], [42, 100, 40], [71, -100, 80]], dtype=numpy.float32)
     expected = numpy.array(
         [[0.125, 0.216, 0.343], [0.343, 0.125, 0.027], [0.166375, 0.421875, 0.042875]]
@@ -45,8 +39,6 @@ def test_colored_lab_matches_independent_xyz_vectors(
 
 
 def test_lab_piecewise_transition_applies_to_each_xyz_component() -> None:
-    # ISO 32000-1 8.6.5.4: g changes branches at 6/29. Choosing intermediate
-    # components 5/29, 6/29, 7/29 produces exact XYZ numerators 108, 216, 343.
     values = numpy.array(
         [
             [8, -500 / 29, -200 / 29],
@@ -67,10 +59,6 @@ def test_normalized_lab_wrapper_preserves_original_float32_results() -> None:
         [[0, 0.5, 0.5], [1, 1, 0], [0.08, 128 / 255, 128 / 255], [0.5, 0.2, 0.8]],
         dtype=numpy.float32,
     )
-    # Captured from the public function before adding the components interface.
-    # Bit patterns pin its normalization and arithmetic order, including negatives.
-    # The cubes go through numpy's float32 power, whose SIMD variants round
-    # differently across CPU generations, so allow the resulting ULP or two.
     expected_bits = numpy.array(
         [
             [3103783820, 0, 968314105],
@@ -111,8 +99,6 @@ def test_lab_conversion_retains_shape_and_leaves_readonly_inputs_untouched(
 
 
 def test_xyz_inverse_matches_independent_lab_vectors_across_piecewise_transition() -> None:
-    # CIE 1976 equations: these XYZ values exercise both the linear and cube-root
-    # branches, with unequal channels to detect transposition and sign errors.
     xyz = numpy.array([[0, 0, 0], [108, 216, 343]], dtype=numpy.float64) / 24389
     numpy.testing.assert_allclose(
         xyz_to_lab_components(xyz, (1, 1, 1)),
@@ -127,8 +113,6 @@ def test_xyz_inverse_matches_independent_lab_vectors_across_piecewise_transition
 
 
 def test_black_point_compensation_maps_endpoints_and_preserves_white() -> None:
-    # ISO 18619's endpoint stage fixes white and maps source black to destination
-    # black. Endpoint detection and adaptation are the caller's responsibility.
     white = (0.9642, 1.0, 0.8249)
     source = (0.04, 0.03, 0.02)
     destination = (0.01, 0.02, 0.03)

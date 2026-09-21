@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""JBIG2 packed composition agrees with a byte-independent pixel oracle."""
 
 from typing import Any, cast
 

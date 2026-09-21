@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Decode PDF image samples independently of downstream consumers."""
 
 from __future__ import annotations
 
@@ -42,13 +41,11 @@ from core_pdf_spec.standards import SemanticContext
 def internal_decode_array_applies(
     dictionary: dict[Any, Any], context: SemanticContext | None
 ) -> bool:
-    # Reader recovery retains the historical interpretation for unknown versions.
     known = context if context and context.version and context.version.recognized else None
     return image_decode_array_applies(dictionary, context=known)
 
 
 def internal_image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
-    """Recognize discarded colourants before decoding samples or associated masks."""
     if dictionary.get("ImageMask") is True:
         return True
     return internal_color_space_paints(dictionary.get("ColorSpace"))
@@ -64,8 +61,6 @@ class DecodedRaster:
 
 @dataclass(frozen=True, slots=True)
 class ImageRaster:
-    """Immutable canonical samples for one decoded image."""
-
     array: numpy.ndarray[Any, Any]
     color_model: str
 
@@ -105,8 +100,6 @@ class ImageRaster:
 
 @dataclass(frozen=True, slots=True)
 class PreparedImage:
-    """A decoded image plus its optional native-resolution soft mask."""
-
     raster: ImageRaster
     soft_mask: ImageRaster | None = None
     is_stencil: bool = False
@@ -125,28 +118,19 @@ def internal_decode_mask(source: ImageSource) -> DecodedRaster | None:
     try:
         decoded = decode_stream_data(source.raw, source.dictionary)
     except FilterError:
-        # Falling back to source.raw here unpacked the still-encoded bytes as
-        # a bitmap, painting compressed noise into the alpha plane. A mask
-        # that cannot be decoded is dropped instead. An unfiltered stream
-        # does not reach this path -- decode_stream_data returns it as-is.
         return None
     row_bytes = (width + 7) // 8
     if len(decoded) < row_bytes * height:
         return None
     packed = numpy.frombuffer(decoded, dtype=numpy.uint8)[: row_bytes * height]
     bits = numpy.unpackbits(packed).reshape(height, row_bytes * 8)[:, :width]
-    # ISO 32000-1 8.9.6.2: "If the Decode array is [ 0 1 ] (the default for
-    # an image mask), a sample value of 0 shall mark the page with the
-    # current colour, and a 1 shall leave the previous contents unchanged.
-    # If the Decode array is [ 1 0 ], these meanings shall be reversed."
-    # Alpha is the marking mask here, so sample 0 is the opaque one.
     alpha = (1 - bits) * 255
     decode = source.dictionary.get("Decode")
     if isinstance(decode, (list, tuple)) and len(decode) >= 2:
         try:
             if float(decode[0]) > float(decode[1]):
                 alpha = 255 - alpha
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
     array = numpy.zeros((height, width, 2), dtype=numpy.uint8)
     array[:, :, 1] = alpha
@@ -178,7 +162,6 @@ def internal_decode_matte(
         parse_int(source.dictionary.get("Width"), 0),
         parse_int(source.dictionary.get("Height"), 0),
     ):
-        # ISO 32000-1/2 11.6.5.2 requires matching dimensions with Matte.
         raise ValueError("image matte requires matching soft mask dimensions")
     decoded = internal_decode_image_samples(soft_mask.raw, dictionary)
     decode = dictionary.get("Decode", (0, 1))
@@ -232,7 +215,6 @@ def internal_canonical_image_array(
     semantic_context: SemanticContext | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[numpy.ndarray[Any, Any], int] | None:
-    """Normalize a decoded image to a contiguous grayscale/RGB sample array."""
     explicit_jpx_decode = (
         samples.source == "jpx"
         and dictionary.get("Decode") is not None
@@ -256,8 +238,6 @@ def internal_canonical_image_array(
             return None
         count = len(space.component_ranges)
         if samples.channels == count + 1:
-            # ISO 32000-1/2 Table 89/87: selector 0 ignores an opacity channel;
-            # 1 uses straight colours; 2 first undoes opacity premultiplication.
             words = samples.array.reshape(-1, samples.channels)
             sample_array = words[:, :count]
             if active_alpha:
@@ -293,7 +273,7 @@ def internal_canonical_image_array(
                 alpha=alpha,
                 rendering=rendering,
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         if converted_words.shape[0] != samples.width * samples.height:
             return None
@@ -338,8 +318,6 @@ def internal_decode_image_samples(
         return native
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
     if bits_per_component == 16:
-        # Validate the complete word layout after filters/predictors. Byte-length
-        # heuristics for 8-bit recovery must not reinterpret compressed words.
         try:
             return decode_stream_data(raw, dictionary)
         except Exception:
@@ -404,8 +382,6 @@ def decode_pdf_image(
         return DecodedRaster(array, width, height, channels)
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
     if bits_per_component == 16 or image_has_color_key_mask(dictionary):
-        # Color-key masks compare original integers before Decode or
-        # conversion (8.9.6.4), and their holes are intrinsic shape.
         try:
             converted_words = convert_integer_image(
                 samples,
@@ -415,16 +391,12 @@ def decode_pdf_image(
                 alpha=alpha,
                 rendering=rendering,
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])
     try:
         converted = internal_convert_image_data(samples, dictionary, rendering=rendering)
     except ValueError:
-        # Broken PDFs sometimes retain an unresolved or malformed ICCBased
-        # reference even though the decoded stream contains ordinary device
-        # samples. The exact sample width is unambiguous here, so preserve the
-        # image instead of failing the whole page.
         pixels = width * height
         if len(samples) in {pixels, pixels * 3}:
             converted = samples
@@ -456,7 +428,6 @@ __all__ = (
 
 
 def prepare_image(source: ImageSource) -> PreparedImage | None:
-    """Prepare a PDF image using the configured device and recovery behavior."""
     if not internal_image_color_space_paints(source.dictionary):
         return None
     is_stencil = source.dictionary.get("ImageMask") is True
@@ -478,7 +449,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
         ):
             try:
                 matte, alpha = internal_decode_matte(source, soft_mask_source)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return None
     decoded = (
         internal_decode_mask(source)

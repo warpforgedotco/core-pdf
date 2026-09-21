@@ -1,5 +1,3 @@
-"""Resolve page trees with PDFMiner cross-reference recovery semantics."""
-
 from __future__ import annotations
 
 import re
@@ -20,11 +18,9 @@ from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, merge_xref_secti
 def internal_pdfminer_resolvable_pages(  # noqa: C901
     document: PdfDocument,
 ) -> Iterator[tuple[int, PdfPage]]:
-    """Walk the declared page tree with pdfminer's stale-xref semantics."""
     data = bytes(document.raw_data)
 
     def fallback_pages(object_keys: Iterable[tuple[int, int]]) -> Iterator[tuple[int, PdfPage]]:
-        """Model PDFXRefFallback plus PDFPage's object-scan fallback."""
         found = 0
         seen: set[int] = set()
         for object_number, generation_number in object_keys:
@@ -189,9 +185,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                 continue
             if not belongs_to_catalog_tree(value):
                 continue
-            # Resolve through the document so indirect inheritance and stream
-            # objects retain the engine's native representation, but only
-            # after the fallback parser itself recognized a Page dictionary.
             try:
                 document.resolver.resolve(PdfReference(object_number, generation_number))
                 page = document.pages[found]
@@ -213,10 +206,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         if line:
             previous_line = line
     if start is None:
-        # PDFXRefFallback scans indirect-object headers only up to the first
-        # trailer and lets later occurrences of an object number replace
-        # earlier ones. Preserve that ordering before PDFPage scans for Page
-        # dictionaries when no usable catalog tree was produced.
         yield from fallback_projection()
         return
     section_start = start
@@ -224,10 +213,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
     section_is_direct = data[section_pos : section_pos + 4] == b"xref"
     section_is_stream = re.match(rb"\d+\s+\d+\s+obj\b", data[section_pos:]) is not None
     if not section_is_direct and not section_is_stream:
-        # PDFParser can still enter a classic xref table when startxref lands
-        # a byte or two inside the literal ``xref`` token.  It does not scan
-        # an arbitrary nearby object, however; that case selects
-        # PDFXRefFallback instead.
         preceding = data[max(0, section_pos - 3) : section_pos + 4]
         relative = preceding.find(b"xref")
         candidate = max(0, section_pos - 3) + relative if relative >= 0 else -1
@@ -246,8 +231,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         strict_xref = merge_xref_sections(revision.entries for revision in revisions)
         strict_trailer = revisions[0].trailer
     except Exception:
-        # pdfminer falls back to its brute-force xref reader for malformed
-        # sections that still expose a usable catalog.
         yield from fallback_projection()
         return
 
@@ -267,9 +250,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             )
             if xref_stream is not None:
                 supplemental = read_section(xref_stream, stream_only=True)
-                # Preserve pdfminer's supplemental-entry precedence in this
-                # compatibility projection; the native revision iterator uses
-                # the specification's primary-table precedence.
                 entries = dict(entries)
                 entries.update(supplemental.entries)
             xref_sections.append(entries)
@@ -291,9 +271,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                 + str(info_reference.generation_number).encode("ascii")
                 + rb"\s+obj\b"
             )
-            # PDFDocument ignores stale /Info entries that do not begin with
-            # the requested object.  Only apply its strict dictionary parser
-            # after confirming that the xref points at that object.
             if expected_header.match(data, info_entry.offset):
                 info_lexer = PdfLexer(data, recover_malformed_objects=False)
                 info_lexer.rewind(info_entry.offset)
@@ -306,10 +283,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         candidates = [section[key] for section in xref_sections if key in section]
         if not candidates:
             return False
-        # PDFParser tolerates arbitrary junk at the xref offset until it sees
-        # an indirect-object header. PDFDocument rejects that first header if
-        # its identity differs from the requested reference; it does not skip
-        # over a different object to find a later match.
         for entry in candidates:
             if not entry.in_use:
                 continue

@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Content-stream interpreter state.
-
-Holds the graphics and text state, the operator handlers, and glyph emission.
-"""
 
 from __future__ import annotations
 
@@ -163,8 +159,6 @@ class RecordingMethods(RecoveringTextState):
     capture_patterns: dict[
         tuple[int, ColorRendering, bool, bool], tuple[object, PatternPaint | None]
     ]
-    # Keyed by the resolved stream's identity, which the resolver cache keeps
-    # stable per document; the value pins the stream so its id is not recycled.
     capture_image_sources: dict[
         tuple[int, ColorRendering], tuple[PdfStream, ImageSource, float | None]
     ]
@@ -186,8 +180,6 @@ class RecordingMethods(RecoveringTextState):
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
-        # Colourant suppression changes raster paint, not the text evidence
-        # available to extraction (including the existing visibility policy).
         if self.internal_text_paint_mode(check_colorants=False) in NON_PAINTING_RENDER_MODES:
             return False
         first_code = ord(text[0])
@@ -196,11 +188,6 @@ class RecordingMethods(RecoveringTextState):
         if not self.marked_content_stack and self.graphics.font_size >= 0.1:
             return True
 
-        # Sub-0.1pt text is not visible here. Whether such a layer is nonetheless
-        # the page's real text -- a scan
-        # carrying an OCR layer -- is a property of the whole page, not of the runs
-        # captured before this operator, so that call belongs to
-        # `internal_hidden_text_is_trusted` once parsing has seen every run.
         if self.graphics.font_size < 0.1:
             return False
 
@@ -239,13 +226,6 @@ class RecordingMethods(RecoveringTextState):
         return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 
     def internal_is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
-        """Report whether a box falls entirely outside the active clip.
-
-        Text only survives if it overlaps the clip, so a form XObject's /BBox,
-        a `W n` clip path and the page box all suppress the marks they exclude.
-        Partially clipped text is kept whole: the glyph is on the page, and
-        reporting half of one would be worse than reporting it.
-        """
         for clip in (self.clip_bbox, self.page_clip):
             if clip is None:
                 continue
@@ -258,7 +238,6 @@ class RecordingMethods(RecoveringTextState):
             self.run_accumulator.append(new_run)
 
     def internal_glyph_paint(self, fill_color: tuple[float, ...] | None) -> GlyphPaint:
-        """Snapshot the graphics state shared by glyphs in a text-show operation."""
         return GlyphPaint(
             clip_bbox=self.clip_bbox,
             page_clip=self.page_clip,
@@ -296,7 +275,6 @@ class RecordingMethods(RecoveringTextState):
         font_descent: float,
         advance_scale: float,
     ) -> GlyphCapture:
-        """Snapshot this text show's inputs for the independent glyph recorder."""
         geometry = TextGeometry(
             basis=text_basis,
             font_size=self.graphics.font_size,
@@ -447,8 +425,6 @@ class RecordingMethods(RecoveringTextState):
             self.glyphs.extend(captured.glyphs)
             self.glyph_cluster_count += captured.cluster_count
             if not self.capture_text_runs:
-                # Glyph-only consumers already have geometry and provenance.
-                # ActualText still needs a temporary run to assemble its span.
                 self.sequence = seqno + 1
                 return
 
@@ -613,9 +589,6 @@ class RecordingMethods(RecoveringTextState):
                     xobject_depth=self.xobject_depth,
                 )
             )
-            # A painted path must consume a sequence number like text does.
-            # Sharing one with the text that follows lets a seqno-ordered
-            # replay paint a cell background over the run's first glyphs.
             self.sequence += 1
 
     def clip_path(self, state: object, source: PdfPath, fill_rule: str) -> None:
@@ -647,12 +620,6 @@ class RecordingMethods(RecoveringTextState):
             self.sequence += 1
 
     def captured_image_source(self, xobj: PdfStream) -> tuple[ImageSource, float | None]:
-        """One image source per XObject and colour rendering for the whole capture.
-
-        Every ``Do`` of the same image then shares one descriptor, so consumers
-        keyed by source identity (the renderer's decoded-image cache) reuse work
-        instead of decoding once per paint.
-        """
         rendering = self.graphics.color_rendering
         key = (id(xobj), rendering)
         cached = self.capture_image_sources.get(key)
@@ -682,10 +649,6 @@ class RecordingMethods(RecoveringTextState):
                 if image_is_stencil
                 else internal_color_space_paints(source.dictionary.get("ColorSpace"))
             )
-            # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
-            # set bits in the current fill colour. Every other image ignores
-            # the fill, so recording it is only meaningful for the mask case,
-            # but it costs nothing to carry and the renderer decides.
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
@@ -855,14 +818,9 @@ class RecordingMethods(RecoveringTextState):
             self.pending_line_break,
         )
         if frame.form_bbox is not None:
-            # ISO 32000-1/2 8.10.1-2: the Form's BBox clips in Form space.
-            # Keep its transformed quadrilateral, not just the enclosing box,
-            # so rotated/sheared Forms do not paint into the envelope's corners.
             x0, y0, x1, y1 = frame.form_bbox
             clip_path = CapturedPath()
             if x1 > x0 and y1 > y0:
-                # Preserve finite endpoints even when their difference would
-                # overflow (a valid box may span almost the full float range).
                 clip_path.subpaths.append(
                     CapturedSubpath([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], closed=True)
                 )
@@ -905,7 +863,6 @@ class RecordingMethods(RecoveringTextState):
             )
             if all(value is not None for value in values):
                 x, y, w, h = cast(Rectangle, values)
-                # Preserve the historical PDFMiner LTFigure projection separately.
                 layout_bbox = transform_bbox((x, y, x + w, y + h), frame.ctm)
         self.layout_form_bbox = layout_bbox
         if frame.is_form:
@@ -921,7 +878,6 @@ class RecordingMethods(RecoveringTextState):
         if id(frame) in self.capture_text_frames:
             previous_text_open, started = self.capture_text_frames.pop(id(frame))
             if started and self.capture_text_open:
-                # Reader EOF recovery closes only the child's unfinished text.
                 self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
             if started:
                 self.text_boundaries.append(CapturedTextBoundary(self.sequence, "stream-end"))
@@ -959,7 +915,6 @@ class RecordingMethods(RecoveringTextState):
         return space.kind == "Pattern" and pattern is None
 
     def internal_text_paint_mode(self, *, check_colorants: bool = True) -> int:
-        """Remove nonpainting colour contributions without changing text clipping."""
         mode = self.graphics.render_mode
         if mode not in range(8):
             return mode
@@ -972,7 +927,6 @@ class RecordingMethods(RecoveringTextState):
         return paint + (4 if mode >= 4 else 0)
 
     def capture_color(self, *, stroke: bool) -> tuple[float, ...] | None:
-        """Project PDF color components only when creating output records."""
         color = self.graphics.stroke_color if stroke else self.graphics.fill_color
         spec = self.graphics.stroke_space if stroke else self.graphics.fill_space
         if color is not None and spec is not None:
@@ -1001,7 +955,6 @@ class RecordingMethods(RecoveringTextState):
         }
 
     def nested_capture_state(self) -> TextState:
-        """A fresh interpreter sharing this capture's mask caches and recursion guards."""
         from core_pdf.impl._impl.capture.interpreter import TextState
 
         nested = TextState(
@@ -1046,8 +999,6 @@ class RecordingMethods(RecoveringTextState):
             nested = self.nested_capture_state()
             nested.graphics.render_intent = self.graphics.render_intent
             nested.graphics.black_point_compensation = self.graphics.black_point_compensation
-            # ISO 32000-2 11.6.7: AIS comes from the defining stream's initial
-            # graphics state; the caller's current AIS only affects outer paint.
             nested.graphics.alpha_is_shape = initial_alpha_is_shape
             nested.graphics.text_knockout = initial_text_knockout
             try:

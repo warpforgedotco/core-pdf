@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Filter dispatch from normalized stream filter names to decoders."""
 
 from __future__ import annotations
 

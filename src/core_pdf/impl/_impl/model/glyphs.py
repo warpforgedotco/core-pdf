@@ -11,15 +11,6 @@ Matrix6 = tuple[float, float, float, float, float, float]
 
 
 class UnicodeSource(StrEnum):
-    """Where a glyph's Unicode text came from.
-
-    A StrEnum so the value keeps comparing equal to the plain strings the
-    compatibility facades still test against, while every producer and every
-    classification table below is checked against one closed vocabulary. This
-    used to be a bare `str`: `undefined` was produced by the decoder but was
-    missing from the confidence table, so it silently scored the 0.50 default.
-    """
-
     ACTUAL_TEXT = "actual_text"
     TO_UNICODE = "to_unicode"
     CFF_GLYPH_REPAIR = "cff_glyph_repair"
@@ -48,9 +39,6 @@ UNICODE_SOURCE_CONFIDENCE: dict[str, float] = {
     UnicodeSource.CID_COLLECTION: 0.88,
     UnicodeSource.ENCODING: 0.84,
     UnicodeSource.IDENTITY: 0.58,
-    # The decoder emits UNDEFINED with the text already replaced by U+FFFD, the
-    # same text REPLACEMENT carries, so it belongs at the same confidence. It
-    # was absent from this table and scored the 0.50 default instead.
     UnicodeSource.UNDEFINED: 0.05,
     UnicodeSource.FALLBACK_NUL: 0.05,
     UnicodeSource.REPLACEMENT: 0.05,
@@ -74,16 +62,12 @@ HEURISTIC_UNICODE_SOURCES: frozenset[str] = frozenset(
 
 
 class GlyphUnicodeSemantics(StrEnum):
-    """Whether glyph text is semantic Unicode or only a PDF character identifier."""
-
     AUTHORITATIVE = "authoritative"
     HEURISTIC = "heuristic"
     UNKNOWN_IDENTIFIER = "unknown-identifier"
     UNSUPPORTED = "unsupported"
 
 
-# Identity semantics: these records are never compared by value, and a
-# generated field-wise __eq__ over this many fields is dead weight.
 @dataclass(slots=True, eq=False)
 class GlyphObservation:
     text: str
@@ -124,20 +108,14 @@ class GlyphObservation:
     line_cap: int = 0
     line_join: int = 0
     dash_pattern: tuple[list[float], float] | None = None
-    # (seqno, cluster index) identity shared by observations decoded from one
-    # source glyph; a dedicated slot so the per-call provenance tuple can be
-    # shared by reference across every glyph of a text-showing op.
     cluster_key: tuple[int, int] | None = None
-    # Text may contribute clipping even when its selected color paints nothing.
     clip_glyph: bool = False
     alpha_is_shape: bool = False
     paint_from_program: bool = False
-    # A passive paint resource, like font_decoder; the renderer owns its type.
     graphics_soft_mask: object | None = None
 
     @property
     def has_paint(self) -> bool:
-        """Whether this glyph can contribute paint to a text-inclusive render."""
         if self.paint_from_program:
             return False
         return bool(
@@ -156,7 +134,6 @@ class GlyphObservation:
         )
 
     def resolved_bitmap(self) -> tuple[int, ...]:
-        """Resolve a glyph shape when a text-inclusive renderer needs it."""
         if self.bitmap:
             return self.bitmap
         decoder = self.font_decoder
@@ -167,12 +144,8 @@ class GlyphObservation:
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
 
-# Identity semantics: these records are never compared by value, and a
-# generated field-wise __eq__ over this many fields is dead weight.
 @dataclass(slots=True, eq=False)
 class GlyphCluster:
-    """One decoded source glyph's text and its emitted observations."""
-
     cluster_id: int
     text: str
     glyphs: tuple[GlyphObservation, ...]
@@ -187,7 +160,6 @@ def glyph_unicode_confidence(
     unicode_source: str,
     alternates: tuple[str, ...] = (),
 ) -> float:
-    """Estimate Unicode decoding confidence from mapping evidence."""
     if not text:
         confidence = 0.0
     else:
@@ -203,13 +175,6 @@ def glyph_unicode_confidence(
 
 
 def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
-    """Classify a decoded value without treating raw CIDs as real Unicode.
-
-    Identity CMaps map character codes to glyph identifiers.  Their numeric value
-    can happen to be a Unicode scalar, but that coincidence is not semantic text.
-    Keeping that distinction explicit lets extraction retain identifiers for
-    diagnostics without presenting them as decoded Unicode text.
-    """
     if not text or glyph_text_has_unsupported_codepoint(text):
         return GlyphUnicodeSemantics.UNSUPPORTED
     if unicode_source in AUTHORITATIVE_UNICODE_SOURCES:

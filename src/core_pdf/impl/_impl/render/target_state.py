@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""State and operations required by the raster target's painting mixins.
-
-Imported only while type checking. The concrete target owns the buffers and clip
-state; this interface checks cross-mixin calls without a runtime adapter.
-"""
 
 from __future__ import annotations
 

@@ -8,8 +8,6 @@ from core_pdf.api.compat.unstructured import _classification
 
 from .support import call_pair, differential_pdfs, pdf_id
 
-# Import the facade first: its required model must be available before the
-# reference tokenizer can attempt its automatic model installation.
 real_partition = pytest.importorskip("unstructured.partition.pdf").partition_pdf
 real_tokenize = pytest.importorskip("unstructured.nlp.tokenize")
 pytestmark = pytest.mark.compat_differential
@@ -17,8 +15,6 @@ pytestmark = pytest.mark.compat_differential
 
 @pytest.fixture(scope="module", autouse=True)
 def require_nlp_pipelines() -> None:
-    # Dependency failures must happen outside call_pair(), which treats a
-    # rejection on both sides as equivalent PDF behavior.
     text = "The library preserves sentence boundaries."
     tokens, sentences = _classification.internal_nlp_features(text)
     assert tokens

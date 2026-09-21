@@ -1,5 +1,3 @@
-"""Supported high-level pdfplumber-shaped APIs backed by core-pdf."""
-
 from __future__ import annotations
 
 import builtins
@@ -65,9 +63,6 @@ def cluster_by(
                 cluster += 1
         cluster_ids[value] = cluster
         previous = value
-    # Sorting only by cluster id is intentionally stable. pdfplumber retains
-    # source order within a geometric line; sorting by the raw coordinate here
-    # changes where zero-width space glyphs split words.
     ordered = sorted(items, key=lambda item: cluster_ids[getter(item)])
     return [list(group) for _, group in groupby(ordered, lambda item: cluster_ids[getter(item)])]
 
@@ -168,9 +163,6 @@ class TableSettings:
 
 def _source(value: PdfInput, password: str = "") -> PdfDocument:
     try:
-        # pdfplumber consumes pdfminer.six's parser semantics.  Keep the
-        # engine's native recovery and text-operator behavior unchanged, but
-        # select the legacy policy at this compatibility boundary.
         return PdfDocument.open(
             value,
             password=password,
@@ -181,8 +173,6 @@ def _source(value: PdfInput, password: str = "") -> PdfDocument:
 
 
 class EnginePageAdapter:
-    """pdfplumber-specific projection of one engine page."""
-
     def __init__(self, page: Any, unicode_norm: str | None = None) -> None:
         self.page = page
         self.unicode_norm = unicode_norm
@@ -297,17 +287,12 @@ class EnginePageAdapter:
                 baseline = ligature[2] if ligature is not None else glyph.baseline
                 if baseline is not None:
                     if glyph.font_decoder.is_vertical:
-                        # Capture's baseline already includes the vertical
-                        # origin displacement. LTChar extends one em across
-                        # the writing line and uses W2 for its vertical extent.
                         metric = glyph.font_decoder.vertical_glyph_metric(glyph.cid)
                         left = -float(metric[1]) * glyph.font_size * 0.001
                         advance = float(metric[0]) * glyph.font_size * 0.001 * scaling
                         horizontal = (left, left + glyph.font_size)
                         vertical = (glyph.font_size + advance, glyph.font_size)
                     else:
-                        # LTChar uses a one-em layout box anchored at the font's
-                        # descent, independently of the native ink/ascent bounds.
                         descent = internal_pdfminer_descent(glyph) * glyph.font_size
                         descent += float(provenance.get("text_rise", 0.0))
                         advance = (
@@ -332,20 +317,12 @@ class EnginePageAdapter:
                         if glyph.font_decoder.is_vertical or glyph.rotation_angle % 180
                         else y1 - y0
                     )
-                # The engine records the text matrix in unrotated page space,
-                # while pdfminer folds the page's rotation into LTChar.matrix.
-                # Apply that final coordinate transform before evaluating the
-                # orientation predicate.
                 if self.info.rotation % 360 == 90:
                     a, b, c, d = b, -a, d, -c
                 elif self.info.rotation % 360 == 180:
                     a, b, c, d = -a, -b, -c, -d
                 elif self.info.rotation % 360 == 270:
                     a, b, c, d = -b, a, -d, c
-                # This is pdfminer's LTChar orientation test.  In particular, a
-                # quarter-turned text matrix can still be "upright": upright
-                # describes the matrix handedness used by word grouping, not
-                # whether the baseline is horizontal on the rendered page.
                 upright = a * d * scaling > 0.0 and b * c <= 0.0
             if glyph.rotation_angle % 360 == 90:
                 x0 = x1 - font_height
@@ -368,23 +345,19 @@ class EnginePageAdapter:
             )
 
     def page_program(self) -> Any:
-        """Capture the page once; drawings and images are views of that program."""
         return self.page.get_page_program()
 
     def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
-        """Native drawing records of the program; ``_drawing`` projects them."""
         if program is None:
             program = self.page_program()
         return self.page.internal_drawing_records(program.drawings)
 
     def images(self, program: Any | None = None) -> tuple[ImageRecord, ...]:
-        """Native image records of the program; ``_image`` projects them."""
         if program is None:
             program = self.page_program()
         return self.page.internal_extract_program_images(program)
 
     def render(self, *, dpi: float, antialias: bool = False) -> Any:
-        # PDFium, used by pdfplumber's image API, leaves UserUnit unapplied.
         rendered = self.page.render()
         rendered.width = rendered.display_list.width
         rendered.height = rendered.display_list.height
@@ -422,7 +395,6 @@ def _bbox(page: EnginePageAdapter, box: Any) -> BBox:
 def _envelope(
     object_type: str, page_number: int, box: BBox, doctop: float, **extra: Any
 ) -> ObjectDict:
-    """Build the pdfplumber nine-key object envelope plus caller extras."""
     x0, top, x1, bottom = box
     return {
         "object_type": object_type,
@@ -441,7 +413,6 @@ def _envelope(
 def _filter_objects(
     value: dict[str, Any], include: Iterable[str] | None, exclude: Iterable[str]
 ) -> None:
-    """Apply pdfplumber's include/exclude attribute filters to a page dict in place."""
     allowed = set(include) | {"object_type"} if include is not None else None
     for kind, objects in value.items():
         if not isinstance(objects, list):
@@ -521,8 +492,6 @@ def _drawing(page: EnginePageAdapter, drawing: DrawingRecord, doctop: float) -> 
         fill_opacity=drawing.fill_opacity,
         stroke_opacity=drawing.stroke_opacity,
         seqno=drawing.seqno,
-        # pdfplumber path items and the raw path are not projected from the
-        # native record; the facade has always emitted these placeholders.
         items=[],
         path=None,
         dash=drawing.dash_pattern,
@@ -533,7 +502,6 @@ def _drawing(page: EnginePageAdapter, drawing: DrawingRecord, doctop: float) -> 
 
 
 def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> ObjectDict | None:
-    """Project a native image record; ``None`` when it has no metadata or box."""
     metadata = image.image_metadata
     box = image.rect or image.image_clip
     if metadata is None or box is None:
@@ -541,8 +509,6 @@ def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> Object
     data = image.data
     payload = bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None
     x0, top, x1, bottom = _bbox(page, box)
-    # Images carry the full drawing envelope with null paint state, then the
-    # image-specific keys; ``width``/``height`` keep their envelope positions.
     return _envelope(
         "image",
         page.info.number,
@@ -593,9 +559,6 @@ class Page:
                 if self.rotation % 180
                 else self.mediabox
             )
-        # pdfplumber preserves integer MediaBox dimensions, including values
-        # larger than IEEE-754 can represent exactly. Integer zeroes keep the
-        # subsequent bbox subtraction in that same numeric domain.
         self.bbox: BBox = (0, 0, self.width, self.height)
         self._objects: dict[str, list[ObjectDict]] | None = None
         self._structured_page: Any | None = None
@@ -811,7 +774,7 @@ class Page:
         def convert(element: Any) -> ObjectDict:
             try:
                 page_index = getattr(element, "page_index", None)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 page_index = None
             result: ObjectDict = {
                 "type": getattr(element, "type", None),
@@ -823,14 +786,14 @@ class Page:
             }
             try:
                 children = tuple(element)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 children = ()
             result["children"] = [convert(child) for child in children if hasattr(child, "role")]
             return result
 
         try:
             elements = tuple(tree)
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             elements = ()
         result = []
         for element in elements:
@@ -838,7 +801,7 @@ class Page:
                 continue
             try:
                 page_index = getattr(element, "page_index", None)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 page_index = None
             if page_index is None or page_index == self.page_number - 1:
                 result.append(convert(element))
@@ -1029,7 +992,6 @@ class Page:
                 )
                 if same_columns and first_box is not None:
                     merged_rows = [row for table in tables for row in table.rows]
-                    # Geometry-free rows retain the structured model's row order.
                     if all(any(cell.bbox is not None for cell in row) for row in merged_rows):
                         merged_rows.sort(
                             key=lambda merged_row: min(
@@ -1277,8 +1239,6 @@ class Page:
             groups.setdefault(tuple(char.get(name) for name in attributes), []).append(index)
         retained = []
 
-        # Cluster transitively in each axis, then keep the earliest positioned
-        # character in each group. Restore source order after selection.
         def position(index: int) -> tuple[float, float]:
             return chars[index]["doctop"], chars[index]["x0"]
 
@@ -1685,7 +1645,6 @@ class PageImage:
         return self
 
     def save(self, path: str | Any, format: str | None = None, **kwargs: Any) -> None:
-        """Write a PNG using only the standard library."""
         del format
         channels = self.raster.channels
         if channels not in (3, 4):
@@ -1778,7 +1737,7 @@ class PageImage:
                     line(x0, y0, x0, y1, ink)
                     line(x1, y0, x1, y1, ink)
                     line(x0, y1, x1, y1, ink)
-            else:  # The remaining entries are circles emitted by draw_circle().
+            else:
                 if isinstance(value, Mapping):
                     cx = (float(value["x0"]) + float(value.get("x1", value["x0"]))) / 2
                     cy = (float(value["top"]) + float(value.get("bottom", value["top"]))) / 2
@@ -1803,7 +1762,6 @@ class PageImage:
         return stream.getvalue()
 
     def show(self) -> None:
-        """Show the annotated page through Pillow's platform image viewer."""
         from PIL import Image
 
         with Image.open(BytesIO(self._repr_png_())) as image:
@@ -1865,7 +1823,7 @@ class PDF(ClosingMixin):
                     page = Page(self, index, doctop, engine_page)
                     self._pages.append(page)
                     doctop += page.height
-            except (IndexError, PdfminerException):
+            except IndexError, PdfminerException:
                 raise
             except Exception as exc:
                 raise PdfminerException(exc) from exc
@@ -2000,7 +1958,6 @@ def outside_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
 
 
 def internal_bbox_overlap(left: BBox, right: BBox) -> BBox | None:
-    """pdfplumber retains shared edges, but excludes a corner-only intersection."""
     x0, top = max(left[0], right[0]), max(left[1], right[1])
     x1, bottom = min(left[2], right[2]), min(left[3], right[3])
     if x1 < x0 or bottom < top or (x1 == x0 and bottom == top):
@@ -2119,7 +2076,6 @@ def merge_edges(
     join_x_tolerance: float = 3,
     join_y_tolerance: float = 3,
 ) -> list[ObjectDict]:
-    """Snap parallel edges, then join collinear intervals without mutating inputs."""
     values = list(edges)
     if any(edge["orientation"] not in {"h", "v"} for edge in values):
         raise ValueError("orientation must be 'h' or 'v'")
@@ -2350,9 +2306,6 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
                             previous_end = -previous["x0"]
                             current_start = -char["x1"]
                     else:
-                        # pdfplumber swaps its x/y tolerances for rotated text:
-                        # the vertical distance is intraline and x is the
-                        # cross-line coordinate.
                         intra_tolerance = y_tolerance
                         cross_tolerance = tolerance
                         previous_cross = previous["x0"]
@@ -2402,10 +2355,6 @@ def _lines(chars: Iterable[ObjectDict], return_chars: bool = True) -> list[Objec
 
 
 def _group_chars(chars: Iterable[ObjectDict]) -> list[list[ObjectDict]]:
-    # pdfplumber's text map uses whitespace to separate words but does not let
-    # standalone space glyphs create layout lines of their own.  Keeping them
-    # in the clustering input produced empty lines whenever a space's nominal
-    # top differed slightly from the surrounding visible glyphs.
     ordered = sorted(chars, key=lambda item: (item["top"], item["x0"]))
     tiny_font = ordered and max(float(item.get("size", 1)) for item in ordered) <= 1
     line_tolerance = 25 if tiny_font else 3

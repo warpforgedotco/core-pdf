@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Transparency calculations for image samples in their original colour space."""
 
 from __future__ import annotations
 
@@ -13,12 +12,6 @@ def unblend_matte_components(
     alpha: numpy.ndarray[Any, Any],
     matte: tuple[float, ...],
 ) -> numpy.ndarray[Any, Any]:
-    """Undo preblending, ISO 32000-1/2 11.6.5.2, before colour conversion.
-
-    The decoded components satisfy c' = m + alpha * (c - m). At zero alpha
-    any finite colour is permitted; choose the matte. The caller clips the
-    recovered components to the colour space's ranges.
-    """
     components = numpy.asarray(values, dtype=numpy.float64)
     opacity = numpy.asarray(alpha, dtype=numpy.float64)
     background = numpy.asarray(matte, dtype=numpy.float64)

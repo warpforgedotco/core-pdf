@@ -1,5 +1,3 @@
-"""Locate and load the bundled predefined CMap resources."""
-
 from __future__ import annotations
 
 from core_adobe_fonts.cmap.resources import resolve_cmap_resource

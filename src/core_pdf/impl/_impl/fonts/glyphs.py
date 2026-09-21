@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native glyph-name Unicode recovery helpers."""
 
 from __future__ import annotations
 
@@ -15,12 +14,6 @@ from core_pdf.impl._impl.fonts.data.glyph_aliases import (
 )
 
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
-# The Adobe glyph list places the Symbol font's bracket, brace and parenthesis
-# pieces -- the segments a reader stacks to build a bracket taller than one
-# line -- in Adobe's corporate private-use area. Unicode 3.2 gave every one of
-# them a real codepoint, and a private-use character is never useful in
-# extracted text: it renders as a blank box and carries no meaning to any
-# consumer. Prefer the standard codepoints.
 ADOBE_PUA_GLYPH_ALIASES = {
     "parenlefttp": "⎛",
     "parenleftex": "⎜",
@@ -44,8 +37,6 @@ ADOBE_PUA_GLYPH_ALIASES = {
     "integralex": "⎮",
     "arrowhorizex": "⎯",
     "arrowvertex": "⏐",
-    # Sans-serif variants of characters that already exist in Unicode; the
-    # distinction is a typeface, not a different character.
     "registersans": "®",
     "copyrightsans": "©",
     "trademarksans": "™",
@@ -54,9 +45,6 @@ ADOBE_PUA_GLYPH_ALIASES = {
 TEX_GLYPH_ALIASES = {
     "Ifractur": "ℑ",
     "Rfractur": "ℜ",
-    # Adobe's legacy glyph list treats the common underscore ligature names
-    # as the corresponding presentation-form characters. Preserve that
-    # semantic identity before the generic component-name fallback runs.
     "f_f": "ﬀ",
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
@@ -103,20 +91,15 @@ TEX_GLYPH_ALIASES = {
     "bracerightbigg": "}",
     "bracerightBigg": "}",
     "slashbig": "/",
-    # Delimiter extension pieces: the segments TeX stacks to build a tall
-    # vertical bar. Unicode has an extension codepoint for the single rule;
-    # the double one is only ever read back as the character it draws.
     "vextendsingle": "\u23d0",
     "vextenddouble": "\u2016",
     "bardbl": "\u2016",
-    # Wide accents, which cmex supplies in several widths for one character.
     "hatwide": "\u02c6",
     "hatwider": "\u02c6",
     "hatwidest": "\u02c6",
     "tildewide": "\u02dc",
     "tildewider": "\u02dc",
     "tildewidest": "\u02dc",
-    # cmsy relations and delimiters with exact Unicode counterparts.
     "latticetop": "\u22a4",
     "star": "\u22c6",
     "mapsto": "\u21a6",
@@ -129,36 +112,24 @@ TEX_GLYPH_ALIASES = {
     "lessmuch": "\u226a",
     "prime": "\u2032",
     "intercal": "\u22ba",
-    # \not is drawn as an overlay, so the combining form composes with the
-    # relation it negates instead of landing beside it.
     "negationslash": "\u0338",
     "radicalbig": "√",
     "radicalBig": "√",
     "radicalbigg": "√",
     "radicalBigg": "√",
-    # Display-size variants of operators the table already carries in their
-    # text size. cmex supplies one glyph per size; they are the same character.
     "uniondisplay": "\u22c3",
     "intersectiondisplay": "\u22c2",
     "productdisplay": "\u220f",
-    # Big angle brackets, following the parenleftbigg/bracketleftbigg pattern
-    # above: a delimiter grown for display maths is still the delimiter.
     "angbracketleftbigg": "\u27e8",
     "angbracketleftBigg": "\u27e8",
     "angbracketrightbigg": "\u27e9",
     "angbracketrightBigg": "\u27e9",
-    # AMS symbol fonts (msam/msbm) reached through their builtin encodings.
     "measuredangle": "\u2221",
     "squaresolid": "\u25a0",
     "subsetnoteql": "\u228a",
     "owner": "\u220b",
-    # Named for the hook it draws on the left of the stem, not for its
-    # direction: cmsy's arrowhookleft is TeX's \hookrightarrow.
     "arrowhookleft": "\u21aa",
-    # cmsy names a variant Greek letter with a trailing 1, as with epsilon1.
     "rho1": "\u03f1",
-    # cmsy's "triangle" is read as the increment sign rather than the geometric
-    # shape, following Adobe's reading of Delta. pypdf reports it the same way.
     "triangle": "\u2206",
 }
 

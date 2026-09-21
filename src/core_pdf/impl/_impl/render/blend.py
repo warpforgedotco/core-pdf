@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Colour conversion and straight-alpha compositing kernels."""
 
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ internal_FALLBACK_BLEND_CONTEXT = SemanticContext(PdfVersion(2, 0))
 
 
 def internal_blend_context(context: SemanticContext | None) -> SemanticContext:
-    """Use the current equations when reader declarations are absent or unknown."""
     if context is None or context.version is None or not context.version.recognized:
         return internal_FALLBACK_BLEND_CONTEXT
     return context
@@ -27,17 +25,6 @@ def internal_blend_normal_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
 ) -> None:
-    """Blend a solid normal-alpha source into an existing RGBA view.
-
-    Indexes ``target`` directly (``target[..., i]`` / ``target[...]``) rather
-    than ``target.reshape(-1, 4)``: callers pass both flat ``(n, 4)`` spans
-    and 2D ``(rows, cols, 4)`` boxes (e.g. ``fill_rect``'s whole-rectangle
-    fast path), and a box slice narrower than the full row stride is not
-    C-contiguous, so reshaping it silently returns a disconnected copy and
-    every write below would be lost -- confirmed reproducible: a semi-
-    transparent, non-full-width, multi-row fill through that path painted
-    nothing.
-    """
     sr, sg, sb, sa = rgba
     if sa <= 0 or target.size == 0:
         return
@@ -96,13 +83,6 @@ def internal_blend_channels_f64(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    """Source-over in float64, shared by solid, image and group paths.
-
-    Inputs are unit-scaled source channels (scalar or array) and 0-255 float64
-    destination channels; the result is rounded 0-255 channels with fully
-    transparent pixels zeroed, exactly as ``blend_px`` computes them. Operation
-    order is part of the contract: the golden-raster digests depend on it.
-    """
     one_minus_src_a = 1.0 - src_a
     dst_a = da / 255.0
     if mode == "multiply":
@@ -146,23 +126,6 @@ def internal_blend_solid_array_numpy(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
-    """Blend a solid source into an RGBA view, replicating ``blend_px``'s
-    per-pixel math (Multiply/Screen premultiply, generic alpha compositing)
-    across every destination pixel in one pass.
-
-    Callers fold any transparency-group alpha into ``rgba``'s alpha before
-    calling -- ``blend_px`` reads that scale from state that is invariant
-    across the whole span, so it is computed once here instead of per pixel.
-    Uses float64 throughout (not float32, unlike the Normal-blend fast paths
-    above) so every intermediate matches ``blend_px``'s plain-Python-float
-    arithmetic bit for bit; the golden-raster digests depend on it.
-
-    Indexes ``target``'s last axis directly (``target[..., 0]`` etc.) rather
-    than ``target.reshape(-1, 4)``: callers pass both flat ``(n, 4)`` spans
-    and 2D ``(rows, cols, 4)`` boxes, and a box slice narrower than the full
-    row stride is not C-contiguous, so reshaping it silently returns a
-    disconnected copy and every write below would be lost.
-    """
     sr, sg, sb, sa = rgba
     if sa <= 0 or target.size == 0:
         return
@@ -204,27 +167,6 @@ def internal_composite_blended_group_numpy(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
-    """Composite a straight-alpha group that carries a blend mode, in one pass.
-
-    The per-pixel twin of this ran ``blend_px`` once per pixel for every group
-    whose blend mode was not Normal, re-resolving the enclosing group's alpha
-    and re-lowercasing ``blend_mode`` on each of them. This is the same math
-    hoisted out of that loop and vectorized: a source *array* where
-    ``internal_blend_solid_array_numpy`` takes a single colour.
-
-    ``source_alpha_scale`` is the group's own alpha and ``target_alpha_scale``
-    the enclosing group's. ``None`` means "absent", i.e. not applied. They are
-    rounded and clamped separately, in that order, exactly as the two scalar
-    steps did -- folding them into one multiply would round once and drift.
-
-    Uses float64 throughout (not the float32 of the Normal-blend fast paths) so
-    every intermediate matches ``blend_px``'s plain-Python-float arithmetic bit
-    for bit; the golden-raster digests depend on it.
-
-    Indexes both views' last axis directly rather than reshaping to ``(-1, 4)``
-    -- see ``internal_blend_normal_solid_array_numpy`` for why a reshaped
-    non-contiguous destination slice silently discards every write.
-    """
     if destination.size == 0:
         return
     source_alpha = source[..., 3].astype(numpy.float64)
@@ -232,13 +174,9 @@ def internal_composite_blended_group_numpy(
         source_alpha = numpy.clip(numpy.rint(source_alpha * source_alpha_scale), 0.0, 255.0)
     if target_alpha_scale is not None:
         source_alpha = numpy.clip(numpy.rint(source_alpha * target_alpha_scale), 0.0, 255.0)
-    # A pixel invisible at any stage stays invisible: scaling is monotonic and
-    # clamped at zero, so this one test covers all three scalar early-returns.
     visible = source_alpha > 0.0
     if not numpy.any(visible):
         return
-    # Everything below runs on the visible pixels only. A group is usually a
-    # shaped region inside a full-page buffer, so this is most of the buffer.
     dr = destination[..., 0][visible].astype(numpy.float64)
     dg = destination[..., 1][visible].astype(numpy.float64)
     db = destination[..., 2][visible].astype(numpy.float64)
@@ -257,8 +195,6 @@ def internal_composite_blended_group_numpy(
         semantic_context=semantic_context,
     )
     for channel, values in ((0, out_r), (1, out_g), (2, out_b), (3, out_a_i)):
-        # `destination[..., channel]` is a basic-indexing view, so the masked
-        # assignment writes through to `destination` itself.
         destination[..., channel][visible] = numpy.clip(values, 0.0, 255.0).astype(numpy.uint8)
 
 
@@ -267,12 +203,6 @@ def internal_blend_normal_alpha_array_numpy(
     rgba: tuple[int, int, int, int],
     alpha: numpy.ndarray[Any, Any],
 ) -> None:
-    """Blend a normal source with one coverage alpha per target pixel.
-
-    Indexes ``target`` directly rather than ``target.reshape(-1, 4)`` -- see
-    ``internal_blend_normal_solid_array_numpy`` for why a reshaped box slice
-    can silently discard every write below.
-    """
     if target.size == 0 or not numpy.any(alpha):
         return
     source_alpha = numpy.minimum(alpha, rgba[3]).astype(numpy.float32) / 255.0
@@ -294,10 +224,6 @@ def internal_blend_normal_alpha_array_numpy(
     destination_float[..., 3] = output_alpha * 255.0
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    # Only touch pixels the source actually covers. Blending zero coverage is
-    # meant to be a no-op, but the arithmetic above drives RGB to zero when the
-    # destination is fully transparent, which discards colour a later blend
-    # would need -- and it is what stopped a whole box being blended in one call.
     numpy.copyto(target, destination_float.astype(numpy.uint8), where=(alpha > 0)[..., None])
 
 
@@ -307,19 +233,6 @@ def internal_composite_normal_group_numpy(
     source_alpha_scale: float,
     target_alpha_scale: float = 1.0,
 ) -> None:
-    """Composite a straight-alpha normal group through two RGBA views.
-
-    Indexes both views directly (``[..., i]``) instead of reshaping to
-    ``(-1, 4)`` -- see ``internal_blend_normal_solid_array_numpy`` for why a
-    reshaped non-contiguous ``destination`` box slice silently discards
-    writes. ``source`` is read-only here, so reshaping it would be safe on
-    its own, but two of the early-return branches below wrote into a
-    reshaped *destination* view and returned without ever assigning back
-    into the real ``destination`` array -- kept both views in the same
-    (unflattened) shape so every write, including boolean-masked ones,
-    targets `destination` (or a scratch copy explicitly written back to it)
-    rather than a same-shaped-but-disconnected copy.
-    """
     if destination.size == 0 or source_alpha_scale <= 0.0:
         return
     source_alpha_u8 = source[..., 3]
@@ -384,7 +297,7 @@ def internal_color_component(value: Any, default: int = 0) -> int:
         return default
     try:
         return max(0, min(255, int(round(float(value) * 255.0))))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -393,7 +306,6 @@ def internal_clamp01(value: float) -> float:
 
 
 def internal_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
-    """Combine a paint's constant alpha with a scalar soft-mask alpha; unset means 1."""
     return (float(opacity) if is_pdf_number(opacity) else 1.0) * (
         float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else 1.0
     )
@@ -410,11 +322,6 @@ def internal_blend_visible_pixels(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
-    """Blend unit-scale source channels into the destination pixels selected by ``visible``.
-
-    Per-pixel channels and alpha are given for the visible pixels only;
-    ``blend_mode`` is already normalized. Same float64 math as ``blend_px``.
-    """
     backdrop = destination[visible].astype(numpy.float64)
     channels = internal_blend_channels_f64(
         red,
@@ -440,15 +347,9 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
             gray = internal_color_component(color[0])
             return gray, gray, gray, alpha
         if len(color) == 4:
-            # DeviceCMYK. The component count is the colour space here --
-            # normalize_colors clamps and preserves arity, and folds in no alpha
-            # -- so four components is CMYK and nothing else. Without this the
-            # tuple fell through to the RGB branch below, which read the first
-            # three components as red/green/blue: `1 1 1 1 k` (rich black)
-            # painted white and `0 0 0 0 k` (white) painted black.
             try:
                 cyan, magenta, yellow, black = (internal_clamp01(float(c)) for c in color)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return 0, 0, 0, alpha
             red, green, blue = cmyk_floats_to_srgb(cyan, magenta, yellow, black)
             return red, green, blue, alpha
@@ -463,7 +364,6 @@ def internal_scale_rgba_alpha(
     rgba: tuple[int, int, int, int],
     alpha_scale: Any,
 ) -> tuple[int, int, int, int]:
-    """Scale a colour's alpha by a mask or transparency-group factor, clamped to a byte."""
     return (
         rgba[0],
         rgba[1],

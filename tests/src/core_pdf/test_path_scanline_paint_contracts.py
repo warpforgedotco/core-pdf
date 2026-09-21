@@ -1,5 +1,3 @@
-"""Scanline painting agrees with geometric regions across blending routes."""
-
 import numpy as np
 import pytest
 
@@ -54,8 +52,6 @@ def test_scanline_holes_and_clipping_match_geometry(
 ):
     monkeypatch.setattr(path_fill_target, "RASTER_NUMPY_SPAN_MIN_PIXELS", threshold)
     target, actual = internal_target(clip_kind)
-    # Horizontal edges do not enter the active-edge table. Vertical edges are
-    # deliberately unordered and share bounds, exercising heap ties and removal.
     edges = [(46, 1, 46, 18), (1, 18, 1, 1), (30, 5, 30, 14), (10, 14, 10, 5)]
     if opposite_inner:
         edges[2:] = [(x1, y1, x0, y0) for x0, y0, x1, y1 in edges[2:]]
@@ -117,8 +113,6 @@ def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
         edge_array=np.asarray(path.fill_edges()) if cached_edges else None,
     )
     expected = np.zeros_like(actual)
-    # Quarter-pixel boundaries have exact area on a 4x4 lattice, so this
-    # independent region oracle applies to both analytic and sampled coverage.
     for row in range(20):
         for column in range(48):
             if not internal_in_clip(column + 0.5, 19.5 - row, clip_kind):

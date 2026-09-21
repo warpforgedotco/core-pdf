@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Raster clip regions materialized at graphics-state transitions."""
 
 from __future__ import annotations
 
@@ -21,15 +20,10 @@ internal_EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 @dataclass(frozen=True, slots=True)
 class internal_ClipRegion:
-    """The effective raster clip after one PDF clipping operation."""
-
     box: tuple[float, float, float, float] | None
     pixel_box: tuple[int, int, int, int] | None
     rectangular: bool
     rows: tuple[internal_RowSpans, ...] | None
-    # ``rows`` only spans the pixel rows the clip box touches; every row outside
-    # that range is empty by construction, so materializing them would cost one
-    # edge sweep per page row for clips nothing ever paints through.
     rows_origin: int = 0
 
     @property
@@ -59,13 +53,6 @@ def internal_intersect_spans(
 
 
 class internal_ClipState:
-    """The effective clip stack for one raster target.
-
-    A clip path is converted to pixel-row spans when it enters the graphics
-    state. Painting then reads the effective region directly instead of
-    rebuilding path edges and intersections for every queried pixel.
-    """
-
     __slots__ = (
         "regions",
         "crop_x0",
@@ -156,7 +143,6 @@ class internal_ClipState:
         return tuple(spans)
 
     def push(self, path: CapturedPath, fill_rule: str) -> None:
-        """Intersect ``path`` with the current region and push the result."""
         parent = self.current_region()
         rect = path.axis_aligned_rect()
         path_box = rect if rect is not None else path.bbox()

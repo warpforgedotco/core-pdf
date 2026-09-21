@@ -1,12 +1,6 @@
-"""Application aliases for the fourteen PDF standard font metric records."""
-
 from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
 
-# Every base font name that resolves to a Standard-14 metric record. Arial,
-# CourierNew and TimesNewRoman are metric clones of Helvetica, Courier and
-# Times respectively -- that mapping is what lets a PDF naming Arial lay out
-# with Helvetica's advances, as an application font-substitution policy.
 internal_METRIC_RECORD_NAMES: dict[str, str] = {
     "Arial": "Helvetica",
     "Arial,Bold": "Helvetica-Bold",

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 1 encryption and length-prefixed byte primitives, without a font backend."""
 
 from __future__ import annotations
 
@@ -44,7 +43,6 @@ def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
 
 
 def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
-    """Yield complete length-prefixed entries, leaving key semantics to callers."""
     for match in pattern.finditer(data):
         length = int(match.group(2))
         start = match.end()
@@ -55,7 +53,6 @@ def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[by
 
 
 def decode_charstring(encrypted: bytes, len_iv: int) -> bytes:
-    """Decrypt Type 1 charstring bytes and remove the specified random prefix."""
     if len_iv < -1:
         raise ValueError("invalid Type 1 lenIV")
     if len_iv == -1:

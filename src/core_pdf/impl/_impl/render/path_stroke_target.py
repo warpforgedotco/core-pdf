@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Stateful path-stroke painting operations for raster targets."""
 
 from __future__ import annotations
 
@@ -23,8 +22,6 @@ if TYPE_CHECKING:
 
 
 class internal_PathStrokeTargetMixin:
-    """Line, join, cap, and path-stroke painting operations."""
-
     __slots__ = ()
 
     def fill_line(
@@ -256,7 +253,6 @@ class internal_PathStrokeTargetMixin:
         round_shape: bool,
         blend_mode: str | None,
     ) -> None:
-        """Paint one join or cap: a disc when round, else a square of the stroke width."""
         radius = max(0.5 / self.scale, float(line_width) * 0.5)
         if round_shape:
             self.fill_circle(px, py, radius, rgba, blend_mode)

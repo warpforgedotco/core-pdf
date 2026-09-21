@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Rendered-page rasterization and page-program composition."""
 
 from __future__ import annotations
 
@@ -38,8 +37,6 @@ from core_pdf_spec.standards import SemanticContext
 
 
 class internal_RenderablePage(Protocol):
-    """The stable page geometry required when composing a display list."""
-
     @property
     def width(self) -> float: ...
 
@@ -68,8 +65,6 @@ def internal_pixel_dimension(length: float, scale: float) -> int:
 
 @dataclass(slots=True)
 class RenderedPage:
-    """A physical page in points with display-list and crop coordinates in PDF units."""
-
     page_number: int
     width: float
     height: float
@@ -122,7 +117,6 @@ class RenderedPage:
         *,
         crop: tuple[float, float, float, float] | None = None,
     ) -> tuple[int, int]:
-        """Return the unrotated pixel size; crop uses raw default user space."""
         scale = internal_raster_scale(scale)
         effective_crop = self.internal_effective_crop(crop)
         if effective_crop is not None:
@@ -142,7 +136,6 @@ class RenderedPage:
         *,
         crop: tuple[float, float, float, float] | None = None,
     ) -> None:
-        """Reject a raster request before allocating an oversized RGBA canvas."""
         if max_pixels is None or max_pixels <= 0:
             return
         width, height = self.unrotated_raster_size(scale, crop=crop)
@@ -162,7 +155,6 @@ class RenderedPage:
         max_pixels: int | None = None,
         crop: tuple[float, float, float, float] | None = None,
     ) -> RasterImage:
-        """Rasterize at ``72 * scale`` DPI; crop coordinates are raw PDF units."""
         scale = internal_raster_scale(scale)
         self.validate_raster_size(scale, max_pixels, crop=crop)
         crop = self.internal_effective_crop(crop)
@@ -231,8 +223,6 @@ class RenderedPage:
                 4,
             )
         else:
-            # A rotation that is not a multiple of 90 rasterizes unrotated; the
-            # reported dimensions match the buffer's unrotated layout.
             result = RasterImage(raster_target.pixels, width, height, 4)
         return result
 
@@ -257,9 +247,6 @@ class RenderedPage:
             ],
             "metadata": dict(self.metadata),
         }
-
-
-# ===== page =====
 
 
 def compose_page(
@@ -296,8 +283,6 @@ def compose_page(
         for appearance in page_program.appearances
         if (options.include_layers if appearance.kind == "widget" else options.include_annotations)
     )
-    # A page's final clipping state does not belong to its annotations. Close
-    # the body scope before replaying independent appearance streams.
     if selected_appearances:
         display_list.append("scope-begin", -1)
     append_captured_program(display_list, page_program.body, include_text=options.include_text)
@@ -321,7 +306,6 @@ def compose_page(
             try:
                 field_records = internal_page.get_fields()
             except ValueError:
-                # A malformed AcroForm must not prevent rendering the page's text and images.
                 field_records = ()
         for field in field_records:
             widget = field.widget or field.dict

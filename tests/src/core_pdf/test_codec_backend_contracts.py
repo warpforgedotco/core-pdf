@@ -1,5 +1,3 @@
-"""Host codec adapters preserve sample layout and classify boundary failures."""
-
 import numpy as np
 import pytest
 
@@ -97,7 +95,6 @@ def test_jpx_thread_setting_respects_default_and_hard_bound(monkeypatch, setting
 def test_png_prediction_backend_preserves_exact_sample_bytes(bits, colors):
     columns = 8
     row_length = columns * colors * bits // 8
-    # A raw row followed by Up-filtered zero differences repeats exactly.
     raw = bytes((index * 37 + 19) % 256 for index in range(row_length))
     result = codecs.internal_png_predict_codec(
         b"\0" + raw + b"\2" + bytes(row_length),

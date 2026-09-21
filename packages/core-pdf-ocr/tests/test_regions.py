@@ -1,5 +1,3 @@
-"""Deterministic OCR crop selection from capture geometry."""
-
 from dataclasses import replace
 
 import pytest

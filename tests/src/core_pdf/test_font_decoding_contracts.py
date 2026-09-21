@@ -1,5 +1,3 @@
-"""Encoding recovery and aggregate metrics obey their per-code contracts."""
-
 import pytest
 
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder

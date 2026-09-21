@@ -1,5 +1,3 @@
-"""Reader resource transitions preserve color state when malformed input is skipped."""
-
 from types import SimpleNamespace
 
 import pytest

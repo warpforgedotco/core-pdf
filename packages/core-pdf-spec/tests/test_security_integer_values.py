@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Security dictionary integers are PDF objects, not lexical tokens."""
 
 from typing import cast
 
@@ -17,8 +16,6 @@ from core_pdf_spec.types import PdfName
 
 
 def security_dictionary() -> PdfDict:
-    # Values from the repository's qpdf-generated AES-128/R4 interoperability
-    # fixture. Embedded here so strict tests need no core or reference corpus.
     return {
         "Filter": PdfName.of("Standard"),
         "V": 4,

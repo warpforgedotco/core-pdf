@@ -1,13 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Capture page and annotation appearance streams.
-
-An annotation's marks live in its appearance stream rather than in the page's
-content stream, so a page interpreted without them loses everything the reader
-actually sees in a form: the filled-in values, the stamp text, the signature.
-12.5.5 defines the transform that places one on the page, and this module
-applies it so those streams reach the interpreter the same way a form XObject
-does.
-"""
 
 from __future__ import annotations
 
@@ -34,7 +25,6 @@ SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
 
 
 def internal_inheritable(document: Any, node: object, key: str) -> object:
-    """Look a key up through an annotation's /Parent chain."""
     for _ in range(50):
         if not isinstance(node, dict):
             return None
@@ -51,17 +41,9 @@ def internal_inheritable(document: Any, node: object, key: str) -> object:
 def select_appearance_stream(
     resolver: Any, appearance: object, appearance_state: object
 ) -> PdfStream | None:
-    """Pick the normal appearance to draw, per 12.5.5.
-
-    ``/AS`` names the substate to use. When it names one ``/N`` does not
-    contain, nothing is drawn: a reader must not substitute some other state,
-    because doing so renders an unchecked box as checked. Without ``/AS`` the
-    choice is unambiguous only when ``/N`` holds exactly one substate.
-    """
     try:
         return normal_appearance_stream(resolver, appearance, appearance_state)
     except ValueError:
-        # The reader can choose a sole normal substate when AS is absent.
         if resolver.resolve_name(appearance_state) is not None:
             return None
         appearances = resolver.resolve(appearance)
@@ -82,8 +64,6 @@ def internal_should_render(document: Any, annot: dict) -> bool:
     if flags & (ANNOTATION_FLAG_HIDDEN | ANNOTATION_FLAG_NO_VIEW):
         return False
     if subtype == "Widget":
-        # A widget without a field type or name is not a control the reader
-        # would draw, and treating it as one resurrects scratch objects.
         if internal_inheritable(document, annot, "FT") is None:
             return False
         if internal_inheritable(document, annot, "T") is None:
@@ -109,11 +89,6 @@ def capture_annotation_appearances(
     fields: Iterable[Any] | None = None,
     annotations: Iterable[Any] | None = None,
 ) -> tuple[AppearanceProgram, ...]:
-    """Interpret each visible appearance once, retaining its source scope.
-
-    Annotation order is canonical. Fields add only widgets absent from Annots,
-    including valid widgets associated with this page through their /P entry.
-    """
     document = page.document
     try:
         candidates = (
@@ -121,13 +96,13 @@ def capture_annotation_appearances(
             if annotations is None
             else [annotation.dict for annotation in annotations]
         )
-    except (PdfParseError, ValueError):
+    except PdfParseError, ValueError:
         candidates = []
     candidates = list({id(annot): annot for annot in candidates}.values())
     if fields is None:
         try:
             fields = page.get_fields()
-        except (PdfParseError, ValueError):
+        except PdfParseError, ValueError:
             fields = ()
     seen = {id(annot) for annot in candidates}
     for field in fields:
@@ -209,7 +184,7 @@ def capture_annotation_appearances(
                         ),
                     )
                 )
-        except (PdfParseError, ValueError):
+        except PdfParseError, ValueError:
             continue
     return tuple(appearances)
 
@@ -221,7 +196,6 @@ def capture_page_program(
     fields: Iterable[RawFormField] | None = None,
     annotations: Iterable[RawAnnotation] | None = None,
 ) -> PageProgram:
-    """Interpret the page and return its immutable program."""
     state = TextState(
         page.document,
         hidden_layers=(

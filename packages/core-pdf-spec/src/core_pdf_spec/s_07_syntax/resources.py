@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Resolve resource dictionaries without traversing their unused entries."""
 
 from __future__ import annotations
 
@@ -13,7 +12,6 @@ def resolve_resource_dict(
     value: object,
     resolver: PdfValueResolver,
 ) -> PdfDict | None:
-    """Keep entry references intact so a lookup retains the source's identity."""
     resolved = resolver.resolve(value)
     if resolved is None:
         return None

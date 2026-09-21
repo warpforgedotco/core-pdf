@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PostScript literal strings decode escapes, nesting, and line ends per PLRM 3.3.2."""
 
 from __future__ import annotations
 

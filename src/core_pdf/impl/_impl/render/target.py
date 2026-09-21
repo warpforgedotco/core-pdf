@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Mutable raster target and clipping."""
 
 from __future__ import annotations
 
@@ -59,7 +58,6 @@ from core_pdf_spec.standards import SemanticContext
 
 
 def internal_index_extent(index: int | slice, size: int) -> tuple[int, int]:
-    """Half-open device extent addressed by a row or column index."""
     if isinstance(index, slice):
         start, stop, _ = index.indices(size)
         return start, max(start, stop)
@@ -67,23 +65,12 @@ def internal_index_extent(index: int | slice, size: int) -> tuple[int, int]:
 
 
 class internal_ElementaryScratch:
-    """Reusable buffers for elementary groups at one nesting depth.
-
-    Every object painted inside a knockout group is its own non-isolated group
-    that starts from the knockout group's fixed initial backdrop. Allocating and
-    copying full-page buffers per glyph dominated rasterization. After such a
-    group composites, only its paint window differs from that backdrop, so the
-    next element under the same parent needs just that window restored.
-    """
-
     __slots__ = ("buffer", "dirty", "source_alpha", "source_shape", "synced_parent")
 
     def __init__(self, size: int, height: int, width: int) -> None:
         self.buffer = bytearray(size)
         self.source_alpha = numpy.zeros((height, width), dtype=numpy.float32)
         self.source_shape = numpy.zeros((height, width), dtype=numpy.float32)
-        # The knockout group whose backdrop the buffers currently equal outside
-        # ``dirty``; that backdrop cannot change while the group is open.
         self.synced_parent: internal_RasterGroup | None = None
         self.dirty: list[int] | None = None
 
@@ -96,17 +83,6 @@ class internal_RasterTarget(
     internal_PathStrokeTargetMixin,
     internal_PatternTargetMixin,
 ):
-    """The RGBA byte buffer being painted, plus the transparency-group stack.
-
-    Lifted out of ``RenderedPage.rasterize``. ``pixels`` is *rebound*, not just
-    mutated: a ``group-begin`` pushes a fresh buffer that subsequent painting
-    goes to, and ``group-end`` pops it and composites it back down. That is why
-    this is an object with explicit push/pop rather than a plain buffer.
-
-    Painting helpers operate against this target instead of capturing duplicate
-    renderer state in closures.
-    """
-
     __slots__ = (
         "pixels",
         "semantic_context",
@@ -171,8 +147,6 @@ class internal_RasterTarget(
         self.group_floor = 1
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
         self.soft_mask_cache: SoftMaskCache = {}
-        # Decoded images and tiling cells keyed by object identity; the value
-        # pins the key object so a recycled id cannot alias a different source.
         self.prepared_image_cache = PreparedImageCache()
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
@@ -182,7 +156,6 @@ class internal_RasterTarget(
             self.group_floor = len(self.buffer_stack)
 
     def push_scope(self, clip_path: CapturedPath | None = None) -> None:
-        """Isolate a source scope from malformed q/Q or group boundaries."""
         self.scope_stack.append(
             (
                 self.clip.depth,
@@ -203,7 +176,6 @@ class internal_RasterTarget(
             raise
 
     def blank_sibling(self) -> tuple[internal_RasterTarget, UInt8Array]:
-        """A transparent target with this device geometry, sharing mask caches and guards."""
         pixels = bytearray(self.width * self.height * 4)
         view = uint8_image_view(pixels, (self.height, self.width, 4))
         sibling = internal_RasterTarget(
@@ -239,7 +211,6 @@ class internal_RasterTarget(
             while len(self.buffer_stack) > buffer_depth:
                 self.composite_group(self.pop_group())
         finally:
-            # Failed composition must not strand the remaining suspended buffers.
             while len(self.buffer_stack) > buffer_depth:
                 self.pop_group()
             self.clip.restore(clip_depth)
@@ -255,7 +226,6 @@ class internal_RasterTarget(
         parent_blend_mode: str | None = None,
         clip_path: CapturedPath | None = None,
     ) -> None:
-        """Replay canonical commands; repeated cells get an isolated clip scope."""
         if translation is None:
             for item in items:
                 self.paint_item(item)
@@ -268,7 +238,6 @@ class internal_RasterTarget(
             self.pop_scope()
 
     def paint_item(self, item: DisplayItem) -> None:
-        """One paint/scope dispatcher, shared by pages and pattern cells."""
         if isinstance(item, (PathPaintItem, ImagePaintItem)) or item.kind in {"glyph", "shading"}:
             previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
             self.paint_alpha_is_shape = (
@@ -286,12 +255,8 @@ class internal_RasterTarget(
                 )
                 elementary_group = knockout or mask_alpha is not None
                 if elementary_group:
-                    # An elementary object blends with the initial backdrop. Its
-                    # completed shape then replaces preceding group contributions.
                     self.push_elementary_group(
                         track_shape=mask_alpha is not None,
-                        # Combined fill/stroke inherits the mask on its children
-                        # inside its implicit knockout group, including AIS shape.
                         mask_alpha=None if fillstroke else mask_alpha,
                         alpha_is_shape=self.paint_alpha_is_shape,
                     )
@@ -381,12 +346,6 @@ class internal_RasterTarget(
         mask_alpha: SoftMaskPlane | None,
         alpha_is_shape: bool,
     ) -> None:
-        """Push a non-isolated, non-knockout group over reusable scratch buffers.
-
-        Equivalent to ``push_group(bytearray(len(self.pixels)), None, None,
-        isolated=False, ...)`` without the per-element page-sized allocation
-        and copy when the parent is a knockout group with an initial backdrop.
-        """
         parent = self.buffer_stack[-1]
         backdrop = parent.backdrop if parent.knockout else self.pixels
         if backdrop is None:
@@ -420,8 +379,6 @@ class internal_RasterTarget(
             buffer[:] = backdrop
             source_alpha.fill(0.0)
             source_shape.fill(0.0)
-        # A live (non-knockout) parent's pixels change between elements, so only
-        # a knockout parent's fixed backdrop can be reused incrementally.
         scratch.synced_parent = parent if parent.knockout else None
         scratch.dirty = None
         self.buffer_stack.append(
@@ -444,7 +401,6 @@ class internal_RasterTarget(
         self.group_source_shape = self.buffer_stack[-1].source_shape
 
     def internal_release_elementary_group(self, child: internal_RasterGroup) -> None:
-        """Record which window of a popped elementary group's scratch was painted."""
         scratch = self.elementary_scratch.get(len(self.buffer_stack))
         if scratch is not None and child.pixels is scratch.buffer:
             scratch.dirty = list(child.paint_window) if child.paint_window else None
@@ -462,8 +418,6 @@ class internal_RasterTarget(
         mask_alpha: SoftMaskPlane | None = None,
     ) -> None:
         parent = self.buffer_stack[-1]
-        # ISO 32000-2 11.4.6: a non-isolated child of a knockout group
-        # inherits the parent's initial backdrop, not its preceding elements.
         backdrop = None if isolated else parent.backdrop if parent.knockout else self.pixels
         source_alpha = None
         if backdrop is not None:
@@ -500,7 +454,6 @@ class internal_RasterTarget(
         return child
 
     def set_shape_alpha(self, alpha: float) -> None:
-        """Under AIS a paint's constant alpha is its shape, ISO 32000-2 11.6.4.3."""
         self.shape_alpha = internal_clamp01(alpha) if self.paint_alpha_is_shape else 1.0
 
     def internal_extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
@@ -517,7 +470,6 @@ class internal_RasterTarget(
         shape: int | UInt8Array = 255,
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None:
-        """Record one paint's alpha and geometric shape over the same pixels."""
         self.record_source_alpha(rows, columns, alpha, visible=visible)
         self.record_source_shape(rows, columns, shape, visible=visible)
 
@@ -529,13 +481,11 @@ class internal_RasterTarget(
         *,
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None:
-        """Accumulate only paint alpha, excluding the group's initial backdrop."""
         plane = self.group_source_alpha
         if plane is not None:
             self.internal_record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
-        """Return an array view for an RGBA byte buffer."""
         return uint8_image_view(buffer, (self.height, self.width, 4))
 
     def record_source_shape(
@@ -546,7 +496,6 @@ class internal_RasterTarget(
         *,
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None:
-        """Union geometric coverage independently of opacity, including zero alpha."""
         plane = self.group_source_shape
         if plane is not None:
             self.internal_record_plane(
@@ -561,7 +510,6 @@ class internal_RasterTarget(
         source: float | numpy.ndarray[Any, Any],
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
     ) -> None:
-        """Union one paint's unit coverage into a group plane over its paint window."""
         self.internal_extend_paint_window(rows, columns)
         previous = plane[rows, columns]
         updated = previous + (1.0 - previous) * source
@@ -570,7 +518,6 @@ class internal_RasterTarget(
         )
 
     def internal_resolved_blend(self, blend_mode: str | None) -> str | None:
-        """Normalize object blend state without consulting group composite state."""
         return blend_mode.lower() if isinstance(blend_mode, str) else None
 
     def blend_px(
@@ -581,7 +528,6 @@ class internal_RasterTarget(
         *,
         shape: int = 255,
     ) -> None:
-        """Blend object paint into the current buffer at its own opacity."""
         pixels = self.pixels
         sr, sg, sb, sa = rgba
         if self.group_source_shape is not None:
@@ -695,8 +641,6 @@ class internal_RasterTarget(
         start_offset = row + start * 4
         stop_offset = row + end * 4
         if sa >= 255:
-            # Keep the destination as a NumPy view instead of allocating a
-            # repeated RGBA byte string for every short span.
             self.pixel_view(pixels)[row // (width * 4), start:end] = (sr, sg, sb, 255)
             return
         src_a = sa / 255.0
@@ -718,12 +662,6 @@ class internal_RasterTarget(
             pixels[idx + 3] = max(0, min(255, out_a_i))
 
     def internal_group_window(self, group: internal_RasterGroup) -> tuple[slice, slice] | None:
-        """Rows and columns a group can change in its parent; None when it painted nothing.
-
-        A group with an initial backdrop contributes only through recorded
-        alpha and shape, so its window is exact. An isolated group's own pixel
-        alpha is its contribution and is read over the whole page.
-        """
         if group.backdrop is None:
             return slice(0, self.height), slice(0, self.width)
         if not group.paint_window:
@@ -766,8 +704,6 @@ class internal_RasterTarget(
             )
             self.record_source_alpha(rows, columns, effective_alpha)
         if shape is not None and parent.source_shape is not None:
-            # Child shape is complete, including its own AIS constant. Do not
-            # apply the currently executing outer paint's shape constant twice.
             parent_shape = parent.source_shape[rows, columns]
             parent_shape += (1.0 - parent_shape) * shape
         self.internal_extend_paint_window(rows, columns)
@@ -779,7 +715,6 @@ class internal_RasterTarget(
         rows: slice,
         columns: slice,
     ) -> UInt8Array:
-        """Apply one group's outer state within a window, returning its effective alpha."""
         child = self.pixel_view(group.pixels)[rows, columns]
         group_alpha = group.composite_alpha
         group_blend_mode = group.blend_mode
@@ -815,7 +750,6 @@ class internal_RasterTarget(
         if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
             internal_composite_normal_group_numpy(destination, child, source_scale)
             return effective_alpha
-        # The parent retains its own composite opacity until it is closed.
         internal_composite_blended_group_numpy(
             destination,
             child,
@@ -836,8 +770,6 @@ class internal_RasterTarget(
         soft_mask_alpha = item.soft_mask_alpha
         paint_kind = item.paint_kind
         if paint_kind is PathPaintKind.FILL_STROKE and self.group_source_shape is not None:
-            # ISO 32000-2 11.7.4.4: the fill and stroke are one outer object,
-            # with an implicit knockout group preventing a doubled border.
             self.push_group(bytearray(len(self.pixels)), None, None, isolated=False, knockout=True)
             try:
                 self.paint_item(replace(item, paint_kind=PathPaintKind.FILL))

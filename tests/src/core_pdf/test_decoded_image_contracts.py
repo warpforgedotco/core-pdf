@@ -1,5 +1,3 @@
-"""Decoded image samples honor channel, precision, and opacity contracts."""
-
 import numpy as np
 import pytest
 
@@ -87,8 +85,6 @@ def test_native_image_precision_normalizes_endpoints(shape, space, dtype):
 def test_jpx_decode_obeys_document_version_and_explicit_color_space(version, explicit_space, dtype):
     from core_pdf_spec.standards import PdfVersion, SemanticContext
 
-    # ISO 32000-1 7.4.9 ignores JPX Decode; ISO 32000-2 7.4.9 applies it
-    # when ColorSpace is explicit. Unknown versions retain reader defaults.
     maximum = np.iinfo(dtype).max
     sample = DecodedImage(np.array([[0, maximum]], dtype=dtype), "jpx")
     dictionary = {"Width": 2, "Height": 1, "Filter": "JPXDecode", "Decode": [1, 0]}

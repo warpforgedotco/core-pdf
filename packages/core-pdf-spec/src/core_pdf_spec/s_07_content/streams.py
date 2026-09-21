@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Nested content frames, snapshots, and their execution lifecycle."""
 
 from __future__ import annotations
 
@@ -23,8 +22,6 @@ StreamKey = tuple[str, int, int]
 
 @dataclass(frozen=True, slots=True)
 class StreamState:
-    """Graphics snapshot and the additional state isolated by a nested stream."""
-
     graphics_state: GraphicsState
     resources: PdfDict
     text_matrix: Matrix
@@ -34,7 +31,6 @@ class StreamState:
     marked_content_stack_len: int
     xobject_depth: int
     compatibility_depth: int = field(default=0, kw_only=True)
-    # Path construction is outside q/Q, but pending child clips must not leak.
     pending_clip_rule: str | None = field(default=None, kw_only=True)
     initial_alpha_is_shape: bool = field(default=False, kw_only=True)
     initial_text_knockout: bool = field(default=True, kw_only=True)
@@ -43,37 +39,28 @@ class StreamState:
 
 @dataclass(slots=True)
 class ContentStreamFrame:
-    """One pending nested content stream, plus the state captured on entry."""
-
     stream: PdfStream
     resources: PdfDict
     ctm: Matrix
     depth: int
     clip_bbox: Rectangle | None
     group_alpha: float | None = None
-    # Legacy explicitly queued groups are isolated; Form dictionaries supply /I.
     group_isolated: bool = field(default=True, kw_only=True)
     group_knockout: bool = field(default=False, kw_only=True)
     form_bbox_operand: object = field(default=None, kw_only=True)
-    # Resolved local bounds; clip_bbox is only their transformed enclosing box.
     form_bbox: Rectangle | None = field(default=None, kw_only=True)
     is_form: bool = field(default=False, kw_only=True)
     source_key: StreamKey | None = field(default=None, kw_only=True)
     stream_key: StreamKey | None = field(default=None, kw_only=True)
     lexer: PdfLexer | None = field(default=None, init=False)
-    # Present only while this frame is entered, including suspension for a child.
     old_state: StreamState | None = field(default=None, init=False)
 
 
 class ContentStreamExecutor:
-    """Drive nested streams while the interpreter owns PDF graphics/text state."""
-
     __slots__ = ("state", "active_streams")
 
     def __init__(self, state: ContentInterpreter) -> None:
         self.state = state
-        # Shared across reentrant Type 3 execution; each consume call owns only
-        # its own frames, so unwinding a glyph cannot discard its caller.
         self.active_streams: set[StreamKey] = set()
 
     @staticmethod
@@ -113,30 +100,19 @@ class ContentStreamExecutor:
         stream_key = frame.stream_key or self.execution_key(frame.stream)
         if stream_key in self.active_streams:
             raise PdfParseError("recursive content stream")
-        # Decode before changing interpreter state or emitting group markers.
-        # A failed stream entry must leave its parent exactly as it was.
         frame.lexer = state.create_lexer(frame.stream.data)
         frame.old_state = state.capture_stream_state()
         state.initial_alpha_is_shape = state.graphics.alpha_is_shape
         state.initial_text_knockout = state.graphics.text_knockout
-        # The implicit Form save also owns clips made without an explicit q.
-        # Its floor prevents malformed child Q operators from consuming any
-        # caller saves, while exit can discard unfinished child scopes safely.
         state.op_q((), frame.depth)
         state.graphics_stack_floor = len(state.stack)
-        # ISO 32000-1 7.8.2: BX/EX sections are not graphics state. A child
-        # starts a fresh scope; its snapshot retains the parent's depth.
         state.compatibility_depth = 0
         state.internal_pending_clip_rule = None
-        # 9.4 permits child Type 3 descriptions and pattern cells to contain
-        # their own text objects while the invoking stream is inside BT..ET.
         state.in_text_object = False
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key
         state.sink.enter_stream(state, frame)
         if frame.group_alpha is not None:
-            # The parent's alpha/blend composite the completed group once.
-            # Children start with default transparency until their own gs.
             state.graphics.fill_opacity = 1.0
             state.graphics.stroke_opacity = 1.0
             state.graphics.blend_mode = None
@@ -160,11 +136,6 @@ class ContentStreamExecutor:
         state.sink.exit_stream(state, frame)
 
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
-        """Execute until a child is requested or the stream's scopes are complete.
-
-        Readers may override this method to supply their parsing and EOF policy.
-        The driver owns suspension, stream-boundary events, and frame cleanup.
-        """
         state = self.state
         assert frame.lexer is not None
         for name, operands in iter_content_operations(frame.lexer):
@@ -181,11 +152,6 @@ class ContentStreamExecutor:
         return None
 
     def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
-        """Propagate entry, dispatch, or boundary errors before frame cleanup.
-
-        A reader override may return to discard this frame and resume its parent.
-        Errors raised while exiting a frame are never handled by this hook.
-        """
         raise error
 
     def consume(
@@ -200,11 +166,6 @@ class ContentStreamExecutor:
         self.consume_frame(ContentStreamFrame(stream, resources, ctm, depth, clip_bbox))
 
     def consume_frame(self, frame: ContentStreamFrame) -> None:
-        """Execute a prepared frame through the normal lifecycle and error hooks.
-
-        This includes Form bounds, transparency defaults, and nested cleanup.
-        The supplied frame must not already be entered by another invocation.
-        """
         if frame.old_state is not None:
             raise PdfParseError("content stream frame is already entered")
         state = self.state
@@ -225,8 +186,6 @@ class ContentStreamExecutor:
                     self.handle_parse_error(frame, error)
                 self.exit(stream_stack.pop())
         finally:
-            # A child failure must unwind suspended parents as well. Keeping
-            # the current frame on the stack also covers failures during entry.
             while stream_stack:
                 self.exit(stream_stack.pop())
 

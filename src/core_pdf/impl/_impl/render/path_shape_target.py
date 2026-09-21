@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Stateful primitive-shape painting operations for raster targets."""
 
 from __future__ import annotations
 
@@ -24,8 +23,6 @@ if TYPE_CHECKING:
 
 
 class internal_PathShapeTargetMixin:
-    """Rectangle, circle, and glyph-bitmap painting operations."""
-
     __slots__ = ()
 
     def fill_rect(
@@ -44,14 +41,6 @@ class internal_PathShapeTargetMixin:
         (x0, y0, x1, y1), (ix0, iy0, ix1, iy1) = clipped_box
         rectangular_clip = self.clip.clip_paths_are_axis_aligned_rects()
         pixels = self.pixels
-        # page_box_to_pixels expands outward (floor left/top, ceil right/bottom),
-        # so filling ix0:ix1 solid paints whole pixels the rectangle only partly
-        # covers. Every axis-aligned fill went through here unantialiased: on
-        # IRS-2023-Form-1095-A the three 1.57px-wide "I" glyphs of "Part III",
-        # 1.39px apart, each grew to three whole pixels and merged into one solid
-        # white block. A rectangle that lands on pixel boundaries still takes the
-        # memset path below; one that does not gets its exact coverage, which is
-        # separable -- full in the interior, fractional in the edge row/column.
         scale = self.scale
         left = (x0 - self.crop_x0) * scale
         right = (x1 - self.crop_x0) * scale
@@ -117,7 +106,6 @@ class internal_PathShapeTargetMixin:
             )
             self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
             return
-        # Only non-Normal blending and nonrectangular clips reach this path.
         width = self.width
         blend_px = self.blend_px
         blend_resolved_mode = self.internal_resolved_blend(blend_mode)
@@ -128,9 +116,6 @@ class internal_PathShapeTargetMixin:
                 return
             blend_target = pixel_view(pixels)
             if rectangular_clip:
-                # The whole ix0:ix1/iy0:iy1 box is visible with no gaps (same
-                # invariant the opaque/Normal fast paths above rely on), so
-                # one array-wide blend replaces a numpy call per row.
                 internal_blend_solid_array_numpy(
                     blend_target[iy0:iy1, ix0:ix1],
                     rgba,

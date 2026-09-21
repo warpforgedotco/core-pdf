@@ -1,5 +1,3 @@
-"""CFF font-program parsing and glyph geometry."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
@@ -48,8 +46,6 @@ class CFFGlyphFeature:
 
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
-# Type 2 charstrings may call subroutines, which may call further subroutines. The spec
-# allows 10 levels; deeper than that means a malformed or maliciously recursive font.
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
 
 internal_TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
@@ -65,7 +61,7 @@ def internal_cff_font_matrix(
 ) -> Matrix | None:
     try:
         matrix = pdf_cff_font_matrix(font_dict)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return None if matrix is None else Matrix(*matrix)
 
@@ -108,15 +104,13 @@ class CFFFont(PdfCFFFont):
     def read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
         try:
             return super().read_charset(pos, glyph_count)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_charset(pos, glyph_count)
 
     def internal_recover_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
         if glyph_count <= 0:
             return {}
         if self.is_cid_keyed and pos in {0, 1, 2}:
-            # Section 18 explicitly forbids predefined charsets for CIDFonts:
-            # their charset values are CIDs, not the SIDs in these tables.
             raise ValueError("CID-keyed CFF font uses a predefined charset")
         if glyph_count == 1:
             return {0: 0}
@@ -131,10 +125,6 @@ class CFFFont(PdfCFFFont):
             case _:
                 glyph_names = None
         if glyph_names is not None:
-            # Predefined charsets are name/SID sequences in GID order, not
-            # identity SID-to-GID maps. Malformed fonts that declare more
-            # glyphs than the selected charset simply leave the excess GIDs
-            # unreachable by name.
             return {
                 STANDARD_GLYPH_SIDS[name]: gid for gid, name in enumerate(glyph_names[:glyph_count])
             }
@@ -181,17 +171,10 @@ class CFFFont(PdfCFFFont):
     def read_encoding_codes(self, pos: int) -> dict[int, int]:
         try:
             return super().read_encoding_codes(pos)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_encoding_codes(pos)
 
     def internal_recover_read_encoding_codes(self, pos: int) -> dict[int, int]:
-        """Read a custom CFF Encoding into a code -> glyph id map.
-
-        Section 12 of the CFF specification defines two layouts, both assigning
-        codes to glyph ids in order from glyph 1 (glyph 0 is .notdef and is
-        always unencoded). Setting the high bit of the format byte appends
-        supplements, which give a second code to an already encoded glyph.
-        """
         data = self.data
         if pos <= 0 or pos >= len(data):
             return {}
@@ -245,29 +228,19 @@ class CFFFont(PdfCFFFont):
                 code = data[pos]
                 sid = int.from_bytes(data[pos + 1 : pos + 3], "big")
                 pos += 3
-                # Supplements are code to SID, so route them through the
-                # charset rather than treating the value as a glyph id.
                 supplement_gid = self.cid_to_gid.get(sid)
                 if supplement_gid is not None and supplement_gid < glyph_count:
                     codes[code] = supplement_gid
         return codes
 
     def builtin_encoding(self) -> dict[int, str]:
-        """Return the font program's own code -> glyph name encoding.
-
-        9.6.6.1 makes this the encoding in force when the PDF font dictionary
-        supplies none. StandardEncoding may be left to the caller's standard
-        fallback, while predefined ExpertEncoding is exposed explicitly.
-        """
         if self.is_cid_keyed:
-            # A CIDFont specifies no encoding (CFF specification, section 12).
             return {}
         operand = self.top_dict.get(16, [0])[0]
         if not isinstance(operand, (int, float)):
             return {}
         offset = int(operand)
         if offset == 0:
-            # The caller already applies StandardEncoding as its implicit base.
             return {}
         if offset == 1:
             sid_to_gid = self.cid_to_gid
@@ -293,13 +266,6 @@ class CFFFont(PdfCFFFont):
         return encoding
 
     def builtin_encoding_is_authoritative(self) -> bool:
-        """Return whether the CFF encoding completely governs its code space.
-
-        StandardEncoding is already represented by the decoder's named base.
-        ExpertEncoding and custom encodings are authoritative even when a
-        subset happens to expose no encoded glyphs: all unspecified codes are
-        unencoded rather than inherited from StandardEncoding.
-        """
         if self.is_cid_keyed:
             return False
         operand = self.top_dict.get(16, [0])[0]
@@ -312,7 +278,7 @@ class CFFFont(PdfCFFFont):
             return self.internal_recover_read_fd_select()
         try:
             return super().read_fd_select()
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_fd_select()
 
     def internal_recover_read_fd_select(self) -> tuple[int, ...]:
@@ -357,13 +323,12 @@ class CFFFont(PdfCFFFont):
     ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
         try:
             return super().read_font_dicts()
-        except (IndexError, OverflowError, TypeError, ValueError):
+        except IndexError, OverflowError, TypeError, ValueError:
             return self.internal_recover_read_font_dicts()
 
     def internal_recover_read_font_dicts(
         self,
     ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
-        """Read the CID font dictionaries while preserving their FD indices."""
         if not self.is_cid_keyed:
             return ()
         fdarray_off = self.top_dict.get((12, 36), [None])[0]
@@ -383,9 +348,7 @@ class CFFFont(PdfCFFFont):
         for raw_font_dict in raw_font_dicts:
             try:
                 font_dicts.append(self.parse_dict(raw_font_dict))
-            except (IndexError, ValueError):
-                # An invalid entry must retain its position because FDSelect
-                # addresses this INDEX by ordinal.
+            except IndexError, ValueError:
                 font_dicts.append({})
         return tuple(font_dicts)
 
@@ -394,7 +357,7 @@ class CFFFont(PdfCFFFont):
     ) -> list[bytes]:
         try:
             return super().read_private_subrs(font_dict)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_private_subrs(font_dict)
 
     def internal_recover_read_private_subrs(
@@ -423,7 +386,7 @@ class CFFFont(PdfCFFFont):
     def local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
         try:
             return super().local_subrs_for_glyph(glyph_id)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_local_subrs_for_glyph(glyph_id)
 
     def internal_recover_local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
@@ -435,11 +398,10 @@ class CFFFont(PdfCFFFont):
     def font_matrix(self, glyph_id: int) -> CffFontMatrix:
         try:
             return super().font_matrix(glyph_id)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return CffFontMatrix(*self.internal_recover_font_matrix(glyph_id))
 
     def internal_recover_font_matrix(self, glyph_id: int) -> Matrix:
-        """Return the effective font matrix for a glyph."""
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
         top_matrix = internal_cff_font_matrix(self.top_dict)
         font_dict = self.font_dicts[fd_index] if 0 <= fd_index < len(self.font_dicts) else None
@@ -457,7 +419,6 @@ class CFFFont(PdfCFFFont):
         accent_dx: float,
         accent_dy: float,
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Resolve deprecated endchar components in raw charstring coordinates."""
         if self.is_cid_keyed:
             return ()
         contours: list[tuple[tuple[float, float], ...]] = []
@@ -488,12 +449,6 @@ class CFFFont(PdfCFFFont):
         tuple[tuple[tuple[float, float], ...], ...],
         tuple[float, float, float, float] | None,
     ]:
-        """Return the glyph's outline points and their bounds.
-
-        With ``bounds_only`` the default font matrix needs no stored outline.
-        Other axis-aligned matrices retain endpoints and coordinate extrema
-        for transformation; a skewed or rotated matrix needs the flattened outline.
-        """
         try:
             charstring = self.charstrings[glyph_id]
         except IndexError:
@@ -508,7 +463,6 @@ class CFFFont(PdfCFFFont):
             retain_contours=not bounds_only or matrix != DEFAULT_CFF_FONT_MATRIX,
         )
         if matrix == DEFAULT_CFF_FONT_MATRIX:
-            # The interpreter tracked the bounds of exactly these points.
             return (tuple(tuple(contour) for contour in contours), raw_bbox)
         normalized = transform_contours(contours, matrix)
         return (normalized, internal_contours_bbox(normalized))
@@ -536,7 +490,6 @@ class CFFFont(PdfCFFFont):
     def normalized_glyph_contours(
         self, glyph_id: int
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Return the Type 2 outline normalized into PDF's 1000-unit glyph space."""
         return self.internal_glyph_geometry_for_gid(glyph_id)[0]
 
 
@@ -608,7 +561,6 @@ def internal_cubic_sample_times(
     p2: tuple[float, float],
     p3: tuple[float, float],
 ) -> tuple[float, ...]:
-    """Adaptively flatten a cubic while retaining its exact coordinate extrema."""
     times = {
         1.0,
         *cubic_extrema_times(p0[0], p1[0], p2[0], p3[0]),
@@ -649,7 +601,7 @@ def internal_cubic_sample_times(
     return tuple(sorted(times))
 
 
-def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors Type 2's spec table
+def internal_type2_glyph_geometry_impl(  # noqa: C901
     charstring: bytes,
     *,
     local_subrs: tuple[bytes, ...],
@@ -664,16 +616,6 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
     flatten: bool = True,
     retain_contours: bool = True,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
-    """Execute a charstring into contours and their bounds.
-
-    Flattening samples every curve adaptively for rasterization. Without it a
-    curve contributes only its endpoints and coordinate extrema, the points that
-    determine its bounds.
-
-    Bounds-only consumers can omit contour storage when they do not need to
-    transform the points. Contour completion and malformed-program recovery
-    still determine which bounds are committed.
-    """
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
     current_min_x = inf
@@ -789,7 +731,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
             seac=seac,
             random_value=random_value,
         )
-    except (ArithmeticError, IndexError, ValueError):
+    except ArithmeticError, IndexError, ValueError:
         unfinished = False
     if unfinished:
         flush_contour()
@@ -871,8 +813,6 @@ def internal_repair_candidate(
 
 
 class CFFUnicodeRepairIndex:
-    """Match suspicious ToUnicode entries against one CFF program."""
-
     __slots__ = (
         "internal_candidate_gids",
         "internal_code_to_gid",
@@ -910,7 +850,6 @@ class CFFUnicodeRepairIndex:
         )
 
     def repairs_for_codes(self, codes: Iterable[bytes]) -> dict[bytes, str]:
-        """Return repairs for the requested content-stream codes."""
         requested_codes = tuple(dict.fromkeys(codes))
         if not requested_codes or not self.internal_repairable_gids:
             return {}

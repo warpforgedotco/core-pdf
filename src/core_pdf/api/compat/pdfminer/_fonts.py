@@ -1,5 +1,3 @@
-"""PDFMiner font decoding, metrics, and ligature projection policies."""
-
 from __future__ import annotations
 
 import re
@@ -23,7 +21,6 @@ from .._shared import LIGATURES
 
 
 def internal_glyph_name_text(name: str) -> str:
-    """Read literal AGL entries directly; parse compound and generated names otherwise."""
     codepoints = LEGACY_AGL2UV.get(name)
     if codepoints is not None:
         return chr(codepoints[0]) if len(codepoints) == 1 else "".join(map(chr, codepoints))
@@ -38,8 +35,6 @@ def _mapping_value(mapping: object, name: str) -> object | None:
 
 @dataclass(slots=True)
 class _FontProjection:
-    """Per-font values derived once for pdfminer's width and text projections."""
-
     font: dict[Any, Any]
     values: dict[str, Any]
     has_widths: bool
@@ -54,11 +49,6 @@ internal_FONT_PROJECTION_CACHE: OrderedDict[int, _FontProjection] = OrderedDict(
 
 
 def _font_projection(font: dict[Any, Any]) -> _FontProjection:
-    """Return the cached per-font projection, keyed by object identity.
-
-    The cached entry retains the font dictionary itself, so an ``id()`` key
-    cannot be recycled for a different object while its entry is alive.
-    """
     cache_key = id(font)
     entry = internal_FONT_PROJECTION_CACHE.get(cache_key)
     if entry is not None and entry.font is font:
@@ -77,16 +67,12 @@ def _font_projection(font: dict[Any, Any]) -> _FontProjection:
             if isinstance(width_value, str):
                 match = re.fullmatch(r"[^0-9+.-]+([+-]?(?:\d+(?:\.\d*)?|\.\d+))", width_value)
                 if match is not None:
-                    # PDFMiner's lexer separates a leading malformed control
-                    # token from trailing numeric bytes. Its numeric coercion
-                    # gives the former zero width and retains the latter as
-                    # the following array entry.
                     legacy_widths.extend((0.0, float(match.group(1))))
                     recovered_malformed_token = True
                     continue
             try:
                 legacy_widths.append(float(width_value))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 legacy_widths.append(0.0)
     entry = _FontProjection(
         font,
@@ -103,7 +89,6 @@ def _font_projection(font: dict[Any, Any]) -> _FontProjection:
 
 
 def _font_value(font: object, name: str) -> object | None:
-    """``_mapping_value`` for font dictionaries, served from the per-font cache."""
     if not isinstance(font, dict):
         return None
     return _font_projection(font).values.get(name)
@@ -120,9 +105,6 @@ def _pdfminer_base_encoding_text(
         "MacRomanEncoding": MAC_ROMAN_ENCODING,
         "WinAnsiEncoding": WIN_ANSI_ENCODING,
     }.get(base_encoding if isinstance(base_encoding, str) else "", STANDARD_ENCODING)
-    # pdfminer follows its Latin glyph-name database here rather than the
-    # Unicode-oriented tables used by core-pdf.  WinAnsi's soft hyphen maps to
-    # a space, while the five reserved bullet placeholders are undefined.
     if base_encoding == "WinAnsiEncoding":
         if char_code == 173:
             return " "
@@ -201,20 +183,11 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
         if glyph_name and not glyph_name_text and not getattr(decoder, "is_type3", False):
             return f"(cid:{glyph.cid})"
         if glyph.unicode_source == "identity":
-            # An explicit ToUnicode CMap is authoritative to PDFMiner. When
-            # it omits a simple-font code and the encoding supplies no glyph
-            # name, PDFMiner exposes the unresolved code instead of applying
-            # Core's useful identity fallback.
             return f"(cid:{glyph.cid})"
     elif glyph_name_text and (
         glyph.unicode_source == "encoding" or not getattr(decoder, "is_cid_font", False)
     ):
         return glyph_name_text
-    # pdfminer consults an explicit ToUnicode map first, then resolves a
-    # simple-font encoding name through its glyph list.  Core's font engine
-    # can recover useful Unicode from an embedded program when that name is
-    # private (for example TeX's ``suppress``), but pdfminer exposes the
-    # unresolved character as a CID marker instead.
     if (
         glyph_name
         and getattr(decoder, "is_type3", False)
@@ -254,14 +227,6 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
 
 
 def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
-    """Whether pdfminer's embedded encoding CMap decodes no character codes.
-
-    The CMap object used for a Type0 font implements ``add_code2cid`` but its
-    parser sends embedded ``cidchar``/``cidrange`` entries through
-    ``add_cid2unichr``.  That base-class hook is intentionally a no-op, so a
-    self-contained embedded encoding produces an empty code tree.  A CMap
-    using a named parent can still populate the tree through ``usecmap``.
-    """
     decoder = glyph.font_decoder
     if not getattr(decoder, "is_cid_font", False):
         return False
@@ -271,7 +236,7 @@ def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
     encoding = _font_value(decoder.font, "Encoding")
     try:
         data = bytes(getattr(encoding, "decoded_data"))
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         return False
     cmap_name_match = re.search(rb"/CMapName\s*/([^\s<>\[\]()/%]+)", data)
     if cmap_name_match is not None:
@@ -312,9 +277,6 @@ def internal_pdfminer_ligature_overrides(
                 cluster_id = glyph.cluster_key
                 cluster = [glyph]
                 if cluster_id is not None:
-                    # Inspect only this cluster; copying the remaining page for
-                    # every mapped glyph makes ordinary single-glyph clusters
-                    # quadratic in the page's glyph count.
                     next_index = index + 1
                     while next_index < len(glyphs):
                         item = glyphs[next_index]
@@ -355,18 +317,9 @@ def internal_pdfminer_ligature_overrides(
         )
         expected_ligature = LIGATURES.get(str(glyph_name) if glyph_name else "", encoded_ligature)
         if expected_ligature not in LIGATURES.values():
-            # A decomposed Unicode sequence is not sufficient evidence that
-            # pdfminer would emit a legacy presentation-form ligature.  Most
-            # commonly it came from /ActualText or a ToUnicode mapping, both
-            # of which pdfminer exposes as ordinary characters. Recombine
-            # only when either the explicit glyph name or the applicable base
-            # encoding identifies the original code as a ligature.
             continue
         ligature_cluster: tuple[Any, ...] | None = None
         legacy_text: str | None = None
-        # Try the longest standard ligature first.  The engine emits one
-        # observation per Unicode scalar, while pdfminer emits one LTChar for
-        # the original encoded character.
         for cluster_size in (3, 2):
             candidate = glyphs[index : index + cluster_size]
             if len(candidate) != cluster_size:
@@ -406,7 +359,6 @@ def internal_pdfminer_ligature_overrides(
 
 
 def _pdfminer_builtin_width(glyph: Any) -> float | None:
-    """Return pdfminer's built-in width for a widthless Standard-14 font."""
     decoder = glyph.font_decoder
     projected_text = internal_pdfminer_glyph_text(glyph)
     font = decoder.font
@@ -427,16 +379,9 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
         and internal_glyph_name_text(glyph_name).isspace()
         and internal_glyph_name_text(glyph_name) != projected_text
     ):
-        # PDFMiner's simple-font decoder can project a Differences entry to a
-        # control character while its width lookup remains keyed by the
-        # encoded glyph name. Such controls are emitted as zero-width layout
-        # marks even when the PDF supplies a /Widths array for the source code.
         return 0.0
     if decoder.is_cid_font or decoder.is_type3:
         return None
-    # PDFType1Font consults FontMetricsDB before the PDF's descriptor and
-    # /Widths array. Exact Standard-14 names therefore use AFM metrics even
-    # when a producer embeds a contradictory width table.
     base_font = str(values.get("BaseFont") or "")
     entry = FONT_DATA.get(base_font)
     if isinstance(entry, dict):
@@ -455,9 +400,6 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
         return None
     descriptor = values.get("FontDescriptor")
     missing_width = _mapping_value(descriptor, "MissingWidth")
-    # PDFSimpleFont constructs a zero-filled width table when /Widths is
-    # absent, then falls back to the descriptor's /MissingWidth. Native core
-    # extraction may recover a better width from the embedded font.
     return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
 
 
@@ -476,9 +418,6 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
     if getattr(glyph.font_decoder, "is_type3", False):
         font_matrix = _font_value(glyph.font_decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) >= 4:
-            # PDFType3Font uses apply_matrix_norm(matrix, (1, 1)) and
-            # therefore scales horizontal widths by ``a + c`` rather than by
-            # the conventional fixed 1/1000 text-space factor.
             width_scale = float(cast(Any, font_matrix[0])) + float(cast(Any, font_matrix[2]))
         raw_widths = _font_value(glyph.font_decoder.font, "Widths")
         first_char = _font_value(glyph.font_decoder.font, "FirstChar")
@@ -487,7 +426,7 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
             if 0 <= index < len(raw_widths):
                 try:
                     return float(raw_widths[index]) * width_scale
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return 0.0
             return 0.0
     width = float(width_lookup(width_code)) * width_scale
@@ -506,14 +445,6 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
 
 
 def internal_pdfminer_font_name(glyph: Any) -> str:
-    """Return the name exposed by pdfminer's constructed font object.
-
-    FontMetricsDB includes aliases such as Arial whose metric record is the
-    corresponding Standard-14 font.  PDFType1Font/PDFTrueTypeFont replace the
-    PDF descriptor with that record before PDFFont derives ``fontname``.
-    Core keeps the source font name because it is useful to native callers, so
-    apply the legacy projection only at the compatibility boundary.
-    """
     base_font = str(_font_value(glyph.font_decoder.font, "BaseFont") or "")
     builtin_metrics = FONT_DATA.get(base_font)
     if isinstance(builtin_metrics, dict):
@@ -535,9 +466,6 @@ def internal_pdfminer_descent(glyph: Any) -> float:
         and not getattr(decoder, "is_type3", False)
         and _font_value(decoder.font, "FontDescriptor") is None
     ):
-        # PDFSimpleFont coerces a missing/null descriptor to an empty dict,
-        # whose default descent is zero. The native decoder uses a defensive
-        # -200 fallback for rendering, which must not leak into LTChar layout.
         descent_value = 0.0
     builtin_metrics = FONT_DATA.get(base_font)
     if (

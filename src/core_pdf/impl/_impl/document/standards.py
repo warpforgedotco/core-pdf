@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader-owned standards declaration discovery and malformed-input diagnostics."""
 
 from __future__ import annotations
 
@@ -51,9 +50,6 @@ internal_IDENTIFICATION_NAMESPACES = {
     "http://www.npes.org/pdfvt/ns/id/": "PDF/VT",
     "http://www.aiim.org/pdfe/ns/id/": "PDF/E",
 }
-# The specification uses HTTP; the registry's XMP example also documents HTTPS.
-# Both are exact identities, not a general XML namespace normalization rule.
-# https://pdfa.org/declarations/
 internal_DECLARATIONS_NAMESPACES = (
     "http://pdfa.org/declarations/",
     "https://pdfa.org/declarations/",
@@ -67,7 +63,6 @@ internal_WTPDF_PROFILES = {
 
 
 def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
-    """Keep an unknown or malformed declaration without changing reader recovery."""
     prefix = bytes(data[:1024])
     offset = prefix.find(b"%PDF-")
     if offset < 0:
@@ -81,7 +76,7 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
     version: PdfVersion | None = None
     try:
         version = parse_header_version(data[offset : offset + 9])
-    except (PdfError, ValueError):
+    except PdfError, ValueError:
         diagnostics.append(StandardsDiagnostic("invalid-header", "Invalid PDF version", "header"))
     if offset:
         diagnostics.append(
@@ -100,12 +95,6 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
 
 
 def internal_resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
-    """Resolve the catalog dictionary itself, not the object graph beneath it.
-
-    Standards, metadata, and profile discovery read a handful of catalog
-    entries and resolve each one on demand. Deep resolution here would parse
-    every object reachable from the catalog before a single page is requested.
-    """
     value = resolve_reference_chain(trailer.get("Root"), resolver.resolve)
     return cast(PdfDict, value) if isinstance(value, dict) else None
 
@@ -113,13 +102,12 @@ def internal_resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> Pd
 def discover_document_standards(
     header: DocumentStandards, resolver: PdfValueResolver, trailer: PdfDict
 ) -> DocumentStandards:
-    """Resolve the latest catalog only after security authentication is complete."""
     diagnostics = list(header.diagnostics)
     try:
         catalog = internal_resolve_catalog(resolver, trailer)
         if catalog is None:
             raise ValueError("missing catalog")
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         return replace(
             header,
             diagnostics=(
@@ -134,7 +122,7 @@ def discover_document_standards(
             value = resolver.resolve(catalog["Version"])
             declaration = str(value) if isinstance(value, PdfName) else repr(value)
             version = parse_catalog_version(value)
-        except (PdfError, RecursionError, ValueError):
+        except PdfError, RecursionError, ValueError:
             diagnostics.append(
                 StandardsDiagnostic(
                     "invalid-catalog-version", "Invalid catalog /Version", "catalog/Version"
@@ -169,8 +157,6 @@ def discover_document_standards(
 
 
 class internal_VersionProbeResolver(ObjectResolver):
-    """Never enter a possibly encrypted object stream while probing names."""
-
     __slots__ = ()
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
@@ -186,15 +172,6 @@ def bootstrap_security_context(
     xref: dict[int, PdfXRefEntry],
     trailer: PdfDict,
 ) -> SemanticContext | None:
-    """Probe only unencrypted version names before choosing security key syntax.
-
-    This reader bootstrap policy recognizes escaped catalog upgrades in an old
-    header. It never installs a decipher or decodes Extensions, strings, streams
-    or profile claims. ISO 32000-2, 7.6.2 leaves names unencrypted; 7.5.7 and
-    7.7.2 prohibit an encrypted catalog in an object stream. Unreadable current
-    or historical declarations retain modern security parsing conservatively.
-    Normal authenticated declaration discovery still runs after security.
-    """
     resolver = internal_VersionProbeResolver(data, xref)
     try:
         catalog = resolver.resolve(trailer.get("Root"))
@@ -207,7 +184,7 @@ def bootstrap_security_context(
         current = replace(
             header, effective_version=effective_pdf_version(header.header_version, version)
         )
-    except (PdfError, ValueError, RecursionError):
+    except PdfError, ValueError, RecursionError:
         return None
     finally:
         resolver.close()
@@ -239,7 +216,7 @@ def internal_discover_extensions(
             return ()
         if not isinstance(value, dict):
             raise ValueError("invalid Extensions dictionary")
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-extensions", "Cannot read extension declarations", "catalog/Extensions"
@@ -271,7 +248,7 @@ def internal_discover_extensions(
                     if isinstance(resolved, dict):
                         resolved = {key: resolve(field) for key, field in resolved.items()}
                     extension = parse_extension(str(prefix), resolved)
-                except (PdfError, RecursionError, ValueError):
+                except PdfError, RecursionError, ValueError:
                     diagnostics.append(
                         StandardsDiagnostic(
                             "invalid-extension", "Invalid extension declaration", item_source
@@ -279,7 +256,7 @@ def internal_discover_extensions(
                     )
                 else:
                     extensions.append(extension)
-        except (PdfError, RecursionError, ValueError):
+        except PdfError, RecursionError, ValueError:
             diagnostics.append(
                 StandardsDiagnostic(
                     "invalid-extension", "Cannot resolve extension declaration", source
@@ -330,12 +307,6 @@ def preserve_historical_version(
     trailer_context: SemanticContext | None = None,
     version_probe: bool = False,
 ) -> DocumentStandards:
-    """Retain a prior upgrade even if a later incremental catalog removes it.
-
-    ISO 32000-2:2020, 7.5.6 permits incremental version upgrades, not downgrades.
-    Historical catalogs use isolated caches and the authenticated decipher; their
-    extensions and profile claims do not override the current document view.
-    """
     diagnostics = list(standards.diagnostics)
     if recovered:
         diagnostics.append(
@@ -357,7 +328,7 @@ def preserve_historical_version(
             if len(sections) >= 1024:
                 raise ValueError("invalid or excessive revision chain")
             sections.append(revision)
-    except (PdfError, ValueError, RecursionError, struct.error, OSError):
+    except PdfError, ValueError, RecursionError, struct.error, OSError:
         diagnostics.append(
             StandardsDiagnostic(
                 "incomplete-version-history",
@@ -380,7 +351,7 @@ def preserve_historical_version(
             if "Version" in catalog:
                 version = parse_catalog_version(resolver.resolve(catalog["Version"]))
                 floor = effective_pdf_version(floor, version)
-        except (PdfError, ValueError, RecursionError):
+        except PdfError, ValueError, RecursionError:
             diagnostics.append(
                 StandardsDiagnostic(
                     "invalid-historical-version",
@@ -406,7 +377,6 @@ def preserve_historical_version(
 def discover_profile_claims(
     standards: DocumentStandards, resolver: PdfValueResolver, trailer: PdfDict
 ) -> DocumentStandards:
-    """Read original metadata namespaces; claims are declarations, never validation."""
     diagnostics = list(standards.diagnostics)
     claims: list[ProfileClaim] = []
     try:
@@ -414,7 +384,7 @@ def discover_profile_claims(
         stream = catalog_metadata_stream(resolver, catalog) if catalog is not None else None
         if stream is not None and stream.data:
             claims.extend(internal_xmp_claims(stream.data, diagnostics))
-    except (PdfError, RecursionError, ValueError, ET.ParseError, DefusedXmlException):
+    except PdfError, RecursionError, ValueError, ET.ParseError, DefusedXmlException:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-xmp", "Cannot read profile claims from XMP", "catalog/Metadata"
@@ -429,7 +399,7 @@ def discover_profile_claims(
                 if (text := resolver.resolve_str(info.get(key))) is not None
             )
             claims.append(internal_profile_claim("PDF/X", "trailer/Info", properties, diagnostics))
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-profile-info", "Cannot read profile claims from Info", "trailer/Info"
@@ -439,9 +409,6 @@ def discover_profile_claims(
 
 
 def internal_xmp_claims(raw: bytes, diagnostics: list[StandardsDiagnostic]) -> list[ProfileClaim]:
-    # ISO 19005 and ISO 14289 identification properties are expanded XML names,
-    # independent of the producer's chosen prefix. Only document RDF descriptions
-    # count, so a nested resource or another rdf:about cannot claim conformance.
     root = defused_fromstring(raw)
     groups: dict[str, list[tuple[str, str]]] = {}
     claims: list[ProfileClaim] = []
@@ -481,8 +448,6 @@ def internal_xmp_claims(raw: bytes, diagnostics: list[StandardsDiagnostic]) -> l
                                     "catalog/Metadata",
                                 )
                             )
-                        # A producer's '-validated' assertion remains an
-                        # unverified claim; only the requested target changes.
                         claims.append(
                             ProfileClaim(
                                 identifier, "WTPDF", "catalog/Metadata", ((entry.tag, value),)

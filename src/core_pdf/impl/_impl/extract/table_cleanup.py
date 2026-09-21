@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Table normalization, filtering, merging, and output annotation."""
 
 from __future__ import annotations
 
@@ -26,7 +25,7 @@ from core_pdf.impl._impl.output.model import (
 )
 from core_pdf.impl._impl.runtime.array_views import finite_median
 
-TABLE_MERGE_GAP = 36.0  # Maximum vertical gap between adjacent table regions.
+TABLE_MERGE_GAP = 36.0
 
 
 def internal_cell_text(
@@ -53,7 +52,6 @@ def internal_table_quality(table: Table) -> tuple[int, int, float, int, int]:
     facts = internal_TableFacts.from_rows(table.rows)
     populated = len(facts.filled_texts)
     density = populated / max(1, facts.row_count * facts.columns)
-    # Prefer plausible multi-column tables before comparing population and density.
     return (int(2 <= facts.columns <= 16), populated, density, facts.row_count, -facts.columns)
 
 
@@ -119,8 +117,6 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
         previous_columns = max((len(row) for row in previous.rows), default=0)
         columns = max((len(row) for row in table.rows), default=0)
         vertical_gap = previous_bbox[1] - table_bbox[3]
-        # Continuations must share a column count and alignment, overlap
-        # horizontally, and remain within the allowed vertical gap.
         if (
             columns != previous_columns
             or not 2 <= columns <= 16
@@ -178,7 +174,6 @@ def internal_semantic_header_row(row: tuple[TableCell, ...]) -> bool:
 
 
 def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
-    """Split long grid regions at repeated section-header rows."""
     if len(table.rows) < 6 or internal_TableFacts.from_rows(table.rows).numeric_density < 0.3:
         return (table,)
     boundaries = [
@@ -233,14 +228,11 @@ def internal_table_character_spaced_prose(
     if table.metadata.get("source") != "stream":
         return False
     facts = facts or internal_TableFacts.from_rows(table.rows)
-    # Raise the column threshold so only wider multi-column prose is filtered.
     if facts.columns < 8:
         return False
     filled_texts = facts.filled_texts
     if not filled_texts:
         return False
-    # Tighten the character-spaced fraction to 0.6 to avoid filtering legitimate
-    # tables that have some character-spaced cells.
     return (
         facts.numeric_density < 0.12 and facts.character_spaced_cells / len(filled_texts) >= 0.60
     ) or (
@@ -251,19 +243,6 @@ def internal_table_character_spaced_prose(
 def internal_table_is_single_column_prose(
     table: Table, *, facts: internal_TableFacts | None = None
 ) -> bool:
-    """Report a detected grid that is really a column of flowing text.
-
-    A grid inferred from whitespace alignment can latch onto ordinary prose:
-    paragraph lines all start at the same margin, so a column boundary appears
-    to run down the page. What gives it away is shape rather than content --
-    the rows hold one cell each, spanning most of the inferred width, because
-    there was never a second column to divide them.
-
-    Judging this on shape keeps it free of assumptions about what a table
-    contains; a genuine table has rows that actually use its columns. It
-    applies whichever way the grid was inferred: rules drawn on a page are as
-    happy to be underlines and dividers as they are to be a table border.
-    """
     facts = facts or internal_TableFacts.from_rows(table.rows)
     if facts.nonempty_rows < 3:
         return False
@@ -285,20 +264,6 @@ internal_STREAM_SPARSE_PROSE_MAX_COLUMNS = 6
 
 
 def internal_stream_table_reads_like_prose(table: Table) -> bool:
-    """Report a stream table whose cells are sentences rather than values.
-
-    Whitespace alignment finds parallel text columns -- two-column papers,
-    side-by-side lists, label/description pairs -- as readily as it finds
-    tables. Rendering those row-major interleaves the columns and destroys
-    the reading order, which costs far more than the table was worth. Real
-    borderless tables carry short data cells and a numeric backbone; a
-    candidate dominated by long cells with almost no short numeric ones is
-    flowing text and should stay in the normal layout.
-
-    Judged after wrapped-row and text-column merging, because the raw
-    detection holds word-level fragments whose lengths say nothing about
-    the prose that emerges once the cells are assembled.
-    """
     facts = internal_TableFacts.from_rows(table.rows)
     filled = facts.filled_texts
     if not filled:
@@ -317,13 +282,6 @@ def internal_stream_table_reads_like_prose(table: Table) -> bool:
         and numeric_cells < len(filled) * internal_STREAM_PROSE_NUMERIC_CELL_RATIO
     ):
         return True
-    # Side-by-side lists picked up as one table are sparse -- each row only
-    # populates the columns its list reaches -- and their cells run long,
-    # because list entries are phrases. A genuine table with empty cells
-    # (a financial grid) stays short-celled, a dense table with long cells
-    # (definition tables) stays dense, and a wide word matrix (roadmaps)
-    # carries more columns than side-by-side lists ever produce, so
-    # requiring all three signals rejects the parallel lists alone.
     total_cells = facts.cell_count
     narrow = facts.columns <= internal_STREAM_SPARSE_PROSE_MAX_COLUMNS
     if (
@@ -333,11 +291,6 @@ def internal_stream_table_reads_like_prose(table: Table) -> bool:
         and long_cells >= len(filled) * internal_STREAM_SPARSE_PROSE_LONG_RATIO
     ):
         return True
-    # Word-fragment grids: whitespace alignment over justified prose yields a
-    # row per text line and a column per word rail. Cell statistics match a
-    # genuine word-y table (short alphabetic cells), but a real one is small
-    # -- a body of text produces dozens of rows, and a real table that wide
-    # and tall carries numbers.
     if (
         facts.columns >= internal_STREAM_WORD_GRID_MIN_COLUMNS
         and facts.populated_rows >= internal_STREAM_WORD_GRID_MIN_ROWS
@@ -351,7 +304,6 @@ def internal_stream_table_reads_like_prose(table: Table) -> bool:
 
 
 def internal_merge_stream_text_columns(table: Table) -> Table:
-    """Merge word-aligned columns that form two wrapped text columns."""
     columns = max((len(row) for row in table.rows), default=0)
     if (
         table.metadata.get("source") != "stream"
@@ -395,27 +347,8 @@ internal_LOGICAL_ROW_MIN_COLUMNS = 5
 
 
 def internal_merge_wrapped_cell_rows(table: Table) -> Table:
-    """Group per-line stream rows into the logical rows their cells span.
-
-    Whitespace alignment sees one row per line of text, but a borderless
-    table's cells wrap independently: a logical row is as tall as its
-    longest cell, and the shorter cells beside it leave the rest of that
-    height blank. Emitting the per-line rows reads across all columns at
-    each line, interleaving the wrapped fragments of every cell -- the
-    content is all present and every word is in the wrong place.
-
-    A cell that continues past the next line's top holds its logical row
-    open, so accumulate rows while the next row starts at or above the
-    running bottom of the group. Wrapped lines inside a cell touch (the
-    leading gap is a fraction of a line), while a genuine row boundary
-    clears the cell padding, which the ratio distinguishes.
-    """
     if table.metadata.get("source") != "stream" or len(table.rows) < internal_LOGICAL_ROW_MIN_ROWS:
         return table
-    # A numeric table records one datum per line, so its lines are its rows;
-    # only descriptive tables wrap a cell across several of them. Line
-    # spacing alone cannot tell the two apart -- a tightly set list of names
-    # separates its records by less than a descriptive table's leading.
     filled = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
     if filled:
         numeric = sum(
@@ -436,10 +369,6 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
             return table
         extents.append((max(box[3] for box in boxes), min(box[1] for box in boxes)))
         heights.extend(box[3] - box[1] for box in boxes)
-    # Merge only where a cell is demonstrably several lines tall. Spacing
-    # alone is too weak a signal: a tightly set table of one-line records
-    # separates its rows by less than a wrapped cell's leading, so inferring
-    # wrapping from gaps regroups records that were already rows.
     median_height = finite_median(numpy.asarray(heights, dtype=numpy.float32))
     if max(heights) < median_height * internal_LOGICAL_ROW_MIN_TALL_RATIO:
         return table
@@ -494,7 +423,6 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
 
 
 def internal_merge_wrapped_stream_rows(table: Table) -> Table:
-    """Merge continuation lines in dense, text-only stream tables."""
     if (
         table.metadata.get("source") != "stream"
         or len(table.rows) < 8
@@ -534,7 +462,6 @@ def internal_annotate_table_associations(
     observations: ObservationBatch,
     text_rows: list[list[int]],
 ) -> Table:
-    """Annotate spanning rows and nearby aligned text without changing cells."""
     title = table.title
     caption = table.caption
     if len(table.rows) >= 2:
@@ -583,7 +510,6 @@ def internal_annotate_table_associations(
 
 
 def internal_table_with_bands(table: Table) -> Table:
-    """Materialize table row and column semantics at the extraction boundary."""
     associated = {
         text.kind: text.text.casefold() for text in (table.title, table.caption) if text is not None
     }

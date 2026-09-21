@@ -1,5 +1,3 @@
-"""Navigation projections preserve source identity and isolate malformed entries."""
-
 from typing import Any
 
 import pytest

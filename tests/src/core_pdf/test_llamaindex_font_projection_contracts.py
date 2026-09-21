@@ -1,5 +1,3 @@
-"""Operator-text font projection preserves explicit width and encoding policies."""
-
 from types import SimpleNamespace
 
 import pytest

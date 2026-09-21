@@ -1,5 +1,3 @@
-"""OCR reading order respects geometry, writing direction, and source provenance."""
-
 import numpy
 import pytest
 

@@ -23,8 +23,6 @@ class internal_ObjectStreamLexer(PdfLexer):
     __slots__ = ()
 
     def parse_stream(self, dictionary: PdfDict) -> PdfStream:
-        # ISO 32000-1/-2, 7.5.7 excludes stream objects even inside a
-        # compressed array/dictionary. Reject them before interpreting Length.
         raise PdfParseError("streams cannot be stored in an object stream")
 
 
@@ -58,7 +56,6 @@ class PdfObjectStream:
     def read_header(
         self, stream: PdfStream, decoded_data: bytes
     ) -> tuple[int, list[tuple[int, int]]]:
-        """Validate the dictionary and read pairs from the constructor's decoded snapshot."""
         if decoded_name(stream.dictionary.get("Type")) != "ObjStm":
             raise PdfParseError("stream is not an object stream")
         n = stream.dictionary.get("N")
@@ -75,11 +72,6 @@ class PdfObjectStream:
         return first, pairs
 
     def build_index(self, pairs: list[tuple[int, int]], body_length: int) -> dict[int, int]:
-        """Validate object identities and byte ranges; readers may recover header entries.
-
-        ISO 32000-1/-2, 7.5.7 requires increasing offsets relative to First,
-        which identifies the first compressed object's starting byte.
-        """
         index: dict[int, int] = {}
         previous_offset = -1
         for object_number, offset in pairs:
@@ -97,11 +89,9 @@ class PdfObjectStream:
         return index
 
     def create_lexer(self, body: bytes | memoryview) -> PdfLexer:
-        """Create a scoped parser for decrypted, decoded object bytes."""
         return internal_ObjectStreamLexer(body, semantic_context=self.semantic_context)
 
     def close(self) -> None:
-        """Release this parser's storage without changing previously returned objects."""
         with self.lock:
             self.objects.clear()
             self.index.clear()
@@ -126,7 +116,6 @@ class PdfObjectStream:
             return result
 
     def get_at_index(self, index: int, *, expected_reference: PdfReference) -> Any:
-        """Resolve the exact compressed-object ordinal declared by a cross-reference entry."""
         with self.lock:
             if (
                 type(index) is not int
@@ -138,7 +127,6 @@ class PdfObjectStream:
             return self.get(expected_reference)
 
     def object_bytes(self, reference: int | PdfReference) -> bytes | None:
-        """Return the declared decoded byte range without parsing or decoding again."""
         object_number = (
             reference.object_number if isinstance(reference, PdfReference) else reference
         )
@@ -153,19 +141,12 @@ class PdfObjectStream:
             return self.raw_body[offset : self.internal_ends[offset]]
 
     def parse_object_at(self, offset: int, end: int) -> Any:
-        """Parse exactly one object within decoded-body-relative bounds; errors propagate.
-
-        ``get`` calls this extension method while holding the object-stream lock
-        and caches its successful result.
-        """
         if not 0 <= offset < end <= len(self.raw_body):
             raise PdfParseError("invalid object stream object bounds")
         with memoryview(self.raw_body)[offset:end] as body:
             lexer = self.create_lexer(body)
             try:
                 result = lexer.parse_object()
-                # ISO 32000-1/-2, 7.5.7 excludes streams and objects consisting
-                # solely of an indirect reference. Arrays/dictionaries may hold references.
                 if isinstance(result, (PdfStream, PdfReference)):
                     raise PdfParseError("invalid compressed object value")
                 lexer.skip_ignored()
@@ -177,7 +158,6 @@ class PdfObjectStream:
 
 
 def parse_object_stream_pair(lexer: PdfLexer) -> tuple[int, int]:
-    """Consume one object-number/offset pair, raising if either integer is absent."""
     values: list[int] = []
     for _ in range(2):
         token = lexer.scan_word()

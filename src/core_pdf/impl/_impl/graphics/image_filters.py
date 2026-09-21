@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Filter dispatch from normalized stream filter names to decoders."""
 
 from __future__ import annotations
 
@@ -31,8 +30,6 @@ from core_pdf.impl._impl.graphics.image_models import DecodedImage
 from core_pdf.impl._impl.graphics.stream_decoding import decode_one_filter, decode_stream_data
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 
-# Decoders whose native path is exactly "preallocate a shape, hand it the buffer".
-# CCITT (needs FilterParams) and flate/lzw (decode then reshape) stay explicit below.
 internal_NATIVE_ARRAY_DECODERS = {
     "jpeg": decode_jpeg_image,
     "jpx": decode_jpx_image,
@@ -47,11 +44,6 @@ class internal_NativeImagePlan:
 
 
 def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePlan | None:
-    """Select a safe native decoder and its optional preallocation shape.
-
-    Missing dimensions are not rejection: JPEG/JPX can read them from their
-    headers and CCITT uses DecodeParms. Raw flate/lzw still require a shape.
-    """
     stream_spec = normalize_stream_decode_spec(dictionary)
     if len(stream_spec.steps) != 1:
         return None
@@ -90,11 +82,6 @@ def decode_stream_image_data(
     data: bytes | memoryview,
     dictionary: object,
 ) -> DecodedImage | None:
-    """Decode supported image filters directly to native sample arrays.
-
-    Ordinary stream decoding remains bytes-valued. This opt-in path is for
-    image consumers that can preserve array-backed samples through rendering.
-    """
 
     stream_spec = normalize_stream_decode_spec(dictionary)
     if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
@@ -156,7 +143,6 @@ def decode_stream_image_data(
 
 
 def image_decode_is_identity(dictionary: object) -> bool:
-    """Return whether an image's PDF Decode array leaves samples unchanged."""
 
     decode = dictionary.get("Decode") if isinstance(dictionary, dict) else None
     if decode is None:

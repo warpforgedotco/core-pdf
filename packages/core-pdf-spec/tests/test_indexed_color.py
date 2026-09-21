@@ -1,5 +1,3 @@
-"""Indexed palette quantization agrees with PDF content color operands."""
-
 import pytest
 
 from core_pdf_spec.s_08_graphics.color import indexed_color_components

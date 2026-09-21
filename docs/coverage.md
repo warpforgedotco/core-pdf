@@ -64,7 +64,7 @@ Every pull request runs the complete workspace suite, including pinned real Tess
 with the locked Unstructured extra and reference libraries. CI verifies the OCR binding's
 linked engine and downloads the English model using the shared fixture manifest's checksum.
 Real veraPDF tests run in their existing Java job. Both jobs must pass before their coverage
-databases are combined under the existing `Differential / Python 3.13` status.
+databases are combined under the existing `Differential / Python 3.14` status.
 
 The `workspace-coverage` artifact contains HTML, JSON, and the combined `.coverage` database.
 `scripts/check_coverage.py` rejects incomplete source inventories, missing branch coverage,

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Page orchestration, tolerant queries, and captured output."""
 
 from __future__ import annotations
 
@@ -217,10 +216,9 @@ class PdfPage:
 
     @property
     def user_unit(self) -> float:
-        """Size of one default user-space unit in points; never inherited."""
         try:
             return page_user_unit(self.document.resolver.resolve(self.page_dict.get("UserUnit")))
-        except (ValueError, PdfParseError):
+        except ValueError, PdfParseError:
             if not self.document.recovery_enabled:
                 raise
             return 1.0
@@ -269,9 +267,6 @@ class PdfPage:
             contents_obj = self.document.resolver.resolve(self.contents)
         except PdfParseError:
             contents_obj = None
-        # Skipping a damaged stream is only safe when other streams keep the
-        # page usable or the document is already in recovery. A one-element
-        # Contents array is a single stream: dropping it empties the page.
         can_skip_bad_stream = (
             len(content_streams) > 1
             or (isinstance(contents_obj, (list, tuple)) and len(contents_obj) > 1)
@@ -322,17 +317,6 @@ class PdfPage:
             return None
 
     def effective_page_clip(self) -> tuple[float, float, float, float] | None:
-        """Return the region the page actually displays.
-
-        7.7.3.3, Table 30 defines CropBox as the visible region of user space,
-        whose contents "shall be clipped (cropped) to this rectangle", and
-        defaults it to MediaBox. 14.11.2.1 adds that a crop box extending past
-        the media box "[is] effectively reduced to [its] intersection with the
-        media box", so the displayed region is the intersection of the two.
-
-        A page missing both boxes is malformed; leave it unclipped rather than
-        discard all of its content.
-        """
         media = self.resolve_box("MediaBox")
         crop = self.resolve_box("CropBox")
         if crop is None:
@@ -340,7 +324,6 @@ class PdfPage:
         if media is None:
             return crop
         clip = page_clip(media, crop)
-        # Preserve the reader's fallback for malformed disjoint page boxes.
         return media if clip[0] >= clip[2] or clip[1] >= clip[3] else clip
 
     def resolve_transparency_group_alpha(self) -> float | None:
@@ -377,12 +360,10 @@ class PdfPage:
 
     @property
     def width_points(self) -> float:
-        """Unrotated media width in points (1/72 inch)."""
         return self.width * self.user_unit
 
     @property
     def height_points(self) -> float:
-        """Unrotated media height in points (1/72 inch)."""
         return self.height * self.user_unit
 
     @property

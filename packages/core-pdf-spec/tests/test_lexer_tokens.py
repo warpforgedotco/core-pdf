@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Token identity, lexical policy, and strict scalar parsing regressions."""
 
 from __future__ import annotations
 
@@ -134,7 +133,6 @@ def test_numeric_array_fast_path_respects_numeric_whitespace() -> None:
 @pytest.mark.parametrize("version", ["1.0", "1.1", "1.2", "1.3", "1.7", "2.0", None])
 @pytest.mark.parametrize("brace", [b"{", b"}"])
 def test_braces_follow_document_version(version: str | None, brace: bytes) -> None:
-    # Adobe 1.2 4.5; Adobe 1.3 3.1.1; ISO 32000-1/2 7.2.3.
     context = None if version is None else SemanticContext(PdfVersion.parse(version))
     lexer = PdfLexer(b"/A" + brace + b"B", semantic_context=context)
     modern = version in (None, "2.0")
@@ -161,7 +159,6 @@ def test_context_change_updates_brace_token_boundaries() -> None:
 def test_object_identifiers_have_version_specific_grammar(
     version: str | None, identifier: bytes, indirect: bool
 ) -> None:
-    # ISO-approved erratum 379 narrows 32000-2 7.3.10, not ordinary numbers.
     context = None if version is None else SemanticContext(PdfVersion.parse(version))
     lexer = PdfLexer(
         identifier + (b" obj true endobj" if indirect else b" R"), semantic_context=context
@@ -194,7 +191,6 @@ def test_invalid_identifier_values_are_rejected(identifier: bytes, version: str)
     "data", [b"<< /A 1 /A 2 >>", b"<< /A null /#41 2 >>", b"<< /D << /A 1 /A 2 >> >>"]
 )
 def test_strict_dictionaries_reject_duplicate_decoded_names(data: bytes) -> None:
-    # ISO 32000-1/2 7.3.7: duplicate keys compare decoded name identities.
     lexer = PdfLexer(data)
     try:
         with pytest.raises(PdfParseError, match="duplicate dictionary key"):

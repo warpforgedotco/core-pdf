@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader composition, source lifecycle, recovery, and document queries."""
 
 from __future__ import annotations
 
@@ -81,8 +80,6 @@ internal_PageT = TypeVar("internal_PageT")
 
 
 class internal_PageLookup(Generic[internal_PageT]):
-    """Lazy page snapshot shared only by one navigation or structure operation."""
-
     __slots__ = (
         "document",
         "internal_nodes",
@@ -152,12 +149,6 @@ def internal_legacy_name_context(context: SemanticContext | None) -> bool:
 
 
 def internal_check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
-    """Reject ambiguous security dictionaries when upgrading legacy name syntax.
-
-    PDF dictionaries require unique keys (7.3.7). An escaped private name in the
-    initial legacy view must not erase a literal authentication signal when the
-    bootstrap chooses modern parsing, including its unreadable-catalog fallback.
-    """
     pending: list[tuple[dict, bool]] = [(trailer, True)]
     seen: set[int] = set()
     while pending:
@@ -179,9 +170,6 @@ def internal_check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) 
                 raise PdfUnsupportedError("Ambiguous security dictionary name aliases")
             names.add(name)
             if top and name in {b"Encrypt", b"AuthCode"}:
-                # Also inspect a future modern /Encr#79pt reference. Security
-                # strings remain unencrypted even if a previous view installed
-                # a decipher before requiring a final lexical transition.
                 security_resolver = ObjectResolver(
                     resolver.data, resolver.xref, semantic_context=resolver.semantic_context
                 )
@@ -197,7 +185,6 @@ class PdfDocument(
     DocumentXRefMixin,
     Generic[internal_PageT],
 ):
-    # Subclasses override this default with their page factory.
     page_class: type | None = None
 
     __slots__ = (
@@ -236,8 +223,6 @@ class PdfDocument(
     internal_closed: bool
     internal_standards: DocumentStandards
     internal_standards_complete: bool
-    # Font decoders shared by every page that selects the same font from the
-    # same font resources; keyed by the capture interpreter, cleared on close.
     internal_font_decoders: dict[object, object]
 
     def __init__(
@@ -268,9 +253,6 @@ class PdfDocument(
             self.raw_data = self.load_data(source)
             self.internal_standards = discover_header_standards(self.raw_data)
             header = self.internal_standards
-            # Names in security dictionaries obey the same historical grammar
-            # as trailer names. Start old headers literally, before any alias
-            # can overwrite Encrypt/AuthCode or their authentication parameters.
             context = header.context if internal_legacy_name_context(header.context) else None
             self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=context)
             self.scan_xref()
@@ -288,8 +270,6 @@ class PdfDocument(
             for attempt in range(2):
                 self.init_security(password)
                 self.resolver.decipher = self.decipher
-                # Full catalog/extension discovery follows password and MAC
-                # authentication. The earlier probe used only unencrypted names.
                 self.internal_standards = discover_document_standards(
                     header, self.resolver, self.trailer_dict
                 )
@@ -305,9 +285,6 @@ class PdfDocument(
                 if internal_legacy_name_context(selected) == internal_legacy_name_context(
                     self.resolver.semantic_context
                 ):
-                    # Encrypt strings are unencrypted (7.6.2). Keep this
-                    # authenticated object when other parsed caches reset;
-                    # re-reading it with the installed decipher is incorrect.
                     encrypt_ref = self.trailer_dict.get("Encrypt")
                     encrypt_object = (
                         self.resolver.resolve(encrypt_ref)
@@ -322,8 +299,6 @@ class PdfDocument(
                     break
                 if attempt:
                     raise PdfUnsupportedError("Unstable security dictionary name semantics")
-                # An inconclusive preflight can become conclusive after auth.
-                # Reparse AND authenticate the final view before returning it.
                 if not internal_legacy_name_context(selected):
                     internal_check_security_aliases(self.trailer_dict, self.resolver)
                 self.resolver.close()
@@ -337,7 +312,6 @@ class PdfDocument(
 
     @property
     def internal_font_semantic_context(self) -> SemanticContext | None:
-        """Select font semantics independently of parsing and graphics semantics."""
         return self.resolver.semantic_context
 
     @classmethod
@@ -418,7 +392,6 @@ class PdfDocument(
         )
 
     def get_standards(self) -> DocumentStandards:
-        """Return the immutable standards snapshot, discovering profile claims once."""
         with self.resolver.lock:
             if not self.internal_standards_complete:
                 self.internal_standards = discover_profile_claims(
@@ -428,11 +401,6 @@ class PdfDocument(
             return self.internal_standards
 
     def internal_catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
-        """A catalog entry that must be a dictionary when it is present at all.
-
-        ``recoverable`` drops an entry that is present but not a dictionary,
-        instead of raising, once the document has already been reconstructed.
-        """
         value = self.resolver.resolve(self.catalog().get(key))
         if value is None:
             return None
@@ -453,10 +421,7 @@ class PdfDocument(
 
     @property
     def recovery_enabled(self) -> bool:
-        """Whether the document was reconstructed and so needs lenient traversal."""
         return self.xref_was_recovered or self.page_tree_was_recovered
-
-    # Source loading and security
 
     def load_data(self, source: PdfSource) -> PdfByteBuffer:
         if isinstance(source, (str, PathLike)):
@@ -498,7 +463,7 @@ class PdfDocument(
             try:
                 position = seekable.tell()
                 seekable.seek(0)
-            except (OSError, TypeError, ValueError):
+            except OSError, TypeError, ValueError:
                 position = None
                 seekable = None
         try:
@@ -516,7 +481,7 @@ class PdfDocument(
             return None
         try:
             fd = fileno()
-        except (OSError, TypeError, ValueError):
+        except OSError, TypeError, ValueError:
             return None
         try:
             return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
@@ -528,7 +493,6 @@ class PdfDocument(
     def init_security(self, password: str) -> None:
         trailer = self.trailer_dict
         if trailer.get("Encrypt") is not None and trailer.get("ID") is None:
-            # Preserve the reader's legacy handling of missing encrypted-file IDs.
             trailer = dict(trailer)
             trailer["ID"] = [b""]
         self.decipher = initialize_document_security(
@@ -539,10 +503,7 @@ class PdfDocument(
             handler_factory=create_recovered_security_handler,
         )
 
-    # Page tree and page labels
-
     def internal_discover_page_nodes(self) -> Iterator[internal_PageNode]:
-        """Recover likely page dictionaries when the declared page tree is unusable."""
         candidates: list[tuple[int, int, int, PdfDict]] = []
         pages_nodes: list[tuple[int, int, int, PdfDict]] = []
         seen_objects: set[int] = set()
@@ -592,9 +553,6 @@ class PdfDocument(
         if node_type == "Pages" or node_type not in (None, "Page"):
             return -100
 
-        # A recovered leaf without an explicit /Type needs page content or an
-        # annotation to distinguish it from outline destinations and other
-        # dictionaries that happen to carry /Parent, /MediaBox, or /Resources.
         explicit_type = recover_pdf_name(obj.get("Type"))
         if explicit_type != "Page" and obj.get("Contents") is None and obj.get("Annots") is None:
             return -100
@@ -744,7 +702,7 @@ class PdfDocument(
             if discovered:
                 yield from discovered
                 return
-        except (PdfParseError, ValueError):
+        except PdfParseError, ValueError:
             discovered = self.internal_recovered_page_nodes()
             if discovered:
                 yield from discovered
@@ -757,7 +715,7 @@ class PdfDocument(
                 count = self.resolver.resolve(self.internal_page_tree_root().get("Count"))
                 if type(count) is int and count >= 0:
                     return count
-            except (PdfParseError, ValueError):
+            except PdfParseError, ValueError:
                 pass
         return len(self.build_page_dicts())
 
@@ -848,8 +806,6 @@ class PdfDocument(
         for page_index in resolve_page_selection(pages, len(page_objects)):
             yield page_index, page_objects[page_index]
 
-    # Navigation
-
     def iter_outlines(self) -> list[RawOutlineItem]:
         outlines = self.resolver.resolve(self.catalog().get("Outlines"))
         if outlines is None:
@@ -895,8 +851,6 @@ class PdfDocument(
             title = self.resolver.resolve_str(current.get("Title"))
             dest = current.get("Dest")
             if dest is None:
-                # /A is very often an indirect reference, so it has to be
-                # resolved before it can be recognised as an action dictionary.
                 action = self.resolver.resolve(current.get("A"))
                 if (
                     isinstance(action, dict)
@@ -1085,19 +1039,12 @@ class PdfDocument(
         for name in targets:
             try:
                 normalize_name(name)
-            except (PdfParseError, ValueError):
-                # Entries in a name tree are independent. Keep a damaged or
-                # dangling destination unresolved without discarding the rest.
+            except PdfParseError, ValueError:
                 normalized[name] = internal_unresolved_destination(name)
         return normalized
 
-    # Forms
-
     @property
     def acroform(self) -> PdfDict | None:
-        # Unlike StructTreeRoot and MarkInfo, a recovered document keeps going
-        # with no form rather than failing: a damaged AcroForm costs the field
-        # list, not the page content every caller came for.
         return self.internal_catalog_dict("AcroForm", recoverable=True)
 
     def fields(self) -> list[RawFormField]:
@@ -1117,9 +1064,6 @@ class PdfDocument(
                 records.extend(
                     collect_field_records(self.resolver, field_obj, recover=self.recovery_enabled)
                 )
-        # 12.5.6.19 lets a field with a single widget merge both dictionaries
-        # into one, so a widget carrying /FT is itself a field and a missing or
-        # empty catalog field tree does not mean the document has none.
         if not records or self.recovery_enabled:
             records.extend(self.discover_widget_field_records(records))
         return records
@@ -1128,7 +1072,6 @@ class PdfDocument(
         self,
         pages: Sequence[internal_PageT] | None = None,
     ) -> dict[int, list[RawFormField]]:
-        """Group every document field by the page index its widget(s) sit on."""
         from core_pdf.impl._impl.document.page import PdfPage
 
         page_sequence = self.pages if pages is None else tuple(pages)
@@ -1196,10 +1139,6 @@ class PdfDocument(
                 subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
                 if subtype != "Widget":
                     continue
-                # A widget may be merged with its field or hang off one as a
-                # kid. Collect from the root of the chain either way, so the
-                # /FT, /T and /V a split field keeps on the parent still reach
-                # the record.
                 root = self.internal_widget_field_root(cast(PdfDict, annot))
                 if id(root) in seen_widgets:
                     continue
@@ -1220,8 +1159,6 @@ class PdfDocument(
             seen.add(id(parent))
             node = cast(PdfDict, parent)
         return node
-
-    # Attachments and optional content
 
     def embedded_files(self) -> list[RawEmbeddedFile]:
         names = self.resolver.resolve(self.catalog().get("Names"))

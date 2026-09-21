@@ -10,7 +10,7 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "core-pdf==0.0.7",

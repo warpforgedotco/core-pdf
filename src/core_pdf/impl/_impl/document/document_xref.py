@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Document-level cross-reference loading and repair."""
 
 from __future__ import annotations
 
@@ -42,12 +41,10 @@ class DocumentXRefMixin:
 
     @property
     def internal_xref_context(self) -> SemanticContext | None:
-        """Use selected semantics after declaration discovery has completed."""
         resolver: ObjectResolver | None = getattr(self, "resolver", None)
         return None if resolver is None else resolver.semantic_context
 
     def strict_xref_validation_error(self) -> str | None:
-        """Return the syntax error hidden by native xref/object recovery, if any."""
         start = XRefScanner.find_startxref(
             self.raw_data, semantic_context=self.internal_xref_context
         )
@@ -111,7 +108,6 @@ class DocumentXRefMixin:
             else:
                 return
 
-        # Missing and unreadable xrefs share the same reconstruction path.
         self.xref = self.brute_force_xref()
         self.xref_was_recovered = True
         if recovery_reason is not None:
@@ -171,15 +167,11 @@ class DocumentXRefMixin:
             self.xref_was_recovered = True
 
     def pdf_header_offset(self) -> int:
-        """Return the physical origin used by header-relative file offsets."""
         data = self.raw_data
-        # ISO 32000 permits the header to occur within the first 1024 bytes. Some
-        # producers prepend diagnostics but still measure xref offsets from it.
         offset = data.find(b"%PDF-", 0, min(len(data), 1024))
         return offset if offset > 0 else 0
 
     def find_xref_entry_header(self, key: int, offset: int) -> int | None:
-        """Find an expected object near a producer's approximate xref offset."""
         data = self.raw_data
         expected_object_number = key >> 16
         expected_generation_number = key & 0xFFFF
@@ -526,8 +518,6 @@ class DocumentXRefMixin:
         if key == "ID":
             return isinstance(value, (list, tuple)) and len(value) > 0
         if key == "Encrypt":
-            # Malformed security declarations must reach initialization and
-            # fail there, rather than disappear during xref recovery.
             return value is not None
         return key == "AuthCode"
 

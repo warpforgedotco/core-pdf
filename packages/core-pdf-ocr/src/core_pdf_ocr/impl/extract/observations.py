@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Plan page extraction and fuse native and recognized observations."""
 
 from __future__ import annotations
 
@@ -29,34 +28,16 @@ from core_pdf_ocr.impl.extract.contracts import (
 )
 from core_pdf_ocr.impl.extract.quality import internal_candidate
 
-# Precision-first extraction thresholds.  Raster text below these confidence
-# levels is more likely to be a layout artifact than a useful observation on
-# the document classes routed through these passes.
-# Scanned pages behind an unpainted text layer are usually degraded scans,
-# where Tesseract reports mid-range confidence on perfectly legible digits.
-# A 90.0 floor silently discarded most of a typewritten table's numbers;
-# 60.0 recovers them while the duplicate/overlap filters downstream absorb
-# the extra noise (measured: recall +0.8pt, precision -0.2pt bench-wide).
 HIDDEN_TEXT_MIN_CONFIDENCE = 60.0
-# Same reasoning as the hidden-text floor: scan-routed pages lose legible
-# words to mid-range Tesseract confidence, and the downstream duplicate and
-# overlap filters absorb what little noise the lower floor admits.
 RASTER_TEXT_MIN_CONFIDENCE = 60.0
 VECTOR_TEXT_MIN_CONFIDENCE = 90.0
 NATIVE_UNAVAILABLE_MIN_CONFIDENCE = 90.0
-# Printer-converted vector labels are filtered one word at a time, so a lower
-# floor retains valid identifiers without admitting an entire uncertain line.
 STROKED_VECTOR_WORD_MIN_CONFIDENCE = 80.0
 
-# Confidence a recognized pass must reach before it may displace or
-# supplement noisy native text. Deliberately stricter than the recognition
-# pass floor: a low pass floor only admits more candidate words, while this
-# gate decides whether recognized text replaces text the document carries.
 FUSION_NOISY_NATIVE_MIN_CONFIDENCE = 90.0
 
 COVERAGE_CHUNK = 256
 
-# Upper bound on elements materialized per vectorized overlap chunk.
 COVERAGE_VECTORIZED_ELEMENTS = 1_000_000
 
 
@@ -64,7 +45,6 @@ def maximum_candidate_coverage(
     candidate_boxes: numpy.ndarray,
     native_boxes: numpy.ndarray,
 ) -> numpy.ndarray:
-    """Return each candidate's maximum covered-area ratio in bounded chunks."""
     if not len(candidate_boxes) or not len(native_boxes):
         return numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
     output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
@@ -103,18 +83,10 @@ def internal_ocr_scale(capture: PageAnalysis, *, schematic: bool, vector_complex
         return 3.0
     if vector_complexity < 150_000:
         return 5.0
-    # Raster-backed mixed pages already contain sampled detail; pure vector pages
-    # need another half pixel per point to preserve their smallest labels.
     return 3.5 if capture.evidence.image_count else 4.0
 
 
 def internal_vector_text_scale(capture: PageAnalysis, vector_complexity: int) -> float:
-    """Choose a higher raster scale for text embedded in vector artwork.
-
-    Charts and diagrams often use small glyphs painted alongside thousands of
-    vector paths.  The regular page scale is sufficient for prose, but loses
-    those labels before OCR can associate them with the artwork.
-    """
     return max(
         4.0, internal_ocr_scale(capture, schematic=True, vector_complexity=vector_complexity)
     )
@@ -125,7 +97,6 @@ def internal_schematic_page(
     text_density: float,
     text_coverage: float,
 ) -> bool:
-    """A vector-heavy page whose visible text is too sparse to read like prose."""
     return vector_complexity >= 180 and (text_density < 0.0015 or text_coverage < 0.05)
 
 
@@ -165,8 +136,6 @@ def internal_native_mapping_is_usable(evidence: PageEvidence) -> bool:
     glyphs = evidence.glyphs
     if glyphs.actual_text_characters >= max(1, int(evidence.native_characters * 0.80)):
         return True
-    # Some synthetic/API callers do not expose glyph observations.  Preserve
-    # their text-only contract; real captured pages always carry glyph evidence.
     if not glyphs.glyph_count:
         return True
     return (
@@ -220,14 +189,6 @@ def internal_fallback_pass(
     run_if_characters_below: int,
     include_native_text: bool,
 ) -> OcrPass:
-    """The second-chance pass an OCR route ends with.
-
-    Whether the page is schematic settles the pass's name, its scope and its
-    tiling together -- a schematic retries weak regions in four tiles, anything
-    else retries the whole page once -- so those move as one decision rather
-    than three parallel conditionals repeated at each call site. Confidence and
-    the native-text and character thresholds are what actually differ by route.
-    """
     return OcrPass(
         "fallback-regions" if schematic else "fallback-page",
         OcrPassScope.WEAK_REGIONS if schematic else OcrPassScope.PAGE,
@@ -259,8 +220,6 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
         and vector_complexity < 150
     )
     if corrupt_mapping:
-        # vector_complexity < 150 here, below the schematic floor of 180, so this
-        # route can never be schematic or need the high-resolution vector pass.
         scale = 6.0
         return WorkPlan(
             PageRoute.OCR,
@@ -319,14 +278,6 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                     (6,),
                     tiles=4,
                     minimum_confidence=HIDDEN_TEXT_MIN_CONFIDENCE,
-                    # Sparse-mode primary OCR drops narrow columns outright
-                    # (single-digit row labels, tick columns), so a page can
-                    # read "well" by character count while missing a column.
-                    # Run the weak-region sweep even on well-read pages, and
-                    # recognize words so the per-word coverage test can admit
-                    # the genuinely novel words while rejecting re-reads of
-                    # text the primary already found (line-level supplements
-                    # sneak whole duplicate rows past the coverage check).
                     run_if_characters_below=1500,
                     recognize_words=True,
                 ),
@@ -659,16 +610,7 @@ def internal_duplicate_of_native_text(
     native_tokens: frozenset[str],
     ocr_text: str,
 ) -> bool:
-    """Detect raster OCR that repeats the page's native text.
-
-    Vector pages can have different coordinate systems after rasterization, so
-    geometry alone cannot identify duplicate OCR. A compact text containment
-    check is deliberately limited to reasonably long observations to avoid
-    discarding short schematic labels such as ``R1`` or ``+5V``.
-    """
     compact = compact_text(ocr_text)
-    # Short observations get no containment shortcut; they fall through to the
-    # token check so that labels such as ``R1`` are not discarded.
     if len(compact) >= 8 and compact in native_compact:
         return True
     tokens = text_tokens(ocr_text)
@@ -722,8 +664,6 @@ def fuse_observations(
         )
     else:
         alphanumeric_mask = numpy.ones(len(ocr), dtype=numpy.bool_)
-    # Image supplements share page coordinates with native text, so overlap
-    # identifies duplicates without discarding repeated labels elsewhere.
     if not plan.image_regions_only:
         native_compact = "".join(compact_text(text) for text in native.text)
         native_tokens = frozenset(token for text in native.text for token in text_tokens(text))

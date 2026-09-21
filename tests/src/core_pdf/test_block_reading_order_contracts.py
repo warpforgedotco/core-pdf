@@ -1,5 +1,3 @@
-"""Large-page reading-order repairs preserve every line and obey geometric axes."""
-
 import pytest
 
 from core_pdf.impl._impl.extract.block_layout import (
@@ -96,8 +94,6 @@ def test_prose_repair_preserves_short_single_column_numeric_and_already_grouped_
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_overlapping_scanned_columns_interleave_by_row_and_retain_other_blocks(reverse):
-    # Long capture fragments share a broad region but their lines have precise
-    # cell bounds. Each fragment contains one cell from every row.
     _, grid = internal_grid(3, 20)
     columns = [
         ParsedBlock(tuple(row[column] for row in grid), (0, 772, 160, 1010)) for column in range(3)

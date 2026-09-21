@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Namespace-aware structure role resolution (ISO 32000-2, 14.7 and 14.8.6)."""
 
 from __future__ import annotations
 
@@ -16,8 +15,6 @@ PDF_1_7_NAMESPACE = "http://iso.org/pdf/ssn"
 PDF_2_0_NAMESPACE = "http://iso.org/pdf2/ssn"
 MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML"
 
-# ISO 32000-1:2008, 14.8.4, Tables 333-340. These identify the namespace's
-# vocabulary, not the introduction version or permitted children of each tag.
 PDF_1_7_STRUCTURE_TYPES = frozenset(
     [
         "Document",
@@ -71,7 +68,6 @@ PDF_1_7_STRUCTURE_TYPES = frozenset(
         "Form",
     ]
 )
-# ISO 32000-2:2020, Annex M; Hn for every positive integer is handled below.
 PDF_2_0_STRUCTURE_TYPES = PDF_1_7_STRUCTURE_TYPES - frozenset(
     [
         "Art",
@@ -91,21 +87,12 @@ PDF_2_0_STRUCTURE_TYPES = PDF_1_7_STRUCTURE_TYPES - frozenset(
 
 @dataclass(frozen=True, slots=True)
 class StructureType:
-    """A type name plus namespace identity; None means an undefined namespace."""
-
     name: str
     namespace: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class StructureRole:
-    """The terminal role and followed associations, without a conformance claim.
-
-    Cycles are permitted in logical role maps (14.7.3, NOTE 2), so they terminate
-    with ``cycle`` instead of a parsing error. ``domain`` identifies MathML's
-    namespace; it does not validate its vocabulary or hierarchy.
-    """
-
     name: str
     namespace: str | None
     status: Literal["standard", "domain", "unmapped", "cycle"]
@@ -165,8 +152,6 @@ def internal_mapping_value(
         return None
     if not isinstance(dictionary, dict):
         raise ValueError("invalid structure role map dictionary")
-    # The object model permits str, PdfName, and byte representations of decoded
-    # dictionary keys. Do not strip a slash belonging to an already decoded key.
     for key, value in dictionary.items():
         decoded = (
             key.value
@@ -190,22 +175,6 @@ def resolve_structure_role(
     decode_text: Callable[[bytes], str] | None = None,
     context: SemanticContext | None = None,
 ) -> StructureRole:
-    """Follow root RoleMap or namespace RoleMapNS associations transitively.
-
-    ``namespace`` is the structure element's NS value, optionally already
-    resolved. Array targets in RoleMapNS must contain an indirect namespace
-    reference (14.7.4.2, Table 356). A single-name target enters the default
-    standard namespace, and does not reapply the root RoleMap (14.8.6.2).
-    The root map applies to an undefined namespace only. Its final standard
-    type uses the PDF 1.7 namespace even in PDF 2.0 (14.8.6.1, corrected).
-
-    Before PDF 1.5, standard types are not remapped (14.7.3, NOTE 3). Otherwise
-    the starting type is mapped even if standard; subsequent associations stop
-    upon a recognized type or a cycle (14.7.3). Namespace declarations are not
-    rejected solely because a document under-declares their introduction.
-    The caller owns malformed-input recovery and Namespaces-array validation.
-    ``resolve_name`` and ``decode_text`` are parsing extension points for readers.
-    """
     if context is not None and (context.version is None or not context.version.recognized):
         raise PdfUnsupportedError("structure role semantics require a recognized PDF version")
     type_name = resolve_name(resolve(name))
@@ -213,8 +182,6 @@ def resolve_structure_role(
         raise ValueError("structure type must be a PDF name")
     namespace_name: str | None = None
     mapping = role_map
-    # Optional dictionary entries whose value resolves to null are absent
-    # (7.3.7 / 7.3.9). Required RoleMapNS array targets below stay strict.
     namespace = resolve(namespace)
     if namespace is not None:
         namespace_name, mapping = internal_namespace(namespace, resolve, context, decode_text)
@@ -262,8 +229,6 @@ def resolve_structure_role(
             next_namespace, next_mapping = internal_namespace(
                 target[1], resolve, context, decode_text
             )
-        # RoleMapNS maps into another namespace; root RoleMap chains are in an
-        # undefined namespace and therefore do not have this restriction.
         if current.namespace is not None and next_namespace == current.namespace:
             raise ValueError("namespace role mapping must target another namespace")
         current = StructureType(target_name, next_namespace)

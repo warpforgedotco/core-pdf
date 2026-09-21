@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 2 charstring interpretation (Adobe TN 5177) over parsed CFF fonts."""
 
 from __future__ import annotations
 
@@ -14,10 +13,6 @@ TYPE2_TRANSIENT_SIZE = 32
 
 
 def cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> tuple[float, ...]:
-    """Return the interior extrema parameters of one cubic coordinate."""
-    # The derivative's Bernstein coefficients are the adjacent control-point
-    # differences. If they have one sign, the coordinate is monotone and no
-    # quadratic root solving is needed (including constant coordinates).
     if p0 <= p1 <= p2 <= p3 or p0 >= p1 >= p2 >= p3:
         return ()
     a = -p0 + 3.0 * p1 - 3.0 * p2 + p3
@@ -45,9 +40,6 @@ def cubic_point(
     t: float,
 ) -> tuple[float, float]:
     mt = 1.0 - t
-    # Every coefficient is shared by the x and y line, so bind them once. Keep
-    # the ** form: mt**3 and mt*mt*mt disagree on about a quarter of random
-    # floats, which would move the golden rasters.
     mt3 = mt**3
     t3 = t**3
     mt2t = 3.0 * mt * mt * t
@@ -63,13 +55,12 @@ def internal_execute_type2_flex(
     operands: list[float],
     curve: Callable[[float, float, float, float, float, float], None],
 ) -> None:
-    """Execute one of the four escaped Type 2 flex operators."""
     match operator:
-        case 34:  # hflex
+        case 34:
             dx1, dx2, dy2, dx3, dx4, dx5, dx6 = operands
             curve(dx1, 0.0, dx2, dy2, dx3, 0.0)
             curve(dx4, 0.0, dx5, -dy2, dx6, 0.0)
-        case 35:  # flex
+        case 35:
             (
                 dx1,
                 dy1,
@@ -87,12 +78,12 @@ def internal_execute_type2_flex(
             ) = operands
             curve(dx1, dy1, dx2, dy2, dx3, dy3)
             curve(dx4, dy4, dx5, dy5, dx6, dy6)
-        case 36:  # hflex1
+        case 36:
             dx1, dy1, dx2, dy2, dx3, dx4, dx5, dy5, dx6 = operands
             dy6 = -(dy1 + dy2 + dy5)
             curve(dx1, dy1, dx2, dy2, dx3, 0.0)
             curve(dx4, 0.0, dx5, dy5, dx6, dy6)
-        case 37:  # flex1
+        case 37:
             dx1, dy1, dx2, dy2, dx3, dy3, dx4, dy4, dx5, dy5, d6 = operands
             dx = dx1 + dx2 + dx3 + dx4 + dx5
             dy = dy1 + dy2 + dy3 + dy4 + dy5
@@ -114,7 +105,7 @@ def internal_type2_subr_bias(count: int) -> int:
     return 32768
 
 
-def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 operators
+def execute_type2_charstring(  # noqa: C901
     charstring: bytes,
     *,
     local_subrs: tuple[bytes, ...],
@@ -127,11 +118,6 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
     seac: Callable[[int, int, float, float], None],
     random_value: Callable[[], float],
 ) -> bool:
-    """Execute Type 2 operators against a caller-owned geometric path sink.
-
-    Return true when the program exhausts without endchar; malformed programs
-    raise. Sampling, partial-path retention and random sources are caller choices.
-    """
     stack: list[float] = []
     transient = [0.0] * TYPE2_TRANSIENT_SIZE
     stem_count = 0
@@ -155,70 +141,70 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
 
     def execute_escaped_operator(operator: int) -> None:
         match operator:
-            case 0:  # dotsection -- deprecated no-op with a clearing stack contract
+            case 0:
                 stack.clear()
-            case 3:  # and
+            case 3:
                 second = stack.pop()
                 first = stack.pop()
                 push(float(first != 0.0 and second != 0.0))
-            case 4:  # or
+            case 4:
                 second = stack.pop()
                 first = stack.pop()
                 push(float(first != 0.0 or second != 0.0))
-            case 5:  # not
+            case 5:
                 push(float(stack.pop() == 0.0))
-            case 9:  # abs
+            case 9:
                 push(abs(stack.pop()))
-            case 10:  # add
+            case 10:
                 second = stack.pop()
                 push(stack.pop() + second)
-            case 11:  # sub
+            case 11:
                 second = stack.pop()
                 push(stack.pop() - second)
-            case 12:  # div
+            case 12:
                 second = stack.pop()
                 push(stack.pop() / second)
-            case 14:  # neg
+            case 14:
                 push(-stack.pop())
-            case 15:  # eq
+            case 15:
                 second = stack.pop()
                 push(float(stack.pop() == second))
-            case 18:  # drop
+            case 18:
                 stack.pop()
-            case 20:  # put
+            case 20:
                 index = pop_integer()
                 value = stack.pop()
                 if not 0 <= index < len(transient):
                     raise ValueError("invalid Type 2 transient-array index")
                 transient[index] = value
-            case 21:  # get
+            case 21:
                 index = pop_integer()
                 if not 0 <= index < len(transient):
                     raise ValueError("invalid Type 2 transient-array index")
                 push(transient[index])
-            case 22:  # ifelse
+            case 22:
                 value2 = stack.pop()
                 value1 = stack.pop()
                 choice2 = stack.pop()
                 choice1 = stack.pop()
                 push(choice1 if value1 <= value2 else choice2)
-            case 23:  # random
+            case 23:
                 push(random_value())
-            case 24:  # mul
+            case 24:
                 second = stack.pop()
                 push(stack.pop() * second)
-            case 26:  # sqrt
+            case 26:
                 push(sqrt(stack.pop()))
-            case 27:  # dup
+            case 27:
                 push(stack[-1])
-            case 28:  # exch
+            case 28:
                 stack[-1], stack[-2] = stack[-2], stack[-1]
-            case 29:  # index
+            case 29:
                 index = max(pop_integer(), 0)
                 if index >= len(stack):
                     raise ValueError("invalid Type 2 stack index")
                 push(stack[-index - 1])
-            case 30:  # roll
+            case 30:
                 shift = pop_integer()
                 count = pop_integer()
                 if count < 0 or count > len(stack):
@@ -228,7 +214,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                     if shift:
                         values = stack[-count:]
                         stack[-count:] = values[-shift:] + values[:-shift]
-            case 34 | 35 | 36 | 37:  # hflex / flex / hflex1 / flex1
+            case 34 | 35 | 36 | 37:
                 if not has_current_point():
                     raise ValueError("Type 2 flex operator has no current point")
                 internal_execute_type2_flex(operator, stack, curve)
@@ -236,18 +222,9 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
             case _:
                 raise ValueError("unsupported Type 2 escaped operator")
 
-    def execute(  # noqa: C901 - keeping operator cases together makes the bytecode contract auditable
+    def execute(  # noqa: C901
         program: bytes, depth: int = 0
     ) -> bool:
-        """Interpret one Type 2 charstring, appending to the enclosing contour state.
-
-        Return ``True`` on exhaustion or ``return``, and ``False`` when ``endchar``
-        has flushed the contour. Malformed programs raise.
-
-        The branches below are keyed by raw Type 2 operator bytes; each carries the
-        operator's spec name. Operands are values above 31, plus 28 (a two-byte
-        integer) and 255 (a 16.16 fixed-point number).
-        """
         nonlocal stem_count, width_resolved
         if depth > TYPE2_MAX_SUBR_DEPTH:
             raise ValueError("invalid Type 2 charstring")
@@ -261,7 +238,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                     continue
                 pos += 1
                 match byte:
-                    case 1 | 3 | 18 | 23:  # hstem, vstem, hstemhm, vstemhm
+                    case 1 | 3 | 18 | 23:
                         operand_count = len(stack)
                         if not width_resolved and operand_count % 2:
                             operand_count -= 1
@@ -272,7 +249,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             raise ValueError("invalid Type 2 charstring")
                         width_resolved = True
                         stack.clear()
-                    case 4 | 22:  # vmoveto / hmoveto
+                    case 4 | 22:
                         if len(stack) == 1:
                             displacement = stack[0]
                         elif not width_resolved and len(stack) == 2:
@@ -285,13 +262,13 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         else:
                             move(displacement, 0.0)
                         stack.clear()
-                    case 5:  # rlineto
+                    case 5:
                         if not has_current_point() or len(stack) < 2 or len(stack) % 2:
                             raise ValueError("invalid Type 2 charstring")
                         for i in range(0, len(stack) - 1, 2):
                             line(stack[i], stack[i + 1])
                         stack.clear()
-                    case 6 | 7:  # hlineto / vlineto -- alternating axes
+                    case 6 | 7:
                         if not has_current_point() or not stack:
                             raise ValueError("invalid Type 2 charstring")
                         horizontal = byte == 6
@@ -299,13 +276,13 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             line(value, 0.0) if horizontal else line(0.0, value)
                             horizontal = not horizontal
                         stack.clear()
-                    case 8:  # rrcurveto
+                    case 8:
                         if not has_current_point() or len(stack) < 6 or len(stack) % 6:
                             raise ValueError("invalid Type 2 charstring")
                         for i in range(0, len(stack) - 5, 6):
                             curve(*stack[i : i + 6])
                         stack.clear()
-                    case 10 | 29:  # callsubr / callgsubr
+                    case 10 | 29:
                         if not stack:
                             raise ValueError("invalid Type 2 charstring")
                         subrs, bias = (
@@ -314,19 +291,17 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         subr_index = pop_integer() + bias
                         if not 0 <= subr_index < len(subrs):
                             raise ValueError("invalid Type 2 charstring")
-                        # Type 2, 4.2 note 6 permits endchar in a subroutine;
-                        # it completes the glyph through every enclosing call.
                         if not execute(subrs[subr_index], depth + 1):
                             return False
-                    case 11:  # return -- leave this subroutine, caller keeps going
+                    case 11:
                         return True
-                    case 12:  # two-byte escaped operator
+                    case 12:
                         if pos >= len(program):
                             raise ValueError("invalid Type 2 charstring")
                         escaped_operator = program[pos]
                         pos += 1
                         execute_escaped_operator(escaped_operator)
-                    case 14:  # endchar -- glyph complete
+                    case 14:
                         arguments = list(stack)
                         if not width_resolved:
                             if len(arguments) in {1, 5}:
@@ -345,8 +320,8 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                                 arguments[0],
                                 arguments[1],
                             )
-                        return False  # endchar completes the glyph
-                    case 19 | 20:  # hintmask, cntrmask -- skip trailing mask bytes
+                        return False
+                    case 19 | 20:
                         operand_count = len(stack)
                         if not width_resolved and operand_count % 2:
                             operand_count -= 1
@@ -361,7 +336,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         width_resolved = True
                         stack.clear()
                         pos += mask_bytes
-                    case 21:  # rmoveto
+                    case 21:
                         if len(stack) == 2:
                             dx, dy = stack
                         elif not width_resolved and len(stack) == 3:
@@ -371,7 +346,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         width_resolved = True
                         move(dx, dy)
                         stack.clear()
-                    case 24:  # rcurveline -- curves followed by exactly one line
+                    case 24:
                         if not has_current_point() or len(stack) < 8 or (len(stack) - 2) % 6:
                             raise ValueError("invalid Type 2 charstring")
                         curve_args = stack[:-2]
@@ -379,7 +354,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             curve(*curve_args[i : i + 6])
                         line(stack[-2], stack[-1])
                         stack.clear()
-                    case 25:  # rlinecurve -- lines followed by exactly one curve
+                    case 25:
                         if not has_current_point() or len(stack) < 8 or (len(stack) - 6) % 2:
                             raise ValueError("invalid Type 2 charstring")
                         line_args = stack[:-6]
@@ -387,7 +362,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                             line(line_args[i], line_args[i + 1])
                         curve(*stack[-6:])
                         stack.clear()
-                    case 26 | 27:  # vvcurveto / hhcurveto
+                    case 26 | 27:
                         if (
                             not has_current_point()
                             or len(stack) < 4
@@ -403,7 +378,7 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                                 curve(first, first_offset, dx2, dy2, last, 0.0)
                             first_offset = 0.0
                         stack.clear()
-                    case 30 | 31:  # vhcurveto / hvcurveto -- alternating tangents
+                    case 30 | 31:
                         if (
                             not has_current_point()
                             or len(stack) < 4
@@ -414,14 +389,14 @@ def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 ope
                         args = list(stack)
                         stack.clear()
                         while len(args) >= 4:
-                            if horizontal:  # this segment starts horizontal
+                            if horizontal:
                                 dx1 = args.pop(0)
                                 dy1 = 0.0
                                 dx2 = args.pop(0)
                                 dy2 = args.pop(0)
                                 dy3 = args.pop(0)
                                 dx3 = args.pop(0) if len(args) == 1 else 0.0
-                            else:  # this segment starts vertical
+                            else:
                                 dx1 = 0.0
                                 dy1 = args.pop(0)
                                 dx2 = args.pop(0)

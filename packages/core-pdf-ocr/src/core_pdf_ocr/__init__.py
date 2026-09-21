@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF extraction with optical and vector text recognition."""
 
 from __future__ import annotations
 

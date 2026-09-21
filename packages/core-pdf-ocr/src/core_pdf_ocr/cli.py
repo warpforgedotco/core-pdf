@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Command-line extraction with OCR support."""
 
 from __future__ import annotations
 

@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PostScript lexical rules used by CMap files (PLRM 3rd ed. 3.3.1 and 3.3.2).
-
-The whitespace, delimiter, and literal-string escape rules coincide with
-ISO 32000-1 7.2.2 and 7.3.4.2; PDF-specific extension hooks are not offered.
-The delimiter set is the PDF one, so braces are ordinary word characters here
-and the tokenizer recognises procedures itself.
-"""
 
 from __future__ import annotations
 
@@ -33,15 +26,8 @@ internal_STRING_ESCAPE = {
 def read_literal_string(
     data: bytes | memoryview, pos: int, data_len: int
 ) -> tuple[bytes | None, int]:
-    """Decode a literal string at ``pos``, returning its value and end position.
-
-    An unterminated string returns ``None`` and the exhausted position.
-    """
     pos += 1
     if isinstance(data, memoryview) and data.format != "B":
-        # CMap callers may supply numeric elements wider than one byte or signed
-        # bytes. Decode those elements directly; byte offsets and prefix copies
-        # would change their values or consume data past the closing delimiter.
         end_idx = pos
     elif isinstance(data, bytes) or data.c_contiguous:
         match = internal_STRING_SPECIAL_RE.search(data, pos, data_len)

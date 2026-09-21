@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compose PDF execution with the application's capture and font policies."""
 
 from math import isfinite
 from typing import Any
@@ -84,7 +83,6 @@ class TextState(RecordingMethods):
         self.recovery = CaptureRecovery()
         self.stream_executor = CaptureStreamExecutor(self)
 
-        # Preserve the reader's historical unset-font and diagnostic color defaults.
         self.graphics.font_size = 12.0
         self.graphics.fill_color = (0.0, 0.0, 0.0)
         self.graphics.stroke_color = (0.0, 0.0, 0.0)

@@ -1,5 +1,3 @@
-"""Role-map and revisioned attribute dictionary semantics from PDF chapter 14."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -36,11 +34,6 @@ def attribute_entries(
     resolve: Callable[[object], object],
     resolve_revision: Callable[[object], int | None],
 ) -> Iterator[StructureAttribute]:
-    """Yield all attribute objects and their optional revision numbers in order.
-
-    Revision selection and conversion to an output dictionary belong to the
-    consumer. An omitted revision number denotes revision zero.
-    """
     index = 0
     pending: object = MISSING
     while index < len(entries):

@@ -14,8 +14,6 @@ __all__ = ("PdfStream",)
 
 
 class PdfStream:
-    """PDF stream object: dictionary plus source bytes."""
-
     __slots__ = (
         "dictionary",
         "raw_data",
@@ -59,7 +57,6 @@ class PdfStream:
         spec: PdfStreamDecodeSpec | MissingObject = MISSING,
         decoder: stream_decode_spec.StreamDecoder | None | MissingObject = MISSING,
     ) -> PdfStream:
-        """Copy source state without activating decoding or evaluating the stream."""
         next_dictionary = self.dictionary if isinstance(dictionary, MissingObject) else dictionary
         if isinstance(spec, MissingObject):
             spec = next_dictionary if self.spec is self.dictionary else self.spec

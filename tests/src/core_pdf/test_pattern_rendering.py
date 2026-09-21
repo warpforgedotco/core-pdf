@@ -1,5 +1,3 @@
-"""Small deterministic gradient geometry and raster fixtures."""
-
 import numpy
 import pytest
 

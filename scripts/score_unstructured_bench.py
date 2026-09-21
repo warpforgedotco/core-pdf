@@ -122,7 +122,6 @@ def mean(values: list[float]) -> float:
 def bootstrap_interval(
     values: list[float], *, samples: int = 2_000, seed: int = 0
 ) -> tuple[float, float]:
-    """Return a deterministic percentile-bootstrap 95% confidence interval."""
     if len(values) < 2:
         value = values[0] if values else 0.0
         return value, value
@@ -499,12 +498,10 @@ def score_case(case: ScoreBenchCase, document_class: type[PdfDocument] = PdfDocu
 
 
 def extract_document_text(document: PdfDocument) -> str:
-    """Return the canonical core-document text used for benchmark scoring."""
     return document.extract().text
 
 
 def configure_native_thread_budget() -> None:
-    """Bound native worker pools so case threads do not oversubscribe the CPU."""
     for variable in (
         "OMP_THREAD_LIMIT",
         "OPENBLAS_NUM_THREADS",
@@ -558,7 +555,6 @@ def score_tokens(
 
 
 def edit_distance(reference: list[str], predicted: list[str]) -> int:
-    """Return exact Levenshtein distance with Myers' bit-vector algorithm."""
     if reference == predicted:
         return 0
     if not reference:
@@ -607,26 +603,22 @@ def score_ordered_errors(gt_text: str, predicted_text: str) -> tuple[float, floa
 
 
 def score_cct(gt_text: str, predicted_text: str) -> float:
-    """Return character-level normalized edit similarity for extracted content."""
     reference = list(normalize_score_text(clean_score_bench_text(gt_text)))
     predicted = list(normalize_score_text(predicted_text))
     return max(0.0, 1.0 - edit_distance(reference, predicted) / max(1, len(reference)))
 
 
 def content_order_gap(content_f1: float, cct: float) -> float:
-    """Estimate the quality lost to sequence differences after token matching."""
     return max(0.0, content_f1 - cct)
 
 
 def normalize_score_text(text: str) -> str:
-    """Normalize characters while retaining whitespace and reading order for CER."""
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
 def score_tables(
     ground_truth: object, predicted_records: object
 ) -> tuple[float | None, float | None]:
-    """Score table cell topology and coordinate-aware cell content independently."""
     truth_cells = ground_truth_table_cells(ground_truth)
     predicted_cells = predicted_table_cells(predicted_records)
     if not truth_cells and not predicted_cells:
@@ -680,7 +672,6 @@ def match_table_indexes(
     truth_cells: list[tuple[int, int, int, int, int, str]],
     predicted_cells: list[tuple[int, int, int, int, int, str]],
 ) -> tuple[tuple[int, int], ...]:
-    """Match tables by content overlap so list ordering is not table identity."""
     truth_tables = group_table_cells(truth_cells)
     predicted_tables = group_table_cells(predicted_cells)
     candidates: list[tuple[float, int, int]] = []
@@ -718,7 +709,6 @@ def match_table_cells(
     predicted: list[tuple[int, int, int, int, int, str]],
     tolerance: int = 1,
 ) -> tuple[tuple[tuple[int, int, int, int, int, str], tuple[int, int, int, int, int, str]], ...]:
-    """Match cells by span and nearby grid coordinates, at most once each."""
     candidates: list[tuple[int, int, int]] = []
     for truth_index, truth_cell in enumerate(truth):
         for predicted_index, predicted_cell in enumerate(predicted):
@@ -770,11 +760,6 @@ def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, in
 
 
 def internal_table_spans(record: object, y: int, x: int) -> tuple[int, int]:
-    """Return (col_span, row_span) for one cell of a predicted table.
-
-    Dictionary payloads store spans as (row_span, col_span) pairs; named keys
-    are also accepted for fixture and diagnostic data.
-    """
     spans = record.get("spans") if isinstance(record, dict) else getattr(record, "spans", None)
     if not isinstance(spans, (list, tuple)) or y >= len(spans):
         return 1, 1
@@ -796,7 +781,6 @@ def internal_table_spans(record: object, y: int, x: int) -> tuple[int, int]:
 
 
 def predicted_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
-    # The graph API returns structured Table objects directly.
     if not isinstance(value, (list, tuple)):
         return []
     cells = []
@@ -1018,7 +1002,6 @@ class ScoreBench:
         return scores
 
     def internal_print_progress(self, case_number: int, score: CaseScore) -> None:
-        # Progress suppressed; clean Markdown summary is printed at completion.
         pass
 
     def internal_print_report(self, results: list[NumberedCaseScore]) -> None:
@@ -1069,7 +1052,6 @@ class ScoreBench:
                 f"| {expected_tables} | {predicted_tables} | {matched_tables} "
                 f"| {table_recall:.4f} | {table_precision:.4f} |"
             )
-            # Bucket breakdown
             bucket_counts = Counter(score_failure_bucket(score) for score in successful)
             lines.append("")
             lines.append("### Bucket Breakdown\n")
@@ -1077,7 +1059,6 @@ class ScoreBench:
             lines.append("|:-------|------:|")
             for bucket, count in sorted(bucket_counts.items()):
                 lines.append(f"| {bucket} | {count} |")
-            # Weakest 25 by CCT
             weakest = sorted(successful, key=lambda s: s.cct)[:25]
             lines.append("")
             lines.append("### Weakest 25 Cases (by CCT)\n")
@@ -1110,7 +1091,7 @@ class ScoreBench:
         print("\n".join(lines))
 
     def internal_print_bucket_summary(self, scores: list[CaseScore]) -> None:
-        pass  # Integrated into internal_print_report Markdown output.
+        pass
 
     def internal_limit_results(self, results: list[NumberedCaseScore]) -> list[NumberedCaseScore]:
         return results if self.full_results else results[: self.report_limit]

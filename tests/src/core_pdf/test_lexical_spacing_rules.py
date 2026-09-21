@@ -1,5 +1,3 @@
-"""Lexical spacing decisions with controlled ranks and explicit geometry."""
-
 import pytest
 
 from core_pdf.impl._impl.layout import text_rules as rules

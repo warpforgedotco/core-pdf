@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize PDF shading dictionaries and functions for raster consumers."""
 
 from __future__ import annotations
 
@@ -20,8 +19,6 @@ from core_pdf_spec.s_08_graphics.shading import parse_shading
 
 @dataclass(frozen=True, slots=True)
 class PreparedShading:
-    """PDF-independent numeric shading parameters consumed by the renderer."""
-
     shading_type: int
     coords: tuple[float, ...]
     domain: tuple[float, float]
@@ -39,7 +36,6 @@ class PreparedShading:
 def prepare_shading(
     dictionary: object, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> PreparedShading | None:
-    """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
         return None
     if not internal_color_space_paints(dictionary.get("ColorSpace")):

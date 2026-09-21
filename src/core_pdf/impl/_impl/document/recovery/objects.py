@@ -86,8 +86,6 @@ class PdfObjectStream(SyntaxObjectStream):
         starts.sort(key=lambda pos: (abs(pos - rel_offset), pos))
         lexer = self.create_lexer(body)
         try:
-            # The bounded strict parse may have rejected trailing bytes or an
-            # inaccurate following offset. Try the declared start before searching.
             for pos in [rel_offset, *starts]:
                 try:
                     return lexer.parse_object_at(pos)

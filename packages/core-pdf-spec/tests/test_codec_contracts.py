@@ -1,5 +1,3 @@
-"""ISO 32000-1 7.4 stream codecs, including state and representation boundaries."""
-
 import base64
 import binascii
 import zlib
@@ -90,7 +88,6 @@ def test_flate_round_trip_and_truncation():
 
 
 def pack_words(words):
-    """Pack explicitly specified code/width pairs, independently of decoder state."""
     bits = "".join(f"{code:0{width}b}" for code, width in words)
     bits += "0" * (-len(bits) % 8)
     return int(bits, 2).to_bytes(len(bits) // 8, "big") if bits else b""
@@ -98,9 +95,6 @@ def pack_words(words):
 
 @pytest.mark.parametrize("early_change", [0, 1])
 def test_lzw_crosses_every_width_boundary_and_saturates_dictionary(early_change):
-    # Table 8: sizes increase one code earlier under EarlyChange=1.
-    # Repeating literal codes makes the expected plaintext independent of the
-    # encoder's dictionary, while explicit boundaries cover 9 -> 10 -> 11 -> 12.
     counts = [255 - early_change, 512, 1024, 2400]
     words = [(256, 9)]
     for width, count in zip((9, 10, 11, 12), counts, strict=True):

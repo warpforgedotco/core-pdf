@@ -68,11 +68,9 @@ def test_tf_reloads_same_name_only_when_selected_in_new_resources() -> None:
     state.op_Tf((name, 12), 0)
     original_decoder = state.graphics.current_decoder
     original_resources = state.resources
-    # Equal dictionaries still represent distinct resource scopes.
     state.resources = dict(state.resources)
     state.events.clear()
 
-    # A Form inherits its selected font until Tf selects a name in the new scope.
     assert state.get_decoder() is original_decoder
     assert state.graphics.decoder_resources is original_resources
     assert state.events == []
@@ -148,7 +146,6 @@ def test_tf_provider_error_occurs_after_selection_update() -> None:
 
 @pytest.mark.parametrize("scope", ["absent", "empty", "indirect-empty", "local"])
 def test_type3_resource_scope_distinguishes_absent_and_empty(scope: str) -> None:
-    # ISO 32000-1 Table 112: only an absent Resources entry inherits page resources.
     state = RecordingState()
     outer = PdfStream(dictionary={"Subtype": PdfName.of("Image")}, raw_data=b"outer")
     local = PdfStream(dictionary={"Subtype": PdfName.of("Image")}, raw_data=b"local")

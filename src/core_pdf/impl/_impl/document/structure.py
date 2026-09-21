@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""The logical structure tree and queries over its elements."""
 
 from __future__ import annotations
 
@@ -25,8 +24,6 @@ if TYPE_CHECKING:
 
 
 class StructureContentItem:
-    """Marked-content reference from a structure element K entry."""
-
     __slots__ = ("page_index", "mcid", "stream")
 
     page_index: int | None
@@ -45,8 +42,6 @@ class StructureContentItem:
 
 
 class StructureContentObject:
-    """Object reference content item from a structure element K entry."""
-
     __slots__ = ("page_index", "props")
 
     page_index: int | None
@@ -110,8 +105,6 @@ def structure_key_name(key: Any) -> str:
 
 
 class internal_StructureNode:
-    """Shared kid enumeration for structure elements and the tree root."""
-
     __slots__ = ("document", "internal_lookup", "kids_value", "props")
 
     def __init__(
@@ -143,8 +136,6 @@ class internal_StructureNode:
 
 
 class StructureElement(internal_StructureNode):
-    """Logical structure element dictionary from the structure tree."""
-
     __slots__ = (
         "actual_text_value",
         "alternate_description_value",
@@ -190,24 +181,19 @@ class StructureElement(internal_StructureNode):
 
     @property
     def role_namespace(self) -> str | None:
-        """Namespace of the resolved role; None when malformed data prevented resolution."""
         result = self.role_resolution
         return result.namespace if result is not None else None
 
     @property
     def role_error(self) -> str | None:
-        """Reader recovery diagnostic for malformed role or namespace declarations."""
         return self.role_error_value if self.role_resolution is None else None
 
     @property
     def role_resolution(self) -> StructureRole | None:
-        """Resolve transitive roles while retaining namespace identity and cycle status."""
         if self.role_resolution_value is not MISSING:
             return cast(StructureRole | None, self.role_resolution_value)
         resolver = self.document.resolver
         context = resolver.semantic_context
-        # Unknown headers and under-declared namespaces do not prevent readers
-        # from interpreting otherwise usable, explicitly identified role maps.
         if context is not None and (context.version is None or not context.version.recognized):
             context = None
         try:
@@ -222,8 +208,6 @@ class StructureElement(internal_StructureNode):
                 context=context,
             )
         except (PdfError, ValueError, RecursionError) as exc:
-            # Preserve the original type for extraction, retaining the error
-            # instead of inventing a namespace or treating recovery as conformance.
             self.role_error_value = str(exc)
             result = None
         self.role_resolution_value = result
@@ -365,8 +349,6 @@ class StructureElement(internal_StructureNode):
 
 
 class StructureTree(internal_StructureNode):
-    """Document logical structure tree rooted at StructTreeRoot."""
-
     __slots__ = ("role_map_value", "parent_tree_value")
 
     role_map_value: dict[str, str] | None
@@ -456,8 +438,6 @@ class StructureTree(internal_StructureNode):
 
 
 class PageStructure(Sequence[StructureElement | None]):
-    """Per-page parent-tree slice indexed by marked-content id."""
-
     __slots__ = ("elements", "page", "parents", "internal_lookup")
 
     page: PdfPage

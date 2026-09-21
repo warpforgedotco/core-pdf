@@ -12,7 +12,6 @@ Contours = tuple[tuple[Point, ...], ...]
 def transform_contours(
     contours: Sequence[Sequence[Point]], matrix: Sequence[float], scale: float = 1000.0
 ) -> Contours:
-    """Apply a font matrix to every point, then scale into 1000-unit glyph space."""
     a, b, c, d, e, f = matrix
     return tuple(
         tuple(((x * a + y * c + e) * scale, (x * b + y * d + f) * scale) for x, y in contour)
@@ -21,7 +20,6 @@ def transform_contours(
 
 
 def scale_contours(contours: Sequence[Sequence[Point]], scale: float) -> Contours:
-    """Uniformly scale every point of every contour."""
     return tuple(tuple((x * scale, y * scale) for x, y in contour) for contour in contours)
 
 

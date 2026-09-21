@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Legacy function inputs and defaults around specification evaluators."""
 
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
 
 
 def internal_sampled_number_array(values: list[Any] | tuple[Any, ...]) -> tuple[float, ...]:
-    """Read the consumed prefix when other array entries prevented reader coercion."""
     output: list[float] = []
     for value in values:
         parsed = parse_pdf_float(value, None)
@@ -46,7 +44,6 @@ def internal_compile_unordered_stitching(
     bounds: tuple[float, ...],
     encode: tuple[float, ...],
 ) -> PdfFunctionEvaluator:
-    """Retain the reader's first-match selection for malformed intervals."""
     parts = tuple(internal_compile_pdf_function(entry) for entry in functions)
     domain_min, domain_max = domain
 
@@ -103,14 +100,12 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
     kind = parse_int(dictionary.get("FunctionType"), -1)
     dictionary["FunctionType"] = kind
     if kind in {2, 3}:
-        # Preserve the reader's existing unbounded Type 2/3 output behavior.
         dictionary.pop("Range", None)
     for name in ("Domain", "Range", "Decode"):
         values = internal_number_array(dictionary.get(name))
         if values:
             dictionary[name] = values
     if kind == 0:
-        # The reader has always interpolated linearly, regardless of Order.
         dictionary["Order"] = 1
         dictionary["BitsPerSample"] = parse_int(dictionary.get("BitsPerSample"), 0)
         sizes = dictionary.get("Size")
@@ -134,7 +129,6 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         raw_range = dictionary.get("Range")
         if isinstance(raw_range, (list, tuple)):
             ranges = internal_sampled_number_array(raw_range[: len(raw_range) // 2 * 2])
-            # A reversed pair historically clipped every value to its lower bound.
             dictionary["Range"] = tuple(
                 value
                 for lower, upper in zip(ranges[::2], ranges[1::2], strict=True)
@@ -197,10 +191,6 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         else dictionary
     )
     if kind in {0, 4} and isinstance(prepared, PdfStream):
-        # Stream-backed function compilers report numeric setup errors as ValueError.
-        # Decode first so authentication failures and unexpected decoder defects
-        # cannot become a recoverable numeric error. Keep existing recovery for
-        # known malformed or unsupported stream data, and never decode it twice.
         try:
             decoded = prepared.data
         except (

@@ -1,5 +1,3 @@
-"""Deterministic vector fixtures for Newstroke recognition, without an OCR engine."""
-
 from dataclasses import replace
 from typing import Any
 
@@ -25,7 +23,6 @@ def internal_line(points: list[tuple[float, float]]) -> CapturedDrawing:
 
 
 def internal_text(text: str, y: float = 0, angle: int = 0) -> tuple[CapturedDrawing, ...]:
-    """Render the bundled Hershey coordinate strings into independent line objects."""
     drawings = []
     cursor = 0.0
     rotation = {0: (1, 0), 90: (0, 1), 180: (-1, 0), 270: (0, -1)}[angle]
@@ -358,8 +355,6 @@ def test_fixed_match_rejects_ambiguous_templates() -> None:
     segments, _, points, styles = internal_arrays(internal_text("R"))
     seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
     assert seed is not None
-    # Synthetic collision exercises the ambiguity policy independently of the
-    # current bundled alphabet: two equally good labels must not yield a guess.
     delta = template.segments[0, 1] - template.segments[0, 0]
     ambiguous = newstroke.internal_TemplateSet(
         (template, replace(template, char="X")),

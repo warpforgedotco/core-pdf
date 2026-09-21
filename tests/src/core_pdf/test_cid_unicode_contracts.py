@@ -1,5 +1,3 @@
-"""CID Unicode recovery honors effective mappings and ordered voting tiers."""
-
 import pytest
 
 from core_pdf.impl._impl.fonts import cid_unicode as cid
@@ -62,7 +60,6 @@ def test_unicode_votes_obey_orientation_weight_fallback_and_ties(
     mapping = cid.CIDUnicodeMap("Test", "Votes", vertical)
     assert mapping.get(7) == expected
     assert mapping.get(7, "missing") == (expected or "missing")
-    # Both successful and unsuccessful votes are cached, not caller defaults.
     maps.clear()
     assert mapping.get(7, "another") == (expected or "another")
 
@@ -118,5 +115,4 @@ def test_packaged_collection_maps_are_cached_by_orientation(vertical):
     assert mapping is not None
     assert mapping.vertical is vertical
     assert cid.resolve_cid_unicode_map("Adobe", "GB1", vertical=vertical) is mapping
-    # GB1 CID 34 denotes ASCII A in the packaged Unicode CMap.
     assert mapping.get(34) == "A"

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recover text exported as individual KiCad Newstroke path segments."""
 
 from __future__ import annotations
 
@@ -28,8 +27,6 @@ MIN_SEQUENCES = 100
 
 @dataclass(frozen=True, slots=True)
 class NewstrokeDecode:
-    """Deterministic text runs and the evidence used to accept them."""
-
     runs: tuple[TextRun, ...] = ()
     candidate_segments: int = 0
     matched_segments: int = 0
@@ -44,7 +41,6 @@ class NewstrokeDecode:
 
     @property
     def trusted(self) -> bool:
-        """Require page-level corroboration before replacing OCR with template text."""
         return (
             self.candidate_segments >= MIN_CANDIDATE_SEGMENTS
             and self.matched_segments >= MIN_MATCHED_SEGMENTS
@@ -292,7 +288,6 @@ def internal_fit_match(
     if error > FIT_ERROR:
         return None
     determinant = a * d - b * c
-    # Positive axis scales and the orthogonality bound above exclude singular matrices.
     inverse = numpy.asarray(((d, -b), (-c, a)), dtype=numpy.float64) / determinant
     transform = internal_Transform(matrix, inverse, scale, x_scale, y_scale)
     return internal_Match(
@@ -368,7 +363,6 @@ def internal_fixed_match(
     first = segments[start]
     if first is None:
         return None
-    # Avoid numpy.asarray for 2-element vector: dx*dx_inv + dy*dy_inv
     dx = first.x1 - first.x0
     dy = first.y1 - first.y0
     inverse = transform.inverse
@@ -394,8 +388,6 @@ def internal_fixed_match(
             candidates.append(candidate)
     if not candidates:
         return None
-    # A one-stroke glyph can be an exact prefix of a richer glyph: I is the
-    # first stroke of H and P. Prefer the longest valid template, then error.
     candidates.sort(key=lambda candidate: (-candidate.stop, candidate.error))
     best = candidates[0]
     if (
@@ -468,7 +460,6 @@ def internal_decode_around(
     if first is None:
         return ()
     position = seed.start
-    # Use a separate prepend list to avoid O(n) insert(0) calls.
     prepend: list[internal_Match] = []
     while position > minimum_start:
         candidates: list[internal_Match] = []
@@ -529,7 +520,6 @@ def internal_sequence_run(
     concrete = tuple(
         segment for segment in segments[matches[0].start : matches[-1].stop] if segment is not None
     )
-    # Every match in a sequence shares one stroke style, including line width.
     padding = concrete[0].line_width * 0.5
     min_x = min(concrete[0].x0, concrete[0].x1)
     max_x = max(concrete[0].x0, concrete[0].x1)
@@ -596,7 +586,6 @@ def internal_sequence_run(
 
 
 def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> NewstrokeDecode:
-    """Decode a flattened Newstroke page without rasterization or OCR."""
     segments, styles, candidate_count = internal_segments(drawings)
     if candidate_count < MIN_CANDIDATE_SEGMENTS:
         return NewstrokeDecode(candidate_segments=candidate_count)
@@ -617,9 +606,6 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
         if first is None:
             position += 1
             continue
-        # Seeds come from a transform already learned for this style; only when
-        # none of those fit here is it worth fitting the robust templates from
-        # scratch. What happens to a seed afterwards is the same either way.
         seeds: list[internal_Match] = []
         for transform in known_transforms.get(first.style, ()):
             seed = internal_fixed_match(

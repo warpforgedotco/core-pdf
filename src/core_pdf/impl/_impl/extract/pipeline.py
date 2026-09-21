@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Page extraction orchestration."""
 
 from __future__ import annotations
 
@@ -58,17 +57,16 @@ def internal_collected_records(
     fetch: Callable[[], Iterable[internal_Record]],
     build: Callable[[int, internal_Record], internal_T],
 ) -> tuple[internal_T, ...]:
-    """Fetch page records and build one product per record, skipping bad entries."""
     records: Iterable[internal_Record]
     try:
         records = fetch()
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         records = ()
     output: list[internal_T] = []
     for index, record in enumerate(records):
         try:
             output.append(build(index, record))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return tuple(output)
 
@@ -81,8 +79,6 @@ class internal_PageProducts:
 
 
 class internal_PageExtraction:
-    """Native extraction with reusable metadata and layout orchestration."""
-
     internal_capture_page = staticmethod(capture_page)
 
     @property
@@ -113,13 +109,8 @@ class internal_PageExtraction:
         else:
             annotation_records: tuple[RawAnnotation, ...] | None
             try:
-                # An empty strict projection can still hide recoverable raw
-                # annotations (for example a non-array /Annots in recovery mode).
                 annotation_records = tuple(page.get_annotations()) or None
-            except (AttributeError, TypeError, ValueError):
-                # Failed strict metadata collection is not an explicit request
-                # to suppress appearances. Let capture enumerate tolerant raw
-                # annotation dictionaries; its output metadata remains empty.
+            except AttributeError, TypeError, ValueError:
                 annotation_records = None
             self.internal_capture = self.internal_capture_page(
                 page,
@@ -130,7 +121,6 @@ class internal_PageExtraction:
             )
 
     def run(self, context: ExtractionScope) -> internal_PageProducts:
-        """Derive tables and layout solely from embedded PDF text."""
         context.raise_if_cancelled()
         observations = self.capture.observations
         return self.internal_layout_products(
@@ -145,7 +135,6 @@ class internal_PageExtraction:
         *,
         layout: internal_Layout = layout_blocks_with_evidence,
     ) -> internal_PageProducts:
-        """Use shared page geometry to lay out an already chosen observation set."""
         capture = self.capture
         table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
         image_obstacles = tuple(
@@ -244,5 +233,4 @@ class internal_PageExtraction:
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
-    """Extract and emit one page."""
     return internal_PageExtraction(page).assembled_page(context)

@@ -1,5 +1,3 @@
-"""Source ownership and security-name alias checks use a live document resolver."""
-
 from io import BytesIO
 from typing import Any
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Load the defined Adobe CMap resources without recovery aliases."""
 
 from __future__ import annotations
 
@@ -12,7 +11,6 @@ RESOURCE_PACKAGE = "core_adobe_fonts.cmap.data"
 
 
 def resolve_cmap_resource(name: str) -> bytes | None:
-    # Resource names are single, already-decoded PDF names, not relative paths.
     if not name or name in {".", ".."} or "/" in name or "\\" in name:
         return None
     root = resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
@@ -23,8 +21,6 @@ def resolve_cmap_resource(name: str) -> bytes | None:
     candidates: list[tuple[Traversable, str | None]] = [(root, None)]
     while candidates:
         current, parent_name = candidates.pop()
-        # CMap directories contain the named resources. Probe the requested
-        # file directly instead of enumerating and stat-ing every other CMap.
         if parent_name == "CMap":
             child = current.joinpath(name)
             if child.is_file():

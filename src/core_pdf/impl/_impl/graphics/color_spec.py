@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Color-space input compatibility and selected ICC fallback policy."""
 
 from __future__ import annotations
 
@@ -45,7 +44,6 @@ def cs_param_floats(params: ColorParams, key: str, count: int, default: list[flo
 
 
 def describe_color_space(value: object) -> str | None:
-    """Return a compact name for an image or shading color-space value."""
     prefixes: list[str] = []
     seen: set[int] = set()
     current = value
@@ -97,16 +95,10 @@ def recover_image_bits_per_component(image_dict: object) -> int:
 
 
 def parse_color_space(value: object) -> ColorSpace:
-    """Preserve reader coercion and selected ICC policy around strict descriptions."""
     return internal_parse_color_space(value, set())
 
 
 def internal_color_space_paints(value: object) -> bool:
-    """Probe resolved colourant names without decoding profiles, palettes or tints.
-
-    This is only an early no-paint decision. Unknown or malformed descriptions
-    retain their normal parsing and recovery path when preparation needs them.
-    """
     seen: set[int] = set()
     while isinstance(value, (list, tuple)) and value:
         marker = id(value)
@@ -133,7 +125,6 @@ def internal_color_space_paints(value: object) -> bool:
 
 
 def internal_nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
-    """Return validated metadata for the reader's NChannel conversion policies."""
     attributes = space.devicen_attributes
     if space.kind != "DeviceN" or attributes is None or attributes.subtype != "NChannel":
         return None
@@ -141,11 +132,6 @@ def internal_nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
 
 
 def internal_nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
-    """Select the supported process-only NChannel output policy.
-
-    Mixed spot/process spaces use the separate mixing policy or global fallback.
-    Extra unused Colorants definitions do not make a process-only space mixed.
-    """
     attributes = internal_nchannel_attributes(space)
     if attributes is None:
         return None
@@ -285,7 +271,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                 )
         try:
             return parse_pdf_color_space(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             name = recover_pdf_name(value)
             if name is None and isinstance(value, (list, tuple)) and value:
                 name = recover_pdf_name(value[0])

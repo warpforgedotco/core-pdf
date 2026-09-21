@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cross-cutting raster coordinate and image kernels."""
 
 from __future__ import annotations
 
@@ -22,20 +21,6 @@ def internal_box_downsample(
     target_width: int,
     target_height: int,
 ) -> tuple[numpy.ndarray[Any, Any], int, int]:
-    """Area-average an image down to about (target_width, target_height).
-
-    Sampling a shrunk image with nearest-neighbour throws away most of it: a
-    2544x3296 scan placed on a 612x792 page keeps roughly one source pixel in
-    eighteen, so the thin rules and letter stems of a scanned form fall between
-    samples and the page renders visibly faint. Averaging the block each output
-    pixel covers keeps that ink.
-
-    Bin edges are ``i * source // target`` so the blocks tile the source exactly
-    even when the ratio is not integral; ``add.reduceat`` then sums each block in
-    one pass per axis. Returns the reduced samples with their new dimensions, so
-    the caller's existing nearest-neighbour map resamples an already-averaged
-    image.
-    """
     if target_width <= 0 or target_height <= 0:
         return samples, source_width, source_height
     if source_width <= target_width and source_height <= target_height:
@@ -59,7 +44,6 @@ def internal_box_downsample(
 def internal_sample_image_plane(
     plane: UInt8Array, u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
 ) -> UInt8Array:
-    """Sample a native-resolution plane at the image's original unit coordinates."""
     height, width = plane.shape
     source_x = numpy.clip((u * width).astype(numpy.intp), 0, width - 1)
     source_y = numpy.clip(((1.0 - v) * height).astype(numpy.intp), 0, height - 1)
@@ -72,12 +56,6 @@ def internal_make_page_geometry(
     Callable[[float, float, float, float], tuple[int, int, int, int] | None],
     Callable[[float, float], tuple[int, int] | None],
 ]:
-    """Build the page-to-pixel converters, closed over a fixed page geometry.
-
-    These run ~1.8M times over the corpus. Binding the geometry into a closure
-    once keeps every read a `LOAD_DEREF`; holding them as instance attributes
-    would add an attribute load per access on the hottest path in the rasterizer.
-    """
 
     def page_box_to_pixels(
         x0: float, y0: float, x1: float, y1: float

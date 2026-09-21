@@ -1,13 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO/TS 32004:2024 PDF MAC token validation over RFC 5652 CMS AuthenticatedData.
-
-ASN.1 and CMS structure are parsed by asn1crypto. All cryptographic operations
-use PyCA cryptography: HKDF-SHA-256 (RFC 5869), AES-256 key unwrap (RFC 3394),
-document and content digests, and HMAC-SHA-256 verification. The caller
-supplies the serialized file, the ByteRange it extracted from the AuthCode
-dictionary, the DER token, the file encryption key, and the KDF salt; every
-PDF object rule stays with the caller.
-"""
 
 from __future__ import annotations
 
@@ -43,8 +34,6 @@ internal_PDF_MAC_HKDF_INFO = b"PDFMAC"
 
 
 class PdfMacIntegrityInfo(core.Sequence):
-    """ISO/TS 32004:2024, 6.2 PdfMacIntegrityInfo ASN.1 sequence."""
-
     _fields = [
         ("version", core.Integer),
         ("data_digest", core.OctetString),
@@ -63,12 +52,6 @@ def validate_pdf_mac_token(
     file_key: bytes,
     kdf_salt: bytes,
 ) -> None:
-    """Validate a standalone DER token against the file bytes it covers.
-
-    Raises ``ValueError`` (or a subclass) for any structural or cryptographic
-    mismatch and ``UnsupportedAlgorithmError`` for a well-formed token that
-    names a digest algorithm outside ISO/TS 32004:2024, Table 8.
-    """
     content_info = parse_der(token, cms.ContentInfo)
     if content_info["content_type"].dotted != internal_AUTHENTICATED_DATA_OID:
         raise ValueError("PDF MAC token is not CMS AuthenticatedData")
@@ -85,16 +68,11 @@ def validate_authenticated_data(
     file_key: bytes,
     kdf_salt: bytes,
 ) -> None:
-    """Validate ISO/TS 32004:2024, 6.2-6.4 and 6.6 CMS requirements."""
     if auth_data["version"].native != "v0":
         raise ValueError("invalid PDF MAC AuthenticatedData version")
     if not isinstance(auth_data["originator_info"], core.Void):
-        # RFC 5652:2009, 9.1 permits originatorInfo only when the key
-        # management algorithm needs it. ISO/TS 32004:2024, 6.3.3 fixes the
-        # sole recipient to PasswordRecipientInfo, which does not use it.
         raise ValueError("PDF MAC cannot contain originator information")
     if not isinstance(auth_data["unauth_attrs"], core.Void):
-        # ISO/TS 32004:2024, 6.3.7 forbids unauthenticated attributes.
         raise ValueError("PDF MAC cannot contain unauthenticated attributes")
 
     hash_algorithm = digest_algorithm(auth_data["digest_algorithm"])
@@ -114,9 +92,6 @@ def validate_authenticated_data(
     if not isinstance(received_mac, bytes) or len(received_mac) != internal_PDF_MAC_KEY_BYTES:
         raise ValueError("invalid PDF MAC value")
 
-    # ISO/TS 32004:2024, 6.3.5 requires HMAC-SHA-256 with a 256-bit key.
-    # RFC 5652:2009, 9.2 requires the DER SET OF encoding of authAttrs as
-    # HMAC input, not its context-specific [2] wrapper.
     verifier = hmac.HMAC(mac_key, hashes.SHA256())
     verifier.update(auth_attrs.untag().dump(force=True))
     try:
@@ -141,7 +116,6 @@ def unwrap_mac_key(
     file_key: bytes,
     kdf_salt: bytes,
 ) -> bytes:
-    """Apply ISO/TS 32004:2024, 6.3.3 and 6.4 key derivation and unwrap."""
     if len(recipient_infos) != 1 or recipient_infos[0].name != "pwri":
         raise ValueError("PDF MAC requires one PasswordRecipientInfo")
     password_info = recipient_infos[0].chosen
@@ -173,9 +147,6 @@ def unwrap_mac_key(
     if len(kdf_salt) != internal_PDF_MAC_KDF_SALT_BYTES:
         raise ValueError("invalid PDF MAC KDFSalt")
 
-    # ISO/TS 32004:2024, 6.4 fixes HKDF to SHA-256, 32-byte KDFSalt,
-    # UTF-8 "PDFMAC" info, the file encryption key as input, and a 256-bit
-    # output because Table 7 requires AES-256 key wrap without padding.
     key_encryption_key = HKDF(
         algorithm=hashes.SHA256(),
         length=internal_PDF_MAC_KEK_BYTES,
@@ -197,7 +168,6 @@ def internal_validate_authenticated_attributes(
     encapsulated_content: bytes,
     hash_algorithm: hashes.HashAlgorithm,
 ) -> None:
-    """Apply ISO/TS 32004:2024, 6.3.6 authenticated-attribute rules."""
     content_type = internal_unique_attribute(attributes, internal_CONTENT_TYPE_ATTRIBUTE_OID)
     if not isinstance(content_type, cms.ContentType):
         raise ValueError("invalid PDF MAC content-type attribute")
@@ -215,9 +185,6 @@ def internal_validate_authenticated_attributes(
         internal_CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID,
         required=False,
     )
-    # ISO/TS 32004:2024, 6.3.6.4 says this attribute SHOULD, rather than
-    # SHALL, be present. RFC 6211:2011, 2-3 makes its contents mandatory
-    # and unique when it is present.
     if algorithm_protection is None:
         return
     if not isinstance(algorithm_protection, cms.CMSAlgorithmProtection):
@@ -242,7 +209,6 @@ def internal_validate_integrity_info(
     integrity_info: PdfMacIntegrityInfo,
     document_digest: bytes,
 ) -> None:
-    """Apply ISO/TS 32004:2024, 6.2 and 6.6.2 to an unsigned revision."""
     if integrity_info["version"].native != 0:
         raise ValueError("invalid PdfMacIntegrityInfo version")
     if not isinstance(integrity_info["signature_digest"], core.Void):
@@ -252,17 +218,12 @@ def internal_validate_integrity_info(
 
 
 def internal_encapsulated_content(auth_data: cms.AuthenticatedData) -> bytes:
-    """Read ISO/TS 32004:2024, 6.3.2 PdfMacIntegrityInfo content."""
     content_info = auth_data["encap_content_info"]
     if content_info["content_type"].dotted != internal_PDF_MAC_INTEGRITY_INFO_OID:
         raise ValueError("incorrect PDF MAC encapsulated content type")
     content = content_info["content"]
     if isinstance(content, core.Void):
         raise ValueError("PDF MAC encapsulated content is missing")
-    # Read the OCTET STRING payload itself instead of ``native``. Other
-    # installed CMS libraries may register the ISO 32004 OID globally with
-    # asn1crypto, causing ``native`` to return a parsed mapping rather than the
-    # exact DER bytes whose digest ISO/TS 32004:2024, 6.3.6.3 authenticates.
     return bytes(content)
 
 
@@ -281,7 +242,6 @@ def internal_unique_attribute(
 
 
 def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
-    # ISO/TS 32004:2024, Table 8 permits these six digest algorithms.
     oid = internal_require_algorithm(identifier, None, require_absent_parameters=False)
     match oid:
         case value if value == internal_SHA256_OID:
@@ -302,8 +262,6 @@ def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
     if oid in {internal_SHA3_256_OID, internal_SHA3_384_OID, internal_SHA3_512_OID}:
         valid_parameters = isinstance(parameters, core.Void)
     else:
-        # SHA-2 AlgorithmIdentifier parameters occur both absent and as NULL
-        # in deployed CMS. NIST's SHA-3 identifiers require them to be absent.
         valid_parameters = isinstance(parameters, (core.Void, core.Null))
     if not valid_parameters:
         raise ValueError("invalid PDF MAC digest algorithm parameters")
@@ -316,9 +274,6 @@ def internal_validate_mac_algorithm(identifier: Any) -> None:
         internal_HMAC_SHA256_OID,
         require_absent_parameters=False,
     )
-    # ISO/TS 32004:2024, Table 9 selects HMAC-SHA-256 in accordance with
-    # RFC 4231:2005, 3.1. RFC 4231 recommends NULL parameters but does not
-    # prohibit their omission, so a validator has to accept both encodings.
     parameters = identifier["parameters"]
     parameters_are_null = isinstance(parameters, core.Null) or (
         isinstance(parameters, core.Any) and isinstance(parameters.parsed, core.Null)
@@ -343,7 +298,6 @@ def internal_require_algorithm(
 
 
 def internal_algorithm_identifiers_match(left: Any, right: Any) -> bool:
-    """Compare RFC 6211 algorithm values without their context-specific tags."""
     if left["algorithm"].dotted != right["algorithm"].dotted:
         return False
     left_parameters = left["parameters"]
@@ -364,8 +318,6 @@ def digest_byte_range(
     byte_range: tuple[int, int, int, int],
     algorithm: hashes.HashAlgorithm,
 ) -> bytes:
-    # ISO/TS 32004:2024, 6.6.2 hashes both ranges in order to obtain
-    # PdfMacIntegrityInfo.dataDigest for an unsigned revision.
     first_start, first_length, second_start, second_length = byte_range
     digest = hashes.Hash(algorithm)
     view = memoryview(raw_data)
@@ -378,9 +330,6 @@ def digest_byte_range(
 
 
 def parse_der(data: bytes, asn1_type: Any) -> Any:
-    # ISO/TS 32004:2024, Table 6 and 6.3 require DER, not merely a BER
-    # encoding accepted by a tolerant ASN.1 parser. Re-encoding must therefore
-    # reproduce every byte, and strict loading forbids unconsumed trailing data.
     value = asn1_type.load(data, strict=True)
     if value.dump(force=True) != data:
         raise ValueError("PDF MAC value is not canonical DER")

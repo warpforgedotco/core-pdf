@@ -1,5 +1,3 @@
-"""Regenerate authored OCR fixtures with Pillow 12.3.0 and the bundled font."""
-
 import zlib
 from pathlib import Path
 
@@ -49,7 +47,6 @@ def main() -> None:
     )
     invoice.save(HERE / "invoice.png")
     write_pdf(invoice, HERE / "invoice.pdf", "480 0 0 192 0 0")
-    # An image-only page stored sideways exercises direct-image rotation.
     sideways = invoice.transpose(Image.Transpose.ROTATE_90)
     write_pdf(sideways, HERE / "rotated-image.pdf", "0 -192 480 0 0 192")
 

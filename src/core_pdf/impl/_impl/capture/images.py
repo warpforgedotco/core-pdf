@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Image capture metadata in addition to passive PDF image inputs."""
 
 import numpy
 

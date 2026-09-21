@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Host codec adapters; no PDF dictionaries or specification dependencies."""
 
 from __future__ import annotations
 
@@ -83,7 +82,7 @@ def decode_jpeg_image(
 ) -> numpy.ndarray:
     try:
         decoded = imagecodecs.jpeg_decode(data, out=out)
-    except Exception as exc:  # pragma: no cover - C-extension integration boundary
+    except Exception as exc:  # pragma: no cover
         internal_raise_codec_error(data, exc, check=imagecodecs.jpeg_check, name="JPEG")
     return internal_normalize_imagecodecs_array(decoded, name="JPEG")
 
@@ -100,7 +99,7 @@ def decode_jpx_image(
             out=out,
             numthreads=internal_jpx_thread_count(),
         )
-    except Exception as exc:  # pragma: no cover - C-extension integration boundary
+    except Exception as exc:  # pragma: no cover
         internal_raise_codec_error(data, exc, check=imagecodecs.jpeg2k_check, name="JPX")
     return internal_normalize_imagecodecs_array(
         decoded, name="JPX", allow_float=True, preserve_uint16=preserve_precision
@@ -137,7 +136,7 @@ def decode_ccitt_fax_image(
                 t4options=t4options,
                 out=out,
             )
-    except Exception as exc:  # pragma: no cover - C-extension integration boundary
+    except Exception as exc:  # pragma: no cover
         internal_raise_codec_error(data, exc, check=decoder_check, name="CCITT")
     array = numpy.asarray(decoded)
     if array.ndim != 2 or array.shape[1] != width or array.dtype != numpy.uint8:
@@ -166,20 +165,9 @@ def internal_png_predict_codec(
     colors: int,
     bits_per_component: int,
 ) -> bytes | None:
-    """Unfilter PNG-predicted rows with libpng via a minimal PNG container.
-
-    The filtered stream is byte-for-byte PNG scanline data, so wrapping it in
-    IHDR/IDAT/IEND (stored-mode zlib, ~memcpy cost) lets imagecodecs run the
-    row unfilter in C. Returns ``None`` when the parameter combination has no
-    PNG equivalent; damaged data raises and the caller falls back to the
-    scalar path, which reproduces the exact error/partial-output semantics.
-    """
     color_type = internal_PNG_COLOR_TYPES.get(colors)
     if color_type is None:
         return None
-    # Sub-byte depths exist only for grayscale, and the decoder's sample
-    # expansion drops row padding bits, so require byte-aligned rows to
-    # stay byte-identical with the scalar path.
     if bits_per_component not in (8, 16) and (
         color_type != 0 or (columns * bits_per_component) % 8
     ):
@@ -205,8 +193,6 @@ def internal_png_predict_codec(
         return decoded.astype(">u2", copy=False).tobytes()
     if bits_per_component == 8:
         return decoded.tobytes()
-    # Sub-byte gray comes back expanded to one byte per sample, scaled by the
-    # exact factor 255 // (2**bits - 1); undo the scaling and repack.
     bits = bits_per_component
     samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
     per_byte = 8 // bits
@@ -239,18 +225,10 @@ def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes
 
 
 def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    # delta_decode preserves byte order, so the big-endian view accumulates and
-    # serializes without a pair of byte swaps around it.
     return internal_tiff_predict(data, columns, colors, ">u2", 2)
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
-    """Undo TIFF prediction on sub-byte samples, byte-aligned per row.
-
-    imcd unpacks and repacks the MSB-first bitstream and accumulates the rows,
-    which is 5-21x the numpy lookup-table path this replaced and removes the
-    scalar bit-buffer loop it fell back to on short streams.
-    """
     sample_count = colors * columns
     row_byte_length = max(1, (sample_count * bits + 7) // 8)
     complete_rows = len(data) // row_byte_length
@@ -264,13 +242,9 @@ def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits:
     samples = numpy.asarray(
         imagecodecs.packints_decode(encoded, numpy.uint8, bits, runlen=sample_count)
     ).reshape(complete_rows, columns, colors)
-    # uint8 accumulation wraps modulo 256, and 2**bits divides 256 for every
-    # width here, so masking once at the end agrees with masking every step.
     accumulated = numpy.asarray(imagecodecs.delta_decode(samples, axis=1))
     decoded = accumulated & numpy.uint8((1 << bits) - 1)
     flat = decoded.reshape(complete_rows, sample_count)
-    # packints_encode packs the whole array as one bitstream, so pad each row
-    # out to a byte boundary first to keep rows byte-aligned as TIFF requires.
     samples_per_byte = 8 // bits
     padding = (-sample_count) % samples_per_byte
     if padding:

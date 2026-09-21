@@ -1,6 +1,3 @@
-"""pdfplumber-compatible exception types."""
-
-
 class PdfminerException(Exception):
     pass
 

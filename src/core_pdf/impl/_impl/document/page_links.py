@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compiled PDF link and destination helpers."""
 
 from __future__ import annotations
 
@@ -37,16 +36,6 @@ def link_target_resolved(
 
 
 def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: int = 0) -> object:
-    """Resolve an annotation destination into plain serializable values.
-
-    A URI action holds its target behind an indirect reference, so the raw
-    action dictionary carries a ``PdfReference`` where the URL belongs.  This
-    resolves references to scalars and unwraps PDF strings and names.
-
-    References to composite objects are deliberately left as references: a
-    GoTo destination points at a page, and inlining a page dictionary here
-    would drag the object graph into the structured document.
-    """
     if depth > 8:
         return value
     if isinstance(value, PdfReference):

@@ -1,5 +1,3 @@
-"""Deterministic recognition batching, text-band estimation, and weak-region selection."""
-
 from dataclasses import replace
 
 import numpy
@@ -43,7 +41,7 @@ def test_text_band_height_tracks_visible_ink(channels: int) -> None:
     color_channels = 1 if channels == 2 else min(channels, 3)
     for y in (10, 30, 50, 70):
         samples[y : y + 6, :, :color_channels] = 0
-        samples[y + 2, :, :color_channels] = 255  # One-row scan dropout is bridged.
+        samples[y + 2, :, :color_channels] = 255
     assert region_tasks.internal_estimated_text_height(internal_raster(samples)) == 6
     if channels in (2, 4):
         samples[:, :, -1] = 0
@@ -135,7 +133,6 @@ def test_dense_primary_text_reduces_rescue_grid_and_region_budget() -> None:
         source, (0, 0, 300, 600), operation, primary
     )
     assert len(rectangles) == 8
-    # The text-filled lower-left cell must not consume the rescue budget.
     assert all(rectangle[:2] != (0, 452) for rectangle in rectangles)
 
 

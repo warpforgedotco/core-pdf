@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Calculator semantics: PostScript Language Reference 3, 8.2, as restricted by PDF."""
 
 import math
 from collections.abc import Callable, Sequence
@@ -73,7 +72,6 @@ def internal_constant(expression: str, outputs: int = 1) -> Callable[..., tuple[
 def test_calculator_implements_every_table_42_operator(
     expression: str, expected: tuple[float, ...]
 ) -> None:
-    # Table 42 has 40 operators and the two boolean literals true/false.
     result = internal_constant(expression, len(expected))(0)
     assert result == pytest.approx(expected)
     assert all(type(value) is float for value in result)
@@ -114,7 +112,6 @@ def test_calculator_implements_every_table_42_operator(
 def test_calculator_arithmetic_uses_postscript_signs_angles_and_rounding(
     expression: str, expected: float
 ) -> None:
-    # PLRM operator details: atan, idiv, mod and round differ from common host defaults.
     assert internal_constant(expression)(0) == pytest.approx((expected,))
 
 
@@ -138,7 +135,6 @@ def test_calculator_arithmetic_uses_postscript_signs_angles_and_rounding(
     ],
 )
 def test_calculator_integer_operations_preserve_integer_type(expression: str) -> None:
-    # Integer-only idiv observes stack type even though exported results are floats.
     assert len(internal_constant(expression + " 1 idiv")(0)) == 1
 
 
@@ -186,7 +182,6 @@ def test_calculator_real_results_are_not_implicitly_integer_operands(expression:
 def test_calculator_signed_32_bit_integer_overflow_promotes_to_real(
     expression: str, expected: int
 ) -> None:
-    # The implementation chooses signed 32-bit integers; PLRM promotes arithmetic overflow.
     assert internal_constant(expression)(0) == (expected,)
     with pytest.raises(ValueError):
         internal_constant(expression + " 1 idiv")(0)
@@ -232,7 +227,6 @@ def test_calculator_cvi_rejects_out_of_range_integer_results(literal: str) -> No
 def test_calculator_bitwise_operations_use_32_bits_and_zero_fill(
     expression: str, expected: int
 ) -> None:
-    # PLRM bitshift inserts zero bits even when the left operand is negative.
     assert internal_constant(expression)(0) == (expected,)
 
 
@@ -406,7 +400,6 @@ def test_calculator_conditionals_execute_only_selected_branch(
     ],
 )
 def test_calculator_rejects_malformed_program_and_first_class_procedures(program: bytes) -> None:
-    # ISO 32000-2, 7.10.5.2: nested braces are syntax, never stack procedure objects.
     with pytest.raises(ValueError):
         internal_compile(program)
 
@@ -437,7 +430,6 @@ def test_calculator_rejects_malformed_program_and_first_class_procedures(program
     ],
 )
 def test_calculator_uses_pdf_number_syntax_and_forbids_other_object_types(operand: bytes) -> None:
-    # PDF syntax excludes PostScript radix/exponent numbers and all composite operands.
     with pytest.raises(ValueError):
         internal_compile(b"{ pop " + operand + b" }")
 
@@ -529,7 +521,6 @@ def test_calculator_multiple_inputs_and_outputs_follow_stack_order() -> None:
 
 @pytest.mark.parametrize("value", [5, 5.0])
 def test_calculator_inputs_are_real_even_when_python_caller_passes_an_integer(value: float) -> None:
-    # A caller's host-language integer type must not change the PDF function program.
     with pytest.raises(ValueError):
         internal_compile(b"{ 2 idiv }")(value)
     assert internal_compile(b"{ cvi 2 idiv }")(value) == (2,)
@@ -567,7 +558,6 @@ def test_calculator_reuses_compiled_program_without_leaking_operand_stack() -> N
 
 
 def test_calculator_supports_the_required_100_operand_stack_entries() -> None:
-    # ISO 7.10.5.3 requires at least 100 entries; this implementation selects exactly 100.
     program = b"{ " + b"0 " * 99 + b"pop " * 99 + b"}"
     assert internal_compile(program)(7) == (7,)
     identity = internal_compile(b"{}", domains=((0, 1),) * 100, ranges=((0, 1),) * 100)
@@ -590,7 +580,6 @@ def test_calculator_rejects_initial_inputs_over_operand_stack_limit() -> None:
 
 
 def test_calculator_allows_255_total_brace_levels() -> None:
-    # ISO 32000-2, 7.10.5.2 limits writer nesting to 255, including the outer braces.
     expression = "true { " * 254 + "7" + " } if" * 254
     assert internal_constant(expression)(0) == (7,)
 

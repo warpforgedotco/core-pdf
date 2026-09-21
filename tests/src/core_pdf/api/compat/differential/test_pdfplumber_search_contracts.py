@@ -1,5 +1,3 @@
-"""Search spans retain source character identity, including multi-character glyphs."""
-
 import re
 from io import BytesIO
 from typing import Any

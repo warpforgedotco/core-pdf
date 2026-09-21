@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader recovery for names supplied as slash-prefixed text."""
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import PdfName

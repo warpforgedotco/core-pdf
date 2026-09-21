@@ -1,12 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Prove a workspace member is installed without the tiers above it.
-
-Usage: ``python scripts/check_package_isolation.py <distribution>``
-
-Run after ``uv sync --locked --package <distribution> --group test``. Every
-``core_*`` import name that belongs to another workspace member must be absent
-unless that member's ``pyproject.toml`` declares it as a dependency.
-"""
 
 from __future__ import annotations
 
@@ -48,7 +40,7 @@ def internal_declared_dependencies(path: Path) -> set[str]:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print(__doc__, file=sys.stderr)
+        print("usage: check_package_isolation.py <distribution>", file=sys.stderr)
         return 2
     target = argv[1]
     members = internal_workspace_members()
@@ -56,7 +48,6 @@ def main(argv: list[str]) -> int:
         print(f"unknown workspace member: {target}", file=sys.stderr)
         return 2
     allowed = {target} | internal_declared_dependencies(members[target])
-    # Transitive workspace dependencies are legitimately present.
     pending = list(allowed - {target})
     while pending:
         name = pending.pop()

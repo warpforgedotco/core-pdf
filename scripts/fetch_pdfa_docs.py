@@ -1,20 +1,5 @@
 #!/usr/bin/env python
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Fetch the PDF Association's specifications and technical notes.
-
-pdfa.org sits behind Cloudflare, which rejects plain HTTP clients even for
-direct PDF URLs, so these documents need a real browser engine. Everything
-else is fetched by scripts/fetch_pdf_specs.sh with curl.
-
-Documents are split by redistribution rights, matching the tiers described in
-tests/fixtures/specifications/README.md:
-
-  reference/pdfa   CC BY 4.0 -- redistributable, committed to the repo
-  restricted/pdfa  no redistribution grant -- gitignored
-
-Usage:
-    uv run --with playwright python scripts/fetch_pdfa_docs.py [reference|restricted|all]
-"""
 
 from __future__ import annotations
 
@@ -27,9 +12,7 @@ PUB = "https://pdfa.org/download-area/publications"
 SPEC = "https://pdfa.org/download-area/specifications"
 UPL = "https://pdfa.org/wp-content/uploads"
 
-# tier -> {local filename: url}
 DOCUMENTS: dict[str, dict[str, str]] = {
-    # CC BY 4.0. Attribution is recorded in reference/NOTICE.md.
     "reference": {
         "Matterhorn-Protocol-1.1.pdf": f"{PUB}/Matterhorn-Protocol-1-1.pdf",
         "Tagged-PDF-Best-Practice-Guide-Syntax.pdf": f"{PUB}/Tagged-PDF-Best-Practice-Guide.pdf",
@@ -43,8 +26,6 @@ DOCUMENTS: dict[str, dict[str, str]] = {
         "PDF-Extension-Brotli.pdf": f"{PUB}/pdf-extension-brotli.pdf",
         "EA-PDF-v1.pdf": f"{SPEC}/EA-PDF-v1.pdf",
     },
-    # The PDF/A Competence Center TechNotes state that redistribution requires
-    # written approval; the WTPDF examples carry no licence grant at all.
     "restricted": {
         "TN0001-PDFA1-and-Namespaces.pdf": (
             f"{UPL}/2011/08/tn0001_pdfa-1_and_namespaces_2008-03-182.pdf"
@@ -68,10 +49,6 @@ DOCUMENTS: dict[str, dict[str, str]] = {
     },
 }
 
-# Cloudflare's rules for pdfa.org are picky about this exact string: the
-# headless default and a "Chrome/126.0.0.0" build number are both rejected with
-# a 403, while "Chrome/126" is served. If these downloads start failing, this
-# line is the first thing to check.
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126 Safari/537.36"
@@ -97,8 +74,6 @@ def main() -> int:
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         ctx = browser.new_context(user_agent=UA)
-        # Load the site once so the Cloudflare clearance cookie is set. The page
-        # must stay open: closing it drops the clearance and every request 403s.
         page = ctx.new_page()
         page.goto("https://pdfa.org/", wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(3000)
@@ -114,7 +89,7 @@ def main() -> int:
                 try:
                     resp = ctx.request.get(html.unescape(url), timeout=120000)
                     body = resp.body()
-                except Exception as exc:  # noqa: BLE001 - report and continue
+                except Exception as exc:  # noqa: BLE001
                     print(f"  ERR  {name}: {type(exc).__name__}", file=sys.stderr)
                     failed += 1
                     continue

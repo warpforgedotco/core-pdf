@@ -1,5 +1,3 @@
-"""Shared text-state transitions for compatibility projections."""
-
 from __future__ import annotations
 
 import math
@@ -9,11 +7,6 @@ from core_pdf.impl._impl.fonts.helpers import build_decode_table
 from core_pdf.impl._impl.model.text import is_neutral_character, is_rtl_character
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 
-# pypdf's _predefined_cmap, which is what both legacy projections have to
-# agree with: the pypdf facade emulates pypdf directly, and the LlamaIndex one
-# emulates llama_index's PDFReader, which wraps pypdf. The codec choices are
-# pypdf's rather than the specification's -- GBK for GB-EUC, cp950 for Big5 --
-# so they are transcribed, not derived.
 internal_PREDEFINED_ENCODING_CODECS = {
     "Identity-H": "utf-16-be",
     "Identity-V": "utf-16-be",
@@ -41,7 +34,6 @@ internal_PREDEFINED_ENCODING_CODECS = {
 
 
 def internal_orientation(matrix: Sequence[float]) -> int:
-    """Return the legacy extraction orientation for an affine matrix."""
     if matrix[3] > 1e-6:
         return 0
     if matrix[3] < -1e-6:
@@ -50,7 +42,6 @@ def internal_orientation(matrix: Sequence[float]) -> int:
 
 
 def internal_legacy_base_table(name: str) -> list[str]:
-    """Build the encoding table expected by the legacy text projections."""
     table = list(build_decode_table(name, ()))
     if name == "StandardEncoding":
         table = [value or chr(code) for code, value in enumerate(table)]
@@ -72,7 +63,6 @@ def internal_legacy_base_table(name: str) -> list[str]:
 
 
 def internal_flush_text(output_parts: list[str], text: str, output_last: str) -> tuple[str, str]:
-    """Move pending text to an append-only output buffer."""
     if text:
         output_parts.append(text)
         return "", text[-1]
@@ -80,7 +70,6 @@ def internal_flush_text(output_parts: list[str], text: str, output_last: str) ->
 
 
 def internal_append_directional_text(text: str, rtl: bool, value: str) -> tuple[str, bool]:
-    """Apply the legacy left-to-right/right-to-left run transition."""
     if len(value) != 1 or is_neutral_character(value):
         return (value + text if rtl else text + value), rtl
     if is_rtl_character(value):
@@ -102,7 +91,6 @@ def internal_positioned_text(
     space_width: float,
     string_width: float,
 ) -> tuple[str, str]:
-    """Insert the newline or space implied by a text-position transition."""
     trailing = text[-1:] or output_last[-1:]
     if not trailing:
         return text, output_last
@@ -133,7 +121,6 @@ def internal_positioned_text(
 
 
 def internal_ensure_line_break(output_parts: list[str], output_last: str) -> str:
-    """End non-empty output at a line boundary."""
     if output_last and output_last != "\n":
         output_parts.append("\n")
         return "\n"

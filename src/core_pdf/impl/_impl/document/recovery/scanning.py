@@ -7,7 +7,6 @@ from core_pdf.impl.types import PdfByteBuffer
 def matches_keyword_with_one_substitution(
     data: PdfByteBuffer | memoryview, pos: int, keyword: bytes
 ) -> bool:
-    """Whether ``keyword`` sits at ``pos`` with exactly one byte substituted."""
     end = pos + len(keyword)
     if end > len(data):
         return False

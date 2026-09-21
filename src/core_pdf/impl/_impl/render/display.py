@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Display-list construction and crop-aware render planning."""
 
 from __future__ import annotations
 
@@ -31,7 +30,6 @@ RASTER_CONTROL_KINDS = frozenset(
 
 
 def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Describe an image while adapting captured data into a display item."""
     dictionary = data.get("dictionary")
     if not isinstance(dictionary, dict):
         return {}
@@ -82,12 +80,11 @@ def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str
 
 
 def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
-    """Normalize an image quad once at display-list construction."""
     quad = data.get("quad")
     if isinstance(quad, (list, tuple)) and len(quad) >= 3:
         try:
             return tuple((float(point[0]), float(point[1])) for point in quad)
-        except (TypeError, ValueError, IndexError):
+        except TypeError, ValueError, IndexError:
             return None
     items = data.get("items")
     if not isinstance(items, (list, tuple)):
@@ -99,7 +96,7 @@ def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...]
             return None
         try:
             return tuple((float(point[0]), float(point[1])) for point in value)
-        except (TypeError, ValueError, IndexError):
+        except TypeError, ValueError, IndexError:
             return None
     return None
 
@@ -114,7 +111,6 @@ class DisplayList:
     internal_group_scope_floors: list[int] = field(default_factory=list, init=False, repr=False)
 
     def internal_track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
-        """Retain separate strokes whenever their raster coverage is tracked."""
         if kind == "scope-begin":
             self.internal_group_scope_floors.append(len(self.internal_shape_tracking_groups))
         elif kind == "scope-end":
@@ -130,8 +126,6 @@ class DisplayList:
                 self.internal_shape_tracking_groups.pop()
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
-        # Capture records carry the mask as an opaque resource; this is the one
-        # place that types it, so renderer consumers read the field directly.
         graphics_mask = data.get("graphics_soft_mask")
         if not isinstance(graphics_mask, CapturedSoftMask):
             graphics_mask = None
@@ -209,7 +203,6 @@ class DisplayList:
         self.items.append(DisplayListItem(kind=kind, seqno=seqno, data=data))
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
-        """Append a captured drawing without rebuilding its keyword-data mapping."""
         if not drawing.paints:
             return
         paint_kind = PATH_PAINT_KINDS.get(drawing.kind)
@@ -293,7 +286,6 @@ class DisplayList:
 
 
 def internal_drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
-    """Paint state shared by typed path items and generic display entries."""
     return {
         "fill": drawing.fill,
         "fill_opacity": drawing.fill_opacity,
@@ -316,7 +308,6 @@ def internal_drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
 def internal_display_item_box(
     item: DisplayItem, *, scale: float = 1.0
 ) -> tuple[float, float, float, float] | None:
-    """Compute conservative bounds for crop-aware rasterization."""
     if type(item) is ImagePaintItem:
         return rect_tuple(item.bbox)
     if type(item) is PathPaintItem:
@@ -327,8 +318,6 @@ def internal_display_item_box(
         if box is None:
             return None
         if item.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
-            # Hairlines occupy a device pixel even when their user-space bounds
-            # have zero thickness. Match the stroke painter's minimum width.
             pad = max(0.5 / scale, item.line_width * 0.5)
             box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box

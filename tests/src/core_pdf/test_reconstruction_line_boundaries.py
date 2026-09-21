@@ -1,5 +1,3 @@
-"""Reconstruction boundaries for long lines, tiny footers, and rotated cells."""
-
 import pytest
 
 from core_pdf.impl._impl.layout.reconstruction import (

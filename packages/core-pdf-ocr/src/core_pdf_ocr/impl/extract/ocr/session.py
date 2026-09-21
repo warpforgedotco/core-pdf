@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Page-scoped OCR task construction and synchronous recognition."""
 
 from __future__ import annotations
 
@@ -63,8 +62,6 @@ from core_pdf_ocr.impl.extract.quality import internal_Candidate
 
 internal_PageBox = tuple[float, float, float, float]
 
-# Small affine placement noise is cheaper to absorb in OCR coordinates than to
-# recompose and rasterize the entire page around an otherwise usable source image.
 internal_OCR_IMAGE_REGIONS_MAX_AXIS_DEVIATION = 0.01
 
 
@@ -75,7 +72,6 @@ def internal_raster_tasks(
     *,
     compact_image: bool | str,
 ) -> tuple[internal_OcrTask, ...]:
-    """Tile one optional raster into OCR tasks."""
     if raster is None:
         return ()
     return internal_tile_tasks(raster, page_box, ocr_pass, compact_image=compact_image)
@@ -99,16 +95,12 @@ def internal_region_tasks(
 
 @dataclass(frozen=True, slots=True)
 class internal_OcrPassTasks:
-    """Materialized work for one OCR pass."""
-
     ocr_pass: OcrPass
     tasks: tuple[internal_OcrTask, ...] = ()
     packed_stroked: internal_PackedStrokedTextRaster | None = None
 
 
 class internal_OcrSession:
-    """Own task construction and synchronous recognition for one page."""
-
     __slots__ = (
         "capture",
         "plan",
@@ -218,8 +210,6 @@ class internal_OcrSession:
 
         preview_raster: internal_Raster | None = None
         if self.capture.evidence.full_page_image:
-            # The preview only measures text height, so enlarging it would
-            # cost time and shift the projection this decision depends on.
             preview_region = internal_dominant_image_region(
                 self.capture,
                 max_pixels=OCR_PREFLIGHT_PIXELS,
@@ -264,7 +254,6 @@ class internal_OcrSession:
         selected: internal_Candidate | None,
         selected_tasks: tuple[internal_OcrTask, ...],
     ) -> internal_OcrPassTasks | None:
-        """Adapt ``ocr_pass`` and construct the tasks belonging to its scope."""
         ocr_pass = self.internal_adapt_pass(ocr_pass)
         if (
             ocr_pass.region_first

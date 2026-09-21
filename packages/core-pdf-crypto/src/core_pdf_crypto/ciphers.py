@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cipher primitives used by PDF encryption: RC4, AES-CBC, AES-ECB, and AES-GCM.
-
-AES-GCM framing follows ISO/TS 32003:2023, 5.2; AES-GCM itself is NIST SP
-800-38D. The other modes are plain PyCA ``cryptography`` operations. Padding
-and initialization-vector conventions are chosen by the caller's standard.
-"""
 
 from __future__ import annotations
 
@@ -50,14 +44,6 @@ def aes_cbc_decrypt(
     *,
     use_padding: bool,
 ) -> bytes:
-    # Object strings and streams use a 16-byte IV and PKCS#7-style padding:
-    # - ISO 32000-1:2008, 7.6.2 (AESV2 / revision 4)
-    # - Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3,
-    #   June 2008, 3.5.1, Algorithm 3.1a (AESV3 / revision 5)
-    # - ISO 32000-2:2020, 7.6.3.1 and 7.6.3.3 (AESV3 / revision 6)
-    # The R5/R6 password algorithms explicitly pass use_padding=False; see
-    # that Adobe supplement's 3.5.2, Algorithm 3.2a and ISO 32000-2:2020,
-    # 7.6.4.3.3, Algorithm 2.A.
     algorithm = internal_aes_algorithm(key)
     try:
         decryptor = Cipher(algorithm, modes.CBC(initialization_vector)).decryptor()
@@ -71,12 +57,6 @@ def aes_cbc_decrypt(
 
 
 def aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
-    """Decrypt the fixed permissions block required by R5 and R6.
-
-    Sources: Adobe Supplement to ISO 32000, BaseVersion 1.7,
-    ExtensionLevel 3, June 2008, 3.5.2, Algorithm 3.13; and
-    ISO 32000-2:2020, 7.6.4.4.12, Algorithm 13.
-    """
     algorithm = internal_aes_algorithm(key)
     try:
         decryptor = Cipher(algorithm, modes.ECB()).decryptor()
@@ -86,13 +66,6 @@ def aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
 
 
 def aes_gcm_decrypt(key: bytes, data: bytes) -> bytes:
-    """Decrypt one AESV4 string or stream and authenticate it before returning.
-
-    ISO/TS 32003:2023, 5.2 specifies a 32-byte key, 12-byte IV, nil AAD,
-    16-byte authentication tag, no PDF-level padding, and the serialized form
-    ``<IV><ciphertext><tag>``. It limits each plaintext object to 2^39 - 256
-    bytes. AES-GCM itself is defined by NIST SP 800-38D (November 2007).
-    """
     if len(key) != AES_GCM_KEY_BYTES:
         raise ValueError(f"AESV4 key must be {AES_GCM_KEY_BYTES} bytes, got {len(key)}")
     minimum_length = AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Ruled-grid and whitespace-inferred native table detection."""
 
 from __future__ import annotations
 
@@ -41,8 +40,6 @@ from core_pdf.impl._impl.model.geometry import bbox_union, interval_overlap, ove
 from core_pdf.impl._impl.output.model import Table, TableCell
 from core_pdf.impl._impl.runtime.array_views import finite_median
 
-# Table-stage orchestration.
-
 
 def internal_table_vertical_sort_key(table: Table) -> float:
     return -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]
@@ -50,8 +47,6 @@ def internal_table_vertical_sort_key(table: Table) -> float:
 
 @dataclass(frozen=True, slots=True)
 class internal_ObservationCoordinates:
-    """Python scalar columns shared by stream-table candidate construction."""
-
     x0: list[float]
     y0: list[float]
     x1: list[float]
@@ -78,8 +73,6 @@ class internal_ObservationCoordinates:
 
 @dataclass(frozen=True, slots=True)
 class internal_TableAnalysis:
-    """Shared observation facts for one table-extraction operation."""
-
     observations: ObservationBatch
     coordinates: internal_ObservationCoordinates
     text_rows: list[list[int]]
@@ -106,7 +99,6 @@ class internal_TableAnalysis:
 
 
 def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
-    """Detect, reconcile, annotate, and band every native table."""
     analysis = internal_TableAnalysis.build(observations, capture.width)
     return internal_finalize_tables(internal_detect_tables(capture, analysis), analysis)
 
@@ -115,7 +107,6 @@ def internal_finalize_tables(
     tables: tuple[Table, ...],
     analysis: internal_TableAnalysis,
 ) -> tuple[Table, ...]:
-    """Sort table candidates and attach text associations and semantic bands."""
     observations = analysis.observations
     tables = tuple(sorted(tables, key=internal_table_vertical_sort_key))
     return tuple(
@@ -175,9 +166,6 @@ def internal_detect_tables(
         )
         if internal_stream_table_reads_like_prose(merged_stream):
             continue
-        # Logical-row grouping runs after the prose gate, which was tuned
-        # against per-line cells: merged cells are longer by construction and
-        # would read as prose to it.
         tables.append(internal_merge_wrapped_cell_rows(merged_stream))
     tables = [
         segment
@@ -190,9 +178,7 @@ def internal_detect_tables(
     return tuple(tables)
 
 
-# Whitespace-aligned stream table inference.
-
-COLUMN_TOLERANCE = 14.0  # loosen tolerance for column edge alignment to reduce split tables
+COLUMN_TOLERANCE = 14.0
 
 
 def internal_text_rows(
@@ -209,8 +195,6 @@ def internal_text_rows(
     ]
     if not visible:
         return []
-    # Unbox the sort/grouping columns once; per-element numpy indexing in sort
-    # keys costs a scalar box per access.
     coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
     all_centers = coordinates.y_centers
     all_lefts = coordinates.x0
@@ -244,7 +228,6 @@ def internal_row_centers(
     *,
     coordinates: internal_ObservationCoordinates | None = None,
 ) -> list[float]:
-    """Mean vertical centre of each row, computed once per observation batch."""
     coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
     centers = coordinates.y_centers
     return [sum(centers[index] for index in row) / len(row) for row in rows]
@@ -398,7 +381,6 @@ def internal_stream_table(
             x_center = (x0 + x1) * 0.5
             column = bisect_right(edge_list, x_center) - 1
             if not (0 <= column < column_count):
-                # Fallback to max interval overlap or left-edge proximity
                 best_col = 0
                 max_ov = -1.0
                 for c_idx in range(column_count):
@@ -500,7 +482,6 @@ def internal_compact_stream_table(
     *,
     coordinates: internal_ObservationCoordinates | None = None,
 ) -> Table | None:
-    """Recover compact tables whose rows are interleaved with nearby prose."""
     coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
     all_x0 = coordinates.x0
     all_y0 = coordinates.y0

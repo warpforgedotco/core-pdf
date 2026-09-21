@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recognition contracts and evidence layered over native extraction records."""
 
 from __future__ import annotations
 
@@ -58,8 +57,6 @@ class OcrPassScope(StrEnum):
 
 
 class PagePlanReason(StrEnum):
-    """Stable explanations for why the router chose a page plan."""
-
     UNSPECIFIED = "unspecified"
     NATIVE_TEXT_CORRUPT = "native-text-corrupt"
     NEWSTROKE_VECTOR_TEXT = "newstroke-vector-text"
@@ -86,8 +83,6 @@ class PagePlanReason(StrEnum):
 
 
 class FusionPolicy(StrEnum):
-    """How hybrid OCR observations interact with the native text layer."""
-
     DEFAULT = "default"
     SPARSE_NATIVE = "sparse-native"
     NOISY_NATIVE = "noisy-native"
@@ -96,8 +91,6 @@ class FusionPolicy(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class StrokedVectorTextEvidence:
-    """Compact path families that are likely to be flattened single-line text."""
-
     trusted: bool = False
     drawing_indexes: tuple[int, ...] = ()
     bbox: tuple[float, float, float, float] | None = None
@@ -106,8 +99,6 @@ class StrokedVectorTextEvidence:
 
 @dataclass(frozen=True, slots=True)
 class PageEvidence(NativePageEvidence):
-    """Native page evidence enriched with recognition-specific vector signals."""
-
     vector_complexity: int = 0
     image_filters: tuple[str, ...] = ()
     uncovered_vector_area: float | None = None
@@ -130,8 +121,6 @@ class PageAnalysis(NativePageAnalysis):
 
 @dataclass(frozen=True, slots=True)
 class OcrPass:
-    """One independently measurable OCR operation over a declared raster scope."""
-
     name: str
     scope: OcrPassScope
     scale: float
@@ -167,8 +156,6 @@ class WorkPlan:
     augment_page_candidates: bool = False
 
     def __post_init__(self) -> None:
-        # Keep direct construction ergonomic for tests and downstream internal
-        # callers while guaranteeing that the stored contract is typed.
         if not isinstance(self.reason, PagePlanReason):
             object.__setattr__(self, "reason", PagePlanReason(self.reason))
 

@@ -1,5 +1,3 @@
-"""Raster grid detection and cell OCR with deterministic pixel fixtures."""
-
 import numpy
 import pytest
 

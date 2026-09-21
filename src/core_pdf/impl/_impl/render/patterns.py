@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Gradient-pattern geometry and colour evaluation."""
 
 from __future__ import annotations
 
@@ -26,15 +25,12 @@ from core_pdf.impl._impl.render.paths import internal_intersect_box
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
-# Keyed by ``(id(pattern), preserve_object_boundaries)``; the pinned pattern
-# keeps that id from being recycled while the render lives.
 TilingCellCache = dict[tuple[int, bool], tuple[TilingPattern, DisplayList, CapturedPath]]
 
 
 def internal_tiling_cell(
     target: internal_RasterState, pattern: TilingPattern
 ) -> tuple[DisplayList, CapturedPath]:
-    """Build one pattern cell's display list and clip once per render."""
     preserve_object_boundaries = target.group_source_shape is not None
     key = (id(pattern), preserve_object_boundaries)
     cached = target.tiling_cell_cache.get(key)
@@ -118,7 +114,6 @@ if TYPE_CHECKING:
 def internal_tiling_pattern_uses_normal_blends(
     pattern: TilingPattern, active: set[int] | None = None
 ) -> bool:
-    """Conservatively identify the isolated optimization allowed by 11.6.7."""
     if active is None:
         active = set()
     identity = id(pattern)
@@ -144,8 +139,6 @@ def internal_tiling_pattern_uses_normal_blends(
 
 
 class internal_PatternTargetMixin:
-    """Stateful gradient and tiling-pattern painting operations."""
-
     __slots__ = ()
 
     def shading_box(
@@ -197,12 +190,8 @@ class internal_PatternTargetMixin:
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
         normal_fast = can_blend_normal_fast(blend_mode)
-        # Fixed for the whole shading; resolving it per pixel re-ran is_pdf_number
-        # and float() once per device pixel of the fill.
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         domain_span = domain[1] - domain[0]
-        # page_x only depends on the column, so it is identical on every row;
-        # computing it once here avoids redoing the same division per pixel.
         page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale
@@ -210,8 +199,6 @@ class internal_PatternTargetMixin:
             visible_spans = clip_row_visible_spans(py)
             if not visible_spans:
                 continue
-            # Walking the spans directly answers a per-row question once per
-            # span, where the bisect answered it again for every pixel.
             for span_start, span_end in visible_spans:
                 for px in range(max(ix0, span_start), min(ix1, span_end)):
                     page_x = page_x_values[px - ix0]
@@ -271,7 +258,7 @@ class internal_PatternTargetMixin:
             if len(target_box) == 4:
                 try:
                     x0, y0, x1, y1 = (float(value) for value in target_box)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return False
             else:
                 x0, y0, x1, y1 = (
@@ -292,9 +279,6 @@ class internal_PatternTargetMixin:
         start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
         cells = 0
         y = start_y
-        # ISO 32000-2 11.6.7: all tiles form one non-isolated group. Notes
-        # 1-2 permit a transparent backdrop when every internal blend is Normal.
-        # Object transparency belongs to the complete pattern result.
         opacity = target_data.fill_opacity
         alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
         if is_pdf_number(target_data.soft_mask_alpha):

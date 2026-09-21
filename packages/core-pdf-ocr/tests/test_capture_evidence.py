@@ -1,5 +1,3 @@
-"""OCR routing evidence derived from deterministic captured drawings."""
-
 from dataclasses import replace
 
 import pytest
@@ -80,7 +78,6 @@ def test_distributed_stroke_evidence_selects_supported_styles_and_render_sized_p
     drawings = tuple(internal_stroke(i) for i in range(300))
     secondary = tuple(replace(internal_stroke(i), stroke_color=(1.0,)) for i in range(8))
     rare = tuple(replace(internal_stroke(i), stroke_color=(0.5,)) for i in range(7))
-    # A slightly larger path shares the dominant style and is retained for rendering.
     result = capture.internal_stroked_vector_text_evidence(
         (*drawings, *secondary, *rare, internal_stroke(0, size=5)),
         page_width=600,

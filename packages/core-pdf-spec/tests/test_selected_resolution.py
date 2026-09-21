@@ -1,5 +1,3 @@
-"""Selected metadata and structure reads preserve lazy object boundaries."""
-
 import pytest
 
 from core_pdf_spec.s_07_document.metadata import metadata_stream

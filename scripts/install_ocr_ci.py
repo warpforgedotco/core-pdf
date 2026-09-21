@@ -1,5 +1,3 @@
-"""Verify the locked OCR binding and install checksum-pinned English test data."""
-
 from __future__ import annotations
 
 import argparse

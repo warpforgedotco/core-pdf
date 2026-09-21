@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Tesseract integration: rasterization, recognition, and rescue passes."""
 
 from __future__ import annotations
 
@@ -60,8 +59,6 @@ from core_pdf_ocr.impl.extract.quality import internal_Candidate
 
 @dataclass(frozen=True, slots=True)
 class internal_OcrPassState:
-    """Candidate selection and task provenance carried between OCR passes."""
-
     selected: internal_Candidate | None = None
     selected_tasks: tuple[internal_OcrTask, ...] = ()
     previous_region_additions: int = 0
@@ -131,7 +128,6 @@ class internal_OcrPassState:
         candidate: internal_Candidate,
         candidate_source_tasks: tuple[internal_OcrTask, ...],
     ) -> Self:
-        """Fold a completed pass into the selection, keeping task provenance."""
         selected = self.selected
         if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
             used_native_seed = selected is None
@@ -273,10 +269,6 @@ def internal_recognize_page_with_reserved_raster(
                 len(packed_stroked.cells),
             )
             if packed_accepted:
-                # Seed packing only rasterizes multi-glyph runs, so isolated
-                # glyphs (pin numbers, lone digits) are never shown to OCR when
-                # the packed decode gate passes. Recognize them from their own
-                # high-scale montage as a supplement.
                 isolated_packed = internal_stroked_vector_text_raster(
                     capture,
                     ocr_pass.scale,
@@ -418,10 +410,6 @@ def internal_recognize_page_with_reserved_raster(
     if selected is None:
         return ObservationBatch.empty()
     selected_tasks = pass_state.selected_tasks
-    # Selection only occurs after a nonempty task batch completes.
-    # Ruled scanned tables defeat Tesseract's page segmentation; when the
-    # page raster shows a full ruling grid, re-recognize cell by cell and
-    # let the grid text replace the page-segmented text inside the grid.
     source_task = max(
         selected_tasks,
         key=lambda task: task.rectangle[2] * task.rectangle[3],
@@ -455,9 +443,6 @@ def internal_recognize_page_with_reserved_raster(
                     for text in cell_observations.text
                 )
                 if cell_alnum < replaced_alnum * 0.8:
-                    # The page-segmented reads carried more content than
-                    # the cell reads; this grid's cells recognize worse
-                    # than whole-page OCR, so keep the original.
                     return selected.observations
                 retained = prior.take(numpy.flatnonzero(outside))
                 return ObservationBatch.concatenate(retained, cell_observations)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recognition candidate quality and scoring."""
 
 from __future__ import annotations
 
@@ -20,8 +19,6 @@ from core_pdf.impl._impl.extract.quality import (
 
 @dataclass(frozen=True, slots=True)
 class internal_CandidateMetrics:
-    """Quality signals used to choose between extraction candidates."""
-
     characters: int
     alphanumeric_characters: int
     tokens: int
@@ -48,10 +45,6 @@ class internal_TextUtility(NamedTuple):
 
 
 def internal_text_utility_stats(text: str, confidence: float) -> internal_TextUtility:
-    """Return non-space count, alphanumeric count, and utility in one character scan."""
-    # str.split() removes exactly the isspace() characters, and Counter over
-    # a map counts in C; per-character casefold keeps expanding folds (one
-    # count under a multi-character key) identical to the previous loop.
     stripped = "".join(text.split())
     nonspace = len(stripped)
     if not nonspace:

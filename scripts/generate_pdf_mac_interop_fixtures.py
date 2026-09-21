@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Generate the ISO/TS 32004:2024 PDF MAC interoperability fixtures.
-
-pyHanko is an offline fixture generator and independent validation oracle, not
-a project or test dependency. The fixed byte sources below make the committed
-artifacts reproducible; predictable keys, salts, and nonces are safe only
-because these PDFs contain public test data.
-
-The generator also proves that pyHanko accepts each pristine fixture with both
-passwords and rejects deterministic changes to the covered document bytes, MAC
-value, KDF salt, byte range, and file extent. Corrupt variants are constructed
-in memory rather than committed because each mutation is fully described by
-the test suite.
-"""
 
 from __future__ import annotations
 
@@ -88,8 +75,6 @@ internal_FIXTURES = (
 
 
 class internal_DeterministicTokenBytes:
-    """Provide distinct reproducible bytes to pyHanko's fixture-only writer."""
-
     def __init__(self, seed: bytes) -> None:
         self.seed = seed
         self.counter = 0
@@ -161,8 +146,6 @@ def internal_tampered_variants(data: bytes) -> dict[str, bytes]:
         "mac-byte": internal_change_hex_digit(data, b"MAC", from_end=True),
         "kdf-salt": internal_change_hex_digit(data, b"KDFSalt"),
         "byte-range": internal_change_byte_range(data),
-        # Removing only the final line feed leaves a parseable PDF while making
-        # the ISO/TS 32004:2024, 6.5.1 whole-file coverage check fail.
         "truncated-file": data[:-1],
         "trailing-file-bytes": data + b"% PDF MAC coverage tamper\n",
     }
@@ -249,7 +232,7 @@ def internal_verify_tamper_rejection(
                     fixture.user_password,
                     pdf_reader,
                 )
-            except Exception:  # noqa: BLE001 - rejection can happen while parsing or validating
+            except Exception:  # noqa: BLE001
                 continue
             if authentication.status.name != "FAILED" or authentication.mac_status.name != "FAILED":
                 raise ValueError(f"pyHanko accepted {name} corruption in {fixture.filename}")
@@ -275,18 +258,12 @@ def internal_generate_fixture(
         destination.open("wb") as output_stream,
     ):
         output = writer.copy_into_new_writer(pdf_reader(input_stream))
-        # pyHanko v0.37.0 is the independent ISO/TS 32004:2024 producer and
-        # validator. It creates the PDF and CMS structures; core-pdf only reads
-        # the resulting committed bytes in its tests.
         output.encrypt(
             fixture.owner_password,
             fixture.user_password,
             pdf_mac=True,
             use_gcm=fixture.use_gcm,
         )
-        # Preserve the deliberately minimal XMP packet byte-for-byte. Its XML
-        # declaration is legal PDF metadata but pyHanko's optional updater
-        # expects an XML fragment when it receives an already-decoded string.
         output._update_meta = lambda: None
         output.write(output_stream)
 

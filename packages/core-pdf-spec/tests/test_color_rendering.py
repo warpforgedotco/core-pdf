@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO 32000-2 8.6.5.8–9, Tables 57/69/87: colour rendering parameters."""
 
 from types import SimpleNamespace
 from typing import Any, cast
@@ -71,7 +70,6 @@ def test_extgstate_absent_and_resolved_null_entries_preserve_state() -> None:
     assert state.graphics.color_rendering == previous
     state.apply_extgstate({"ca": 0.5})
     assert state.graphics.color_rendering == previous
-    # 7.3.7 and 7.3.9: null values, including undefined references, mean absent.
     state.apply_extgstate({"RI": PdfReference(99, 0), "UseBlackPtComp": None, "ca": 0.75})
     state.apply_extgstate({"UseBlackPtComp": PdfReference(99, 0), "RI": None})
     assert state.graphics.color_rendering == previous
@@ -97,5 +95,4 @@ def test_pattern_overrides_and_image_intent_preserve_unmentioned_parameters() ->
     assert image_color_rendering({"Intent": "Unknown"}, current) == ColorRendering(
         "RelativeColorimetric", "ON"
     )
-    # Table 87: stencil images ignore Intent, including malformed values.
     assert image_color_rendering({"ImageMask": True, "Intent": 123}, current) == current

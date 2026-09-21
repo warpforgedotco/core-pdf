@@ -1,5 +1,3 @@
-"""TIFF horizontal differencing wraps per component and keeps rows byte-aligned."""
-
 import pytest
 
 from core_predictors.errors import PredictorError
@@ -54,7 +52,6 @@ def test_tiff_word_kernels_preserve_empty_dimensions(bits: int) -> None:
 
 
 def test_tiff_sub_byte_rows_stay_byte_aligned() -> None:
-    # Two rows of three 4-bit samples: each row pads to two bytes.
     encoded = pack_samples([[1, 1, 1], [2, 3, 4]], 4)
     assert tiff_predict_bits(encoded, columns=3, colors=1, bits=4) == pack_samples(
         [[1, 2, 3], [2, 5, 9]], 4

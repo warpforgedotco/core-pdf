@@ -1,5 +1,3 @@
-"""Project captured page evidence into PDFMiner layout objects."""
-
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
@@ -41,8 +39,6 @@ def _pdfminer_form_glyph_is_clipped(provenance: dict[str, Any]) -> bool:
     if not isinstance(clip, (tuple, list)) or len(clip) != 4:
         return False
     left, bottom, right, top = (float(value) for value in clip)
-    # PDFMiner ignores page-content clipping during layout, but form
-    # traversal still rejects a form whose transformed bounds are empty.
     return right <= left and top <= bottom
 
 
@@ -115,7 +111,6 @@ def internal_project_page(
     *,
     unstructured_mode: bool = False,
 ) -> LTPage:
-    """Project one already-open page using PDFMiner's geometry and layout policies."""
     page_width = abs(page.width)
     page_height = abs(page.height)
     page_media_box = page.media_box or (0.0, 0.0, page_width, page_height)
@@ -134,7 +129,7 @@ def internal_project_page(
     form_ancestor_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
     try:
         page_annotations = page.get_annotations()
-    except (PdfError, ValueError):
+    except PdfError, ValueError:
         page_annotations = []
     annotation_boxes = tuple(
         tuple(annotation.rect) for annotation in page_annotations if annotation.rect is not None
@@ -175,9 +170,6 @@ def internal_project_page(
             x1 = baseline_x + glyph.font_size * 0.5
             y0 = baseline_y - glyph.font_size * 0.88
             y1 = y0 + glyph.font_size
-        # PDF text size precedes the text matrix, so it can be much larger than the
-        # effective glyph size after horizontal scaling. Recover the transformed size
-        # from core's baseline advance; the advance box already has pdfminer's x bounds.
         width_code = (
             glyph.cid
             if getattr(glyph.font_decoder, "is_cid_font", False)
@@ -215,10 +207,6 @@ def internal_project_page(
                 and _font_value(glyph.font_decoder.font, "Widths") is None
                 and base_font.split("+")[-1] in {"Symbol", "ZapfDingbats"}
             ):
-                # pdfminer indexes built-in Symbol/Zapf metrics by its
-                # legacy encoded character keys. A Differences entry
-                # resolves to Unicode and therefore has no built-in
-                # width unless /Widths explicitly supplies one.
                 normalized_width = 0.0
         orientation = glyph.rotation_angle % 360
         text_matrix = glyph_provenance.get("text_matrix")
@@ -236,19 +224,10 @@ def internal_project_page(
             and width_code is not None
         ):
             metric = glyph.font_decoder.vertical_glyph_metric(width_code)
-            # The engine advances an entire text-show array in bulk,
-            # while PDFMiner advances one token at a time. Normalize
-            # the resulting sub-picopoint accumulation noise before
-            # applying vertical displacement metrics; otherwise two
-            # mathematically touching boxes can miss by one ULP.
             origin_x, origin_y = _pdfminer_layout_origin(
                 baseline,
                 normalize_noise=effective_font_size == glyph.font_size,
             )
-            # PDFMiner applies the vertical displacement and advance
-            # as a local LTChar rectangle before transforming it.  In
-            # particular, the character origin is not the lower edge:
-            # a normal vertical advance extends down from ``v1y``.
             matrix_a, matrix_b, matrix_c, matrix_d, _matrix_e, _matrix_f = (
                 float(value) for value in resolved_text_matrix
             )
@@ -308,10 +287,6 @@ def internal_project_page(
             and len(text_matrix) == 4
         ):
             matrix_a, matrix_b, matrix_c, matrix_d = (float(value) for value in text_matrix)
-            # A horizontal show immediately following vertical writing
-            # resumes at the vertical cursor. Normalize only that
-            # hand-off; ordinary horizontal origins must retain
-            # PDFMiner's native floating-point arithmetic.
             origin_x, origin_y = _pdfminer_layout_origin(
                 baseline,
                 normalize_noise=(
@@ -320,9 +295,6 @@ def internal_project_page(
             )
             text_rise = float(glyph_provenance.get("text_rise", 0.0))
             descent = internal_pdfminer_descent(glyph) * glyph.font_size + text_rise
-            # ``LTChar`` uses the font descent only to anchor horizontal
-            # glyphs; its box is always exactly one text-space unit tall.
-            # FontBBox/ascent describes ink, not pdfminer's layout box.
             top = descent + glyph.font_size
             advance = normalized_width * horizontal_scale * glyph.font_size
             media_left, media_bottom, _media_right, _media_top = page_media_box
@@ -344,8 +316,6 @@ def internal_project_page(
                 page_width,
                 page_height,
             )
-            # Compute the four corners directly, preserving evaluation order
-            # and zero products while avoiding temporary tuples and generators.
             bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
             bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
             top_left_x = 0.0 * matrix_a + top * matrix_c + layout_origin_x
@@ -376,9 +346,6 @@ def internal_project_page(
             x1 = x0 + effective_font_height
             if normalized_width > 0:
                 y0 = y1 - normalized_width * effective_font_size
-        # PDFMiner places the media-box lower-left at layout-space
-        # (0, 0). Core's canonical geometry remains in PDF user space,
-        # so normalize non-zero and negative media-box origins here.
         if not coordinates_in_layout_space:
             x0, y0, x1, y1 = _pdfminer_layout_figure_box(
                 (x0, y0, x1, y1),
@@ -463,10 +430,6 @@ def internal_project_page(
         )
     )
     boxes.extend(empty_lines)
-    # PDFMiner inserts layout children only for marks that reach its
-    # device. Graphics-state and clipping records are engine
-    # provenance, not LTItems, and therefore cannot delimit figure
-    # text during recursive extraction.
     drawing_sequences_by_depth: dict[int, list[int]] = {}
     for drawing in products.drawings:
         if drawing.kind in {

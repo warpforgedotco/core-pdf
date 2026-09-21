@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Records and box geometry shared across the OCR stage.
-
-The recognition stage is large enough to have its own internal vocabulary: rasters,
-the regions cut from them, and the tasks queued against Tesseract. These types are
-referenced from every part of the stage, so they live here rather than in whichever
-module happened to need them first.
-"""
 
 from __future__ import annotations
 
@@ -30,16 +23,12 @@ class internal_Raster:
 
 @dataclass(frozen=True, slots=True)
 class internal_RasterRegion:
-    """A decoded raster coupled to the page-space area it actually represents."""
-
     raster: internal_Raster
     page_box: tuple[float, float, float, float]
 
 
 @dataclass(frozen=True, slots=True)
 class internal_StrokedTextCell:
-    """A translated vector-text run in a packed OCR raster."""
-
     source_box: tuple[float, float, float, float]
     packed_box: tuple[float, float, float, float]
     drawing_indexes: tuple[int, ...]
@@ -47,8 +36,6 @@ class internal_StrokedTextCell:
 
 @dataclass(frozen=True, slots=True)
 class internal_PackedStrokedTextRaster:
-    """One compact raster plus the piecewise map back into PDF page space."""
-
     raster: internal_Raster
     packed_box: tuple[float, float, float, float]
     cells: tuple[internal_StrokedTextCell, ...]
@@ -56,8 +43,6 @@ class internal_PackedStrokedTextRaster:
 
 @dataclass(frozen=True, slots=True)
 class internal_OcrRegion:
-    """A ranked page-space region selected before compositor rasterization."""
-
     page_box: tuple[float, float, float, float]
     score: float
     reasons: tuple[str, ...]
@@ -87,7 +72,6 @@ def internal_pixel_box_to_page_box(
     image_height: int,
     page_box: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float]:
-    """Map a top-left-origin pixel box into bottom-left PDF page space."""
     x0, y0, x1, y1 = bbox
     page_x0, page_y0, page_x1, page_y1 = page_box
     page_width = page_x1 - page_x0
@@ -104,7 +88,6 @@ def internal_map_ocr_box(
     task: internal_OcrTask,
     bbox: tuple[int, int, int, int],
 ) -> tuple[float, float, float, float]:
-    """Map one Tesseract pixel box into the task's PDF coordinate space."""
     return internal_pixel_box_to_page_box(bbox, task.image.width, task.image.height, task.page_box)
 
 
@@ -130,7 +113,6 @@ def internal_raster_rectangle_page_box(
     page_box: tuple[float, float, float, float],
     rectangle: tuple[int, int, int, int],
 ) -> tuple[float, float, float, float]:
-    """Map a top-left raster rectangle into bottom-left PDF page space."""
     x, y, width, height = rectangle
     return internal_pixel_box_to_page_box(
         (x, y, x + width, y + height), raster.width, raster.height, page_box

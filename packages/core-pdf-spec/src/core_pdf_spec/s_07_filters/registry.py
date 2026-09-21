@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Canonical metadata for supported PDF stream filters."""
 
 from __future__ import annotations
 
@@ -22,14 +21,10 @@ FilterDecoder: TypeAlias = Literal[
 
 @dataclass(frozen=True, slots=True)
 class FilterDescriptor:
-    """Normalization and decoding properties for one accepted filter name."""
-
     name: str
     decoder: FilterDecoder | None
     predictor: bool = False
     ccitt: bool = False
-    # JPX reads the image dictionary (for /SMaskInData and colour) rather than
-    # the DecodeParms every other filter is handed.
     wants_image_dictionary: bool = False
 
 

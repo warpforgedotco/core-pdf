@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Document-selection enrichment and extraction orchestration."""
 
 from __future__ import annotations
 
@@ -44,8 +43,6 @@ DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 
 @dataclass(frozen=True, slots=True)
 class internal_FontEnrichment:
-    """Immutable learned Unicode overlay for one exact document selection."""
-
     learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
     recognition_by_index: Mapping[int, RecognitionResult] = field(
         default_factory=lambda: MappingProxyType({})
@@ -121,8 +118,6 @@ def internal_font_mapping_votes(
     )
     if not glyphs:
         return votes
-    # Each OCR word only inspects glyphs in its own vertical band, so bucket the
-    # page's glyphs by ink center once instead of rescanning them all per word.
     glyphs_by_y = sorted(glyphs, key=lambda glyph: (glyph.ink_bbox[1] + glyph.ink_bbox[3]) * 0.5)
     y_centers = [(glyph.ink_bbox[1] + glyph.ink_bbox[3]) * 0.5 for glyph in glyphs_by_y]
     for text, bbox, confidence in zip(ocr.text, ocr.bbox, ocr.confidence, strict=True):
@@ -135,8 +130,6 @@ def internal_font_mapping_votes(
         tolerance = max(1.0, (y1 - y0) * 0.10)
         y_start = bisect_left(y_centers, y0 - tolerance)
         y_stop = bisect_right(y_centers, y1 + tolerance)
-        # Vertical geometry selects word members. Their horizontal position,
-        # rather than differing ink bottoms or PDF paint order, aligns letters.
         aligned = tuple(
             sorted(
                 (
@@ -244,7 +237,6 @@ def internal_apply_font_enrichment(
     captures: tuple[PageAnalysis, ...],
     font: internal_FontEnrichment,
 ) -> tuple[internal_PageExtraction, ...]:
-    """Create local pipelines only for non-seed pages changed by the overlay."""
     enriched: list[internal_PageExtraction] = []
     for index, (base, capture) in enumerate(zip(extractions, captures, strict=True)):
         recognition = font.recognition_by_index.get(index)
@@ -290,7 +282,6 @@ def internal_merge_document_stroked_alphabet(
     ambiguous: set[GlyphSignature],
     source: Iterable[tuple[GlyphSignature, str]],
 ) -> None:
-    """Merge exact glyph mappings and permanently exclude cross-page conflicts."""
     for signature, character in source:
         if signature in ambiguous:
             continue
@@ -313,7 +304,6 @@ def internal_document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -
 def internal_document_stroked_recognition(
     decoded: StrokedTextDecode,
 ) -> RecognitionResult:
-    """Build a selection-local zero-raster recognition result."""
     from core_pdf_ocr.impl.extract.ocr.vector import internal_stroked_vector_decoded_batch
 
     observations = internal_stroked_vector_decoded_batch(decoded.observations)
@@ -325,10 +315,6 @@ def internal_prepare_document_stroked_mappings(
     captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
 ) -> Mapping[int, RecognitionResult]:
-    """OCR the richest flattened-font page, then decode compatible pages structurally.
-
-    Returns selection-local recognition replacements learned across compatible pages.
-    """
     indexes = tuple(
         index
         for index, capture in enumerate(captures)
@@ -412,7 +398,6 @@ def internal_prepare_selection_state(
     captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
 ) -> tuple[internal_PageExtraction, ...]:
-    """Page pipelines enriched with everything learned across one exact selection."""
     font = internal_prepare_document_font_mappings(extractions, captures, context)
     extractions = internal_apply_font_enrichment(extractions, captures, font)
     stroked = internal_prepare_document_stroked_mappings(

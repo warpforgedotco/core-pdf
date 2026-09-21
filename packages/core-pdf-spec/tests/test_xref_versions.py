@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Version-selected lexical rules reach all cross-reference parsing paths."""
 
 from __future__ import annotations
 
@@ -40,7 +39,6 @@ def internal_table(trailer: bytes = b"", *, separator: bytes = b" ") -> bytes:
 
 @pytest.mark.parametrize(("version", "key"), [("1.1", "Legacy#20Key"), ("1.2", "Legacy Key")])
 def test_xref_trailer_names_follow_the_selected_version(version: str, key: str) -> None:
-    # Adobe PDF Reference 1.2, 4.5: hexadecimal name escapes start with PDF 1.2.
     data = internal_table(b"/Legacy#20Key true")
     _, trailer = XRefScanner.parse_table_section(
         data, 0, semantic_context=internal_context(version)
@@ -66,7 +64,6 @@ def test_legacy_context_reaches_previous_classic_sections() -> None:
     data += internal_table(f"/Prev {previous}".encode())
     revisions = internal_revisions(data, latest, internal_context("1.1"))
     assert [revision.offset for revision in revisions] == [latest, previous]
-    # The same bytes name /Prev in 1.2; the out-of-bounds third section must fail.
     with pytest.raises(PdfParseError, match="invalid xref section"):
         internal_revisions(data, latest, internal_context("1.2"))
 
@@ -82,14 +79,11 @@ def test_hybrid_stream_uses_context_for_escaped_type_names() -> None:
     data += internal_table(f"/XRefStm {stream}".encode())
     revisions = internal_revisions(data, table, internal_context("1.5"))
     assert revisions[0].entries[1 << 16].offset == 9
-    # An intentionally under-declared context cannot silently use modern name
-    # decoding inside the hybrid branch, even though the outer table is readable.
     with pytest.raises(PdfParseError, match="invalid xref stream type"):
         internal_revisions(data, table, internal_context("1.1"))
 
 
 def test_nul_whitespace_in_xref_subsections_follows_selected_rules() -> None:
-    # PDF 1.2, 4.4 omits NUL; PDF 1.3, Table 3.1 includes it.
     data = internal_table(separator=b"\x00")
     with pytest.raises(PdfParseError, match="invalid xref table subsection"):
         XRefScanner.parse_table_section(data, 0, semantic_context=internal_context("1.2"))

@@ -1,5 +1,3 @@
-"""Session materialization and raster projection ownership with controlled boundaries."""
-
 from dataclasses import replace
 from types import SimpleNamespace
 

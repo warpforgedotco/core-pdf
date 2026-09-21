@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader coercion of Standard Security dictionary scalars."""
 
 from __future__ import annotations
 
@@ -22,7 +21,6 @@ def internal_normalize_values(
     normalized = values
     for name in integer_fields:
         value = values.get(name)
-        # Retain the old lexical grammar, which is narrower than host int().
         number = parse_int(value)
         if number is not None and type(value) is not int:
             if normalized is values:
@@ -41,7 +39,6 @@ def internal_normalize_values(
 def create_recovered_security_handler(
     document_id: Sequence[object], params: PdfDict, password: str = ""
 ) -> StandardSecurityHandler:
-    """Coerce legacy tokens without modifying authenticated source dictionaries."""
     normalized = internal_normalize_values(
         params, ("V", "R", "P", "Length"), ("Filter", "StmF", "StrF", "EFF")
     )

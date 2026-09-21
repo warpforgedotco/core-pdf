@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF numeric tokens and the distinct syntax of indirect object identifiers."""
 
 from __future__ import annotations
 
@@ -35,7 +34,6 @@ def is_number_token(token: bytes | memoryview) -> bool:
 
 
 def parse_integer_token(token: bytes | memoryview) -> int:
-    """Convert a complete integer token, preserving Python's configured digit limit."""
     raw = token.tobytes() if isinstance(token, memoryview) else token
     if not is_integer_token(raw):
         raise PdfParseError("invalid PDF integer")
@@ -46,7 +44,6 @@ def parse_integer_token(token: bytes | memoryview) -> int:
 
 
 def parse_real_token(token: bytes | memoryview) -> float:
-    """Convert a PDF number to a finite real; Annex C requires reporting limits."""
     raw = token.tobytes() if isinstance(token, memoryview) else token
     if not is_number_token(raw):
         raise PdfParseError("invalid PDF real number")
@@ -62,12 +59,6 @@ def parse_identifier_tokens(
     *,
     canonical: bool = True,
 ) -> tuple[int, int]:
-    """Validate the two tokens in ``X Y obj`` or ``X Y R``.
-
-    ISO 32000-2:2020, 7.3.10, corrected by issue 379, requires digits without
-    signs or redundant leading zeros. Earlier editions specify integer tokens.
-    Object-stream pairs and xref fields have their own integer representations.
-    """
     if canonical:
         for token in (object_token, generation_token):
             raw = token.tobytes() if isinstance(token, memoryview) else token

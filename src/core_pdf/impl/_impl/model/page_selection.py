@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Page-selection values and normalization shared by PDF and structured documents."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ PageSelection: TypeAlias = int | str | range | Sequence[int]
 
 
 def resolve_page_selection(pages: PageSelection | None, page_count: int) -> list[int]:
-    """Return normalized, deduplicated 0-based indexes for a 1-based page selection."""
     segments: list[int | range]
     match pages:
         case None:
@@ -52,8 +50,6 @@ def resolve_page_selection(pages: PageSelection | None, page_count: int) -> list
         case _:
             raise TypeError(f"invalid page selection: {pages!r}")
 
-    # Finish syntax/type validation before bounds checks, and validate every
-    # compact segment before allocating any expanded range.
     has_pages = False
     for segment in segments:
         if isinstance(segment, range):

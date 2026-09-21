@@ -1,5 +1,3 @@
-"""Companion entry points opt into OCR while retaining native-page behavior."""
-
 import importlib
 import runpy
 from dataclasses import replace

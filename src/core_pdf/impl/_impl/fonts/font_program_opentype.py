@@ -1,5 +1,3 @@
-"""OpenType CFF/CFF2 outline access through the vendored fontTools subset."""
-
 from __future__ import annotations
 
 from io import BytesIO
@@ -20,8 +18,6 @@ def parse_opentype_program(data: bytes) -> TTFont:
 
 
 class OpenTypeFontProgram:
-    """Expose normalized outlines from an OpenType CFF or CFF2 wrapper."""
-
     __slots__ = (
         "font",
         "outlines",
@@ -31,10 +27,6 @@ class OpenTypeFontProgram:
         try:
             self.font = parse_opentype_program(data)
             self.outlines = internal_FontToolsOutlineAccess(self.font)
-            # The renderer resolves variable CFF2 fonts at their default
-            # instance. A default glyph set does not need axis metadata, and
-            # dropping the lazily registered table avoids loading variation
-            # machinery that is intentionally absent from the vendored subset.
             if "CFF2" in self.font and "fvar" in self.font:
                 del self.font["fvar"]
         except FONT_PROGRAM_ERRORS as exc:

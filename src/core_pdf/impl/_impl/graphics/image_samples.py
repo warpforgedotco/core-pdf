@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared natural-component conversion and integer image sample decoding."""
 
 from __future__ import annotations
 
@@ -63,8 +62,6 @@ def internal_convert_components(
     kind = space.kind
     process = internal_nchannel_process(space)
     if process is not None:
-        # PDF 8.6.6.5: process components use their natural values. Missing
-        # CMYK components are unpainted inks, not copied from adjacent channels.
         mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
         for destination, source in enumerate(process.component_indices):
             if source is not None:
@@ -91,7 +88,7 @@ def internal_convert_components(
             transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
             if transform is not None and transform.input_channels == values.shape[1]:
                 return transform.apply_uint16(internal_quantize(values, 65535), rendering=rendering)
-        except (IccProfileError, IccSampleError):
+        except IccProfileError, IccSampleError:
             pass
         if space.alternate is not None:
             return internal_convert_components(
@@ -109,9 +106,6 @@ def internal_convert_components(
             base, space.base, depth + 1, matte=matte, alpha=alpha, rendering=rendering
         )
     if kind in {"Separation", "DeviceN"}:
-        # Reader recovery for missing/unusable tint transforms is subtractive:
-        # zero tint is unpainted, full tint is the darkest approximation.
-        # Keep this policy identical for vector, low- and high-depth samples.
         try:
             if space.alternate is None:
                 raise ValueError("missing tint alternate")
@@ -128,7 +122,7 @@ def internal_convert_components(
             return internal_convert_components(
                 tinted, space.alternate, depth + 1, rendering=rendering
             )[inverse]
-        except (TypeError, ValueError, ArithmeticError):
+        except TypeError, ValueError, ArithmeticError:
             gray = internal_quantize(1 - numpy.max(values, axis=1, keepdims=True))
             return numpy.repeat(gray, 3, axis=1)
     if kind in {"Lab", "CalGray", "CalRGB"}:
@@ -145,7 +139,6 @@ def internal_convert_components(
         else:
             gamma = cs_param_floats(space.params, "Gamma", 3, [1, 1, 1])
             matrix = cs_param_floats(space.params, "Matrix", 9, [1, 0, 0, 0, 1, 0, 0, 0, 1])
-            # PDF stores the XYZ contributions for A, B, C consecutively.
             xyz = ((values ** numpy.asarray(gamma)) @ numpy.asarray(matrix).reshape(3, 3)).astype(
                 numpy.float32
             )
@@ -165,11 +158,6 @@ def convert_integer_samples(
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> numpy.ndarray:
-    """Decode native unsigned words, then convert colours and source-sample masks.
-
-    ISO 32000-1 8.9.3 and 8.9.6.4: Decode precedes colour conversion but colour
-    key comparisons use the original integers, including their low eight bits.
-    """
     space = parse_color_space(dictionary.get("ColorSpace"))
     count = len(space.component_ranges)
     if count <= 0:
@@ -189,7 +177,6 @@ def convert_integer_samples(
         values, space, matte=matte, alpha=alpha, rendering=rendering
     )
     mask = dictionary.get("Mask")
-    # An SMask takes precedence over the colour key mask (Table 89).
     if isinstance(mask, (list, tuple)) and dictionary.get("SMask") is None:
         output = numpy.column_stack((output, color_key_alpha(integers, tuple(mask), maximum)))
     return output
@@ -204,7 +191,6 @@ def convert_integer_image(
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> numpy.ndarray:
-    """Unpack packed integer samples and convert them with their colour-key mask."""
     space = parse_color_space(dictionary.get("ColorSpace"))
     samples = unpack_image_samples(
         data,

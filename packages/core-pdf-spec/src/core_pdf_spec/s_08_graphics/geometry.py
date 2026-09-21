@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Exact geometric bounds used by PDF semantics."""
 
 from __future__ import annotations
 
@@ -11,7 +10,6 @@ from core_pdf_spec.types import Rectangle
 
 
 def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
-    """Axis-aligned bounds of a point sequence, or None for no points."""
     x0 = y0 = math.inf
     x1 = y1 = -math.inf
     for x, y in points:
@@ -29,7 +27,6 @@ def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
 
 
 def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
-    """Axis-aligned bounds of ``bbox`` after the PDF matrix ``(a, b, c, d, e, f)``."""
     x0, y0, x1, y1 = bbox
     a, b, c, d, e, f = matrix
     xs = (x0 * a + y0 * c + e, x1 * a + y0 * c + e, x0 * a + y1 * c + e, x1 * a + y1 * c + e)
@@ -38,7 +35,6 @@ def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
 
 
 def unit_square_placement(matrix: Matrix) -> tuple[Rectangle, tuple[tuple[float, float], ...]]:
-    """Image bounds and ordered affine sampling corners in page coordinates."""
     a, b, c, d, e, f = matrix
     quad = ((e, f), (a + e, b + f), (c + e, d + f), (a + c + e, b + d + f))
     bbox = points_bbox(quad)
