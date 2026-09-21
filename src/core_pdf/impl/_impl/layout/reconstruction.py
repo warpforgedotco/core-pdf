@@ -632,6 +632,8 @@ class GlyphLineBuilder:
             return False
         text_length = len(text)
         for (px0, py0, px1, py1), prev_text in reversed(recent_runs):
+            if px0 >= x1 or px1 <= x0:
+                continue
             ox = (min(px1, x1)) - (max(px0, x0))
             oy = (min(py1, y1)) - (max(py0, y0))
             if ox <= 0 or oy <= 0:
