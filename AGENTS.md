@@ -18,8 +18,9 @@ specification family: `core-predictors` (PNG and TIFF predictors), `core-postscr
 PLRM calculator subset), `core-jbig2` (ITU-T T.88), `core-pdf-crypto` (ciphers, RFC 5652 CMS,
 ISO/TS 32003 and 32004), and `core-adobe-fonts` (CFF, Type 2, Type 1, CMaps, the Adobe Glyph
 List, and Core 14 metrics, with the CMap data). Each lives at `packages/<name>/src/<name>/`
-and imports nothing from core, spec, OCR, validate, or the other floor packages, including
-type-only imports. PDF glue (DecodeParms, PDF objects, spec exceptions, T.88 polarity
+and imports nothing from core, spec, OCR, or validate, including type-only imports; the floor
+packages are independent of each other except that any may use `core-predictors`, which also
+hosts the shared numpy sample-view helpers. PDF glue (DecodeParms, PDF objects, spec exceptions, T.88 polarity
 inversion) stays in the spec chapter that ISO 32000 assigns; kernels take bytes and plain
 Python values. Spec pins each floor package's minor range; core pins the three it imports
 directly. See `tests/fixtures/specifications/README.md` for the document-to-package map.
@@ -41,7 +42,7 @@ This is a Python 3.14+ PDF parsing engine using the `src` layout. Production cod
 - `impl/_impl/document/` composes source/lifecycle, recovery adapters, page operations, and navigation/metadata/field/structure projections. `impl/_impl/capture/` records interpreter events into runs, glyph observations, page programs, and renderer commands. `impl/_impl/fonts/` owns font selection, Unicode recovery, raster adapters, and substitute font assets. `impl/_impl/graphics/` owns color output, raster preparation, codec selection, and tolerant filter/function adapters.
 - `impl/types.py` defines core capture records and source protocols and re-exports spec-owned PDF primitive identities. `core_pdf_spec.types` and `core_pdf_spec.exceptions` own shared foundational types and errors. Keep module-level functions in their owning implementation modules; shared text normalization belongs in `impl/_impl/model/text.py`.
 - `impl/_impl/extract/` is the native extraction pipeline. Recognition routing, learning, OCR tasks, and recognition-specific output policies belong to the companion. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
-- `impl/_impl/render/` rasterizes; `impl/_impl/output/model.py` defines structured output and `impl/_impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/_impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/_impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/_impl/runtime/` holds engine-independent infrastructure and must not import from `core_pdf_spec`, the standards packages, or the derived-processing packages beside it.
+- `impl/_impl/render/` rasterizes; `impl/_impl/output/model.py` defines structured output and `impl/_impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/_impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/_impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/_impl/runtime/` holds engine-independent infrastructure and must not import from `core_pdf_spec` or the derived-processing packages beside it; it may use the standards packages, which sit below spec.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 The authored test suite includes differential comparisons under

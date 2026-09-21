@@ -418,11 +418,15 @@ name = "core-jbig2"
 version = "0.1.0"
 source = { editable = "packages/core-jbig2" }
 dependencies = [
+    { name = "core-predictors" },
     { name = "numpy" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "numpy", specifier = ">=2.5.1" }]
+requires-dist = [
+    { name = "core-predictors", editable = "packages/core-predictors" },
+    { name = "numpy", specifier = ">=2.5.1" },
+]
 
 [[package]]
 name = "core-pdf"

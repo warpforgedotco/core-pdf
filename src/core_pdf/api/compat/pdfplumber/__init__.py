@@ -1237,7 +1237,7 @@ class Page:
         groups: dict[tuple[Any, ...], list[int]] = {}
         for index, char in enumerate(chars):
             groups.setdefault(tuple(char.get(name) for name in attributes), []).append(index)
-        retained = []
+        retained: list[int] = []
 
         def position(index: int) -> tuple[float, float]:
             return chars[index]["doctop"], chars[index]["x0"]

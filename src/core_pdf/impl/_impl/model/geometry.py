@@ -7,6 +7,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 from core_pdf.impl.types import Rectangle
+from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
 
 
 def internal_float_value(value: object) -> float:
@@ -100,31 +101,6 @@ def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle
     )
 
 
-def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
-    x0 = y0 = math.inf
-    x1 = y1 = -math.inf
-    for x, y in points:
-        if x < x0:
-            x0 = x
-        if x > x1:
-            x1 = x
-        if y < y0:
-            y0 = y
-        if y > y1:
-            y1 = y
-    if x0 > x1:
-        return None
-    return (x0, y0, x1, y1)
-
-
-def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
-    x0, y0, x1, y1 = bbox
-    a, b, c, d, e, f = matrix
-    xs = (x0 * a + y0 * c + e, x1 * a + y0 * c + e, x0 * a + y1 * c + e, x1 * a + y1 * c + e)
-    ys = (x0 * b + y0 * d + f, x1 * b + y0 * d + f, x0 * b + y1 * d + f, x1 * b + y1 * d + f)
-    return (min(xs), min(ys), max(xs), max(ys))
-
-
 def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     overlap = min(a1, b1) - max(a0, b0)
     return max(0.0, overlap)
@@ -192,3 +168,25 @@ def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
         float(rect[2]),
         page_height - float(rect[1]),
     )
+
+
+__all__ = (
+    "bbox_area",
+    "bbox_contains",
+    "bbox_intersection_area",
+    "bbox_intersects",
+    "bbox_union",
+    "finite_rect",
+    "flip_rect_vertical",
+    "horizontal_overlap_ratio",
+    "internal_float_value",
+    "intersect_bbox",
+    "interval_overlap",
+    "overlap_ratio_min",
+    "overlap_ratio_min_exact",
+    "overlap_ratio_of",
+    "points_bbox",
+    "rect_tuple",
+    "transform_bbox",
+    "union_bbox",
+)

@@ -320,6 +320,7 @@ layers = [
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.output.serialize"]
+ignore_imports = ["core_pdf.impl._impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
     "core_pdf.impl._impl.document",
     "core_pdf.impl._impl.capture",
@@ -370,15 +371,14 @@ source_modules = [
 ]
 forbidden_modules = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate"]
 
+# core-predictors also hosts the shared numpy sample-view helpers, so it is the
+# one floor package the others may use; the rest stay independent of each other.
 [[tool.importlinter.contracts]]
-name = "Standards packages do not depend on each other"
-type = "independence"
-modules = [
+name = "Standards packages depend at most on core-predictors"
+type = "layers"
+layers = [
+    "core_postscript | core_jbig2 | core_pdf_crypto | core_adobe_fonts",
     "core_predictors",
-    "core_postscript",
-    "core_jbig2",
-    "core_pdf_crypto",
-    "core_adobe_fonts",
 ]
 
 [[tool.importlinter.contracts]]
@@ -396,11 +396,6 @@ forbidden_modules = [
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.render",
     "core_pdf_spec",
-    "core_predictors",
-    "core_postscript",
-    "core_jbig2",
-    "core_pdf_crypto",
-    "core_adobe_fonts",
     "core_pdf.api",
 ]
 
@@ -408,6 +403,9 @@ forbidden_modules = [
 name = "The shared model depends on nothing above it"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.model"]
+# Spec's geometry module is a leaf (only core_pdf_spec.types); the model
+# re-exports its bbox helpers rather than duplicating them.
+ignore_imports = ["core_pdf.impl._impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
     "core_pdf.impl._impl.document",
     "core_pdf.impl._impl.capture",

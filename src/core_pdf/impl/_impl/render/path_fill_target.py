@@ -356,7 +356,7 @@ class internal_PathFillTargetMixin:
             )
         for py in range(iy0, iy1):
             row = py * width * 4
-            sample_spans = []
+            sample_spans: list[list[tuple[float, float]]] = []
             if all_row_crossings is not None:
                 base = (py - iy0) * samples
                 sample_spans.extend(

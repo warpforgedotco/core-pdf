@@ -9,6 +9,7 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 classifiers = ["Development Status :: 3 - Alpha"]
 requires-python = ">=3.14"
 dependencies = [
+    "core-predictors>=0.1.0,<0.2.0",
     "numpy>=2.5.1",
 ]
 
@@ -31,3 +32,6 @@ core_jbig2 = ["py.typed"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["**/__pycache__/*", "**/*.pyc", "*.pdf", "**/*.pdf"]
+
+[tool.uv.sources]
+core-predictors = { workspace = true }
