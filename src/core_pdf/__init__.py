@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
-    from core_pdf.api.document import DocumentAdapter, PdfDocument, PdfPage
+    from core_pdf.impl._impl.document.document import DocumentAdapter, PdfDocument
+    from core_pdf.impl._impl.document.page import PdfPage
     from core_pdf.impl._impl.fonts.fallback import (
         PdfRasterFontFace,
         PdfRasterFontProvider,
@@ -44,10 +45,10 @@ if TYPE_CHECKING:
         TextWord,
     )
 internal_EXPORTS = {
-    "DocumentAdapter": ("core_pdf.api.document", "DocumentAdapter"),
+    "DocumentAdapter": ("core_pdf.impl._impl.document.document", "DocumentAdapter"),
     "Document": ("core_pdf.impl._impl.output.model", "Document"),
     "PageSelection": ("core_pdf.impl._impl.model.page_selection", "PageSelection"),
-    "PdfDocument": ("core_pdf.api.document", "PdfDocument"),
+    "PdfDocument": ("core_pdf.impl._impl.document.document", "PdfDocument"),
     "PdfRasterFontFace": (
         "core_pdf.impl._impl.fonts.fallback",
         "PdfRasterFontFace",
@@ -77,7 +78,7 @@ internal_EXPORTS = {
     "TextView": ("core_pdf.impl._impl.output.model", "TextView"),
     "TextWord": ("core_pdf.impl.types", "TextWord"),
     "TextLineReference": ("core_pdf.impl._impl.output.model", "TextLineReference"),
-    "PdfPage": ("core_pdf.api.document", "PdfPage"),
+    "PdfPage": ("core_pdf.impl._impl.document.page", "PdfPage"),
     "PdfDecryptionError": ("core_pdf.impl.exceptions", "PdfDecryptionError"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),

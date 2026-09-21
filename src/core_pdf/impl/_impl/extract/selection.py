@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from contextlib import suppress
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from core_pdf.impl._impl.extract.pipeline import internal_PageExtraction
 from core_pdf.impl._impl.output.model import SCHEMA_VERSION, Document, Page
@@ -31,7 +31,7 @@ class internal_ExtractionBuilder(Protocol[internal_Extraction]):
 
 
 def internal_prepare_document_pages(
-    document: PdfDocument,
+    document: PdfDocument[Any],
     pages: Sequence[PdfPage],
     build: internal_ExtractionBuilder[internal_Extraction],
 ) -> tuple[internal_Extraction, ...]:
@@ -63,7 +63,7 @@ def internal_prepare_document_pages(
 
 
 def internal_assemble_document(
-    document: PdfDocument,
+    document: PdfDocument[Any],
     extractions: tuple[internal_PageExtraction, ...],
     context: ExtractionScope,
 ) -> Document:
@@ -83,7 +83,7 @@ def internal_assemble_document(
 
 
 def extract_document(
-    document: PdfDocument, context: ExtractionScope, pages: Sequence[PdfPage]
+    document: PdfDocument[Any], context: ExtractionScope, pages: Sequence[PdfPage]
 ) -> Document:
     extractions = internal_prepare_document_pages(document, tuple(pages), internal_PageExtraction)
     return internal_assemble_document(document, extractions, context)
