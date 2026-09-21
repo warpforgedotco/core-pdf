@@ -153,11 +153,40 @@ line-length = 100
 
 [tool.ruff.lint.per-file-ignores]
 "src/core_pdf/__main__.py" = ["E501"]
+# Test doubles and scripts accept signatures they do not use.
+"tests/**" = ["ARG"]
+"packages/*/tests/**" = ["ARG"]
+"conftest.py" = ["ARG"]
+"scripts/**" = ["ARG"]
+# Operator handlers share one dispatch signature: (operands, depth).
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_content/interpreter.py" = ["ARG002"]
+"src/core_pdf/api/compat/pdfminer/_capture.py" = ["ARG002"]
+# Stream filters share the FilterFn signature: (data, parms).
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
+"src/core_pdf/impl/_impl/graphics/filter_recovery.py" = ["ARG001"]
+"src/core_pdf/impl/_impl/graphics/codec_dispatch.py" = ["ARG001"]
+# Scanner callbacks share the (data, pos, ..., semantic_context) signature.
+"src/core_pdf/impl/_impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
+# Content operator handlers and semantic-sink callbacks share fixed signatures.
+"src/core_pdf/impl/_impl/capture/tolerant_state.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/capture/recording.py" = ["ARG002"]
+# Documented parsing extension hooks keep their signatures, in the strict base
+# and in the recovery overrides.
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/lexer.py" = ["ARG002"]
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/objects.py" = ["ARG002"]
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/resolver.py" = ["ARG002"]
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_content/streams.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/document/recovery/lexer.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/document/recovery/resolver.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/fonts/cmap_tounicode.py" = ["ARG002"]
 [tool.ruff.lint.mccabe]
 max-complexity = 60
 
 [tool.ruff.lint]
+# The codebase names deliberately unused bindings ignored_*; treat them as dummies.
+dummy-variable-rgx = "^(_+|_[a-zA-Z0-9_]*|ignored(_.*)?)$"
 select = [
+    "ARG",     # unused arguments
     "B",       # flake8-bugbear
     "C4",      # flake8-comprehensions
     "C90",     # mccabe complexity

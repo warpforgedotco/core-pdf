@@ -761,7 +761,7 @@ class PdfDocument(
                     self.resolver.resolve,
                     inherited_keys=PAGE_INHERITED_KEYS,
                     node_type=lambda node: resolve_page_tree_node_type(self.resolver, node),
-                    on_invalid_child=lambda node: True,
+                    on_invalid_child=lambda _node: True,
                     max_depth=MAX_PAGE_TREE_DEPTH,
                 )
             )

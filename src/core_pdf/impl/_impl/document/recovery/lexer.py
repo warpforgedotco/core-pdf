@@ -72,7 +72,7 @@ internal_READER_RULES: dict[LexicalRules, LexicalRules] = {
 }
 
 
-def internal_drop_unknown_escape(byte: int) -> bytes:
+def internal_drop_unknown_escape(_byte: int) -> bytes:
     return b""
 
 

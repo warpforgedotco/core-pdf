@@ -1248,7 +1248,7 @@ class Page:
                     min(cluster, key=position)
                     for cluster in cluster_by(line, lambda index: chars[index]["x0"], tolerance)
                 )
-        result = FilteredPage(self, lambda obj: True)
+        result = FilteredPage(self, lambda _obj: True)
         result._objects = {**self.objects, "char": [chars[index] for index in sorted(retained)]}
         return result
 
