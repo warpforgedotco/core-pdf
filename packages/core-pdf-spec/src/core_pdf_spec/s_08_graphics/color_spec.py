@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF color-space descriptions, independent of sample layout and output devices."""
 
 from __future__ import annotations
 
@@ -40,8 +39,6 @@ class ColorSpace:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class DeviceNProcess:
-    """Process components and their DeviceN input indices, in process-space order."""
-
     color_space: ColorSpace
     components: tuple[str, ...]
     component_indices: tuple[int | None, ...]
@@ -49,8 +46,6 @@ class DeviceNProcess:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class DeviceNAttributes:
-    """DeviceN metadata; process definitions take precedence over spot definitions."""
-
     subtype: str
     process: DeviceNProcess | None
     colorants: Mapping[str, ColorSpace]
@@ -76,8 +71,6 @@ def internal_colorant_names(value: object) -> tuple[str, ...]:
 
 
 def internal_device_n_names(names: tuple[str, ...], subtype: str) -> None:
-    # ISO 32000-2:2020, 8.6.6.5: only None may repeat, and only in ordinary
-    # DeviceN. All is reserved for Separation, never DeviceN.
     named = tuple(name for name in names if name != "None")
     if "All" in names or len(set(named)) != len(named):
         raise ValueError("invalid DeviceN colorant names")
@@ -91,17 +84,6 @@ def parse_device_n_attributes(
     *,
     context: SemanticContext | None = None,
 ) -> DeviceNAttributes:
-    """Parse resolved attributes without parsing the outer alternate or tint function.
-
-    ISO 32000-2:2020, 8.6.6.5 and Tables 70-71 define process/spot membership
-    and ordering. The Colorants dictionary already appears in Adobe PDF 1.3,
-    Table 4.20; NChannel extends it in PDF 1.6. This parser checks metadata
-    semantics, not the declared introduction version of every feature.
-
-    ``component_indices`` maps each process-space component to its index in
-    ``colorants``. Omitted CMYK channels have None indices. NChannel requires
-    every non-CMYK process component, contiguously and in natural order.
-    """
     if context is not None and (context.version is None or not context.version.recognized):
         raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
     version = context.version if context is not None else None
@@ -202,8 +184,6 @@ def internal_parse_device_n_attributes(
                 name = decoded_name(raw_name)
                 if name is None:
                     raise ValueError("invalid DeviceN Colorants name")
-                # Table 70 and 8.6.6.5 require process entries to be ignored.
-                # Null dictionary entries are absent (7.3.7).
                 if name in process_names or raw_space is None:
                     continue
                 space = internal_parse_color_space(raw_space, active, version)
@@ -272,16 +252,6 @@ def internal_calibrated_params(kind: str, source: dict) -> ColorParams:
 
 
 def parse_color_space(value: object, *, context: SemanticContext | None = None) -> ColorSpace:
-    """Parse a resolved color-space value without discarding nested spaces.
-
-    ISO 32000-1, 8.6: component ranges belong to the color space; image sample
-    bit depth does not. Parameter arrays are copied into immutable tuples.
-
-    An explicit context enforces the version-dependent Indexed base constraint
-    in Adobe PDF Reference 1.3, 4.5.5 (pp. 181-182). Omitting context preserves
-    the historical all-version API. This does not validate feature availability
-    for every kind of color space.
-    """
     if context is not None and (context.version is None or not context.version.recognized):
         raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
     version = context.version if context is not None else None
@@ -313,9 +283,6 @@ def internal_parse_color_space(
             base = internal_parse_color_space(value[1], active, version)
             if base.kind in {"Indexed", "Pattern"}:
                 raise ValueError("invalid Indexed base color space")
-            # Adobe PDF Reference 1.3, 4.5.5 explicitly requires an error for
-            # these bases in PDF 1.2; ISO 32000-2:2020, 8.6.6.3 retains 1.3
-            # as the introduction of the broader Indexed base constraint.
             if (
                 base.kind in {"Separation", "DeviceN"}
                 and version is not None

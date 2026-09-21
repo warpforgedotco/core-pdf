@@ -1,5 +1,3 @@
-"""Associate OCR chart values without manufacturing tables from ordinary prose."""
-
 from dataclasses import replace
 
 import pytest

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native text quality analysis."""
 
 from __future__ import annotations
 
@@ -30,16 +29,9 @@ def internal_analyze_text(text: str) -> TextAnalysis:
     non_ascii = 0
     suspicious = 0
     for token in tokens:
-        # `tokens` comes from a `\S+` regex match, so every character in `token` already
-        # satisfies `not character.isspace()` (CPython's Unicode `\s`/`str.isspace()` share
-        # the same whitespace classification) -- iterate `token` directly instead of
-        # rebuilding an always-identical filtered copy.
         if len(token) <= 2:
             short_tokens += 1
         if token.isascii() and token.isprintable():
-            # Printable ASCII contributes no non-ASCII or suspicious counts,
-            # and the common all-letter / all-digit tokens resolve with
-            # whole-string C checks instead of six method calls per character.
             nonspace += len(token)
             if token.isalpha():
                 if len(token) >= 3 and not internal_ASCII_VOWELS.isdisjoint(token):

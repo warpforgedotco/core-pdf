@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 1 font program primitives reject truncation and preserve charstrings."""
 
 from __future__ import annotations
 

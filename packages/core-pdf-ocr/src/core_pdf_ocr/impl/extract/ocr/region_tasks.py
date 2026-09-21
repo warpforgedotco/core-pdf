@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Materialize proposed OCR regions into bounded recognition tasks."""
 
 from __future__ import annotations
 
@@ -48,7 +47,6 @@ OCR_BATCH_MAX_PIXELS = 8_000_000
 def internal_ocr_task_groups(
     tasks: tuple[internal_OcrTask, ...],
 ) -> tuple[tuple[internal_OcrTask, ...], ...]:
-    """Create ordered same-raster/mode batches without duplicating image setup."""
     groups: list[tuple[internal_OcrTask, ...]] = []
     current: list[internal_OcrTask] = []
     current_pixels = 0
@@ -108,7 +106,6 @@ def internal_rectangle_tasks(
     *,
     compact_image: bool | str,
 ) -> tuple[internal_OcrTask, ...]:
-    """Apply one pass's recognition options to rectangles sharing the same raster."""
     image = (
         internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
         if compact_image
@@ -132,12 +129,6 @@ def internal_rectangle_tasks(
 
 
 def internal_estimated_text_height(raster: internal_Raster) -> float:
-    """Estimate ordinary text-band height from a bounded raster preview.
-
-    Horizontal projections are substantially cheaper than an exploratory OCR
-    pass.  Sampling several vertical strips avoids letting table borders or a
-    single illustration join otherwise independent text lines.
-    """
     pixels = raster.image.array()
     sample_step = max(1, math.ceil(math.sqrt(raster.width * raster.height / 1_000_000)))
     sampled = pixels[::sample_step, ::sample_step]
@@ -154,7 +145,6 @@ def internal_estimated_text_height(raster: internal_Raster) -> float:
             continue
         required = max(2, int(math.ceil(strip.shape[1] * 0.01)))
         active = numpy.count_nonzero(strip, axis=1) >= required
-        # Close a one-row break caused by ascenders, punctuation, or scan noise.
         if len(active) >= 3:
             active[1:-1] |= active[:-2] & active[2:]
         padded = numpy.pad(active.astype(numpy.int8), (1, 1))
@@ -179,7 +169,6 @@ def internal_observation_utility_grid(
     rows: int,
     columns: int,
 ) -> numpy.ndarray[Any, Any]:
-    """Assign each observation to one cell for stable weak-region ranking."""
     if not len(observations):
         return numpy.zeros(rows * columns, dtype=numpy.float32)
     x0, y0, x1, y1 = page_box
@@ -244,7 +233,6 @@ def internal_weak_region_rectangles(
     ocr_pass: OcrPass,
     primary: ObservationBatch,
 ) -> tuple[tuple[int, int, int, int], ...]:
-    """Find visually occupied cells where the primary OCR recovered little text."""
     rows, columns = internal_weak_region_grid_shape(raster, ocr_pass, primary)
     ink = internal_raster_ink_grid(raster, rows, columns)
     utility = internal_observation_utility_grid(primary, page_box, rows, columns)
@@ -259,9 +247,6 @@ def internal_weak_region_rectangles(
         region_limit = max(1, region_limit // 2)
         region_limit = min(region_limit, 8)
     ranked = eligible[numpy.argsort(priority)[::-1][:region_limit]]
-    # Tesseract's sparse-text layout pass scans connected components that can cross
-    # the requested rectangle. A narrow horizontal margin can therefore make
-    # Leptonica reject a component as being outside the active rectangle.
     overlap_x = min(
         max(48, int(round(raster.resolution * 0.20))),
         max(0, (raster.width // columns - 1) // 2),
@@ -301,7 +286,6 @@ def internal_weak_region_tasks(
     *,
     compact_image: bool | str = False,
 ) -> tuple[internal_OcrTask, ...]:
-    """Create OCR tasks for weak regions in an already materialized raster."""
     return internal_rectangle_tasks(
         raster,
         page_box,
@@ -312,20 +296,11 @@ def internal_weak_region_tasks(
 
 
 def internal_direct_scan_allowed(capture: PageAnalysis, plan: WorkPlan) -> bool:
-    """Decide whether a page-scope pass may OCR the decoded scan itself.
-
-    Rendering a scanned page through the compositor resamples the scan a second
-    time at whatever scale the pass chose, which is strictly worse than reading
-    its own pixels.  The rendered page is still required whenever the page holds
-    content the dominant image does not cover.
-    """
     evidence = capture.evidence
     if not plan.allow_direct_image_ocr:
         return False
     if evidence.visible_native_characters >= 10 or not evidence.image_count:
         return True
-    # No native text and one image covering the page: the image *is* the page, so
-    # nothing is lost by reading it directly.  Any weaker signal keeps the render.
     return bool(evidence.full_page_image) and not evidence.visible_native_characters
 
 
@@ -356,8 +331,6 @@ def internal_candidate_region_tasks(
         matching_direct = tuple(
             candidate
             for candidate in direct_regions
-            # Region proposals include padding, so a source image need not cover the
-            # entire box. It must still cover most of the requested target.
             if overlap_ratio_of(region.page_box, candidate.page_box)
             >= OCR_DIRECT_REGION_MIN_COVERAGE
         )
@@ -431,7 +404,6 @@ def internal_high_resolution_weak_region_tasks(
     rendered: Any,
     compact_image: bool | str,
 ) -> tuple[internal_OcrTask, ...]:
-    """Rasterize only weak cells at rescue resolution instead of the whole page."""
     source_rasters: dict[tuple[int, tuple[float, float, float, float], int], internal_Raster] = {}
     for task in source_tasks:
         source_rasters.setdefault(

@@ -1,5 +1,3 @@
-"""ToUnicode CMap parsing and decoding."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -70,7 +68,6 @@ def internal_parse_codespace_ranges(program: CMapProgram) -> tuple[tuple[bytes, 
 
 
 def internal_parse_mapping_blocks(program: CMapProgram, mappings: dict[bytes, str]) -> None:
-    """Compile character mappings in order so succeeding definitions win."""
     invalid_range_count = 0
     valid_range_count = 0
     for block in cmap_mapping_blocks(program, include_cid_ranges=True):
@@ -97,11 +94,6 @@ def internal_parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, s
                 continue
             dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
         except ValueError, UnicodeDecodeError:
-            # PostScript hex strings pad an odd final nibble with zero.
-            # If corruption starts another ``<`` before the closing
-            # delimiter, pdfminer's parser retains the valid prefix as
-            # the destination and abandons the now-misaligned operands
-            # that follow in this bfchar block.
             if dst_tok.startswith(b"<") and b"<" in dst_tok[1:]:
                 prefix = dst_tok[1 : dst_tok.find(b"<", 1)]
                 try:
@@ -173,14 +165,6 @@ def internal_parse_bfrange_block(
 
 
 def internal_parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
-    """Parse numeric CID ranges accepted by PDFMiner in ToUnicode maps.
-
-    Although a conforming ToUnicode CMap normally uses ``bfrange``, some
-    producers emit ``cidrange`` records whose numeric destination is a
-    Unicode scalar. PostScript CMap parsing accepts those records, and
-    PDFMiner consequently exposes their text. Retain that recovery without
-    changing ordinary encoding-CMap semantics.
-    """
     for record in block.records():
         assert record.source_end is not None
         try:
@@ -206,7 +190,7 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
         return parse_to_unicode_cmap(data)
 
     def validate_mappings(self) -> None:
-        """Keep recovered mappings even when their effective codespace is malformed."""
+        pass
 
     def __init__(
         self,
@@ -301,13 +285,6 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
     try:
         code_space_ranges = internal_parse_codespace_ranges(program)
     except ValueError:
-        # A number of producers write a numerically ordered codespace whose
-        # individual bytes are not ordered (for example ``<0083> <020c>``).
-        # That is not a valid rectangular CMap codespace, but the explicit
-        # bfchar/bfrange entries remain unambiguous.  PostScript CMap parsers
-        # such as PDFMiner retain those entries, so recover them instead of
-        # rejecting the complete ToUnicode map.  A map with no usable entries
-        # still raises, preserving validation for genuinely empty corruption.
         if not mappings:
             raise
         code_space_ranges = ()

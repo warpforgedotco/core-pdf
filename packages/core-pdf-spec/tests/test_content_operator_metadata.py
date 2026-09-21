@@ -1,5 +1,3 @@
-"""The shared operator vocabulary preserves parser and handler contracts."""
-
 from typing import Any, cast
 
 import pytest

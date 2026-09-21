@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Vectorized color-space conversion math."""
 
 from __future__ import annotations
 
@@ -27,8 +26,6 @@ D50_TO_D65_MATRIX = numpy.asarray(
 )
 
 
-# One matmul for the ubiquitous xyz_to_srgb(adapt_d50_to_d65(x)) tail:
-# x @ D50.T @ SRGB.T == x @ (SRGB @ D50).T.
 D50_XYZ_TO_SRGB_MATRIX = (SRGB_MATRIX @ D50_TO_D65_MATRIX).astype(numpy.float32)
 
 
@@ -42,5 +39,4 @@ def linear_to_srgb(values: ColorSamples) -> ColorSamples:
 
 
 def d50_xyz_to_srgb(values: ColorSamples) -> ColorSamples:
-    """Convert D50 XYZ straight to normalized sRGB with a single matmul."""
     return linear_to_srgb(values @ D50_XYZ_TO_SRGB_MATRIX.T)

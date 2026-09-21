@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Literal UTF-16BE ToUnicode mappings and CMap inheritance."""
 
 from __future__ import annotations
 
@@ -19,7 +18,6 @@ from core_adobe_fonts.cmap.tokenizer import (
 
 
 def decode_utf16be(data: bytes) -> str:
-    """ToUnicode destinations are UTF-16BE strings, including literal U+0000."""
     return data.decode("utf-16-be")
 
 
@@ -32,8 +30,6 @@ class ParsedToUnicodeCMap:
 
 @dataclass(frozen=True, slots=True)
 class CMapMappingRecord:
-    """Literal operands of one character or range mapping, before decoding."""
-
     source: bytes
     destination: bytes
     source_end: bytes | None = None
@@ -62,12 +58,6 @@ class CMapMappingBlock:
 def cmap_mapping_blocks(
     program: CMapProgram, *, include_cid_ranges: bool = False
 ) -> Iterator[CMapMappingBlock]:
-    """Traverse raw mapping records in source order without choosing error recovery.
-
-    Numeric CID ranges are valid encoding-CMap syntax. A ToUnicode compiler
-    selects whether to inspect those records in addition to its bf mappings.
-    Trailing operands remain visible so callers can reject or recover them.
-    """
     delimiters = {b"beginbfchar": b"endbfchar", b"beginbfrange": b"endbfrange"}
     if include_cid_ranges:
         delimiters[b"begincidrange"] = b"endcidrange"
@@ -99,7 +89,6 @@ class CMapSourceRange:
 
 
 def cmap_source_range(start: bytes, end: bytes) -> CMapSourceRange:
-    """Validate decoded range endpoints without selecting an expansion limit."""
     if not 1 <= len(start) <= 4:
         raise ValueError("invalid ToUnicode character code length")
     first, last = int.from_bytes(start, "big"), int.from_bytes(end, "big")
@@ -153,10 +142,6 @@ class ToUnicodeCMap:
         return parse_to_unicode_cmap(data)
 
     def validate_mappings(self) -> None:
-        """Validate the complete codespace and mappings after parent resolution.
-
-        Recovery adapters may override this completion step for recovered maps.
-        """
         validate_effective_codespace(self.code_space_ranges, self.mappings)
 
     def resolve_parent(
@@ -166,7 +151,6 @@ class ToUnicodeCMap:
         depth: int,
         ancestor_names: tuple[str, ...] = (),
     ) -> ToUnicodeCMap | None:
-        """Load a required parent; unavailable or cyclic links raise ValueError."""
         if name in ancestor_names:
             raise ValueError("cyclic ToUnicode CMap usecmap")
         data = resolver(name) if resolver is not None else None
@@ -190,7 +174,6 @@ class ToUnicodeCMap:
 
 
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
-    """Parse local definitions, deferring inherited codespace checks to resolution."""
     program = CMapProgram.parse(data)
     ranges: list[tuple[bytes, bytes]] = []
     mappings: dict[bytes, str] = {}

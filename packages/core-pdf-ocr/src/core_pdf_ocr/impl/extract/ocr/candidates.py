@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""OCR candidate verification, reconciliation, and diagnostics."""
 
 from __future__ import annotations
 
@@ -51,7 +50,6 @@ def internal_hidden_text_verification(
     hidden: ObservationBatch,
     preview: ObservationBatch,
 ) -> bool:
-    """Whether a word-level raster preview matches hidden text and its page geometry."""
     hidden_by_token: dict[str, list[tuple[float, float, float, float]]] = defaultdict(list)
     for text, raw_box in zip(hidden.text, hidden.bbox, strict=True):
         box = internal_bbox_tuple(raw_box)
@@ -170,8 +168,6 @@ def internal_merge_candidate_batches(
         for order_position, raw_index in enumerate(order):
             index = int(raw_index)
             box = combined.bbox[index]
-            # Earlier boxes start at or above this one. Only starts below its
-            # top edge can overlap, regardless of intervening text density.
             start = int(numpy.searchsorted(descending_y, -box[3], side="right"))
             nearby_positions: list[int] = []
             for raw_other in order[start:order_position]:
@@ -249,7 +245,6 @@ def internal_augment_candidate(
     *,
     minimum_confidence: float,
 ) -> tuple[internal_Candidate, int]:
-    """Add only high-quality supplement observations absent from the primary pass."""
     if not len(supplement.observations):
         return primary, 0
     observations = supplement.observations

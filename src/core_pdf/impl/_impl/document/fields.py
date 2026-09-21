@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""AcroForm field inheritance, traversal, and record construction."""
 
 from __future__ import annotations
 
@@ -47,10 +46,6 @@ def field_value_text(resolver: FieldResolver, value: object) -> str:
         elif isinstance(current, (int, float)) and not isinstance(current, bool):
             item_text = str(current)
         else:
-            # AcroForm values are text strings, names, or arrays of those
-            # values.  Signature fields instead store a signature dictionary
-            # in /V; coercing that dictionary (or another malformed composite
-            # value) to ``str`` leaks PDF object syntax into extracted text.
             continue
         if item_text:
             parts.append(item_text)
@@ -97,11 +92,6 @@ def collect_field_records(
     *,
     recover: bool,
 ) -> list[RawFormField]:
-    """Collect fields parent-first, retaining terminal widgets as leaf records.
-
-    Only field nodes participate in depth/cycle checks: a widget child is a
-    terminal annotation even if a malformed producer supplies it with Kids.
-    """
     seen: set[int] = set()
     records: list[RawFormField] = []
     stack: list[FieldTraversalEntry] = [("node", node, "", "", None, 0)]

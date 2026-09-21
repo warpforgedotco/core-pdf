@@ -1,5 +1,3 @@
-"""Required NLP pipeline and Unstructured semantic classification."""
-
 from __future__ import annotations
 
 import re
@@ -31,12 +29,8 @@ internal_POS_VERB_TAGS = frozenset({"VB", "VBG", "VBD", "VBN", "VBP", "VBZ"})
 
 
 def internal_load_nlp() -> Any:
-    """Load the required English pipeline without installing dependencies at runtime."""
     try:
         model = import_module("en_core_web_sm")
-        # Classification consumes token tags and parser sentence boundaries.
-        # Downstream entities, lemmas and morphological attributes are unused.
-        # Preserve the attribute ruler's sole TAG rewrite in feature projection.
         return model.load(exclude=["attribute_ruler", "lemmatizer", "ner"])
     except (ImportError, OSError) as error:
         raise ImportError(
@@ -49,8 +43,6 @@ def internal_load_nlp() -> Any:
 
 internal_NLP = internal_load_nlp()
 
-# Load the required model before importing elements. Failed facade imports must
-# not leave a cached element module that can be imported without the model.
 from ._elements import (  # noqa: E402
     Address,
     Element,
@@ -76,7 +68,6 @@ def internal_nlp_features(
 def internal_document_features(
     document: Any,
 ) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
-    # The pinned English model's only tag rewrite marks whitespace as _SP.
     tokens = tuple((token.text, "_SP" if token.is_space else token.tag_) for token in document)
     sentences = tuple(sentence.text for sentence in document.sents)
     return tokens, sentences
@@ -90,8 +81,6 @@ def internal_sentence_count(sentences: tuple[str, ...], minimum_words: int) -> i
         words = 0
         in_word = False
         for character in sentence:
-            # Match punctuation deletion followed by str.split(): punctuation
-            # joins adjacent text, while whitespace separates words.
             if unicodedata.category(character).startswith("P"):
                 continue
             if character.isspace():
@@ -120,7 +109,6 @@ def internal_element_classes(
     regions: Iterable[tuple[str, tuple[float, float, float, float]]],
     page_height: float,
 ) -> Iterator[type[Element]]:
-    """Classify a page in source order using bounded batches of NLP inference."""
     classified = [
         (text, internal_simple_element_class(text, bbox, page_height)) for text, bbox in regions
     ]
@@ -158,7 +146,6 @@ def internal_simple_element_class(
 
 
 def internal_has_classifiable_text(text: str) -> bool:
-    """Whether either NLP-dependent category can accept this text."""
     alphabetic = sum(character.isalpha() for character in text)
     non_space = sum(not character.isspace() for character in text)
     return alphabetic / max(non_space, 1) >= 0.5 and not text.isnumeric()
@@ -180,8 +167,6 @@ def internal_text_element_class(
     has_verb = any(tag in internal_POS_VERB_TAGS for _token, tag in tagged_tokens)
     if not exceeds_cap_ratio and has_verb:
         return NarrativeText
-    # At most one three-word sentence also implies at most one five-word
-    # sentence, so the Title sentence-count rule is already satisfied.
     if (
         len(text.split(" ")) <= 12
         and not text.endswith(",")

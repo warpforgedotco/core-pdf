@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Immutable table-shape and cell-text facts, independent of acceptance policy."""
 
 from __future__ import annotations
 
@@ -26,12 +25,6 @@ def internal_character_spaced_cell(text: str) -> bool:
 
 @dataclass(frozen=True)
 class internal_TableFacts:
-    """Facts for one row snapshot; rebuild after merging or rewriting its cells.
-
-    Physical columns and spanned columns are intentionally separate. Expensive
-    text classifications are lazy so a shape-only gate does not scan every word.
-    """
-
     row_count: int
     nonempty_rows: int
     populated_rows: int
@@ -72,7 +65,6 @@ class internal_TableFacts:
 
     @cached_property
     def numeric_cells(self) -> int:
-        """Populated cells whose digits make up at least half their alphanumerics."""
         return sum(internal_numeric_cell(text) for text in self.filled_texts)
 
     @property

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ICC colour management, delegated to Little-CMS through imagecodecs."""
 
 from __future__ import annotations
 
@@ -20,11 +19,11 @@ ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 
 class IccProfileError(ValueError):
-    """Raised when an ICC profile cannot be converted by core-color."""
+    pass
 
 
 class IccSampleError(ValueError):
-    """Raised when sample arrays do not match an ICC transform."""
+    pass
 
 
 internal_INTENT_CODES = {
@@ -36,22 +35,10 @@ internal_INTENT_CODES = {
 
 
 def internal_cms_options(rendering: ColorRendering) -> tuple[int, int]:
-    # Flags are cmsFLAGS_NOOPTIMIZE (0x0100) and cmsFLAGS_BLACKPOINTCOMPENSATION
-    # (0x2000) from lcms2.h. NOOPTIMIZE is not a quality trade here but the
-    # opposite: it stops lcms precomputing a device-link LUT, which is both more
-    # faithful (with the LUT the 8-bit CMYK cube deviates by up to 21/255) and an
-    # order of magnitude cheaper to set up. Setup dominates because imagecodecs
-    # exposes no reusable transform handle, so every call rebuilds the transform.
-    # Selected reader Default preserves the existing BPC-on policy; relative
-    # colorimetric with BPC reproduces the converter this replaced to within
-    # 2/255 per channel.
     flags = 0x0100 | (0x2000 if use_black_point_compensation(rendering, default=True) else 0)
     return internal_INTENT_CODES[rendering.intent], flags
 
 
-# ICC data colour space signatures (ICC.1:2010, Table 19) as lcms reports them,
-# mapped to the names the colour-space code above this module uses. Lowercasing
-# a name recovers the lcms spelling, which is what `cms_transform` wants.
 INTERNAL_COLOR_SPACE_NAMES = {
     "gray": "GRAY",
     "rgb": "RGB",
@@ -65,28 +52,18 @@ INTERNAL_ALTERNATE_COLOR_SPACES = {
     "CMYK": "DeviceCMYK",
 }
 
-# Real images repeat colours heavily -- a CMYK page photograph runs around 10%
-# distinct -- so deduplicating a large batch shrinks the transform by an order
-# of magnitude. Below this floor the sort is not worth setting up.
 INTERNAL_DEDUPLICATE_MIN_ROWS = 4096
 
-# Once the sort is paid for, scattering the result back costs about a twelfth
-# of what transforming the duplicate rows would, so deduplicating pays until
-# the batch is within a few percent of all-distinct. Measured on this profile:
-# ~0.19us per row transformed against ~0.015us per row gathered.
 INTERNAL_DEDUPLICATE_MAX_DISTINCT = 0.9
 
 
 @cache
 def internal_srgb_profile() -> bytes:
-    """Return the sRGB profile every transform in this module converts to."""
     return bytes(imagecodecs.cms_profile("srgb"))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class IccTransform:
-    """An ICC profile and the sRGB conversion it defines."""
-
     profile: bytes
     color_space: str
     input_channels: int
@@ -98,12 +75,6 @@ class IccTransform:
     def apply_uint8(
         self, samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
     ) -> ByteSamples:
-        """Convert an (n, channels) block of 8-bit device samples to 8-bit sRGB.
-
-        Distinct colours are the only ones worth sending to lcms, so a batch
-        large enough to be worth sorting is deduplicated first and the result
-        scattered back.
-        """
         channels = self.input_channels
         if samples.dtype != numpy.dtype(numpy.uint8):
             raise IccSampleError("samples must have uint8 dtype")
@@ -111,8 +82,6 @@ class IccTransform:
             raise IccSampleError(f"samples must have shape (count, {channels})")
         if channels <= 4 and len(samples) > INTERNAL_DEDUPLICATE_MIN_ROWS:
             distinct, inverse = internal_distinct_byte_rows(samples)
-            # The sort is already paid for by this point, so the test only has
-            # to clear the gather that is still ahead, not the sort behind.
             if len(distinct) < len(samples) * INTERNAL_DEDUPLICATE_MAX_DISTINCT:
                 return internal_transform(self, distinct, rendering)[inverse]
         return internal_transform(self, samples, rendering)
@@ -123,7 +92,6 @@ class IccTransform:
         *,
         rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
     ) -> ByteSamples:
-        """Convert native-endian 16-bit device samples without an 8-bit input stage."""
         if samples.dtype != numpy.dtype(numpy.uint16):
             raise IccSampleError("samples must have uint16 dtype")
         if samples.ndim != 2 or samples.shape[1] != self.input_channels:
@@ -136,12 +104,6 @@ def internal_transform(
     samples: numpy.ndarray[Any, Any],
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> ByteSamples:
-    """Run one batch through lcms, as an (n, 1, channels) single-column image.
-
-    Whole batches go in one call: lcms streams sample by sample in C, and
-    blocking would instead rebuild the transform once per block, which is the
-    dominant cost of a conversion.
-    """
     rows, channels = samples.shape
     if rows == 0:
         return numpy.empty((0, 3), dtype=numpy.uint8)
@@ -163,13 +125,9 @@ def internal_transform(
 
 
 def parse_icc_transform(profile: bytes) -> IccTransform:
-    """Compile an embedded ICC profile into a transform to sRGB."""
     return internal_parse_icc_transform(bytes(profile))
 
 
-# Every ICCBased image re-parses its profile just to read the alternate colour
-# space, and the built-in CMYK profile is 2.7MB. Bounded because the cached
-# value retains the profile bytes, which `cms_transform` needs on every call.
 @lru_cache(maxsize=32)
 def internal_parse_icc_transform(profile: bytes) -> IccTransform:
     try:
@@ -188,12 +146,6 @@ def internal_parse_icc_transform(profile: bytes) -> IccTransform:
 def internal_distinct_byte_rows(
     samples: ByteSamples,
 ) -> tuple[ByteSamples, numpy.ndarray[Any, Any]]:
-    """Split a byte batch into its distinct rows plus the index that rebuilds it.
-
-    Reduces "unique rows" to a single sort over a flat integer array by packing
-    the channels into one key. Callers must hold the batch to at most four
-    channels, which is what fits in the 32-bit key.
-    """
     channels = samples.shape[1]
     if channels > 4:
         raise IccSampleError("cannot pack more than four channels into one key")
@@ -203,20 +155,12 @@ def internal_distinct_byte_rows(
         keys |= samples[:, index]
     inverse: numpy.ndarray[Any, Any]
     if channels <= 3:
-        # Up to 24-bit keys fit a presence table, which replaces the sort with
-        # one scatter, one prefix sum and one gather: about five times faster
-        # than numpy.unique on a page-sized RGB image, for ~80 MB of transient
-        # memory. Ranks come out sorted, matching numpy.unique's order.
         present = numpy.zeros(1 << (8 * channels), dtype=numpy.bool_)
         present[keys] = True
         unique_keys = numpy.flatnonzero(present).astype(numpy.uint32)
         ranks = numpy.cumsum(present, dtype=numpy.int32)
         inverse = ranks[keys] - 1
     else:
-        # The key holds the whole row, so the distinct rows unpack straight out
-        # of the unique keys. Asking for return_index instead forces
-        # numpy.unique onto a stable sort, which is materially slower for no
-        # extra information.
         unique_keys, inverse = numpy.unique(keys, return_inverse=True)
     distinct = numpy.empty((len(unique_keys), channels), dtype=numpy.uint8)
     for index in range(channels):

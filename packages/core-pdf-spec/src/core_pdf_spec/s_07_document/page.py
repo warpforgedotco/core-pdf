@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Page dictionary rules, ISO 32000-2, 7.7.3 and 14.11.2."""
 
 from __future__ import annotations
 
@@ -41,12 +40,6 @@ def page_rotation(value: object) -> int:
 
 
 def page_user_unit(value: object) -> float:
-    """Decode the page-local unit size in points (PDF 1.6; ISO 32000-2, Table 31).
-
-    UserUnit is not inheritable. The caller resolves the leaf page's entry;
-    absent or null entries use one point. The standard does not impose Acrobat's
-    implementation-specific upper limit on other processors.
-    """
     if value is None:
         return 1.0
     if type(value) not in (int, float):
@@ -65,7 +58,6 @@ def page_inherited_values(
     resolve: Callable[[object], object],
     keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
 ) -> InheritedValueMap:
-    """Select leaf-to-root candidates without reading shadowed ancestor entries."""
     values: InheritedValueMap = {}
     for node in nodes:
         for key in keys:
@@ -86,12 +78,6 @@ def iter_page_nodes(
     on_invalid_child: Callable[[object], bool] | None = None,
     max_depth: int | None = None,
 ) -> Iterator[PageNode]:
-    """Walk Kids in source order and carry each ancestor's inheritable values.
-
-    ``node_type`` replaces reading each node's Type entry; ``on_invalid_child``
-    receives a resolved kid that is not a dictionary and returns whether to skip
-    it instead of raising; ``max_depth`` bounds nesting below the root.
-    """
     stack: list[tuple[object, int, tuple[PdfDict, ...], frozenset[int]]] = [
         (root, 0, (), frozenset())
     ]

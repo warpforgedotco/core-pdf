@@ -1,1 +1,1 @@
-"""Bundled word-frequency lists."""
+pass

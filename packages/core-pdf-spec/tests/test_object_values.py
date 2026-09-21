@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Parsed object values retain PDF types, names, inheritance, and decode state."""
 
 from __future__ import annotations
 
@@ -110,7 +109,6 @@ def test_escaped_slash_resource_names_do_not_collide(resolver: ObjectResolver) -
 
 @pytest.mark.parametrize("value", [None, PdfReference(1), PdfReference(999)])
 def test_null_values_inherit_from_parent(resolver: ObjectResolver, value: PdfObject) -> None:
-    # ISO 32000-1, 7.3.9–7.3.10 equates null and nonexistent references with omission.
     resolver.objects[key_for(1)] = None
     parent = [0, 0, 100, 100]
     assert inherited_dictionary_value({"V": value}, "V", parent, resolver.resolve) is parent

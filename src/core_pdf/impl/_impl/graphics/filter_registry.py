@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Canonical metadata for supported PDF stream filters."""
 
 from __future__ import annotations
 
@@ -37,14 +36,6 @@ PREDICTOR_FILTERS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class NativeImageSpec:
-    """What a decoder's array fast path accepts, and how wide its output is.
-
-    `channels` maps a normalized colour-space name to its component count and
-    doubles as the preallocation table: a name absent from it means "decode
-    without a preallocated buffer". `color_names` and `bits` are the wider set
-    the fast path will accept at all; `bits=None` means any depth.
-    """
-
     channels: Mapping[str | None, int]
     color_names: frozenset[str | None]
     bits: frozenset[int | None] | None = None
@@ -71,13 +62,11 @@ NATIVE_IMAGE_SPECS: Mapping[str, NativeImageSpec] = {
         color_names=frozenset({None, "DeviceGray"}),
         bits=frozenset({None, 1}),
     ),
-    # flate and lzw share a spec: both decode to raw samples the caller reshapes.
     "flate": internal_RAW_SAMPLE_IMAGE,
     "lzw": internal_RAW_SAMPLE_IMAGE,
 }
 
 
 def declared_filter_names(value: object) -> list[str]:
-    """Retain reader metadata recovery by omitting malformed filter entries."""
     values = value if isinstance(value, (list, tuple)) else (value,)
     return [name for item in values if (name := recover_pdf_name(item))]

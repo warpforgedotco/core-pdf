@@ -1,5 +1,3 @@
-"""Page content streams retain usable content across tolerant parse paths."""
-
 from typing import Any, cast
 
 import pytest

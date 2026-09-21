@@ -1,5 +1,3 @@
-"""ToUnicode reader recovery retains usable mappings and deterministic fallbacks."""
-
 import pytest
 
 from core_pdf.impl._impl.fonts.cmap_ranges import expand_range
@@ -33,7 +31,6 @@ def test_mapping_lengths_nulls_and_unmapped_bytes_have_stable_precedence(
 ):
     source = block(b"bfchar", b"<01> <0041> <0102> <0058> <03> <0000> <04> <00420043>")
     cmap = ToUnicodeCMap(buffer_type(source))
-    # Shortest matching code wins; a present mapping to null is still a match.
     assert cmap.decode(b"\1\2\3\4", preserve_nulls=preserve_nulls) == (
         "A\2\0BC" if preserve_nulls else "A\2BC"
     )

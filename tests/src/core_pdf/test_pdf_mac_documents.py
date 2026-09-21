@@ -1,5 +1,3 @@
-"""Authenticated interoperability fixtures reach the public extraction API."""
-
 import hashlib
 import json
 from pathlib import Path

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Knockout attributes and alpha source semantics, ISO 32000-2 11.4.6/11.6."""
 
 from typing import Any, cast
 
@@ -45,7 +44,6 @@ def internal_state() -> tuple[ContentInterpreter, PaintSink]:
 def test_knockout_is_independent_boolean_group_attribute(
     isolated: bool, knockout: object, indirect: bool
 ) -> None:
-    # Table 145: K defaults false and does not imply I.
     state, _ = internal_state()
     group: PdfDict = {"S": PdfName.of("Transparency"), "I": isolated}
     if knockout is not None:
@@ -105,7 +103,6 @@ def test_alpha_source_rejects_nonboolean_values_without_changing_flag(value: obj
 def test_transparency_group_inherits_AIS_while_resetting_alpha_and_blend(
     initial: bool, knockout: bool
 ) -> None:
-    # 11.6.6 resets BM, CA/ca and SMask, not AIS.
     state, sink = internal_state()
     state.graphics.alpha_is_shape = initial
     state.graphics.fill_opacity = 0.3
@@ -135,8 +132,6 @@ def test_transparency_group_inherits_AIS_while_resetting_alpha_and_blend(
 def test_pattern_retains_defining_stream_initial_AIS_across_nested_and_later_state_changes() -> (
     None
 ):
-    # 11.6.7: initial stream state belongs to the pattern definition; paint-time
-    # state belongs to the final object. q/Q does not replace stream initial state.
     state, sink = internal_state()
     pattern = PdfStream(
         dictionary={

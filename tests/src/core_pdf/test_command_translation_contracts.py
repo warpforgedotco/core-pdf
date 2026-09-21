@@ -1,5 +1,3 @@
-"""Repeated paint placement keeps geometry and derived coordinates together."""
-
 from dataclasses import replace
 
 import numpy as np

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Transparency Form scope rules from ISO 32000-1 11.6.6 and Table 147."""
 
 from typing import Any, cast
 

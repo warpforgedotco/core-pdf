@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader repairs and substitutions around strict PDF content transitions."""
 
 from __future__ import annotations
 
@@ -38,12 +37,6 @@ def internal_font_companions(
     resolve: typing.Callable[[object], object],
     cache: FontCompanionsCache,
 ) -> FontCompanions:
-    """Group the references of one ``/Font`` resource dictionary by base name.
-
-    Every value must already be an indirect reference. The grouping is
-    computed once per resource dictionary; the cache entry pins the
-    dictionary so its identity cannot be reused by a collected object.
-    """
     entry = cache.get(id(fonts))
     if entry is not None and entry[0] is fonts:
         return entry[1]
@@ -70,13 +63,6 @@ def internal_font_signature(
     resolve: typing.Callable[[object], object],
     companions_cache: FontCompanionsCache,
 ) -> object | None:
-    """Identify a font selection by its reference and its same-named siblings.
-
-    A decoder depends on its font object and on the sibling fonts that
-    ligature detection may pair it with, which share its base name. Only
-    indirect objects have an identity that holds across pages, so any direct
-    sibling disables sharing.
-    """
     if not isinstance(resources, dict) or not isinstance(font_obj, dict):
         return None
     fonts = resolve(resources.get("Font"))
@@ -92,8 +78,6 @@ def internal_font_signature(
 
 
 class RecoveringTextState(ContentInterpreter):
-    """Reader repairs layered over the shared PDF state transitions."""
-
     recovery: CaptureRecovery
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
@@ -110,12 +94,7 @@ class RecoveringTextState(ContentInterpreter):
         handler = self.operator_overrides.get(name) or self.internal_default_handlers.get(name)
         return handler(operands, depth) if handler is not None else None
 
-    # Decoders owned by this capture, one per (font object, resource scope).
-    # A ``Tf`` selects a font resource; the decoder belongs to that resource,
-    # not to the operator, so re-selecting a font reuses its decoder.
     capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
-    # Sibling grouping per ``/Font`` resource dictionary, computed once per
-    # dictionary rather than once per selected font.
     capture_font_companions: FontCompanionsCache
 
     def get_decoder(self) -> FontDecoder:
@@ -148,17 +127,11 @@ class RecoveringTextState(ContentInterpreter):
             font_key = id(font_obj)
         owned = self.capture_font_decoders.setdefault(font_key, [])
         for owner_resources, owner_font, decoder in owned:
-            # The entries pin their font and resources objects, so identity
-            # comparison cannot alias a collected object.
             if owner_resources is resources and owner_font is font_obj:
                 self.graphics.current_decoder = decoder
                 self.graphics.decoder_resources = resources
                 return decoder
 
-        # Pages of one document select the same fonts over and over. A decoder
-        # depends only on its font object and on the sibling fonts that
-        # ligature detection may pair it with, so those identify a decoder the
-        # whole document can share once every one of them is an indirect object.
         document_decoders: dict[object, object] | None = getattr(
             getattr(self, "document", None), "internal_font_decoders", None
         )
@@ -231,16 +204,11 @@ class RecoveringTextState(ContentInterpreter):
         super().append_tj_array(array)
 
     def tj_array_extra_bytes(self, item: object) -> bytes:
-        """Retain Latin-1 text and skip other unsupported reader entries."""
         return item.encode("latin-1") if type(item) is str else b""
 
     def op_Tj(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
             return
-        # Operators consume their operands from the top of the operand stack.
-        # A well-formed Tj has exactly one string, but damaged streams sometimes
-        # leave older operands before it.  Those older values are not part of
-        # the text-showing operation.
         decoder = self.get_decoder()
         operand = operands[-1]
         if type(operand) is PdfString:
@@ -332,7 +300,6 @@ class RecoveringTextState(ContentInterpreter):
         )
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
-        """The leading `count` numeric operands, with errors delegated to the consumer."""
         if len(operands) < count:
             self.handle_operand_error(PdfParseError("missing numeric operand"), "numeric-operands")
             return None
@@ -343,7 +310,6 @@ class RecoveringTextState(ContentInterpreter):
             return None
 
     def as_int_operand(self, operands: ContentOperands) -> int | None:
-        """The first integer operand, with errors delegated to the consumer."""
         if not operands:
             self.handle_operand_error(PdfParseError("missing numeric operand"), "integer-operand")
             return None
@@ -359,7 +325,6 @@ class RecoveringTextState(ContentInterpreter):
         self.graphics = self.pop_graphics_save()
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
-        # Reader dispatch invokes raw callbacks without strict scope validation.
         self.compatibility_depth += 1
 
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
@@ -383,8 +348,6 @@ class RecoveringTextState(ContentInterpreter):
         if self.current_point is None or (values := self.as_floats(operands, 4)) is None:
             return
         x1, y1, x3, y3 = values
-        # `y` doubles the endpoint as the second control point, unlike `v`,
-        # which uses the current point as the first one.
         self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
     def append_cubic_curve(

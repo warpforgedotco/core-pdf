@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""CMap to CID parsing and decoding."""
 
 from __future__ import annotations
 
@@ -142,7 +141,6 @@ class CMapDecoder:
 
     @staticmethod
     def parse_program(data: bytes) -> CMapProgram:
-        """Parse a complete CMap; malformed token or block syntax raises ValueError."""
         return CMapProgram.parse(data)
 
     @staticmethod
@@ -150,7 +148,6 @@ class CMapDecoder:
         return cmap_metadata(program)
 
     def validate_mappings(self) -> None:
-        """Validate all inherited and local codespaces and CID/notdef mappings."""
         validate_effective_codespace(
             self.code_space_ranges, chain(self.cid_mappings, self.notdef_mappings)
         )
@@ -223,7 +220,6 @@ class CMapDecoder:
         self.wmode = parent.wmode
 
     def parse_mapping_blocks(self, program: CMapProgram) -> None:
-        """Compile mapping sections in order so succeeding definitions win."""
         delimiters = {
             b"begincidchar": b"endcidchar",
             b"begincidrange": b"endcidrange",
@@ -251,7 +247,6 @@ class CMapDecoder:
         block: CMapBlock,
         mappings: dict[bytes, int],
     ) -> None:
-        """Collect the `<code> cid` pairs from one character-mapping block."""
         items = block.token_values(include_words=True)
         if len(items) % 2 != 0:
             raise ValueError("invalid CMap character mapping operands")
@@ -275,7 +270,6 @@ class CMapDecoder:
         ranges: list[CodeRangeT],
         make_range: Callable[[bytes, bytes, int], CodeRangeT],
     ) -> None:
-        """Collect range triples, dropping explicit codes the range supersedes."""
         items = block.token_values(include_words=True)
         if len(items) % 3 != 0:
             raise ValueError("invalid CMap range mapping operands")
@@ -292,7 +286,6 @@ class CMapDecoder:
                 start_bytes = decode_cmap_hex_token(start_token)
                 end_bytes = decode_cmap_hex_token(end_token)
                 cid = int(cid_token)
-                # Also rejects empty or mismatched start/end lengths.
                 validate_codespace_range(start_bytes, end_bytes)
             except (ValueError, UnicodeDecodeError) as exc:
                 raise ValueError("invalid CMap mapping") from exc
@@ -419,11 +412,6 @@ class CMapDecoder:
                 matched = True
                 break
             if not matched:
-                # ISO 32000-1 9.7.6.3: an invalid code does not consume one
-                # byte -- "The length of the codes in the chosen codespace
-                # range determines the total number of bytes to consume from
-                # the string." Consuming one byte instead desynchronized every
-                # following code in the string.
                 length = self.internal_invalid_code_length(data, pos, n)
                 entry = (bytes(data[pos : pos + length]), 0)
                 out.append(entry)
@@ -433,12 +421,6 @@ class CMapDecoder:
     def internal_invalid_code_length(
         self, data: bytes | bytearray | memoryview, pos: int, limit: int
     ) -> int:
-        """Bytes to consume for a code matching no codespace range (9.7.6.3).
-
-        (a) If the first byte matches no range's first byte, the range having
-        the shortest codes is chosen. (b) Otherwise the longest partial match
-        wins, ties going to the shortest codes.
-        """
         ranges = self.code_space_ranges_by_length
         if not ranges:
             return 1
@@ -446,8 +428,6 @@ class CMapDecoder:
         shortest = lengths[0]
         best_partial = 0
         chosen = shortest
-        # Ascending lengths, and a strict improvement test, so a tie keeps the
-        # shortest codes without a second comparison.
         for length in lengths:
             for start, end in ranges[length]:
                 matched_bytes = 0
@@ -467,7 +447,6 @@ CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | None]
 
 
 def index_ranges_by_length(ranges: list[CodeRangeT]) -> dict[int, tuple[CodeRangeT, ...]]:
-    """Bucket code ranges by code length, later definitions first."""
     indexed: dict[int, list[CodeRangeT]] = {}
     for item in reversed(ranges):
         indexed.setdefault(len(item.start), []).append(item)
@@ -477,12 +456,6 @@ def index_ranges_by_length(ranges: list[CodeRangeT]) -> dict[int, tuple[CodeRang
 def index_ranges_by_lead_byte(
     ranges_by_length: dict[int, tuple[CodeRangeT, ...]],
 ) -> dict[int, dict[int, tuple[CodeRangeT, ...]]]:
-    """Sub-bucket length-indexed ranges by their first code byte.
-
-    A range spanning several lead bytes is listed under each of them, so every
-    bucket keeps the same relative order as the length index and a lookup only
-    scans the ranges that can contain the code.
-    """
     indexed: dict[int, dict[int, list[CodeRangeT]]] = {}
     for length, items in ranges_by_length.items():
         buckets = indexed.setdefault(length, {})

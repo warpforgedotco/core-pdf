@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Vectorized spatial queries over immutable rectangle collections."""
 
 from __future__ import annotations
 
@@ -13,8 +12,6 @@ from core_pdf.impl.types import Rectangle
 
 @dataclass(frozen=True, slots=True)
 class SpatialFrame:
-    """Packed rectangles with canonical intersection and overlap queries."""
-
     boxes: numpy.ndarray[Any, Any]
     areas: numpy.ndarray[Any, Any]
 

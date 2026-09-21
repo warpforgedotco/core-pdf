@@ -1,5 +1,3 @@
-"""Text layout decisions from explicit positions, independent of PDF fixtures."""
-
 import pytest
 
 from core_pdf.impl._impl.layout import text_rules as rules

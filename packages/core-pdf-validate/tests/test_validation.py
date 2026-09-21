@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adapter behavior using recorded real reports and local executable stand-ins."""
 
 from __future__ import annotations
 

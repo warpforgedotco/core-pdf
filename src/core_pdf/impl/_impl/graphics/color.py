@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Vector and packed-image adapters for the shared component converter."""
 
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ def color_operands_to_srgb(
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[float, float, float] | None:
-    """Convert natural PDF operands; device operands remain handled downstream."""
     if spec.kind in {"DeviceGray", "DeviceRGB", "Pattern"} or (
         spec.kind == "DeviceCMYK" and rendering == DEFAULT_COLOR_RENDERING
     ):
@@ -52,7 +50,6 @@ def internal_convert_image_data(
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> ByteBuffer | None:
-    """Unpack and decode once, keeping original integers for colour-key masks."""
     spec = parse_color_space(image_dict.get("ColorSpace"))
     bits = recover_image_bits_per_component(image_dict)
     if bits not in {1, 2, 4, 8, 16} or not spec.component_ranges:
@@ -61,8 +58,6 @@ def internal_convert_image_data(
     if fast is not None and image_dict.get("Mask") is None:
         return fast
     dictionary = dict(image_dict)
-    # Preserve the low-depth reader's tolerance for malformed Decode arrays.
-    # Valid arrays always decode into the colour space's natural ranges.
     decode = dictionary.get("Decode")
     if bits != 16 and decode is not None:
         count = len(spec.component_ranges) * 2
@@ -99,8 +94,6 @@ def internal_simple_device_color_fast_path(
     expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
     if len(raw) != expected:
         return None
-    # Native grayscale samples stay one-channel for extraction consumers;
-    # renderers expand them at the final compositing boundary.
     return raw
 
 

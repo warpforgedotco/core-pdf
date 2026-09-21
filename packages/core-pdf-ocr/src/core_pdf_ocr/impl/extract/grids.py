@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Raster ruling detection and cell-level OCR task construction."""
 
 from __future__ import annotations
 
@@ -28,12 +27,6 @@ internal_PSM_SINGLE_LINE = 7
 
 
 def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
-    """Bridge horizontal gaps up to ``gap`` pixels inside each row.
-
-    Scanned rulings drop out along their length, so a rule reads as many
-    short runs. Only bounded gaps within the limit are filled; existing ink
-    and unbounded row margins remain unchanged.
-    """
     if gap <= 0:
         return mask
     width = mask.shape[1]
@@ -45,7 +38,6 @@ def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
 
 
 def internal_longest_true_runs(mask: numpy.ndarray) -> numpy.ndarray:
-    """Return the longest consecutive True run per row of a boolean matrix."""
     height, width = mask.shape
     separated = numpy.zeros((height, width + 2), dtype=numpy.int8)
     separated[:, 1:-1] = mask
@@ -79,7 +71,6 @@ internal_GRID_DETECT_POOL = 3
 
 
 def internal_estimate_ruling_skew(dark: numpy.ndarray) -> float:
-    """Estimate page skew from horizontal rule offsets between page thirds."""
     height, width = dark.shape
     strip = width // 3
     if strip < 50:
@@ -104,7 +95,6 @@ def internal_estimate_ruling_skew(dark: numpy.ndarray) -> float:
 
 
 def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
-    """Shift each column vertically by ``-slope * x`` to straighten h-rules."""
     height, width = dark.shape
     shifts = numpy.round(slope * numpy.arange(width)).astype(numpy.int64)
     rows = numpy.arange(height)[:, None] + shifts[None, :]
@@ -115,7 +105,6 @@ def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
 def internal_detect_ruling_grid(
     image: RasterImage,
 ) -> tuple[list[int], list[int], numpy.ndarray, float] | None:
-    """Find a ruled table grid; return edges, source samples, and measured skew."""
     array = numpy.asarray(image.array())
     if array.shape[2] >= 3:
         color = array[:, :, :3]
@@ -174,7 +163,6 @@ def internal_grid_cell_tasks(
     source_samples: numpy.ndarray,
     slope: float,
 ) -> tuple[internal_OcrTask, ...]:
-    """Build one single-line OCR task per populated ruled cell."""
     if (len(x_lines) - 1) * (len(y_lines) - 1) > internal_GRID_MAX_CELLS:
         return ()
     inset = max(internal_GRID_CELL_INSET_PX, int(round(task.resolution / 40)))
@@ -246,7 +234,6 @@ def internal_grid_is_regular_table(
     prior: ObservationBatch,
     task: internal_OcrTask,
 ) -> bool:
-    """Distinguish a data table's grid from a form's boxed fields."""
     x_lines, y_lines, _source_samples, slope = grid
     if len(y_lines) - 1 < internal_GRID_MIN_ROWS or len(x_lines) - 1 < internal_GRID_MIN_COLUMNS:
         return False
@@ -286,7 +273,6 @@ def internal_grid_is_regular_table(
 def internal_grid_row_observations(
     observations: ObservationBatch,
 ) -> ObservationBatch:
-    """Merge cell reads into one observation per grid row, left to right."""
     if not len(observations):
         return observations
     heights = observations.bbox[:, 3] - observations.bbox[:, 1]

@@ -1,5 +1,3 @@
-"""Predictor wrappers enforce DecodeParms framing and translate kernel errors."""
-
 import pytest
 
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams

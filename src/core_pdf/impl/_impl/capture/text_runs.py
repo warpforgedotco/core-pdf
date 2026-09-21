@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize captured text and accumulate adjacent fragments into runs."""
 
 from __future__ import annotations
 
@@ -37,12 +36,6 @@ def internal_can_merge_cross_font_word(left: str, right: str) -> bool:
 
 
 class internal_PendingRun:
-    """Own a run and defer joining fragments until it is emitted.
-
-    A deque avoids quadratic copying when a producer shows one glyph at a time.
-    Cluster chunks retain emission order even when text is prepended for RTL.
-    """
-
     __slots__ = ("run", "parts", "clusters", "head", "tail")
 
     def __init__(self, run: TextRun) -> None:
@@ -133,8 +126,6 @@ class internal_PendingRun:
 
 
 class RunAccumulator:
-    """Accumulate adjacent runs and append completed runs to the capture output."""
-
     __slots__ = ("output", "pending")
 
     def __init__(self, output: list[TextRun]) -> None:

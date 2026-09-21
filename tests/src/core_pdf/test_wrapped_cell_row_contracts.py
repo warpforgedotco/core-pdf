@@ -1,5 +1,3 @@
-"""Logical table rows merge wrapped cells without interleaving columns."""
-
 from dataclasses import replace
 
 import pytest

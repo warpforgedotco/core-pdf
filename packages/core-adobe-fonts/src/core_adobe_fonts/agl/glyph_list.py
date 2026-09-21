@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adobe Glyph List: glyph name to Unicode text, as published by Adobe."""
 
 from __future__ import annotations
 

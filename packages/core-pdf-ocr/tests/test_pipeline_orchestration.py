@@ -1,5 +1,3 @@
-"""Pipeline integration with deterministic raster and recognition boundaries."""
-
 from dataclasses import replace
 
 import pytest
@@ -140,7 +138,6 @@ def test_hidden_layer_verification_short_circuits_only_after_matching_preview(
         source=1,
         confidence=(100,) * 24,
     )
-    # A failed preview must fall through to the regular OCR pass.
     preview = internal_candidate(11, hidden if verified else ObservationBatch.empty())
     source = internal_task()
     fallback = internal_result("fallback")

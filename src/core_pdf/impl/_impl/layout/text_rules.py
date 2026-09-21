@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Pure decision rules for reconstructing text from positioned runs."""
 
 from __future__ import annotations
 
@@ -32,8 +31,6 @@ class WordFrequency:
 
 
 class WordRankIndex(Mapping[str, int]):
-    """Read-only binary-search index backed directly by packaged byte buffer."""
-
     __slots__ = ("internal_count", "internal_data_start", "internal_mmap")
 
     def __init__(self, path_or_bytes: str | bytes) -> None:
@@ -119,11 +116,9 @@ def english_word_frequencies() -> dict[str, WordFrequency]:
 
 @cache
 def english_word_ranks() -> Mapping[str, int]:
-    """Open the packaged rank index without inflating source word lists."""
     import os
     import sys
 
-    # When running under Nuitka compiled / onefile mode, locate file directly in unpacked dist tree
     if "__compiled__" in globals() or "__compiled__" in sys.modules:
         base_dir = os.path.dirname(__file__)
         candidates = [
@@ -144,24 +139,18 @@ def english_word_ranks() -> Mapping[str, int]:
                 try:
                     return WordRankIndex(candidate)
                 except Exception:
-                    # Path exists but is not a usable index (truncated, wrong layout,
-                    # unreadable). Fall through to the next candidate.
                     pass
 
     res = files(WORDLIST_PACKAGE).joinpath(WORD_RANK_INDEX)
-    # A zipimport or compiled-bundle traversable has no filesystem path.
     index_path = os.fspath(res) if isinstance(res, os.PathLike) else None
     if index_path is not None and os.path.isfile(index_path):
         try:
-            # Map the packaged file instead of reading it into memory.
             return WordRankIndex(index_path)
         except Exception:
             pass
     try:
         return WordRankIndex(res.read_bytes())
     except Exception:
-        # Not readable as package data -- e.g. inside a zipimport or a compiled
-        # bundle. Fall through to the as_file() path below.
         pass
     from importlib.resources import as_file
 
@@ -173,7 +162,6 @@ def english_word_ranks() -> Mapping[str, int]:
 
 
 def internal_gzipped_wordlist_lines(resource: str) -> list[str]:
-    """Read one packaged gzip word list, falling back to a materialized file."""
     res = files(WORDLIST_PACKAGE).joinpath(resource)
     try:
         return gzip.decompress(res.read_bytes()).decode("utf-8").splitlines()
@@ -305,7 +293,6 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
 
 
 def positive_run_gaps(runs: list[TextRun]) -> list[float]:
-    """Positive horizontal gaps between consecutive text-bearing runs."""
     gaps: list[float] = []
     previous: TextRun | None = None
     for run in runs:
@@ -489,10 +476,6 @@ def should_join_plausible_split_word(
     if x_gap > max(space_width * 1.45, height * 0.45, 4.5):
         return False
     if allow_short_prefix and len(tail) < 3:
-        # A producer may split one word into several short text-showing
-        # operators (``V`` + ``o`` + ``l`` + ``u`` + ``m`` + ``e``). There is
-        # no useful dictionary candidate until the final fragment arrives, so
-        # keep only tight, lowercase joins in this opt-in path.
         return x_gap <= max(1.8, min(space_width, height) * 0.25)
     joined = f"{tail}{head}"
     joined_rank = word_rank(joined)
@@ -649,14 +632,6 @@ def formula_like_runs(runs: list[TextRun]) -> bool:
 
 
 def reorder_stacked_formula_numerators(runs: list[TextRun]) -> list[TextRun]:
-    """Place a vertically stacked numeric numerator before its denominator.
-
-    PDF math producers commonly paint a fraction's numerator and denominator
-    as independent glyphs at the same x position.  The ordinary horizontal
-    sort consequently emits the denominator first.  Keep the correction
-    limited to a small digit/formula overlap so ordinary subscripts and table
-    values retain their existing order.
-    """
     reordered = list(runs)
     for index in range(1, len(reordered)):
         numerator = reordered[index]

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Specification filter ordering with explicitly supplied external decoders."""
 
 from __future__ import annotations
 

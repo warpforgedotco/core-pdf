@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Supported JBIG2 decoding and explicit unsupported-feature boundaries."""
 
 import struct
 
@@ -34,7 +33,6 @@ def generic_region(mmr: bool, payload: bytes) -> bytes:
 
 @pytest.mark.parametrize(("flags", "expected"), [(0, b"\xff"), (4, b"\x00")])
 def test_default_page_pixels_and_harmless_segments(flags: int, expected: bytes) -> None:
-    # T.88, 7.4.9--7.4.14: markers, profiles, and nonnecessary extensions.
     encoded = (
         segment(0, 52, struct.pack(">II", 1, 1), page=0)
         + page_info(flags)
@@ -46,15 +44,11 @@ def test_default_page_pixels_and_harmless_segments(flags: int, expected: bytes) 
 
 
 def test_supported_arithmetic_template_zero_decodes_black_row() -> None:
-    # Eight black pixels, checked against MuPDF's JBIG2 decoder. T.88 Annex E
-    # terminates the arithmetic-coded data with FF AC.
     encoded = page_info() + generic_region(False, bytes.fromhex("ff ac")) + segment(3, 49, b"")
     assert decode_jbig2(encoded, None) == b"\x00"
 
 
 def test_mmr_compressed_bits_are_never_returned_as_pixels() -> None:
-    # T.88, 6.2.6: one T.6 white row followed by EOFB, byte padded.
-    # Decoding gives eight white pixels; interpreting 0x80 as pixels is wrong.
     encoded = page_info() + generic_region(True, bytes.fromhex("80 08 00 80"))
     with pytest.raises(FilterUnsupportedError, match="MMR region") as error:
         decode_jbig2(encoded, None)
@@ -103,7 +97,6 @@ def test_malformed_segment_metadata_keeps_parse_error_mapping(
 
 
 def test_necessary_unknown_extension_is_unsupported() -> None:
-    # T.88, 7.4.14 requires reserved bit 29 whenever necessary bit 31 is set.
     data = page_info() + segment(2, 62, struct.pack(">I", 0xA0000000))
     with pytest.raises(FilterUnsupportedError, match="necessary JBIG2 extension"):
         decode_jbig2(data, None)
@@ -146,8 +139,6 @@ def test_generic_header_keeps_common_metadata_and_signed_offsets() -> None:
 
 
 def test_decode_jbig2_inverts_t88_polarity_for_pdf() -> None:
-    # Positive control for ISO 32000-1 7.4.7: a page whose default pixel is
-    # black (T.88 bit 1) reaches PDF as 0 bits, and vice versa.
     decoder = JBIG2PageDecoder()
     for item in parse_embedded_segments(page_info(4)):
         decoder.decode_segment(item)

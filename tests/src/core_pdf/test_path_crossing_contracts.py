@@ -1,5 +1,3 @@
-"""Scanline crossings agree across scalar, row, and batch implementations."""
-
 import numpy as np
 import pytest
 
@@ -13,7 +11,6 @@ def test_scanline_crossings_preserve_half_open_bounds_and_edge_order(
     monkeypatch, limit, reverse_edges, offset
 ):
     monkeypatch.setattr(paths, "INTERNAL_CROSSING_MASK_CELL_LIMIT", limit)
-    # Rising left edge, descending right edge, and an inactive horizontal edge.
     edges: list[tuple[float, float, float, float, float, float]] = [
         (2, 0, 2, 6, 0, 6),
         (8, 6, 8, 0, 0, 6),

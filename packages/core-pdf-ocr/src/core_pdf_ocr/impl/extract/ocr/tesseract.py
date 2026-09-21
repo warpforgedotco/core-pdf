@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""The Tesseract binding: process setup, tessdata resolution, timeouts, and hOCR.
-
-Everything that knows Tesseract exists lives here -- importing tesserocr, locating
-trained data, budgeting per-task timeouts and recovering from them, and parsing the
-hOCR that comes back. The rest of the OCR stage decides *what* to recognize and
-consumes observations; only this module talks to the engine.
-"""
 
 from __future__ import annotations
 
@@ -41,8 +34,6 @@ from core_pdf_ocr.impl.extract.ocr.types import (
 )
 from core_pdf_ocr.impl.extract.quality import internal_Candidate, internal_candidate
 
-# OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels
-# from creating another layer of workers on top of it.
 os.environ["OMP_THREAD_LIMIT"] = "1"
 
 internal_OCR_SIGNALS_READY = False
@@ -52,32 +43,23 @@ internal_MAIN_THREAD_MESSAGE = (
 
 
 def internal_prepare_ocr_signals() -> None:
-    """Install cysignals' handlers from the main thread, once per process."""
     global internal_OCR_SIGNALS_READY
     if internal_OCR_SIGNALS_READY:
         return
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError(internal_MAIN_THREAD_MESSAGE)
-    # Not every tesserocr build depends on cysignals. Where it is absent there
-    # is no signal handler to install and therefore no main-thread constraint.
     with suppress(ImportError):
         import_module("cysignals.signals")
     internal_OCR_SIGNALS_READY = True
 
 
 OCR_TIMEOUT_MILLISECONDS = 12_000
-# Recognition cost grows with the raster, so a flat budget starves exactly the
-# large rasters the adaptive passes escalate to. Extend it per megapixel above
-# the primary budget, but keep a ceiling so one page cannot stall a document.
 OCR_TIMEOUT_MILLISECONDS_PER_MEGAPIXEL = 2_000
 OCR_TIMEOUT_MAX_MILLISECONDS = 30_000
-# A timed-out recognition yields nothing at all. Retry it once on a raster small
-# enough to finish rather than letting the empty candidate win selection.
 OCR_TIMEOUT_RETRY_PIXELS = 4_000_000
 
 
 def internal_import_tesserocr() -> Any:
-    """Import tesserocr once cysignals' main-thread setup is in place."""
     if "tesserocr" not in sys.modules:
         internal_prepare_ocr_signals()
     return import_module("tesserocr")
@@ -91,7 +73,6 @@ def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
 
 
 def internal_tessdata_path() -> str:
-    """Resolve English traineddata without relying on wheel build prefixes."""
     resolved_path, error_message = internal_resolve_tessdata_path()
     if resolved_path is None:
         raise RuntimeError(error_message)
@@ -163,8 +144,6 @@ internal_HOCR_CONFIDENCE_RE = re.compile(r"(?:x_conf|x_wconf) (-?\d+(?:\.\d+)?)"
 
 
 class internal_HocrCharacterParser(HTMLParser):
-    """Extract line text after dropping low-confidence hOCR characters."""
-
     def __init__(self, threshold: float) -> None:
         super().__init__(convert_charrefs=True)
         self.threshold = threshold
@@ -273,12 +252,6 @@ def internal_acceptable_text(
         if alphanumeric_count == 0 and minimum_confidence != 55.0:
             return False
     if length == 1 and not stripped.isalnum():
-        # A lone non-alphanumeric character as the entirety of an OCR
-        # observation is almost always segmentation noise — Braille cells
-        # misread from blank regions, decorative glyphs, or empty form-field
-        # marks.  Non-ASCII symbols are rejected outright; ASCII punctuation
-        # keeps the existing confidence gate so legitimate low-volume marks
-        # (e.g. a lone period) are not silently dropped.
         character = stripped[0]
         if not character.isascii() or (confidence < 70.0 and minimum_confidence != 55.0):
             return False
@@ -289,13 +262,6 @@ def internal_select_character_filtered_candidate(
     raw: internal_Candidate,
     filtered: internal_Candidate,
 ) -> internal_Candidate:
-    """Keep raw OCR unless filtering earns its recall cost.
-
-    hOCR character confidence is useful for removing isolated noise, but treating
-    every low-confidence character as false creates large recall losses on dense
-    schematics and degraded scans.  The filtered candidate may give up only a small
-    amount of local utility while retaining nearly all recovered content.
-    """
     raw_metrics = raw.metrics
     filtered_metrics = filtered.metrics
     if not len(filtered.observations):
@@ -310,7 +276,6 @@ def internal_select_character_filtered_candidate(
 
 
 def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> ObservationBatch:
-    """Read character boxes from an existing recognition without another OCR pass."""
     iterator = api.GetIterator()
     if iterator is None:
         return ObservationBatch.empty()
@@ -344,7 +309,6 @@ def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> Observation
 
 @contextmanager
 def internal_suppress_c_stderr() -> Iterator[None]:
-    """Redirect C-level stderr (fd 2) to /dev/null during C library execution."""
     devnull_fd = None
     stderr_fd = None
     with suppress(OSError):
@@ -364,7 +328,6 @@ def internal_suppress_c_stderr() -> Iterator[None]:
 
 
 def internal_recognition_timeout(task: internal_OcrTask) -> int:
-    """Allow a large raster proportionally more time before it is abandoned."""
     pixels = max(1, task.rectangle[2] * task.rectangle[3])
     excess_megapixels = max(0, pixels - PRIMARY_OCR_PIXELS) / 1_000_000
     budget = OCR_TIMEOUT_MILLISECONDS + int(
@@ -375,7 +338,6 @@ def internal_recognition_timeout(task: internal_OcrTask) -> int:
 
 @contextmanager
 def internal_owned_api(mode: int) -> Iterator[Any]:
-    """Acquire one Tesseract API and end it at the ownership boundary."""
     api = internal_api(mode)
     try:
         yield api
@@ -539,7 +501,6 @@ def internal_recognize_group(
     *,
     raise_if_cancelled: Callable[[], None] | None = None,
 ) -> tuple[internal_Candidate, ...]:
-    """Recognize same-raster tasks while reusing Tesseract image setup."""
     if not tasks:
         return ()
     if raise_if_cancelled is not None:
@@ -555,18 +516,10 @@ def internal_recognize_group(
 
 
 def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask | None:
-    """Rebuild a timed-out task on a raster small enough to finish.
-
-    Tesseract returns nothing at all when it runs out of time, and the empty
-    candidate then wins selection because no later pass improves on it. Cropping
-    to the task's own rectangle and reducing it keeps the page's text recoverable
-    at lower fidelity instead of dropping the page entirely.
-    """
     x, y, width, height = task.rectangle
     pixels = max(1, width * height)
     if pixels <= OCR_TIMEOUT_RETRY_PIXELS:
         return None
-    # Clamping a thin axis to one pixel must not let the other exceed the budget.
     reduction = min(
         math.sqrt(OCR_TIMEOUT_RETRY_PIXELS / pixels),
         OCR_TIMEOUT_RETRY_PIXELS / max(1, width),
@@ -603,11 +556,6 @@ def internal_recover_timed_out_tasks(
     candidates: tuple[internal_Candidate, ...],
     recognize: Callable[[tuple[internal_OcrTask, ...]], tuple[internal_Candidate, ...]],
 ) -> tuple[internal_Candidate, ...]:
-    """Re-run only the tasks whose recognition timed out without producing text.
-
-    Recovery is best effort: a retry that still returns nothing leaves the original
-    candidate in place rather than failing the page.
-    """
     retry_indexes: list[int] = []
     retry_tasks: list[internal_OcrTask] = []
     for index, (task, candidate) in enumerate(zip(tasks, candidates, strict=False)):

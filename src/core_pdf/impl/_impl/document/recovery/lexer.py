@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader recovery layered over the PDF lexical grammar."""
 
 from __future__ import annotations
 
@@ -58,17 +57,9 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 
 
 def internal_reader_lexical_rules(rules: LexicalRules) -> LexicalRules:
-    """Derive the reader grammar from a spec grammar.
-
-    Reader acceptance keeps NUL whitespace and unknown versions. Valid legacy
-    names still retain a literal # instead of changing identity.
-    """
     return replace(rules, whitespace=WHITESPACE, canonical_identifiers=False)
 
 
-# One reader grammar per spec grammar. The spec selects among a fixed set of
-# grammars by version, so deriving each once at import keeps lexer creation
-# from rebuilding lookup tables and compiling patterns per content stream.
 internal_READER_RULES: dict[LexicalRules, LexicalRules] = {
     rules: internal_reader_lexical_rules(rules)
     for rules in {
@@ -159,12 +150,9 @@ class PdfLexer(SyntaxLexer):
         return raw, end
 
     def is_numeric_array_word(self, raw: bytes | memoryview) -> bool:
-        # Retain reader acceptance of Python numeric spellings in array fast paths.
         return True
 
     def parse_integer_token(self, token: bytes | memoryview) -> int:
-        # Retain Python spellings in numeric-array recovery, but report limits
-        # on otherwise valid PDF integers consistently with ordinary parsing.
         try:
             return int(token)
         except ValueError:
@@ -173,7 +161,6 @@ class PdfLexer(SyntaxLexer):
             raise
 
     def parse_real_token(self, token: bytes | memoryview) -> float:
-        # Keep the reader's existing numeric conversion, including overflow to infinity.
         return float(token)
 
     def handle_missing_endobj(self, keyword: tuple[bytes, int] | None) -> bool:
@@ -199,7 +186,6 @@ class PdfLexer(SyntaxLexer):
     def handle_invalid_name_escape(
         self, data: bytes, index: int, decoded: int | None, out: bytearray
     ) -> int:
-        # A malformed escape keeps its literal '#'; an escaped NUL is retained.
         if decoded is None:
             out.append(35)
             return index + 1
@@ -213,8 +199,6 @@ class PdfLexer(SyntaxLexer):
         length = super().dictionary_end_length(pos)
         if length or not (self.recover_malformed_objects and self.recover_dictionary_structure):
             return length
-        # Input cut off after a single '>' is a truncated terminator; consume it
-        # so the dictionary closes instead of failing on a missing key.
         return 1 if self.raw_data[pos] == 62 and pos + 1 >= self.data_len else 0
 
     def handle_dictionary_key_error(self) -> bool:
@@ -317,12 +301,6 @@ class PdfLexer(SyntaxLexer):
     def internal_recover_stream_data(
         self, data_start: int, *, preferred: int | None = None
     ) -> bytes | memoryview | None:
-        """Delimit stream data by ``endstream``, else ``endobj``; ``None`` if neither exists.
-
-        On success the lexer is positioned at the keyword found; the caller
-        consumes ``endstream`` itself, since a stream cut at ``endobj`` has
-        no ``endstream`` to skip.
-        """
         endstream_pos = self.find_stream_end(data_start, preferred=preferred)
         if endstream_pos >= 0:
             self.rewind(endstream_pos)
@@ -426,7 +404,6 @@ class PdfLexer(SyntaxLexer):
         return key.decode("latin-1")
 
     def parse_identifier(self, object_token: bytes, generation_token: bytes) -> tuple[int, int]:
-        # Reader recovery retains zero, signed and padded object identifiers.
         obj_num = parse_integer_token(object_token)
         gen_num = parse_integer_token(generation_token)
         if obj_num < 0 or not 0 <= gen_num <= 65535:

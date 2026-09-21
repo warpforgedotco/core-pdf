@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Tolerant name and number tree readers using the shared syntax traversal."""
 
 from __future__ import annotations
 
@@ -92,12 +91,9 @@ def internal_iter_tree_items(
     depth: int = 0,
     seen: set[int] | None = None,
 ) -> Iterator[tuple[TreeKeyT, object]]:
-    """Iterate a tree without recursion while validating its node shape."""
 
     if seen is None:
         seen = set()
-    # Pins visited nodes for this walk so a freed dictionary's id cannot be
-    # reused by a later resolved node and read as a cycle.
     visited_objects: dict[int, dict] = {}
     references: set[tuple[int, int]] = set()
     stack: list[tuple[object, int]] = [(node, depth)]

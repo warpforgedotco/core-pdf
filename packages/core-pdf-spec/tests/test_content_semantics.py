@@ -1,5 +1,3 @@
-"""Shared matrix, text-displacement and color rules at strict content boundaries."""
-
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -62,7 +60,6 @@ def test_matrix_requires_exactly_six_entries(value: object) -> None:
 
 @pytest.mark.parametrize("indirect", [False, True])
 def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
-    # ISO 32000-1 7.3.10 and Tables 75/95: arrays and their entries may be indirect.
     state = internal_state()
     resolver = cast(ObjectResolver, state.resolver)
     resolver.objects[key_for(1, 0)] = [1, 0, 0, 1, PdfReference(2, 0), 6]
@@ -107,7 +104,6 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
 def test_form_retains_transparency_transform_and_source_identity(
     indirect: bool, isolated: bool, opacity: float, blend: str | None
 ) -> None:
-    # ISO 32000-1 Table 147 and 11.6.6: the invoking state supplies group alpha.
     state = internal_state()
     bbox = [0, 0, 2, 3]
     form = PdfStream(
@@ -138,7 +134,6 @@ def test_form_retains_transparency_transform_and_source_identity(
 
 @pytest.mark.parametrize("resources", [None, {}, {"Font": {}}])
 def test_form_inherits_resources_only_when_absent(resources: dict | None) -> None:
-    # ISO 32000-1 Table 95: an explicit empty Resources dictionary is still local.
     state = internal_state()
     form = PdfStream(dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1]})
     if resources is not None:
@@ -169,7 +164,6 @@ def test_form_rejects_missing_bbox_and_invalid_subtypes(dictionary: dict, messag
 def test_tj_horizontal_scale_applies_only_horizontally(
     vertical: bool, expected: tuple[int, int]
 ) -> None:
-    # ISO 32000-1 9.4.4: Th is absent from the vertical displacement equation.
     assert (
         text_adjustment_vector(100, vertical=vertical, font_size=10, horizontal_scale=200)
         == expected
@@ -337,7 +331,6 @@ def test_color_range_validation_precedes_initialization(ranges: list[object]) ->
 
 @pytest.mark.parametrize("stroke", [False, True])
 def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> None:
-    # ISO 32000-1 Table 74: reserved names cannot be shadowed by resources.
     state = internal_state()
     state.resources = {"ColorSpace": {"DeviceRGB": PdfName.of("DeviceGray")}}
     state.graphics.fill_pattern = state.graphics.stroke_pattern = cast(Any, object())

@@ -1,5 +1,3 @@
-"""Malformed content recovery resumes at explicit boundaries without replay."""
-
 import pytest
 
 from core_pdf.impl._impl.capture.recovery import (

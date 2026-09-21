@@ -1,5 +1,3 @@
-"""Logical-structure metadata projected through the real document resolver."""
-
 import pytest
 
 from core_pdf.impl._impl.document import structure

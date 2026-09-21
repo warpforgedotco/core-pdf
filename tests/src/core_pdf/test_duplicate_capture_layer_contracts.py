@@ -1,5 +1,3 @@
-"""Duplicate layers require local content and glyph evidence, not just overlap."""
-
 from dataclasses import replace
 
 import pytest

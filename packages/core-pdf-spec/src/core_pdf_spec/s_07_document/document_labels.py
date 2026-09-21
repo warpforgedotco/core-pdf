@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF page-label numbering, ISO 32000-2, 12.4.2."""
 
 from __future__ import annotations
 
@@ -13,8 +12,6 @@ ResolveFn = Callable[[object], object]
 
 
 class PageLabelStyle(StrEnum):
-    """PDF page-label numbering styles."""
-
     LOWER_ROMAN = "r"
     UPPER_ROMAN = "R"
     LOWER_ALPHA = "a"

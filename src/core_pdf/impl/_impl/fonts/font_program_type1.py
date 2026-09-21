@@ -1,5 +1,3 @@
-"""Application outline and damaged-program adapter for Type 1 fonts."""
-
 from __future__ import annotations
 
 import re
@@ -40,8 +38,6 @@ internal_MAX_SUBROUTINES = 4096
 
 
 class internal_Type1FontProgram:
-    """A bounded decoder for the outlines in one embedded Type 1 program."""
-
     __slots__ = (
         "charstrings",
         "font_matrix",

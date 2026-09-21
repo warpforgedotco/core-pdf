@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Text-object knockout and Type 3 glyph boundaries, ISO 32000-2 9.3.8/9.4."""
 
 from types import SimpleNamespace
 from typing import Any, cast
@@ -83,7 +82,6 @@ def test_text_knockout_rejects_nonbooleans_outside_text(value: object, indirect:
 def test_TK_is_ignored_inside_text_while_other_graphics_changes_persist(
     initial: bool, value: object
 ) -> None:
-    # 9.3.8: text objects inherit graphics state without resetting or saving it.
     state, _ = internal_state()
     state.graphics.text_knockout = initial
     state.graphics.fill_opacity = 0.2
@@ -141,7 +139,6 @@ def test_text_object_scope_is_not_part_of_q_Q_graphics_state() -> None:
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_child_stream_resets_and_restores_text_object_scope(failure: bool) -> None:
-    # 9.4: child text objects have their own BT/ET scope, even inside parent text.
     state, sink = internal_state()
     state.graphics.text_knockout = False
     state.op_BT((), 0)
@@ -185,7 +182,6 @@ def internal_type3_font(stream: PdfStream, resources: PdfDict | None = None) -> 
 
 
 def test_type3_boundaries_enclose_all_commands_in_each_executed_glyph() -> None:
-    # 9.3.8 applies the glyph-element boundary to Type 3 CharProcs as well.
     state, sink = internal_state()
     state.op_BT((), 0)
     glyph = PdfStream(raw_data=b"0 0 d0 /False gs 0 0 1 1 re f BT /True gs 0 0 1 1 re f ET")
@@ -237,7 +233,6 @@ def test_invisible_type3_text_emits_no_glyph_boundaries() -> None:
 
 
 def test_pattern_retains_defining_stream_initial_TK_across_nested_and_later_changes() -> None:
-    # 11.6.7: pattern initial state is the defining stream's initial state.
     state, sink = internal_state()
     pattern = PdfStream(
         dictionary={

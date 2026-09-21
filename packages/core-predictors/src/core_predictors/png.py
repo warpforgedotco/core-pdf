@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PNG (3rd edition) section 9 filter reconstruction over byte rows.
-
-Each encoded row starts with a filter-type byte (0 None, 1 Sub, 2 Up,
-3 Average, 4 Paeth) followed by ``row_length`` filtered bytes. The Paeth
-predictor breaks ties in the prescribed order: left, above, upper-left.
-"""
 
 from __future__ import annotations
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF primitives, extraction records, and shared boundary types."""
 
 from __future__ import annotations
 
@@ -20,14 +19,10 @@ from core_pdf_spec.types import (
 
 
 class BinaryReader(Protocol):
-    """Readable binary source that can be materialized before parsing."""
-
     def read(self, size: int = -1, /) -> bytes | bytearray | memoryview: ...
 
 
 class SeekableBinaryReader(BinaryReader, Protocol):
-    """Random-access binary source aligned with PDF byte-offset structure."""
-
     def seek(self, offset: int, whence: int = 0, /) -> int: ...
 
     def tell(self) -> int: ...
@@ -46,8 +41,6 @@ RecordT = TypeVar("RecordT")
 
 @dataclass(frozen=True, slots=True)
 class PageScoped(Generic[RecordT]):
-    """A page-level extraction record with its document-level context."""
-
     page_index: int
     page_number: int
     page_label: str | None
@@ -56,8 +49,6 @@ class PageScoped(Generic[RecordT]):
 
 @dataclass(frozen=True, slots=True)
 class TextWord:
-    """One canonical word record shared by layout and structured extraction."""
-
     text: str
     bbox: Rectangle | None = None
     line_index: int = 0
@@ -94,7 +85,6 @@ class DrawingRecord:
 
     @classmethod
     def from_captured(cls, source: object, **overrides: object) -> Self:
-        """Build a record from an object exposing the same fields."""
         values = {name: getattr(source, name) for name in internal_DRAWING_FIELD_NAMES}
         values.update(overrides)
         return cls(**values)

@@ -1,5 +1,3 @@
-"""Resolve the PDF-defined document information dictionary and metadata stream."""
-
 from __future__ import annotations
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -24,7 +22,6 @@ def metadata_stream(resolver: PdfValueResolver, trailer: PdfDict) -> PdfStream |
 
 
 def catalog_metadata_stream(resolver: PdfValueResolver, catalog: object) -> PdfStream | None:
-    """Resolve optional Metadata from an already resolved catalog dictionary."""
     if not isinstance(catalog, dict):
         raise ValueError("invalid trailer Root dictionary")
     metadata = resolver.resolve(catalog.get("Metadata"))

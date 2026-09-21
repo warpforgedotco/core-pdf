@@ -1,5 +1,3 @@
-"""Font dictionary ownership and optional-entry semantics."""
-
 from __future__ import annotations
 
 import pytest
@@ -14,7 +12,6 @@ from core_pdf_spec.s_09_fonts.widths import parse_font_widths
 def test_optional_descriptor_has_the_same_absent_and_null_semantics(
     font: dict[str, object],
 ) -> None:
-    # ISO 32000-1, 7.3.9: null dictionary entries are equivalent to omitted entries.
     inputs = prepare_font_program_inputs(font)
     assert (inputs.font_file, inputs.font_file2, inputs.font_file3) == (None, None, None)
     metrics = parse_font_widths(font, "Type1")

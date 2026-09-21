@@ -1,5 +1,3 @@
-"""Geometry and synthetic page collections retain their reference contracts."""
-
 from io import BytesIO
 
 import pytest

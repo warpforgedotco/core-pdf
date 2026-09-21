@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Tokenization of CMap programs (Adobe TN 5014) with PostScript lexical rules."""
 
 from __future__ import annotations
 
@@ -32,8 +31,6 @@ CMapTokenKind = typing.Literal["array", "delimiter", "hex", "literal", "procedur
 
 @dataclass(frozen=True, slots=True)
 class CMapToken:
-    """One lexical CMap token and its location in the source program."""
-
     value: bytes
     start: int
     end: int
@@ -42,8 +39,6 @@ class CMapToken:
 
 @dataclass(frozen=True, slots=True)
 class CMapBlock:
-    """The operands between an exact ``begin*``/``end*`` operator pair."""
-
     data: bytes
     tokens: tuple[CMapToken, ...]
 
@@ -57,8 +52,6 @@ class CMapBlock:
 
 @dataclass(frozen=True, slots=True)
 class CMapProgram:
-    """A tokenized CMap program shared by its semantic compilers."""
-
     data: bytes
     tokens: tuple[CMapToken, ...]
 
@@ -72,25 +65,17 @@ class CMapProgram:
             raise ValueError("unterminated CMap program")
         scoped_tokens = scope_cmap_tokens(tokens)
         operators = {token.value for token in scoped_tokens if token.kind == "word"}
-        # Adobe Technical Note 5014, 5.4 and 7.3: usecmap adopts its parent's
-        # codespace; a child must not redefine that codespace.
         if {b"usecmap", b"begincodespacerange"} <= operators:
             raise ValueError("CMap usecmap cannot redefine codespacerange")
         return cls(source, scoped_tokens)
 
     def blocks(self, begin: bytes, end: bytes) -> typing.Iterator[CMapBlock]:
-        """Yield blocks delimited by exact word tokens.
-
-        Grouped array and string tokens ensure that operator-looking contents do
-        not accidentally terminate a surrounding CMap section.
-        """
         for ignored_begin, block in self.blocks_in_order({begin: end}):
             yield block
 
     def blocks_in_order(
         self, delimiters: dict[bytes, bytes]
     ) -> typing.Iterator[tuple[bytes, CMapBlock]]:
-        """Yield selected block kinds in their original program order."""
         begin_keyword: bytes | None = None
         end_keyword: bytes | None = None
         block_start: int | None = None
@@ -153,18 +138,11 @@ class CMapProgram:
 
 
 def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
-    """Yield CMap blocks delimited by exact, non-comment operator tokens."""
     for block in CMapProgram.parse(data).blocks(begin, end):
         yield block.data
 
 
 def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
-    """Scan a ``(...)`` literal string starting at ``pos``.
-
-    Returns ``(end, terminated)``: ``end`` is the position just past the closing
-    unescaped ``)`` if the string is properly balanced, otherwise ``len(data)`` with
-    ``terminated=False``.
-    """
     end = pos + 1
     depth = 1
     n = len(data)
@@ -187,7 +165,6 @@ def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, b
 
 
 def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
-    """Scan a ``[...]`` array or ``{...}`` procedure as one composite object."""
     opening = data[pos]
     match opening:
         case 91:
@@ -201,12 +178,12 @@ def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
     while end < n:
         current = data[end]
         match current:
-            case 37:  # comment
+            case 37:
                 while end < n and data[end] not in (10, 13):
                     end += 1
-            case 40:  # literal string
+            case 40:
                 end, ignored_terminated = internal_scan_cmap_literal_string_end(data, end)
-            case 60:  # hex string or dictionary opener
+            case 60:
                 if end + 1 < n and data[end + 1] == 60:
                     end += 2
                     continue
@@ -214,7 +191,7 @@ def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
                 if close < 0:
                     return n, False
                 end = close + 1
-            case 91 | 123:  # nested array or procedure
+            case 91 | 123:
                 end, terminated = internal_scan_cmap_composite_end(data, end)
                 if not terminated:
                     return n, False
@@ -226,7 +203,6 @@ def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
 
 
 def scope_cmap_tokens(tokens: tuple[CMapToken, ...]) -> tuple[CMapToken, ...]:
-    """Restrict a CMap program to its top-level ``begincmap`` region when present."""
     begin_index = next(
         (
             index
@@ -256,16 +232,16 @@ def iter_cmap_tokens(data: bytes, *, group_arrays: bool) -> typing.Iterator[CMap
             pos += 1
             continue
         match byte:
-            case 37:  # comment
+            case 37:
                 while pos < n and data[pos] not in (10, 13):
                     pos += 1
-            case 40:  # literal string
+            case 40:
                 end, terminated = internal_scan_cmap_literal_string_end(data, pos)
                 if not terminated:
                     raise ValueError("unterminated CMap literal string")
                 yield CMapToken(data[pos:end], pos, end, "literal")
                 pos = end
-            case 60:  # hex string or dictionary opener
+            case 60:
                 if pos + 1 < n and data[pos + 1] == 60:
                     yield CMapToken(b"<<", pos, pos + 2, "delimiter")
                     pos += 2
@@ -276,7 +252,7 @@ def iter_cmap_tokens(data: bytes, *, group_arrays: bool) -> typing.Iterator[CMap
                 end += 1
                 yield CMapToken(data[pos:end], pos, end, "hex")
                 pos = end
-            case 62:  # dictionary closer or stray delimiter
+            case 62:
                 end = pos + (2 if pos + 1 < n and data[pos + 1] == 62 else 1)
                 yield CMapToken(data[pos:end], pos, end, "delimiter")
                 pos = end
@@ -286,13 +262,13 @@ def iter_cmap_tokens(data: bytes, *, group_arrays: bool) -> typing.Iterator[CMap
                     raise ValueError("unterminated CMap array")
                 yield CMapToken(data[pos:end], pos, end, "array")
                 pos = end
-            case 123:  # procedure
+            case 123:
                 end, terminated = internal_scan_cmap_composite_end(data, pos)
                 if not terminated:
                     raise ValueError("unterminated CMap procedure")
                 yield CMapToken(data[pos:end], pos, end, "procedure")
                 pos = end
-            case 47:  # name object
+            case 47:
                 end = pos + 1
                 while end < n and not SEPARATOR_TABLE[data[end]]:
                     end += 1

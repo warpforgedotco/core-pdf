@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cross-reference identity checks and owned object-stream parser lifetimes."""
 
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier

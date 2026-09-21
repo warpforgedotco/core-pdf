@@ -1,5 +1,3 @@
-"""Prevent compiled modules from shadowing sources during differential tests."""
-
 from __future__ import annotations
 
 import pathlib
@@ -11,7 +9,6 @@ internal_REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 def internal_source_roots() -> tuple[pathlib.Path, ...]:
-    """Every source root the coverage configuration enumerates."""
     with (internal_REPOSITORY_ROOT / "pyproject.toml").open("rb") as handle:
         sources = tomllib.load(handle)["tool"]["coverage"]["run"]["source"]
     return tuple(internal_REPOSITORY_ROOT / source for source in sources)
@@ -23,7 +20,6 @@ internal_EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
 
 @pytest.fixture
 def text_pdf_bytes() -> bytes:
-    """A self-contained page with embedded text, requiring no reference library."""
     content = b"BT /F1 12 Tf 20 100 Td (Hello maintenance) Tj ET"
     objects = (
         b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -49,7 +45,6 @@ def text_pdf_bytes() -> bytes:
 
 
 def internal_shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
-    """Find compiled extensions that shadow a same-named source module."""
     shadowed: list[tuple[pathlib.Path, pathlib.Path]] = []
     for root in internal_SOURCE_ROOTS:
         for path in root.rglob("*"):

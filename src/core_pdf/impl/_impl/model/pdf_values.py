@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Conversions from PDF values into host and compatibility representations."""
 
 from __future__ import annotations
 
@@ -43,12 +42,6 @@ class internal_CoercionFrame:
 
 
 def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None = None) -> object:
-    """Project host values, replacing active container backedges with null.
-
-    Backedges cannot be represented in ordinary metadata/output trees. Keep
-    their keys and array positions, retain non-cyclic sharing, and leave other
-    unsupported scalar values to the receiving representation's existing policy.
-    """
 
     def decode_scalar(item: object) -> object:
         if string_decoder is not None:

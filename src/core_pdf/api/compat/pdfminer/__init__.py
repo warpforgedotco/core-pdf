@@ -1,5 +1,3 @@
-"""PDFMiner-compatible APIs backed by core-pdf."""
-
 from __future__ import annotations
 
 from ._extract import (
@@ -26,7 +24,6 @@ from ._layout import (
     LTTextLineVertical,
 )
 
-# Preserve the historical public identity for imports, reprs, and pickling.
 for internal_export in (
     LAParams,
     LTAnno,

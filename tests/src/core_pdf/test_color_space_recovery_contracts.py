@@ -1,5 +1,3 @@
-"""Reader color descriptions and recovery retain structure without unsafe recursion."""
-
 import pytest
 
 from core_pdf.impl._impl.graphics.color_spec import (

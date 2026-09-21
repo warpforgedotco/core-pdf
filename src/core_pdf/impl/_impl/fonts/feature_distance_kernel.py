@@ -1,5 +1,3 @@
-"""Compiled glyph-feature comparison kernel."""
-
 from __future__ import annotations
 
 from math import inf
@@ -136,7 +134,6 @@ def internal_feature_arrays(
     bitmap_rows = numpy.zeros((count, bitmap_width), dtype=numpy.uint64)
     for index, bitmap in enumerate(bitmaps):
         if bitmap:
-            # CFF feature bitmaps are 18-bit rows, so uint64 preserves every bit.
             bitmap_rows[index, : len(bitmap)] = bitmap
     return (
         masks,
@@ -160,7 +157,6 @@ def feature_distance_matrix(
     *,
     internal_right_arrays: FeatureArrays | None = None,
 ) -> numpy.ndarray[Any, Any]:
-    """Return pairwise feature distances for two feature collections."""
     (
         left_masks,
         left_maps,

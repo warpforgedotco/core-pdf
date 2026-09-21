@@ -1,5 +1,3 @@
-"""Capture font caches share only decoders with equivalent resource dependencies."""
-
 from types import SimpleNamespace
 
 import pytest

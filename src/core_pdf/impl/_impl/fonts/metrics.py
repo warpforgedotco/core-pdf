@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native PDF font metric helpers."""
 
 from __future__ import annotations
 
@@ -39,9 +38,6 @@ def parse_font_metrics(
     ascent, descent = 800.0, -200.0
     descriptor = font_dict.get("FontDescriptor")
     if subtype == "Type3" and not isinstance(descriptor, dict):
-        # Type 3 fonts need not have a FontDescriptor. Their FontBBox is in
-        # glyph space and supplies the vertical metrics directly; using the
-        # generic Latin fallback shifts every layout box below its baseline.
         font_bbox = font_dict.get("FontBBox")
         if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
             with contextlib.suppress(ValueError):
@@ -79,10 +75,6 @@ def parse_font_metrics(
             with contextlib.suppress(ValueError):
                 descent = parse_float_strict(descriptor_descent, "invalid font Descent")
                 descriptor_descent_applied = True
-    # ISO 32000 defines Descent below the baseline and therefore as non-positive.
-    # Some PDF producers (notably PScript5.dll) serialize its magnitude instead.
-    # Normalize that widespread malformed form once at the font boundary so every
-    # geometry consumer sees a consistent text coordinate system.
     if descriptor_descent_applied and descent > 0:
         descent = -descent
     return ascent, descent

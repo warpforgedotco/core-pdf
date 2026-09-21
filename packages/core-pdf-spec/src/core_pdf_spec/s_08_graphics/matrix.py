@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native affine matrix value type."""
 
 from __future__ import annotations
 
@@ -36,11 +35,6 @@ IDENTITY_MATRIX: Final = Matrix(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
 def multiply_affine(left: Sequence[float], right: Sequence[float]) -> Matrix:
-    """Evaluate the six affine product expressions, including identity products.
-
-    Callers that emulate mutable matrices can convert the result to a list.
-    Matrix.multiply adds identity shortcuts for native callers.
-    """
     return Matrix(
         left[0] * right[0] + left[1] * right[2],
         left[0] * right[1] + left[1] * right[3],

@@ -1,5 +1,3 @@
-"""Application Unicode replacement and legacy range expansion."""
-
 MAX_CMAP_RANGE_SPAN = 65536
 
 

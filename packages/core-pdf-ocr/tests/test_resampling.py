@@ -1,5 +1,3 @@
-"""Recognition resampling preserves pixel values, channels, and shape contracts."""
-
 import numpy
 import pytest
 

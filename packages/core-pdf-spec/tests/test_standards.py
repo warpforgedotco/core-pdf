@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Version recognition stays distinct from strict contextual rules and coverage."""
 
 from __future__ import annotations
 
@@ -66,7 +65,6 @@ def test_catalog_version_requires_a_name() -> None:
 
 
 def test_catalog_upgrade_and_incremental_update_cannot_downgrade() -> None:
-    # ISO 32000-2:2020 7.5.6 errata explicitly includes preceding catalog versions.
     assert effective_pdf_version(PdfVersion(1, 4), PdfVersion(1, 7)) == PdfVersion(1, 7)
     assert effective_pdf_version(PdfVersion(1, 7), PdfVersion(1, 4)) == PdfVersion(1, 7)
     assert effective_pdf_version(PdfVersion(1, 4), None, previous=PdfVersion(2, 0)) == PdfVersion(
@@ -149,7 +147,6 @@ def test_extensions_do_not_resolve_or_skip_invalid_entries(declarations: object)
 
 
 def test_text_encoding_changes_only_with_pdf_2_0() -> None:
-    # ISO 32000-1:2008 7.9.2.2 vs ISO 32000-2:2020 7.9.2.2.1.
     utf8 = b"\xef\xbb\xbfHello"
     assert decode_pdf_text_string(utf8, context=SemanticContext(PdfVersion(1, 7))) == "ï»¿Hello"
     assert decode_pdf_text_string(utf8, context=SemanticContext(PdfVersion(2, 0))) == "Hello"
@@ -219,8 +216,6 @@ def test_profile_catalog_separates_families_editions_and_unknown_targets() -> No
 def test_additional_family_reference_catalog(
     identifier: str, family: str, edition: str, base_version: PdfVersion
 ) -> None:
-    # These identities do not advertise validation support. In particular,
-    # PDF/VT part names do not map one-to-one to ISO publication part numbers.
     profile = get_standard_profile(identifier)
     assert profile is not None
     assert (profile.family, profile.edition, profile.base_version) == (
@@ -231,7 +226,6 @@ def test_additional_family_reference_catalog(
 
 
 def test_aes_gcm_extension_coverage_requires_published_revision_identity() -> None:
-    # ISO/TS 32003:2023, clause 4 Table 1 includes the colon in :2023.
     extension = parse_extension(
         "ISO_",
         {
@@ -254,7 +248,6 @@ def test_aes_gcm_extension_coverage_requires_published_revision_identity() -> No
 
 
 def test_revised_blend_coverage_requires_exact_adobe_extension_identity() -> None:
-    # Adobe PDF 1.7 ExtensionLevel 5 supplement, 3.1: revised separable modes.
     coverage = get_extension_coverage(PdfExtension("ADBE", PdfVersion(1, 7), 5))
     assert coverage is not None
     assert coverage.features == ("ColorDodge and ColorBurn revised component blending",)

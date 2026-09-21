@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Ligature width detection across a font and its companion TrueType program."""
 
 from __future__ import annotations
 
@@ -132,9 +131,6 @@ def detect_ligature_overrides(
     if font_file is None:
         return {}
 
-    # Most fonts have no companion, so look for one before decoding the
-    # primary font program: the decoded bytes are only needed once a
-    # companion exists or its lookup fails.
     try:
         starter_widths, starter_chars, companion_data = find_companion_font(
             document, resources, base_name, set("ftscFTSC")

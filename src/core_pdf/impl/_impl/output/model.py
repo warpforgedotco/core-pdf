@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Immutable, format-neutral document records."""
 
 from __future__ import annotations
 
@@ -16,7 +15,6 @@ from core_pdf.impl._impl.model.text import internal_reconcile_text_words
 from core_pdf.impl.types import Rectangle, TextWord
 
 SCHEMA_VERSION = "5.0"
-"""Schema version stamped on every structured :class:`Document`."""
 
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
@@ -31,7 +29,6 @@ def internal_freeze(value: Any) -> Any:
     return value
 
 
-# Sentinel for a source, page class or route the pipeline could not determine.
 UNKNOWN = "unknown"
 
 
@@ -250,8 +247,6 @@ PageElement: TypeAlias = Block | Table | Figure
 
 @dataclass(frozen=True, slots=True)
 class ContentNode:
-    """A shared ordered graph node with a typed payload."""
-
     node_id: int
     kind: str
     payload: PageElement
@@ -273,8 +268,6 @@ class ContentNode:
 
 @dataclass(frozen=True, slots=True)
 class TextView:
-    """Reading-order projection over the page's text nodes."""
-
     elements: tuple[PageElement, ...]
     page_number: int | None = None
 
@@ -323,8 +316,6 @@ class TextView:
 
 @dataclass(frozen=True, slots=True)
 class TextLineReference:
-    """A document-owned reference to a normalized line and its source page."""
-
     page_number: int
     line_index: int
     line: TextLine
@@ -332,16 +323,12 @@ class TextLineReference:
 
 @dataclass(frozen=True, slots=True)
 class TableView:
-    """Structured table projection independent of reading-order text."""
-
     tables: tuple[Table, ...]
     page_number: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class TableReference:
-    """A document-owned reference to a table and its source page."""
-
     page_number: int
     table_index: int
     table: Table
@@ -349,8 +336,6 @@ class TableReference:
 
 @dataclass(frozen=True, slots=True)
 class DocumentTextView:
-    """Document-wide text projection retaining page boundaries."""
-
     pages: tuple[TextView, ...]
 
     @property
@@ -375,7 +360,6 @@ class DocumentTextView:
 
     @property
     def words(self) -> tuple[TextWord, ...]:
-        # TextView.words already stamps page_number, so no restamping is needed here.
         words: list[TextWord] = []
         for page in self.pages:
             words.extend(page.words)
@@ -388,8 +372,6 @@ class DocumentTextView:
 
 @dataclass(frozen=True, slots=True)
 class DocumentTableView:
-    """Document-wide structured table projection retaining page ownership."""
-
     pages: tuple[TableView, ...]
 
     @property
@@ -433,12 +415,10 @@ class Page:
 
     @property
     def width_points(self) -> float:
-        """Unrotated width in points; stored geometry uses default user space."""
         return self.width * self.user_unit
 
     @property
     def height_points(self) -> float:
-        """Unrotated height in points; stored geometry uses default user space."""
         return self.height * self.user_unit
 
     @property
@@ -452,7 +432,6 @@ class Page:
         return tuple(self.internal_nodes())
 
     def internal_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
-        """Construct nodes with IDs assigned directly in the owning projection."""
         for index, element in enumerate(self.elements, start=start_id):
             yield ContentNode(
                 node_id=index,
@@ -467,7 +446,6 @@ class Page:
 
     @property
     def words(self) -> tuple[TextWord, ...]:
-        """Return the canonical reading-order word projection for this page."""
         return self.text_view.words
 
     @property
@@ -519,7 +497,6 @@ class Document:
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:
-        """Return one reading-order node stream with page ownership preserved."""
         nodes: list[ContentNode] = []
         for page in self.pages:
             nodes.extend(page.internal_nodes(start_id=len(nodes)))

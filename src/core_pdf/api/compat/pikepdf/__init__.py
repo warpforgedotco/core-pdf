@@ -1,5 +1,3 @@
-"""High-level pikepdf-shaped facade backed by core-pdf."""
-
 from __future__ import annotations
 
 import re
@@ -27,8 +25,6 @@ from .._strict_page_tree import internal_has_malformed_shadowed_definition
 
 
 class Rectangle(tuple[Decimal, Decimal, Decimal, Decimal]):
-    """pikepdf-shaped numeric array preserving PDF decimal spelling semantics."""
-
     def __new__(cls, *values: object) -> "Rectangle":
         if len(values) != 4:
             raise ValueError("rectangle must contain four coordinates")
@@ -139,10 +135,6 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
             and entry is not None
             and entry.object_stream is not None
         ):
-            # qpdf's damaged-file reconstruction scans indirect objects but
-            # cannot use a malformed xref stream to locate compressed objects.
-            # Core's recovery can salvage that index, so preserve pikepdf's
-            # stricter boundary when the page-tree root exists only there.
             raise PdfUnsupportedError("root of pages tree has no /Kids array")
     seen: set[tuple[str, int, int] | tuple[str, int]] = set()
 

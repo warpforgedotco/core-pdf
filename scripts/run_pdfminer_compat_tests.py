@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run pdfminer.six's high-level tests against upstream and core-pdf."""
 
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ UPSTREAM_ENV_MARKER = "CORE_PDF_PDFMINER_UPSTREAM_ENV"
 
 
 def internal_install_core_pdf_facade() -> None:
-    """Install facade-backed public pdfminer modules before pytest collection."""
     from core_pdf.api.compat import pdfminer as facade
 
     package = ModuleType("pdfminer")
@@ -57,7 +55,6 @@ def internal_install_core_pdf_facade() -> None:
 
 
 def internal_run_one(implementation: str, pytest_args: list[str]) -> int:
-    """Run one implementation in the current process."""
     if not UPSTREAM_TEST.is_file():
         print(
             "pdfminer.six fixture is missing; run "
@@ -92,7 +89,6 @@ def internal_run_one(implementation: str, pytest_args: list[str]) -> int:
 
 
 def internal_run_both(pytest_args: list[str]) -> int:
-    """Run both implementations in isolated child interpreters."""
     results: list[int] = []
     for implementation in ("upstream", "core-pdf"):
         print(f"\n=== pdfminer.six high-level tests: {implementation} ===", flush=True)

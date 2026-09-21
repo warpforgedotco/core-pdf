@@ -1,5 +1,3 @@
-"""X-ray recovery uses raw object evidence and explicit occlusion thresholds."""
-
 from types import SimpleNamespace
 from typing import Any
 

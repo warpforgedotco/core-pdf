@@ -1,5 +1,3 @@
-"""Cleanup, mathematical ordering, and footer rules with explicit fixtures."""
-
 import pytest
 
 from core_pdf.impl._impl.layout import text_rules as rules

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader approximations for JBIG2 features without a supported decoder."""
 
 from __future__ import annotations
 
@@ -15,8 +14,6 @@ from core_jbig2.codec import (
 
 
 class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
-    """Preserve the reader's historical partial images and raw-region guesses."""
-
     def decode_segment(self, segment: JBIG2Segment) -> None:
         if segment.segment_type in (48, 6, 38, 39):
             super().decode_segment(segment)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Build extraction blocks and repair their reading order."""
 
 from __future__ import annotations
 
@@ -190,8 +189,6 @@ def internal_build_lines(
             for reference in (observations.references[index] for index in indexes)
             if reference is not None
         ]
-        # Each reference's bold/italic state was resolved four times below -- twice for
-        # the majority vote and twice when its span is built.  Resolve each once.
         reference_styles = [
             (
                 internal_style_enabled(reference, "is_bold"),
@@ -315,7 +312,6 @@ def internal_classify_blocks(
     *,
     body_font_size: float | None,
 ) -> list[ParsedBlock]:
-    """Add conservative semantic roles using typography and stable text cues."""
     classified: list[ParsedBlock] = []
     heading_sizes = sorted(
         {
@@ -363,15 +359,6 @@ def internal_semantic_body_font_size(lines: tuple[ParsedLine, ...]) -> float | N
 def internal_display_boxes(
     boxes: numpy.ndarray, rotation: int, width: float, height: float
 ) -> numpy.ndarray:
-    """Map boxes into the frame the page is displayed in.
-
-    Reading order is a statement about what a reader sees, so it has to be
-    decided in the rotated frame. A page carrying /Rotate 180 stores its first
-    line at the bottom of unrotated space, and ordering there walks the page
-    backwards -- one benchmark page came out reading its outline items l, k, j,
-    i, h. Ordering alone is rotated: the boxes handed back to callers stay in
-    page space, where the rest of the engine expects them.
-    """
     rotation %= 360
     if rotation == 0 or not len(boxes):
         return boxes
@@ -406,7 +393,6 @@ def layout_blocks(
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
 ) -> tuple[ParsedBlock, ...]:
-    """Reduce fused observations into geometrically ordered, structured blocks."""
     built_lines = internal_build_lines(
         observations, source_labels=source_labels, group_order=group_order
     )
@@ -486,7 +472,6 @@ def layout_blocks_with_evidence(
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
 ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
-    """Return ordered blocks together with validation evidence."""
     blocks = layout_blocks(
         observations,
         obstacles=obstacles,
@@ -506,18 +491,12 @@ def layout_element_order(
     page_width: float = 0.0,
     page_height: float = 0.0,
 ) -> tuple[int, ...]:
-    """Return reading order for arbitrary page elements represented by boxes."""
     if len(boxes) < 2:
         return tuple(range(len(boxes)))
     values = internal_display_boxes(
         numpy.asarray(boxes, dtype=numpy.float32), rotation, page_width, page_height
     )
     heights = numpy.maximum(1.0, values[:, 3] - values[:, 1])
-    # A full-width element -- a table or figure set across the text -- is itself
-    # the obstacle that divides the page above it from the page below. Ordering
-    # elements without saying so leaves its box bridging the column gutter, so
-    # no column split is available and a two-column page falls back to row order
-    # with its columns interleaved.
     span = max(1.0, float(values[:, 2].max() - values[:, 0].min()))
     obstacles = tuple(
         internal_bbox_tuple(box) for box in values if (box[2] - box[0]) / span >= 0.70
@@ -531,12 +510,9 @@ def layout_element_order(
     return tuple(int(index) for region in regions for index in region)
 
 
-# Block-level reading-order evidence and repair heuristics.
-
-
 def internal_line_bbox(line: ParsedLine) -> tuple[float, float, float, float]:
     bbox = line.line.bbox
-    assert bbox is not None  # ParsedLine only accepts positioned lines.
+    assert bbox is not None
     return bbox
 
 
@@ -551,7 +527,6 @@ def internal_block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, fl
 
 
 def internal_inversion_count(values: tuple[int, ...]) -> int:
-    """Count source-order inversions in O(n log n) time and O(n) memory."""
     if len(values) < 2:
         return 0
     ranks = {value: rank + 1 for rank, value in enumerate(sorted(values))}
@@ -575,7 +550,6 @@ def internal_inversion_count(values: tuple[int, ...]) -> int:
 def internal_reading_order_evidence(
     blocks: tuple[ParsedBlock, ...],
 ) -> ReadingOrderEvidence:
-    """Summarize repair strength and ambiguity for an ordered block sequence."""
     lines = tuple(line for block in blocks for line in block.lines)
     sequences = tuple(line.sequence for line in lines)
     inversions = internal_inversion_count(sequences)
@@ -604,7 +578,6 @@ def internal_reading_order_evidence(
 def internal_interval_overlap_pairs(
     starts: numpy.ndarray, ends: numpy.ndarray
 ) -> set[tuple[int, int]]:
-    """Return index pairs whose open intervals overlap, using a sweep line."""
     order = numpy.argsort(starts, kind="stable")
     active: set[int] = set()
     ending: list[tuple[float, int]] = []
@@ -637,7 +610,6 @@ def internal_sparse_block_candidate_pairs(
 
 
 def internal_full_width_blocks(blocks: list[ParsedBlock]) -> list[bool]:
-    """Flag blocks spanning most of the page width, which act as section headers."""
     page_x0 = min(block.bbox[0] for block in blocks)
     page_x1 = max(block.bbox[2] for block in blocks)
     page_width = max(1.0, page_x1 - page_x0)
@@ -647,12 +619,6 @@ def internal_full_width_blocks(blocks: list[ParsedBlock]) -> list[bool]:
 def internal_topological_block_order_from_pairs(
     blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]], full_width: list[bool]
 ) -> list[ParsedBlock]:
-    """Sort blocks into topological reading order using a spatial predecessor DAG.
-
-    Full-width header blocks enforce strict vertical precedence over all child columns,
-    and column blocks are ordered left-to-right while preserving top-down sequence inside
-    each column.
-    """
     if len(blocks) <= 2:
         return blocks
     n = len(blocks)
@@ -665,7 +631,6 @@ def internal_topological_block_order_from_pairs(
         bx0, by0, bx1, by1 = blocks[j].bbox
         b_is_full_width = full_width[j]
 
-        # Rule 1: Full-width header preceding child blocks below it
         if a_is_full_width and not b_is_full_width and ay0 >= by1 - 2.0:
             graph[i].append(j)
             in_degree[j] += 1
@@ -681,16 +646,12 @@ def internal_topological_block_order_from_pairs(
                     graph[j].append(i)
                     in_degree[i] += 1
             elif ax1 <= bx0 + 2.0 and interval_overlap(ay0, ay1, by0, by1) > 4.0:
-                # Column A is strictly left of Column B with vertical overlap
                 graph[i].append(j)
                 in_degree[j] += 1
             elif bx1 <= ax0 + 2.0 and interval_overlap(ay0, ay1, by0, by1) > 4.0:
-                # Column B is strictly left of Column A with vertical overlap
                 graph[j].append(i)
                 in_degree[i] += 1
 
-    # Kahn's algorithm with the same stable top-down, left-to-right priority as
-    # the former repeatedly sorted list, but O(log N) queue operations.
     ready: list[tuple[float, float, int, int]] = []
     serial = 0
     for index in range(n):
@@ -722,7 +683,6 @@ def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBl
 
 
 def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    """Interleave line fragments when a scanned table was split into columns."""
     candidates = [block for block in blocks if len(block.lines) >= 20]
     if len(candidates) < 3:
         return blocks
@@ -744,7 +704,6 @@ def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[Parse
 
 
 def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    """Use column-major order for wide prose blocks from magazine-style pages."""
     output: list[ParsedBlock] = []
     for block in blocks:
         if len(block.lines) < 80:
@@ -782,9 +741,6 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         if transitions / max(1, len(line_clusters) - 1) < 0.25:
             output.append(block)
             continue
-        # Stable column-major ordering from the nearest-column assignment.
-        # Re-deriving membership with a fixed window emitted lines close to
-        # two columns twice and silently dropped lines close to none.
         columns: list[list[ParsedLine]] = [[] for internal_cluster in clusters]
         for line, assigned in zip(block.lines, line_clusters, strict=True):
             columns[int(assigned)].append(line)
@@ -798,7 +754,6 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
 
 
 def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    """Transpose vectorized table columns into row-wise reading order."""
     output: list[ParsedBlock] = []
     for block in blocks:
         if len(block.lines) < 300:
@@ -823,7 +778,6 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
 
 
 def internal_has_repeated_block_columns(blocks: tuple[ParsedBlock, ...]) -> bool:
-    """Identify pages whose blocks form a repeated multi-column grid."""
     bounded = tuple(block.bbox for block in blocks if block.bbox is not None)
     if len(bounded) < 6:
         return False

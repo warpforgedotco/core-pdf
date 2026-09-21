@@ -1,5 +1,3 @@
-"""Unstructured-compatible elements and metadata."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,8 +5,6 @@ from typing import Any
 
 
 class ElementMetadata(dict[str, Any]):
-    """Dictionary-compatible Unstructured metadata with attribute access."""
-
     def __getattr__(self, name: str) -> Any:
         try:
             return self[name]

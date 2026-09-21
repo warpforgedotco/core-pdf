@@ -1,5 +1,3 @@
-"""Encrypted reader lifecycle agrees with pypdf for independently written files."""
-
 from io import BytesIO
 
 import pytest

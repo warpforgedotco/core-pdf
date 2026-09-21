@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Grouped layout lines and text reconstruction.
-
-A ``LayoutLine`` is what the line-grouping heuristics produce, not what capture
-emits, so it lives here rather than with the capture records in ``model/``.
-"""
 
 from __future__ import annotations
 
@@ -95,7 +90,6 @@ class LayoutLine:
     def text_and_words(
         self, reconstructed: LayoutLineText | None = None
     ) -> tuple[str, tuple[TextWord, ...]]:
-        """Project word geometry from one reconstruction, supplied when already available."""
         if reconstructed is None:
             reconstructed = self.reconstructed_text()
         parts: list[str] = []
@@ -325,10 +319,6 @@ def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
     if cluster_union is None or advance_bbox is None or not bbox_is_positive(advance_bbox):
         return tuple(issues)
 
-    # Glyph clusters are derived from glyph advance geometry, which is also the
-    # canonical page-space extent used by layout.  The legacy run coordinates
-    # can describe the text origin and nominal font box instead, notably for
-    # vertical writing where those boxes are intentionally offset.
     cluster_inside_advance = overlap_ratio_of(cluster_union, advance_bbox)
     if cluster_inside_advance < 0.80:
         issues.append(

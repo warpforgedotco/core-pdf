@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native inline-image parsing and decode helpers."""
 
 from __future__ import annotations
 
@@ -67,12 +66,6 @@ class InlineImage:
 
 
 class InlineImageDataLengthError(PdfParseError):
-    """An unfiltered payload disagrees with its declared sample layout.
-
-    The parsed dictionary and payload start remain available to a reader that
-    elects to locate a later delimiter. Strict parsing performs no such retry.
-    """
-
     def __init__(self, dictionary: PdfDict, data_start: int, expected_length: int) -> None:
         super().__init__("inline image data length does not match dimensions")
         self.dictionary = dictionary
@@ -218,7 +211,6 @@ def parse_inline_image(lexer: PdfLexer) -> InlineImage:
 
 
 def scan_inline_image_data(lexer: PdfLexer, dictionary: PdfDict, start: int) -> InlineImage:
-    """Consume a delimiter-terminated payload when its byte length is unknown."""
     raw_data = lexer.raw_data
     source_buffer = lexer.source_buffer
     source_bytes: bytes | None = source_buffer if type(source_buffer) is bytes else None
@@ -243,9 +235,6 @@ def scan_inline_image_data(lexer: PdfLexer, dictionary: PdfDict, start: int) -> 
             after >= len(search_data) or lexer.lexical_rules.separator_table[search_data[after]]
         )
         if prev_ok and next_ok:
-            # Only the delimiter belongs to EI. Binary samples can themselves
-            # end in NUL, tab, newline, or space, especially when a named colour
-            # resource prevents computing the exact payload length here.
             data_end = marker - 1 if marker > data_start else marker
             image_data = search_data[data_start:data_end]
             lexer.pos = position_offset + after
@@ -262,7 +251,6 @@ def internal_next_inline_image(
     data_len: int,
     rules: LexicalRules,
 ) -> int | None:
-    """Find a top-level BI token, ignoring names, strings and containers."""
     container_depth = 0
     while match := internal_INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
         marker = match.start()
@@ -312,7 +300,6 @@ def internal_next_inline_image(
 def validate_inline_images(
     data: bytes | memoryview, *, context: SemanticContext | None = None
 ) -> None:
-    """Validate inline-image boundaries without executing content operators."""
     raw_bytes = full_source_bytes(data)
     if raw_bytes is None:
         raw_bytes = bytes(data)

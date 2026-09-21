@@ -1,5 +1,3 @@
-"""Enforce independent statement/branch floors on a complete workspace report."""
-
 from __future__ import annotations
 
 import argparse
@@ -35,7 +33,6 @@ def check_coverage(
         messages.append(
             f"Workspace {label}: {numerator}/{denominator} ({numerator / denominator:.2%})"
         )
-        # Compare exact fractions; the displayed 82.04% was actually 82.03646%.
         if numerator * floor["total"] < floor["covered"] * denominator:
             raise ValueError(f"{label} coverage regressed: {messages[-1]}")
     return messages

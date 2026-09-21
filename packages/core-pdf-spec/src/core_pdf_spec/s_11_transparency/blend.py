@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Version-sensitive separable colour blending, before alpha compositing.
-
-ISO 32000-1:2008, 11.3.5/Table 136 defines the original ColorDodge and
-ColorBurn functions. Adobe's 1.7 ExtensionLevel 5 supplement, 3.1, and
-ISO 32000-2:2020, 11.3.5/Table 134 revise their singular corner values.
-"""
 
 from __future__ import annotations
 
@@ -27,8 +21,6 @@ def internal_revised_blending(context: SemanticContext | None) -> bool:
         raise PdfUnsupportedError("blend semantics require a recognized PDF version")
     if version == PdfVersion(2, 0):
         return True
-    # Exact audited identity; an arbitrary higher extension number is not
-    # evidence that this particular extension's semantics have been selected.
     return version == PdfVersion(1, 7) and any(
         extension.prefix == "ADBE"
         and extension.base_version == PdfVersion(1, 7)
@@ -45,12 +37,6 @@ def blend_component(
     *,
     context: SemanticContext | None = None,
 ) -> float:
-    """Blend one unit-range component, without changing its alpha.
-
-    A recognized explicit context selects the historical or revised equation;
-    no context selects the PDF 2.0 equation. Inputs must be finite and in [0, 1].
-    This implements these two modes, not transparency conformance validation.
-    """
     revised = internal_revised_blending(context)
     if not 0.0 <= backdrop <= 1.0 or not 0.0 <= source <= 1.0:
         raise ValueError("blend components must be finite and between zero and one")
@@ -76,12 +62,6 @@ def blend_components(
     *,
     context: SemanticContext | None = None,
 ) -> BlendSamples:
-    """The scalar equation over broadcastable arrays, returning new float64 data.
-
-    Arrays may have any shape and are not mutated. Values must be finite and
-    unit-range, as for ``blend_component``. Singular branches never divide by
-    zero, including when NumPy floating-point exceptions are enabled.
-    """
     revised = internal_revised_blending(context)
     cb, cs = numpy.broadcast_arrays(
         numpy.asarray(backdrop, dtype=numpy.float64), numpy.asarray(source, dtype=numpy.float64)

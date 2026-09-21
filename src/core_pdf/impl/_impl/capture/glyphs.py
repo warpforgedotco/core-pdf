@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Capture decoded glyphs using the geometry and paint of one text show."""
 
 from __future__ import annotations
 
@@ -18,9 +17,6 @@ from core_pdf.impl._impl.model.glyphs import (
 )
 from core_pdf.impl.types import Rectangle
 
-# (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
-# glyph in one text-showing operation, so callers looping over glyphs compute it once and
-# pass it in rather than re-deriving it from `state` on every glyph.
 TextBasis = tuple[float, float, float, float, float, float]
 
 
@@ -42,7 +38,6 @@ def should_capture_glyph_bitmap(text: str) -> bool:
 
 
 def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
-    """Capture shapes for non-ligature CMap values that look concatenated."""
     if len(text) <= 1 or text in LEGITIMATE_MULTI_CHAR_GLYPHS:
         return False
     nonspace = [char for char in text if not char.isspace()]
@@ -71,7 +66,6 @@ def glyph_bitmap_dimensions(
 def internal_text_basis_rect(
     x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
 ) -> Rectangle:
-    """Axis-aligned device bounds of a text-space rect under ``text_basis``."""
     base_x, base_y, a, b, c, d = text_basis
     return transform_bbox((x0, y0, x1, y1), (a, b, c, d, base_x, base_y))
 
@@ -161,13 +155,6 @@ def glyph_text_space_boxes(
 
 
 class RunGeometry:
-    """Running union of glyph advance/ink boxes plus the minimum confidence.
-
-    Accumulated as observations are appended so a caller never has to rescan
-    the slice it just wrote. Empty until the first `add`, which is what
-    distinguishes "no glyphs recorded" from "a run at the origin".
-    """
-
     __slots__ = ("started", "advance", "ink", "confidence")
 
     def __init__(self) -> None:
@@ -209,8 +196,6 @@ class RunGeometry:
 
 @dataclass(frozen=True, slots=True)
 class TextGeometry:
-    """Font metrics, spacing and transforms fixed throughout a text show."""
-
     basis: TextBasis
     font_size: float
     font_scale: float
@@ -228,8 +213,6 @@ class TextGeometry:
 
 @dataclass(frozen=True, slots=True)
 class GlyphPaint:
-    """Resolved graphics paint; stroke measurements are in device space."""
-
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
     fill: tuple[float, ...] | None
@@ -250,8 +233,6 @@ class GlyphPaint:
 
 @dataclass(slots=True)
 class GlyphCapture:
-    """Observations, source-glyph clusters and their aggregate geometry."""
-
     glyphs: list[GlyphObservation] = field(default_factory=list)
     clusters: list[GlyphCluster] = field(default_factory=list)
     cluster_count: int = 0
@@ -274,15 +255,6 @@ def capture_glyphs(
     capture_ink_bounds: bool = True,
     capture_run_details: bool = True,
 ) -> GlyphCapture:
-    """Build observations without changing interpreter state or decoding again.
-
-    A decoded source glyph owns one cluster, even when its Unicode expands
-    into multiple observations. Each cluster paints its source outline once.
-    Metric-only consumers can omit outline bounds; observations then use their
-    advance rectangles without executing embedded glyph programs for bounds.
-    Consumers without text runs can omit cluster objects and aggregate geometry;
-    cluster_count still advances so observation identities stay unchanged.
-    """
     result = GlyphCapture()
     if not glyphs:
         return result
@@ -316,8 +288,6 @@ def capture_glyphs(
         if axis_advance_y0 > axis_advance_y1:
             axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
         axis_baseline_y = text_basis[1] + rise * combined_d
-    # Accumulated during the append loop so the caller need not rescan
-    # the slice it just wrote.
     add_run_geometry = result.geometry.add
     for glyph in glyphs:
         advance_x, advance_y = decoder.glyph_advance_vector(
@@ -328,7 +298,6 @@ def capture_glyphs(
             horizontal_scale=geometry.horizontal_scale,
             encoded_space=glyph.code_bytes == b" ",
         )
-        # Capture measures positive distance down the vertical writing line.
         advance = -advance_y if is_vertical else advance_x
         chunk_text = glyph.unicode
         if not chunk_text:
@@ -368,9 +337,6 @@ def capture_glyphs(
                 text_basis[1] + origin_x * combined_b + origin_y * combined_d,
             )
         else:
-            # The sums are written out rather than factored so that the
-            # evaluation order -- and therefore the floats -- stay identical
-            # to the vertical branch above.
             outline_transform = (
                 transform_a,
                 transform_b,
@@ -465,8 +431,6 @@ def capture_glyphs(
             bitmap_width, bitmap_height = glyph_bitmap_dimensions(glyph_bbox, font_size)
             bitmap_code = glyph.bitmap_code
 
-        # Only the fragment geometry and text differ between an ordinary
-        # glyph, an unsplit mapping and a ligature expanded into characters.
         fragments: list[tuple[str, Rectangle, Rectangle, Rectangle, float]] = []
         if glyph.split_unicode and not single_character and not suspicious_multi:
             per_char_advance = advance / len(chunk_text)
@@ -544,8 +508,6 @@ def capture_glyphs(
             if capture_run_details:
                 cluster_observations.append(observation)
                 add_run_geometry(advance_rect, ink, confidence)
-        # Every nonempty decoded glyph emits at least one observation. Its
-        # identity does not require retaining a cluster object or run geometry.
         result.cluster_count += 1
         if capture_run_details:
             cluster = glyph_cluster_from_observations(

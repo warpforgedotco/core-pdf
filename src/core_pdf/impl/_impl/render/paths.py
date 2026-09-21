@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Path geometry, coverage, and standalone path rasterization kernels."""
 
 from __future__ import annotations
 
@@ -12,12 +11,8 @@ from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl._impl.runtime.array_views import UInt8Array, uint8_view
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
-# NumPy's coordinate mask remains cheaper than Python pixel loops for modest
-# circles, while very small caps are faster to paint directly.
 RASTER_CIRCLE_MIN_PIXEL_AREA = 16
 RASTER_SAMPLE_OFFSETS = (0.125, 0.375, 0.625, 0.875)
-# Above this many (row, edge) pairs the activity mask costs more memory than the
-# per-row loop costs time, so the loop stays the fallback.
 INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
 internal_CIRCLE_VERTICES = tuple(
     (math.cos(index * math.tau / 32), math.sin(index * math.tau / 32)) for index in range(32)
@@ -25,7 +20,6 @@ internal_CIRCLE_VERTICES = tuple(
 
 
 def internal_circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
-    """Build a round dot for the ordinary path painter's analytic coverage."""
     return CapturedPath(
         [
             CapturedSubpath(
@@ -39,7 +33,6 @@ def internal_circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
 def internal_dash_subpath(
     subpath: CapturedSubpath, dash_pattern: tuple[list[float], float]
 ) -> list[CapturedSubpath]:
-    """Split one subpath into continuous painted dashes, retaining its vertices."""
     lengths = [max(0.0, float(value)) for value in dash_pattern[0]]
     if len(lengths) % 2:
         lengths *= 2
@@ -126,15 +119,6 @@ def rasterize_unclipped_line_normal(
     return_source_alpha: bool = False,
     source_shape: UInt8Array | None = None,
 ) -> UInt8Array | None:
-    """Rasterize one antialiased line into an unclipped normal RGBA bitmap.
-
-    This intentionally mirrors the renderer's general diagonal-line path.  Keeping the
-    kernel free of renderer state makes it suitable for isolated performance testing
-    while preserving
-    the existing renderer for clipped, dashed, and non-normal blend-mode paths.
-    A caller tracking group opacity may request the effective source alpha plane;
-    source_shape receives geometric coverage even when the paint opacity is zero.
-    """
     x_delta = x1 - x0
     y_delta = y1 - y0
     segment_length_squared = x_delta * x_delta + y_delta * y_delta
@@ -266,7 +250,6 @@ def rasterize_unclipped_line_normal(
 def internal_group_offsets(
     counts: numpy.ndarray[Any, Any],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    """Expand per-group counts into (group index, index within group) pairs."""
     total = int(counts.sum())
     if total == 0:
         empty = numpy.empty(0, numpy.int64)
@@ -282,24 +265,6 @@ def internal_signed_area_coverage(
     width: int,
     height: int,
 ) -> numpy.ndarray[Any, Any]:
-    """Exact analytic coverage for a nonzero-wound polygon, in one vectorized pass.
-
-    Accumulates signed area per pixel the way font-rs and stb_truetype do, then
-    prefix-sums along x. Two properties matter here:
-
-    * Cost is O(sum of edge extents), not O(rows x edges). The sampling
-      rasterizer this replaces tested every edge against every sample row, so a
-      30-pixel glyph with 84 edges did ~2,000 intersections; here each edge
-      touches only the cells it actually crosses.
-    * Coverage is exact rather than quantized to the 17 levels a 4x4 sample grid
-      can express, so edges are smoother, not just cheaper.
-
-    ``edges`` is (n, 4) of x0, y0, x1, y1 in device pixels with y increasing
-    downward, already translated so the box origin is (0, 0). Returns an
-    (height, width) float array in [0, 1]. Nonzero winding only -- the
-    abs-and-clamp at the end is what makes it nonzero, and even-odd needs the
-    span-based path.
-    """
     if height <= 0 or width <= 0 or edges.size == 0:
         return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
     start_y = edges[:, 1]
@@ -348,18 +313,6 @@ def internal_signed_area_coverage(
     left_x = numpy.minimum(entry_x, exit_x)
     right_x = numpy.maximum(entry_x, exit_x)
 
-    # Split each row piece again at column boundaries so every fragment lies in
-    # one cell; the midpoint split below is exact only within a single cell.
-    #
-    # The walk is bounded to one cell either side of the box. A fill clipped to
-    # a small box still arrives with the whole path's edges, so a near-
-    # horizontal edge can cross millions of columns that the box never shows --
-    # one fragment each, gigabytes of them. Everything left of the box already
-    # lands on column 0 and everything right of it past the visible slice, so
-    # collapsing those runs into the first and last fragment changes nothing.
-    # Those two keep the piece's original extents, which is what holds the
-    # coverage weights identical to the unbounded walk (and bit-identical when
-    # the piece lies inside the box, where the clamp does not bite).
     walk_left = numpy.clip(left_x, -1.0, width + 1.0)
     walk_right = numpy.clip(right_x, -1.0, width + 1.0)
     column_count = (numpy.floor(walk_right) - numpy.floor(walk_left) + 1.0).astype(numpy.int64)
@@ -448,18 +401,6 @@ def internal_fill_path_sample_crossings_numpy(
     edge_segments: numpy.ndarray[Any, Any],
     page_ys: numpy.ndarray[Any, Any],
 ) -> list[list[tuple[float, int]]]:
-    """Intersect every edge with every scanline, one row per returned list.
-
-    Solves all rows in a single pass rather than looping in Python: this runs
-    once per scanline per filled path, and at a handful of numpy calls on a
-    few-element array per row it was pure call overhead.
-
-    The per-element arithmetic is spelled exactly as the row-at-a-time form
-    below it -- ``ex0 + ((y - ey0) / dy * (ex1 - ex0))`` -- because these are
-    elementwise IEEE double operations that numpy does not reassociate, so
-    batching them cannot move a bit. ``nonzero`` walks the mask in C order, so
-    each row keeps its edges in edge_segments order, matching the loop.
-    """
     row_count = len(page_ys)
     if row_count == 0:
         return []
@@ -524,10 +465,6 @@ def internal_fill_path_crossing_spans(
     if not count:
         return []
     if count == 2:
-        # 44% of calls on a text-heavy page: a single edge pair. Both rules
-        # collapse to one comparison -- even-odd pairs the two sorted crossings,
-        # and nonzero's sweep opens a span iff the winding after the first is
-        # non-zero, which it always is because directions are only ever +/-1.
         first_x = crossings[0][0]
         second_x = crossings[1][0]
         if second_x < first_x:

@@ -1,5 +1,3 @@
-"""Supported high-level pypdf-shaped APIs backed by core-pdf."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -22,7 +20,6 @@ PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 
 
 def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
-    """Preserve pypdf's rejection of repeated/cyclic intermediate page nodes."""
     literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
     if literal_trailers:
         latest_root = literal_trailers[-1].get("Root")
@@ -53,15 +50,12 @@ def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
 
 
 class StructuredState(ClosingMixin):
-    """Facade-local ownership of an engine document or synthetic structured snapshot."""
-
     def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
         self.pdf = pdf
         self._structured = structured
 
     @property
     def structured(self) -> Document:
-        """Full structured snapshot, extracted lazily from the source document."""
         if self._structured is None:
             self._structured = self.source_pdf.structured_document
         return self._structured
@@ -114,8 +108,6 @@ class StructuredState(ClosingMixin):
 
 
 class Destination:
-    """Small pypdf-shaped bookmark destination."""
-
     def __init__(self, title: str, page: int | None, level: int = 0) -> None:
         self.title = title
         self.page = page
@@ -127,8 +119,6 @@ class Destination:
 
 
 class Rectangle(tuple[float, float, float, float]):
-    """Tuple-compatible pypdf rectangle with the common geometry accessors."""
-
     def __new__(cls, left: float, bottom: float, right: float, top: float) -> "Rectangle":
         return super().__new__(cls, (float(left), float(bottom), float(right), float(top)))
 
@@ -204,7 +194,6 @@ class PdfPageObject:
         del args, kwargs
         if self.internal_text_override is not None:
             return self.internal_text_override
-        # Preserve the legacy text-operator projection for untouched pages.
         source_page = self._document.pages[self._page.page_number - 1]
         if self._document.pdf is not None and self._page is source_page:
             page = self._document.capability_page(self._page.page_number)
@@ -229,7 +218,6 @@ class PdfPageObject:
         return self
 
     def transfer_rotation_to_content(self) -> None:
-        """Apply the page rotation to its geometry and clear the page rotation."""
         if self.rotation % 180:
             self.mediabox = Rectangle(0, 0, self.mediabox.height, self.mediabox.width)
             self.cropbox = Rectangle(0, 0, self.cropbox.height, self.cropbox.width)
@@ -286,8 +274,6 @@ class internal_LockedPages:
 
 
 class PdfReader(ClosingMixin):
-    """Reader exposing the most-used pypdf page and metadata APIs."""
-
     pages: Any
     metadata: dict[str, Any]
 
@@ -316,7 +302,6 @@ class PdfReader(ClosingMixin):
         self.trailer = {}
 
     def _bind(self, document: StructuredState) -> None:
-        """Adopt ``document`` and drop any previously materialized pages/metadata."""
         self._document = document
         self.__dict__.pop("pages", None)
         self.__dict__.pop("metadata", None)
@@ -328,7 +313,6 @@ class PdfReader(ClosingMixin):
         raise AttributeError(name)
 
     def _materialize(self) -> None:
-        """Materialize page objects and project PDF Info names lazily."""
         document = self._document
         self.pages = tuple(PdfPageObject(document, page) for page in document.pages)
         raw_metadata = document.source_pdf.get_metadata()
@@ -347,7 +331,6 @@ class PdfReader(ClosingMixin):
         return self.pages[page_number]
 
     def get_page_number(self, page: PdfPageObject | Page) -> int:
-        """Return the zero-based index for a page owned by this reader."""
         value = page._page if isinstance(page, PdfPageObject) else page
         candidate: PdfPageObject
         for index, candidate in enumerate(self.pages):

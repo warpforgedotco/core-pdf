@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native glyph-name Unicode recovery helpers."""
 
 from __future__ import annotations
 
@@ -48,7 +47,6 @@ def has_untrusted_unicode_semantics(text: str) -> bool:
 
 
 def has_invalid_unicode_mapping(text: str) -> bool:
-    """Return whether a mapping is an explicit failure sentinel."""
     return "\ufffd" in text or "\x00" in text
 
 

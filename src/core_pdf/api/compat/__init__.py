@@ -1,9 +1,3 @@
-"""High-level compatibility facades over the local core-pdf engine.
-
-Facades are loaded independently so importing one compatibility target does not
-initialize every other third-party projection.
-"""
-
 from __future__ import annotations
 
 from importlib import import_module

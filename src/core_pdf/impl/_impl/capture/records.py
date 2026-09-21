@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Captured text and drawing primitives used by the compiled content state."""
 
 from __future__ import annotations
 
@@ -23,8 +22,6 @@ LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class CapturedSoftMask:
-    """A mask-only program captured in its installation coordinate system."""
-
     program: CapturedProgram
     transfer: PdfFunctionEvaluator | None = None
     offset: tuple[float, float] = (0.0, 0.0)
@@ -32,8 +29,6 @@ class CapturedSoftMask:
 
 @dataclass(frozen=True, slots=True)
 class CapturedTextBoundary:
-    """An ordered text/glyph scope, independent of extraction paint records."""
-
     seqno: int
     kind: Literal["begin", "end", "glyph-begin", "glyph-end", "stream-begin", "stream-end"]
     knockout: bool = True
@@ -50,8 +45,6 @@ class CapturedLine:
 
 @dataclass(frozen=True, slots=True)
 class CapturedInlineImage:
-    """Typed inline-image product emitted by content interpretation."""
-
     seqno: int
     dictionary: dict[Any, Any]
     data: bytes
@@ -147,13 +140,6 @@ class CapturedPath:
             self.subpaths[-1].close()
 
     def axis_aligned_rect(self) -> Rectangle | None:
-        """The rectangle this path draws when it is exactly one axis-aligned box.
-
-        One segment-bearing subpath (empty ``m``-only subpaths are ignored), four
-        corners in either winding, closed explicitly or by repeating the first
-        point, and a positive area. Both the router's "simple vector rectangle"
-        test and the rasterizer's rect fast path rely on this one definition.
-        """
         segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
         if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
             return None
@@ -267,12 +253,6 @@ class CapturedDrawing:
             self.items = internal_EMPTY_DRAWING_ITEMS
 
     def stroke_style_key(self) -> StrokeStyleKey | None:
-        """Hashable stroke paint style, or None when a pattern paints the stroke.
-
-        Colour, opacity (1.0 when unset), width, cap, join, normalised dash,
-        blend mode and soft-mask alpha, in that order. Consumers that group
-        strokes by style key off this tuple and layer their own filters on top.
-        """
         if self.stroke_pattern is not None:
             return None
         color = self.stroke_color
@@ -290,7 +270,6 @@ class CapturedDrawing:
 
     @property
     def rect(self) -> Rectangle | None:
-        """Normalized bounds: the explicit bbox, else the path's own bounds."""
         bbox = self.bbox
         if bbox is None:
             if self.path is None:
@@ -316,11 +295,6 @@ def marker_drawing(
     alpha_is_shape: bool = False,
     graphics_soft_mask: CapturedSoftMask | None = None,
 ) -> CapturedDrawing:
-    """A zero-geometry drawing that only marks a scope boundary in page order.
-
-    Used for the `state-push`/`state-pop` clip scopes and the
-    `group-begin`/`group-end` transparency-group boundaries.
-    """
     return CapturedDrawing(
         seqno=seqno,
         fill=None,
@@ -337,20 +311,12 @@ def marker_drawing(
 
 @dataclass(frozen=True, slots=True)
 class ShadingPattern:
-    """A PatternType 2 paint: the resolved /Shading dictionary."""
-
     dictionary: dict[Any, Any]
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
 
 @dataclass(frozen=True, slots=True)
 class TilingPattern:
-    """A PatternType 1 paint: one captured cell plus the step to repeat it by.
-
-    The cell is a complete ``CapturedProgram`` built by capture after
-    recolouring and glyph filtering, so rendering appends it directly.
-    """
-
     bbox: Rectangle
     x_step: float
     y_step: float

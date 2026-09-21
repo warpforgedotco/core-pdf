@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Stateful path-fill painting operations for raster targets."""
 
 from __future__ import annotations
 
@@ -31,15 +30,12 @@ if TYPE_CHECKING:
 def internal_edge_tuples(
     edge_array: numpy.ndarray[Any, Any] | None,
 ) -> list[tuple[float, float, float, float]]:
-    """Materialize a precomputed edge array as the tuples the scanline paths take."""
     if edge_array is None:
         return []
     return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
 
 
 class internal_PathFillTargetMixin:
-    """Scanline and sampled path-fill painting operations."""
-
     __slots__ = ()
 
     def fill_path_scanlines(
@@ -83,14 +79,6 @@ class internal_PathFillTargetMixin:
                 return None
             return start, end
 
-        # Active-edge table: rows are visited with strictly decreasing page_y,
-        # so instead of rescanning every edge on every row, each edge is
-        # pushed onto a min-heap (by its lower y bound) once page_y drops
-        # below its upper bound, and popped once page_y drops below its
-        # lower bound. What remains on the heap for a given row is exactly
-        # the edges a full per-row scan would have kept -- validated against
-        # a brute-force reference over thousands of randomized edge sets,
-        # including duplicate-`low` ties and edges shorter than one row step.
         edge_count = len(edge_segments)
         pending_order = sorted(range(edge_count), key=lambda i: -edge_segments[i][5])
         pending_index = 0
@@ -120,8 +108,6 @@ class internal_PathFillTargetMixin:
             if not crossings:
                 continue
             row = py * width * 4
-            # Same winding sweep as the kernel helper; the helper drops the
-            # degenerate evenodd pairs that `span_pixels` would reject anyway.
             scan_spans = internal_fill_path_crossing_spans(crossings, fill_rule)
             for start_x, end_x in scan_spans:
                 span = span_pixels(start_x, end_x)
@@ -176,7 +162,6 @@ class internal_PathFillTargetMixin:
         edges: list[tuple[float, float, float, float]],
         bbox: tuple[float, float, float, float],
     ) -> bool:
-        """Fill opaque black polygons using one winding scan per raster row."""
         blend_normal_solid_span = self.blend_normal_solid_span
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
@@ -190,12 +175,6 @@ class internal_PathFillTargetMixin:
         ix0, iy0, ix1, iy1 = pixel_box
         if ix1 - ix0 < 10 or iy1 - iy0 < 10:
             return False
-        # Active-edge table, mirroring `fill_path_scanlines`: rows are visited
-        # with strictly decreasing scan_y, so instead of rescanning every edge
-        # on every row, each edge is pushed onto a min-heap (by its lower y
-        # bound) once scan_y drops below its upper bound and popped once
-        # scan_y drops below its lower bound. The in-loop bounds recheck keeps
-        # the crossing set identical to the full per-row scan.
         edge_bounds = [
             (ex0, ey0, ex1, ey1, ey0 if ey0 < ey1 else ey1, ey1 if ey1 > ey0 else ey0)
             for ex0, ey0, ex1, ey1 in edges
@@ -248,7 +227,6 @@ class internal_PathFillTargetMixin:
         bbox: tuple[float, float, float, float] | None = None,
         edge_array: numpy.ndarray[Any, Any] | None = None,
     ) -> None:
-        """Fill ``path``; ``bbox`` and ``edge_array`` are the path's own, precomputed."""
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
@@ -296,9 +274,6 @@ class internal_PathFillTargetMixin:
         if (
             rgba == (0, 0, 0, 255)
             and blend_mode is None
-            # This shortcut uses a different scanline approximation from the
-            # general fill. Tracked shape must not change with paint opacity
-            # or color, including a zero-opacity knockout element.
             and self.group_source_shape is None
             and fast_bbox is not None
             and fill_rule == "nonzero"
@@ -316,11 +291,6 @@ class internal_PathFillTargetMixin:
         rectangular_clip = clip_paths_are_axis_aligned_rects()
         normal_fast = can_blend_normal_fast(blend_mode)
         if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
-            # Analytic coverage for the whole box in one pass, then one blend.
-            # Cost follows the edges' extents rather than rows x edges, and the
-            # result is exact rather than quantized to a 4x4 sample grid. This
-            # runs first because it needs neither the y-extent columns nor the
-            # sample-path array built below, and it takes ~99% of fills.
             source = (
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
             )
@@ -370,11 +340,6 @@ class internal_PathFillTargetMixin:
             return
         samples = 4
         track_shape = self.group_source_shape is not None
-        # Sample every scanline of the box up front. Called per pixel row this
-        # handed the kernel four y values at a time, so the numpy work was pure
-        # call overhead; one call per fill amortizes it over the whole box.
-        # The y values are spelled exactly as the per-row form below to keep
-        # each sample bit-identical.
         all_row_crossings = None
         if edge_segments_array is not None:
             row_count = iy1 - iy0
@@ -405,11 +370,6 @@ class internal_PathFillTargetMixin:
                     crossings = internal_fill_path_sample_crossings(edge_segments, page_y)
                     sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
             if normal_fast and rectangular_clip:
-                # Accumulate into a difference array: each covered span is two
-                # integer updates instead of a numpy slice-add, and the row is
-                # summed once at the end. Coverage never exceeds samples**2, so
-                # it still fits uint8, and integer addition is commutative --
-                # reordering the sample loops cannot change the totals.
                 deltas = [0] * (ix1 - ix0 + 1)
                 covered_any = False
                 for spans in sample_spans:

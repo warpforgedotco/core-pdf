@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO 32000-2 14.7.3, Table 356, 14.8.6, and Annex M role semantics."""
 
 from collections.abc import Callable, Mapping
 
@@ -29,8 +28,6 @@ def resolver(objects: Mapping[int, object]) -> Callable[[object], object]:
 
 
 def test_undefined_namespace_maps_transitively_then_defaults_to_pdf17() -> None:
-    # The corrected 14.8.6.1 / 14.8.6.2 example maps Foo -> Bar -> P.
-    # https://pdf-issues.pdfa.org/32000-2-2020/clause14.html
     result = resolve_structure_role(
         PdfName.of("Foo"),
         role_map={"Foo": PdfName.of("Bar"), "Bar": PdfName.of("P")},
@@ -73,7 +70,6 @@ def test_required_namespace_name_resolving_to_null_is_rejected() -> None:
 
 @pytest.mark.parametrize(("minor", "expected"), [(3, "P"), (4, "P"), (5, "H1"), (7, "H1")])
 def test_standard_types_are_remapped_from_pdf15(minor: int, expected: str) -> None:
-    # 14.7.3 NOTE 3: earlier than 1.5, standard element types were never remapped.
     result = resolve_structure_role(
         PdfName.of("P"),
         role_map={"P": PdfName.of("Custom"), "Custom": PdfName.of("H1")},
@@ -167,7 +163,6 @@ def test_direct_mathml_preserves_domain_identity_without_claiming_vocabulary_val
 
 
 def test_root_role_map_cycle_is_a_finite_result_not_a_parse_error() -> None:
-    # 14.7.3 NOTE 2 permits circular logical role maps; tagged conformance is separate.
     result = resolve_structure_role(
         PdfName.of("A"), role_map={"A": PdfName.of("B"), "B": PdfName.of("A")}
     )

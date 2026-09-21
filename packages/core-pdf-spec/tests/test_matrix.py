@@ -1,5 +1,3 @@
-"""Affine composition shares arithmetic across PDF and CFF consumers."""
-
 import math
 
 import pytest
@@ -38,7 +36,6 @@ def test_pdf_matrix_numbers_are_strict(value: object) -> None:
 
 
 def test_cff_font_matrix_converts_to_the_pdf_matrix_type() -> None:
-    # A CFF FontMatrix composes with PDF matrices once core lifts it into Matrix.
     assert Matrix(*DEFAULT_CFF_FONT_MATRIX) == Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
     assert Matrix(*DEFAULT_CFF_FONT_MATRIX).multiply(IDENTITY_MATRIX) == Matrix(
         *DEFAULT_CFF_FONT_MATRIX

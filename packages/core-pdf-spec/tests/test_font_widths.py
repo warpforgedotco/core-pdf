@@ -1,5 +1,3 @@
-"""Widths use exact PDF numeric objects and prescribed dictionary defaults."""
-
 from collections.abc import Mapping
 
 import pytest
@@ -27,7 +25,6 @@ def test_simple_width_range_requires_pdf_integers(value: object, field: str) -> 
 @pytest.mark.parametrize("value", ["0", b"0", True, 0.0])
 @pytest.mark.parametrize("last", [False, True])
 def test_cid_width_range_requires_pdf_integers(value: object, last: bool) -> None:
-    # Both CID indices use integer objects, even when a real has an integral value.
     with pytest.raises(ValueError, match="CID width"):
         parse_cid_widths([0, value, 500] if last else [value, [500]])
 
@@ -63,8 +60,6 @@ def test_vertical_width_indices_require_pdf_integers(value: object, last: bool) 
 
 
 def test_null_optional_widths_equal_omission_but_explicit_zero_survives() -> None:
-    # ISO 32000-1 7.3.9 and Tables 117/122: null is omission; DW=1000,
-    # DW2=[880,-1000], no W/W2 and MissingWidth=0 are prescribed defaults.
     null_cid = {"DescendantFonts": [dict.fromkeys(("DW", "DW2", "W", "W2"))]}
     metrics = parse_font_widths(null_cid, "Type0")
     assert metrics == parse_font_widths({"DescendantFonts": [{}]}, "Type0")

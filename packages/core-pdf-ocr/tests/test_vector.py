@@ -1,5 +1,3 @@
-"""Vector OCR packing and recovery with deterministic page geometry."""
-
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast

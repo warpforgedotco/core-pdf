@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Object graph resolution preserves cycles, sharing, and source ownership."""
 
 from collections.abc import Iterator
 from typing import cast

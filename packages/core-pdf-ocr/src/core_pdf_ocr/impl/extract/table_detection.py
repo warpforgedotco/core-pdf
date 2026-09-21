@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Augment native table candidates with recognized chart regions."""
 
 from __future__ import annotations
 
@@ -24,7 +23,6 @@ internal_CHART_DUPLICATE_OVERLAP = 0.5
 
 
 def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
-    """Detect native tables and chart associations from recognized observations."""
     evidence = capture.evidence
     if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
         return ()
@@ -37,7 +35,6 @@ def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tup
 
 
 def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
-    """Split dense OCR axis/value lines while keeping prose intact."""
     tokens = tuple(part for part in text.split() if part)
     numeric_count = sum(bool(internal_CHART_NUMERIC_TOKEN.fullmatch(part)) for part in tokens)
     if len(tokens) >= 4 and numeric_count >= 3:
@@ -51,14 +48,6 @@ def internal_chart_cell_center_y(cell: TableCell) -> float:
 
 
 def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -> Table | None:
-    """Represent OCR text recovered from vector artwork as one chart region.
-
-    Vector charts frequently paint labels and values without table ruling.  The
-    normal table detector correctly ignores them, but downstream parsers then
-    lose the association between the recovered labels and values.  A compact
-    synthetic row gives consumers a structured region while leaving ordinary
-    pages untouched.
-    """
     if (capture.evidence.uncovered_vector_area or 0.0) < 20_000.0:
         return None
     ocr_indexes = numpy.flatnonzero(observations.source == int(ObservationSource.OCR))
@@ -78,8 +67,6 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
     seen: dict[str, list[Rectangle]] = {}
     for text, box in sorted(chart_observations, key=lambda item: item[1][0]):
         matching_boxes = seen.setdefault(text.casefold(), [])
-        # Repeated values belong to distinct chart positions; suppress only
-        # another reading of the same text over substantially the same area.
         if any(
             overlap_ratio_min_exact(box, previous) >= internal_CHART_DUPLICATE_OVERLAP
             for previous in matching_boxes
@@ -100,8 +87,6 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
         return None
     row_tolerance = max(6.0, capture.height * 0.008)
     row_groups: list[tuple[float, list[TableCell]]] = []
-    # Grouping only compares against the open group, so the cells have to arrive
-    # in the same order the comparison uses: descending row center, not bbox top.
     for cell in sorted(
         cells,
         key=lambda item: (-internal_chart_cell_center_y(item), item.column),

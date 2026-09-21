@@ -1,5 +1,3 @@
-"""Strict physical sections and shared revision traversal have distinct contracts."""
-
 from functools import partial
 from typing import cast
 
@@ -37,7 +35,6 @@ def internal_table(subsections: list[tuple[int, int, int]]) -> bytes:
 def test_classic_subsections_cannot_repeat_an_object_number(
     subsections: list[tuple[int, int, int]],
 ) -> None:
-    # ISO 32000-1/2, 7.5.4 prohibits overlap, including across generations.
     with pytest.raises(PdfParseError, match="overlapping"):
         XRefScanner.parse_table_section(internal_table(subsections), 0)
 
@@ -50,7 +47,6 @@ def test_classic_subsections_may_be_in_descending_order() -> None:
 
 @pytest.mark.parametrize("previous", [b"null", b"-1", b"99999", b"true", b"(bad)", b"[9]"])
 def test_hybrid_stream_previous_pointer_has_no_meaning(previous: bytes) -> None:
-    # ISO 32000-1/2, Table 17: only the primary trailer's /Prev is followed.
     data = b"%PDF-1.5\n"
     stream = len(data)
     data += (

@@ -1,5 +1,3 @@
-"""Scalar resolution, reference sharing, and page inheritance contracts."""
-
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -71,7 +69,6 @@ def test_reference_chains_preserve_cycles_and_shared_containers() -> None:
         assert resolved[0] is not shared
         assert shared["key"] is first
 
-        # A destination array is not a string; its page graph must remain untouched.
         destination = [PdfReference(100), "XYZ", 0, 0, 1]
         assert resolver.resolve_str(destination) is None
         assert key_for(100) not in resolver.objects

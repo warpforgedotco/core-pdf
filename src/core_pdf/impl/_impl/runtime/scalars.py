@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Host scalar conversion for tolerant adapters."""
 
 from __future__ import annotations
 
@@ -7,13 +6,6 @@ from typing import overload
 
 
 def internal_scalar_text(value: object) -> str | None:
-    """The text of a scalar that is not already a number, or None if it is not one.
-
-    A number reaches this layer as bytes from the lexer, or as a memoryview or
-    bytearray slice of the source buffer, so all three have to end up as str
-    before int()/float() sees them. bool is rejected rather than converted:
-    True would otherwise parse as 1 and silently stand in for a number.
-    """
     if type(value) is bool:
         return None
     if type(value) is memoryview:
@@ -88,7 +80,6 @@ def parse_float_strict(value: object, message: str | None = None) -> float:
 
 
 def parse_box(value: object) -> tuple[float, float, float, float] | None:
-    """Four strict numbers to a rectangle tuple, or None if ``value`` is not one."""
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:

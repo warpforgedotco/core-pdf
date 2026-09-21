@@ -1,5 +1,3 @@
-"""Pixel-level checks for OCR preprocessing and image-supplement signals."""
-
 from dataclasses import replace
 
 import numpy

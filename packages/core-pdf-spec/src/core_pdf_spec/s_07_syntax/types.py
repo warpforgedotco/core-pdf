@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recursive type vocabulary for PDF object values."""
 
 from __future__ import annotations
 
@@ -41,8 +40,6 @@ InheritedValueMap: TypeAlias = dict[str, CachedPdfObject]
 
 
 class PdfValueResolver(Protocol):
-    """The resolution operations needed by higher-level PDF features."""
-
     def resolve(self, ref: object) -> object: ...
 
     def deep_resolve(self, value: object) -> object: ...

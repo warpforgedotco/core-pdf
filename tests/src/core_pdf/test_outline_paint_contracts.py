@@ -1,5 +1,3 @@
-"""Scalar and cached array outlines preserve geometry and text paint policy."""
-
 from dataclasses import replace
 
 import numpy as np

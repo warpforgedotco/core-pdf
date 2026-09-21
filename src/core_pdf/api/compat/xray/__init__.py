@@ -37,8 +37,6 @@ _OK_WORDS = re.compile(
 class internal_XrayDocument(PdfDocument):
     @property
     def internal_font_semantic_context(self) -> None:
-        # Upstream x-ray uses MuPDF's modern font encodings for old PDF headers.
-        # Keep the document's actual context for names, content and graphics.
         return None
 
 
@@ -106,8 +104,6 @@ def _path_rectangles(
 
 
 class _PageRaster:
-    """Compose the inspection's page program once, then rasterize rectangle crops."""
-
     __slots__ = ("page", "program", "rendered")
 
     def __init__(self, page: Any, program: PageProgram) -> None:
@@ -154,7 +150,6 @@ def _fitz_box(
     crop_box: tuple[float, float, float, float],
     user_unit: float = 1.0,
 ) -> tuple[float, float, float, float]:
-    """Convert engine PDF coordinates to PyMuPDF's cropped, top-origin space."""
     crop_x0, _crop_y0, _crop_x1, crop_y1 = crop_box
     user_unit = _float32(user_unit)
     crop_x0 = _float32(_fitz_coordinate(crop_x0) * user_unit)
@@ -180,7 +175,6 @@ def _next_float32(value: float) -> float:
 
 
 def _parse_object_at(document: Any, offset: int) -> object | None:
-    """Parse the indirect object at ``offset``, or None when it cannot be read."""
     lexer = PdfLexer(
         document.raw_data,
         reference_resolver=document.resolver.resolve,
@@ -196,7 +190,6 @@ def _parse_object_at(document: Any, offset: int) -> object | None:
 
 
 def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
-    """Recover a CMap from raw objects when a damaged xref hides the font resource."""
     document = page.document
     raw_data = bytes(document.raw_data)
     pattern = rb"/" + re.escape(font_name.encode("latin-1")) + rb"\s+(\d+)\s+(\d+)\s+R\b"
@@ -240,7 +233,6 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
 
 
 def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
-    """Map multi-operand hex ``Tj`` payloads to their final operand, document-wide."""
     return {
         bytes.fromhex(groups[0].decode()): bytes.fromhex(groups[-1].decode())
         for match in re.finditer(rb"(?:<[0-9A-Fa-f]+>){2,}\s*Tj\b", raw_data)
@@ -425,7 +417,6 @@ def _page_redactions(
 
 
 def _validate_mupdf_structure(document: PdfDocument) -> None:
-    """Apply the strict top-level syntax assumptions made by MuPDF."""
     raw_data = bytes(document.raw_data)
     eof = raw_data.rfind(b"%%EOF")
     if eof >= 0:
@@ -452,7 +443,6 @@ def _validate_mupdf_structure(document: PdfDocument) -> None:
 
 
 def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
-    """Recover simple hidden text when a corrupt embedded font aborts page capture."""
     highlights = [
         tuple(annotation.rect)
         for annotation in page.get_annotations()
@@ -556,7 +546,6 @@ def _source_bytes(source: object) -> bytes | None:
 
 
 def _requires_password(document: PdfDocument) -> bool:
-    """Match MuPDF's implicit empty-user-password authentication for AES-256 files."""
     if document.decipher is None:
         return False
     handler = cast(Any, document.decipher).__self__
@@ -567,7 +556,6 @@ def _requires_password(document: PdfDocument) -> bool:
 
 
 def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
-    """Return x-ray-shaped bad-redaction findings from engine evidence."""
     output: dict[int, list[dict[str, object]]] = {}
     try:
         document = internal_XrayDocument.open(source)

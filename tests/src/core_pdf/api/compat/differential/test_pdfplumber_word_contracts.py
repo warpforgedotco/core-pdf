@@ -1,5 +1,3 @@
-"""Word grouping agrees with pdfplumber for controlled glyph layouts."""
-
 from copy import deepcopy
 from typing import Any
 

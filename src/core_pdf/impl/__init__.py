@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Internal PDF specification, runtime, and derived-processing packages."""
 
 from __future__ import annotations
 
@@ -12,12 +11,6 @@ def install_lazy_module_exports(
     module_globals: dict[str, Any],
     exports: Mapping[str, tuple[str, str]],
 ) -> None:
-    """Install module ``__getattr__``/``__dir__`` that lazily resolve public exports.
-
-    ``exports`` maps each public attribute name to ``(module, attribute)``.
-    Python's import system owns module reuse; this helper retains no second copy
-    of resolved attributes.
-    """
     module_name = module_globals.get("__name__", "?")
 
     def __getattr__(name: str) -> Any:

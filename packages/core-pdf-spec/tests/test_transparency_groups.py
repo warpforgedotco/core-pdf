@@ -15,7 +15,6 @@ def internal_composite(
     source_alpha: numpy.ndarray,
     mode: Literal["Normal", "Multiply", "Screen"] = "Normal",
 ) -> tuple[numpy.ndarray, numpy.ndarray]:
-    """Independent three-contribution form of ISO 32000-1/2 11.3.3."""
     if mode == "Multiply":
         blended = backdrop * source
     elif mode == "Screen":
@@ -33,7 +32,6 @@ def internal_composite(
 
 
 def test_group_backdrop_removal_recovers_single_normal_source() -> None:
-    # Cn = 0.75 * gray + 0.25 * red over an opaque backdrop.
     color, alpha = remove_group_backdrop(
         numpy.asarray([[0.625, 0.375, 0.375]]),
         numpy.asarray([1.0]),
@@ -53,7 +51,6 @@ def test_group_source_retains_inner_blend_interaction_with_initial_backdrop() ->
         backdrop, initial, numpy.asarray([[0.25, 0.5, 0.9]]), source_alpha, "Multiply"
     )
     color, alpha = remove_group_backdrop(rendered, complete, backdrop, initial, source_alpha)
-    # The source must preserve (1 - alpha0) * Cs + alpha0 * Multiply(C0, Cs).
     numpy.testing.assert_allclose(color, [[0.23, 0.36, 0.576]])
     numpy.testing.assert_array_equal(alpha, source_alpha)
 
@@ -63,8 +60,6 @@ def test_group_source_retains_inner_blend_interaction_with_initial_backdrop() ->
 def test_nonisolated_group_matches_ungrouped_painting(
     initial_alpha: float, mode: Literal["Normal", "Multiply", "Screen"]
 ) -> None:
-    # ISO 32000-1/2 11.4.4 Note 5: grouping with outer Normal/full opacity
-    # does not change the appearance, including internal non-Normal blends.
     backdrop = numpy.asarray([[0.15, 0.75, 0.4]])
     initial = numpy.asarray([initial_alpha])
     first, first_alpha = internal_composite(
@@ -73,7 +68,6 @@ def test_nonisolated_group_matches_ungrouped_painting(
     rendered, complete = internal_composite(
         first, first_alpha, numpy.asarray([[0.2, 0.5, 0.9]]), numpy.asarray([0.5]), mode
     )
-    # Source-only alpha is 0.4 + (1 - 0.4) * 0.5, independently of alpha0.
     color, alpha = remove_group_backdrop(
         rendered, complete, backdrop, initial, numpy.asarray([0.7])
     )
@@ -103,7 +97,6 @@ def test_outer_opacity_applies_once_after_multiple_group_elements(
         rendered, complete, backdrop, initial, numpy.asarray([0.75])
     )
     actual, actual_alpha = internal_composite(backdrop, initial, color, alpha * opacity)
-    # Normal outer opacity interpolates the premultiplied before/after result.
     expected_premultiplied = (
         opacity * rendered * complete[..., None] + (1.0 - opacity) * backdrop * initial[..., None]
     )
@@ -112,7 +105,6 @@ def test_outer_opacity_applies_once_after_multiple_group_elements(
 
 
 def test_outer_blend_uses_removed_source_and_only_group_alpha() -> None:
-    # The two marks yield RGB (0.3, 0.3, 0.2), including an opaque backdrop.
     backdrop = numpy.asarray([[0.2, 0.6, 0.8]])
     initial = numpy.asarray([1.0])
     color, alpha = remove_group_backdrop(
@@ -122,7 +114,6 @@ def test_outer_blend_uses_removed_source_and_only_group_alpha() -> None:
         initial,
         numpy.asarray([0.75]),
     )
-    # Source color = (1/3, 0.2, 0); Screen = (7/15, 0.68, 0.8).
     actual, actual_alpha = internal_composite(backdrop, initial, color, alpha * 0.4, "Screen")
     numpy.testing.assert_allclose(actual, [[0.28, 0.624, 0.8]])
     numpy.testing.assert_array_equal(actual_alpha, [1.0])
@@ -146,7 +137,6 @@ def test_nested_nonisolated_groups_remove_their_own_initial_backdrop(
     nested_output, nested_output_alpha = internal_composite(
         first, first_alpha, nested_color, nested_alpha * 0.5
     )
-    # Parent tracks the nested group's returned alpha times outer opacity.
     parent_color, parent_alpha = remove_group_backdrop(
         nested_output, nested_output_alpha, backdrop, initial, numpy.asarray([0.36])
     )

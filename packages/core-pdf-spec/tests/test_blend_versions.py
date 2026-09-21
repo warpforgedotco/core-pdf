@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO 32000-1 Table 136 versus ISO 32000-2 Table 134 singular blend corners."""
 
 from typing import cast
 
@@ -60,7 +59,6 @@ def test_full_piecewise_equations_and_no_context_latest_default() -> None:
 def test_adobe_supplement_selects_only_audited_extension_identity(
     extension: PdfExtension, revised: bool
 ) -> None:
-    # Adobe Supplement, BaseVersion 1.7/ExtensionLevel 5 (June 2009), 3.1.
     context = SemanticContext(PdfVersion(1, 7), (extension,))
     assert blend_component(0, 1, "ColorDodge", context=context) == (0 if revised else 1)
     assert blend_components(1, 0, "ColorBurn", context=context).item() == (1 if revised else 0)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Selected CIE output conversion, preserving the established Default path."""
 
 from functools import lru_cache
 from typing import Any
@@ -41,8 +40,6 @@ def calibrated_xyz_to_srgb(
         ).astype(numpy.uint8)
     values = xyz
     if use_black_point_compensation(rendering, default=True) and any(black):
-        # Calibrated dictionaries supply their diffuse black endpoint. The
-        # selected sRGB output has a zero black endpoint in these coordinates.
         values = compensate_black_point_xyz(values, white, black, (0.0, 0.0, 0.0))
     lab = xyz_to_lab_components(values, white)
     intent, flags = internal_cms_options(rendering)

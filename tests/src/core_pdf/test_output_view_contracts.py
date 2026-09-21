@@ -1,5 +1,3 @@
-"""Ownership, ordering, and immutability contracts for structured output views."""
-
 from dataclasses import replace
 from typing import Any
 

@@ -1,5 +1,3 @@
-"""Optional-content defaults, overrides, and reader recovery use real resolution."""
-
 from typing import Any
 
 import pytest

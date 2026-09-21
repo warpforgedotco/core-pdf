@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ITU-T T.88 (JBIG2) embedded-stream decoding.
-
-Segment headers (T.88 7.2), page information (7.4.8), the MQ arithmetic
-decoder (Annex E), and generic region decoding (6.2) are implemented here for
-the PDF embedded organisation (Annex D.3). Text, refinement, halftone, and MMR
-regions raise ``Jbig2UnsupportedError``. Bitmaps use T.88 polarity: 1 = black.
-"""
 
 from __future__ import annotations
 
@@ -23,24 +16,19 @@ JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION = 39
 
 
 class Jbig2Error(Exception):
-    """Base error for JBIG2 codec failures."""
+    pass
 
 
 class Jbig2ParseError(Jbig2Error):
-    """Raised when JBIG2 bytes are malformed."""
+    pass
 
 
 class Jbig2UnsupportedError(Jbig2Error):
-    """Raised when valid JBIG2 data uses unsupported features."""
+    pass
 
 
 GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
 
-# The MQ-coder probability estimation table, ITU-T T.88 Table E.1. One row per
-# state index: the Qe probability, the next index after a more-probable-symbol
-# renormalization, the next index after a less-probable one, and whether that
-# LPS path swaps the sense of the MPS.
-#
 internal_MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
     (0x5601, 1, 1, 1),
     (0x3401, 2, 6, 0),
@@ -91,7 +79,6 @@ internal_MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
     (0x5601, 46, 46, 0),
 )
 
-# The decoder indexes these per pixel, so the columns stay flat tuples of ints.
 MQ_QE = tuple(state[0] for state in internal_MQ_STATES)
 MQ_NMPS = tuple(state[1] for state in internal_MQ_STATES)
 MQ_NLPS = tuple(state[2] for state in internal_MQ_STATES)
@@ -245,7 +232,6 @@ def parse_page_info(data: bytes) -> JBIG2PageInfo:
 
 
 def parse_region(data: bytes, kind: str) -> JBIG2Region:
-    """Read the information field shared by every JBIG2 region type."""
     if len(data) < 17:
         raise Jbig2ParseError(f"truncated JBIG2 {kind} region")
     return JBIG2Region(
@@ -329,7 +315,6 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
     flags, pos = read_u8(data, pos)
     retention_flags, pos = read_u8(data, pos)
     referred_to_count = retention_flags >> 5
-    # T.88 7.2.4: the long form uses all 29 count bits, then retention bytes.
     if referred_to_count == 7:
         ref_count, pos = read_u24(data, pos)
         referred_to_count = ((retention_flags & 0x1F) << 24) | ref_count
@@ -339,7 +324,6 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
         pos += bit_bytes
     elif referred_to_count in (5, 6):
         raise Jbig2ParseError("invalid JBIG2 referred-to segment count")
-    # T.88 7.2.5: reference width depends on this segment's number, in both forms.
     reference_width = 1 if number <= 256 else 2 if number <= 65536 else 4
     referred_to_segments, pos = internal_read_segment_references(
         data, pos, referred_to_count, reference_width
@@ -364,7 +348,6 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
 
 
 def parse_embedded_segments(data: bytes) -> list[JBIG2Segment]:
-    """Read the headerless segment organization used by PDF (T.88 Annex D.3)."""
     pos = 0
     segments: list[JBIG2Segment] = []
     while pos + 11 <= len(data):
@@ -390,13 +373,6 @@ def parse_embedded_segments(data: bytes) -> list[JBIG2Segment]:
 
 
 class JBIG2PageDecoder:
-    """Own one page canvas and the supported T.88 segment decoding procedures.
-
-    Reader implementations may override ``decode_segment``, ``decode_text_region``
-    and ``decode_generic_region`` to own recovery. Region methods receive metadata
-    parsed once, after the canvas includes the region's extent.
-    """
-
     def __init__(self) -> None:
         self.page_info: JBIG2PageInfo | None = None
         self.image: JBIG2Image | None = None
@@ -439,18 +415,15 @@ class JBIG2PageDecoder:
             if self.image is not None:
                 self.decode_generic_region(parse_generic_region_header(region))
         elif kind in (49, JBIG2_END_OF_FILE):
-            # T.88, 7.4.9 and 7.4.11: these markers have no associated data.
             if segment.data:
                 raise Jbig2ParseError("JBIG2 end marker has segment data")
         elif kind == 52:
-            # T.88, 7.4.12: profile declarations do not contribute image pixels.
             if len(segment.data) < 4:
                 raise Jbig2ParseError("truncated JBIG2 profiles segment")
             count = read_be_u32(segment.data, 0)
             if len(segment.data) != 4 + count * 4:
                 raise Jbig2ParseError("invalid JBIG2 profiles segment length")
         elif kind == 62:
-            # T.88, 7.4.14: an unknown necessary extension prevents decoding.
             if len(segment.data) < 4:
                 raise Jbig2ParseError("truncated JBIG2 extension segment")
             extension = read_be_u32(segment.data, 0)
@@ -464,13 +437,11 @@ class JBIG2PageDecoder:
             raise Jbig2ParseError(f"reserved JBIG2 segment type {kind}")
 
     def decode_text_region(self, region: JBIG2Region) -> None:
-        # T.88, 6.4: text regions require symbol-instance decoding.
         if len(region.raw) < 20:
             raise Jbig2ParseError("truncated JBIG2 text region")
         raise Jbig2UnsupportedError("JBIG2 text region decoding is not implemented")
 
     def decode_generic_region(self, header: JBIG2GenericRegionHeader) -> None:
-        # T.88, 6.2.6 requires T.6 decoding for an MMR region, not raw pixels.
         if header.mmr:
             raise Jbig2UnsupportedError("JBIG2 MMR region decoding is not implemented")
         region = header.region
@@ -488,7 +459,6 @@ class JBIG2PageDecoder:
             compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
 
     def finish(self) -> bytes:
-        """Return the page bitmap in T.88 polarity: 1 bits are black pixels."""
         if self.image is None:
             raise Jbig2UnsupportedError("JBIG2Decode produced no image")
         return bytes(self.image.data)
@@ -542,8 +512,6 @@ def decode_arithmetic_generic_template0(data: bytes, width: int, height: int) ->
     bp = decoder.bp
     data_end = decoder.data_end
     for row_index in range(height):
-        # Four sentinel bytes eliminate bounds checks for the look-ahead
-        # samples at col + 3 and col + 4 in the template-0 context.
         row = bytearray(width + 4)
         row1 = row if row_index < 1 else previous_row
         row2 = row if row_index < 2 else previous_previous_row

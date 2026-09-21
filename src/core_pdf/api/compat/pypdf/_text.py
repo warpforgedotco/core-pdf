@@ -1,5 +1,3 @@
-"""Content-stream-order text extraction for legacy compatibility projections."""
-
 from __future__ import annotations
 
 import math
@@ -73,11 +71,6 @@ class LegacyFont:
             parts = tuple(data.decode(self.encoding_codec, errors=errors))
         else:
             parts = tuple(self.internal_glyph_text(glyph) for glyph in glyphs)
-        # A ToUnicode CMap may deliberately map codes to no text at all: Arabic
-        # shaping glyphs whose letters are emitted by a different run do exactly
-        # that. Reading the bytes back as latin-1 would then paste raw CIDs into
-        # the page, so only treat an empty result as a failed decode when the
-        # CMap had nothing to say about it.
         if not any(parts) and not mapped_every_glyph:
             parts = tuple(data.decode("latin-1"))
         return parts, width
@@ -103,10 +96,6 @@ class LegacyFont:
                 if self.cmap is not None and glyph.code_bytes in self.cmap.mappings
                 else table[code]
             )
-            # pypdf computes widths before applying ToUnicode. Its space
-            # shortcut therefore applies only when the encoding itself emits
-            # the encoded space character, not merely when ToUnicode maps the
-            # source byte to U+0020.
             if glyph.code_bytes == self.space_code_bytes and encoded == chr(code):
                 return self.space_width
             return float(
@@ -133,8 +122,6 @@ class LegacyFont:
 
 
 class LegacyTextExtractor:
-    """Interpret text operators while retaining their original state boundaries."""
-
     def __init__(
         self,
         page: Any,
@@ -146,12 +133,6 @@ class LegacyTextExtractor:
         self.document = page.document
         self.resources = resources if resources is not None else page.resources
         self.known_forms = known_forms if known_forms is not None else set()
-        # Extracted text per form XObject (keyed by identity, holding the stream
-        # alive), shared across nested extractors for one page extraction. A
-        # form's output ignores the outer graphics state, so repeating a Do of
-        # the same form repeats the same text. Entries are recorded only for
-        # top-level invocations: while ancestors are active, a recursive
-        # reference is skipped and the result would not be reusable.
         self.form_text_cache = form_text_cache if form_text_cache is not None else {}
         self.fonts = self.internal_fonts(self.resources)
         self.cm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
@@ -164,8 +145,6 @@ class LegacyTextExtractor:
         self.half_space_width = 125.0
         self.leading = 0.0
         self.text = ""
-        # Accumulated page output as parts plus its trailing character; joining
-        # or copying the whole output per operator is quadratic.
         self.output_parts: list[str] = []
         self.output_last = ""
         self.rtl = False
@@ -207,8 +186,6 @@ class LegacyTextExtractor:
             ):
                 raise ValueError("font descriptor contains more than one font program")
             try:
-                # pypdf applies modern encoding tables even to pre-1.3 headers;
-                # leave font context unset for this compatibility projection.
                 decoder = FontDecoder(self.document.resolver.resolve_font_dict(font))
             except TypeError, ValueError:
                 continue
@@ -386,7 +363,6 @@ class LegacyTextExtractor:
         return tuple(table), None, character_map
 
     def internal_type1_character_map(self, descriptor: dict[object, object]) -> dict[str, str]:
-        """Project the clear-text Type 1 encoding accepted by pypdf."""
         raw_font_file = self.document.resolver.resolve(descriptor.get("FontFile"))
         if not isinstance(raw_font_file, PdfStream):
             return {}
@@ -418,10 +394,6 @@ class LegacyTextExtractor:
     def internal_legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
         if name == "negationslash":
             return "⁄"
-        # The engine reads cmex's wide tilde accents as U+02DC, which is the
-        # accent rather than the ASCII punctuation. pypdf reports a plain tilde,
-        # and this facade reports what pypdf reports. Its wide circumflexes
-        # already agree, so only the tildes need saying.
         if name in {"tildewide", "tildewider", "tildewidest"}:
             return "~"
         if name == ".notdef":
@@ -482,12 +454,7 @@ class LegacyTextExtractor:
                     for name in char_procs
                 )
             ):
-                # pypdf declares such a Type3 font uninterpretable and skips
-                # its Widths array, but native text mode still emits its
-                # declared encoding with the placeholder metrics.
                 return {}, 500.0, 200.0
-            # The legacy API compares unscaled Widths values. The canonical
-            # engine scales Type3 metrics through FontMatrix for geometry.
             with suppress(ValueError):
                 widths = parse_font_widths(cast(Any, font), subtype).widths
 
@@ -526,17 +493,10 @@ class LegacyTextExtractor:
         else:
             space_codes = [self.internal_space_code(cmap, encoding_table, encoding_is_mapping)]
         for code in space_codes:
-            # pypdf uses the explicit width attached to the encoded space for
-            # both simple and CID fonts. Only a genuinely missing/zero entry
-            # falls back to the extraction API's 200-unit default.
             width = widths.get(code)
             legacy_width = width if decoder.is_cid_font else int(width or 0)
             if legacy_width:
                 return widths, default_width, float(legacy_width)
-        # extract_text's public ``space_width=200`` override replaces the
-        # synthesized Font.space_width whenever the encoded space has no
-        # explicit width entry. Keep that extraction-layer behavior separate
-        # from the font's default glyph width above.
         return widths, default_width, 200.0
 
     def flush(self) -> None:
@@ -549,8 +509,6 @@ class LegacyTextExtractor:
             self.add_text_unit(character)
 
     def add_text_unit(self, value: str) -> None:
-        # Native pypdf sends a preceding directional run only to visitor_text
-        # when direction changes. The default API intentionally discards it.
         self.text, self.rtl = internal_append_directional_text(self.text, self.rtl, value)
 
     def check_position(self, string_width: float) -> None:
@@ -651,9 +609,6 @@ class LegacyTextExtractor:
                 if isinstance(item, PdfString):
                     self.show(bytes(item.data))
                 elif isinstance(item, PdfName):
-                    # Malformed producers occasionally place a name where TJ
-                    # requires a string. pypdf preserves that operand's PDF
-                    # spelling in extracted text.
                     self.add_text(f"/{item.value}")
                 elif (
                     isinstance(item, (int, float))
@@ -676,9 +631,6 @@ class LegacyTextExtractor:
 
     def extract(self, streams: tuple[PdfStream, ...] | None = None) -> str:
         content_streams = streams if streams is not None else self.page.content_streams
-        # A page Contents array is one logical content stream. Operators and
-        # their operands may legally straddle physical stream boundaries, so
-        # preserve the token state by joining them with a whitespace separator.
         data = b"\n".join(stream.data for stream in content_streams)
         inline_image = re.search(rb"(?<!\S)BI(?=\s)", data)
         if (
@@ -686,8 +638,6 @@ class LegacyTextExtractor:
             and re.search(rb"(?<!\S)EI(?:\s|$)", data[inline_image.end() :]) is None
         ):
             raise ValueError("unexpected end of inline image stream")
-        # Complete parsing before projection so later parse errors cannot leave
-        # partially applied text state or trigger Form processing prematurely.
         parsed = list(iter_content_operations(PdfLexer(data)))
         for operator, operands in parsed:
             if operator == "Do":
@@ -742,5 +692,4 @@ class LegacyTextExtractor:
 
 
 def extract_legacy_text(page: Any) -> str:
-    """Extract page/form text in content-stream operation order."""
     return LegacyTextExtractor(page).extract()

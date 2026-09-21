@@ -1,5 +1,3 @@
-"""Damaged-font highlight recovery retains only intersecting recoverable text."""
-
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +7,6 @@ from core_pdf.api.compat import xray
 
 def source(data: bytes, content: bytes) -> bytes:
     cmap = b"2 beginbfchar <41> <0041> <42> <0042> endbfchar"
-    # Keep the base page from supplying an unrelated BT during raw recovery.
     return data.replace(b"BT /F1", b"   /F1") + (
         b"\n/F2 90 0 R\n90 0 obj\n<< /FirstChar 65 /Widths [500 600] /ToUnicode 91 0 R >>\nendobj\n"
         + f"91 0 obj\n<< /Length {len(cmap)} >>\nstream\n".encode()

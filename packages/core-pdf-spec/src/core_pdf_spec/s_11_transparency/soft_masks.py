@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Graphics-state soft-mask dictionaries, ISO 32000-2 11.5 and Table 142."""
 
 from __future__ import annotations
 
@@ -23,14 +22,6 @@ from core_pdf_spec.types import PdfReference
 
 @dataclass(frozen=True, slots=True)
 class SoftMask:
-    """Resolved mask semantics with its original, unevaluated group stream.
-
-    ``ctm`` is the invoking CTM at gs, before the Form's Matrix is concatenated.
-    ``transfer=None`` means Identity; a supplied evaluator clips its single output
-    to [0, 1]. Alpha masks ignore backdrop colour and blending colour space.
-    Resources and group content remain demand-driven and preserve source identity.
-    """
-
     subtype: Literal["Alpha", "Luminosity"]
     group: PdfStream
     ctm: Matrix
@@ -144,8 +135,6 @@ def internal_color_space(value: object, resolver: PdfValueResolver) -> ColorSpac
                     prepared[key] = internal_array(prepared[key], resolver)
             if "N" in prepared:
                 prepared["N"] = internal_resolve(prepared["N"], resolver)
-            # Group ICC spaces cannot use special alternates; resolve only the
-            # selected colour description, never unrelated profile references.
             if "Alternate" in prepared:
                 prepared["Alternate"] = internal_array(prepared["Alternate"], resolver)
             value = (
@@ -167,13 +156,6 @@ def parse_soft_mask(
     ctm: Matrix,
     compile_function: Callable[[object], PdfFunctionEvaluator] = compile_pdf_function,
 ) -> SoftMask | None:
-    """Parse a selected SMask, preserving G identity and its unused resources.
-
-    PDF /None clears the mask. Omitted/null graphics-state entries are handled
-    by the caller. Function compilation is injectable; strict defaults support
-    the function types implemented by ``compile_pdf_function``. This parser
-    does not execute the group or select a raster/luminosity conversion policy.
-    """
     value = internal_resolve(value, resolver)
     if resolver.resolve_name(value) == "None":
         return None

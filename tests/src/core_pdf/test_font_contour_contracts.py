@@ -1,5 +1,3 @@
-"""Recorded font curves preserve endpoints, implied joins, and contour closure."""
-
 import numpy as np
 import pytest
 

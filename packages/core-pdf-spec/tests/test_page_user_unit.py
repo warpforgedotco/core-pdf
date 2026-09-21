@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""ISO 32000-2, Table 31 and 8.3.2.3: the page's default user-space unit."""
 
 import pytest
 
@@ -14,7 +13,6 @@ from core_pdf_spec.types import PdfName
 
 @pytest.mark.parametrize("value", [None, 1, 1.0, 0.25, 2.5, 75001, 1e20])
 def test_positive_units_and_default(value: int | float | None) -> None:
-    # 75000 is an Acrobat limit, not a limit imposed by Table 31.
     assert page_user_unit(value) == (1.0 if value is None else value)
 
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Established tolerant content recovery selected by application composition."""
 
 from collections.abc import Callable, Iterator
 from typing import cast
@@ -57,7 +56,6 @@ def recover_inline_image_position(
 
 
 def recover_inline_image_data(lexer: PdfLexer, error: InlineImageDataLengthError) -> InlineImage:
-    """Preserve the reader's permissive known-length and delimiter fallback."""
     data_end = error.data_start + error.expected_length
     marker = data_end
     while marker < lexer.data_len and lexer.raw_data[marker] in WHITESPACE:
@@ -106,18 +104,9 @@ def iter_content_operations(
     recovery: CaptureRecovery | None = None,
     is_operator: Callable[[bytes], bool] | None = None,
 ) -> Iterator[ContentOperation]:
-    """Yield reader operations with operand limits and malformed-token recovery.
-
-    The lexer advances past each operation before yielding, allowing nested
-    execution to resume without replaying a parent operation. Callers that need
-    complete parsing before projection can explicitly materialize the iterator.
-    """
     operands: list[ContentOperand] = []
     recovery = recovery if recovery is not None else CaptureRecovery()
     while True:
-        # Token parsing skips ignored bytes itself; the token's start position
-        # is only needed for recovery, so recompute it from the same cursor
-        # instead of scanning the gap twice for every token.
         cursor = lexer.pos
         try:
             try:
@@ -129,8 +118,6 @@ def iter_content_operations(
             start = lexer.skip_ignored_at(cursor)
             prefix = bytes(lexer.raw_data[start : start + 2])
             if str(error) == "unexpected delimiter in content stream":
-                # The reader historically skips all standalone delimiters,
-                # including stray closing strings. Braces remain ordinary word tokens.
                 lexer.pos = start + (2 if prefix == b">>" else 1)
                 continue
             kind = (

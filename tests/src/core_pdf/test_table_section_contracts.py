@@ -1,5 +1,3 @@
-"""Section splitting preserves cell identity and prose rejection has positive controls."""
-
 import pytest
 
 from core_pdf.impl._impl.extract import table_cleanup as cleanup

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Packed 1-bit bitmap views and composition kernels for ITU-T T.88 regions."""
 
 from __future__ import annotations
 
@@ -15,7 +14,6 @@ def internal_uint8_view(
     count: int = -1,
     offset: int = 0,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    """Return a flat uint8 view, copying only non-contiguous/wrong-typed arrays."""
     count = index(count)
     offset = index(offset)
     if isinstance(buffer, numpy.ndarray):
@@ -44,13 +42,9 @@ def uint8_matrix_view(
     rows: int,
     columns: int,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    """Return a validated mutable/read-only matrix view over packed rows."""
     return internal_uint8_view(buffer, count=rows * columns).reshape(rows, columns)
 
 
-# NumPy's packed-bit path amortizes its view setup above a small region.  The
-# aligned case is already faster at 64 pixels, while scalar composition remains
-# cheaper for tiny regions and avoids unpacking temporary bit arrays.
 PACKED_COMPOSE_NUMPY_THRESHOLD = 64
 
 
@@ -159,7 +153,6 @@ def compose_packed_bitmap_data(
     image_data: bytearray,
     operator: int,
 ) -> None:
-    """Composite contiguous packed one-bit rows into an image buffer."""
     if row_count <= 0 or region_width <= 0:
         return
     row_byte_length = max(1, (region_width + 7) // 8)
@@ -206,7 +199,6 @@ def compose_packed_bitmap_data(
 
 
 def invert_packed_bitmap(data: bytes | bytearray) -> bytes:
-    """Flip every bit of a packed bitmap, converting T.88 polarity (1 = black)."""
     if isinstance(data, bytearray):
         image = internal_uint8_view(data)
         numpy.bitwise_xor(image, 0xFF, out=image)

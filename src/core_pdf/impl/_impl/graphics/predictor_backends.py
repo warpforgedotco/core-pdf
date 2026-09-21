@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Predictor acceleration and damaged-row compatibility policy."""
 
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ def png_predict(
     if decoded is not None:
         return decoded
     stride = max(1, (colors * columns * bits_per_component + 7) // 8) + 1
-    # The historical direct helper retains complete rows from a truncated stream.
     stop = len(data) // stride * stride
     if damaged_rows_before_error:
         for start in range(0, stop, stride):

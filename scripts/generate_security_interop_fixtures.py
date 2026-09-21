@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Generate the qpdf security interoperability fixtures.
-
-qpdf is an offline fixture generator, not a project or test dependency. Weak
-crypto is enabled only for the legacy RC4 formats that this compatibility suite
-must be able to read.
-"""
 
 from __future__ import annotations
 

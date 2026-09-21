@@ -1,5 +1,3 @@
-"""Attachment projections retain source objects and isolate malformed entries."""
-
 from typing import Any
 
 import pytest

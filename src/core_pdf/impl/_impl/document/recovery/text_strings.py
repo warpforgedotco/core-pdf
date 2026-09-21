@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader text-string recovery beyond the PDF-defined encodings."""
 
 from __future__ import annotations
 
@@ -20,8 +19,6 @@ def decode_pdf_text_string(
             return data[2:].decode("utf-16-le")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-16LE data") from exc
-    # Readers have historically accepted under-declared Unicode and Euro text strings.
-    # Keep that policy explicit while strict spec callers use the selected version.
     if context is not None and (
         context.version is None
         or not context.version.recognized

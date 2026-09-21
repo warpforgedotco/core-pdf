@@ -1,5 +1,3 @@
-"""PDFMiner layout records, grouping, and reading order."""
-
 from __future__ import annotations
 
 import heapq
@@ -12,8 +10,6 @@ from core_pdf.impl._impl.model.geometry import bbox_union
 
 @dataclass(slots=True)
 class LAParams:
-    """pdfminer.six layout parameters accepted by the compatibility facade."""
-
     line_overlap: float = 0.5
     char_margin: float = 2.0
     line_margin: float = 0.5
@@ -242,9 +238,6 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
     if isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal):
         tolerance = ratio * first.height
         return (
-            # ``LTTextLineHorizontal.find_neighbors`` first queries a spatial
-            # plane over the line's own horizontal extent. Alignment alone is
-            # insufficient: lines separated along x are never candidates.
             not (second.x1 <= first.x0 or first.x1 <= second.x0)
             and not (second.y1 <= first.y0 - tolerance or first.y1 + tolerance <= second.y0)
             and abs(second.height - first.height) <= tolerance
@@ -257,8 +250,6 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
     if isinstance(first, LTTextLineVertical) and isinstance(second, LTTextLineVertical):
         tolerance = ratio * first.width
         return (
-            # The vertical counterpart's plane query is restricted to the
-            # line's own vertical extent.
             not (second.y1 <= first.y0 or first.y1 <= second.y0)
             and not (second.x1 <= first.x0 - tolerance or first.x1 + tolerance <= second.x0)
             and abs(second.width - first.width) <= tolerance
@@ -272,8 +263,6 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
 
 
 class _LayoutPlane:
-    """Small identity-based spatial index matching pdfminer's layout plane."""
-
     __slots__ = ("bbox", "grid", "gridsize", "objects", "sequence")
 
     def __init__(self, bbox: tuple[float, float, float, float], gridsize: int = 50) -> None:
@@ -328,8 +317,6 @@ class _LayoutPlane:
 
 
 class internal_SparseLayoutPlane(_LayoutPlane):
-    """Preserve virtual-grid query order without allocating coordinate-sized grids."""
-
     __slots__ = ()
 
     def add(self, item: LTComponent | _TextGroup) -> None:
@@ -367,8 +354,6 @@ class internal_SparseLayoutPlane(_LayoutPlane):
             first_x, first_y = max(left, il), max(bottom, ib)
             if first_x < min(right, ir) and first_y < min(top, it):
                 candidates.append((first_y, first_x, item))
-        # The ordinary plane visits cells row-first, then objects in insertion
-        # order. Stable sorting by the first shared cell reproduces that order.
         candidates.sort(key=lambda candidate: candidate[:2])
         yield from (candidate[2] for candidate in candidates)
 
@@ -381,9 +366,6 @@ def _group_lines(
     if not lines:
         return []
     plane_bbox = page_bbox or bbox_union(line.bbox for line in lines) or lines[0].bbox
-    # Use sparse queries only when estimated grid insertion work exceeds both
-    # a small-grid budget and the cost of scanning all lines for every query.
-    # Large pages containing many short lines therefore keep the normal index.
     grid_entries = sum((line.width / 50 + 1) * (line.height / 50 + 1) for line in lines)
     sparse_queries = grid_entries > max(65536, len(lines) ** 2)
     plane = internal_SparseLayoutPlane(plane_bbox) if sparse_queries else _LayoutPlane(plane_bbox)
@@ -407,9 +389,6 @@ def _group_lines(
             members.append(candidate)
             previous = groups_by_line.pop(id(candidate), None)
             if previous is not None and id(previous) not in merged_groups:
-                # Neighboring lines can all refer to the same group. Expanding
-                # it once preserves first-occurrence order without copying the
-                # full group again for each of its neighboring members.
                 merged_groups.add(id(previous))
                 members.extend(previous)
         unique_members = list({id(member): member for member in members}.values())
@@ -464,15 +443,10 @@ def _reading_order(
 
     active: dict[int, LTTextBox | _TextGroup] = {id(box): box for box in boxes}
     plane_bbox = page_bbox or bbox_union(box.bbox for box in boxes) or boxes[0].bbox
-    # Merged groups can span the whole page. Bound the number of grid cells
-    # even when a document uses unusually large coordinates or page dimensions.
     gridsize = max(50, ceil(max(plane_bbox[2] - plane_bbox[0], plane_bbox[3] - plane_bbox[1]) / 64))
     plane = _LayoutPlane(plane_bbox, gridsize=gridsize)
     for box in boxes:
         plane.add(box)
-    # Heap entries use object identity like pdfminer itself. Keep merged groups
-    # alive until ordering completes so CPython cannot recycle an id while a
-    # stale entry for the former object is still queued.
     retained_groups: list[_TextGroup] = []
 
     def area_gap(first: LTTextBox | _TextGroup, second: LTTextBox | _TextGroup) -> float:
@@ -506,8 +480,6 @@ def _reading_order(
                 min(query[2], page_bbox[2]),
                 min(query[3], page_bbox[3]),
             )
-        # Only existence matters: query local candidates and stop at the
-        # first blocker instead of collecting every intersecting object.
         if (
             not skip_between
             and query[0] < query[2]
@@ -529,8 +501,6 @@ def _reading_order(
         del active[first_id], active[second_id]
         group_id = id(group)
         if not active:
-            # Every remaining queued pair refers to a removed object. The
-            # completed root needs neither index updates nor heap draining.
             active[group_id] = group
             break
         plane.remove(active_first)
@@ -540,9 +510,6 @@ def _reading_order(
         active[group_id] = group
         plane.add(group)
         if len(active) <= compact_at:
-            # There is at most one queued entry per surviving pair. Compact
-            # only when at least half the heap must be obsolete, and inspect
-            # at geometrically decreasing sizes to bound maintenance work.
             if len(queue) > len(active) * (len(active) - 1):
                 queue = [entry for entry in queue if entry[2] in active and entry[3] in active]
                 heapq.heapify(queue)
@@ -552,7 +519,6 @@ def _reading_order(
 
 
 def internal_flatten_text_group(root: LTTextBox | _TextGroup, boxes_flow: float) -> list[LTTextBox]:
-    """Visit ordered leaves once without copying subtree results or recursive frames."""
     result: list[LTTextBox] = []
     pending: list[LTTextBox | _TextGroup] = [root]
     while pending:

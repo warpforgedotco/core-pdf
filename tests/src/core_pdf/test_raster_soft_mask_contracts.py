@@ -1,5 +1,3 @@
-"""Captured alpha masks evaluated through the actual raster target."""
-
 import numpy as np
 import pytest
 

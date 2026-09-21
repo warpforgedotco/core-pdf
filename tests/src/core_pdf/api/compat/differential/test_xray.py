@@ -13,7 +13,6 @@ pytestmark = pytest.mark.compat_differential
 
 @pytest.fixture(scope="module")
 def real_xray() -> Iterator[Any]:
-    """Import the reference x-ray package once, against the real PyMuPDF."""
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.syspath_prepend(str(XRAY_ROOT))
         monkeypatch.setitem(sys.modules, "fitz", real_pymupdf)

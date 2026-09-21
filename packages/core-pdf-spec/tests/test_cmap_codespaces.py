@@ -1,5 +1,3 @@
-"""Effective PDF CMap codespaces are validated after inheritance."""
-
 from __future__ import annotations
 
 import pytest
@@ -17,7 +15,6 @@ CODESPACE = b"1 begincodespacerange <00> <7f> endcodespacerange\n"
 def test_pdf_codespace_supports_one_to_four_bytes(
     reader: type[CMapDecoder | ToUnicodeCMap], width: int
 ) -> None:
-    # ISO 32000-1, 9.7.6.2 limits PDF character codes to four bytes.
     start, end = b"00" * width, b"ff" * width
     data = b"1 begincodespacerange <" + start + b"> <" + end + b"> endcodespacerange"
     if width == 5:
@@ -59,7 +56,6 @@ def test_complete_codespace_rejects_malformed_ranges(
 def test_inheriting_cmap_cannot_redeclare_its_codespace(
     reader: type[CMapDecoder | ToUnicodeCMap], local_codespace: bytes
 ) -> None:
-    # Adobe Technical Note 5014, 5.4 and 7.3: a usecmap's codespace is implicit.
     with pytest.raises(ValueError, match="usecmap.*redefine"):
         reader(b"/Parent usecmap " + local_codespace, usecmap_resolver=lambda name: CODESPACE)
 

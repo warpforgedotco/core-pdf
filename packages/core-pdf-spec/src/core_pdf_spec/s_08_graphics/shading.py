@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF axial/radial shading descriptors and parameter semantics."""
 
 from __future__ import annotations
 

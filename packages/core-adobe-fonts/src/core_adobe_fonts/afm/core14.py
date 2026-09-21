@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adobe Core 14 font metrics, generated from the AFM files (see NOTICE.md)."""
 
 from __future__ import annotations
 
@@ -11,9 +10,6 @@ class Core14FontMetrics(TypedDict):
     props: dict[str, object]
 
 
-# The fourteen Standard-14 fonts share nine width tables: the four Courier
-# faces are monospaced and metrically identical, and each Helvetica face
-# matches its oblique. Only the tables that actually differ are written out.
 internal_COURIER_WIDTHS: dict[str, int] = {
     " ": 600,
     "!": 600,
@@ -2630,7 +2626,6 @@ internal_ZAPF_DINGBATS_WIDTHS: dict[str, int] = {
     "➾": 918,
 }
 
-# The fourteen Standard-14 metric records, keyed by their canonical name.
 FONT_DATA: dict[str, Core14FontMetrics] = {
     "Courier": {
         "widths": internal_COURIER_WIDTHS,

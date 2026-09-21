@@ -41,7 +41,6 @@ class MarkedContentEntry:
         font_decoder: object | None = None,
         effective_font_height: float = 0.0,
     ) -> None:
-        """Collect extents while retaining the first run's style and provenance."""
         captured = self.run
         if captured is None:
             self.run = run

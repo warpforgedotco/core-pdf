@@ -1,9 +1,3 @@
-"""Measure the differential extraction workload with a fresh document each time.
-
-Run under cProfile or Scalene for attribution; use unprofiled repetitions for
-wall-clock comparisons. Select the reference separately to isolate engine cost.
-"""
-
 from __future__ import annotations
 
 import argparse

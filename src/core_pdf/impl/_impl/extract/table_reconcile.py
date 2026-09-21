@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reconcile overlapping text and table projections."""
 
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ def internal_remove_block_duplicate_table_rows(
     blocks: list[Block],
     tables: tuple[Table, ...],
 ) -> tuple[Table, ...]:
-    """Drop rows reproduced completely by a surviving line in the same region."""
     if not blocks or not tables:
         return tables
     line_boxes_by_text: dict[str, list[Rectangle]] = {}
@@ -53,8 +51,6 @@ def internal_remove_block_duplicate_table_rows(
             filtered.append(table)
             continue
         if not kept_row_indexes:
-            # The blocks cover the rows, but need not include associated text.
-            # Keep its table until that text can be projected independently.
             if table.title is not None or table.caption is not None:
                 filtered.append(table)
             continue
@@ -71,8 +67,6 @@ def internal_remove_block_duplicate_table_rows(
         )
         projected = internal_table_with_bands(replace(table, rows=rows))
         if table.row_bands:
-            # A removed row must not shift another row's semantic role. Rebuild
-            # column bounds, but retain the surviving row classifications.
             projected = replace(
                 projected,
                 row_bands=tuple(
@@ -85,7 +79,6 @@ def internal_remove_block_duplicate_table_rows(
 
 
 def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> bool:
-    """Require complete text in the same cell region before dropping a line."""
     normalized = collapse_ws(text)
     if not normalized or table.bbox is None or overlap_ratio_of(box, table.bbox) < 0.90:
         return False
@@ -118,9 +111,6 @@ def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> b
                 if normalized != candidate:
                     continue
                 matched_cells = cells[start : end + 1]
-                # Inferred column boundaries can graze the line's last glyph.
-                # Test exact cell sequences instead of forcing neighboring
-                # text into a match because of a small geometric intersection.
                 if all(cell.bbox is not None for cell in matched_cells):
                     row_box = bbox_union(
                         cell.bbox for cell in matched_cells if cell.bbox is not None
@@ -128,11 +118,7 @@ def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> b
                     if row_box is not None and overlap_ratio_of(box, row_box) >= 0.90:
                         return True
                 elif start == 0 and end + 1 == len(cells) == len(row_cells):
-                    # Without cell geometry, only the complete row can be
-                    # compared using the containing table's known bounds.
                     return True
-    # A single text line can represent an entire table in a competing layout.
-    # Keep case, punctuation, order, and repeated values in this comparison.
     known_geometry = all(cell.bbox is not None for cell in participating_cells)
     if not known_geometry and len(participating_cells) != total_cells:
         return False
@@ -164,8 +150,6 @@ def internal_remove_table_duplicate_blocks(
     for block in blocks:
         kept_lines = []
         for line in block.lines:
-            # A tall block can include a heading well outside the table. Only
-            # its individual lines establish which text actually repeats cells.
             box = line.bbox or (block.bbox if len(block.lines) == 1 else None)
             if box is None or not any(
                 internal_line_duplicates_table(line.text, box, located_tables[int(index)])
@@ -188,7 +172,6 @@ def internal_project_text_and_tables(
     blocks: list[Block],
     parsed_tables: tuple[Table, ...],
 ) -> tuple[list[Block], tuple[Table, ...]]:
-    """Resolve overlap once, producing explicit text and table projections."""
     text_blocks = internal_remove_table_duplicate_blocks(blocks, parsed_tables)
     projected_tables = internal_remove_block_duplicate_table_rows(text_blocks, parsed_tables)
     return text_blocks, projected_tables

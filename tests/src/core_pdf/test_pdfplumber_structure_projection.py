@@ -1,5 +1,3 @@
-"""Structure projection retains supported fields and tolerates malformed children."""
-
 from io import BytesIO
 from types import SimpleNamespace
 

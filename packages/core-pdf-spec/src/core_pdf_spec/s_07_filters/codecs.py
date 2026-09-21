@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF stream decoding algorithms without malformed-input recovery."""
 
 from __future__ import annotations
 
@@ -143,7 +142,6 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
 
 
 def internal_ascii85_tail(accumulator: int, digits: int) -> bytes:
-    """ISO 32000-1 7.4.3: pad a final 2-4 digit group with u, then truncate."""
     if not digits:
         return b""
     if digits == 1:
@@ -192,8 +190,6 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
         out_pos = 0
         full_end = clean_len - clean_len % 5
         pos = 0
-        # Full tuples are independent. Keep the bulk path for large streams,
-        # after the same alphabet validation used by the scalar/z paths.
         if full_end >= 4096:
             import numpy
 

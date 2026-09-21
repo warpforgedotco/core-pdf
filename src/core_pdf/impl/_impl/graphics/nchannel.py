@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Selected sRGB screen approximation for NChannel spot/process combinations.
-
-ISO 32000-2, 8.6.6.5 permits reader-selected blending instead of the global tint
-function. Multiplication here is a core output policy, not a PDF-mandated ink or
-spectral equation. It does not retain separate plates for overprint/transparency.
-"""
 
 from collections.abc import Callable, Mapping
 
@@ -20,13 +14,6 @@ def internal_mix_nchannel(
     space: ColorSpace,
     convert: Callable[[numpy.ndarray, ColorSpace], numpy.ndarray],
 ) -> numpy.ndarray | None:
-    """Combine process and spot appearances, or request the whole global fallback.
-
-    Only an empty/absent MixingHints dictionary and white zero-tint spot endpoints
-    are supported. Other papers, ink opacities, laydown orders and dot gain need a
-    different mixing policy; silently normalizing their endpoints would lose meaning.
-    The callback carries rendering intent, BPC and recursion limits into every space.
-    """
     attributes = internal_nchannel_attributes(space)
     if attributes is None:
         return None
@@ -47,9 +34,6 @@ def internal_mix_nchannel(
     if not spots:
         return None
     try:
-        # A zero amount of every spot ink must leave the process baseline alone.
-        # A nonwhite endpoint may encode a different paper; defer to the writer's
-        # complete transform rather than guessing how to remove that paper.
         zero = numpy.zeros((1, 1), dtype=numpy.float64)
         for _, spot in spots:
             if not numpy.all(internal_rgb_appearance(convert(zero, spot)) == 1):
@@ -72,8 +56,6 @@ def internal_mix_nchannel(
         PdfParseError,
         PdfUnsupportedError,
     ):
-        # A damaged individual description must not leave a partially mixed result.
-        # Authentication errors and unexpected decoder failures still propagate.
         return None
 
 

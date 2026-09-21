@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Object streams obey their header identities and decoded byte ranges (§7.5.7)."""
 
 from __future__ import annotations
 
@@ -83,7 +82,6 @@ def test_compressed_object_cannot_consume_its_neighbor_or_extra_value(
     try:
         with pytest.raises(PdfParseError):
             objects.get(1)
-        # A failed parse must not populate the object cache.
         with pytest.raises(PdfParseError):
             objects.get(1)
     finally:
@@ -115,7 +113,6 @@ def test_compressed_ordinal_requires_the_expected_header_identity(
 ) -> None:
     objects = PdfObjectStream(object_stream(b"1 0 2 2 ", b"1 2", 2))
     try:
-        # Validate coordinates even when the demanded object was already cached.
         assert objects.get(1) == 1
         with pytest.raises(PdfParseError, match="compressed object reference"):
             objects.get_at_index(index, expected_reference=reference)

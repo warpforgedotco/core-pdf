@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 3 invisibility suppresses programs without suppressing text advancement."""
 
 from typing import Any, cast
 
@@ -50,8 +49,6 @@ class Type3Font:
 def test_type3_invisible_modes_skip_programs_but_keep_width_spacing_and_scale(
     render_mode: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # ISO 32000-2 9.3.6 and 9.4.4: modes 3/7 still advance exactly as
-    # visible text, including font widths, spacing and horizontal scaling.
     state = ContentInterpreter(ObjectResolver(b"", {}), cast(Any, Sink()), cast(Any, None))
     state.graphics.render_mode = render_mode
     state.graphics.font_size = 12

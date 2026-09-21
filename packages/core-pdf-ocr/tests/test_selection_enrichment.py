@@ -133,7 +133,6 @@ def test_cross_page_font_learning_votes_and_seed_reuse(ocr_capture: PageAnalysis
         cast(Any, font.learned_unicode)[decoder] = {}
     with pytest.raises(TypeError):
         cast(Any, font.learned_unicode[decoder])[b"\x00"] = "X"
-    # Another selection must not inherit mappings or recognition results.
     isolated = selection.internal_prepare_document_font_mappings(
         cast(Any, extractions[2:]), captures[2:], ExtractionScope()
     )

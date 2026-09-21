@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Decode font programs to glyphs, widths, and Unicode text."""
 
 from __future__ import annotations
 
@@ -93,11 +92,6 @@ FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontPro
 
 
 TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
-
-
-# Adapters from a PDF font dictionary (9.6-9.7) to an embedded font program.
-# The font_program_* modules parse raw program bytes; only this module reads
-# FontDescriptor / FontFile entries.
 
 
 def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
@@ -251,7 +245,6 @@ def internal_opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | N
 
 
 def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
-    """Select one embedded outline implementation in format-preference order."""
     try:
         inputs = prepare_font_program_inputs(font)
     except ValueError:
@@ -301,8 +294,6 @@ class DecodedGlyph(DecodedFontGlyph):
     split_unicode: bool = False
 
 
-# A glyph whose text is a placeholder rather than a real mapping: the CFF
-# repair pass may overwrite these, and only these.
 internal_UNRESOLVED_UNICODE_SOURCES = frozenset(
     {UnicodeSource.IDENTITY, UnicodeSource.REPLACEMENT, UnicodeSource.FALLBACK_NUL}
 )
@@ -353,7 +344,6 @@ def internal_font_is_vertical(
     base_font_name: str | None,
     cmap: CMapDecoder | None,
 ) -> bool:
-    """Combine CMap writing mode with historical font-dictionary/name recovery."""
     if (
         base_encoding == "V"
         or (base_encoding and base_encoding.endswith("-V"))
@@ -374,15 +364,6 @@ def internal_font_is_vertical(
 
 
 class GlyphOutlineArrays:
-    """One glyph's paintable contours as coordinate columns.
-
-    ``spans`` holds the ``[start, end)`` slice of each contour with at least
-    two points, so a renderer transforms every point of the glyph in one
-    vectorized pass and slices the result back into subpaths. Text shows the
-    same glyph at the same scale many times, so the linear part of each
-    transform is kept per ``(a, b, c, d)``; an occurrence only adds its offset.
-    """
-
     __slots__ = ("linear", "spans", "xs", "ys")
 
     def __init__(
@@ -402,7 +383,6 @@ class GlyphOutlineArrays:
     def linear_columns(
         self, a: float, b: float, c: float, d: float
     ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-        """``x * a + y * c`` and ``x * b + y * d`` for every point, in that float order."""
         key = (a, b, c, d)
         columns = self.linear.get(key)
         if columns is None:
@@ -473,15 +453,11 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
-    # Per-decoder memos. A page shows the same glyph many times; the
-    # embedded program's geometry for a code never changes after initialization.
     internal_glyph_bbox_cache: dict[int, Rectangle | None]
     internal_glyph_outline_cache: dict[
         tuple[int, int | None, str], tuple[tuple[tuple[float, float], ...], ...]
     ]
     internal_glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
-    # Text products of a code are likewise fixed once the font is initialized;
-    # a page repeats a few hundred distinct codes across thousands of glyphs.
     internal_glyph_id_cache: dict[int, int | None]
     internal_unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
 
@@ -511,9 +487,6 @@ class FontDecoder:
         if subtype is not None:
             subtype = recover_pdf_name(subtype)
 
-        # The embedded program's built-in encoding participates in simple-font
-        # decoding, so select the one canonical backend before normalizing the
-        # PDF font dictionary's /Encoding.
         self.font_program = internal_font_program_for_pdf_font(font)
 
         to_unicode_obj = font.get("ToUnicode")
@@ -571,13 +544,9 @@ class FontDecoder:
             byte_decode_table = encoding_decode_table
 
         if not widths and not is_cid_font and not is_type3:
-            # A standard 14 font may legally omit /Widths (9.6.2.2); supply the
-            # built-in metrics rather than advancing every glyph by MissingWidth.
             builtin = standard_14_widths(base_font_name, encoding_decode_table)
             if builtin is not None:
                 widths = builtin
-                # Table 122 defaults MissingWidth to 0, and a code this font
-                # does not encode should not advance by a full em.
                 if font.get("MissingWidth") is None:
                     default_width = 0.0
                     default_width_explicit = True
@@ -587,9 +556,6 @@ class FontDecoder:
         self.cid_registry, self.cid_ordering = self.internal_cid_system_info(font)
         self.base_encoding = base_encoding
         self.differences = differences
-        # Compatibility facades inspect the sparse overrides directly. Keep
-        # that view alongside the complete glyph-name and Unicode tables used
-        # by native decoding and outline selection.
         self.encoding_differences = (
             {**builtin_encoding, **differences} if builtin_encoding else differences
         )
@@ -600,9 +566,6 @@ class FontDecoder:
         self.byte_decode_table = byte_decode_table
         self.widths = widths
         self.default_width = default_width
-        # One place decides what an unlisted code advances by. A stated default
-        # -- including a stated 0 (Table 122) -- is used verbatim; only when the
-        # document says nothing does the lenient em/half-em pair apply.
         if default_width_explicit:
             self.internal_width_fallback = default_width
             self.internal_space_width_fallback = default_width
@@ -701,23 +664,12 @@ class FontDecoder:
         builtin: dict[int, str] = {}
         builtin_authoritative = False
         if subtype in ("Type1", "MMType1") and not base_encoding_explicit:
-            # Table 114: when /BaseEncoding is absent, the implicit base for an
-            # embedded font program is the program's own built-in encoding, and
-            # /Differences describes changes from that. An explicit base
-            # encoding still wins, so this only fills the implicit case.
             builtin, builtin_authoritative = self.internal_builtin_font_encoding(font)
         if base_encoding is None and subtype in ("Type1", "MMType1"):
-            # 9.6.6.1: every font program bar Type 3 carries a built-in
-            # encoding, which governs when the font dictionary supplies none.
-            # Where we cannot read it back out of the program, the Latin text
-            # default in Annex D is the right stand-in -- PDFDocEncoding, the
-            # previous fallback, encodes text strings such as metadata and
-            # bookmark titles and has no business decoding glyphs.
             base_encoding = "StandardEncoding"
         return cmap, base_encoding, differences, builtin, builtin_authoritative
 
     def internal_builtin_font_encoding(self, font: dict[str, Any]) -> tuple[dict[int, str], bool]:
-        """Read the code to glyph-name encoding out of an embedded program."""
         match self.font_program:
             case CFFFont() as program:
                 try:
@@ -819,9 +771,6 @@ class FontDecoder:
         if gid is not None:
             tt_text = self.internal_true_type_unicode_for_gid(gid)
             if tt_text == to_unicode_text == "\ufffd":
-                # An embedded replacement glyph confirms that the explicit
-                # ToUnicode value is intentional, despite its usual role as a
-                # failure sentinel in malformed font mappings.
                 return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
             if tt_text and not has_untrusted_unicode_semantics(tt_text):
                 return UnicodeChoice(
@@ -866,9 +815,6 @@ class FontDecoder:
                 )
 
         if to_unicode_text is not None and "\ufffd" in to_unicode_text:
-            # Keep explicit replacement text when no font or encoding supplies
-            # a supported repair. A numeric character code alone cannot justify
-            # replacing it, and may erase other characters in the same mapping.
             return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
 
         if fallback_code == 0:
@@ -887,7 +833,6 @@ class FontDecoder:
                 return ""
 
     def internal_visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
-        """Recover a horizontal punctuation glyph from a misleading ToUnicode map."""
         if len(text) != 1 or not unicodedata.category(text).startswith("M"):
             return None
         match self.font_program:
@@ -962,17 +907,6 @@ class FontDecoder:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
             elif table is not None:
                 text = table[code]
-                # Preserve the glyph and its geometry even when neither the
-                # base encoding nor /Differences defines Unicode for this code.
-                # Facades can project this source as their native unknown-glyph
-                # spelling (pdfminer uses ``(cid:N)``); the engine retains the
-                # standard Unicode replacement character instead of silently
-                # losing painted content.
-                # The predefined encodings intentionally preserve their raw
-                # C0 slots.  Those are legitimate byte-to-text mappings (for
-                # example form feed in WinAnsi), unlike an unknown numeric
-                # /Differences glyph name which happens to contain a control
-                # code.
                 undefined = not text or (
                     code in self.differences and len(text) == 1 and ord(text) < 32
                 )
@@ -1018,7 +952,6 @@ class FontDecoder:
                 current = self.cff_unicode_repairs
                 changed = {code for code, text in repairs.items() if current.get(code) != text}
                 if changed:
-                    # A new repair supersedes any choice already memoized for its code.
                     cache = self.internal_unicode_choice_cache
                     for key in [key for key in cache if key[0] in changed]:
                         del cache[key]
@@ -1026,7 +959,6 @@ class FontDecoder:
         return [self.internal_build_cid_glyph(code_bytes, cid) for code_bytes, cid in entries]
 
     def internal_build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
-        """Build one decoded glyph from a content-stream code and mapped CID."""
         char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
         gid = self.glyph_id_for_code(cid)
         if gid is not None and gid != 0 and not self.internal_glyph_exists(gid):
@@ -1121,7 +1053,6 @@ class FontDecoder:
         return program.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
 
     def vertical_glyph_metric(self, code: int) -> tuple[float, float, float]:
-        """Return the explicit W2 metric or the DW2/width-derived fallback."""
         metric = self.vertical_metrics.get(code)
         if metric is None:
             metric = (
@@ -1150,12 +1081,6 @@ class FontDecoder:
     def glyph_outline(
         self, code: int, gid: int | None = None, text: str = ""
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Resolve an embedded glyph outline without rasterizing it.
-
-        The returned points use PDF's conventional 1000-unit glyph space so
-        capture can apply the exact text matrix at composition time. Missing or
-        malformed font programs deliberately return no outline.
-        """
         if code < 0:
             return ()
         cache = self.internal_glyph_outline_cache
@@ -1168,7 +1093,6 @@ class FontDecoder:
     def glyph_outline_arrays(
         self, code: int, gid: int | None = None, text: str = ""
     ) -> GlyphOutlineArrays | None:
-        """Column form of ``glyph_outline`` for batched transforms; None paints nothing."""
         if code < 0:
             return None
         cache = self.internal_glyph_outline_array_cache
@@ -1214,12 +1138,6 @@ class FontDecoder:
         horizontal_scale: float,
         encoded_space: bool,
     ) -> tuple[float, float]:
-        """Return one glyph's signed text-space displacement.
-
-        PDF 32000-1 9.4.4 defines vertical ``w1`` as a signed y
-        displacement. Keeping that sign here gives text-matrix updates and
-        geometry capture one canonical arithmetic path.
-        """
         width = self.vertical_glyph_metric(code)[0] if self.is_vertical else self.glyph_width(code)
         return pdf_glyph_advance_vector(
             width,
@@ -1246,9 +1164,6 @@ class FontDecoder:
         if glyphs is None:
             glyphs = self.decode_glyphs(bytes(data))
 
-        # Aggregate the same displacement model as glyph_advance_vector while
-        # retaining this path's historical operation order. Floating-point
-        # rounding can differ slightly from summing individual method calls.
         if self.is_vertical:
             total_y = 0.0
             vertical_glyph_metric = self.vertical_glyph_metric

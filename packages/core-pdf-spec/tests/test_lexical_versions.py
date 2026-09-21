@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Historical token identities propagate through every strict parsing entry point."""
 
 from typing import Any, cast
 
@@ -35,8 +34,6 @@ def internal_parse(data: bytes, version: str) -> object:
 
 @pytest.mark.parametrize("version", ["1.0", "1.1"])
 def test_legacy_names_keep_literal_number_signs_in_keys_and_values(version: str) -> None:
-    # Adobe PDF Reference 1.2 §4.5, pp45–46 explicitly calls this incompatible
-    # with PDF1.1: /A#42 becomes another spelling of /AB only in PDF1.2.
     assert internal_parse(b"<< /A#42 /C#44 /AB /other /# /#zz >>", version) == {
         "A#42": PdfName.of("C#44"),
         "AB": PdfName.of("other"),
@@ -55,9 +52,6 @@ def test_modern_names_decode_escapes_and_reject_malformed_ones(version: str) -> 
 @pytest.mark.parametrize("version", ["1.0", "1.1", "1.2"])
 @pytest.mark.parametrize("data", [b"[12\0 34]", b"<4\0 1>", b"\0true"])
 def test_earlier_whitespace_does_not_silently_consume_nul(version: str, data: bytes) -> None:
-    # Adobe1.2 §4.4 lists five whitespace bytes; Adobe1.3 Table3.1 includesNUL.
-    # The historical boundary is explicitly confirmed by the PDF Association:
-    # https://pdfa.org/pdf-malformations-and-more/ (2023-09-06).
     with pytest.raises(PdfParseError):
         internal_parse(data, version)
 
@@ -171,7 +165,6 @@ def test_context_change_rebuilds_cached_object_stream_parsers() -> None:
 
 @pytest.mark.parametrize(("version", "expected"), [("1.1", "A#42"), ("1.5", "AB")])
 def test_decoded_object_stream_body_keeps_the_supplied_context(version: str, expected: str) -> None:
-    # Parsing a known encoding doesn't itself validate feature availability.
     stream = PdfStream(
         raw_data=b"2 0 /A#42", dictionary={"Type": PdfName.of("ObjStm"), "N": 1, "First": 4}
     )

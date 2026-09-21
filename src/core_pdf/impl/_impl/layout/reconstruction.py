@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Assemble glyph runs into layout lines, words, and their reconstructed text."""
 
 from __future__ import annotations
 
@@ -15,8 +14,6 @@ from core_pdf.impl._impl.model.runs import (
 )
 from core_pdf.impl._impl.model.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
 
-# A digit is a superscript of the preceding text when it is clearly shorter and its
-# baseline sits clearly above; the run-level and atom-level passes share the rule.
 SUPERSCRIPT_HEIGHT_RATIO = 0.9
 SUPERSCRIPT_BASELINE_MIN = 0.45
 SUPERSCRIPT_BASELINE_RATIO = 0.05
@@ -34,7 +31,6 @@ SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶�
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
 
-# Builder-only atoms are short-lived and never escape into the immutable layout result.
 @dataclass(slots=True)
 class LayoutLineTextAtom:
     text: str
@@ -47,8 +43,6 @@ class LayoutLineTextAtom:
 def reconstruct_layout_line_text(
     runs: list[TextRun], *, is_all_caps_text: bool | None = None
 ) -> LayoutLineText:
-    # Empty capture records carry no text or glyph geometry. They must not
-    # change the line's direction, heuristics, or choice of assembly path.
     runs = [run for run in runs if run.text or run.glyph_clusters]
     if not runs:
         return EMPTY_LAYOUT_LINE_TEXT
@@ -213,7 +207,6 @@ def internal_is_short_digit_run(
     max_length: int,
     require_baseline: bool = True,
 ) -> bool:
-    """Whether ``run`` is a short, unrotated, digits-only run with no surrounding space."""
     stripped = run.stripped_text
     return bool(
         stripped
@@ -314,7 +307,6 @@ class GlyphLineBuilder:
             ):
                 continue
 
-            # Nonempty normalized text always yields at least one nonempty atom.
             for atom in self.text_atoms(run, text):
                 atom_text = atom.text
                 separator_before = ""
@@ -356,10 +348,6 @@ class GlyphLineBuilder:
             and text == run.text
             and "".join(cluster.text for cluster in clusters) == run.text
         ):
-            # A text-showing operation that already carries whitespace has
-            # authoritative word boundaries. Keep it as one atom so ordinary
-            # authored lines do not get exploded into hundreds of glyph objects
-            # merely to join them back together unchanged.
             if any(character.isspace() for character in text):
                 return (
                     LayoutLineTextAtom(
@@ -487,16 +475,6 @@ class GlyphLineBuilder:
         attach_factor: float = 0.25,
         attach_previous_only: bool = False,
     ) -> bool:
-        """Shared gate for runs shifted off the surrounding baseline.
-
-        The defaults describe a raised (superscript-like) run; subscript
-        callers override them to look for a dropped baseline.
-
-        Classifies a run as script-like when its neighbours accept it as
-        context, its font is small enough relative to theirs, its baseline is
-        raised (or dropped) far enough, and it sits tightly attached to a
-        neighbour.
-        """
         if run.baseline is None:
             return False
         context_runs = [
@@ -541,7 +519,6 @@ class GlyphLineBuilder:
         return attached_prev or attached_next
 
     def is_formula_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
-        """Recognize numeric subscripts attached to mathematical variables."""
         run_baseline = run.baseline
         if not internal_is_short_digit_run(run, max_length=3) or run_baseline is None:
             return False
@@ -561,7 +538,6 @@ class GlyphLineBuilder:
         return run.x0 - previous.x1 <= attach_gap
 
     def text_runs_by_x0(self) -> list[TextRun]:
-        """Text runs of the line in stable left-to-right order, sorted once."""
         ordered = self.internal_text_runs_by_x0
         if ordered is None:
             ordered = sorted(
@@ -575,8 +551,6 @@ class GlyphLineBuilder:
         if not internal_is_short_digit_run(run, max_length=2, require_baseline=False):
             return False
         ordered = self.text_runs_by_x0()
-        # The stable x0 order makes the first match the leftmost candidate,
-        # with ties resolved in the original run order.
         following = next(
             (
                 candidate
@@ -768,9 +742,6 @@ class GlyphLineBuilder:
             and first_char.isalnum()
             and x_gap < -max(prev_run.font_size, run.font_size, prev_run.height, height)
         ):
-            # A run that restarts well before the preceding text ends is a
-            # separate phrase, even when their painted areas overlap. Preserve
-            # glyph joins and small overlaps used for kerning within a word.
             return " "
 
         if self.is_column_gap(spacing_gap, height, space_width):
@@ -949,7 +920,6 @@ class GlyphLineBuilder:
         previous: LayoutLineTextAtom,
         atom: LayoutLineTextAtom,
     ) -> bool:
-        """Recognize a same-size lower glyph stacked under a formula glyph."""
         text = atom.text.strip()
         if not text:
             return False
@@ -1008,10 +978,6 @@ class GlyphLineBuilder:
     ) -> bool:
         if self.is_tracked_glyph_line:
             return False
-        # Tables frequently split a word into adjacent text-showing
-        # operators while also containing numeric cells.  Preserve the
-        # table spacing rules for real cell gaps, but join only very tight
-        # fragments (for example ``Vo`` + ``lume``).
         if self.is_table_like_line and spacing_gap > max(1.8, min(space_width, height) * 0.25):
             return False
         return rules.should_join_plausible_split_word(

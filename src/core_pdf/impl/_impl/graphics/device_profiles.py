@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Built-in profiles for the device colour spaces PDF leaves undefined."""
 
 from __future__ import annotations
 
@@ -22,18 +21,6 @@ INTERNAL_DEFAULT_CMYK_PROFILE = "SWOP2006_Coated5v2.icc"
 
 @cache
 def default_cmyk_transform() -> IccTransform | None:
-    """Return the built-in DeviceCMYK profile, or None if it cannot be used.
-
-    PDF 32000-1 makes DeviceCMYK device-dependent and defines no conversion to
-    RGB, so every renderer supplies its own default profile; ours is vendored in
-    `_vendor/icc/`, and `_vendor/icc/README.md` records where it came from.
-    Returning None rather than raising keeps a damaged or stripped install
-    rendering -- the callers below fall back to the naive ink formula.
-
-    Cached because the profile is 2.7MB: every DeviceCMYK colour and image
-    sample funnels through here, and re-reading and re-parsing it per call cost
-    more than the conversion itself.
-    """
     try:
         profile = (
             resources.files("core_pdf._vendor.icc")
@@ -54,14 +41,12 @@ def default_cmyk_transform() -> IccTransform | None:
 def cmyk_bytes_to_srgb(
     samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> ByteSamples:
-    """Convert an (n, 4) block of 8-bit DeviceCMYK samples to (n, 3) sRGB."""
     return cmyk_components_to_srgb(samples.astype(numpy.float64) / 255, rendering=rendering)
 
 
 def cmyk_components_to_srgb(
     values: numpy.ndarray, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> ByteSamples:
-    """One profile and subtractive fallback policy for all source sample depths."""
     values = numpy.clip(values, 0, 1)
     transform = default_cmyk_transform()
     if transform is not None:
@@ -81,7 +66,6 @@ def cmyk_floats_to_srgb(
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int]:
-    """Convert one DeviceCMYK colour given as four floats in [0, 1] to sRGB."""
     return internal_cmyk_bytes_to_srgb(
         internal_component_byte(cyan),
         internal_component_byte(magenta),
@@ -91,11 +75,6 @@ def cmyk_floats_to_srgb(
     )
 
 
-# Keyed on the quantized inks, not the floats they came from. The hot caller is
-# `render/patterns`, which asks for one colour per pixel of an axial or radial
-# shading: the floats vary continuously, so a float key misses on essentially
-# every pixel and pays a fresh lcms transform build for each, while the byte
-# key collapses a whole gradient ramp to a few hundred entries.
 @lru_cache(maxsize=8192)
 def internal_cmyk_bytes_to_srgb(
     cyan: int,

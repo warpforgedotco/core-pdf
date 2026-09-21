@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""JPX Decode semantics changed between ISO 32000-1 and ISO 32000-2."""
 
 import pytest
 

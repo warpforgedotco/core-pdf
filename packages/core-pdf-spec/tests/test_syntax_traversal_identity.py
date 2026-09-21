@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Traversal identity remains correct with callbacks which do not cache dictionaries."""
 
 import pytest
 

@@ -1,5 +1,3 @@
-"""Private helpers shared by the compat facades."""
-
 from __future__ import annotations
 
 import struct

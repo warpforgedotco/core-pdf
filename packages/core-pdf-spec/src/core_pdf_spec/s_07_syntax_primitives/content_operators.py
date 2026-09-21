@@ -1,18 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""The content-stream operator vocabulary.
-
-The shared table of PDF 7.8.2 operators lives in the syntax primitives so
-consumers can use the vocabulary independently of the content interpreter.
-Reader filter recovery uses it to recognize content streams, and `s_07_content`
-binds each operator to the interpreter method that implements it. Add operators
-here and implement their handlers in `s_07_content/interpreter.py`.
-"""
 
 from __future__ import annotations
 
-# Operator -> (ContentInterpreter method, fixed operand categories), following
-# ISO 32000-1 Tables 51 and 57–59 and Annex A. None explicitly identifies
-# variable-length color operands checked against the selected color space.
 internal_CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
     "BT": ("op_BT", ""),
     "ET": ("op_ET", ""),
@@ -87,23 +76,18 @@ internal_CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
     "n": ("op_paint_clear", ""),
 }
 
-#: Operator name -> the `ContentInterpreter` method that implements it.
 CONTENT_OPERATOR_HANDLERS = {
     name: handler for name, (handler, _) in internal_CONTENT_OPERATORS.items()
 }
 
-#: Fixed operand categories; selected-color-space operators are omitted.
 CONTENT_OPERATOR_SIGNATURES = {
     name: signature
     for name, (_, signature) in internal_CONTENT_OPERATORS.items()
     if signature is not None
 }
 
-#: `ID` and `EI` delimit inline-image data rather than invoking a handler, so
-#: they carry no entry above but are still part of the lexical vocabulary.
 INLINE_IMAGE_DATA_OPERATORS = frozenset({b"ID", b"EI"})
 
-#: Lexical vocabulary used to recognize content streams before they are parsed.
 PDF_CONTENT_OPERATOR_BYTES = (
     frozenset(name.encode("latin-1") for name in CONTENT_OPERATOR_HANDLERS)
     | INLINE_IMAGE_DATA_OPERATORS

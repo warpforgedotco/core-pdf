@@ -1,5 +1,3 @@
-"""Array compositing agrees with scalar source-over on strided RGBA views."""
-
 import numpy as np
 import pytest
 

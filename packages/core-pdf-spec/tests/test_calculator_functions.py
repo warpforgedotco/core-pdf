@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Calculator semantics: ISO 32000-2, 7.10.5; PostScript Language Reference 3."""
 
 import math
 import zlib

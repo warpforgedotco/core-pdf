@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Pure capture-to-display conversion shared by pages and repeated pattern cells."""
 
 from __future__ import annotations
 
@@ -36,11 +35,6 @@ from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 def internal_glyph_outline_path(
     glyph: GlyphObservation,
 ) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
-    """Resolve and transform one captured embedded-font outline.
-
-    Returns the path, its bounds, and, when the outline came as coordinate
-    columns, its fill edges as an (n, 4) array in ``fill_edges`` order.
-    """
     if not glyph.paint_glyph:
         return None
     transform = glyph.glyph_transform
@@ -83,8 +77,6 @@ def internal_glyph_outline_path(
 def internal_transformed_outline(
     arrays: GlyphOutlineArrays, transform: Matrix6
 ) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
-    # Elementwise operations in the same order as the scalar
-    # ``x * a + y * c + e`` keep every transformed coordinate bit-identical.
     a, b, c, d, e, f = transform
     linear_x, linear_y = arrays.linear_columns(a, b, c, d)
     column_x = linear_x + e
@@ -101,8 +93,6 @@ def internal_transformed_outline(
             end -= 1
         if len(points) >= 2:
             subpaths.append(CapturedSubpath(points, closed=True))
-            # The same edges ``fill_edges`` would produce: consecutive pairs,
-            # then the closing edge unless the contour already ends at its start.
             xs = column_x[start:end]
             ys = column_y[start:end]
             edge_blocks.append(numpy.column_stack((xs[:-1], ys[:-1], xs[1:], ys[1:])))
@@ -170,15 +160,12 @@ def internal_append_glyph_paint(
 def append_captured_program(
     display_list: DisplayList, page_program: CapturedProgram, *, include_text: bool
 ) -> None:
-    """Translate page and appearance captures through the same ordered paint path."""
     commands = page_program.commands
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
     explicit_text_boundaries = bool(page_program.text_boundaries)
     text_active = False
     text_group_open = False
-    # A knockout text object opens its group at its first paint, so text that
-    # only clips or is invisible never pays for an empty group.
     text_group_pending = False
     glyph_scope_depth = 0
     text_stream_stack: list[tuple[bool, bool, bool, list[CapturedSubpath], int | None]] = []
@@ -211,8 +198,6 @@ def append_captured_program(
         nonlocal text_active, text_group_open, text_group_pending, current_text_object_id
         if text_group_open:
             display_list.append("group-end", seqno)
-        # ISO 32000-2 9.3.6/9.3.8: paint the text object before its
-        # accumulated outlines modify the clipping path at ET.
         flush_text_clip(seqno)
         text_active = False
         text_group_open = False
@@ -227,8 +212,6 @@ def append_captured_program(
             begin_text_group(seqno, knockout=True)
 
     def begin_text_group(seqno: int, *, knockout: bool) -> None:
-        # Text and Type 3 glyph groups retain transparency on their children;
-        # outer composition is always Normal, alpha=1 and no soft mask.
         display_list.append(
             "group-begin",
             seqno,
@@ -236,8 +219,6 @@ def append_captured_program(
             blend_mode=None,
             group_isolated=False,
             group_knockout=knockout,
-            # Even TK=false glyphs are elementary objects: their stroke pieces
-            # and combined fill/stroke need one geometric coverage result.
             group_track_shape=True,
         )
 
@@ -287,8 +268,6 @@ def append_captured_program(
                     glyph_scope_depth -= 1
             continue
         if not include_text and glyph_scope_depth:
-            # Type 3 paint is captured as paths/images, but remains text for
-            # the renderer's include_text option. Scope records stay balanced.
             continue
         if not include_text and isinstance(command, TextRun):
             continue
@@ -393,7 +372,6 @@ def append_captured_program(
 def internal_translated_soft_mask(
     mask: CapturedSoftMask | None, tx: float, ty: float
 ) -> CapturedSoftMask | None:
-    """Move a mask with its repeated paint without recapturing its program."""
     if mask is None or (tx == 0 and ty == 0):
         return mask
     return replace(mask, offset=(mask.offset[0] + tx, mask.offset[1] + ty))
@@ -402,7 +380,6 @@ def internal_translated_soft_mask(
 def translated_command(
     item: DisplayItem, tx: float, ty: float, parent_blend_mode: str | None = None
 ) -> DisplayItem:
-    """Place one cell command without mutating the pattern's shared captures."""
     if isinstance(item, PathPaintItem):
         return replace(
             item,

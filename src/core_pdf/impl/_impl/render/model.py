@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Renderer value records and raster storage."""
 
 from __future__ import annotations
 
@@ -18,8 +17,6 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 @dataclass(slots=True)
 class RenderOptions:
-    """Page composition options; crop uses unrotated default PDF user space."""
-
     page_number: int | None = None
     rotate: int = 0
     crop: tuple[float, float, float, float] | None = None
@@ -61,12 +58,8 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
-# Identity semantics: these records are never compared by value, and a
-# generated field-wise __eq__ over this many fields is dead weight.
 @dataclass(slots=True, eq=False)
 class PathPaintItem:
-    """Typed, allocation-light record for the common unpatterned path hot path."""
-
     paint_kind: PathPaintKind
     seqno: int
     bbox: Any
@@ -87,8 +80,6 @@ class PathPaintItem:
     stroke_pattern: PatternPaint | None = None
     alpha_is_shape: bool = False
     graphics_soft_mask: CapturedSoftMask | None = None
-    # Optional (n, 4) float64 page-space edges in ``CapturedPath.fill_edges``
-    # order, precomputed by producers that already hold the path as arrays.
     edge_array: Any = None
 
     @property
@@ -119,8 +110,6 @@ class PathPaintItem:
 
 @dataclass(slots=True)
 class ImagePaintItem:
-    """Typed image paint command whose source owns all PDF image preparation."""
-
     paint_kind: str
     seqno: int
     bbox: Any
@@ -142,7 +131,6 @@ class ImagePaintItem:
         return self.paint_kind
 
     def to_data(self) -> dict[str, Any]:
-        """Return the legacy diagnostic mapping without duplicating paint ownership."""
         source = self.source
         return {
             "bbox": self.bbox,
@@ -169,13 +157,9 @@ DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
 
 @dataclass(frozen=True, slots=True)
 class internal_RasterGroup:
-    """A group's pixels and the state used only when compositing that group."""
-
     pixels: bytearray
     composite_alpha: float | None = None
     blend_mode: str | None = None
-    # A non-isolated group paints over its suspended parent's pixels. Its own
-    # alpha must remain separate from the alpha already present in that backdrop.
     backdrop: bytearray | None = field(default=None, kw_only=True)
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
         default=None, kw_only=True
@@ -188,14 +172,10 @@ class internal_RasterGroup:
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = field(
         default=None, kw_only=True
     )
-    # Device rows/columns [y0, y1, x0, x1] touched by recorded paint, empty
-    # until the first record. A group with an initial backdrop composites only
-    # this window: its unrecorded pixels still equal that backdrop.
     paint_window: list[int] = field(default_factory=list, kw_only=True)
 
     @property
     def source_scale(self) -> float:
-        """The group's constant alpha, clamped to the unit interval; unset is 1."""
         return (
             internal_clamp01(float(self.composite_alpha))
             if is_pdf_number(self.composite_alpha)
@@ -217,13 +197,6 @@ class internal_RasterGroup:
 
 @dataclass(frozen=True, slots=True)
 class RasterImage:
-    """A contiguous interleaved pixel buffer with its physical layout.
-
-    ``pixels`` is normalized to a read-only byte view. The owner may be a
-    ``bytearray`` or NumPy array, so constructing a raster does not copy the
-    backing storage.
-    """
-
     pixels: bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
     width: int
     height: int
@@ -252,7 +225,6 @@ class RasterImage:
         return memoryview(self.pixels).nbytes
 
     def array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-        """Return a read-only zero-copy ``(height, width, channels)`` view."""
         return uint8_image_view(
             self.pixels,
             (self.height, self.width, self.channels),

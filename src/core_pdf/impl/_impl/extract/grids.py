@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Vector ruled-grid geometry and native table construction."""
 
 from __future__ import annotations
 
@@ -14,16 +13,12 @@ from core_pdf.impl._impl.extract.table_cleanup import internal_cell_text
 from core_pdf.impl._impl.model.geometry import bbox_union
 from core_pdf.impl._impl.output.model import Table, TableCell
 
-# Shared vector ruling geometry.
-
 AXIS_TOLERANCE = 1.5
 
-# Upper bound on the elements of one crossing mask; each bool temporary stays
-# near 1 MiB regardless of how many segments a page draws.
 GRID_CROSSING_MASK_ELEMENTS = 1 << 20
 
 
-TABLE_REGION_GAP = 22.0  # loosened to allow adjacent table regions with modest gaps to merge
+TABLE_REGION_GAP = 22.0
 
 
 def internal_line_coordinate_columns(
@@ -34,7 +29,6 @@ def internal_line_coordinate_columns(
     numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     numpy.ndarray[Any, numpy.dtype[numpy.float64]],
 ]:
-    """Materialize ``(x0, y0, x1, y1)`` columns for captured lines."""
     values = tuple(lines)
     coordinates = numpy.fromiter(
         (value for line in values for value in (line.x0, line.y0, line.x1, line.y1)),
@@ -72,8 +66,6 @@ def internal_axis_segments(
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty
 
-    # Fold the captured coordinates into columns, then classify and normalize
-    # all segments with array operations.
     x0, y0, x1, y1 = internal_line_coordinate_columns(lines)
     horizontal_mask = (numpy.abs(y1 - y0) <= AXIS_TOLERANCE) & (
         numpy.abs(x1 - x0) >= page_width * 0.02
@@ -101,11 +93,6 @@ def internal_grid_components(
     vertical_x = vertical[:, 0]
     vertical_y0 = vertical[:, 1]
     vertical_y1 = vertical[:, 2]
-    # Broadcast (horizontal, vertical) pairs in row chunks sized so that each
-    # temporary mask stays within GRID_CROSSING_MASK_ELEMENTS, whatever the
-    # segment counts of a line-heavy page. The tolerance bounds are widened in
-    # float64 and then rounded to the segment dtype, exactly as a Python float
-    # compared against the float32 columns would be.
     bounds = horizontal.astype(numpy.float64)
     dtype = vertical.dtype
     x_low = (bounds[:, 0:1] - AXIS_TOLERANCE).astype(dtype)
@@ -146,7 +133,6 @@ def internal_split_grid_component(
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
-    """Split a connected ruled component into vertically separated table regions."""
     positions = numpy.unique(horizontal[:, 2])
     if len(positions) < 3:
         return ((horizontal, vertical),)
@@ -166,9 +152,6 @@ def internal_split_grid_component(
         if len(region_horizontal) >= 2 and len(region_vertical) >= 2:
             regions.append((region_horizontal, region_vertical))
     return tuple(regions) or ((horizontal, vertical),)
-
-
-# Ruled-grid table construction.
 
 
 def internal_cluster_positions(values: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
@@ -233,7 +216,6 @@ def internal_merge_grid_cells(
     x_edges: numpy.ndarray[Any, Any],
     y_edges: numpy.ndarray[Any, Any],
 ) -> list[tuple[TableCell, ...]]:
-    """Collapse grid cells across absent rules into row/column-spanning cells."""
     row_count = len(rows)
     column_count = max((len(row) for row in rows), default=0)
     if row_count == 0 or column_count == 0:
@@ -297,9 +279,6 @@ def internal_merge_grid_cells(
         min_column = min(column for internal_row, column in cells)
         max_column = max(column for internal_row, column in cells)
         if len(cells) != (max_row - min_row + 1) * (max_column - min_column + 1):
-            # Missing rules can connect an L-shaped region. A rectangular span
-            # would cover cells owned by another region, so retain its source
-            # cells until the ruling supports an unambiguous rectangular merge.
             for row, column in cells:
                 merged[row].append(rows[row][column])
             continue
@@ -356,16 +335,6 @@ def internal_table_from_component(
     if populated < 2:
         return None
     density = populated / max(1, columns * row_count)
-    # Wide, sparsely populated ruled grids are usually decorative form/layout
-    # geometry rather than tables.  Keep narrow sparse tables supported while
-    # requiring broad grids to contain enough text to justify table structure.
-    # Relax wide-grid rejection slightly: allow wider grids with moderate density.
-    # Previously rejected grids with >=6 columns and density < 0.5. Loosen to
-    # only reject very wide grids (>=8 columns) with density < 0.4 to capture
-    # legitimate tables that are sparse but meaningful.
-    # Loosen rejection for wide grids: only reject very wide grids with low density.
-    # Increase column threshold and lower density threshold to accept sparser wide tables.
-    # Loosen rejection for wide grids further: accept slightly sparser wide tables.
     if columns >= 10 and density < 0.30:
         return None
     rows: list[list[TableCell]] = []

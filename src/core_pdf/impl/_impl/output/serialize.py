@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Serialization views for the core-document IR."""
 
 from __future__ import annotations
 
@@ -81,8 +80,6 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             raise ValueError(f"duplicate structured page id: {page_id}")
         seen_page_ids.add(page_id)
 
-        # Payloads may be referenced by several ordered nodes. Intern each identity
-        # once per page, as we do for lines shared between blocks below.
         page_blocks = {id(block): block for block in page.blocks}
         page_tables = {id(table): table for table in page.tables}
         page_figures = {id(figure): figure for figure in page.figures}
@@ -384,7 +381,6 @@ def bbox_to_json(bbox: tuple[float, float, float, float] | None) -> list[JsonVal
 
 
 def internal_selected_pages(document: Document, pages: PageSelection | None) -> tuple[Page, ...]:
-    """Return document pages narrowed by a 1-based page selection, in selection order."""
     if pages is None:
         return document.pages
     indexes = resolve_page_selection(pages, len(document.pages))
@@ -396,7 +392,6 @@ def internal_page_lines(page: Page) -> tuple[TextLine, ...]:
 
 
 def document_to_csv(document: Document, *, pages: PageSelection | None = None) -> str:
-    """Export deterministic page text rows with geometry as CSV."""
     output = StringIO()
     rows = writer(output, lineterminator="\n")
     rows.writerow(("page_number", "line_index", "text", "x0", "y0", "x1", "y1"))
@@ -418,7 +413,6 @@ def document_to_csv(document: Document, *, pages: PageSelection | None = None) -
 
 
 def document_to_tei(document: Document, *, pages: PageSelection | None = None) -> str:
-    """Export page text as deterministic TEI-like XML with page boundaries."""
     root = Element("TEI")
     text = SubElement(root, "text")
     body = SubElement(text, "body")
@@ -456,12 +450,6 @@ def internal_render_styled_line(
     italic: tuple[str, str],
     start: int = 0,
 ) -> str:
-    """Wrap each styled span, innermost style first.
-
-    Markdown and HTML differ only in escaping and in the three delimiters that
-    have a Markdown spelling; `sup`/`sub`/`mark`/`u` have no Markdown equivalent
-    and are emitted as inline HTML by both renderers.
-    """
     rendered: list[str] = []
     for span in line.styled_spans():
         text = span.text
@@ -561,7 +549,6 @@ def block_to_html(block: Block) -> str:
 
 
 def table_to_html(table: Table) -> str:
-    """Preserve merged cells in HTML, also embedded directly in Markdown output."""
     if not table.rows:
         return "<table></table>"
     associated_text = tuple(value for value in (table.title, table.caption) if value is not None)
@@ -609,7 +596,6 @@ def internal_table_cell_to_html(cell: TableCell, *, header: bool = False) -> str
 
 
 def internal_list_prefix(text: str) -> str:
-    """Return the raw list marker and spacing, before escaping or span styling."""
     match = internal_LIST_PREFIX_RE.match(text)
     return match.group(0) if match is not None else ""
 

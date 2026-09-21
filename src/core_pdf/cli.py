@@ -73,7 +73,6 @@ def process_pdf(
 ) -> Path | None:
     with (document_class or PdfDocument)(path) as document:
         if not print_content and not write_files and output_dir is None:
-            # Parse document without emitting MD
             document.extract()
             return None
 
@@ -101,7 +100,6 @@ def run(
     document_class: type[PdfDocument] | None = None,
     program_name: str = "core-pdf",
 ) -> int:
-    """Run the common CLI with the caller's document implementation."""
     parser = build_parser(program_name)
     args = parser.parse_args(argv)
 

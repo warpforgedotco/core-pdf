@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native font width parsing helpers."""
 
 from __future__ import annotations
 
@@ -34,10 +33,6 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
     widths: Mapping[int, float] = {}
     missing_width = font.get("MissingWidth")
     if missing_width is None:
-        # Not the Table 122 default of 0: a font that omits MissingWidth and
-        # also omits a code from /Widths is broken, and advancing by zero piles
-        # its glyphs on one spot. Deliberate leniency, applied only when the
-        # document says nothing.
         default_width = 1000.0
         default_width_explicit = False
     else:
@@ -98,10 +93,6 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
             widths = parse_cid_widths(descendant.get("W"))
             descriptor = descendant.get("FontDescriptor")
 
-    # ISO 32000-1 Table 122 scopes MissingWidth to "character codes whose widths
-    # are not specified in a font dictionary's Widths array". A CIDFont has no
-    # Widths array -- 9.7.4.3 gives it W/DW instead, and Table 117 makes DW the
-    # default width -- so a descriptor MissingWidth must not override DW.
     if isinstance(descriptor, dict) and subtype != "Type0":
         desc_missing_width = descriptor.get("MissingWidth")
         if desc_missing_width is not None:
@@ -146,7 +137,6 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
 
 
 def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
-    # Top-level MissingWidth and malformed entries are historical input recovery.
     if font.get("MissingWidth") is not None:
         return internal_recover_font_widths(font, subtype)
     try:

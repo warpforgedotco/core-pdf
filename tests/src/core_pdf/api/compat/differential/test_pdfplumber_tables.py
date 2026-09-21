@@ -155,8 +155,6 @@ def test_explicit_table_strategy_validates_both_axes_at_finding_time(
                 and settings.get(f"explicit_{axis}_lines") is None
                 for axis in ("vertical", "horizontal")
             )
-            # The reference reports TypeError for an omitted sequence; the facade
-            # gives the same deliberate ValueError as for an undersized sequence.
             error_type = TypeError if library is reference and missing_lines else ValueError
             for method in (pdf.pages[0].find_tables, pdf.pages[0].debug_tablefinder):
                 with pytest.raises(error_type):

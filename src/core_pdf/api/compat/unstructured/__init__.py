@@ -1,8 +1,5 @@
-"""Unstructured-style APIs requiring spaCy and the English en_core_web_sm model."""
-
 from __future__ import annotations
 
-# Enforce the NLP requirement before any element submodule can be cached.
 from . import _classification as _classification
 from ._elements import (
     Address,
@@ -23,7 +20,6 @@ from ._partition import (
     partition_pdf,
 )
 
-# Preserve the historical public identity for imports, reprs, and pickling.
 for internal_export in (
     Element,
     ElementMetadata,

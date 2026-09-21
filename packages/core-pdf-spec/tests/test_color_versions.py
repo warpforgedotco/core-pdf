@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Version-specific color constraints retain shared color calculations."""
 
 from __future__ import annotations
 
@@ -21,8 +20,6 @@ def internal_indexed_tint_space(kind: str) -> list[object]:
 @pytest.mark.parametrize("kind", ["Separation", "DeviceN"])
 @pytest.mark.parametrize("version", [PdfVersion(1, 1), PdfVersion(1, 2)])
 def test_indexed_rejects_tint_bases_before_pdf_13(kind: str, version: PdfVersion) -> None:
-    # Adobe PDF Reference 1.3, 4.5.5, pp. 181-182 explicitly distinguishes
-    # permitted Indexed bases from the error prescribed in PDF 1.2.
     with pytest.raises(ValueError, match="Indexed.*bases require PDF 1.3"):
         parse_color_space(internal_indexed_tint_space(kind), context=SemanticContext(version))
 
@@ -30,7 +27,6 @@ def test_indexed_rejects_tint_bases_before_pdf_13(kind: str, version: PdfVersion
 @pytest.mark.parametrize("kind", ["Separation", "DeviceN"])
 @pytest.mark.parametrize("version", [PdfVersion(1, 3), PdfVersion(1, 7), PdfVersion(2, 0)])
 def test_indexed_accepts_tint_bases_from_pdf_13(kind: str, version: PdfVersion) -> None:
-    # ISO 32000-2:2020, 8.6.6.3 preserves the same permitted bases from PDF 1.3.
     space = parse_color_space(internal_indexed_tint_space(kind), context=SemanticContext(version))
     assert space.base is not None
     assert space.base.kind == kind

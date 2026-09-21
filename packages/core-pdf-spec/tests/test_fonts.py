@@ -1,5 +1,3 @@
-"""Standalone font semantics reject damage and retain prescribed PDF defaults."""
-
 from __future__ import annotations
 
 import importlib
@@ -83,8 +81,6 @@ def test_simple_encoding_rejects_malformed_explicit_entries(entry: dict[int, str
 
 @pytest.mark.parametrize("descendants", [[], [{}, {}], [42]])
 def test_descendant_font_array_must_contain_one_dictionary(descendants: list[object]) -> None:
-    # PDF 1.3 Table 5.16 explicitly covers every earlier version too; the
-    # generalized PDF 1.2 Table 7.9 wording does not permit multiple descendants.
     with pytest.raises(ValueError, match="DescendantFonts"):
         get_descendant({"DescendantFonts": descendants})
 
@@ -114,7 +110,6 @@ def test_cid_widths_reject_nonfinite_numbers_in_compact_array() -> None:
 
 
 def type2_operands(*values: float) -> bytes:
-    """Encode explicit operands without relying on the parser under test."""
     return b"".join(
         b"\x1c" + int(value).to_bytes(2, "big", signed=True)
         if value == int(value)

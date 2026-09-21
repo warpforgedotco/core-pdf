@@ -1,5 +1,3 @@
-"""One color-space description retains the PDF rules shared by content and images."""
-
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -45,8 +43,6 @@ def internal_tint(outputs: int = 3) -> dict[str, object]:
 def test_none_colorants_discard_output_through_base_spaces(
     kind: str, names: tuple[str, ...], paints: bool, wrapper: str
 ) -> None:
-    # 8.6.6.5 explicitly requires all-None DeviceN to discard output without
-    # using its tint transform, even when that transform would return black.
     space = ColorSpace(kind, ((0.0, 1.0),) * len(names), colorants=names, tint_fn=object())
     if "indexed" in wrapper:
         space = ColorSpace("Indexed", ((0.0, 0.0),), base=space, lookup=b"\0" * len(names))
@@ -61,7 +57,6 @@ def test_ordinary_spaces_and_unbound_colored_patterns_can_paint(name: str) -> No
 
 
 def test_mixed_none_component_still_reaches_the_alternate_tint_function() -> None:
-    # This sampled function returns only the first (None) component.
     function = PdfStream(
         dictionary={
             "FunctionType": 0,
@@ -78,7 +73,6 @@ def test_mixed_none_component_still_reaches_the_alternate_tint_function() -> Non
 
 
 def test_indexed_lab_lookup_scales_each_base_component_range() -> None:
-    # ISO 32000-1, 8.6.6.3: palette bytes span each base component's complete range.
     space = parse_color_space(["Indexed", internal_lab(), 0, b"\xff\x00\xff"])
     assert space.base is not None
     assert space.base.kind == "Lab"
@@ -114,7 +108,6 @@ def test_tint_alternate_keeps_calibrated_space_and_checks_result_count(kind: str
 
 
 def test_indexed_allows_separation_base() -> None:
-    # PDF 1.3 explicitly permits Separation and DeviceN as Indexed bases.
     base = ["Separation", PdfName.of("Ink"), "DeviceGray", internal_tint(1)]
     space = parse_color_space(["Indexed", base, 0, b"\xff"])
     assert space.base is not None
@@ -197,7 +190,6 @@ def test_ordinary_image_requires_valid_integer_bit_depth(bits: object) -> None:
 
 
 def test_mask_and_jpx_bit_depth_rules() -> None:
-    # ISO 32000-1 Table 89: mask default is one; JPX ignores this dictionary entry.
     assert image_bits_per_component({"ImageMask": True}) == 1
     assert image_bits_per_component({"ImageMask": True, "BitsPerComponent": 1}) == 1
     with pytest.raises(ValueError):

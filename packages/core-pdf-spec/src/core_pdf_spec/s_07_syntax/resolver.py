@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Resolve indirect references against the cross-reference table."""
 
 from __future__ import annotations
 
@@ -68,9 +67,6 @@ class ObjectResolver:
         decipher: Decipher | None = None,
         semantic_context: SemanticContext | None = None,
     ) -> None:
-        # Keep an owned view.  Reusing the caller's memoryview lets a temporary
-        # resolver.close() release the document's source buffer underneath
-        # concurrent readers.
         self.data = memoryview(data)
         self.xref = xref
         self.decipher = decipher
@@ -86,12 +82,6 @@ class ObjectResolver:
 
     @semantic_context.setter
     def semantic_context(self, context: SemanticContext | None) -> None:
-        """Select semantics before parsing or after bootstrap, clearing parsed caches.
-
-        Names and dictionary keys depend on the version as well as text strings.
-        Previously returned objects retain their values; subsequent resolutions
-        use the new context. Callers must finish active parsing before changing it.
-        """
         with self.lock:
             if context == self.internal_semantic_context:
                 return
@@ -112,14 +102,12 @@ class ObjectResolver:
         lexer.close()
 
     def internal_detach_parsed_caches(self) -> tuple[PdfObjectStream, ...]:
-        """Detach owned parsers while the caller holds the resolver lock."""
         streams = tuple(self.object_streams.values())
         self.objects.clear()
         self.object_streams.clear()
         return streams
 
     def close(self) -> None:
-        """Release owned parsing resources after active resolution has finished."""
         with self.lock:
             streams = self.internal_detach_parsed_caches()
             self.decipher = None
@@ -160,7 +148,6 @@ class ObjectResolver:
         return resolved
 
     def deep_resolve(self, value: object) -> object:
-        """Resolve an object graph, preserving sharing, cycles, and unchanged identity."""
         return internal_resolve_object_graph(value, self.resolve)
 
     def resolve_dict(self, value: object) -> PdfDict | None:
@@ -177,8 +164,6 @@ class ObjectResolver:
         return box
 
     def resolve_font_dict(self, font: PdfDict) -> PdfDict:
-        # Type 3 fonts carry their own resources. Those remain demand-driven,
-        # while the decoder needs the font's metrics and character programs.
         has_resources = "Resources" in font
         font_values = (
             {key: value for key, value in font.items() if key != "Resources"}
@@ -208,10 +193,6 @@ class ObjectResolver:
         if type(value) is str:
             return value
 
-        # Resolve only an indirect scalar chain. ISO 32000-1:2008 and
-        # ISO 32000-2:2020, 12.3.2.2 allow a GoTo destination to be an array
-        # beginning with an indirect page reference. Deep-resolving such an
-        # array merely to decide whether it is a string walks the page graph.
         resolved = resolve_reference_chain(value, self.resolve)
         if isinstance(resolved, PdfString):
             return self.decode_text(resolved.data)
@@ -234,11 +215,6 @@ class ObjectResolver:
         return self.resolve_stream(resolved) if type(resolved) is PdfStream else resolved
 
     def get_object_stream(self, stream_number: int) -> PdfObjectStream | None:
-        """Get a cached parser, or None when the referenced value is not a stream.
-
-        Parser construction and decoding failures propagate. The caller decides
-        whether a missing container is a structural error or recoverable damage.
-        """
         with self.lock:
             container = self.object_streams.get(stream_number)
         if container is not None:
@@ -254,7 +230,6 @@ class ObjectResolver:
         return container
 
     def load_compressed_object(self, ref: PdfReference, entry: PdfXRefEntry) -> object:
-        """Validate an in-use compressed entry against its object-stream header."""
         stream_number = entry.object_stream
         index = entry.index_in_stream
         if (
@@ -286,27 +261,21 @@ class ObjectResolver:
         return stream.replace(dictionary=dictionary)
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
-        """Look up the exact object number and generation."""
         return self.xref.get(key_for(ref.object_number, ref.generation_number))
 
     def missing_object(self, ref: PdfReference) -> object:
-        """Return the prescribed null value for an undefined indirect reference."""
-        # ISO 32000-2, 7.3.9: undefined indirect references denote null.
         return None
 
     def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
-        """Create an object-stream parser; malformed stream errors propagate."""
         return PdfObjectStream(stream, semantic_context=self.semantic_context)
 
     def load_indirect_object(
         self, lexer: PdfLexer, offset: int, *, expected_reference: PdfReference
     ) -> object:
-        """Read the demanded object, validating its identity before decoding its body."""
         lexer.rewind(offset)
         return lexer.parse_indirect_object(expected_reference=expected_reference)
 
     def decode_text(self, data: bytes) -> str:
-        """Decode under semantic_context; applications may override reader recovery."""
         return decode_pdf_text_string(data, context=self.semantic_context)
 
 

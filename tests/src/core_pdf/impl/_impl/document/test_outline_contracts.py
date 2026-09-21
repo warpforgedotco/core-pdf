@@ -1,5 +1,3 @@
-"""Outline recovery retains valid siblings without hiding strict failures."""
-
 import pytest
 
 from core_pdf.impl._impl.document.document import PdfDocument

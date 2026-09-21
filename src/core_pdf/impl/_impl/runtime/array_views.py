@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared zero-copy views over byte-oriented image buffers."""
 
 from __future__ import annotations
 
@@ -13,13 +12,11 @@ UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 
 def readonly(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-    """Mark an array immutable and return it, so callers can seal in an expression."""
     array.flags.writeable = False
     return array
 
 
 def finite_median(values: numpy.ndarray[Any, Any]) -> float:
-    """Return the median of a non-empty finite 1D array without NaN dispatch."""
     size = values.size
     if size == 0:
         raise ValueError("finite_median requires at least one value")
@@ -32,7 +29,6 @@ def finite_median(values: numpy.ndarray[Any, Any]) -> float:
 
 
 def nearest_indices(output_count: int, source_count: int) -> numpy.ndarray[Any, Any]:
-    """Return bounded nearest-neighbour source indexes for an output axis."""
     if output_count <= 0 or source_count <= 0:
         return numpy.empty(0, dtype=numpy.intp)
     indexes = numpy.arange(output_count, dtype=numpy.intp)
@@ -41,7 +37,6 @@ def nearest_indices(output_count: int, source_count: int) -> numpy.ndarray[Any, 
 
 
 def unit_sample_positions(output_count: int) -> numpy.ndarray[Any, Any]:
-    """Return normalized pixel positions used for sampled-mask interpolation."""
     if output_count <= 0:
         return numpy.empty(0, dtype=numpy.float64)
     result = numpy.arange(output_count, dtype=numpy.float64) / output_count
@@ -49,7 +44,6 @@ def unit_sample_positions(output_count: int) -> numpy.ndarray[Any, Any]:
 
 
 def contiguous_bytes(array: numpy.ndarray[Any, Any]) -> memoryview:
-    """Expose a C-contiguous array as bytes, copying only at the serialization boundary."""
     return memoryview(numpy.ascontiguousarray(array)).cast("B")
 
 
@@ -59,7 +53,6 @@ def uint8_view(
     count: int = -1,
     offset: int = 0,
 ) -> UInt8Array:
-    """Return a flat uint8 view, copying only non-contiguous/wrong-typed arrays."""
     count = index(count)
     offset = index(offset)
     if isinstance(buffer, numpy.ndarray):
@@ -89,7 +82,6 @@ def uint8_image_view(
     *,
     allow_trailing: bool = False,
 ) -> UInt8Array:
-    """Return a shaped uint8 view, validating the required byte count."""
     view = uint8_view(buffer)
     expected = 1
     for dimension in shape:

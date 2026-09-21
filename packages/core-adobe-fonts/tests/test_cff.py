@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""CFF parsing (TN 5176) and Type 2 charstrings (TN 5177) emit exact geometry."""
 
 from __future__ import annotations
 
@@ -50,7 +49,6 @@ def internal_execute_type2(
 
 
 def type2_operands(*values: float) -> bytes:
-    """Encode explicit operands without relying on the parser under test."""
     return b"".join(
         b"\x1c" + int(value).to_bytes(2, "big", signed=True)
         if value == int(value)
@@ -60,8 +58,6 @@ def type2_operands(*values: float) -> bytes:
 
 
 def test_cff_parses_without_font_backend_and_keeps_standard_encoding() -> None:
-    # Header, one name, one Top DICT (CharStrings offset 21), empty String
-    # and Global Subr indexes, then one .notdef charstring containing endchar.
     font = CFFFont(
         b"\x01\x00\x04\x04"
         b"\x00\x01\x01\x01\x02F"
@@ -97,7 +93,6 @@ def test_type2_operators_emit_exact_displacements() -> None:
 def test_type2_axis_lines_alternate_and_clear_operands(
     operator: int, expected: list[tuple[float, float]], count: int
 ) -> None:
-    # Adobe Type 2 Charstring Format, 4.1: each operand alternates the drawing axis.
     values = [10, 20, 30, 40][:count]
     program = bytes([139, 139, 21, *(value + 139 for value in values), operator, 144, 22, 14])
     events: list[tuple[str, tuple[float, ...]]] = []
@@ -122,7 +117,6 @@ def test_type2_axis_lines_reject_missing_point_or_operands(operator: int, prefix
 def test_type2_subroutines_share_operands_and_use_their_own_bias(
     operator: int, count: int, bias: int
 ) -> None:
-    # Adobe Type 2 Charstring Format, 4.7: calls consume only their index, sharing the stack.
     subrs = (bytes([5, 153, 154, 11]),) + (b"\x0b",) * (count - 1)
     local, global_ = (subrs, (b"\x00",)) if operator == 10 else ((b"\x00",), subrs)
     program = bytes([149, 159, 21, 169, 179, 28]) + (-bias).to_bytes(2, "big", signed=True)
@@ -168,7 +162,6 @@ def test_type2_subroutine_depth_limit(operator: int, depth: int) -> None:
 
 @pytest.mark.parametrize("operators", [(10,), (29,), (10, 10), (10, 29), (29, 10), (29, 29)])
 def test_type2_subroutine_endchar_completes_all_enclosing_calls(operators: tuple[int, ...]) -> None:
-    # Adobe Type 2 Charstring Format, 2.3 and 4.2 note 6: endchar may terminate a subroutine.
     subrs = {10: [b"\x00"] * len(operators), 29: [b"\x00"] * len(operators)}
     for index, operator in enumerate(operators):
         subrs[operator][index] = (
@@ -236,7 +229,6 @@ def test_cff_dict_rejects_unconsumed_operands() -> None:
     ],
 )
 def test_type2_arithmetic_and_logic_drive_emitted_geometry(operator, operands, expected):
-    # Adobe Technical Note 5177, sections 4.4 and 4.6.
     program = type2_operands(*operands) + bytes([12, operator, 22, 14])
     events = []
     assert internal_execute_type2(program, events) is False
@@ -272,8 +264,6 @@ def test_type2_transient_storage_is_shared_with_subroutines_but_reset_per_glyph(
     events = []
     internal_execute_type2(type2_operands(-107) + b"\x0a" + get, events, local_subrs=(put,))
     assert events == [("move", (23, 0)), ("flush", ())]
-    # Uninitialized storage is undefined by 4.5; this implementation starts at zero.
-    # The contractual part is that one glyph cannot retain another glyph's values.
     events.clear()
     internal_execute_type2(get, events)
     assert events == [("move", (0, 0)), ("flush", ())]
@@ -324,7 +314,6 @@ def test_type2_stack_underflow_has_consistent_error_family(operator):
     ],
 )
 def test_type2_flex_emits_two_curves_and_clears_operands(operator, operands, curves):
-    # Adobe Technical Note 5177, 4.1: flex variants constrain the final displacement.
     events = []
     program = type2_operands(0, 0) + b"\x15" + type2_operands(*operands) + bytes([12, operator])
     internal_execute_type2(program + type2_operands(2) + b"\x16\x0e", events)
@@ -466,7 +455,6 @@ def test_cff_numbers_reject_incomplete_and_wrong_context_encodings(encoded, dict
 
 @pytest.mark.parametrize("count", [48, 49])
 def test_type2_operand_stack_limit_has_positive_control(count):
-    # Technical Note 5177, Appendix B: 48 operands may be live at once.
     program = type2_operands(*range(count)) + b"\x0c\0\x0e"
     if count == 48:
         assert internal_execute_type2(program, []) is False

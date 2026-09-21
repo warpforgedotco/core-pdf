@@ -61,7 +61,6 @@ def test_pdfminer_selection_preserves_lazy_file_lifetime(
         with monkeypatch.context() as patch:
             patch.setattr(builtins, "open", track_open)
             pages = extract_pages(pdf_path, page_numbers=(1,), maxpages=1)
-            # Constructing an iterator must not open its document.
             assert not handles
             with closing(pages):
                 page = next(pages)

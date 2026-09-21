@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Text-run records emitted by content capture."""
 
 from __future__ import annotations
 
@@ -163,7 +162,6 @@ class TextRun:
         return "italic" in fn or "oblique" in fn or "slanted" in fn
 
     def replace(self, **kwargs: Any) -> TextRun:
-        """Copy a run, discarding evidence invalidated by text or geometry edits."""
         coords_changed = any(key in kwargs for key in ("x0", "y0", "x1", "y1"))
         if coords_changed:
             box = (

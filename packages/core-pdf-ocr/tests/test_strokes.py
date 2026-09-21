@@ -1,5 +1,3 @@
-"""Page-local stroke learning with deterministic paths and OCR evidence."""
-
 from dataclasses import replace
 
 import pytest
@@ -287,7 +285,6 @@ def test_overlapping_path_components_form_one_glyph() -> None:
     assert len(profile.run_profiles[0].glyphs[0]) == 2
     records = strokes.internal_group_overlapping_x(profile.records)
     assert [len(glyph) for glyph in records] == [2, 1]
-    # Missing capture indexes must separate runs, even when the shapes overlap.
     separated = strokes.profile_stroked_text(drawings, (0, 2))
     assert len(separated.run_profiles) == 2
 
@@ -336,10 +333,6 @@ def test_seed_run_rejects_excessive_dimensions() -> None:
 
 
 def test_anchored_learning_reaches_all_supported_glyphs_in_long_chain() -> None:
-    # Each three-letter word exposes two new glyphs from the last known anchor.
-    # Chained samples share a source sequence, so they cannot create independent
-    # votes before their anchors are learned. Two sources corroborate only AB.
-    # All signatures use distinct path topologies; consensus treats them as identities.
     alphabet = "ABCDEFGHIJKLMNOPQRSTUV"
     signatures: dict[str, strokes.GlyphSignature] = {
         char: (((False, ((0, 0), (16, 16)) * (i + 1)),),) for i, char in enumerate(alphabet)

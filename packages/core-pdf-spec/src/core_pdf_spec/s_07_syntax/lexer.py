@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Lexer for PDF syntax: tokens, objects, strings, and numeric arrays."""
 
 from __future__ import annotations
 
@@ -107,12 +106,6 @@ class PdfLexer:
         self.internal_semantic_context = context
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
-        """Select token rules; readers may override explicit recovery policy.
-
-        Context changes affect subsequent parsing, including dictionary names,
-        hexadecimal strings, and numeric-array fast paths. Existing values are
-        not rewritten. Calls without context retain the modern grammar.
-        """
         return lexical_rules(context)
 
     def close(self) -> None:
@@ -167,9 +160,6 @@ class PdfLexer:
         byte = data[pos]
         if byte != 37 and not ws_table[byte]:
             return pos
-        # Only whitespace was consumed reaching `pos`, which skip_pdf_ignored
-        # would skip again anyway -- resume there rather than making it redo
-        # the peek above from `position`.
         return skip_pdf_ignored(data, pos, data_len, rules=self.lexical_rules)
 
     def scan_word_at(self, position: int, skip_ignored: bool = True) -> tuple[bytes, int] | None:
@@ -258,7 +248,6 @@ class PdfLexer:
             return self.handle_invalid_hex_string(filtered)
 
     def handle_invalid_hex_string(self, filtered: bytes) -> bytes:
-        """Extension point for hex string data that stays invalid without whitespace."""
         raise PdfParseError("invalid hex string") from None
 
     def read_name(self) -> memoryview:
@@ -294,11 +283,6 @@ class PdfLexer:
     def handle_invalid_name_escape(
         self, data: bytes, index: int, decoded: int | None, out: bytearray
     ) -> int:
-        """Extension point for a ``#`` escape at ``index`` that is malformed or encodes NUL.
-
-        ``decoded`` is ``None`` for a malformed escape. Return the index to continue
-        from; ISO 32000-1, 7.3.5 rejects both cases.
-        """
         if decoded is None:
             raise PdfParseError("invalid hexadecimal escape in name")
         raise PdfParseError("null byte in PDF name")
@@ -357,13 +341,11 @@ class PdfLexer:
         return self.parse_object()
 
     def parse_identifier(self, object_token: bytes, generation_token: bytes) -> tuple[int, int]:
-        """Validate a header/reference identifier; readers may supply explicit recovery."""
         return parse_identifier_tokens(
             object_token, generation_token, canonical=self.lexical_rules.canonical_identifiers
         )
 
     def read_indirect_header(self) -> tuple[int, int]:
-        """Consume an object header; leave the cursor after obj on success."""
         object_token = self.scan_word()
         if object_token is None:
             raise PdfParseError("expected indirect object header")
@@ -380,7 +362,6 @@ class PdfLexer:
         return identifier
 
     def read_indirect_terminator(self) -> None:
-        """Consume endobj, raising at its expected position when absent."""
         self.pos = self.skip_ignored_at(self.pos)
         keyword = self.scan_word(skip_ignored=False)
         if keyword is None or keyword[0] != b"endobj":
@@ -407,7 +388,6 @@ class PdfLexer:
         return obj
 
     def parse_numeric_array(self) -> list[int | float] | None:
-        """Parse an all-numeric array, leaving the cursor unchanged on rejection."""
         start_pos = self.pos
         data = self.raw_data
         source = self.source_buffer
@@ -424,7 +404,6 @@ class PdfLexer:
                 if source is not None
                 else data[start_pos + 1 : end_array]
             )
-            # bytes.split also recognizes VT, which is not standard PDF whitespace.
             if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
                 tokens = payload.split()
                 if all(self.is_numeric_array_word(token) for token in tokens):
@@ -436,7 +415,6 @@ class PdfLexer:
                             for token in tokens
                         ]
                     except ValueError:
-                        # Reader conversion overrides may reject a non-PDF spelling.
                         pass
                     else:
                         self.pos = end_array + 1
@@ -464,19 +442,12 @@ class PdfLexer:
             pos = end
 
     def is_numeric_array_word(self, raw: bytes | memoryview) -> bool:
-        """Whether a complete token can enter the numeric-array fast path.
-
-        The default accepts PDF number syntax. Overrides must not change parser
-        state; returning False leaves the token to ordinary array parsing.
-        """
         return is_number_token(raw)
 
     def parse_integer_token(self, token: bytes | memoryview) -> int:
-        """Convert a complete integer token without changing parser state."""
         return parse_integer_token(token)
 
     def parse_real_token(self, token: bytes | memoryview) -> float:
-        """Convert a complete PDF number token to a finite real without moving the cursor."""
         return parse_real_token(token)
 
     def internal_parse_number_or_reference(
@@ -500,11 +471,6 @@ class PdfLexer:
     def parse_reference_suffix(
         self, raw: bytes, next_raw: bytes, next_end: int
     ) -> PdfReference | None:
-        """The ``R`` of an ``N G R`` reference, given the two integers already scanned.
-
-        Returns None -- leaving self.pos alone -- when the third token is not
-        ``R``, so the caller can fall back to treating ``raw`` as a number.
-        """
         next_next = self.scan_word_at(next_end)
         if next_next is None or next_next[0] != b"R":
             return None
@@ -567,11 +533,6 @@ class PdfLexer:
     def parse_dictionary(self) -> PdfDict:
         values: PdfDict = {}
         contents_was_parsed_without_decipher = False
-        # The signature-Contents carve-out below is the only reason to inspect a
-        # value before parsing it, and it cannot apply when nothing is being
-        # deciphered. Deciding that once keeps the probe -- a skip_ignored_at the
-        # following parse_object immediately repeats, two buffer reads, and a
-        # PdfName-to-str compare -- off every key of every dictionary.
         deciphering = self.decipher is not None and self.current_obj_num is not None
         self.advance(2)
         while True:
@@ -607,11 +568,6 @@ class PdfLexer:
                         and self.raw_data[value_pos] == 60
                         and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
                     ):
-                        # ISO 32000-2:2020, 7.6.2 excludes a Signature
-                        # dictionary's hexadecimal Contents value from
-                        # encryption. Parse it raw until the whole dictionary
-                        # identifies its type; Type may follow Contents and
-                        # defaults to Sig under Table 255.
                         self.pos = value_pos
                         values[key] = PdfString(self.read_hex_string(), is_literal=False)
                         contents_was_parsed_without_decipher = True
@@ -638,32 +594,16 @@ class PdfLexer:
         return values
 
     def dictionary_end_length(self, pos: int) -> int:
-        """Extension point naming the dictionary terminator at ``pos``.
-
-        Return the terminator's byte length, or ``0`` when ``pos`` does not start
-        one; the default accepts only the ``>>`` of ISO 32000-1/2, 7.3.7.
-        """
         data = self.raw_data
         return 2 if data[pos] == 62 and pos + 1 < self.data_len and data[pos + 1] == 62 else 0
 
     def handle_dictionary_key_error(self) -> bool:
-        """Extension point when a dictionary key is not a name.
-
-        Return ``True`` after moving ``pos`` to a recovered key or dictionary end;
-        the default leaves the strict error to the caller.
-        """
         return False
 
     def handle_duplicate_dictionary_key(self, key: PdfName) -> None:
-        """Extension point for a repeated key; ISO 32000-1/2, 7.3.7 requires unique keys."""
         raise PdfParseError("duplicate dictionary key")
 
     def handle_dictionary_entry_error(self, value_start: int) -> bool:
-        """Extension point when the value starting at ``value_start`` fails to parse.
-
-        ``pos`` is where parsing failed. Return ``True`` after moving ``pos`` to a
-        recovered key or dictionary end; the default re-raises the error.
-        """
         return False
 
     def parse_stream(self, dictionary: PdfDict) -> PdfStream:
@@ -680,7 +620,6 @@ class PdfLexer:
         return PdfStream(dictionary, raw_data, dictionary, decoder=self.stream_decoder)
 
     def read_stream_eol(self) -> None:
-        """Consume the LF or CRLF required after the stream keyword."""
         if self.pos >= self.data_len or self.raw_data[self.pos] not in (10, 13):
             raise PdfParseError("stream keyword must be followed by an end-of-line marker")
         if self.raw_data[self.pos] == 13 and (
@@ -724,7 +663,6 @@ class PdfLexer:
         self.pos = pos
 
     def scan_value_word(self, position: int) -> tuple[bytes, int] | None:
-        """Scan one scalar value token without changing the cursor."""
         return self.scan_word_at(position, skip_ignored=False)
 
 

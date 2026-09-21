@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF content state, semantic records, and the consumer contract."""
 
 from __future__ import annotations
 
@@ -89,8 +88,6 @@ class MarkedContentEntry:
 
 @dataclass(slots=True)
 class GraphicsState:
-    """Parameters saved by q/Q, including the active font selection."""
-
     ctm: Matrix = IDENTITY_MATRIX
     fill_color: tuple[float, ...] | None = (0.0,)
     fill_pattern: PatternPaint | None = None
@@ -128,9 +125,6 @@ class GraphicsState:
         return internal_color_rendering(self.render_intent, self.black_point_compensation)
 
     def __copy__(self) -> GraphicsState:
-        # q saves the full state on every nesting level; copy.copy's generic
-        # reduce protocol costs an order of magnitude more than direct slot
-        # assignment for a record this wide.
         new = object.__new__(GraphicsState)
         for name in internal_GRAPHICS_STATE_FIELD_NAMES:
             setattr(new, name, getattr(self, name))
@@ -144,17 +138,10 @@ internal_GRAPHICS_STATE_FIELD_NAMES = tuple(item.name for item in fields(Graphic
 def internal_color_rendering(
     intent: str | None, black_point: BlackPointCompensation
 ) -> ColorRendering:
-    """Share one validated rendering record per distinct (RI, UseBlackPtComp) pair.
-
-    Every paint operation reads the current state's colour rendering; the
-    parameters only change on ``ri`` and ``gs`` operators.
-    """
     return ColorRendering(parse_rendering_intent(intent or "RelativeColorimetric"), black_point)
 
 
 class ContentSink(Protocol):
-    """Consume semantic execution events without owning interpreter state."""
-
     def show_text(
         self,
         state: ContentInterpreter,

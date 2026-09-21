@@ -1,5 +1,3 @@
-"""Reader recovery rejects malformed operands without corrupting paint state."""
-
 from types import SimpleNamespace
 
 import pytest

@@ -1,5 +1,3 @@
-"""Candidate reconciliation preserves useful text and verifies hidden-layer geometry."""
-
 import pytest
 
 from core_pdf.impl._impl.extract.contracts import ObservationBatch

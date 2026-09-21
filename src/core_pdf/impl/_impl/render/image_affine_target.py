@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Affine decoded-image sampling and blitting for raster targets."""
 
 from __future__ import annotations
 
@@ -25,8 +24,6 @@ if TYPE_CHECKING:
 
 
 class internal_ImageAffineTargetMixin:
-    """Affine decoded-image sampling and blitting for a raster target."""
-
     __slots__ = ()
 
     def blit_opaque_sampled_tiles(
@@ -64,8 +61,6 @@ class internal_ImageAffineTargetMixin:
             for column_start in range(0, column_count, tile_columns):
                 column_end = min(column_count, column_start + tile_columns)
                 if transposed:
-                    # Gather only this tile; taking rows first copies the full
-                    # source width, which can exceed the scratch budget.
                     sampled = source_pixels[
                         source_y[None, column_start:column_end],
                         source_x[row_start:row_end, None],
@@ -103,7 +98,6 @@ class internal_ImageAffineTargetMixin:
                     255,
                     visible=visible,
                 )
-                # Release this tile before allocating the next one.
                 del sampled, visible
 
     def blit_affine_image(
@@ -294,8 +288,6 @@ class internal_ImageAffineTargetMixin:
             height_px, width_px, comps
         )
         target_pixels = pixel_view(pixels)
-        # All general, translucent and nonrectangular-clipped images share this
-        # inverse map. Tiling bounds temporary coordinate and sample arrays.
         tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
         tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
         for row_start in range(iy0, iy1, tile_rows):
@@ -348,9 +340,6 @@ class internal_ImageAffineTargetMixin:
                         alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
                     ).astype(numpy.uint8)
                 if tracking_shape:
-                    # Intrinsic hard masks are shape. Soft alpha contributes
-                    # shape only for AIS; constant opacity is applied by the
-                    # target's shape_alpha, once, after this sampled coverage.
                     shape_grid: int | UInt8Array = (
                         alpha_grid
                         if self.paint_alpha_is_shape

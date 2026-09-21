@@ -1,5 +1,3 @@
-"""Default line records preserve text, geometry, and source character identity."""
-
 import pytest
 
 from core_pdf.api.compat import pdfplumber as compat

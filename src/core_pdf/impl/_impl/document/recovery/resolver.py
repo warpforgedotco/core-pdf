@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Resolve indirect references against the cross-reference table."""
 
 from __future__ import annotations
 
@@ -64,10 +63,6 @@ class ObjectResolver(SyntaxResolver):
         self, lexer: SyntaxLexer, offset: int, *, expected_reference: PdfReference
     ) -> object:
         try:
-            # Reader xref recovery deliberately accepts the actual header at
-            # the selected offset, including a generation-zero substitute.
-            # Rejecting that identity before parsing would redirect a usable
-            # object into nearby-offset recovery and could select its neighbor.
             lexer.rewind(offset)
             return lexer.parse_indirect_object()
         except PdfDecryptionError, PdfUnsupportedError:
@@ -76,7 +71,6 @@ class ObjectResolver(SyntaxResolver):
             return self.recover_indirect_object(lexer, offset)
 
     def load_compressed_object(self, ref: PdfReference, entry: PdfXRefEntry) -> object:
-        """Retain demanded-number recovery for damaged compressed-entry ordinals."""
         stream_number = entry.object_stream
         if stream_number is None:
             return None
@@ -100,7 +94,6 @@ class ObjectResolver(SyntaxResolver):
         )
 
     def internal_recovery_offsets(self, lexer: SyntaxLexer) -> dict[int, tuple[int, ...]]:
-        """Find indirect-object headers for one damaged-xref recovery."""
         offsets: dict[int, list[int]] = {}
         for offset, object_number, generation_number in iter_indirect_object_headers(
             lexer.raw_data, 0, len(lexer.raw_data), source_buffer=lexer.source_buffer
@@ -125,7 +118,6 @@ class ObjectResolver(SyntaxResolver):
         return lexer.parse_indirect_object()
 
     def recover_missing_indirect_object(self, lexer: SyntaxLexer, ref: PdfReference) -> object:
-        """Resolve a demanded object omitted by a damaged cross-reference table."""
         key = key_for(ref.object_number, ref.generation_number)
         for offset in reversed(self.internal_recovery_offsets(lexer).get(key, ())):
             lexer.rewind(offset)
@@ -138,11 +130,6 @@ class ObjectResolver(SyntaxResolver):
         return None
 
     def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
-        """A value as a name, falling back to a text string.
-
-        ``name_like`` also accepts a non-name value whose text is a valid name,
-        which lenient readers allow for AcroForm field types.
-        """
         text = self.resolve_name(value)
         if text is None and name_like:
             text = self.resolve_name_like_value(value)
@@ -175,8 +162,6 @@ class ObjectResolver(SyntaxResolver):
         return parse_int(self.resolve(value), default)
 
     def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
-        # Same shape as the spec method, but the reader's parse_box also accepts
-        # numeric strings the recovery lexer retains, such as an exponent token.
         resolved = self.deep_resolve(value)
         if resolved is None:
             return None

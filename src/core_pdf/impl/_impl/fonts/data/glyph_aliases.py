@@ -1,5 +1,3 @@
-"""Names selected for application glyph-name accent recovery."""
-
 MODIFIER_NAMES: dict[str, str] = {
     "acute": "ACUTE ACCENT",
     "grave": "GRAVE ACCENT",

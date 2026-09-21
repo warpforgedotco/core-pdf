@@ -1,5 +1,3 @@
-"""Unstructured PDF input policy and element assembly."""
-
 from __future__ import annotations
 
 import re
@@ -47,10 +45,6 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
             strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
         ):
             return True
-        # pdfminer refuses a cyclic /Prev xref chain and consequently exposes
-        # no pages.  Core-pdf deliberately recovers the document by scanning
-        # indirect objects; the compatibility projection must retain the
-        # reference library's empty result without weakening engine recovery.
         if document.xref_recovery_reason == "xref section loop detected":
             return True
         for page in document.pages:
@@ -86,8 +80,6 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         and not (isinstance(filename, str) and filename.startswith("%PDF"))
         and not Path(cast(str | PathLike[str], filename)).exists()
     ):
-        # Unstructured's fast strategy treats an absent filename as an empty
-        # document. This also covers broken corpus symlinks.
         return []
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
@@ -120,12 +112,6 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
             regions = internal_layout_regions(text_boxes)
             for figure in (item for item in page if isinstance(item, LTFigure)):
-                # PDFMiner's recursive figure extraction inserts a newline for
-                # every non-text drawing and Unstructured splits those runs
-                # before classification.  The compatibility layout preserves
-                # those drawing-delimited runs while constructing each figure.
-                # Keeping them separate here avoids collapsing an illustrated
-                # page into one document-wide paragraph.
                 for figure_text in internal_figure_text_snippets(figure):
                     if cleaned_figure_text := internal_clean_text(figure_text):
                         regions.append(internal_TextRegion(cleaned_figure_text, figure.bbox))

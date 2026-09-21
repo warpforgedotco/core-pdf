@@ -1,5 +1,3 @@
-"""Coverage gates reject partial collection and independent metric regressions."""
-
 import hashlib
 from copy import deepcopy
 from io import BytesIO

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Code-space and CID range helpers."""
 
 from __future__ import annotations
 
@@ -69,9 +68,6 @@ def validate_codespace_range(start: bytes, end: bytes) -> None:
 
 
 def validate_effective_codespace(ranges: CodeSpaceRanges, codes: typing.Iterable[bytes]) -> None:
-    """Validate the effective PDF codespace after adopting any parent CMap."""
-    # ISO 32000-1, 9.7.6.2: PDF codes have at most four bytes, and codespace
-    # ranges cannot overlap. Generic PostScript CMap ranges need no PDF limit.
     if not ranges:
         raise ValueError("missing CMap codespacerange")
     for index, (start, end) in enumerate(ranges):

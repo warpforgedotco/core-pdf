@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Reader limits and error handling for nested content execution."""
 
 from __future__ import annotations
 
@@ -56,9 +55,6 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
-        # Operator names are ASCII, so membership of the raw token equals
-        # membership of its latin-1 decoding; build the byte set once per
-        # stream instead of decoding every token twice.
         operator_names = frozenset(
             name.encode("latin-1")
             for name in (*state.internal_default_handlers, *state.operator_overrides)

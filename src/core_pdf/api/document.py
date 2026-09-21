@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Public PDF document and page entry points over the internal processing engine."""
 
 from __future__ import annotations
 
@@ -45,8 +44,6 @@ if TYPE_CHECKING:
 
 
 class DocumentAdapter(Protocol):
-    """Transform a structured document after extraction releases its operation."""
-
     def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
 
 
@@ -55,7 +52,6 @@ class PdfPage(EnginePdfPage):
 
     @property
     def structured_view(self) -> StructuredPage:
-        """Return this page's canonical high-level structured representation."""
         return self.extract()
 
     def extract(self) -> StructuredPage:
@@ -113,7 +109,6 @@ class PdfPage(EnginePdfPage):
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[ImageRecord, ...]:
-        """Decode the image records of an already captured page program."""
         images: list[ImageRecord] = []
         if include_xobjects:
             images.extend(
@@ -174,15 +169,12 @@ class PdfPage(EnginePdfPage):
         options = options or RenderOptions()
         fields: tuple[RawFormField, ...] = ()
         if options.include_layers:
-            # Malformed form metadata must not prevent painting page contents.
             with suppress(ValueError):
                 fields = tuple(self.get_fields())
         annotations = tuple(self.get_annotations()) if options.include_annotations else None
         return compose_page(
             self,
             options,
-            # Empty recovered metadata need not mean there are no raw
-            # appearance dictionaries; capture retains its tolerant policy.
             page_program=self.get_page_program(fields=fields, annotations=annotations or None),
             fields=fields,
             annotations=annotations,
@@ -212,8 +204,6 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
 
 
 class PdfDocument(EnginePdfDocument["PdfPage"]):
-    """A thread-native PDF document backed by the v2 parse pipeline."""
-
     page_class = PdfPage
 
     def __init__(
@@ -241,26 +231,22 @@ class PdfDocument(EnginePdfDocument["PdfPage"]):
 
     @property
     def metadata(self) -> dict[str, object]:
-        """Return the document metadata in the canonical high-level shape."""
         value = self.get_metadata()
         return dict(value) if isinstance(value, dict) else {}
 
     @property
     def standards(self) -> DocumentStandards:
-        """Return declared PDF versions, extensions, and unvalidated profile claims."""
         with self.acquire_operation():
             return self.get_standards()
 
     @property
     def outlines(self) -> tuple[Any, ...]:
-        """Return resolved outline entries owned by the engine."""
         return tuple(self.iter_outlines())
 
     def internal_scoped_pending[RecordT](
         self,
         pending: Iterable[tuple[int, RecordT]],
     ) -> tuple[PageScoped[RecordT], ...]:
-        """Attach page numbers and labels after collecting the selected records."""
         pending = tuple(pending)
         if not pending:
             return ()
@@ -332,7 +318,6 @@ class PdfDocument(EnginePdfDocument["PdfPage"]):
 
     @property
     def structured_document(self) -> StructuredDocument:
-        """Return the high-level structured view of this document."""
         if self.page_count() == 0:
             return StructuredDocument(metadata=self.metadata)
         return self.extract()

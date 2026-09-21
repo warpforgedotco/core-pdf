@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 4 function dictionaries (ISO 32000-1/2 7.10.5) over the PLRM calculator."""
 
 from __future__ import annotations
 
@@ -21,7 +20,6 @@ def internal_bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]
 
 
 def internal_compile_calculator_function(function: PdfStream) -> Callable[..., tuple[float, ...]]:
-    """Read Domain and Range as PDF number arrays, then compile the decoded stream."""
     domains = internal_bounds(function.dictionary.get("Domain"), "domain")
     ranges = internal_bounds(function.dictionary.get("Range"), "range")
     return compile_calculator(function.data, domains, ranges)

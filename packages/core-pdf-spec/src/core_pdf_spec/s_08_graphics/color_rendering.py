@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF rendering intent and black-point compensation parameters."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -14,7 +13,6 @@ BlackPointCompensation = Literal["Default", "ON", "OFF"]
 
 
 def parse_rendering_intent(value: object) -> RenderingIntent:
-    """ISO 32000-2 8.6.5.8: unrecognized names use RelativeColorimetric."""
     name = decoded_name(value)
     if name is None:
         raise ValueError("rendering intent must be a PDF name")
@@ -26,7 +24,6 @@ def parse_rendering_intent(value: object) -> RenderingIntent:
 
 
 def parse_black_point_compensation(value: object) -> BlackPointCompensation:
-    """ISO 32000-2 Table 57: the three permitted UseBlackPtComp names."""
     name = decoded_name(value)
     match name:
         case "Default":
@@ -41,8 +38,6 @@ def parse_black_point_compensation(value: object) -> BlackPointCompensation:
 
 @dataclass(frozen=True, slots=True)
 class ColorRendering:
-    """Immutable parameters attached to an object's colour conversions."""
-
     intent: RenderingIntent = "RelativeColorimetric"
     black_point_compensation: BlackPointCompensation = "Default"
 
@@ -61,7 +56,6 @@ DEFAULT_COLOR_RENDERING = ColorRendering()
 def override_color_rendering(
     dictionary: Mapping[str, object], rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> ColorRendering:
-    """Apply present ExtGState colour entries without resetting absent entries."""
     intent = dictionary.get("RI")
     black_point = dictionary.get("UseBlackPtComp")
     return ColorRendering(
@@ -73,7 +67,6 @@ def override_color_rendering(
 
 
 def use_black_point_compensation(rendering: ColorRendering, *, default: bool) -> bool:
-    """8.6.5.9: absolute colorimetric disables BPC; Default is reader-selected."""
     if rendering.intent == "AbsoluteColorimetric":
         return False
     return (

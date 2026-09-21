@@ -1,12 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Recover repeated single-line text from flattened vector paths.
-
-Some CAD exporters convert every character to a handful of stroked paths and
-discard the PDF text objects.  Raster OCR can seed a page-local alphabet for
-those paths: repeated, conflict-free shapes are learned first, then anchored
-OCR words safely teach the remaining shapes.  Fully recognized path runs can
-thereafter be emitted without another OCR pass.
-"""
 
 from __future__ import annotations
 
@@ -44,8 +36,6 @@ STROKED_TEXT_ALLOWED_CHARACTERS = frozenset(string.ascii_letters + string.digits
 
 @dataclass(frozen=True, slots=True)
 class StrokedTextSeed:
-    """One OCR token that may label a sequence of vector glyphs."""
-
     text: str
     bbox: Rectangle
     confidence: float
@@ -54,8 +44,6 @@ class StrokedTextSeed:
 
 @dataclass(frozen=True, slots=True)
 class StrokedTextObservation:
-    """Text decoded directly from a consecutive vector-path run."""
-
     text: str
     bbox: Rectangle
     first_drawing: int
@@ -65,8 +53,6 @@ class StrokedTextObservation:
 
 @dataclass(frozen=True, slots=True)
 class StrokedTextDecode:
-    """Page-local decoder output and compact diagnostics."""
-
     observations: tuple[StrokedTextObservation, ...] = ()
     eligible_seeds: int = 0
     aligned_seeds: int = 0
@@ -91,8 +77,6 @@ class StrokedTextDecode:
 
 @dataclass(frozen=True, slots=True)
 class StrokedTextRun:
-    """One compact horizontal path run suitable for seeding raster OCR."""
-
     bbox: Rectangle
     drawing_indexes: tuple[int, ...]
     glyph_count: int
@@ -110,8 +94,6 @@ internal_Glyph: TypeAlias = tuple[internal_PathRecord, ...]
 
 @dataclass(frozen=True, slots=True)
 class StrokedTextProfile:
-    """Reusable segmentation and signatures for one flattened vector font layer."""
-
     records: tuple[internal_PathRecord, ...] = ()
     run_profiles: tuple[internal_StrokedTextRunProfile, ...] = ()
     seed_runs: tuple[StrokedTextRun, ...] = ()
@@ -126,8 +108,6 @@ class internal_SeedSample:
 
 @dataclass(frozen=True, slots=True)
 class internal_StrokedTextRunProfile:
-    """Geometry and signatures that remain invariant across OCR seed sets."""
-
     glyphs: tuple[internal_Glyph, ...]
     signatures: tuple[GlyphSignature | None, ...]
     bbox: Rectangle
@@ -156,7 +136,6 @@ def internal_path_records(
 def internal_group_overlapping_x(
     records: Iterable[internal_PathRecord],
 ) -> tuple[internal_Glyph, ...]:
-    """Group consecutive path components whose horizontal extents overlap."""
     groups: list[list[internal_PathRecord]] = []
     bounds: list[list[float]] = []
     for record in records:
@@ -178,7 +157,6 @@ def internal_group_overlapping_x(
 def internal_glyph_signature(
     glyph: internal_Glyph,
 ) -> GlyphSignature | None:
-    """Return a translation- and scale-independent polyline signature."""
     points = tuple(
         point for record in glyph for subpath in record.path.subpaths for point in subpath.points
     )
@@ -222,7 +200,6 @@ def internal_seed_run_overlap(
     seed_box: Rectangle,
     run_box: Rectangle,
 ) -> float:
-    """Return containment-style overlap for a remapped packed OCR token."""
     intersection = bbox_intersection_area(seed_box, run_box)
     seed_area = max(0.01, bbox_area(seed_box))
     run_area = max(0.01, bbox_area(run_box))
@@ -314,11 +291,7 @@ def internal_consensus_mapping(
             mapping[signature] = winner
     initial = len(mapping)
 
-    # A consensus alphabet validates otherwise unique glyphs inside anchored
-    # words.  A single anchor is sufficient only for tokens of at least three
-    # characters, and it must be alphanumeric rather than punctuation.
     accepted_sequences: set[int] = set()
-    # Each productive round adds signatures from the finite sample alphabet.
     while True:
         anchored_votes: dict[GlyphSignature, dict[str, set[int]]] = defaultdict(
             lambda: defaultdict(set)
@@ -351,7 +324,6 @@ def internal_consensus_mapping(
 
 
 def internal_required_bbox(boxes: Iterable[Rectangle]) -> Rectangle:
-    """`bbox_union` for groups the caller has already shown to be non-empty."""
     bbox = bbox_union(boxes)
     if bbox is None:
         raise ValueError("cannot take the bounding box of an empty group")
@@ -366,7 +338,6 @@ def internal_signature_distance(
     left: GlyphSignature,
     right: GlyphSignature,
 ) -> tuple[int, float] | None:
-    """Compare signatures only when their path topology is identical."""
     if len(left) != len(right):
         return None
     maximum = 0
@@ -401,7 +372,6 @@ def internal_expand_mapping(
     runs: tuple[internal_StrokedTextRunProfile, ...],
     mapping: dict[GlyphSignature, str],
 ) -> int:
-    """Map small quantization variants only when their character is unique."""
     additions = 0
     learned_by_topology: dict[GlyphTopology, list[tuple[GlyphSignature, str]]] = defaultdict(list)
     for learned_signature, character in mapping.items():
@@ -433,14 +403,11 @@ def internal_expand_mapping(
 def internal_path_runs(
     records: tuple[internal_PathRecord, ...],
 ) -> tuple[tuple[internal_Glyph, ...], ...]:
-    """Segment capture-order paths into horizontal glyph runs."""
     runs: list[tuple[internal_Glyph, ...]] = []
     run: list[internal_Glyph] = []
     glyph: list[internal_PathRecord] = []
     glyph_x0 = 0.0
     glyph_x1 = 0.0
-    # Running vertical extent of every record appended to the current run;
-    # records are only ever added, so the min/max accumulate monotonically.
     line_y0 = 0.0
     line_y1 = 0.0
     previous_index = -2
@@ -512,13 +479,6 @@ STROKED_TEXT_ISOLATED_MIN_ASPECT_RATIO = 0.12
 
 
 def stroked_text_isolated_runs(profile: StrokedTextProfile) -> tuple[StrokedTextRun, ...]:
-    """Return single-glyph runs the seed packer skips (pin numbers, lone digits).
-
-    Seed packing requires at least two glyphs per run, so isolated labels are
-    never rasterized for OCR.  Collect the glyph-sized singles here so a
-    supplemental montage can show them to OCR; near-degenerate boxes (wire
-    stubs, junction dashes) stay excluded via the aspect gate.
-    """
     isolated: list[StrokedTextRun] = []
     for run in profile.run_profiles:
         glyphs = run.glyphs
@@ -568,7 +528,6 @@ def profile_stroked_text(
     drawings: tuple[CapturedDrawing, ...],
     drawing_indexes: Iterable[int],
 ) -> StrokedTextProfile:
-    """Segment and fingerprint one stroke-text layer once for all later stages."""
     records = internal_path_records(drawings, drawing_indexes)
     if not records:
         return StrokedTextProfile()
@@ -612,9 +571,6 @@ def internal_decode_runs(
         if len(signatures) == 1 and (bbox[2] - bbox[0]) / max(0.01, bbox[3] - bbox[1]) < (
             STROKED_TEXT_SINGLE_GLYPH_MIN_ASPECT_RATIO
         ):
-            # Isolated vertical wires can share the normalized topology of a
-            # single-line-font ``I``. Real standalone glyphs retain measurable
-            # horizontal ink even when the character itself is narrow.
             continue
         observations.append(
             StrokedTextObservation(
@@ -661,12 +617,6 @@ def internal_decoded_profile(
     accepted_seeds: int = 0,
     initial_signatures: int = 0,
 ) -> StrokedTextDecode:
-    """Decode ``profile`` under ``mapping`` and report it with the seed counters.
-
-    The three entry points differ only in how they arrive at the mapping and
-    which seed counters they have to report; everything from the decode onward
-    is the same, and used to be written out three times.
-    """
     observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
         internal_decode_with_mapping(profile, mapping)
     )
@@ -690,7 +640,6 @@ def decode_stroked_text_profile(
     profile: StrokedTextProfile,
     seeds: tuple[StrokedTextSeed, ...],
 ) -> StrokedTextDecode:
-    """Learn and decode a page-local font from an existing structural profile."""
     if not profile.records or not seeds:
         return StrokedTextDecode()
     samples, eligible = internal_seed_samples(profile, seeds)
@@ -717,12 +666,6 @@ def decode_stroked_text_profile_with_supplemental_seeds(
     primary_seeds: tuple[StrokedTextSeed, ...],
     supplemental_seeds: tuple[StrokedTextSeed, ...],
 ) -> StrokedTextDecode:
-    """Extend a primary alphabet monotonically and decode the profile once.
-
-    Character-level OCR can expose complete packed cells that the word iterator
-    omitted.  Its consensus may add signatures, but never replaces a mapping
-    supported by the primary word observations.
-    """
     if not supplemental_seeds:
         return decode_stroked_text_profile(profile, primary_seeds)
     if not profile.records:
@@ -739,8 +682,6 @@ def decode_stroked_text_profile_with_supplemental_seeds(
     if primary_samples:
         primary_mapping, _, _ = internal_consensus_mapping(primary_samples)
     mapping, initial, accepted = internal_consensus_mapping(samples)
-    # Primary word recognition wins conflicts. Supplemental symbols can only
-    # make the exact alphabet larger, so structural coverage cannot regress.
     mapping.update(primary_mapping)
     if not mapping:
         return StrokedTextDecode(
@@ -762,10 +703,7 @@ def decode_stroked_text_profile_with_alphabet(
     profile: StrokedTextProfile,
     alphabet: Mapping[GlyphSignature, str] | Iterable[tuple[GlyphSignature, str]],
 ) -> StrokedTextDecode:
-    """Apply an exact document alphabet to an existing structural profile."""
     mapping = dict(alphabet)
     if not profile.records or not mapping:
         return StrokedTextDecode()
-    # An exact alphabet is its own initial signature set: nothing was learned
-    # from seeds here, so there are no seed counters to report.
     return internal_decoded_profile(profile, mapping, initial_signatures=len(mapping))

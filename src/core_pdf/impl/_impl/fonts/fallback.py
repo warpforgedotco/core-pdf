@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Deterministic raster-only font fallback for unembedded PDF fonts."""
 
 from __future__ import annotations
 
@@ -15,8 +14,6 @@ from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 
 @dataclass(frozen=True, slots=True)
 class PdfRasterFontRequest:
-    """Description passed to a custom renderer font provider."""
-
     font_name: str | None
     text: str
     is_cid_font: bool
@@ -27,15 +24,11 @@ class PdfRasterFontRequest:
 
 @dataclass(frozen=True, slots=True)
 class PdfRasterFontFace:
-    """An in-memory TrueType font used only for raster rendering."""
-
     identifier: str
     data: bytes
 
 
 class PdfRasterFontProvider(Protocol):
-    """Resolve an unembedded font without changing extraction semantics."""
-
     def resolve_raster_font(self, request: PdfRasterFontRequest) -> PdfRasterFontFace | None: ...
 
 
@@ -45,13 +38,6 @@ RasterFontProviderLike = (
 
 
 class internal_RasterFontRepository:
-    """Document-owned parsed fonts used by raster fallback.
-
-    Font programs are immutable after construction. Keeping them beside the
-    document avoids both process-global state and reparsing a font for every
-    painted glyph.
-    """
-
     __slots__ = ("provider", "internal_builtin_programs", "internal_provider_programs")
 
     def __init__(self, provider: RasterFontProviderLike | None = None) -> None:
@@ -83,7 +69,6 @@ class internal_RasterFontRepository:
         return self.internal_builtin_programs[face_name]
 
     def close(self) -> None:
-        """Release all document-scoped references to parsed font programs."""
         self.internal_builtin_programs.clear()
         self.internal_provider_programs.clear()
 
@@ -131,7 +116,6 @@ def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
 
 @cache
 def internal_builtin_font(face_name: str) -> TrueTypeFontProgram:
-    """Parse one bundled face once per process; the file set is fixed."""
     resource = files(__package__).joinpath("data", "raster_fonts", face_name)
     return TrueTypeFontProgram(resource.read_bytes(), use_cmap=True)
 
@@ -146,7 +130,6 @@ def fallback_glyph_outline(
     cid_ordering: str | None = None,
     provider: RasterFontProviderLike | internal_RasterFontRepository | None = None,
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
-    """Resolve one Unicode scalar through a custom provider, then bundled fonts."""
     if len(text) != 1:
         return ()
     request = PdfRasterFontRequest(

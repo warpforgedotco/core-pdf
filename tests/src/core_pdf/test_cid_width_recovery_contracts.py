@@ -1,5 +1,3 @@
-"""CID recovery keeps usable widths without leaking invalid numeric values."""
-
 import pytest
 
 from core_pdf.impl._impl.fonts.cmap_widths import parse_cid_widths
@@ -17,7 +15,6 @@ def test_invalid_cid_widths_are_skipped_without_losing_later_entries(value, form
         "range": [0, 0, value, 1, 1, 600],
     }[form]
     assert dict(parse_cid_widths(data)) == {1: 600.0}
-    # Exercise the strict-first orchestration as well as the recovery parser.
     metrics = parse_font_widths({"DescendantFonts": [{"W": data}]}, "Type0")
     assert dict(metrics.widths) == {1: 600.0}
     assert metrics.default_width == 1000

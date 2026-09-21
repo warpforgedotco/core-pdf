@@ -1,5 +1,3 @@
-"""Primitive raster routes agree with explicit pixel geometry and clipping."""
-
 import numpy as np
 import pytest
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Annotation appearance placement, ISO 32000-2, 12.5.5."""
 
 from __future__ import annotations
 
@@ -17,11 +16,6 @@ def appearance_matrix(
     bbox: tuple[float, float, float, float],
     matrix: Matrix,
 ) -> Matrix:
-    """Build the matrix mapping an appearance's BBox onto the annotation Rect.
-
-    This is the algorithm in 12.5.5: transform the box by the appearance's
-    /Matrix, then scale and shift that result to cover /Rect.
-    """
     tx0, ty0, tx1, ty1 = transform_bbox(bbox, matrix)
     width = tx1 - tx0
     height = ty1 - ty0
@@ -33,7 +27,6 @@ def appearance_matrix(
 def normal_appearance_stream(
     resolver: PdfValueResolver, appearance: object, appearance_state: object
 ) -> PdfStream | None:
-    """Resolve the normal appearance named by AS (ISO 32000-2, 12.5.5)."""
     appearances = resolver.resolve(appearance)
     if appearances is None:
         return None

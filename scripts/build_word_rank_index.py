@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Build the mmap-friendly runtime word-rank index from vendored sources."""
 
 from __future__ import annotations
 

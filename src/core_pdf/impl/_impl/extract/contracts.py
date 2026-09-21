@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Core dataclasses shared by every extraction stage."""
 
 from __future__ import annotations
 
@@ -31,7 +30,6 @@ def internal_column(
     dtype: Any,
     default: Callable[[], numpy.ndarray[Any, Any]] | None = None,
 ) -> numpy.ndarray[Any, Any]:
-    """Materialize one observation column, or its default when the column is absent."""
     if values is None:
         if default is None:
             raise ValueError("observation column is required")
@@ -50,7 +48,6 @@ def internal_validate_selection_mask(mask: BoolArray, size: int) -> None:
 
 
 def internal_bbox_tuple(row: object) -> tuple[float, float, float, float]:
-    """Narrow one four-column NumPy bbox row without allocating an intermediate list."""
     values = cast(numpy.ndarray[Any, Any], row)
     return (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
 
@@ -65,8 +62,6 @@ class ObservationSource(IntEnum):
 
 @dataclass(frozen=True, slots=True)
 class ObservationBatch:
-    """Columnar text observations optimized for vectorized geometry operations."""
-
     text: tuple[str, ...]
     bbox: FloatArray
     source: ByteArray
@@ -235,11 +230,6 @@ class ObservationBatch:
         secondary: ObservationBatch,
         secondary_mask: BoolArray,
     ) -> ObservationBatch:
-        """Combine one complete batch and one selection with one numeric allocation.
-
-        NumPy boolean indexing materializes a copy. Building a selected batch and then
-        concatenating it would therefore copy every selected numeric column twice.
-        """
         internal_validate_selection_mask(secondary_mask, len(secondary))
         if not len(primary) and bool(numpy.all(secondary_mask)):
             return secondary
@@ -277,8 +267,6 @@ class ObservationBatch:
 
 @dataclass(frozen=True, slots=True)
 class TextQualityStats:
-    """Shape-only text quality signals used for routing and diagnostics."""
-
     token_count: int = 0
     wordlike_ratio: float = 0.0
     short_token_ratio: float = 0.0
@@ -303,8 +291,6 @@ class TextQualityStats:
 
 @dataclass(frozen=True, slots=True)
 class GlyphEvidence:
-    """Page-level evidence about whether glyph identifiers carry real Unicode."""
-
     glyph_count: int = 0
     semantic_characters: int = 0
     authoritative_glyphs: int = 0
@@ -344,8 +330,6 @@ class GlyphEvidence:
 
 @dataclass(frozen=True, slots=True)
 class PageEvidence:
-    """Reusable, capture-time evidence for routing and progressive extraction."""
-
     page_area: float
     native_characters: int
     visible_native_characters: int
@@ -394,8 +378,6 @@ class PageAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class ParsedLine:
-    """A positioned output line plus the evidence layout needs to order it."""
-
     line: TextLine
     sequence: int = 0
     rotation: int = 0
@@ -417,8 +399,6 @@ class ParsedBlock:
 
 @dataclass(frozen=True, slots=True)
 class ReadingOrderEvidence:
-    """Explain how geometry changed authored line order on one page."""
-
     line_count: int
     source_inversions: int
     source_inversion_ratio: float

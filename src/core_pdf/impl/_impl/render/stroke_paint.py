@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Paint one stroke's combined coverage without blending its pieces together."""
 
 from __future__ import annotations
 
@@ -24,20 +23,10 @@ def internal_paint_stroke_once(
     line_cap: int,
     line_join: int,
 ) -> None:
-    """Keep a shape-tracked stroke elementary, ISO 32000-1/2 11.6.2.
-
-    The stroke rasterizer expands segments, caps and joins into overlapping
-    pieces. First combine their opaque coverage using the existing raster
-    approximation, then apply the stroke's opacity and blend mode once. In
-    particular, a round cap must not double the stroke opacity where it meets
-    the body. Source shape stays independent of that opacity unless AIS is set.
-    """
     pixels = target.pixels
     source_alpha = target.group_source_alpha
     source_shape = target.group_source_shape
     coverage_buffer = bytearray(len(pixels))
-    # Geometry painting never enters another group. Suspend only the buffer
-    # and recording planes it uses; the group stack and clip remain intact.
     target.pixels = coverage_buffer
     target.group_source_alpha = None
     target.group_source_shape = None

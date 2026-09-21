@@ -1,5 +1,3 @@
-"""Line-level invariants across capture fragmentation and geometry changes."""
-
 import pytest
 
 from core_pdf.impl._impl.layout.reconstruction import reconstruct_layout_line_text

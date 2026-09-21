@@ -1,5 +1,3 @@
-"""AcroForm field names, inheritable entries, and child-array semantics."""
-
 from __future__ import annotations
 
 from typing import cast

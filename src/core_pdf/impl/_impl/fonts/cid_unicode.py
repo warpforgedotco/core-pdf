@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native CID-to-Unicode recovery and compact CMap helpers."""
 
 from __future__ import annotations
 
@@ -31,7 +30,6 @@ class CompactCMap:
 
 
 def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
-    """Invert the effective CID mappings compiled by ``CMapDecoder``."""
     code_space_ranges = decoder.code_space_ranges
 
     def code_is_decodable(code: bytes) -> bool:
@@ -57,12 +55,6 @@ def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
 
 @cache
 def compact_cmap(name: str) -> CompactCMap | None:
-    """Invert one predefined CMap once per process.
-
-    The domain is the fixed set of packaged CMap names, and the product is
-    immutable, so every CID lookup against a collection shares one inversion
-    instead of re-parsing the resource per glyph.
-    """
     if resolve_cmap_resource(name) is None:
         return None
     decoder = resolve_cmap_decoder(name)
@@ -90,7 +82,6 @@ class CIDUnicodeMap:
         self.registry = registry
         self.ordering = ordering
         self.vertical = vertical
-        # The collection tables are immutable, so each CID votes once per map.
         self.internal_cache: dict[int, str | None] = {}
 
     def get(self, cid: int, default: str | None = None) -> str | None:

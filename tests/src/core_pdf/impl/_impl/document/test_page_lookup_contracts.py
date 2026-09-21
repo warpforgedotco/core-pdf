@@ -1,5 +1,3 @@
-"""Navigation lookup recognizes page identities before recovery signatures."""
-
 import pytest
 
 from core_pdf.impl._impl.document.document import PdfDocument, internal_PageLookup

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Historical encoding assignments, separately from explicit font glyph selection."""
 
 import pytest
 
@@ -15,10 +14,6 @@ VERSIONS = [*[PdfVersion(1, n) for n in range(8)], PdfVersion(2, 0)]
 
 @pytest.mark.parametrize("version", VERSIONS)
 def test_winansi_assignments_change_in_pdf_1_3(version: PdfVersion) -> None:
-    # Adobe PDF 1.2, Annex C.1 (printed p.343): unused WinAnsi high codes select
-    # bullet. Adobe PDF 1.3, Annex D.1 notes 1–3 (printed p.554) reassigns these
-    # three slots, while the PDF MacRoman currency slot remains unchanged.
-    # https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.3.pdf
     names = get_base_encoding_glyph_names("WinAnsiEncoding", context=SemanticContext(version))
     assert tuple(names[code] for code in (0x80, 0x8E, 0x9E)) == (
         ("bullet", "bullet", "bullet")

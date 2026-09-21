@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""TIFF and PNG predictor wrappers over DecodeParms (ISO 32000-1 7.4.4.4).
-
-The predictor kernels live in ``core_predictors``; this module keeps the
-PDF-specific parameter handling and maps kernel errors onto filter errors.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from core_predictors.errors import PredictorError, UnsupportedPngFilterError
 from core_predictors.png import png_predict
 from core_predictors.tiff import tiff_predict
 
-# Table 8 (ISO 32000-1 7.4.4.4): BitsPerComponent values a predictor accepts.
 SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 
 

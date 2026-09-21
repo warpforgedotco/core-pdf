@@ -81,7 +81,6 @@ def skip_pdf_ignored(
     *,
     rules: LexicalRules | None = None,
 ) -> int:
-    """Skip comments and whitespace under the caller's selected lexical rules."""
     rules = lexical_rules() if rules is None else rules
     ws_table = rules.whitespace_table
     pos = position
@@ -132,7 +131,6 @@ def looks_like_indirect_object_header(
     rules: LexicalRules | None = None,
     parse_identifier: Callable[[bytes, bytes], tuple[int, int]] | None = None,
 ) -> bool:
-    """Recognize a complete header using the selected token and identifier rules."""
     rules = lexical_rules() if rules is None else rules
     pos = position
     tokens: list[bytes] = []
@@ -219,20 +217,8 @@ def read_literal_string(
     unknown_escape: Callable[[int], bytes] | None = None,
     eol_pair: Callable[[int, int], bool] | None = None,
 ) -> tuple[bytes | None, int]:
-    """Decode a literal string at ``pos``, returning its value and end position.
-
-    An unterminated string returns ``None`` and the exhausted position so callers
-    can preserve their own error type and cursor semantics.
-
-    ``unknown_escape`` replaces ISO 32000-1, 7.3.4.2's rule that an unrecognised
-    escape yields the escaped byte; ``eol_pair`` replaces the CR LF pairing used
-    when folding end-of-line sequences. Both default to the specified behaviour.
-    """
     pos += 1
     if isinstance(data, memoryview) and data.format != "B":
-        # CMap callers may supply numeric elements wider than one byte or signed
-        # bytes. Decode those elements directly; byte offsets and prefix copies
-        # would change their values or consume data past the closing delimiter.
         end_idx = pos
     elif isinstance(data, bytes) or data.c_contiguous:
         match = internal_STRING_SPECIAL_RE.search(data, pos, data_len)
@@ -319,7 +305,6 @@ def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
 def skip_name(
     data: bytes | memoryview, pos: int, data_len: int, *, rules: LexicalRules | None = None
 ) -> int:
-    """Skip a name using the caller's selected token boundaries."""
     separators = (lexical_rules() if rules is None else rules).separator_table
     pos += 1
     while pos < data_len and not separators[data[pos]]:

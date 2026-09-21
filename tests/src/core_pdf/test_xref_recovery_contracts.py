@@ -1,5 +1,3 @@
-"""Reader recovery preserves entry meaning across encoding and damage boundaries."""
-
 import zlib
 
 import pytest
@@ -32,7 +30,6 @@ def test_fixed_and_loose_xref_entries_reject_same_invalid_numbers(fields):
     for line in (f"{offset} {generation} n\n", f"{offset:0>10} {generation:0>5} n\n"):
         with pytest.raises(PdfParseError):
             xref.parse_xref_entry_at(line.encode(), 0)
-    # Sign-first padding is also accepted by int() and must not bypass validation.
     if offset == "-1":
         with pytest.raises(PdfParseError):
             xref.parse_xref_entry_at(b"-000000001 00000 n\n", 0)

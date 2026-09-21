@@ -1,5 +1,3 @@
-"""Word-rank lookup and resource recovery using small, deterministic indexes."""
-
 import gzip
 import io
 from contextlib import nullcontext

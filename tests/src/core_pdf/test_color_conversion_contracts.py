@@ -1,5 +1,3 @@
-"""Equivalent PDF colours must not depend on their storage representation."""
-
 import numpy as np
 import pytest
 
@@ -43,7 +41,6 @@ def test_unusable_tint_has_same_subtractive_recovery_everywhere(function, tint):
     vector = color_operands_to_srgb(parse_color_space(space), [tint])
     expected = round((1 - tint) * 255)
     assert vector == (expected / 255,) * 3
-    # Explicit Decode produces the identical natural tint at either sample depth.
     for bits in (8, 16):
         raw = bytes(bits // 8)
         image = internal_convert_image_data(

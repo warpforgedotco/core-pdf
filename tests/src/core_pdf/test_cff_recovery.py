@@ -1,5 +1,3 @@
-"""Reader recovery policies, separate from strict CFF conformance tests."""
-
 import pytest
 
 from core_pdf.impl._impl.fonts.font_program import (
@@ -182,7 +180,7 @@ def test_cubic_flattening_keeps_extrema_and_refines_curves() -> None:
     assert internal_cubic_sample_times((0, 0), (1, 1), (2, 2), (3, 3)) == (1.0,)
     assert internal_cubic_sample_times((0, 0), (0, 0), (0, 0), (0, 0)) == (1.0,)
     times = internal_cubic_sample_times((0, 0), (0, 100), (100, 100), (100, 0))
-    assert 0.5 in times  # Exact height extremum, independent of adaptive subdivision.
+    assert 0.5 in times
     assert times == tuple(sorted(set(times)))
     assert len(times) > 4
     assert 0 < times[0] < times[-1] == 1
@@ -206,7 +204,6 @@ def test_unicode_index_scalar_and_matrix_matching_preserve_code_identity(count: 
         b"\x02": "S",
         b"alias": "S",
     }
-    # The larger map crosses the batching threshold; results must match scalar matching.
     assert index.repairs_for_codes([code for code, _, _ in items]) == {
         code: "S" for code, _, _ in items if code != b"\x01"
     }
@@ -222,7 +219,6 @@ def test_glyph_outline_and_bounds_agree_for_terminated_and_unterminated_paths(
     ending: bytes,
 ) -> None:
     font = CFFFont(None)
-    # rmoveto(0, 0), rlineto(10, 0, 0, 20, -10, 0).
     font.charstrings = [bytes([139, 139, 21, 149, 139, 139, 159, 129, 139, 5]) + ending]
     assert font.glyph_bbox_for_gid(0) == (0, 0, 10, 20)
     assert internal_contours_bbox(font.normalized_glyph_contours(0)) == (0, 0, 10, 20)
@@ -235,8 +231,6 @@ def test_glyph_outline_and_bounds_agree_for_terminated_and_unterminated_paths(
 
 def test_malformed_charstring_retains_only_completed_contours() -> None:
     font = CFFFont(None)
-    # A second moveto commits the first contour. Its partial successor must not
-    # leak into the recovered bounds when an invalid operator ends execution.
     font.charstrings = [bytes([139, 139, 21, 149, 159, 5, 149, 149, 21, 0])]
     assert font.glyph_bbox_for_gid(0) == (0, 0, 10, 20)
     assert font.normalized_glyph_contours(0) == (((0, 0), (10, 20)),)
@@ -245,7 +239,6 @@ def test_malformed_charstring_retains_only_completed_contours() -> None:
 @pytest.mark.parametrize("matrix", [[0.002, 0, 0, 0.003, 0, 0], [0, 0.001, -0.001, 0, 0, 0]])
 def test_transformed_curve_bounds_match_flattened_outline(matrix: list[float]) -> None:
     font = CFFFont(None)
-    # rmoveto(0, 0), rrcurveto(0, 100, 100, 0, 0, -100), endchar.
     font.charstrings = [bytes([139, 139, 21, 139, 239, 239, 139, 139, 39, 8, 14])]
     font.top_dict = {(12, 7): matrix}
     assert font.glyph_bbox_for_gid(0) == internal_contours_bbox(font.normalized_glyph_contours(0))
@@ -259,10 +252,8 @@ def test_invalid_private_dictionary_recovers_without_subroutines(private: list[f
 
 
 def test_private_subroutines_use_private_relative_offset() -> None:
-    # Private dictionary: Subrs offset 2. INDEX: one one-byte return program.
     font = internal_font(b"\x8d\x13\x00\x01\x01\x01\x02\x0b")
     assert font.read_private_subrs({18: [2, 3]}) == [b"\x0b"]
-    # Reader accepts extra operands without shifting the offset origin.
     assert font.read_private_subrs({18: [2, 3, 99]}) == [b"\x0b"]
     font.data = font.data[:-1]
     assert font.read_private_subrs({18: [2, 3]}) == []
@@ -277,7 +268,6 @@ def test_invalid_font_dictionary_offsets_recover_without_entries(offset: float) 
 
 
 def test_font_dictionary_recovery_preserves_indices_after_a_bad_entry() -> None:
-    # Three INDEX entries: malformed short integer, empty dictionary, valid dict.
     font = internal_font(b"\x00\x03\x01\x01\x02\x02\x04\x1c\x8b\x11")
     font.is_cid_keyed = True
     font.top_dict = {(12, 36): [3]}
@@ -345,7 +335,6 @@ def test_accent_components_are_translated_before_bounds_and_rasterization() -> N
     font = internal_font(b"")
     base = bytes([139, 139, 21, 149, 159, 5, 14])
     accent = bytes([139, 139, 21, 144, 144, 5, 14])
-    # seac endchar with displacement (30, 40), StandardEncoding A and B.
     composite = bytes([169, 179, 204, 205, 14])
     font.charstrings = [b"\x0e", base, accent, composite]
     font.cid_to_gid = {STANDARD_GLYPH_SIDS["A"]: 1, STANDARD_GLYPH_SIDS["B"]: 2}
@@ -359,7 +348,6 @@ def test_accent_components_are_translated_before_bounds_and_rasterization() -> N
 
 def test_random_charstring_geometry_is_repeatable() -> None:
     font = internal_font(b"")
-    # Two random values provide the moveto operands; rlineto adds (10, 20).
     font.charstrings = [bytes([12, 23, 12, 23, 21, 149, 159, 5, 14])]
     first = font.glyph_bbox_for_gid(0)
     assert first == font.glyph_bbox_for_gid(0)

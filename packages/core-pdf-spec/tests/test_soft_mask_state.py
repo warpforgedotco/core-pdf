@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Selected soft-mask state and Form execution, ISO 32000-2 11.5/11.6.5–6."""
 
 from dataclasses import FrozenInstanceError
 from typing import Any, cast
@@ -228,7 +227,6 @@ def test_resolved_transfer_clips_its_single_output_and_defines_nonzero_outside_a
     mask = parse_soft_mask(internal_mask(TR=transfer), resolver, ctm=IDENTITY_MATRIX)
     assert mask is not None
     assert mask.transfer is not None
-    # 11.6.5.1: outside an Alpha group's BBox, the mask is TR(0), not always zero.
     assert mask.transfer(0) == (1,)
     assert mask.transfer(0.5) == (0.5,)
     assert mask.transfer(1) == (0,)

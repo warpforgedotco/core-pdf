@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Adaptive OCR rescue coverage and sufficiency policy."""
 
 from __future__ import annotations
 
@@ -97,7 +96,6 @@ def internal_adaptive_rescue_coverage(
     ocr_pass: OcrPass,
     primary: ObservationBatch,
 ) -> internal_RescueCoverage:
-    """Measure ink not spatially explained by the primary OCR observations."""
     raster_count = 0
     cell_count = 0
     total_ink = 0.0
@@ -128,12 +126,6 @@ def internal_adaptive_rescue_coverage(
 
 
 def internal_primary_text_is_sufficient(candidate: internal_Candidate) -> bool:
-    """Return whether a sparse primary result is already large and trustworthy.
-
-    Resolution escalation cannot add detail to text that is already comfortably
-    sampled. Keep this decision shared by the adaptive rescue and subsequent
-    full-page fallbacks so the latter cannot repeat work the former rejected.
-    """
     metrics = candidate.metrics
     return (
         metrics.characters < 32
@@ -147,7 +139,6 @@ def internal_adaptive_rescue_decision(
     source_tasks: tuple[internal_OcrTask, ...],
     ocr_pass: OcrPass,
 ) -> bool:
-    """Decide whether another raster pass has enough unresolved visual evidence."""
     metrics = candidate.metrics
     coverage_pass = replace(
         ocr_pass,
@@ -170,8 +161,6 @@ def internal_adaptive_rescue_decision(
             and metrics.mean_confidence >= internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE
         )
     ):
-        # A nearly solid source gives the coarse ink grid no useful localization
-        # signal. Reprocessing arbitrary cells cannot target missing text.
         return False
     return not (
         metrics.characters >= 300

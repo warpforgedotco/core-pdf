@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normalize stream dictionaries into a decode specification."""
 
 from __future__ import annotations
 
@@ -21,8 +20,6 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 @dataclass(frozen=True, slots=True)
 class FilterParams(PdfFilterParams):
-    """Decode parameters associated with a PDF stream filter."""
-
     @classmethod
     def from_parms(cls, parms: object) -> "FilterParams":
         if not isinstance(parms, dict):
@@ -90,12 +87,6 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if not isinstance(dictionary, dict):
         raise FilterParseError("invalid stream dictionary")
     raw_filters = dictionary.get("Filter")
-    # ISO 32000-1 Table 5: on a regular stream /F is a *file specification* and
-    # the filters for that external data are named by /FFilter, so /FFilter is
-    # consulted first. /F means "Filter" only for inline images (Table 93), and
-    # those are already normalized to Filter/DecodeParms before reaching here --
-    # the abbreviation fallback below is kept only as leniency for writers that
-    # use it on a regular stream.
     if is_pdf_null(raw_filters):
         raw_filters = dictionary.get("FFilter")
     if is_pdf_null(raw_filters):

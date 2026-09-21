@@ -1,5 +1,3 @@
-"""Embedded font selection contains malformed programs and preserves name precedence."""
-
 import struct
 from typing import Any
 

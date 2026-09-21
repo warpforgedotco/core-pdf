@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF sample packing and Decode mapping, before device quantization."""
 
 from __future__ import annotations
 
@@ -51,7 +50,6 @@ def unpack_image_samples(
     height: int,
     components: int,
 ) -> numpy.ndarray[Any, Any]:
-    """ISO 32000-1, 8.9.3: unpack unsigned samples, with 16-bit words MSB first."""
     if bits_per_component in {1, 2, 4}:
         return unpack_subbyte_image_samples(data, bits_per_component, width, height, components)
     if bits_per_component not in {8, 16} or min(width, height, components) <= 0:
@@ -72,7 +70,6 @@ def unpack_image_samples(
 def color_key_alpha(
     samples: numpy.ndarray[Any, Any], mask: tuple[int, ...], max_sample: int
 ) -> numpy.ndarray[Any, Any]:
-    """ISO 32000-1/2 8.9.6.4: mask inclusive source integers before Decode."""
     integers = numpy.asarray(samples)
     if (
         integers.ndim != 2

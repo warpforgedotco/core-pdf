@@ -1,5 +1,3 @@
-"""Layout-object projections retain text, geometry, and disabled-layout behavior."""
-
 from io import BytesIO
 
 import pytest

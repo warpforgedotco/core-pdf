@@ -1,5 +1,3 @@
-"""Reader recovery preserves decoded prefixes and recognizes content conservatively."""
-
 import base64
 import zlib
 from types import SimpleNamespace
@@ -109,7 +107,6 @@ def test_flate_recovers_real_raw_zlib_and_gzip_streams(wbits, truncated):
     encoder = zlib.compressobj(wbits=wbits)
     encoded = encoder.compress(payload) + encoder.flush()
     if truncated:
-        # Removing the final byte leaves the complete payload in these streams.
         encoded = encoded[:-1]
     assert recovery.apply_flate(encoded, None) == payload
 

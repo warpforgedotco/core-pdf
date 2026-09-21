@@ -1,5 +1,3 @@
-"""Application CMap aliases around the PDF CMap decoder."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -67,7 +65,6 @@ class CMapDecoder(PdfCMapDecoder):
         block: CMapBlock,
         mappings: dict[bytes, int],
     ) -> None:
-        """Collect the `<code> cid` pairs from one character-mapping block."""
         items = block.token_values(include_words=True)
         if len(items) % 2 != 0:
             items = items[:-1]
@@ -91,7 +88,6 @@ class CMapDecoder(PdfCMapDecoder):
         ranges: list[CodeRangeT],
         make_range: Callable[[bytes, bytes, int], CodeRangeT],
     ) -> None:
-        """Collect range triples, dropping explicit codes the range supersedes."""
         items = block.token_values(include_words=True)
         if len(items) % 3 != 0:
             items = items[: len(items) - (len(items) % 3)]
@@ -108,7 +104,6 @@ class CMapDecoder(PdfCMapDecoder):
                 start_bytes = decode_spec_cmap_hex_token(start_token)
                 end_bytes = decode_spec_cmap_hex_token(end_token)
                 cid = int(cid_token)
-                # Also rejects empty or mismatched start/end lengths.
                 validate_codespace_range(start_bytes, end_bytes)
             except ValueError, UnicodeDecodeError:
                 continue

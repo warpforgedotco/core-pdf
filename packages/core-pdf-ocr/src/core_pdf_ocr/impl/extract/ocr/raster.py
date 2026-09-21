@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Producing the rasters recognition runs against.
-
-Three sources feed OCR: an embedded image decoded directly, the page rendered
-through the rasterizer, and crops taken from either. This module owns turning any
-of them into pixels at a resolution Tesseract can read, deciding a direct image is
-upright, and judging from the pixels alone whether a raster carries text at all.
-"""
 
 from __future__ import annotations
 
@@ -29,9 +22,6 @@ from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import internal_Raster
 
-# Tesseract's LSTM was trained near 300-400 DPI. Scans below that are enlarged to
-# reach it; the gain comes from the resampling being smooth, not from pixel count,
-# so enlarging past this target only costs recognition time.
 DIRECT_OCR_TARGET_RESOLUTION = 400
 
 
@@ -42,7 +32,6 @@ DIRECT_OCR_WHOLE_SCALE_TOLERANCE = 0.06
 
 
 def internal_visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-    """Minimum color intensity after compositing any alpha onto white."""
     channels = samples.shape[2]
     if channels == 1:
         return samples[:, :, 0]
@@ -56,7 +45,6 @@ def internal_visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarra
 def internal_raster_ink_grid(
     raster: internal_Raster, rows: int, columns: int
 ) -> numpy.ndarray[Any, Any]:
-    """Measure visual ink per coarse region from a bounded zero-copy raster sample."""
     if rows <= 0 or columns <= 0:
         return numpy.zeros(max(0, rows * columns), dtype=numpy.float32)
     pixels = raster.image.array()
@@ -85,19 +73,12 @@ def internal_raster_ink_grid(
     return grid_output.reshape(-1)
 
 
-# ITU-R BT.601 luma, in the fixed-point form Tesseract's own conversion uses. The
-# weights sum to 256, so an achromatic pixel round-trips to its exact input value.
 LUMA_RED = 77
 LUMA_GREEN = 150
 LUMA_BLUE = 29
 
 
 def internal_luma(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-    """Reduce interleaved RGB(A) samples to one grayscale plane.
-
-    Accumulates in place: the naive expression allocates a uint16 temporary per
-    channel, which costs more than the rasterization it follows on a megapixel page.
-    """
     gray = samples[:, :, 0].astype(numpy.uint16)
     gray *= LUMA_RED
     channel = samples[:, :, 1].astype(numpy.uint16)
@@ -112,7 +93,6 @@ def internal_luma(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
 
 
 def internal_flatten_onto_white(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-    """Composite RGBA over white, matching what Tesseract's pixRemoveAlpha would do."""
     alpha = samples[:, :, 3].astype(numpy.uint16)
     flattened = numpy.empty(samples.shape[:2] + (3,), dtype=numpy.uint8)
     for index in range(3):
@@ -126,20 +106,6 @@ def internal_flatten_onto_white(samples: numpy.ndarray[Any, Any]) -> numpy.ndarr
 
 
 def internal_compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -> RasterImage:
-    """Reduce a raster to the narrowest layout Tesseract can read.
-
-    Tesseract discards colour before recognizing: it strips alpha with
-    ``pixRemoveAlpha`` (blending onto white) and then runs ``pixConvertTo8``, so RGB
-    and RGBA input buy no accuracy and cost two conversion passes plus four times the
-    bytes across the API boundary. Doing the reduction here is measurably cheaper --
-    19% off the combined SetImageBytes-and-Recognize time on a rendered page -- and
-    leaves recognition accuracy unchanged.
-
-    Note the reduction must happen for *large* rasters above all. An earlier version
-    returned any four-channel image of a megapixel or more untouched, to skip an alpha
-    scan, which meant every rendered page -- the only rasters big enough for the cost
-    to matter -- was handed over as RGBA while small crops were compacted.
-    """
     if image.channels == 3 and grayscale:
         if image.width * image.height < 5_000_000:
             return image
@@ -154,9 +120,6 @@ def internal_compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -
     if image.channels == 2:
         if opaque:
             return RasterImage(contiguous_bytes(samples[:, :, 0]), image.width, image.height, 1)
-        # Tesseract accepts gray, RGB, and RGBA byte layouts, but not the
-        # gray-plus-alpha layout produced by PDF soft masks. Composite it
-        # onto the same white background used by page rendering.
         distance_from_white = numpy.multiply(
             255 - samples[:, :, 0],
             samples[:, :, 1],
@@ -198,14 +161,6 @@ class internal_RasterTextSignal:
 
 
 def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal:
-    """Reject obvious non-text image supplements using a bounded pixel sample.
-
-    This gate is intentionally limited to image supplements on pages that already
-    have native text.  Full-page scan OCR and compositor fallbacks never use it.
-    Text and line art have frequent horizontal intensity transitions; continuous-
-    tone photographs may also have many edges, but those edges are less strongly
-    horizontal and occur without a light document background.
-    """
     pixels = image.array()
     sample_step = max(
         1,
@@ -253,7 +208,6 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
 
 
 def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
-    """Binarize faded scans against their local background for a fallback pass."""
     pixels = raster.image.array()
     gray = internal_visible_intensity(pixels).astype(numpy.float32)
     radius = max(8, min(24, min(raster.width, raster.height) // 80))
@@ -318,8 +272,6 @@ def internal_decoded_image_raster(
         decoded_width = decoded.width
         decoded_height = decoded.height
         decoded_channels = decoded.channels
-    # Placement area is raw user space; resolution describes physical inches.
-    # Divide after the square root to avoid overflowing UserUnit squared.
     pixels_per_point = (
         math.sqrt(decoded_width * decoded_height / max(1.0, display_area)) / user_unit
     )
@@ -328,8 +280,6 @@ def internal_decoded_image_raster(
     height = decoded_height
     channels = decoded_channels
     if width * height > max_pixels:
-        # Either dimension can bottom out at one pixel on a narrow image.
-        # Bound the other dimension as well as the estimated area.
         reduction = (
             min(
                 math.sqrt(max_pixels / (width * height)),
@@ -354,11 +304,6 @@ def internal_decoded_image_raster(
         if samples is None:
             assert data is not None
             samples = uint8_image_view(data, (height, width, channels))
-        # Tesseract's line classifier wants roughly 300-400 DPI. How to get there
-        # depends on the factor: a whole-number enlargement is exact pixel
-        # replication and keeps stems crisp, while interpolating one only blurs
-        # them. Fractional factors have no such option, and there replication
-        # staircases the strokes badly enough to change which glyph is read.
         whole_factor = round(scale)
         if (
             1 <= whole_factor <= headroom
@@ -467,9 +412,6 @@ def internal_orient_direct_image_raster(
     if orientation is None or orientation is DirectImageOrientation.IDENTITY:
         return raster
     samples = raster.image.array()
-    # The same target-to-source corner mapping drives detection and pixels.
-    # Source corners are TL=0, TR=1, BL=2, BR=3. A target horizontal edge
-    # spanning source rows requires a transpose; descending edges require flips.
     origin, right, below, _ = internal_DIRECT_IMAGE_ORIENTATIONS[orientation]
     oriented = samples.transpose(1, 0, 2) if abs(right - origin) == 2 else samples
     if right < origin:
@@ -490,7 +432,6 @@ def internal_fit_raster_scale(
     *,
     crop: tuple[float, float, float, float] | None = None,
 ) -> float:
-    """Fit rounded pixel dimensions inside the allocation budget."""
     if max_pixels < 1:
         raise ValueError("OCR raster pixel budget must be positive")
     width, height = rendered.unrotated_raster_size(scale, crop=crop)
@@ -525,9 +466,6 @@ def internal_rendered_page_raster(
             crop=crop,
         )
     except IndexError:
-        # A malformed embedded image can produce a source sample outside its
-        # decoded raster during compositing.  Keep native extraction usable and
-        # let OCR continue without the rendered-page fallback.
         return None
     return internal_Raster(
         data,
@@ -536,11 +474,6 @@ def internal_rendered_page_raster(
 
 
 def internal_safe_image_crop(capture: PageAnalysis) -> tuple[float, float, float, float] | None:
-    """Return a useful crop when OCR is known to be image-dominated.
-
-    A crop is only safe when the image coverage is substantial.  Sparse images
-    must not hide page text outside the image bounds from the page OCR path.
-    """
     evidence = capture.evidence
     if not evidence.image_boxes or not (
         evidence.full_page_image or evidence.image_area_ratio >= 0.65

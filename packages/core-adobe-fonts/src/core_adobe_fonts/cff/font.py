@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""CFF font programs (Adobe TN 5176): INDEX, DICT, charsets, and encodings."""
 
 from __future__ import annotations
 
@@ -16,8 +15,6 @@ from core_adobe_fonts._vendor.font_data.encoding_names import STANDARD_ENCODING_
 
 
 class CffFontMatrix(NamedTuple):
-    """A CFF FontMatrix (TN 5176, Table 9): six affine coefficients."""
-
     a: float
     b: float
     c: float
@@ -26,7 +23,6 @@ class CffFontMatrix(NamedTuple):
     f: float
 
     def multiply(self, right: CffFontMatrix) -> CffFontMatrix:
-        """Return ``self`` followed by ``right``, the ordinary affine product."""
         return CffFontMatrix(
             self.a * right.a + self.b * right.c,
             self.a * right.b + self.b * right.d,
@@ -81,7 +77,6 @@ CFF_EXPERT_ENCODING_CODES = tuple(
 
 
 def internal_cff_offset(values: list[float] | None, context: str) -> int:
-    """Validate a single DICT offset before conversion or indexing."""
     if not values or len(values) != 1:
         raise ValueError(f"invalid CFF {context}")
     value = values[0]
@@ -113,18 +108,6 @@ def cff_font_matrix(
 
 
 class CFFFont:
-    """One CFF 1 font with strict table readers and Type 2 program data.
-
-    The ``read_*``, ``parse_*``, ``dict_offset``, ``local_subrs_for_glyph``,
-    and ``font_matrix`` methods are supported
-    extension points. Readers return values without changing parser state and
-    raise ValueError for malformed input. Construction initializes ``data``
-    first, then the string/global-subroutine indexes, ``top_dict`` and
-    ``is_cid_keyed``, ``charstrings``, ``cid_to_gid``, ``fd_select``,
-    ``font_dicts``, and ``local_subrs`` in that order. An overriding reader may
-    rely on earlier fields only; callers must discard a failed construction.
-    """
-
     __slots__ = (
         "data",
         "top_dict",
@@ -141,9 +124,6 @@ class CFFFont:
     def __init__(self, data: bytes | memoryview | None) -> None:
         if data is None:
             raise ValueError("missing CFF font program")
-        # Keep a caller-owned read-only view when one is provided.  INDEX
-        # entries are still materialized as bytes below because they escape
-        # the parser and remain stable identifiers within the font program.
         self.data = data
         pos = self.read_header()
         ignored_names, pos = self.read_index(pos)
@@ -166,7 +146,6 @@ class CFFFont:
         self.local_subrs = self.read_local_subrs()
 
     def read_header(self) -> int:
-        """Return the first INDEX offset after validating the CFF 1 header."""
         if len(self.data) < 4 or self.data[0] != 1:
             raise ValueError("invalid CFF font program")
         size = self.data[2]
@@ -175,7 +154,6 @@ class CFFFont:
         return size
 
     def dict_offset(self, operator: int, *, default: int | None = None) -> int:
-        """Read a nonnegative integral Top DICT offset; default applies only to absence."""
         values = self.top_dict.get(operator)
         if values is None and default is not None:
             return default
@@ -273,8 +251,6 @@ class CFFFont:
                 elif nibble == 12:
                     parts.append("e-")
                 elif nibble == 13:
-                    # 0xd is reserved by the CFF real-number encoding. Treating
-                    # it as whitespace silently joins the surrounding digits.
                     raise ValueError("invalid CFF real number")
                 elif nibble == 14:
                     parts.append("-")
@@ -289,7 +265,6 @@ class CFFFont:
     def read_dict_entries(
         self, item: bytes
     ) -> tuple[dict[int | tuple[int, int], list[float]], list[float]]:
-        """Return operator entries and any unconsumed trailing operands."""
         result: dict[int | tuple[int, int], list[float]] = {}
         stack: list[float] = []
         pos = 0

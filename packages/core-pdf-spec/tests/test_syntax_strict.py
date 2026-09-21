@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Strict syntax rejects damage without rejecting specification-defined defaults."""
 
 from __future__ import annotations
 
@@ -61,7 +60,6 @@ def test_pdf_string_defaults_and_odd_hex_padding() -> None:
 
 @pytest.mark.parametrize("data", [b"[1_000 2]", b"[1.2e3 4]", b"[1_000 % ignored\n2]"])
 def test_numeric_arrays_reject_non_pdf_number_spellings(data: bytes) -> None:
-    # ISO 32000-2:2020, 7.3.3 allows decimal PDF numbers, not Python literals.
     lexer = PdfLexer(data)
     try:
         with pytest.raises(PdfParseError):

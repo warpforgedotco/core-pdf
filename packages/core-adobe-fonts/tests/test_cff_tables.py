@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""CFF table readers keep their strict parsing extension contract on malformed input."""
 
 import pytest
 
@@ -56,7 +55,6 @@ def test_fdselect_rejects_truncation_invalid_format_bounds_and_nonincreasing_ran
 
 
 def test_fdarray_parses_each_dictionary_and_noncid_fonts_need_no_fd_tables():
-    # INDEX with two one-byte dictionaries: operator 0 and operator 1.
     font = table_font(b"prefix\0\2\1\1\2\3\0\1")
     font.top_dict = {(12, 36): [6]}
     assert font.read_font_dicts() == ({0: []}, {1: []})
@@ -93,7 +91,6 @@ def test_subroutine_offset_requires_one_finite_nonnegative_integer(encoded):
 
 
 def test_private_subroutine_offset_is_relative_to_private_dictionary():
-    # Private DICT says Subrs is at relative offset 2. The INDEX has one return program.
     font = table_font(b"prefix\x8d\x13\0\1\1\1\2\x0b")
     assert font.read_private_subrs({18: [2, 6]}) == [b"\x0b"]
     assert font.read_private_subrs({}) == []

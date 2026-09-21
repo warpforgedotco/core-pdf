@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native document metadata parsing and resolution helpers."""
 
 from __future__ import annotations
 
@@ -59,7 +58,6 @@ def resolve_metadata(
     try:
         xmp = resolve_metadata_stream(resolver, trailer, recover=True)
     except PdfError, RecursionError, ValueError:
-        # XMP is optional metadata and malformed metadata must not block extraction.
         xmp = {"parse_error": "invalid XMP metadata"}
     return {
         "info": resolve_info_metadata(resolver, trailer, recover=recover),
@@ -121,10 +119,6 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
     raw = stream.data
     if not raw:
         return None
-    # XMP arrives from an untrusted document, and ElementTree expands internal
-    # entities without limit: a 400-byte "billion laughs" packet nests to
-    # hundreds of megabytes before it yields a tree. defusedxml rejects the
-    # entity declarations instead, and still forbids external references.
     try:
         root = defused_fromstring(raw)
     except (ET.ParseError, DefusedXmlException) as error:

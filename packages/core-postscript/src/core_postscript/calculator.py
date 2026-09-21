@@ -1,11 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PostScript calculator subset: PLRM 3rd ed. 8.2 operators over a bounded stack.
-
-ISO 32000-1 7.10.5 (Type 4 functions) restricts the language to these operators,
-PDF number syntax, and brace-delimited conditionals. This module implements that
-restricted language on bytes and plain Python numbers; reading ``Domain`` and
-``Range`` from a PDF function dictionary belongs to the caller.
-"""
 
 from __future__ import annotations
 
@@ -81,7 +74,7 @@ def internal_tokens(source: bytes) -> Iterator[bytes]:
         byte = source[position]
         if byte in internal_WHITESPACE:
             position += 1
-        elif byte == 37:  # PDF comments end at either line-ending character.
+        elif byte == 37:
             position += 1
             while position < len(source) and source[position] not in b"\r\n":
                 position += 1
@@ -122,8 +115,6 @@ def internal_parse(source: bytes) -> tuple[internal_Instruction, ...]:
                 number = float(token)
                 if not math.isfinite(number):
                     raise ValueError("calculator number exceeds real representation")
-                # Preserve integer operands within this implementation's
-                # signed 32-bit representation; larger literals use reals.
                 instructions.append(
                     int(number)
                     if b"." not in token and internal_INT_MIN <= number <= internal_INT_MAX
@@ -190,8 +181,6 @@ def internal_unary(operator: str, value: internal_Operand) -> int | float:
         elif operator == "truncate":
             rounded = math.trunc(number)
         else:
-            # PLRM round chooses the greater integer at a half, including
-            # negative halves, and retains the original numeric type.
             lower = math.floor(number)
             rounded = lower + (number - lower >= 0.5)
         return float(rounded)
@@ -306,7 +295,6 @@ def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
 
 
 def internal_require_real(value: object) -> float:
-    """Accept a finite host number as a calculator real; booleans are not numbers."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError("invalid calculator input")
     try:
@@ -339,14 +327,6 @@ def compile_calculator(
     domains: Sequence[tuple[float, float]],
     ranges: Sequence[tuple[float, float]],
 ) -> Callable[..., tuple[float, ...]]:
-    """Compile once, using 32-bit integers, finite reals and a 100-entry stack.
-
-    ``domains`` and ``ranges`` are ``(lower, upper)`` pairs: inputs are clipped
-    to their domain before execution and outputs to their range afterwards.
-    Braces form conditional syntax only: blocks cannot be put on the operand
-    stack or called indirectly. Execution therefore visits each instruction at
-    most once, and the 255-level syntax limit also bounds execution nesting.
-    """
     domains = internal_bounds(domains, "domain")
     ranges = internal_bounds(ranges, "range")
     if max(len(domains), len(ranges)) > STACK_LIMIT:

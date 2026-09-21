@@ -1,5 +1,3 @@
-"""Opt-in integration with the pinned Tesseract engine and English model."""
-
 import hashlib
 import json
 import os
@@ -35,7 +33,6 @@ def pinned_engine() -> None:
 
 @pytest.fixture
 def owned_engines(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-    """Count real API ownership without replacing recognition or image handling."""
     factory = tesseract.internal_api
     engines: list[Any] = []
 
@@ -84,7 +81,6 @@ def test_public_extraction_recognizes_image_only_pages_and_releases_engine(
 def invoice_task() -> internal_OcrTask:
     with Image.open(FIXTURES / "invoice.png") as image:
         raster = RasterImage(image.tobytes(), image.width, image.height, 1)
-    # Rectangle coordinates remain relative to the original raster.
     return internal_OcrTask(6, raster, (30, 35, 650, 80), (10, 20, 490, 212), 150)
 
 

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""T.88 7.2.4--7.2.7: segment references must not shift subsequent fields."""
 
 import struct
 
@@ -53,7 +52,6 @@ def test_reference_width_count_and_page_size_preserve_payload_boundary(
 
 @pytest.mark.parametrize("count_tag", [5, 6])
 def test_reserved_short_count_tags_are_rejected(count_tag):
-    # T.88 7.2.4 explicitly prohibits these three-bit tags.
     data = struct.pack(">IBB", 100, 52, count_tag << 5) + bytes(40)
     with pytest.raises(Jbig2ParseError, match="referred-to segment count"):
         parse_segment_header(data, 0)
@@ -69,7 +67,6 @@ def test_every_truncated_header_prefix_fails_before_returning_partial_fields(cou
 
 
 def test_extended_count_keeps_high_five_bits_when_checking_required_storage():
-    # A 29-bit count cannot be silently truncated to the low 24 bits.
     data = struct.pack(">IBI", 0x2000000, 52, 0xE1000000) + bytes(10)
     with pytest.raises(Jbig2ParseError):
         parse_segment_header(data, 0)

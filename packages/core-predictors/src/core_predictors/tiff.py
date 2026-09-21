@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""TIFF 6.0 section 14 horizontal differencing (Predictor 2) kernels."""
 
 from __future__ import annotations
 
@@ -37,7 +36,6 @@ def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> byte
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
-    """Undo TIFF differences modulo the sample depth, preserving row alignment."""
     sample_count = colors * columns
     row_byte_length = max(1, (sample_count * bits + 7) // 8)
     complete_rows = len(data) // row_byte_length
@@ -51,13 +49,9 @@ def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits:
     samples = unpack_subbyte_rows(
         encoded.reshape(complete_rows, row_byte_length), sample_count, bits
     ).reshape(complete_rows, columns, colors)
-    # uint8 accumulation wraps modulo 256, and 2**bits divides 256 for every
-    # width here, so masking once at the end agrees with masking every step.
     accumulated = numpy.cumsum(samples, axis=1, dtype=numpy.uint8)
     decoded = accumulated & numpy.uint8((1 << bits) - 1)
     flat = decoded.reshape(complete_rows, sample_count)
-    # packints_encode packs the whole array as one bitstream, so pad each row
-    # out to a byte boundary first to keep rows byte-aligned as TIFF requires.
     samples_per_byte = 8 // bits
     padding = (-sample_count) % samples_per_byte
     if padding:

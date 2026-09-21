@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Resolved PDF image inputs and their soft masks, without image preparation."""
 
 from __future__ import annotations
 
@@ -34,21 +33,12 @@ internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
 
 @dataclass(frozen=True, slots=True)
 class SoftMask:
-    """The /SMask plane accompanying an image XObject.
-
-    Carried as its own field rather than smuggled through the image's PDF
-    dictionary: that dictionary is the real object dictionary and is exported
-    verbatim to display consumers, so private keys in it leak downstream.
-    """
-
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
 
 
 @dataclass(slots=True, eq=False)
 class ImageSource:
-    """Resolved PDF image inputs, without device preparation policy."""
-
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
     soft_mask: SoftMask | None = field(default=None, kw_only=True)
@@ -59,8 +49,6 @@ class ImageSource:
 def internal_resolve_image_dictionary(
     dictionary: dict[object, object], resolver: PdfValueResolver
 ) -> dict[object, object]:
-    # Image and filter decoders have no resolver. Resolve their inputs for both
-    # image kinds without walking unrelated metadata or changing the source.
     return {
         key: resolver.deep_resolve(value)
         if value is not None and decoded_name(key) in internal_IMAGE_INPUT_KEYS
@@ -76,10 +64,6 @@ def image_source_from_stream(
     semantic_context: SemanticContext | None = None,
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> ImageSource:
-    """Resolve the image's samples, colour space and optional soft mask.
-
-    The returned descriptor contains inputs only; it performs no image preparation.
-    """
     soft_mask = None
     mask = stream.dictionary.get("SMask")
     mask_stream = resolver.resolve(mask) if mask is not None else None
@@ -101,7 +85,6 @@ def image_source_from_stream(
 def image_color_rendering(
     dictionary: dict[object, object], rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> ColorRendering:
-    """ISO 32000-1 Table 89 / ISO 32000-2 Table 87: image Intent overrides state."""
     if dictionary.get("ImageMask") is True:
         return rendering
     intent = dictionary.get("Intent")
@@ -115,12 +98,6 @@ def image_color_rendering(
 def image_decode_array_applies(
     dictionary: dict[object, object], *, context: SemanticContext | None = None
 ) -> bool:
-    """Whether an image's Decode array applies to its decoded samples.
-
-    ISO 32000-1 7.4.9 and Table 89 ignore JPX Decode except for stencils.
-    ISO 32000-2:2020 7.4.9 and Table 87 apply it when ColorSpace is present.
-    Without document context, preserve the ISO 32000-1 interpretation.
-    """
     filters = dictionary.get("Filter")
     filters = filters if isinstance(filters, (list, tuple)) else (filters,)
     if not any(decoded_name(value) == "JPXDecode" for value in filters):
@@ -135,7 +112,6 @@ def image_decode_array_applies(
 
 
 def image_smask_in_data(dictionary: dict[object, object]) -> int:
-    """Table 89/87: JPX opacity selector; the entry is meaningless for other filters."""
     filters = dictionary.get("Filter")
     filters = filters if isinstance(filters, (list, tuple)) else (filters,)
     if not any(decoded_name(value) == "JPXDecode" for value in filters):
@@ -147,7 +123,6 @@ def image_smask_in_data(dictionary: dict[object, object]) -> int:
 
 
 def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
-    """Table 89: masks have one-bit samples; JPX defines its own sample depth."""
     filters = dictionary.get("Filter")
     filters = filters if isinstance(filters, (list, tuple)) else (filters,)
     if any(decoded_name(value) == "JPXDecode" for value in filters):

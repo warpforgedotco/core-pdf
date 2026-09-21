@@ -1,5 +1,3 @@
-"""Learned Unicode overlays must remain aligned with captured source glyphs."""
-
 from dataclasses import replace
 
 import pytest
@@ -323,8 +321,6 @@ def test_learned_cluster_attributes_replacement_to_first_nonblank_observation(le
 
 
 def test_blank_observations_do_not_receive_invented_text_attribution() -> None:
-    # The record model permits source text separate from observation text.
-    # Learning may replace that source text without selecting a blank observation.
     font = object()
     glyphs = (internal_glyph("", font), internal_glyph(" ", font))
     run = internal_run("a", internal_cluster("a", *glyphs))

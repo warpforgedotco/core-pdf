@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Composite backdrop-bearing RGB groups into the selected byte raster."""
 
 from __future__ import annotations
 
@@ -26,12 +25,6 @@ def internal_composite_nonisolated_group(
     semantic_context: SemanticContext,
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
 ) -> UInt8Array:
-    """Remove the initial backdrop before applying the group's outer state once.
-
-    The destination is the suspended parent's buffer, still equal to the initial
-    backdrop. Return the effective source alpha for any enclosing non-isolated
-    group. Empty areas must preserve even a transparent backdrop's hidden RGB.
-    """
     opacity = internal_clamp01(opacity)
     scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
     if mask_alpha is not None:
@@ -42,8 +35,6 @@ def internal_composite_nonisolated_group(
         return effective_alpha
     mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
     if opacity == 1.0 and mode in {None, "normal"}:
-        # The rendered result already includes this exact backdrop. At full
-        # opacity/Normal, replacing covered pixels avoids a lossy round trip.
         if mask_alpha is None:
             destination[visible] = rendered[visible]
             return effective_alpha
@@ -62,8 +53,6 @@ def internal_composite_nonisolated_group(
         source_alpha[visible],
         validate=False,
     )
-    # Byte rounding during painting can put the reconstructed color just
-    # outside gamut; clipping belongs to this selected raster output policy.
     colors = numpy.clip(colors, 0.0, 1.0)
     internal_blend_visible_pixels(
         destination,
@@ -88,7 +77,6 @@ def internal_composite_masked_group(
     *,
     semantic_context: SemanticContext,
 ) -> UInt8Array:
-    """Apply a graphics soft mask once to a group's source alpha, not its backdrop."""
     if source_alpha is not None:
         return internal_composite_nonisolated_group(
             destination,
@@ -99,8 +87,6 @@ def internal_composite_masked_group(
             semantic_context=semantic_context,
             mask_alpha=mask_alpha,
         )
-    # An isolated group has no initial backdrop to remove. Its stored alpha
-    # already describes just its own marks, including nested masked objects.
     effective_alpha = numpy.clip(
         numpy.rint(rendered[..., 3].astype(numpy.float64) * opacity * mask_alpha), 0, 255
     ).astype(numpy.uint8)
@@ -129,9 +115,6 @@ def internal_composite_knockout_group(
     element_alpha: UInt8Array,
     shape: numpy.ndarray[Any, Any],
 ) -> None:
-    """Replace group contributions by element shape using the strict group equation."""
-    # Raster alpha and coverage are independently rounded. Reconcile the small
-    # discrepancy at the output boundary before passing unit samples to spec.
     effective_alpha = element_alpha.astype(numpy.float64) / 255.0
     shape = numpy.maximum(numpy.clip(shape, 0.0, 1.0), effective_alpha)
     visible = shape > 0.0

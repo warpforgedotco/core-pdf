@@ -89,7 +89,7 @@ def test_serializing_filtered_attributes_does_not_mutate_cached_page_objects(
             before = deepcopy(page.chars)
             target = pdf if document_level else page
             serialized = target.to_json(**filters)
-            assert "Hello" not in serialized  # Character records, not reconstructed text.
+            assert "Hello" not in serialized
             assert page.chars == before
             assert page.extract_text() == "Hello maintenance"
 

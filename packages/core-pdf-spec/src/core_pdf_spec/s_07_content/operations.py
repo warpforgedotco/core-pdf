@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Content-stream tokenization, operation parsing, and operand validation.
-
-Token parsing advances the lexer only through the token being read. On failure
-its cursor identifies the failure location; readers may recover outside this
-module and call the primitive again at a selected boundary.
-"""
 
 from __future__ import annotations
 
@@ -32,19 +26,12 @@ OperationHandler: TypeAlias = Callable[[ContentOperands, int], "ContentStreamFra
 
 
 class ContentToken(NamedTuple):
-    """An operand or operator, with its exact byte start position.
-
-    Content streams produce one token per few bytes; a tuple subclass keeps
-    the record immutable at a fraction of a generated ``__init__``'s cost.
-    """
-
     start: int
     value: ContentOperand
     is_operator: bool = False
 
 
 def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
-    """Consume one token, or return None at EOF; malformed input raises."""
     match = lexer.lexical_rules.content_token_re.match(lexer.raw_data, lexer.pos)
     if match is not None:
         kind = cast(str, match.lastgroup)
@@ -97,7 +84,6 @@ def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
 
 
 def validate_content_operands(operator: str, operands: ContentOperands) -> None:
-    """Check the fixed PDF operator signature before any state transition."""
     signature = CONTENT_OPERATOR_SIGNATURES.get(operator)
     if signature is None:
         return
@@ -150,12 +136,6 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
 
 
 def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
-    """Yield complete operations without executing or validating their semantics.
-
-    The lexer advances past each operation before yielding. Interpreter execution
-    may then suspend for a child stream and resume at the next parent operation.
-    Operator signatures and state constraints belong to execute_operation.
-    """
     operands: list[ContentOperand] = []
     while (token := parse_content_token(lexer)) is not None:
         if isinstance(token.value, InlineImage):

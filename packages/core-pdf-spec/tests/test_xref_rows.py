@@ -1,5 +1,3 @@
-"""Xref row and stream APIs enforce the same field layout and row semantics."""
-
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
@@ -68,7 +66,6 @@ def test_row_bulk_and_stream_decoding_share_defaults_and_entry_types(
     size: int,
     expected: dict[int, tuple[object, ...]],
 ) -> None:
-    # ISO 32000-2:2020, 7.5.8.3 supplies zero-width defaults and null future entry types.
     rows = {}
     position = 0
     for pair in range(0, len(index), 2):

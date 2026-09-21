@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Resolved Form clipping bounds, ISO 32000-1 7.9.5 and 8.10.2/Table 95."""
 
 from typing import Any, cast
 

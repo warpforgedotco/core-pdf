@@ -1,5 +1,3 @@
-"""PNG row reconstruction follows the third-edition filter equations byte by byte."""
-
 import pytest
 
 from core_predictors.errors import PredictorError, UnsupportedPngFilterError
@@ -69,7 +67,6 @@ def test_png_first_row_uses_zero_previous_bytes(filter_type: int, expected: list
 def test_png_paeth_resolves_ties_in_prescribed_order(
     previous: bytes, encoded: bytes, expected: bytes
 ) -> None:
-    # PNG Paeth chooses left, then above, then upper-left when distances tie.
     data = b"\x00" + previous + b"\x04" + encoded
     assert png_predict(data, columns=2, colors=1, bits_per_component=8) == previous + expected
 

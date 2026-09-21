@@ -1,5 +1,3 @@
-"""CSV output preserves scalar values and never mutates cached page objects."""
-
 import csv
 from copy import deepcopy
 from io import BytesIO, StringIO
