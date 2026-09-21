@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf_spec.s_09_fonts.cmap_decoder import CMapDecoder
-from core_pdf_spec.s_09_fonts.cmap_ranges import validate_codespace_range
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import CMapProgram
+from core_adobe_fonts.cmap.decoder import CMapDecoder
+from core_adobe_fonts.cmap.ranges import validate_codespace_range
+from core_adobe_fonts.cmap.tokenizer import CMapProgram
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap, parse_to_unicode_cmap
 
 CODESPACE = b"1 begincodespacerange <00> <7f> endcodespacerange\n"

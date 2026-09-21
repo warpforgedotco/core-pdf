@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Literal UTF-16BE ToUnicode mappings and CMap inheritance."""
 
 from __future__ import annotations
@@ -5,11 +6,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
-from core_pdf_spec.s_09_fonts.cmap_ranges import (
+from core_adobe_fonts.cmap.ranges import (
     CodeSpaceRanges,
-    internal_validate_pdf_codespace,
+    validate_effective_codespace,
 )
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
+from core_adobe_fonts.cmap.tokenizer import (
     CMapProgram,
     cmap_metadata,
     cmap_tokens,
@@ -156,7 +157,7 @@ class ToUnicodeCMap:
 
         Recovery adapters may override this completion step for recovered maps.
         """
-        internal_validate_pdf_codespace(self.code_space_ranges, self.mappings)
+        validate_effective_codespace(self.code_space_ranges, self.mappings)
 
     def resolve_parent(
         self,
@@ -228,7 +229,7 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
             )
     parent = cmap_metadata(program)[0]
     if parent is None:
-        internal_validate_pdf_codespace(ranges, mappings)
+        validate_effective_codespace(ranges, mappings)
     return ParsedToUnicodeCMap(tuple(ranges), mappings, parent)
 
 

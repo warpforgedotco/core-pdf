@@ -23,16 +23,29 @@ if [[ ! -x "${NUITKA_ROOT}/bin/nuitka" ]]; then
     exit 1
 fi
 
+# Standards packages beneath core-pdf-spec: source roots for PYTHONPATH and
+# include flags for Nuitka (the fonts package carries CMap package data).
+STANDARDS_DISTRIBUTIONS=(core-predictors core-postscript core-jbig2 core-pdf-crypto core-adobe-fonts)
+SOURCE_PATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}/packages/core-pdf-spec/src"
+INCLUDE_ARGS=(
+    --include-package=core_pdf
+    --include-package=core_pdf_spec
+    --include-package-data=core_pdf
+    --include-package-data=core_pdf_spec
+)
+for distribution in "${STANDARDS_DISTRIBUTIONS[@]}"; do
+    SOURCE_PATH="${SOURCE_PATH}:${PROJECT_ROOT}/packages/${distribution}/src"
+    package="${distribution//-/_}"
+    INCLUDE_ARGS+=("--include-package=${package}" "--include-package-data=${package}")
+done
+
 echo "==> Building core-pdf CLI with C-level PGO (--pgo-c)..."
-PYTHONPATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}/packages/core-pdf-spec/src" \
+PYTHONPATH="${SOURCE_PATH}" \
 NUITKA_CACHE_DIR="${CACHE_DIR}" \
 CCACHE_DISABLE=1 \
 "${PYTHON}" "${NUITKA_ROOT}/bin/nuitka" \
     --mode=accelerated \
-    --include-package=core_pdf \
-    --include-package=core_pdf_spec \
-    --include-package-data=core_pdf \
-    --include-package-data=core_pdf_spec \
+    "${INCLUDE_ARGS[@]}" \
     --pgo-c \
     --lto=yes \
     --assume-yes-for-downloads \

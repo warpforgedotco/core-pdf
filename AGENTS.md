@@ -13,6 +13,17 @@ spec must never import core or OCR, including type-only imports. Spec exposes lo
 chapter APIs, not a document facade or CLI. Its exported symbols and documented parsing
 extension methods form the cross-distribution compatibility contract.
 
+Five standards packages sit beneath spec as the workspace floor, one per external
+specification family: `core-predictors` (PNG and TIFF predictors), `core-postscript` (the
+PLRM calculator subset), `core-jbig2` (ITU-T T.88), `core-pdf-crypto` (ciphers, RFC 5652 CMS,
+ISO/TS 32003 and 32004), and `core-adobe-fonts` (CFF, Type 2, Type 1, CMaps, the Adobe Glyph
+List, and Core 14 metrics, with the CMap data). Each lives at `packages/<name>/src/<name>/`
+and imports nothing from core, spec, OCR, validate, or the other floor packages, including
+type-only imports. PDF glue (DecodeParms, PDF objects, spec exceptions, T.88 polarity
+inversion) stays in the spec chapter that ISO 32000 assigns; kernels take bytes and plain
+Python values. Spec pins each floor package's minor range; core pins the three it imports
+directly. See `tests/fixtures/specifications/README.md` for the document-to-package map.
+
 The optional `core-pdf-validate` workspace member owns external validator adapters and reports.
 Core, spec, and OCR must never import or discover it. Explicit validation uses original source
 bytes; only declaration discovery depends on public core APIs. Validator execution, temporary
@@ -26,16 +37,17 @@ differential runs; ordinary `uv sync`/`uv run` commands may otherwise remove the
 
 This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. `src/core_pdf/api/document.py` owns the public `PdfDocument` and `PdfPage` APIs; third-party compatibility facades live in `src/core_pdf/api/compat`. Nothing under `impl/` may import from `api/`. Internal implementation is organized under `src/core_pdf/impl`:
 
-- `packages/core-pdf-spec/src/core_pdf_spec/` contains PDF-defined semantics and referenced-standard algorithms, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …). Reader recovery, substitute fonts, Unicode guesses, capture products, selected device profiles, and raster preparation belong under `_impl/`. This boundary also applies to type-only imports.
+- `packages/core-pdf-spec/src/core_pdf_spec/` contains PDF-defined semantics and referenced-standard algorithms, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …); code for a referenced external standard lives in the floor packages above and spec keeps only the PDF wrapper. Reader recovery, substitute fonts, Unicode guesses, capture products, selected device profiles, and raster preparation belong under `_impl/`. This boundary also applies to type-only imports.
 - `impl/_impl/document/` composes source/lifecycle, recovery adapters, page operations, and navigation/metadata/field/structure projections. `impl/_impl/capture/` records interpreter events into runs, glyph observations, page programs, and renderer commands. `impl/_impl/fonts/` owns font selection, Unicode recovery, raster adapters, and substitute font assets. `impl/_impl/graphics/` owns color output, raster preparation, codec selection, and tolerant filter/function adapters.
 - `impl/types.py` defines core capture records and source protocols and re-exports spec-owned PDF primitive identities. `core_pdf_spec.types` and `core_pdf_spec.exceptions` own shared foundational types and errors. Keep module-level functions in their owning implementation modules; shared text normalization belongs in `impl/_impl/model/text.py`.
 - `impl/_impl/extract/` is the native extraction pipeline. Recognition routing, learning, OCR tasks, and recognition-specific output policies belong to the companion. `extract/__init__.py` re-exports only the pipeline entry points; import stage internals from the owning submodule.
-- `impl/_impl/render/` rasterizes; `impl/_impl/output/model.py` defines structured output and `impl/_impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/_impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/_impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/_impl/runtime/` holds engine-independent infrastructure and must not import from `core_pdf_spec` or the derived-processing packages beside it.
+- `impl/_impl/render/` rasterizes; `impl/_impl/output/model.py` defines structured output and `impl/_impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/_impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/_impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/_impl/runtime/` holds engine-independent infrastructure and must not import from `core_pdf_spec`, the standards packages, or the derived-processing packages beside it.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 The authored test suite includes differential comparisons under
 `tests/src/core_pdf/api/compat/differential`, strict spec tests under
-`packages/core-pdf-spec/tests`, and validation tests under
+`packages/core-pdf-spec/tests`, each standards package's tests under its own
+`packages/<name>/tests` (which import nothing from spec or core), and validation tests under
 `packages/core-pdf-validate/tests`. Reference corpora remain in
 `tests/fixtures`. `docs/` holds `api.md`, `standards.md`, `roadmap.md`, and
 licensing material; maintenance scripts are in `scripts/`.
@@ -75,7 +87,7 @@ A Nuitka module build can leave a `<module>.cpython-*.so` next to its `.py` in
 `src/`. Python's `ExtensionFileLoader` wins over `SourceFileLoader`, so the stale
 binary is imported instead of the source — and it still reports the `.py` path as
 `__file__`, so nothing looks wrong. Edits to that module then silently do nothing.
-Remove any such `.so` from all four source roots before validating source changes.
+Remove any such `.so` from every source root listed in `[tool.coverage.run].source` before validating source changes; the root `conftest.py` reads that list and aborts the run if one is found.
 
 ### Two type checkers, contradictory advice
 
@@ -86,7 +98,7 @@ a typing change is an improvement.
 
 ## Dependency Management
 
-Never edit `pyproject.toml` or `uv.lock` manually when adding or removing dependencies. Use `uv add --group <group> <package>` or `uv remove --group <group> <package>`; these commands update project metadata and the lockfile, and both generated changes should be reviewed and committed. Use the existing groups for their intended purpose: `test` for pytest and its runner, `vendor-test` for reference libraries used by differential tests, and `lint` for Ruff, mypy, and ty. For example, add a test dependency with `uv add --group test pytest-xdist`; do not create a new group when an existing group fits.
+Never edit `pyproject.toml` or `uv.lock` manually when adding or removing dependencies. Use `uv add --group <group> <package>` or `uv remove --group <group> <package>`; these commands update project metadata and the lockfile, and both generated changes should be reviewed and committed. Use the existing groups for their intended purpose: `test` for pytest and its runner, `vendor-test` for reference libraries used by differential tests, and `lint` for Ruff, mypy, and ty. For example, add a test dependency with `uv add --group test pytest-xdist`; do not create a new group when an existing group fits. A dependency of a workspace member is added with `uv add --package <member> <package>`; for another member, pass a version range such as `"core-jbig2>=0.1.0,<0.2.0"` and uv records the `{ workspace = true }` source itself.
 
 ## Coding Style & Naming Conventions
 
@@ -94,7 +106,7 @@ Write Python with four-space indentation, clear type annotations, and lines no l
 
 Module-level symbols that are not part of a module's interface are prefixed `internal_` rather than with a leading underscore — about 490 of them. Treat anything so prefixed as private. The convention is applied unevenly across subpackages, so its *absence* does not imply a symbol is public; nothing under `impl/` is. Where a module declares `__all__`, that is the more reliable signal. Two wrinkles worth knowing: `internal_EXPORTS` in `__init__.py` is the public export table (the prefix marks the variable as private, not its contents), and a handful of constants are spelled `internal_UPPER_CASE`.
 
-Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the derived-processing layering, the spec layering, the spec/reader policy boundary, and the foundational packages that must not depend upward (`impl/_impl/runtime/`, `impl/_impl/model/`, `core_pdf_spec.s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the contract's own description in `pyproject.toml` before editing it.
+Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the derived-processing layering, the spec layering, the spec/reader policy boundary, and the foundational packages that must not depend upward (`impl/_impl/runtime/`, `impl/_impl/model/`, `core_pdf_spec.s_07_syntax`), and the standards-package floor (they import no other workspace package and not each other). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the contract's own description in `pyproject.toml` before editing it.
 
 Third-party implementations belong in the owning package's `_vendor/` directory.
 The fontTools backend stays in `src/core_pdf/_vendor/`; spec may contain attributed inert
@@ -118,5 +130,7 @@ on both sides. Validate with `uv run --locked --all-packages --extra unstructure
 Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...`, `test(corpus): ...`, and `ci: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, fixture or compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
 
 ## Local and CI Validation
+
+CI also installs each floor package and spec on its own (`uv sync --locked --package <member> --group test`), runs `scripts/check_package_isolation.py <member>` to prove the tiers above it are absent, and then runs that member's tests. Reproduce it locally the same way; it replaces `.venv`, so run a full `uv sync --all-packages` afterwards.
 
 Local commands may use the installed environment directly. To reproduce CI’s locked dependency validation, use `uv run --locked` with the relevant group, such as `uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto` or `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.

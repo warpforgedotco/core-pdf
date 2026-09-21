@@ -5,18 +5,18 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 
+from core_adobe_fonts.type1.program import (
+    binary_entries,
+    decode_charstring,
+    decode_eexec_payload,
+    decrypt_type1,
+)
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf.impl._impl.fonts.font_program_truetype import internal_recording_to_contours
 from core_pdf.impl._impl.fonts.raster_kernel import Point, rasterize_contours, transform_contours
-from core_pdf_spec.s_09_fonts.font_program_type1 import (
-    binary_entries,
-    decode_charstring,
-    decode_eexec_payload,
-    decrypt_type1,
-)
 
 internal_LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 

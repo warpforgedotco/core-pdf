@@ -1,6 +1,8 @@
 # PDF versions and standards validation
 
-`core-pdf-spec` shares its chapter algorithms across PDF versions. A document's format
+`core-pdf-spec` shares its chapter algorithms across PDF versions; the external-standard
+kernels it wraps (JBIG2, predictors, the PostScript calculator, CMS and PDF MAC ciphers, and
+the Adobe font formats) are their own distributions beneath it. A document's format
 version, specification edition, developer extensions, and conformance claims are
 separate identities. Recognizing one does not mean every feature is implemented or
 that the document conforms.

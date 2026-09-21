@@ -1,0 +1,449 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Type 2 charstring interpretation (Adobe TN 5177) over parsed CFF fonts."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from math import isfinite, sqrt
+
+from core_adobe_fonts.cff.font import CFFFont
+
+TYPE2_MAX_SUBR_DEPTH = 10
+TYPE2_MAX_STACK = 48
+TYPE2_TRANSIENT_SIZE = 32
+
+
+def cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> tuple[float, ...]:
+    """Return the interior extrema parameters of one cubic coordinate."""
+    # The derivative's Bernstein coefficients are the adjacent control-point
+    # differences. If they have one sign, the coordinate is monotone and no
+    # quadratic root solving is needed (including constant coordinates).
+    if p0 <= p1 <= p2 <= p3 or p0 >= p1 >= p2 >= p3:
+        return ()
+    a = -p0 + 3.0 * p1 - 3.0 * p2 + p3
+    b = 2.0 * (p0 - 2.0 * p1 + p2)
+    c = p1 - p0
+    epsilon = 1e-12
+    if abs(a) <= epsilon:
+        if abs(b) <= epsilon:
+            return ()
+        root = -c / b
+        return (root,) if 0.0 < root < 1.0 else ()
+    discriminant = b * b - 4.0 * a * c
+    if discriminant < 0.0:
+        return ()
+    root_delta = sqrt(discriminant)
+    roots = ((-b - root_delta) / (2.0 * a), (-b + root_delta) / (2.0 * a))
+    return tuple(dict.fromkeys(root for root in roots if 0.0 < root < 1.0))
+
+
+def cubic_point(
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+    t: float,
+) -> tuple[float, float]:
+    mt = 1.0 - t
+    # Every coefficient is shared by the x and y line, so bind them once. Keep
+    # the ** form: mt**3 and mt*mt*mt disagree on about a quarter of random
+    # floats, which would move the golden rasters.
+    mt3 = mt**3
+    t3 = t**3
+    mt2t = 3.0 * mt * mt * t
+    mtt2 = 3.0 * mt * t * t
+    return (
+        mt3 * p0[0] + mt2t * p1[0] + mtt2 * p2[0] + t3 * p3[0],
+        mt3 * p0[1] + mt2t * p1[1] + mtt2 * p2[1] + t3 * p3[1],
+    )
+
+
+def internal_execute_type2_flex(
+    operator: int,
+    operands: list[float],
+    curve: Callable[[float, float, float, float, float, float], None],
+) -> None:
+    """Execute one of the four escaped Type 2 flex operators."""
+    match operator:
+        case 34:  # hflex
+            dx1, dx2, dy2, dx3, dx4, dx5, dx6 = operands
+            curve(dx1, 0.0, dx2, dy2, dx3, 0.0)
+            curve(dx4, 0.0, dx5, -dy2, dx6, 0.0)
+        case 35:  # flex
+            (
+                dx1,
+                dy1,
+                dx2,
+                dy2,
+                dx3,
+                dy3,
+                dx4,
+                dy4,
+                dx5,
+                dy5,
+                dx6,
+                dy6,
+                ignored_flex_depth,
+            ) = operands
+            curve(dx1, dy1, dx2, dy2, dx3, dy3)
+            curve(dx4, dy4, dx5, dy5, dx6, dy6)
+        case 36:  # hflex1
+            dx1, dy1, dx2, dy2, dx3, dx4, dx5, dy5, dx6 = operands
+            dy6 = -(dy1 + dy2 + dy5)
+            curve(dx1, dy1, dx2, dy2, dx3, 0.0)
+            curve(dx4, 0.0, dx5, dy5, dx6, dy6)
+        case 37:  # flex1
+            dx1, dy1, dx2, dy2, dx3, dy3, dx4, dy4, dx5, dy5, d6 = operands
+            dx = dx1 + dx2 + dx3 + dx4 + dx5
+            dy = dy1 + dy2 + dy3 + dy4 + dy5
+            if abs(dx) > abs(dy):
+                dx6, dy6 = d6, -dy
+            else:
+                dx6, dy6 = -dx, d6
+            curve(dx1, dy1, dx2, dy2, dx3, dy3)
+            curve(dx4, dy4, dx5, dy5, dx6, dy6)
+        case _:
+            raise ValueError("invalid Type 2 flex operator")
+
+
+def internal_type2_subr_bias(count: int) -> int:
+    if count < 1240:
+        return 107
+    if count < 33900:
+        return 1131
+    return 32768
+
+
+def execute_type2_charstring(  # noqa: C901 - direct dispatch mirrors Type 2 operators
+    charstring: bytes,
+    *,
+    local_subrs: tuple[bytes, ...],
+    global_subrs: tuple[bytes, ...],
+    move: Callable[[float, float], None],
+    line: Callable[[float, float], None],
+    curve: Callable[[float, float, float, float, float, float], None],
+    flush_contour: Callable[[], None],
+    has_current_point: Callable[[], bool],
+    seac: Callable[[int, int, float, float], None],
+    random_value: Callable[[], float],
+) -> bool:
+    """Execute Type 2 operators against a caller-owned geometric path sink.
+
+    Return true when the program exhausts without endchar; malformed programs
+    raise. Sampling, partial-path retention and random sources are caller choices.
+    """
+    stack: list[float] = []
+    transient = [0.0] * TYPE2_TRANSIENT_SIZE
+    stem_count = 0
+    width_resolved = False
+    subr_bias = internal_type2_subr_bias(len(local_subrs))
+    gsubr_bias = internal_type2_subr_bias(len(global_subrs))
+
+    def push(value: float) -> None:
+        if len(stack) >= TYPE2_MAX_STACK or not isfinite(value):
+            raise ValueError("invalid Type 2 operand stack")
+        stack.append(float(value))
+
+    def require_integer(value: float) -> int:
+        integer = int(value)
+        if value != integer:
+            raise ValueError("Type 2 operator requires an integer")
+        return integer
+
+    def pop_integer() -> int:
+        return require_integer(stack.pop())
+
+    def execute_escaped_operator(operator: int) -> None:
+        match operator:
+            case 0:  # dotsection -- deprecated no-op with a clearing stack contract
+                stack.clear()
+            case 3:  # and
+                second = stack.pop()
+                first = stack.pop()
+                push(float(first != 0.0 and second != 0.0))
+            case 4:  # or
+                second = stack.pop()
+                first = stack.pop()
+                push(float(first != 0.0 or second != 0.0))
+            case 5:  # not
+                push(float(stack.pop() == 0.0))
+            case 9:  # abs
+                push(abs(stack.pop()))
+            case 10:  # add
+                second = stack.pop()
+                push(stack.pop() + second)
+            case 11:  # sub
+                second = stack.pop()
+                push(stack.pop() - second)
+            case 12:  # div
+                second = stack.pop()
+                push(stack.pop() / second)
+            case 14:  # neg
+                push(-stack.pop())
+            case 15:  # eq
+                second = stack.pop()
+                push(float(stack.pop() == second))
+            case 18:  # drop
+                stack.pop()
+            case 20:  # put
+                index = pop_integer()
+                value = stack.pop()
+                if not 0 <= index < len(transient):
+                    raise ValueError("invalid Type 2 transient-array index")
+                transient[index] = value
+            case 21:  # get
+                index = pop_integer()
+                if not 0 <= index < len(transient):
+                    raise ValueError("invalid Type 2 transient-array index")
+                push(transient[index])
+            case 22:  # ifelse
+                value2 = stack.pop()
+                value1 = stack.pop()
+                choice2 = stack.pop()
+                choice1 = stack.pop()
+                push(choice1 if value1 <= value2 else choice2)
+            case 23:  # random
+                push(random_value())
+            case 24:  # mul
+                second = stack.pop()
+                push(stack.pop() * second)
+            case 26:  # sqrt
+                push(sqrt(stack.pop()))
+            case 27:  # dup
+                push(stack[-1])
+            case 28:  # exch
+                stack[-1], stack[-2] = stack[-2], stack[-1]
+            case 29:  # index
+                index = max(pop_integer(), 0)
+                if index >= len(stack):
+                    raise ValueError("invalid Type 2 stack index")
+                push(stack[-index - 1])
+            case 30:  # roll
+                shift = pop_integer()
+                count = pop_integer()
+                if count < 0 or count > len(stack):
+                    raise ValueError("invalid Type 2 roll count")
+                if count:
+                    shift %= count
+                    if shift:
+                        values = stack[-count:]
+                        stack[-count:] = values[-shift:] + values[:-shift]
+            case 34 | 35 | 36 | 37:  # hflex / flex / hflex1 / flex1
+                if not has_current_point():
+                    raise ValueError("Type 2 flex operator has no current point")
+                internal_execute_type2_flex(operator, stack, curve)
+                stack.clear()
+            case _:
+                raise ValueError("unsupported Type 2 escaped operator")
+
+    def execute(  # noqa: C901 - keeping operator cases together makes the bytecode contract auditable
+        program: bytes, depth: int = 0
+    ) -> bool:
+        """Interpret one Type 2 charstring, appending to the enclosing contour state.
+
+        Return ``True`` on exhaustion or ``return``, and ``False`` when ``endchar``
+        has flushed the contour. Malformed programs raise.
+
+        The branches below are keyed by raw Type 2 operator bytes; each carries the
+        operator's spec name. Operands are values above 31, plus 28 (a two-byte
+        integer) and 255 (a 16.16 fixed-point number).
+        """
+        nonlocal stem_count, width_resolved
+        if depth > TYPE2_MAX_SUBR_DEPTH:
+            raise ValueError("invalid Type 2 charstring")
+        pos = 0
+        try:
+            while pos < len(program):
+                byte = program[pos]
+                if byte > 31 or byte in {28, 255}:
+                    value, pos = CFFFont.parse_number(program, pos)
+                    push(value)
+                    continue
+                pos += 1
+                match byte:
+                    case 1 | 3 | 18 | 23:  # hstem, vstem, hstemhm, vstemhm
+                        operand_count = len(stack)
+                        if not width_resolved and operand_count % 2:
+                            operand_count -= 1
+                        if operand_count < 2 or operand_count % 2:
+                            raise ValueError("invalid Type 2 charstring")
+                        stem_count += operand_count // 2
+                        if stem_count > 96:
+                            raise ValueError("invalid Type 2 charstring")
+                        width_resolved = True
+                        stack.clear()
+                    case 4 | 22:  # vmoveto / hmoveto
+                        if len(stack) == 1:
+                            displacement = stack[0]
+                        elif not width_resolved and len(stack) == 2:
+                            displacement = stack[1]
+                        else:
+                            raise ValueError("invalid Type 2 charstring")
+                        width_resolved = True
+                        if byte == 4:
+                            move(0.0, displacement)
+                        else:
+                            move(displacement, 0.0)
+                        stack.clear()
+                    case 5:  # rlineto
+                        if not has_current_point() or len(stack) < 2 or len(stack) % 2:
+                            raise ValueError("invalid Type 2 charstring")
+                        for i in range(0, len(stack) - 1, 2):
+                            line(stack[i], stack[i + 1])
+                        stack.clear()
+                    case 6 | 7:  # hlineto / vlineto -- alternating axes
+                        if not has_current_point() or not stack:
+                            raise ValueError("invalid Type 2 charstring")
+                        horizontal = byte == 6
+                        for value in stack:
+                            line(value, 0.0) if horizontal else line(0.0, value)
+                            horizontal = not horizontal
+                        stack.clear()
+                    case 8:  # rrcurveto
+                        if not has_current_point() or len(stack) < 6 or len(stack) % 6:
+                            raise ValueError("invalid Type 2 charstring")
+                        for i in range(0, len(stack) - 5, 6):
+                            curve(*stack[i : i + 6])
+                        stack.clear()
+                    case 10 | 29:  # callsubr / callgsubr
+                        if not stack:
+                            raise ValueError("invalid Type 2 charstring")
+                        subrs, bias = (
+                            (local_subrs, subr_bias) if byte == 10 else (global_subrs, gsubr_bias)
+                        )
+                        subr_index = pop_integer() + bias
+                        if not 0 <= subr_index < len(subrs):
+                            raise ValueError("invalid Type 2 charstring")
+                        # Type 2, 4.2 note 6 permits endchar in a subroutine;
+                        # it completes the glyph through every enclosing call.
+                        if not execute(subrs[subr_index], depth + 1):
+                            return False
+                    case 11:  # return -- leave this subroutine, caller keeps going
+                        return True
+                    case 12:  # two-byte escaped operator
+                        if pos >= len(program):
+                            raise ValueError("invalid Type 2 charstring")
+                        escaped_operator = program[pos]
+                        pos += 1
+                        execute_escaped_operator(escaped_operator)
+                    case 14:  # endchar -- glyph complete
+                        arguments = list(stack)
+                        if not width_resolved:
+                            if len(arguments) in {1, 5}:
+                                arguments = arguments[1:]
+                            elif len(arguments) not in {0, 4}:
+                                raise ValueError("invalid Type 2 charstring")
+                            width_resolved = True
+                        elif len(arguments) not in {0, 4}:
+                            raise ValueError("invalid Type 2 charstring")
+                        stack.clear()
+                        flush_contour()
+                        if arguments:
+                            seac(
+                                require_integer(arguments[2]),
+                                require_integer(arguments[3]),
+                                arguments[0],
+                                arguments[1],
+                            )
+                        return False  # endchar completes the glyph
+                    case 19 | 20:  # hintmask, cntrmask -- skip trailing mask bytes
+                        operand_count = len(stack)
+                        if not width_resolved and operand_count % 2:
+                            operand_count -= 1
+                        if operand_count % 2:
+                            raise ValueError("invalid Type 2 charstring")
+                        stem_count += operand_count // 2
+                        if stem_count <= 0 or stem_count > 96:
+                            raise ValueError("invalid Type 2 charstring")
+                        mask_bytes = (stem_count + 7) // 8
+                        if pos + mask_bytes > len(program):
+                            raise ValueError("invalid Type 2 charstring")
+                        width_resolved = True
+                        stack.clear()
+                        pos += mask_bytes
+                    case 21:  # rmoveto
+                        if len(stack) == 2:
+                            dx, dy = stack
+                        elif not width_resolved and len(stack) == 3:
+                            dx, dy = stack[1:]
+                        else:
+                            raise ValueError("invalid Type 2 charstring")
+                        width_resolved = True
+                        move(dx, dy)
+                        stack.clear()
+                    case 24:  # rcurveline -- curves followed by exactly one line
+                        if not has_current_point() or len(stack) < 8 or (len(stack) - 2) % 6:
+                            raise ValueError("invalid Type 2 charstring")
+                        curve_args = stack[:-2]
+                        for i in range(0, len(curve_args) - 5, 6):
+                            curve(*curve_args[i : i + 6])
+                        line(stack[-2], stack[-1])
+                        stack.clear()
+                    case 25:  # rlinecurve -- lines followed by exactly one curve
+                        if not has_current_point() or len(stack) < 8 or (len(stack) - 6) % 2:
+                            raise ValueError("invalid Type 2 charstring")
+                        line_args = stack[:-6]
+                        for i in range(0, len(line_args) - 1, 2):
+                            line(line_args[i], line_args[i + 1])
+                        curve(*stack[-6:])
+                        stack.clear()
+                    case 26 | 27:  # vvcurveto / hhcurveto
+                        if (
+                            not has_current_point()
+                            or len(stack) < 4
+                            or len(stack) % 4 not in {0, 1}
+                        ):
+                            raise ValueError("invalid Type 2 charstring")
+                        first_offset = stack.pop(0) if len(stack) % 2 else 0.0
+                        for i in range(0, len(stack) - 3, 4):
+                            first, dx2, dy2, last = stack[i : i + 4]
+                            if byte == 26:
+                                curve(first_offset, first, dx2, dy2, 0.0, last)
+                            else:
+                                curve(first, first_offset, dx2, dy2, last, 0.0)
+                            first_offset = 0.0
+                        stack.clear()
+                    case 30 | 31:  # vhcurveto / hvcurveto -- alternating tangents
+                        if (
+                            not has_current_point()
+                            or len(stack) < 4
+                            or len(stack) % 4 not in {0, 1}
+                        ):
+                            raise ValueError("invalid Type 2 charstring")
+                        horizontal = byte == 31
+                        args = list(stack)
+                        stack.clear()
+                        while len(args) >= 4:
+                            if horizontal:  # this segment starts horizontal
+                                dx1 = args.pop(0)
+                                dy1 = 0.0
+                                dx2 = args.pop(0)
+                                dy2 = args.pop(0)
+                                dy3 = args.pop(0)
+                                dx3 = args.pop(0) if len(args) == 1 else 0.0
+                            else:  # this segment starts vertical
+                                dx1 = 0.0
+                                dy1 = args.pop(0)
+                                dx2 = args.pop(0)
+                                dy2 = args.pop(0)
+                                dx3 = args.pop(0)
+                                dy3 = args.pop(0) if len(args) == 1 else 0.0
+                            curve(dx1, dy1, dx2, dy2, dx3, dy3)
+                            horizontal = not horizontal
+                    case _:
+                        raise ValueError("invalid Type 2 charstring")
+            return True
+        except (ArithmeticError, IndexError, ValueError) as exc:
+            raise ValueError("invalid Type 2 charstring") from exc
+
+    return execute(charstring)
+
+
+__all__ = (
+    "TYPE2_MAX_SUBR_DEPTH",
+    "TYPE2_MAX_STACK",
+    "TYPE2_TRANSIENT_SIZE",
+    "cubic_extrema_times",
+    "cubic_point",
+    "execute_type2_charstring",
+)

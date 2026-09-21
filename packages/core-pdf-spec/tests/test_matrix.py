@@ -1,12 +1,11 @@
 """Affine composition shares arithmetic across PDF and CFF consumers."""
 
 import math
-from typing import Any, cast
 
 import pytest
 
+from core_adobe_fonts.cff.font import DEFAULT_CFF_FONT_MATRIX
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, multiply_affine
-from core_pdf_spec.s_09_fonts.font_program import DEFAULT_CFF_FONT_MATRIX, CFFFont, cff_font_matrix
 
 
 def test_unconditional_affine_product_preserves_operand_order() -> None:
@@ -33,31 +32,14 @@ def test_identity_shortcut_is_only_used_by_matrix_method() -> None:
 
 
 @pytest.mark.parametrize("value", [True, "1", b"1", float("inf"), float("nan"), 10**400])
-def test_pdf_and_cff_matrix_numbers_are_strict(value: object) -> None:
-    values = [value, 0, 0, 1, 0, 0]
+def test_pdf_matrix_numbers_are_strict(value: object) -> None:
     with pytest.raises(ValueError, match="matrix operand"):
-        Matrix.from_operand(values)
-    with pytest.raises(ValueError, match="CFF FontMatrix"):
-        cff_font_matrix(cast(Any, {(12, 7): values}))
+        Matrix.from_operand([value, 0, 0, 1, 0, 0])
 
 
-@pytest.mark.parametrize(
-    ("top", "child", "expected"),
-    [
-        (None, None, DEFAULT_CFF_FONT_MATRIX),
-        ([2, 1, 3, 4, 5, 6], None, Matrix(2, 1, 3, 4, 5, 6)),
-        (None, [7, 8, 9, 10, 11, 12], Matrix(7, 8, 9, 10, 11, 12)),
-        ([7, 8, 9, 10, 11, 12], [2, 1, 3, 4, 5, 6], Matrix(23, 26, 57, 64, 100, 112)),
-    ],
-)
-def test_cff_top_and_font_dictionary_matrix_defaults_and_composition(
-    top: list[float] | None, child: list[float] | None, expected: Matrix
-) -> None:
-    font = CFFFont.__new__(CFFFont)
-    font.charstrings = [b"\x0e"]
-    font.top_dict = {} if top is None else {(12, 7): top}
-    font.fd_select = (0,)
-    font.font_dicts = ({},) if child is None else ({(12, 7): child},)
-    result = font.font_matrix(0)
-    assert isinstance(result, Matrix)
-    assert result == expected
+def test_cff_font_matrix_converts_to_the_pdf_matrix_type() -> None:
+    # A CFF FontMatrix composes with PDF matrices once core lifts it into Matrix.
+    assert Matrix(*DEFAULT_CFF_FONT_MATRIX) == Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+    assert Matrix(*DEFAULT_CFF_FONT_MATRIX).multiply(IDENTITY_MATRIX) == Matrix(
+        *DEFAULT_CFF_FONT_MATRIX
+    )

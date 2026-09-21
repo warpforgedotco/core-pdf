@@ -57,8 +57,10 @@ Contact: <turcioskevinr@gmail.com>
 
 
 The low-level algorithms are also available as the independently versioned `core-pdf-spec`
-package (`core_pdf_spec`). It contains strict PDF and referenced-standard semantics;
-`core-pdf` composes these with reader recovery, font backends, extraction, and rendering.
+package (`core_pdf_spec`). It contains strict PDF semantics and wraps the referenced
+standards, which are themselves separate packages (`core-predictors`, `core-postscript`,
+`core-jbig2`, `core-pdf-crypto`, `core-adobe-fonts`) usable without PDF; `core-pdf`
+composes these with reader recovery, font backends, extraction, and rendering.
 See [the spec package](packages/core-pdf-spec/README.md) for the package boundary and
 low-level usage.
 

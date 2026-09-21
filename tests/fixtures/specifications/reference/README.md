@@ -16,22 +16,22 @@ Re-fetch with:
 
 | Reference | Licence | Engine code |
 | --- | --- | --- |
-| `fonts/TN5176-CFF.pdf` | CC BY-ND 4.0 | `spec/s_09_fonts` — the CFF parser |
-| `fonts/TN5177-Type2-Charstring.pdf` | CC BY-ND 4.0 | charstring interpretation |
-| `fonts/Type1-Font-Format.pdf` | CC BY-ND 4.0 | `Type1`, `MMType1` |
+| `fonts/TN5176-CFF.pdf` | CC BY-ND 4.0 | `core-adobe-fonts` `cff.font` — the CFF parser |
+| `fonts/TN5177-Type2-Charstring.pdf` | CC BY-ND 4.0 | `core-adobe-fonts` `cff.charstrings` |
+| `fonts/Type1-Font-Format.pdf` | CC BY-ND 4.0 | `core-adobe-fonts` `type1.program`; `Type1`, `MMType1` |
 | `fonts/TN5015-Type1-Supplement.pdf` | CC BY-ND 4.0 | Type 1 edge cases |
-| `fonts/TN5014-CMap-CIDFont.pdf` | CC BY-ND 4.0 | `Type0`, `CIDFontType0/2`, CMaps |
+| `fonts/TN5014-CMap-CIDFont.pdf` | CC BY-ND 4.0 | `core-adobe-fonts` `cmap.*`; `Type0`, `CIDFontType0/2` |
 | `fonts/TN5094-CJK-Collections.pdf` | CC BY-ND 4.0 | Adobe-Japan1 etc. ordering |
 | `fonts/TN5180-sfnt.pdf` | CC BY-ND 4.0 | sfnt/OpenType container |
-| `glyph-lists/glyphlist.txt` | BSD-3-Clause | glyph-name → Unicode fallback |
+| `glyph-lists/glyphlist.txt` | BSD-3-Clause | `core-adobe-fonts` `agl.glyph_list`; glyph-name → Unicode fallback |
 | `glyph-lists/aglfn.txt` | BSD-3-Clause | new-font glyph naming |
 | `rfc/rfc1950-zlib.txt` | IETF Trust | `FlateDecode` container |
 | `rfc/rfc1951-deflate.txt` | IETF Trust | `FlateDecode` |
-| `rfc/rfc5652-cms.txt` | IETF Trust | `adbe.pkcs7` signatures |
+| `rfc/rfc5652-cms.txt` | IETF Trust | `core-pdf-crypto` `pdf_mac` (CMS AuthenticatedData) |
 | `rfc/rfc3161-timestamp.txt` | IETF Trust | signature timestamps |
 | `unicode/UnicodeData.txt` | Unicode | `ToUnicode` normalisation |
 | `unicode/LineBreak.txt` | Unicode | line/word segmentation |
-| `png/png-3rd-edition.html` | W3C Document | `FlateDecode` PNG predictors |
+| `png/png-3rd-edition.html` | W3C Document | `core-predictors` `png`; `FlateDecode` PNG predictors |
 | `pdfa/Matterhorn-Protocol-1.1.pdf` | CC BY 4.0 | PDF/UA failure conditions, `s_14_structure` |
 | `pdfa/Tagged-PDF-Best-Practice-Guide-Syntax.pdf` | CC BY 4.0 | structure tree, `s_14_structure` |
 | `pdfa/Well-Tagged-PDF-WTPDF-1.0.pdf` | CC BY 4.0 | tagged PDF 2.0 |
@@ -55,7 +55,7 @@ authoritative mapping.
   as a multi-page site, with no single downloadable document; the ISO form is
   paywalled. `fonts/TN5180-sfnt.pdf` covers the container format.
 - **PostScript Language Reference** — needed for Type 4 (PostScript calculator)
-  functions. Adobe no longer serves a stable copy.
+  functions, implemented by `core-postscript`. Adobe no longer serves a stable copy.
 - **UAX #9 / #14 / #29** — the algorithm reports themselves are HTML-only and
   versioned; the UCD data files above carry the property tables they operate on.
 - **ISO 32000-2 (PDF 2.0)** — obtained, but it lives in `../PDF/` rather than

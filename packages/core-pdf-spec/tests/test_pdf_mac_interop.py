@@ -6,8 +6,10 @@ import re
 from pathlib import Path
 
 import pytest
-from asn1crypto import algos, cms, core
+from asn1crypto import cms
 
+from core_pdf_crypto.errors import UnsupportedAlgorithmError
+from core_pdf_crypto.pdf_mac import validate_authenticated_data
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfUnsupportedError
 from core_pdf_spec.s_07_security import pdf_mac as mac
 from core_pdf_spec.s_07_security.document import initialize_document_security
@@ -100,16 +102,6 @@ def test_byte_range_must_cover_exactly_the_file(byte_range):
 
 
 @pytest.mark.parametrize(
-    "algorithm", ["sha256", "sha384", "sha512", "sha3_256", "sha3_384", "sha3_512"]
-)
-def test_standard_digest_algorithms_have_positive_controls(algorithm):
-    # ISO/TS 32004:2024 Table 8; SHA-3 requires absent parameters.
-    identifier = algos.DigestAlgorithm({"algorithm": algorithm})
-    digest = mac.internal_digest(b"contract", mac.internal_digest_algorithm(identifier))
-    assert digest == hashlib.new(algorithm, b"contract").digest()
-
-
-@pytest.mark.parametrize(
     "change",
     [
         "version",
@@ -155,17 +147,10 @@ def test_malformed_authenticated_data_is_rejected(fixture, change):
             auth["recipient_infos"][0].chosen["key_derivation_algorithm"] = None
         else:
             auth["recipient_infos"][0].chosen["encrypted_key"] = b"short"
-        error = PdfUnsupportedError if change == "digest" else ValueError
+        error = UnsupportedAlgorithmError if change == "digest" else ValueError
         with pytest.raises(error):
-            mac.internal_validate_authenticated_data(
+            validate_authenticated_data(
                 raw, byte_range, auth, handler.file_key, handler.config.kdf_salt
             )
     finally:
         resolver.close()
-
-
-def test_der_rejects_trailing_data_and_noncanonical_encoding():
-    for data in (b"\x02\x01\x01\x00", b"\x02\x81\x01\x01"):
-        with pytest.raises(ValueError):
-            mac.internal_parse_der(data, core.Integer)
-    assert mac.internal_parse_der(b"\x02\x01\x01", core.Integer).native == 1

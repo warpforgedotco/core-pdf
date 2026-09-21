@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from core_pdf_spec.s_09_fonts.data.core14 import FONT_DATA
+from core_adobe_fonts.afm.core14 import FONT_DATA
 
 
 def standard_14_widths(

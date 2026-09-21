@@ -35,11 +35,11 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "mypy", name = "mypy", entry = "uv run --all-packages --group lint mypy", language = "system", pass_filenames = false, files = "^(src/core_pdf/|packages/core-pdf-(ocr|spec|validate)/src/core_pdf_(ocr|spec|validate)/).*\\.py$", stages = [
+  { id = "mypy", name = "mypy", entry = "uv run --all-packages --group lint mypy", language = "system", pass_filenames = false, files = "^(src/core_pdf/|packages/core-[a-z0-9-]+/src/core_[a-z0-9_]+/).*\\.py$", stages = [
     "pre-push",
     "manual",
   ], require_serial = true },
-  { id = "import-linter", name = "import-linter", entry = "uv run --all-packages --group lint lint-imports", language = "system", pass_filenames = false, files = "^((src/core_pdf/|packages/core-pdf-(ocr|spec|validate)/src/core_pdf_(ocr|spec|validate)/).*\\.py|pyproject\\.toml|packages/core-pdf-(ocr|spec|validate)/pyproject\\.toml)$", stages = [
+  { id = "import-linter", name = "import-linter", entry = "uv run --all-packages --group lint lint-imports", language = "system", pass_filenames = false, files = "^((src/core_pdf/|packages/core-[a-z0-9-]+/src/core_[a-z0-9_]+/).*\\.py|pyproject\\.toml|packages/core-[a-z0-9-]+/pyproject\\.toml)$", stages = [
     "pre-push",
     "manual",
   ], require_serial = true },

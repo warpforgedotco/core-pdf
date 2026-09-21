@@ -23,25 +23,28 @@ document semantics, security, graphics, fonts, and structure. A module's `__all_
 supported exports; `internal_` names are private. Public parser methods document strict
 parsing and the extension points consumers can implement.
 
-The library contains implemented PDF semantics and algorithms from referenced standards,
-including bundled CMaps and standard font tables. It preserves standard-defined defaults and
-fallback rules. Malformed-input repair, retry/skip policy, substitute fonts, fontTools backends,
+The library contains implemented PDF semantics and the PDF-facing wrappers over the
+referenced standards. The referenced-standard kernels themselves are separate floor
+distributions that spec depends on: `core-predictors`, `core-postscript`, `core-jbig2`,
+`core-pdf-crypto`, and `core-adobe-fonts` (which also carries the bundled CMaps and
+standard font tables). It preserves standard-defined defaults and fallback rules. Malformed-input repair, retry/skip policy, substitute fonts, fontTools backends,
 Unicode guesses, output-device choices, capture products, and rasterization belong to
 applications such as `core-pdf`. Semantic sinks, stream decoders, and font providers are supplied
 through typed interfaces. Unsupported algorithms report failure instead of selecting a backend.
 
 There is no document facade, CLI, or complete conformance-validator claim. Core and OCR are
-not dependencies and are never discovered or imported. Runtime dependencies are NumPy,
-cryptography, and asn1crypto; bundled font data retains its original notices.
+not dependencies and are never discovered or imported. Runtime dependencies are NumPy and
+the five floor packages; cryptography and asn1crypto arrive through `core-pdf-crypto`, and
+bundled font data retains its original notices inside `core-adobe-fonts`.
 
 For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accepts
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
 Image sample decoding and range enforcement belong to the caller. The existing
 `lab_to_xyz` function retains its normalized input convention as a compatibility wrapper.
 
-The current spec version is `0.4.1`, released independently of core. During `0.x`, breaking
+The current spec version is `0.5.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.4.1,<0.5.0`; changes to that range require core integration and differential validation.
+`>=0.5.0,<0.6.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -101,7 +104,7 @@ selects PDF 2.0. Source image helpers preserve 16-bit samples, and
 output raster conversion stay in core.
 
 `s_08_graphics.pdf_function.compile_pdf_function` supports Type 4 calculator streams using
-the shared PDF 1.3+ semantics for all 42 operators. The compiler accepts PDF numeric syntax,
+the shared PDF 1.3+ semantics for all 42 operators, evaluated by `core_postscript.calculator`. The compiler accepts PDF numeric syntax,
 comments, and conditional blocks, clips inputs to Domain and outputs to Range, and requires
 exact numeric output arity. Evaluation uses finite float64 reals and signed 32-bit integers;
 oversized integer literals and applicable arithmetic results promote to reals. The limits
@@ -194,6 +197,35 @@ defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availabi
 DeviceN spaces that discard output, including through Indexed and uncolored Pattern
 bases. Mixed DeviceN spaces retain every input component for their alternate tint transform.
 
+When migrating to `0.5.0`, import the referenced-standard kernels from their own packages;
+the spec modules keep only the PDF wrappers:
+
+- `s_07_filters.predictors` keeps `apply_predictor`, `apply_tiff_predictor`,
+  `apply_png_predictor`, and `SUPPORTED_PREDICTOR_BITS`; `png_predict`, `tiff_predict*`,
+  `PredictorError`, and `UnsupportedPngFilterError` are in `core_predictors.{png,tiff,errors}`,
+  and the sub-byte unpacker is public as `core_predictors.samples.unpack_subbyte_rows`.
+- `s_08_graphics.calculator` keeps the Domain/Range reader; the language is
+  `core_postscript.calculator.compile_calculator(source, domains, ranges)`.
+- `s_07_filters.jbig2` is now a module exporting `decode_jbig2`; the decoder, segment
+  parsers, and bitmap kernels are `core_jbig2.codec` and `core_jbig2.bitmap`.
+  `JBIG2PageDecoder.finish()` returns T.88 polarity (1 = black); `decode_jbig2` applies the
+  ISO 32000-1 7.4.7 inversion through `core_jbig2.bitmap.invert_packed_bitmap`.
+- `s_07_security.ciphers` and `s_07_security.pdf_mac` keep the PDF wrappers over
+  `core_pdf_crypto.ciphers` (public `aes_*`, `rc4_crypt`) and `core_pdf_crypto.pdf_mac`
+  (`validate_pdf_mac_token`, `validate_authenticated_data`, `digest*`, `parse_der`).
+  Unsupported digest algorithms raise `core_pdf_crypto.errors.UnsupportedAlgorithmError`,
+  which the wrapper maps to `PdfUnsupportedError`.
+- `s_09_fonts.font_program`, `font_program_type1`, `cmap_tokenizer`, `cmap_ranges`,
+  `cmap_decoder`, `cmap_resources`, `glyphs`, `data.core14`, `data.zapf_dingbats`, and
+  `_vendor.font_data` moved to `core_adobe_fonts.{cff.font, cff.charstrings, type1.program,
+  cmap.tokenizer, cmap.ranges, cmap.decoder, cmap.resources, agl.mapping, afm.core14,
+  agl.glyph_list, agl.zapf_dingbats, _vendor.font_data}`; the three base encoding name
+  tables are re-exported by `core_adobe_fonts.encodings`. `CFFFont.font_matrix` returns
+  `CffFontMatrix`, a plain six-float tuple, instead of `s_08_graphics.matrix.Matrix`;
+  `internal_validate_pdf_codespace` is public as `cmap.ranges.validate_effective_codespace`.
+  `s_09_fonts.cmap_tounicode`, `font_program_truetype`, `dictionaries`, `widths`, `metrics`,
+  `helpers`, `service`, and `data.base_encodings` stay in spec.
+
 When migrating to `0.4.0`:
 
 - Construct `ObjectResolver(data, xref, decipher=...)` without the removed `trailer` argument;
@@ -206,4 +238,12 @@ From the workspace, run the standalone tests with:
 
 ```sh
 uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests
+```
+
+To prove spec works with only its declared dependencies installed:
+
+```sh
+uv sync --locked --package core-pdf-spec --group test
+uv run --locked --no-sync python scripts/check_package_isolation.py core-pdf-spec
+uv run --locked --no-sync pytest packages/core-pdf-spec/tests
 ```

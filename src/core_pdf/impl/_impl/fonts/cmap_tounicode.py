@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from core_adobe_fonts.cmap.ranges import (
+    ranges_overlap,
+    validate_codespace_range,
+)
 from core_pdf.impl._impl.fonts.cmap_ranges import (
     MAX_CMAP_RANGE_SPAN,
     expand_range,
@@ -15,10 +19,6 @@ from core_pdf.impl._impl.fonts.cmap_tokenizer import (
     cmap_tokens,
     decode_cmap_hex_token,
     decode_cmap_token,
-)
-from core_pdf_spec.s_09_fonts.cmap_ranges import (
-    ranges_overlap,
-    validate_codespace_range,
 )
 from core_pdf_spec.s_09_fonts.cmap_tounicode import (
     CMapMappingBlock,

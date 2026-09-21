@@ -34,8 +34,16 @@ jobs:
       - name: Install workspace packages and quality tools
         run: uv sync --locked --all-packages --group lint --group test
 
-      - name: Run strict spec and validation tests
-        run: uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests packages/core-pdf-validate/tests
+      - name: Run strict spec, standards, and validation tests
+        run: >-
+          uv run --locked --all-packages --group test pytest
+          packages/core-pdf-spec/tests
+          packages/core-pdf-validate/tests
+          packages/core-predictors/tests
+          packages/core-postscript/tests
+          packages/core-jbig2/tests
+          packages/core-pdf-crypto/tests
+          packages/core-adobe-fonts/tests
 
       - name: Build standalone distributions
         run: uv build --all-packages
@@ -110,6 +118,47 @@ jobs:
           path: .coverage.verapdf
           include-hidden-files: true
           if-no-files-found: error
+
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
+  standalone:
+    # Each floor package and the specification library must import and pass
+    # their tests with only their own declared dependencies installed.
+    name: Standalone / ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - core-predictors
+          - core-postscript
+          - core-jbig2
+          - core-pdf-crypto
+          - core-adobe-fonts
+          - core-pdf-spec
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install only the package and the test tools
+        run: uv sync --locked --package ${{ matrix.package }} --group test
+
+      - name: Prove higher tiers are absent
+        run: uv run --locked --no-sync python scripts/check_package_isolation.py ${{ matrix.package }}
+
+      - name: Run the package's tests
+        run: uv run --locked --no-sync pytest packages/${{ matrix.package }}/tests -p no:cacheprovider
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}

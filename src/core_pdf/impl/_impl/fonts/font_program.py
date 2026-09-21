@@ -6,6 +6,22 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from math import inf, isfinite
 
+from core_adobe_fonts.cff.charstrings import (
+    cubic_extrema_times,
+    cubic_point,
+    execute_type2_charstring,
+)
+from core_adobe_fonts.cff.font import (
+    CFF_EXPERT_ENCODING_CODES,
+    CFF_STANDARD_STRING_COUNT,
+    STANDARD_GLYPH_SIDS,
+    CffFontMatrix,
+)
+from core_adobe_fonts.cff.font import DEFAULT_CFF_FONT_MATRIX as internal_DEFAULT_CFF_MATRIX
+from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
+from core_adobe_fonts.cff.font import (
+    cff_font_matrix as pdf_cff_font_matrix,
+)
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
     cffIExpertStrings,
@@ -21,19 +37,6 @@ from core_pdf.impl._impl.fonts.feature_distance_kernel import (
 from core_pdf.impl._impl.fonts.feature_distance_kernel import internal_feature_arrays
 from core_pdf.impl._impl.fonts.raster_kernel import rasterize_contours, transform_contours
 from core_pdf_spec.s_08_graphics.matrix import Matrix
-from core_pdf_spec.s_09_fonts.font_program import (
-    CFF_EXPERT_ENCODING_CODES,
-    CFF_STANDARD_STRING_COUNT,
-    DEFAULT_CFF_FONT_MATRIX,
-    STANDARD_GLYPH_SIDS,
-    cubic_extrema_times,
-    cubic_point,
-    execute_type2_charstring,
-)
-from core_pdf_spec.s_09_fonts.font_program import CFFFont as PdfCFFFont
-from core_pdf_spec.s_09_fonts.font_program import (
-    cff_font_matrix as pdf_cff_font_matrix,
-)
 
 
 @dataclass(frozen=True)
@@ -54,13 +57,17 @@ internal_CUBIC_FLATNESS = 0.25
 internal_CUBIC_MAX_DEPTH = 12
 
 
+DEFAULT_CFF_FONT_MATRIX = Matrix(*internal_DEFAULT_CFF_MATRIX)
+
+
 def internal_cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
 ) -> Matrix | None:
     try:
-        return pdf_cff_font_matrix(font_dict)
+        matrix = pdf_cff_font_matrix(font_dict)
     except (TypeError, ValueError):
         return None
+    return None if matrix is None else Matrix(*matrix)
 
 
 class CFFFont(PdfCFFFont):
@@ -425,11 +432,11 @@ class CFFFont(PdfCFFFont):
             return self.local_subrs[fd_index]
         return ()
 
-    def font_matrix(self, glyph_id: int) -> Matrix:
+    def font_matrix(self, glyph_id: int) -> CffFontMatrix:
         try:
             return super().font_matrix(glyph_id)
         except (IndexError, TypeError, ValueError):
-            return self.internal_recover_font_matrix(glyph_id)
+            return CffFontMatrix(*self.internal_recover_font_matrix(glyph_id))
 
     def internal_recover_font_matrix(self, glyph_id: int) -> Matrix:
         """Return the effective font matrix for a glyph."""
@@ -491,7 +498,7 @@ class CFFFont(PdfCFFFont):
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return ((), None)
-        matrix = self.font_matrix(glyph_id)
+        matrix = Matrix(*self.font_matrix(glyph_id))
         contours, raw_bbox = internal_type2_glyph_geometry_impl(
             charstring,
             local_subrs=self.local_subrs_for_glyph(glyph_id),

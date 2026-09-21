@@ -3,15 +3,12 @@
 
 from __future__ import annotations
 
-import core_pdf_spec.s_07_filters.predictors as strict
+import core_predictors.png as strict
 from core_pdf.impl._impl.graphics.decode_compat import FilterParams
 from core_pdf.impl._impl.runtime.codec_backends import internal_png_predict_codec
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf_spec.s_07_filters.predictors import (
-    SUPPORTED_PREDICTOR_BITS,
-    PredictorError,
-    UnsupportedPngFilterError,
-)
+from core_pdf_spec.s_07_filters.predictors import SUPPORTED_PREDICTOR_BITS
+from core_predictors.errors import PredictorError, UnsupportedPngFilterError
 
 
 def png_predict(

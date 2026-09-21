@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import pathlib
+import tomllib
 
 import pytest
 
 internal_REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
-internal_SOURCE_ROOTS = (
-    internal_REPOSITORY_ROOT / "src",
-    internal_REPOSITORY_ROOT / "packages/core-pdf-ocr/src",
-)
+
+
+def internal_source_roots() -> tuple[pathlib.Path, ...]:
+    """Every source root the coverage configuration enumerates."""
+    with (internal_REPOSITORY_ROOT / "pyproject.toml").open("rb") as handle:
+        sources = tomllib.load(handle)["tool"]["coverage"]["run"]["source"]
+    return tuple(internal_REPOSITORY_ROOT / source for source in sources)
+
+
+internal_SOURCE_ROOTS = internal_source_roots()
 internal_EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
 
 
