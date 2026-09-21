@@ -28,6 +28,12 @@ def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
 def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
     x0, y0, x1, y1 = bbox
     a, b, c, d, e, f = matrix
+    if b == 0.0 and c == 0.0:
+        ax0 = x0 * a + e
+        ax1 = x1 * a + e
+        dy0 = y0 * d + f
+        dy1 = y1 * d + f
+        return (min(ax0, ax1), min(dy0, dy1), max(ax0, ax1), max(dy0, dy1))
     xs = (x0 * a + y0 * c + e, x1 * a + y0 * c + e, x0 * a + y1 * c + e, x1 * a + y1 * c + e)
     ys = (x0 * b + y0 * d + f, x1 * b + y0 * d + f, x0 * b + y1 * d + f, x1 * b + y1 * d + f)
     return (min(xs), min(ys), max(xs), max(ys))
