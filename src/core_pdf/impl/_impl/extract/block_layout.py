@@ -231,7 +231,18 @@ def internal_build_lines(
         source_low = int(source_minimum[group_index])
         source_high = int(source_maximum[group_index])
         source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
-        words = tuple(replace(word, source=source) for word in words)
+        words = tuple(
+            type(word)(
+                word.text,
+                word.bbox,
+                word.line_index,
+                word.word_index,
+                word.block_index,
+                word.page_number,
+                source,
+            )
+            for word in words
+        )
         group_box = group_boxes[group_index]
         output.append(
             ParsedLine(
