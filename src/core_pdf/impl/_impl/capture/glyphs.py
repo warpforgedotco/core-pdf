@@ -289,16 +289,25 @@ def capture_glyphs(
             axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
         axis_baseline_y = text_basis[1] + rise * combined_d
     add_run_geometry = result.geometry.add
+    char_space = geometry.char_space
+    word_space = geometry.word_space
+    horizontal_scale = geometry.horizontal_scale
+    glyph_width = decoder.glyph_width
     for glyph in glyphs:
-        advance_x, advance_y = decoder.glyph_advance_vector(
-            glyph.width_code,
-            font_size=font_size,
-            char_space=geometry.char_space,
-            word_space=geometry.word_space,
-            horizontal_scale=geometry.horizontal_scale,
-            encoded_space=glyph.code_bytes == b" ",
-        )
-        advance = -advance_y if is_vertical else advance_x
+        if is_vertical:
+            advance_x, advance_y = decoder.glyph_advance_vector(
+                glyph.width_code,
+                font_size=font_size,
+                char_space=char_space,
+                word_space=word_space,
+                horizontal_scale=horizontal_scale,
+                encoded_space=glyph.code_bytes == b" ",
+            )
+            advance = -advance_y
+        else:
+            spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
+            displacement = glyph_width(glyph.width_code) * font_size / 1000.0 + spacing
+            advance = displacement * horizontal_scale / 100.0
         chunk_text = glyph.unicode
         if not chunk_text:
             chunk_text = text[cursor : cursor + 1]

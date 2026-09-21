@@ -155,10 +155,34 @@ class GlyphCluster:
     confidence: float | None
 
 
+internal_CONFIDENCE_CACHE: dict[tuple[str, str, tuple[str, ...]], float] = {}
+internal_CONFIDENCE_CACHE_LIMIT = 8192
+
+
 def glyph_unicode_confidence(
     text: str,
     unicode_source: str,
     alternates: tuple[str, ...] = (),
+) -> float:
+    key = (text, unicode_source, alternates)
+    try:
+        return internal_CONFIDENCE_CACHE[key]
+    except KeyError:
+        pass
+    except TypeError:
+        return internal_glyph_unicode_confidence(text, unicode_source, alternates)
+    if len(internal_CONFIDENCE_CACHE) >= internal_CONFIDENCE_CACHE_LIMIT:
+        internal_CONFIDENCE_CACHE.clear()
+    confidence = internal_CONFIDENCE_CACHE[key] = internal_glyph_unicode_confidence(
+        text, unicode_source, alternates
+    )
+    return confidence
+
+
+def internal_glyph_unicode_confidence(
+    text: str,
+    unicode_source: str,
+    alternates: tuple[str, ...],
 ) -> float:
     if not text:
         confidence = 0.0

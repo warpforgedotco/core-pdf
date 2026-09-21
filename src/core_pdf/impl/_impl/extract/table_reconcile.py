@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from dataclasses import replace
+from dataclasses import dataclass, replace
+
+import numpy
 
 from core_pdf.impl._impl.extract.table_cleanup import internal_table_with_bands
-from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_min, overlap_ratio_of
+from core_pdf.impl._impl.model.geometry import (
+    bbox_area,
+    bbox_union,
+    overlap_ratio_min,
+    overlap_ratio_of,
+)
 from core_pdf.impl._impl.model.spatial import SpatialFrame
 from core_pdf.impl._impl.model.text import collapse_ws, complete_text_covered, content_tokens
-from core_pdf.impl._impl.output.model import Block, Table
+from core_pdf.impl._impl.output.model import Block, Table, TableCell
 from core_pdf.impl.types import Rectangle
 
 
@@ -78,28 +85,83 @@ def internal_remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> bool:
+@dataclass(frozen=True, slots=True)
+class internal_IndexedRow:
+    cells: tuple[TableCell, ...]
+    texts: tuple[str, ...]
+    tokens: tuple[tuple[str, ...], ...]
+    frame_indexes: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class internal_TableIndex:
+    table: Table
+    rows: tuple[internal_IndexedRow, ...]
+    frame: SpatialFrame | None
+
+    @classmethod
+    def build(cls, table: Table) -> internal_TableIndex:
+        rows: list[internal_IndexedRow] = []
+        boxes: list[Rectangle] = []
+        for row in table.rows:
+            cells = tuple(cell for cell in row if cell.text)
+            texts = tuple(collapse_ws(cell.text) for cell in cells)
+            indexes: list[int] = []
+            for cell in cells:
+                if cell.bbox is None:
+                    indexes.append(-1)
+                else:
+                    indexes.append(len(boxes))
+                    boxes.append(cell.bbox)
+            rows.append(
+                internal_IndexedRow(
+                    cells,
+                    texts,
+                    tuple(content_tokens(text) for text in texts),
+                    tuple(indexes),
+                )
+            )
+        frame = SpatialFrame.from_boxes(boxes) if boxes else None
+        return cls(table, tuple(rows), frame)
+
+
+def internal_line_duplicates_table(text: str, box: Rectangle, index: internal_TableIndex) -> bool:
+    table = index.table
     normalized = collapse_ws(text)
     if not normalized or table.bbox is None or overlap_ratio_of(box, table.bbox) < 0.90:
         return False
     tokens = content_tokens(normalized)
-    participating_cells = []
+    if index.frame is None:
+        touches = covered = numpy.zeros(0, dtype=bool)
+    else:
+        intersections = index.frame.intersection_areas(box)
+        touches = intersections > 0.0
+        box_area = bbox_area(box)
+        covered = (
+            intersections / box_area >= 0.90
+            if box_area > 0.0
+            else numpy.zeros(len(intersections), dtype=bool)
+        )
+    participating_cells: list[TableCell] = []
     total_cells = 0
-    for row in table.rows:
-        row_cells = [cell for cell in row if cell.text]
-        total_cells += len(row_cells)
-        cells = [
-            cell for cell in row_cells if cell.bbox is None or overlap_ratio_min(box, cell.bbox) > 0
+    for row in index.rows:
+        total_cells += len(row.cells)
+        kept = [
+            position
+            for position, frame_index in enumerate(row.frame_indexes)
+            if frame_index < 0 or touches[frame_index]
         ]
-        if not cells:
+        if not kept:
             continue
+        cells = [row.cells[position] for position in kept]
         participating_cells.extend(cells)
-        cell_texts = [collapse_ws(cell.text) for cell in cells]
-        for cell, cell_text in zip(cells, cell_texts, strict=True):
+        cell_texts = [row.texts[position] for position in kept]
+        for position in kept:
+            frame_index = row.frame_indexes[position]
             if (
-                cell.bbox is not None
-                and overlap_ratio_of(box, cell.bbox) >= 0.90
-                and complete_text_covered(tokens, content_tokens(cell_text))
+                frame_index >= 0
+                and covered[frame_index]
+                and complete_text_covered(tokens, row.tokens[position])
             ):
                 return True
         for start in range(len(cells)):
@@ -117,7 +179,7 @@ def internal_line_duplicates_table(text: str, box: Rectangle, table: Table) -> b
                     )
                     if row_box is not None and overlap_ratio_of(box, row_box) >= 0.90:
                         return True
-                elif start == 0 and end + 1 == len(cells) == len(row_cells):
+                elif start == 0 and end + 1 == len(cells) == len(row.cells):
                     return True
     known_geometry = all(cell.bbox is not None for cell in participating_cells)
     if not known_geometry and len(participating_cells) != total_cells:
@@ -146,13 +208,14 @@ def internal_remove_table_duplicate_blocks(
     table_frame = SpatialFrame.from_boxes(
         table.bbox for table in located_tables if table.bbox is not None
     )
+    indexes = [internal_TableIndex.build(table) for table in located_tables]
     deduplicated: list[Block] = []
     for block in blocks:
         kept_lines = []
         for line in block.lines:
             box = line.bbox or (block.bbox if len(block.lines) == 1 else None)
             if box is None or not any(
-                internal_line_duplicates_table(line.text, box, located_tables[int(index)])
+                internal_line_duplicates_table(line.text, box, indexes[int(index)])
                 for index in table_frame.matching_overlap_min(box, 0.90)
             ):
                 kept_lines.append(line)

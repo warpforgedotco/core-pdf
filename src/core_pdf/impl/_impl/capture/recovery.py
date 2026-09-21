@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_content.inline_images import (
     InlineImage,
     InlineImageDataLengthError,
@@ -98,6 +99,10 @@ class CaptureRecovery:
         return lexer.pos if lexer.pos > start else None
 
 
+internal_KEYWORD_TOKENS = frozenset((b"BI", b"true", b"false", b"null"))
+internal_OBJECT_KEYWORDS = frozenset(("R", "obj", "endobj", "stream", "endstream"))
+
+
 def iter_content_operations(
     lexer: PdfLexer,
     *,
@@ -106,8 +111,40 @@ def iter_content_operations(
 ) -> Iterator[ContentOperation]:
     operands: list[ContentOperand] = []
     recovery = recovery if recovery is not None else CaptureRecovery()
+    token_re = lexer.lexical_rules.content_token_re
+    data = lexer.raw_data
+    names: dict[bytes, PdfName] = {}
+    operators: dict[bytes, str] = {}
     while True:
         cursor = lexer.pos
+        match = token_re.match(data, cursor)
+        if match is not None and (kind := match.lastgroup) is not None:
+            word = match.group(kind)
+            if kind == "num":
+                if len(word) < 16:
+                    value: ContentOperand = float(word) if b"." in word else int(word)
+                    lexer.pos = match.end()
+                    if len(operands) < 16:
+                        operands.append(value)
+                    continue
+            elif kind == "name":
+                lexer.pos = match.end()
+                name = names.get(word)
+                if name is None:
+                    name = names[word] = PdfName.of(word[1:])
+                if len(operands) < 16:
+                    operands.append(name)
+                continue
+            elif word not in internal_KEYWORD_TOKENS:
+                lexer.pos = match.end()
+                op_name = operators.get(word)
+                if op_name is None:
+                    op_name = operators[word] = word.decode("latin-1")
+                operation = (op_name, tuple(operands))
+                operands.clear()
+                if op_name not in internal_OBJECT_KEYWORDS:
+                    yield operation
+                continue
         try:
             try:
                 token = parse_content_token(lexer)
@@ -156,5 +193,5 @@ def iter_content_operations(
             continue
         operation = (op_name, tuple(operands))
         operands.clear()
-        if op_name not in {"R", "obj", "endobj", "stream", "endstream"}:
+        if op_name not in internal_OBJECT_KEYWORDS:
             yield operation

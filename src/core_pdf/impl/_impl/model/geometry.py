@@ -20,13 +20,12 @@ def internal_float_value(value: object) -> float:
 
 def rect_tuple(value: object) -> Rectangle | None:
     if isinstance(value, (list, tuple)) and len(value) == 4:
-        rect = cast(Sequence[object], value)
         try:
             return (
-                internal_float_value(rect[0]),
-                internal_float_value(rect[1]),
-                internal_float_value(rect[2]),
-                internal_float_value(rect[3]),
+                internal_float_value(value[0]),
+                internal_float_value(value[1]),
+                internal_float_value(value[2]),
+                internal_float_value(value[3]),
             )
         except TypeError, ValueError:
             return None
