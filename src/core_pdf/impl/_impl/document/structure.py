@@ -87,9 +87,7 @@ def find_all(
         el = stack.pop()
         if match_func(el):
             yield el
-        for child in reversed(list(el)):
-            if isinstance(child, StructureElement):
-                stack.append(child)
+        stack.extend(child for child in reversed(list(el)) if isinstance(child, StructureElement))
 
 
 def literal_name(value: Any) -> str | None:
@@ -339,7 +337,7 @@ class StructureElement(internal_StructureNode):
     def internal_kids_page(self) -> PdfPage | None:
         return self.page
 
-    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator["StructureElement"]:
+    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
         elements: list[StructureChild] = list(self)
         filtered = [el for el in elements if isinstance(el, StructureElement)]
         return find_all(filtered, matcher)
@@ -424,7 +422,7 @@ class StructureTree(internal_StructureNode):
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
         return next(self.find_all(matcher), None)
 
-    def page_structure(self, page: PdfPage) -> "PageStructure":
+    def page_structure(self, page: PdfPage) -> PageStructure:
         key = self.document.resolver.resolve_int(page.page_dict.get("StructParents"))
         if type(key) is not int:
             raise ValueError("invalid page StructParents value")
@@ -468,7 +466,7 @@ class PageStructure(Sequence[StructureElement | None]):
     def __getitem__(self, idx: int) -> StructureElement | None: ...
 
     @overload
-    def __getitem__(self, idx: slice) -> "PageStructure": ...
+    def __getitem__(self, idx: slice) -> PageStructure: ...
 
     def __getitem__(self, idx: int | slice) -> PageStructure | StructureElement | None:
         if isinstance(idx, slice):
@@ -562,8 +560,7 @@ def make_kids(
         if current is None:
             continue
         if isinstance(current, list):
-            for item in reversed(current):
-                stack.append((item, depth + 1))
+            stack.extend((item, depth + 1) for item in reversed(current))
             continue
         if type(current) is bool:
             if recover_structure:

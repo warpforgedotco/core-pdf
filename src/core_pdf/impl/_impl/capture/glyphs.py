@@ -138,10 +138,10 @@ def glyph_text_space_boxes(
         end_y = start_y - advance
         ar = font_ascent
         dr = font_descent
-        x0 = position_x + (dr if dr < ar else ar)
-        x1 = position_x + (ar if ar > dr else dr)
-        y0 = end_y if end_y < start_y else start_y
-        y1 = start_y if start_y > end_y else end_y
+        x0 = position_x + (min(ar, dr))
+        x1 = position_x + (max(dr, ar))
+        y0 = min(start_y, end_y)
+        y1 = max(end_y, start_y)
         return (
             (x0, y0, x1, y1),
             (0.0, start_y, 0.0, end_y),
@@ -178,18 +178,18 @@ class RunGeometry:
         ax0, ay0, ax1, ay1 = self.advance
         bx0, by0, bx1, by1 = advance_bbox
         self.advance = (
-            bx0 if bx0 < ax0 else ax0,
-            by0 if by0 < ay0 else ay0,
-            bx1 if bx1 > ax1 else ax1,
-            by1 if by1 > ay1 else ay1,
+            min(ax0, bx0),
+            min(ay0, by0),
+            max(ax1, bx1),
+            max(ay1, by1),
         )
         ix0, iy0, ix1, iy1 = self.ink
         bx0, by0, bx1, by1 = ink_bbox
         self.ink = (
-            bx0 if bx0 < ix0 else ix0,
-            by0 if by0 < iy0 else iy0,
-            bx1 if bx1 > ix1 else ix1,
-            by1 if by1 > iy1 else iy1,
+            min(ix0, bx0),
+            min(iy0, by0),
+            max(ix1, bx1),
+            max(iy1, by1),
         )
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
@@ -349,9 +349,9 @@ def capture_glyphs(
                 advance_x0 = text_basis[0] + offset * combined_a
                 advance_x1 = text_basis[0] + (offset + advance) * combined_a
                 advance_bbox = (
-                    advance_x0 if advance_x0 < advance_x1 else advance_x1,
+                    min(advance_x1, advance_x0),
                     axis_advance_y0,
-                    advance_x1 if advance_x1 > advance_x0 else advance_x0,
+                    max(advance_x0, advance_x1),
                     axis_advance_y1,
                 )
                 baseline = (

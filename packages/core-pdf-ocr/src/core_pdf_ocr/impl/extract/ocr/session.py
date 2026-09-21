@@ -234,7 +234,7 @@ class internal_OcrSession:
             return ocr_pass
 
         original_scale = ocr_pass.scale
-        adapted_pass = replace(
+        return replace(
             ocr_pass,
             scale=min(
                 8.0,
@@ -245,7 +245,6 @@ class internal_OcrSession:
             ),
             pixel_budget=MAX_OCR_PIXELS,
         )
-        return adapted_pass
 
     def materialize(
         self,

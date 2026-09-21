@@ -61,7 +61,7 @@ class StructuredState(ClosingMixin):
         return self._structured
 
     @classmethod
-    def open(cls, source: PdfInput, *, password: str = "") -> "StructuredState":
+    def open(cls, source: PdfInput, *, password: str = "") -> StructuredState:
         pdf = PdfDocument.open(source, password=password)
         try:
             if pdf.raw_data.find(b"startxref") < 0:
@@ -73,7 +73,7 @@ class StructuredState(ClosingMixin):
         return cls(pdf)
 
     @classmethod
-    def synthetic(cls, structured: Document) -> "StructuredState":
+    def synthetic(cls, structured: Document) -> StructuredState:
         return cls(None, structured)
 
     @property
@@ -119,7 +119,7 @@ class Destination:
 
 
 class Rectangle(tuple[float, float, float, float]):
-    def __new__(cls, left: float, bottom: float, right: float, top: float) -> "Rectangle":
+    def __new__(cls, left: float, bottom: float, right: float, top: float) -> Rectangle:
         return super().__new__(cls, (float(left), float(bottom), float(right), float(top)))
 
     @property

@@ -78,7 +78,7 @@ def read_literal_string(
                 out.extend(mapped)
             else:
                 out.append(esc)
-        elif byte == 13 or byte == 10:
+        elif byte in {13, 10}:
             out.append(10)
             if pos < data_len and byte == 13 and data[pos] == 10:
                 pos += 1

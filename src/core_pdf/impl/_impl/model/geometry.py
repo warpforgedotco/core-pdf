@@ -7,6 +7,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 from core_pdf.impl.types import Rectangle
+from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
 
 
 def internal_float_value(value: object) -> float:
@@ -45,20 +46,20 @@ def bbox_area(bbox: Sequence[float]) -> float:
     if type(bbox) is tuple and len(bbox) == 4:
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
-        return (w if w > 0.0 else 0.0) * (h if h > 0.0 else 0.0)
+        return (max(0.0, w)) * (max(0.0, h))
     w = float(bbox[2]) - float(bbox[0])
     h = float(bbox[3]) - float(bbox[1])
-    return (w if w > 0.0 else 0.0) * (h if h > 0.0 else 0.0)
+    return (max(0.0, w)) * (max(0.0, h))
 
 
 def bbox_intersection_area(left: Sequence[float], right: Sequence[float]) -> float:
     if type(left) is tuple and type(right) is tuple and len(left) == 4 and len(right) == 4:
         w = min(left[2], right[2]) - max(left[0], right[0])
         h = min(left[3], right[3]) - max(left[1], right[1])
-        return (w if w > 0.0 else 0.0) * (h if h > 0.0 else 0.0)
+        return (max(0.0, w)) * (max(0.0, h))
     w = min(float(left[2]), float(right[2])) - max(float(left[0]), float(right[0]))
     h = min(float(left[3]), float(right[3])) - max(float(left[1]), float(right[1]))
-    return (w if w > 0.0 else 0.0) * (h if h > 0.0 else 0.0)
+    return (max(0.0, w)) * (max(0.0, h))
 
 
 def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | None:
@@ -100,34 +101,9 @@ def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle
     )
 
 
-def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
-    x0 = y0 = math.inf
-    x1 = y1 = -math.inf
-    for x, y in points:
-        if x < x0:
-            x0 = x
-        if x > x1:
-            x1 = x
-        if y < y0:
-            y0 = y
-        if y > y1:
-            y1 = y
-    if x0 > x1:
-        return None
-    return (x0, y0, x1, y1)
-
-
-def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
-    x0, y0, x1, y1 = bbox
-    a, b, c, d, e, f = matrix
-    xs = (x0 * a + y0 * c + e, x1 * a + y0 * c + e, x0 * a + y1 * c + e, x1 * a + y1 * c + e)
-    ys = (x0 * b + y0 * d + f, x1 * b + y0 * d + f, x0 * b + y1 * d + f, x1 * b + y1 * d + f)
-    return (min(xs), min(ys), max(xs), max(ys))
-
-
 def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     overlap = min(a1, b1) - max(a0, b0)
-    return overlap if overlap > 0.0 else 0.0
+    return max(0.0, overlap)
 
 
 def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
@@ -138,10 +114,10 @@ def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
             result = (x0, y0, x1, y1)
         else:
             result = (
-                result[0] if result[0] < x0 else x0,
-                result[1] if result[1] < y0 else y0,
-                result[2] if result[2] > x1 else x1,
-                result[3] if result[3] > y1 else y1,
+                min(x0, result[0]),
+                min(y0, result[1]),
+                max(x1, result[2]),
+                max(y1, result[3]),
             )
     return result
 
@@ -192,3 +168,25 @@ def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
         float(rect[2]),
         page_height - float(rect[1]),
     )
+
+
+__all__ = (
+    "bbox_area",
+    "bbox_contains",
+    "bbox_intersection_area",
+    "bbox_intersects",
+    "bbox_union",
+    "finite_rect",
+    "flip_rect_vertical",
+    "horizontal_overlap_ratio",
+    "internal_float_value",
+    "intersect_bbox",
+    "interval_overlap",
+    "overlap_ratio_min",
+    "overlap_ratio_min_exact",
+    "overlap_ratio_of",
+    "points_bbox",
+    "rect_tuple",
+    "transform_bbox",
+    "union_bbox",
+)

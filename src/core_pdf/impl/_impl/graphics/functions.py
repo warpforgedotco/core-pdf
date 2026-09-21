@@ -92,7 +92,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             raise ValueError("invalid PDF function") from exc
         if not constants:
             raise ValueError("invalid PDF function")
-        return lambda *inputs: constants
+        return lambda *_inputs: constants
     source_dictionary = function.dictionary if isinstance(function, PdfStream) else function
     if not isinstance(source_dictionary, dict):
         raise ValueError("invalid PDF function")

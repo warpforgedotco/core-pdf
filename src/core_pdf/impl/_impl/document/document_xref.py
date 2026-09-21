@@ -169,7 +169,7 @@ class DocumentXRefMixin:
     def pdf_header_offset(self) -> int:
         data = self.raw_data
         offset = data.find(b"%PDF-", 0, min(len(data), 1024))
-        return offset if offset > 0 else 0
+        return max(0, offset)
 
     def find_xref_entry_header(self, key: int, offset: int) -> int | None:
         data = self.raw_data

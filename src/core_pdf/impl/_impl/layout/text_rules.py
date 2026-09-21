@@ -232,8 +232,8 @@ def runs_are_left_to_right(runs: list[TextRun]) -> bool:
             return False
         x1 = run.x1
         height = run.height
-        overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
-        if overlap > (prev_height if prev_height < height else height) * 0.25:
+        overlap = (min(x1, prev_x1)) - (max(x0, prev_x0))
+        if overlap > (min(height, prev_height)) * 0.25:
             return False
         prev_x0 = x0
         prev_x1 = x1
@@ -280,7 +280,7 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         x1 = run.x1
         space_width = run.space_width
         if previous is not None:
-            overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
+            overlap = (min(x1, prev_x1)) - (max(x0, prev_x0))
             min_width = min(prev_x1 - prev_x0, x1 - x0)
             threshold = max(2.5, min_width * 0.45, max(prev_space_width, space_width) * 0.8)
             if overlap > threshold:
@@ -730,7 +730,7 @@ def is_private_use_or_control(ch: str) -> bool:
     codepoint = ord(ch)
     if ch in "\t\n\r":
         return False
-    if codepoint == 0xFFFD or codepoint == 0x00AD:
+    if codepoint in {65533, 173}:
         return True
     if 0xE000 <= codepoint <= 0xF8FF:
         return True

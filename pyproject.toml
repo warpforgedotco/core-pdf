@@ -153,21 +153,61 @@ line-length = 100
 
 [tool.ruff.lint.per-file-ignores]
 "src/core_pdf/__main__.py" = ["E501"]
+# Test doubles and scripts accept signatures they do not use.
+"tests/**" = ["ARG"]
+"packages/*/tests/**" = ["ARG"]
+"conftest.py" = ["ARG"]
+"scripts/**" = ["ARG"]
+# Operator handlers share one dispatch signature: (operands, depth).
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_content/interpreter.py" = ["ARG002"]
+"src/core_pdf/api/compat/pdfminer/_capture.py" = ["ARG002"]
+# Stream filters share the FilterFn signature: (data, parms).
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
+"src/core_pdf/impl/_impl/graphics/filter_recovery.py" = ["ARG001"]
+"src/core_pdf/impl/_impl/graphics/codec_dispatch.py" = ["ARG001"]
+# Scanner callbacks share the (data, pos, ..., semantic_context) signature.
+"src/core_pdf/impl/_impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
+# Content operator handlers and semantic-sink callbacks share fixed signatures.
+"src/core_pdf/impl/_impl/capture/tolerant_state.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/capture/recording.py" = ["ARG002"]
+# Documented parsing extension hooks keep their signatures, in the strict base
+# and in the recovery overrides.
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/lexer.py" = ["ARG002"]
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/objects.py" = ["ARG002"]
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/resolver.py" = ["ARG002"]
+"packages/core-pdf-spec/src/core_pdf_spec/s_07_content/streams.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/document/recovery/lexer.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/document/recovery/resolver.py" = ["ARG002"]
+"src/core_pdf/impl/_impl/fonts/cmap_tounicode.py" = ["ARG002"]
 [tool.ruff.lint.mccabe]
 max-complexity = 60
 
 [tool.ruff.lint]
+# The codebase names deliberately unused bindings ignored_*; treat them as dummies.
+dummy-variable-rgx = "^(_+|_[a-zA-Z0-9_]*|ignored(_.*)?)$"
 select = [
+    "ARG",     # unused arguments
     "B",       # flake8-bugbear
     "C4",      # flake8-comprehensions
     "C90",     # mccabe complexity
     "COM",     # flake8-commas
     "E",       # pycodestyle errors
     "F",       # pyflakes
+    "FURB",    # refurb modernisations
     "I",       # isort (imports)
+    "PERF",    # perflint
+    "PIE",     # flake8-pie
+    "PLR1714", # repeated equality comparison
+    "PLR5501", # collapsible else-if
     "PLR0402", # Name compared with itself like `foo == foo`
     "PT",      # flake8-pytest-style
+    "RET504",  # unnecessary assignment before return
+    "RET505",  # superfluous else after return
     "SIM",     # flake8-simplify
+    "UP035",   # deprecated typing imports
+    "UP037",   # quoted annotations under future annotations
+    "UP046",   # PEP 695 generic classes
+    "UP047",   # PEP 695 generic functions
     "UP015",   # redundant `open()` mode parameter (like "r" is default)
     "UP018",   # Unnecessary {literal_type} call like `str("abc")`. (rewrite as a literal)
     "UP032",   # Use f-string instead of `.format()` call
@@ -309,6 +349,7 @@ layers = [
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.output.serialize"]
+ignore_imports = ["core_pdf.impl._impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
     "core_pdf.impl._impl.document",
     "core_pdf.impl._impl.capture",
@@ -359,15 +400,14 @@ source_modules = [
 ]
 forbidden_modules = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate"]
 
+# core-predictors also hosts the shared numpy sample-view helpers, so it is the
+# one floor package the others may use; the rest stay independent of each other.
 [[tool.importlinter.contracts]]
-name = "Standards packages do not depend on each other"
-type = "independence"
-modules = [
+name = "Standards packages depend at most on core-predictors"
+type = "layers"
+layers = [
+    "core_postscript | core_jbig2 | core_pdf_crypto | core_adobe_fonts",
     "core_predictors",
-    "core_postscript",
-    "core_jbig2",
-    "core_pdf_crypto",
-    "core_adobe_fonts",
 ]
 
 [[tool.importlinter.contracts]]
@@ -385,11 +425,6 @@ forbidden_modules = [
     "core_pdf.impl._impl.output",
     "core_pdf.impl._impl.render",
     "core_pdf_spec",
-    "core_predictors",
-    "core_postscript",
-    "core_jbig2",
-    "core_pdf_crypto",
-    "core_adobe_fonts",
     "core_pdf.api",
 ]
 
@@ -397,6 +432,9 @@ forbidden_modules = [
 name = "The shared model depends on nothing above it"
 type = "forbidden"
 source_modules = ["core_pdf.impl._impl.model"]
+# Spec's geometry module is a leaf (only core_pdf_spec.types); the model
+# re-exports its bbox helpers rather than duplicating them.
+ignore_imports = ["core_pdf.impl._impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
     "core_pdf.impl._impl.document",
     "core_pdf.impl._impl.capture",

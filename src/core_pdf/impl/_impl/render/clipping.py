@@ -130,8 +130,8 @@ class internal_ClipState:
         for x0, y0, x1, y1 in edges:
             if y0 == y1:
                 continue
-            low = y0 if y0 < y1 else y1
-            high = y1 if y1 > y0 else y0
+            low = min(y1, y0)
+            high = max(y0, y1)
             if low <= page_y < high:
                 offset = (page_y - y0) / (y1 - y0)
                 crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))

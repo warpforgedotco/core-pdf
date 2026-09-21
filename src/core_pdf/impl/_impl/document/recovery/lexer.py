@@ -72,7 +72,7 @@ internal_READER_RULES: dict[LexicalRules, LexicalRules] = {
 }
 
 
-def internal_drop_unknown_escape(byte: int) -> bytes:
+def internal_drop_unknown_escape(_byte: int) -> bytes:
     return b""
 
 
@@ -246,9 +246,7 @@ class PdfLexer(SyntaxLexer):
                     next_byte = data[value_pos]
                     if (
                         next_byte in (40, 47, 60, 91)
-                        or next_byte == 45
-                        or next_byte == 43
-                        or next_byte == 46
+                        or next_byte in {45, 43, 46}
                         or 48 <= next_byte <= 57
                         or 65 <= next_byte <= 90
                         or 97 <= next_byte <= 122

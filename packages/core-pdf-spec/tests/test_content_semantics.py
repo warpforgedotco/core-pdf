@@ -280,15 +280,13 @@ def test_initial_color_and_component_count(
     ("spec", "values", "expected", "initial"),
     [
         (
-            parse_color_space(
-                ["Lab", {"WhitePoint": [0.9505, 1, 1.089], **{"Range": [2, 4, -4, -2]}}]
-            ),
+            parse_color_space(["Lab", {"WhitePoint": [0.9505, 1, 1.089], "Range": [2, 4, -4, -2]}]),
             (150, 1, 1),
             (100, 2, -2),
             (0, 2, -2),
         ),
         (
-            parse_color_space(["ICCBased", PdfStream(dictionary={"N": 1, **{"Range": [2, 4]}})]),
+            parse_color_space(["ICCBased", PdfStream(dictionary={"N": 1, "Range": [2, 4]})]),
             (5,),
             (4,),
             (2,),
@@ -325,7 +323,7 @@ def test_color_components_reject_wrong_count_or_non_pdf_numbers(
 def test_color_range_validation_precedes_initialization(ranges: list[object]) -> None:
     with pytest.raises(ValueError):
         initial_color_components(
-            parse_color_space(["ICCBased", PdfStream(dictionary={"N": 1, **{"Range": ranges}})])
+            parse_color_space(["ICCBased", PdfStream(dictionary={"N": 1, "Range": ranges})])
         )
 
 

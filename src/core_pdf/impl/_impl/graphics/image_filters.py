@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import numpy
 
 if typing.TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
     FilterFn = Callable[[bytes, object], bytes]
 

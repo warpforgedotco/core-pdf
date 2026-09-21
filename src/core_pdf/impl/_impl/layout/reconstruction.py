@@ -60,15 +60,14 @@ def reconstruct_layout_line_text(
         sorted_runs = runs
     elif rules.runs_are_right_to_left(runs):
         sorted_runs = sorted(runs, key=lambda r: (r.order, r.stream_order))
+    elif angle == 90:
+        sorted_runs = sorted(runs, key=lambda r: (r.y0, r.order))
+    elif angle == 270:
+        sorted_runs = sorted(runs, key=lambda r: (-r.y1, r.order))
     else:
-        if angle == 90:
-            sorted_runs = sorted(runs, key=lambda r: (r.y0, r.order))
-        elif angle == 270:
-            sorted_runs = sorted(runs, key=lambda r: (-r.y1, r.order))
-        else:
-            sorted_runs = sorted(runs, key=lambda r: (r.x0, r.order))
-            if rules.has_interleaved_horizontal_overlap(sorted_runs):
-                sorted_runs = sorted(runs, key=lambda r: (r.order, r.stream_order))
+        sorted_runs = sorted(runs, key=lambda r: (r.x0, r.order))
+        if rules.has_interleaved_horizontal_overlap(sorted_runs):
+            sorted_runs = sorted(runs, key=lambda r: (r.order, r.stream_order))
 
     is_formula_like_line = rules.formula_like_runs(sorted_runs)
     if angle == 0 and is_formula_like_line:
@@ -633,8 +632,8 @@ class GlyphLineBuilder:
             return False
         text_length = len(text)
         for (px0, py0, px1, py1), prev_text in reversed(recent_runs):
-            ox = (x1 if x1 < px1 else px1) - (x0 if x0 > px0 else px0)
-            oy = (y1 if y1 < py1 else py1) - (y0 if y0 > py0 else py0)
+            ox = (min(px1, x1)) - (max(px0, x0))
+            oy = (min(py1, y1)) - (max(py0, y0))
             if ox <= 0 or oy <= 0:
                 continue
             overlap_ratio = (ox * oy) / box_area

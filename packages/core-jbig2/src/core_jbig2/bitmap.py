@@ -2,39 +2,11 @@
 
 from __future__ import annotations
 
-from operator import index
 from typing import Any
 
 import numpy
 
-
-def internal_uint8_view(
-    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
-    *,
-    count: int = -1,
-    offset: int = 0,
-) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    count = index(count)
-    offset = index(offset)
-    if isinstance(buffer, numpy.ndarray):
-        array = numpy.asarray(buffer)
-        if array.dtype.type is numpy.uint8:
-            if array.flags.c_contiguous:
-                view = array.reshape(-1)
-            else:
-                view = numpy.ascontiguousarray(array).reshape(-1)
-        else:
-            view = numpy.asarray(array, dtype=numpy.uint8).reshape(-1)
-        if offset < 0 or offset > view.size:
-            raise ValueError("offset must be non-negative and no greater than buffer length")
-        if count > view.size - offset:
-            raise ValueError("buffer is smaller than requested size")
-        if offset:
-            view = view[offset:]
-        if count >= 0:
-            view = view[:count]
-        return view
-    return numpy.frombuffer(buffer, dtype=numpy.uint8, count=count, offset=offset)
+from core_predictors.samples import uint8_view
 
 
 def uint8_matrix_view(
@@ -42,7 +14,7 @@ def uint8_matrix_view(
     rows: int,
     columns: int,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    return internal_uint8_view(buffer, count=rows * columns).reshape(rows, columns)
+    return uint8_view(buffer, count=rows * columns).reshape(rows, columns)
 
 
 PACKED_COMPOSE_NUMPY_THRESHOLD = 64
@@ -97,7 +69,7 @@ def internal_compose_packed_bitmap_numpy(
     if first_row >= last_row or first_col >= last_col:
         return
 
-    source = internal_uint8_view(
+    source = uint8_view(
         packed_bitmap,
         count=(last_row - first_row) * row_byte_length,
         offset=first_row * row_byte_length,
@@ -200,12 +172,12 @@ def compose_packed_bitmap_data(
 
 def invert_packed_bitmap(data: bytes | bytearray) -> bytes:
     if isinstance(data, bytearray):
-        image = internal_uint8_view(data)
+        image = uint8_view(data)
         numpy.bitwise_xor(image, 0xFF, out=image)
         return bytes(data)
     if len(data) < 4096:
         return bytes(byte ^ 0xFF for byte in data)
-    return numpy.bitwise_xor(internal_uint8_view(data), 0xFF).tobytes()
+    return numpy.bitwise_xor(uint8_view(data), 0xFF).tobytes()
 
 
 __all__ = (

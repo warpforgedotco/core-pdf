@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl._impl.pdf_names import recover_pdf_name

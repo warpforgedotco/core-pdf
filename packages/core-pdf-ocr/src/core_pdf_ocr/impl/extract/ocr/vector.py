@@ -237,12 +237,11 @@ def internal_stroked_vector_text_raster(
         data,
         max(70, int(round(72.0 * scale))),
     )
-    packed = internal_PackedStrokedTextRaster(
+    return internal_PackedStrokedTextRaster(
         raster=raster,
         packed_box=(0.0, 0.0, packed_width, packed_height),
         cells=cells,
     )
-    return packed
 
 
 def internal_full_stroked_vector_text_raster(

@@ -56,7 +56,7 @@ class CMapProgram:
     tokens: tuple[CMapToken, ...]
 
     @classmethod
-    def parse(cls, data: bytes | bytearray | memoryview) -> "CMapProgram":
+    def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:
         source = data if type(data) is bytes else bytes(data)
         tokens = tuple(iter_cmap_tokens(source, group_arrays=True))
         if any(

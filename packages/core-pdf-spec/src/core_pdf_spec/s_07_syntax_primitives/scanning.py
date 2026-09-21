@@ -112,7 +112,7 @@ def skip_pdf_ignored(
         pos += 1
         while pos < data_len:
             byte = data[pos]
-            if byte == 10 or byte == 13:
+            if byte in {10, 13}:
                 pos += 1
                 if pos < data_len:
                     next_byte = data[pos]
@@ -275,7 +275,7 @@ def read_literal_string(
                 out.extend(unknown_escape(esc))
             else:
                 out.append(esc)
-        elif byte == 13 or byte == 10:
+        elif byte in {13, 10}:
             out.append(10)
             if pos < data_len:
                 next_byte = data[pos]

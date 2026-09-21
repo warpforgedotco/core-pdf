@@ -53,7 +53,7 @@ class internal_Layout(Protocol):
     ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]: ...
 
 
-def internal_collected_records(
+def internal_collected_records[internal_Record, internal_T](
     fetch: Callable[[], Iterable[internal_Record]],
     build: Callable[[int, internal_Record], internal_T],
 ) -> tuple[internal_T, ...]:
@@ -221,7 +221,7 @@ class internal_PageExtraction:
         cropbox = assembled.cropbox
         with suppress(TypeError, ValueError):
             cropbox = self.page.crop_box
-        assembled = replace(
+        return replace(
             assembled,
             annotations=annotations,
             links=links,
@@ -229,7 +229,6 @@ class internal_PageExtraction:
             cropbox=cropbox,
             user_unit=self.page.user_unit,
         )
-        return assembled
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:

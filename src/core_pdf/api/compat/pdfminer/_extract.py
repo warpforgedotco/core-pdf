@@ -140,8 +140,10 @@ def _structured_output(
     xml_parts: list[str] = []
     for page in pages:
         xml_parts.append(f'<page id="{page.pageid}" bbox="{page.bbox}">')
-        for item in page:
-            if isinstance(item, LTText) and isinstance(item, LTComponent):
-                xml_parts.append(f'<textbox bbox="{item.bbox}">{escape(item.get_text())}</textbox>')
+        xml_parts.extend(
+            f'<textbox bbox="{item.bbox}">{escape(item.get_text())}</textbox>'
+            for item in page
+            if isinstance(item, LTText) and isinstance(item, LTComponent)
+        )
         xml_parts.append("</page>")
     return "<pages>" + "".join(xml_parts) + "</pages>"
