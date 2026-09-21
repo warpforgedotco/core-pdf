@@ -1,6 +1,6 @@
 """Annotation validation and recovery preserve usable records and source identity."""
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -29,7 +29,8 @@ def test_annotation_validation_and_recovery(
             if malformation == "entry"
             else [malformed, valid]
         )
-        document.build_page_dicts()[0]["Annots"] = annots
+        # Deliberately malformed shapes: bypass the PdfObject value type on purpose.
+        document.build_page_dicts()[0]["Annots"] = cast(Any, annots)
         page = document.pages[0]
         # Tolerant dictionary discovery accepts a singleton and skips non-dictionaries.
         discovered = page.annotation_dicts()
