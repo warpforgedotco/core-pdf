@@ -1,3 +1,5 @@
+from typing import cast
+
 import pytest
 
 from core_pdf.impl._impl.capture.recovery import (
@@ -6,6 +8,7 @@ from core_pdf.impl._impl.capture.recovery import (
     recover_inline_image_data,
     recover_inline_image_position,
 )
+from core_pdf.impl.types import PdfString
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, InlineImageDataLengthError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -173,3 +176,42 @@ def test_inline_image_consumption_respects_a_full_operand_buffer():
         iter_content_operations(PdfLexer(prefix + b" BI /W 1 /H 1 /BPC 8 /CS /G ID x EI Q"))
     )
     assert operations == [("BI", tuple(range(16))), ("Q", ())]
+
+
+def internal_operations(data: bytes) -> list[tuple[str, tuple[object, ...]]]:
+    return list(iter_content_operations(PdfLexer(data)))
+
+
+def test_inline_fast_path_matches_token_parser_for_simple_operands() -> None:
+    operations = internal_operations(
+        b"1 -2.5 /Name true null (str) <41> [1 2] 12345678901234567 Tj Do"
+    )
+    assert len(operations) == 2
+    name, operands = operations[0]
+    assert name == "Tj"
+    assert operands[:2] == (1, -2.5)
+    assert str(operands[2]) == "Name"
+    assert operands[3] is True
+    assert operands[4] is None
+    assert cast(PdfString, operands[5]).data == b"str"
+    assert cast(PdfString, operands[6]).data == b"A"
+    assert operands[7] == [1, 2]
+    assert operands[8] == 12345678901234567
+    assert operations[1] == ("Do", ())
+
+
+def test_inline_fast_path_reuses_interned_names_and_caps_operands() -> None:
+    ((_, operands),) = internal_operations(b"/F1 /F1 " + b"1 " * 40 + b"Tf")
+    assert operands[0] is operands[1]
+    assert len(operands) == 16
+
+
+def test_inline_fast_path_filters_object_keywords_like_the_token_parser() -> None:
+    assert internal_operations(b"1 0 obj 5 0 R endobj q Q stream endstream") == [
+        ("q", ()),
+        ("Q", ()),
+    ]
+
+
+def test_inline_fast_path_reports_unknown_delimiters_through_recovery() -> None:
+    assert internal_operations(b"q >> Q") == [("q", ()), ("Q", ())]

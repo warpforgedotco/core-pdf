@@ -131,7 +131,9 @@ def internal_line_duplicates_table(text: str, box: Rectangle, index: internal_Ta
     if not normalized or table.bbox is None or overlap_ratio_of(box, table.bbox) < 0.90:
         return False
     tokens = content_tokens(normalized)
-    if index.frame is not None:
+    if index.frame is None:
+        touches = covered = numpy.zeros(0, dtype=bool)
+    else:
         intersections = index.frame.intersection_areas(box)
         touches = intersections > 0.0
         box_area = bbox_area(box)
