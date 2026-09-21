@@ -33,7 +33,7 @@ class PdfName:
         return self.str_value
 
     @classmethod
-    def of(cls, value: str | bytes | memoryview | "PdfName") -> "PdfName":
+    def of(cls, value: str | bytes | memoryview | PdfName) -> PdfName:
         if type(value) is PdfName:
             return value
         if type(value) is str:

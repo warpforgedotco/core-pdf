@@ -587,7 +587,7 @@ def internal_capture_from_program(
             for box in visible_image_boxes
         )
     )
-    captured = PageAnalysis(
+    return PageAnalysis(
         page=page,
         width=page_width,
         height=page_height,
@@ -621,7 +621,6 @@ def internal_capture_from_program(
             trusted_hidden_text=trusted_hidden_text,
         ),
     )
-    return captured
 
 
 def capture_page(

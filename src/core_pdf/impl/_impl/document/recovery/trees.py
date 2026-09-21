@@ -76,7 +76,7 @@ def iter_name_tree_items(
 TreeKeyT = TypeVar("TreeKeyT")
 
 
-def internal_iter_tree_items(
+def internal_iter_tree_items[TreeKeyT](
     node: object,
     resolve: ResolveFn,
     decode_key: Callable[[object], TreeKeyT | None],
@@ -151,5 +151,4 @@ def internal_iter_tree_items(
             if recover:
                 continue
             raise ValueError(f"invalid {tree_name} tree Kids array")
-        for kid in reversed(kids):
-            stack.append((kid, current_depth + 1))
+        stack.extend((kid, current_depth + 1) for kid in reversed(kids))

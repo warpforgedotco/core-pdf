@@ -321,10 +321,10 @@ def test_dense_page_preserves_barriers_and_separate_stroke_styles() -> None:
     drawings: list[CapturedDrawing] = []
     for row in range(160):
         drawings.append(CapturedDrawing(row, None, None))
-        for drawing in internal_text(text, row * 20):
-            drawings.append(
-                replace(drawing, stroke_color=(float(row % 2),), line_width=0.2 + row % 2)
-            )
+        drawings.extend(
+            replace(drawing, stroke_color=(float(row % 2),), line_width=0.2 + row % 2)
+            for drawing in internal_text(text, row * 20)
+        )
     result = newstroke.decode_newstroke_drawings(tuple(drawings))
     assert result.trusted
     assert [run.text for run in result.runs] == [text] * 160

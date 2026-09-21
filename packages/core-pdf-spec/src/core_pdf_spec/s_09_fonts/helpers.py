@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from core_adobe_fonts.encodings import (
     MAC_ROMAN_ENCODING_GLYPH_NAMES,

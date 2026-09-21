@@ -28,9 +28,7 @@ def resolve_cmap_resource(name: str) -> bytes | None:
                     return child.read_bytes()
                 deprecated = child
             continue
-        for child in current.iterdir():
-            if child.is_dir():
-                candidates.append((child, child.name))
+        candidates.extend((child, child.name) for child in current.iterdir() if child.is_dir())
     return deprecated.read_bytes() if deprecated is not None else None
 
 

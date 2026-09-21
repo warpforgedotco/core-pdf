@@ -52,7 +52,7 @@ def test_font_recovery_cache_is_shared_across_glyphs_and_routes(monkeypatch, rec
         height=100,
         get_page_program=lambda: program,
         internal_drawing_records=lambda drawings: [drawing],
-        get_annotations=lambda: [],
+        get_annotations=list,
     )
     overrides = (
         {}

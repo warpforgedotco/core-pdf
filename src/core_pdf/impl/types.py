@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from os import PathLike
-from typing import Generic, Protocol, Self, TypeAlias, TypeVar
+from typing import Protocol, Self, TypeAlias, TypeVar
 
 from core_pdf_spec.types import (
     MISSING,
@@ -40,7 +40,7 @@ RecordT = TypeVar("RecordT")
 
 
 @dataclass(frozen=True, slots=True)
-class PageScoped(Generic[RecordT]):
+class PageScoped[RecordT]:
     page_index: int
     page_number: int
     page_label: str | None

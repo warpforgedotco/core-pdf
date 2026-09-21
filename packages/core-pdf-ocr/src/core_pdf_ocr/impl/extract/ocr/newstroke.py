@@ -528,16 +528,16 @@ def internal_sequence_run(
     for segment in concrete[1:]:
         sx0 = segment.x0
         sx1 = segment.x1
-        seg_min_x = sx0 if sx0 < sx1 else sx1
-        seg_max_x = sx1 if sx1 > sx0 else sx0
+        seg_min_x = min(sx1, sx0)
+        seg_max_x = max(sx0, sx1)
         if seg_min_x < min_x:
             min_x = seg_min_x
         if seg_max_x > max_x:
             max_x = seg_max_x
         sy0 = segment.y0
         sy1 = segment.y1
-        seg_min_y = sy0 if sy0 < sy1 else sy1
-        seg_max_y = sy1 if sy1 > sy0 else sy0
+        seg_min_y = min(sy1, sy0)
+        seg_max_y = max(sy0, sy1)
         if seg_min_y < min_y:
             min_y = seg_min_y
         if seg_max_y > max_y:

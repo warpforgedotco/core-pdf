@@ -36,8 +36,8 @@ def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str
 
     width = parse_int(dictionary.get("Width"), 0)
     height = parse_int(dictionary.get("Height"), 0)
-    width = width if width > 0 else 0
-    height = height if height > 0 else 0
+    width = max(0, width)
+    height = max(0, height)
     image_mask = dictionary.get("ImageMask") is True
     default_bpc = 1 if image_mask else 0
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), default_bpc)

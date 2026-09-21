@@ -21,7 +21,7 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError
 @dataclass(frozen=True, slots=True)
 class FilterParams(PdfFilterParams):
     @classmethod
-    def from_parms(cls, parms: object) -> "FilterParams":
+    def from_parms(cls, parms: object) -> FilterParams:
         if not isinstance(parms, dict):
             if is_pdf_null(parms) or isinstance(parms, PdfReference):
                 return cls()

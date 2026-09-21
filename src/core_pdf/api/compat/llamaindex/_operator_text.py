@@ -462,7 +462,7 @@ class OperatorTextProjection:
         encoding_name = recover_pdf_name(raw_encoding)
         if raw_encoding is None:
             return "charmap"
-        elif encoding_name is not None:
+        if encoding_name is not None:
             name = encoding_name
             codecs = internal_PREDEFINED_ENCODING_CODECS
             if name in codecs or "-UCS2-" in name:

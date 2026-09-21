@@ -176,8 +176,7 @@ class internal_PathFillTargetMixin:
         if ix1 - ix0 < 10 or iy1 - iy0 < 10:
             return False
         edge_bounds = [
-            (ex0, ey0, ex1, ey1, ey0 if ey0 < ey1 else ey1, ey1 if ey1 > ey0 else ey0)
-            for ex0, ey0, ex1, ey1 in edges
+            (ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1)) for ex0, ey0, ex1, ey1 in edges
         ]
         edge_count = len(edge_bounds)
         pending_order = sorted(range(edge_count), key=lambda i: -edge_bounds[i][5])
@@ -324,8 +323,8 @@ class internal_PathFillTargetMixin:
                 ey0,
                 ex1,
                 ey1,
-                ey0 if ey0 < ey1 else ey1,
-                ey1 if ey1 > ey0 else ey0,
+                min(ey1, ey0),
+                max(ey0, ey1),
             )
             for ex0, ey0, ex1, ey1 in edges
             if ey0 != ey1
@@ -360,10 +359,10 @@ class internal_PathFillTargetMixin:
             sample_spans = []
             if all_row_crossings is not None:
                 base = (py - iy0) * samples
-                for sy in range(samples):
-                    sample_spans.append(
-                        internal_fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
-                    )
+                sample_spans.extend(
+                    internal_fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
+                    for sy in range(samples)
+                )
             else:
                 for sy in range(samples):
                     page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale

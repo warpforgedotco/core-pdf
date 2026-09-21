@@ -31,7 +31,7 @@ class FilterParams:
     jbig2_globals: object | None = None
 
     @classmethod
-    def from_parms(cls, parms: object) -> "FilterParams":
+    def from_parms(cls, parms: object) -> FilterParams:
         if not isinstance(parms, dict):
             if is_pdf_null(parms):
                 return cls()

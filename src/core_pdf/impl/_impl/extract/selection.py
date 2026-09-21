@@ -30,7 +30,7 @@ class internal_ExtractionBuilder(Protocol[internal_Extraction]):
     ) -> internal_Extraction: ...
 
 
-def internal_prepare_document_pages(
+def internal_prepare_document_pages[internal_Extraction: internal_PageExtraction](
     document: PdfDocument[Any],
     pages: Sequence[PdfPage],
     build: internal_ExtractionBuilder[internal_Extraction],

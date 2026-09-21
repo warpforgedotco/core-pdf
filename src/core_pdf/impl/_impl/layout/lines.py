@@ -431,20 +431,22 @@ def page_layout_geometry_issues(
 ) -> tuple[LayoutGeometryIssue, ...]:
     issues: list[LayoutGeometryIssue] = []
     for line_index, line in enumerate(lines):
-        for issue in layout_line_geometry_issues(line):
-            issues.append(replace(issue, details=(*issue.details, ("line_index", line_index))))
+        issues.extend(
+            replace(issue, details=(*issue.details, ("line_index", line_index)))
+            for issue in layout_line_geometry_issues(line)
+        )
         for run_index, run in enumerate(line.runs):
-            for issue in text_run_geometry_issues(run):
-                issues.append(
-                    replace(
-                        issue,
-                        details=(
-                            *issue.details,
-                            ("run_index", run_index),
-                            ("line_index", line_index),
-                        ),
-                    )
+            issues.extend(
+                replace(
+                    issue,
+                    details=(
+                        *issue.details,
+                        ("run_index", run_index),
+                        ("line_index", line_index),
+                    ),
                 )
+                for issue in text_run_geometry_issues(run)
+            )
     return tuple(issues)
 
 

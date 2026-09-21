@@ -164,10 +164,21 @@ select = [
     "COM",     # flake8-commas
     "E",       # pycodestyle errors
     "F",       # pyflakes
+    "FURB",    # refurb modernisations
     "I",       # isort (imports)
+    "PERF",    # perflint
+    "PIE",     # flake8-pie
+    "PLR1714", # repeated equality comparison
+    "PLR5501", # collapsible else-if
     "PLR0402", # Name compared with itself like `foo == foo`
     "PT",      # flake8-pytest-style
+    "RET504",  # unnecessary assignment before return
+    "RET505",  # superfluous else after return
     "SIM",     # flake8-simplify
+    "UP035",   # deprecated typing imports
+    "UP037",   # quoted annotations under future annotations
+    "UP046",   # PEP 695 generic classes
+    "UP047",   # PEP 695 generic functions
     "UP015",   # redundant `open()` mode parameter (like "r" is default)
     "UP018",   # Unnecessary {literal_type} call like `str("abc")`. (rewrite as a literal)
     "UP032",   # Use f-string instead of `.format()` call

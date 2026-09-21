@@ -42,7 +42,7 @@ class XmpNodeRecord(TypedDict, total=False):
     tag: str
     attributes: dict[str, str]
     text: str
-    children: list["XmpNodeRecord"]
+    children: list[XmpNodeRecord]
     parse_error: str
 
 

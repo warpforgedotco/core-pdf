@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 
 if typing.TYPE_CHECKING:
-    from typing import Callable
+    from collections.abc import Callable
 
     FilterFn = Callable[[bytes, object], bytes]
 

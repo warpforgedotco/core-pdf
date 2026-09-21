@@ -151,9 +151,8 @@ def internal_estimated_text_height(raster: internal_Raster) -> float:
         transitions = numpy.diff(padded)
         starts = numpy.flatnonzero(transitions == 1)
         ends = numpy.flatnonzero(transitions == -1)
-        for height in ends - starts:
-            if 2 <= height <= max(12, sampled.shape[0] // 12):
-                heights.append(int(height))
+        limit = max(12, sampled.shape[0] // 12)
+        heights.extend(int(height) for height in ends - starts if 2 <= height <= limit)
     if len(heights) < 4:
         return 0.0
     values = numpy.asarray(heights, dtype=numpy.float32)
@@ -412,19 +411,19 @@ def internal_high_resolution_weak_region_tasks(
         )
     weak_regions: list[internal_OcrRegion] = []
     for (_, page_box, _), source_raster in source_rasters.items():
-        for rectangle in internal_weak_region_rectangles(
-            source_raster,
-            page_box,
-            ocr_pass,
-            primary,
-        ):
-            weak_regions.append(
-                internal_OcrRegion(
-                    internal_raster_rectangle_page_box(source_raster, page_box, rectangle),
-                    1.0,
-                    ("adaptive-weak-region",),
-                )
+        weak_regions.extend(
+            internal_OcrRegion(
+                internal_raster_rectangle_page_box(source_raster, page_box, rectangle),
+                1.0,
+                ("adaptive-weak-region",),
             )
+            for rectangle in internal_weak_region_rectangles(
+                source_raster,
+                page_box,
+                ocr_pass,
+                primary,
+            )
+        )
     regions = internal_merge_ocr_regions(weak_regions)
     if not regions:
         return ()

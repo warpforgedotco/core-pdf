@@ -9,13 +9,14 @@ import sys
 import textwrap
 import unicodedata
 from collections import Counter
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from functools import partial
 from pathlib import Path
 from random import Random
 from time import perf_counter
-from typing import Any, Iterable, cast
+from typing import Any, cast
 
 from core_pdf import PdfDocument
 
@@ -453,7 +454,7 @@ def score_case(case: ScoreBenchCase, document_class: type[PdfDocument] = PdfDocu
         predicted_cells = predicted_table_cells(predicted_tables)
         table_pairs = match_table_indexes(truth_cells, predicted_cells)
         evaluation_elapsed = perf_counter() - evaluation_started
-        score = CaseScore(
+        return CaseScore(
             stem=case.stem,
             status="ok",
             cct=cct,
@@ -480,7 +481,6 @@ def score_case(case: ScoreBenchCase, document_class: type[PdfDocument] = PdfDocu
             missing_top=token_diff["missing_top"][:5],
             extra_top=token_diff["extra_top"][:5],
         )
-        return score
     except Exception as exc:
         return CaseScore(
             stem=case.stem,
@@ -1082,10 +1082,10 @@ class ScoreBench:
         if errors:
             lines.append("")
             lines.append("### Errors\n")
-            for result in errors:
-                lines.append(
-                    f"- **{result.case_number}. {result.score.stem}**: {result.score.error}"
-                )
+            lines.extend(
+                f"- **{result.case_number}. {result.score.stem}**: {result.score.error}"
+                for result in errors
+            )
         if self.html_output is not None:
             lines.append(f"\n> HTML report: `{self.html_output}`")
         print("\n".join(lines))

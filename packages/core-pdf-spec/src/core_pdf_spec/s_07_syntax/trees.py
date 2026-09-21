@@ -30,7 +30,7 @@ def tree_array(node: dict, field: str, resolve: ResolveFn, tree_name: str) -> li
     return value
 
 
-def tree_entry(
+def tree_entry[TreeKeyT](
     entries: list, index: int, key: TreeKeyT | None, key_error: str
 ) -> tuple[TreeKeyT, object]:
     if index + 1 >= len(entries):
@@ -40,7 +40,7 @@ def tree_entry(
     return key, entries[index + 1]
 
 
-def internal_iter_tree_items(
+def internal_iter_tree_items[TreeKeyT](
     node: object,
     resolve: ResolveFn,
     decode_key: Callable[[object], TreeKeyT | None],

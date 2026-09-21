@@ -193,7 +193,7 @@ class CMapDecoder:
         usecmap_resolver: CMapResourceResolver | None,
         depth: int,
         ancestor_names: tuple[str, ...] = (),
-    ) -> "CMapDecoder | None":
+    ) -> CMapDecoder | None:
         if name in {"Identity-H", "Identity-V"}:
             return CMapDecoder.identity(byte_width=2, wmode=int(name.endswith("-V")))
         if name in ancestor_names:
@@ -210,7 +210,7 @@ class CMapDecoder:
             ancestor_names=(*ancestor_names, name),
         )
 
-    def inherit(self, parent: "CMapDecoder") -> None:
+    def inherit(self, parent: CMapDecoder) -> None:
         self.code_space_ranges.extend(parent.code_space_ranges)
         self.cid_mappings.update(parent.cid_mappings)
         self.cid_ranges.extend(parent.cid_ranges)
@@ -446,14 +446,16 @@ class CMapDecoder:
 CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | None]
 
 
-def index_ranges_by_length(ranges: list[CodeRangeT]) -> dict[int, tuple[CodeRangeT, ...]]:
+def index_ranges_by_length[CodeRangeT: (CIDRange, NotdefRange)](
+    ranges: list[CodeRangeT],
+) -> dict[int, tuple[CodeRangeT, ...]]:
     indexed: dict[int, list[CodeRangeT]] = {}
     for item in reversed(ranges):
         indexed.setdefault(len(item.start), []).append(item)
     return {length: tuple(items) for length, items in indexed.items()}
 
 
-def index_ranges_by_lead_byte(
+def index_ranges_by_lead_byte[CodeRangeT: (CIDRange, NotdefRange)](
     ranges_by_length: dict[int, tuple[CodeRangeT, ...]],
 ) -> dict[int, dict[int, tuple[CodeRangeT, ...]]]:
     indexed: dict[int, dict[int, list[CodeRangeT]]] = {}

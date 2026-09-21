@@ -143,10 +143,10 @@ class TextRun:
         x0, y0, x1, y1 = self.ink_bbox
         bx0, by0, bx1, by1 = bbox
         self.ink_bbox = (
-            bx0 if bx0 < x0 else x0,
-            by0 if by0 < y0 else y0,
-            bx1 if bx1 > x1 else x1,
-            by1 if by1 > y1 else y1,
+            min(x0, bx0),
+            min(y0, by0),
+            max(x1, bx1),
+            max(y1, by1),
         )
 
     def is_bold(self) -> bool:

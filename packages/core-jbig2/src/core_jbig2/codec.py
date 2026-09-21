@@ -147,7 +147,7 @@ class JBIG2Image:
     data: bytearray
 
     @classmethod
-    def create(cls, width: int, height: int) -> "JBIG2Image":
+    def create(cls, width: int, height: int) -> JBIG2Image:
         if width <= 0 or height <= 0:
             raise Jbig2ParseError("invalid JBIG2 image dimensions")
         stride = (width + 7) // 8

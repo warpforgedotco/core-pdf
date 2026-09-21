@@ -25,7 +25,7 @@ from .._strict_page_tree import internal_has_malformed_shadowed_definition
 
 
 class Rectangle(tuple[Decimal, Decimal, Decimal, Decimal]):
-    def __new__(cls, *values: object) -> "Rectangle":
+    def __new__(cls, *values: object) -> Rectangle:
         if len(values) != 4:
             raise ValueError("rectangle must contain four coordinates")
         coordinates = cast(
@@ -256,7 +256,7 @@ class Attachments(MutableMapping[str, bytes]):
 
 
 class DocumentInfo(MutableMapping[str, Any]):
-    def __init__(self, owner: "Pdf", values: dict[str, Any]) -> None:
+    def __init__(self, owner: Pdf, values: dict[str, Any]) -> None:
         self._owner = owner
         self._values = dict(values)
 
@@ -279,7 +279,7 @@ class DocumentInfo(MutableMapping[str, Any]):
 
 
 class Pages(MutableSequence[PdfPageObject]):
-    def __init__(self, owner: "Pdf", values: tuple[PdfPageObject, ...] = ()) -> None:
+    def __init__(self, owner: Pdf, values: tuple[PdfPageObject, ...] = ()) -> None:
         self._owner = owner
         self._values: list[PdfPageObject] = list(values)
 

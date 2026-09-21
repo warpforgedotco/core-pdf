@@ -43,12 +43,12 @@ def decode_cmap_token(token: bytes) -> bytes:
 
 class CMapProgram(PdfCMapProgram):
     @classmethod
-    def parse(cls, data: bytes | bytearray | memoryview) -> "CMapProgram":
+    def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:
         source = bytes(data)
         tokens: list[CMapToken] = []
         try:
             for token in iter_cmap_tokens(source, group_arrays=True):
-                tokens.append(token)
+                tokens.append(token)  # noqa: PERF402
         except ValueError:
             pass
         return cls(source, scope_cmap_tokens(tuple(tokens)))
@@ -120,7 +120,7 @@ def cmap_tokens(
     tokens: list[CMapToken] = []
     try:
         for token in iter_cmap_tokens(data, group_arrays=include_arrays):
-            tokens.append(token)
+            tokens.append(token)  # noqa: PERF402
     except ValueError:
         pass
     return CMapBlock(data, tuple(tokens)).token_values(

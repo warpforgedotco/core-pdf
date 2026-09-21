@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 import typing
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from io import BytesIO
-from typing import Any, Iterable
+from typing import Any
 
 import numpy
 

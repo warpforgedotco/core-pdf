@@ -675,7 +675,7 @@ class RecordingMethods(RecoveringTextState):
             )
             self.sequence += 1
 
-    def paint_inline_image(self, state: object, image: "InlineImage") -> None:
+    def paint_inline_image(self, state: object, image: InlineImage) -> None:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             if dictionary.get("ImageMask") is True and self.internal_initial_pattern(stroke=False):

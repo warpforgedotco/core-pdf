@@ -209,7 +209,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
     }
 
 
-def internal_map_page_element(
+def internal_map_page_element[ElementResultT](
     element: PageElement,
     *,
     block: Callable[[Block], ElementResultT],

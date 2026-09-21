@@ -5,8 +5,9 @@ from __future__ import annotations
 import string
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Iterable, Mapping, TypeAlias
+from typing import TypeAlias
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.model.geometry import (

@@ -124,7 +124,7 @@ class TableSettings:
         }
         unknown = set(values) - defaults.keys() - {"text_layout"}
         if unknown:
-            raise TypeError(f"Unknown table setting: {sorted(unknown)[0]}")
+            raise TypeError(f"Unknown table setting: {min(unknown)}")
         self.__dict__.update(defaults | values)
         self.text_settings = dict(self.text_settings or {})
         text_tolerance = self.text_settings.pop("tolerance", 3)
@@ -146,7 +146,7 @@ class TableSettings:
                 raise ValueError(f"unknown table strategy: {strategy}")
 
     @classmethod
-    def resolve(cls, settings: Mapping[str, Any] | "TableSettings" | None) -> "TableSettings":
+    def resolve(cls, settings: Mapping[str, Any] | TableSettings | None) -> TableSettings:
         if settings is None:
             return cls()
         if isinstance(settings, cls):
@@ -541,7 +541,7 @@ def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> Object
 
 class Page:
     def __init__(
-        self, pdf: "PDF", index: int, doctop: float = 0.0, engine_page: Any | None = None
+        self, pdf: PDF, index: int, doctop: float = 0.0, engine_page: Any | None = None
     ) -> None:
         self.pdf = pdf
         self.page_number = index + 1
@@ -954,7 +954,7 @@ class Page:
 
     def find_tables(
         self, table_settings: Mapping[str, Any] | TableSettings | None = None
-    ) -> list["Table"]:
+    ) -> list[Table]:
         settings = TableSettings.resolve(table_settings)
         for axis in ("vertical", "horizontal"):
             if (
@@ -1016,7 +1016,7 @@ class Page:
             return wrapped
         return self._fallback_tables(settings)
 
-    def _fallback_tables(self, settings: TableSettings) -> list["Table"]:
+    def _fallback_tables(self, settings: TableSettings) -> list[Table]:
         def cell_text(bbox: BBox) -> str:
             left, top, right, bottom = bbox
             selected = self.filter(
@@ -1122,12 +1122,12 @@ class Page:
         )
         return [Table(_CompatNativeTable(table_bbox, grid_rows))]
 
-    def debug_tablefinder(self, table_settings: Mapping[str, Any] | None = None) -> "TableFinder":
+    def debug_tablefinder(self, table_settings: Mapping[str, Any] | None = None) -> TableFinder:
         if isinstance(table_settings, TableFinder):
             return table_settings
         return TableFinder(self, TableSettings.resolve(table_settings))
 
-    def find_table(self, table_settings: Mapping[str, Any] | None = None) -> "Table | None":
+    def find_table(self, table_settings: Mapping[str, Any] | None = None) -> Table | None:
         tables = self.find_tables(table_settings)
         if not tables:
             return None
@@ -1151,7 +1151,7 @@ class Page:
         height: float | None = None,
         antialias: bool = False,
         force_mediabox: bool = False,
-    ) -> "PageImage":
+    ) -> PageImage:
         if sum(value is not None for value in (resolution, width, height)) > 1:
             raise ValueError("specify only one of resolution, width, or height")
         if width is not None:
@@ -1211,26 +1211,26 @@ class Page:
         if not results and regex and isinstance(pattern, str) and not kwargs.get("layout"):
             formatted = self.extract_text()
             fallback_expression = re.sub(r"\\ +", r"\\s+", re.escape(pattern))
-            for match in re.finditer(fallback_expression, formatted, flags):
-                if self.chars:
-                    results.append(build_result(match, self.chars))
+            if self.chars:
+                results.extend(
+                    build_result(match, self.chars)
+                    for match in re.finditer(fallback_expression, formatted, flags)
+                )
         return results
 
-    def crop(self, bbox: BBox, relative: bool = False, strict: bool = True) -> "CroppedPage":
+    def crop(self, bbox: BBox, relative: bool = False, strict: bool = True) -> CroppedPage:
         return CroppedPage(self, bbox, relative, strict, "intersects")
 
-    def within_bbox(self, bbox: BBox, relative: bool = False, strict: bool = True) -> "CroppedPage":
+    def within_bbox(self, bbox: BBox, relative: bool = False, strict: bool = True) -> CroppedPage:
         return CroppedPage(self, bbox, relative, strict, "within")
 
-    def outside_bbox(
-        self, bbox: BBox, relative: bool = False, strict: bool = True
-    ) -> "CroppedPage":
+    def outside_bbox(self, bbox: BBox, relative: bool = False, strict: bool = True) -> CroppedPage:
         return CroppedPage(self, bbox, relative, strict, "outside")
 
-    def filter(self, test_function: Callable[[ObjectDict], bool]) -> "FilteredPage":
+    def filter(self, test_function: Callable[[ObjectDict], bool]) -> FilteredPage:
         return FilteredPage(self, test_function)
 
-    def dedupe_chars(self, **kwargs: Any) -> "FilteredPage":
+    def dedupe_chars(self, **kwargs: Any) -> FilteredPage:
         tolerance = float(kwargs.get("tolerance", 1))
         attributes = ("upright", "text", *(kwargs.get("extra_attrs", ("fontname", "size")) or ()))
         chars = self.chars
@@ -1244,8 +1244,10 @@ class Page:
 
         for indexes in groups.values():
             for line in cluster_by(indexes, lambda index: chars[index]["doctop"], tolerance):
-                for cluster in cluster_by(line, lambda index: chars[index]["x0"], tolerance):
-                    retained.append(min(cluster, key=position))
+                retained.extend(
+                    min(cluster, key=position)
+                    for cluster in cluster_by(line, lambda index: chars[index]["x0"], tolerance)
+                )
         result = FilteredPage(self, lambda obj: True)
         result._objects = {**self.objects, "char": [chars[index] for index in sorted(retained)]}
         return result
@@ -1575,72 +1577,72 @@ class PageImage:
         self.original = _ImageOriginal(*(original_size or (self.width, self.height)))
         self._drawings: list[tuple[str, Any]] = []
 
-    def reset(self) -> "PageImage":
+    def reset(self) -> PageImage:
         self._drawings.clear()
         return self
 
-    def copy(self) -> "PageImage":
+    def copy(self) -> PageImage:
         result = copy(self)
         result._drawings = list(self._drawings)
         return result
 
-    def draw_line(self, line: Any, **kwargs: Any) -> "PageImage":
+    def draw_line(self, line: Any, **kwargs: Any) -> PageImage:
         return self.draw_lines((line,), **kwargs)
 
-    def draw_rects(self, rects: Iterable[Any], **kwargs: Any) -> "PageImage":
+    def draw_rects(self, rects: Iterable[Any], **kwargs: Any) -> PageImage:
         self._drawings.extend(("rect", (rect, kwargs)) for rect in rects)
         return self
 
-    def draw_lines(self, lines: Iterable[Any], **kwargs: Any) -> "PageImage":
+    def draw_lines(self, lines: Iterable[Any], **kwargs: Any) -> PageImage:
         self._drawings.extend(("line", (line, kwargs)) for line in lines)
         return self
 
-    def draw_vline(self, x: float, **kwargs: Any) -> "PageImage":
+    def draw_vline(self, x: float, **kwargs: Any) -> PageImage:
         return self.draw_line((x, self.page.bbox[1], x, self.page.bbox[3]), **kwargs)
 
-    def draw_vlines(self, xs: Iterable[float], **kwargs: Any) -> "PageImage":
+    def draw_vlines(self, xs: Iterable[float], **kwargs: Any) -> PageImage:
         for x in xs:
             self.draw_vline(x, **kwargs)
         return self
 
-    def draw_hline(self, y: float, **kwargs: Any) -> "PageImage":
+    def draw_hline(self, y: float, **kwargs: Any) -> PageImage:
         return self.draw_line((self.page.bbox[0], y, self.page.bbox[2], y), **kwargs)
 
-    def draw_hlines(self, ys: Iterable[float], **kwargs: Any) -> "PageImage":
+    def draw_hlines(self, ys: Iterable[float], **kwargs: Any) -> PageImage:
         for y in ys:
             self.draw_hline(y, **kwargs)
         return self
 
-    def draw_rect(self, rect: Any, **kwargs: Any) -> "PageImage":
+    def draw_rect(self, rect: Any, **kwargs: Any) -> PageImage:
         return self.draw_rects((rect,), **kwargs)
 
-    def draw_circle(self, circle: Any, **kwargs: Any) -> "PageImage":
+    def draw_circle(self, circle: Any, **kwargs: Any) -> PageImage:
         self._drawings.append(("circle", (circle, kwargs)))
         return self
 
-    def draw_circles(self, circles: Iterable[Any], **kwargs: Any) -> "PageImage":
+    def draw_circles(self, circles: Iterable[Any], **kwargs: Any) -> PageImage:
         for circle in circles:
             self.draw_circle(circle, **kwargs)
         return self
 
-    def outline_words(self, words: Iterable[Any] | None = None, **kwargs: Any) -> "PageImage":
+    def outline_words(self, words: Iterable[Any] | None = None, **kwargs: Any) -> PageImage:
         return self.draw_rects(words or self.page.extract_words(), **kwargs)
 
-    def outline_chars(self, chars: Iterable[Any] | None = None, **kwargs: Any) -> "PageImage":
+    def outline_chars(self, chars: Iterable[Any] | None = None, **kwargs: Any) -> PageImage:
         return self.draw_rects(chars or self.page.chars, **kwargs)
 
-    def debug_tablefinder(self, table_settings: Mapping[str, Any] | None = None) -> "PageImage":
+    def debug_tablefinder(self, table_settings: Mapping[str, Any] | None = None) -> PageImage:
         finder = self.page.debug_tablefinder(table_settings)
         self.draw_lines(finder.edges)
         for table in finder.tables:
             self.debug_table(table, stroke="blue")
         return self
 
-    def debug_table(self, table: Any, **kwargs: Any) -> "PageImage":
+    def debug_table(self, table: Any, **kwargs: Any) -> PageImage:
         cells = getattr(table, "cells", ())
         return self.draw_rects((cell for cell in cells if cell is not None), **kwargs)
 
-    def draw_words(self, words: Iterable[Any], **kwargs: Any) -> "PageImage":
+    def draw_words(self, words: Iterable[Any], **kwargs: Any) -> PageImage:
         self._drawings.extend(("word", (word, kwargs)) for word in words)
         return self
 
@@ -1804,7 +1806,7 @@ class PDF(ClosingMixin):
         unicode_norm: str | None = None,
         laparams: Any = None,
         **_: Any,
-    ) -> "PDF":
+    ) -> PDF:
         return cls(_source(source, password), source, pages, laparams, unicode_norm)
 
     @property

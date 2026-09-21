@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Mapping, TypeAlias
+from typing import Any, TypeAlias
 
 from core_pdf.impl._impl.model.geometry import bbox_union
 from core_pdf.impl._impl.model.page_selection import PageSelection

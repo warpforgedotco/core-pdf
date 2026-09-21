@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from math import inf
-from typing import Any, Sequence, TypeAlias
+from typing import Any, TypeAlias
 
 import numpy
 

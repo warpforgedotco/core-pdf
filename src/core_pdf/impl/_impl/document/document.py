@@ -112,7 +112,7 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
         self.release()
 
 
-class internal_PageLookup(Generic[internal_LookupPageT]):
+class internal_PageLookup[internal_LookupPageT: PdfPage]:
     __slots__ = (
         "document",
         "internal_nodes",
@@ -1160,13 +1160,14 @@ class PdfDocument(
         if isinstance(names, dict):
             dests_tree = self.resolver.resolve(names.get("Dests"))
             if isinstance(dests_tree, dict):
-                for name, value in iter_name_tree_items(
-                    dests_tree,
-                    self.resolver.resolve,
-                    self.resolver.resolve_str,
-                    recover=self.recovery_enabled,
-                ):
-                    targets[name] = value
+                targets.update(
+                    iter_name_tree_items(
+                        dests_tree,
+                        self.resolver.resolve,
+                        self.resolver.resolve_str,
+                        recover=self.recovery_enabled,
+                    )
+                )
 
         normalized: dict[str, RawNamedDestination] = {}
         resolving: set[str] = set()
