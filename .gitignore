@@ -224,3 +224,6 @@ __marimo__/
 
 # pytest-benchmark local result storage
 .benchmarks/
+
+# macOS Finder metadata
+.DS_Store
