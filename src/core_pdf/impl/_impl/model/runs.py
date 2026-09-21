@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 if TYPE_CHECKING:
@@ -184,4 +184,35 @@ class TextRun:
             or any(key in kwargs for key in ("advance_bbox", "ink_bbox", "baseline"))
         ):
             kwargs.setdefault("glyph_clusters", ())
-        return replace(self, **kwargs)
+        take = kwargs.pop
+        replaced = type(self)(
+            take("text", self.text),
+            take("x0", self.x0),
+            take("y0", self.y0),
+            take("x1", self.x1),
+            take("y1", self.y1),
+            take("tx", self.tx),
+            take("ty", self.ty),
+            take("font_size", self.font_size),
+            take("space_width", self.space_width),
+            take("order", self.order),
+            take("stream_order", self.stream_order),
+            take("xobject_depth", self.xobject_depth),
+            take("font_name", self.font_name),
+            take("is_vertical", self.is_vertical),
+            take("rotation_angle", self.rotation_angle),
+            take("visible", self.visible),
+            take("inside_active_clip", self.inside_active_clip),
+            take("line_break_before", self.line_break_before),
+            take("seqno", self.seqno),
+            take("fill_color", self.fill_color),
+            take("advance_bbox", self.advance_bbox),
+            take("ink_bbox", self.ink_bbox),
+            take("baseline", self.baseline),
+            take("provenance", self.provenance),
+            take("confidence", self.confidence),
+            take("glyph_clusters", self.glyph_clusters),
+        )
+        if kwargs:
+            raise TypeError(f"unexpected TextRun field(s): {', '.join(sorted(kwargs))}")
+        return replaced
