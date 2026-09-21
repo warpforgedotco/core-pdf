@@ -3,14 +3,19 @@
     "src/core_pdf",
     "packages/core-pdf-ocr/src/core_pdf_ocr",
     "packages/core-pdf-spec/src/core_pdf_spec",
-    "packages/core-pdf-validate/src/core_pdf_validate"
+    "packages/core-pdf-validate/src/core_pdf_validate",
+    "packages/core-predictors/src/core_predictors",
+    "packages/core-postscript/src/core_postscript",
+    "packages/core-jbig2/src/core_jbig2",
+    "packages/core-pdf-crypto/src/core_pdf_crypto",
+    "packages/core-adobe-fonts/src/core_adobe_fonts"
   ],
   "statements": {
-    "covered": 35693,
-    "total": 38805
+    "covered": 35914,
+    "total": 39006
   },
   "branches": {
-    "covered": 12629,
-    "total": 14938
+    "covered": 12700,
+    "total": 14992
   }
 }

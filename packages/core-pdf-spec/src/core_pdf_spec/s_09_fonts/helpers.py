@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Callable
 
-from core_pdf_spec._vendor.font_data.encoding_names import (
+from core_adobe_fonts.encodings import (
     MAC_ROMAN_ENCODING_GLYPH_NAMES,
     STANDARD_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_GLYPH_NAMES,

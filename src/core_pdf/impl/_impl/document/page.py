@@ -269,9 +269,12 @@ class PdfPage:
             contents_obj = self.document.resolver.resolve(self.contents)
         except PdfParseError:
             contents_obj = None
+        # Skipping a damaged stream is only safe when other streams keep the
+        # page usable or the document is already in recovery. A one-element
+        # Contents array is a single stream: dropping it empties the page.
         can_skip_bad_stream = (
             len(content_streams) > 1
-            or isinstance(contents_obj, (list, tuple))
+            or (isinstance(contents_obj, (list, tuple)) and len(contents_obj) > 1)
             or self.document.recovery_enabled
         )
         if len(content_streams) > 1:

@@ -1,0 +1,33 @@
+[project]
+name = "core-predictors"
+version = "0.1.0"
+description = "PNG and TIFF predictor kernels"
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
+classifiers = ["Development Status :: 3 - Alpha"]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5.1",
+]
+
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+Repository = "https://github.com/core-experiments/core-pdf"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core_predictors = ["py.typed"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["**/__pycache__/*", "**/*.pyc", "*.pdf", "**/*.pdf"]

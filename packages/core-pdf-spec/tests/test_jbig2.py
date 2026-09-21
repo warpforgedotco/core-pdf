@@ -5,15 +5,16 @@ import struct
 
 import pytest
 
-from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf_spec.s_07_filters.jbig2.codec import (
+from core_jbig2.codec import (
     JBIG2PageDecoder,
     Jbig2ParseError,
     Jbig2UnsupportedError,
-    decode_jbig2,
+    parse_embedded_segments,
     parse_generic_region_header,
     parse_region,
 )
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2
 
 
 def segment(number: int, kind: int, data: bytes, page: int = 1) -> bytes:
@@ -144,12 +145,11 @@ def test_generic_header_keeps_common_metadata_and_signed_offsets() -> None:
     assert header.bitmap_start == 26
 
 
-def test_canvas_growth_preserves_pixels_and_finish_does_not_mutate_them() -> None:
+def test_decode_jbig2_inverts_t88_polarity_for_pdf() -> None:
+    # Positive control for ISO 32000-1 7.4.7: a page whose default pixel is
+    # black (T.88 bit 1) reaches PDF as 0 bits, and vice versa.
     decoder = JBIG2PageDecoder()
-    decoder.ensure_image(8, 1)
-    assert decoder.image is not None
-    decoder.image.data[0] = 0x80
-    decoder.ensure_image(16, 2)
-    assert (decoder.image.width, decoder.image.height) == (16, 2)
-    assert decoder.finish() == b"\x7f\xff\xff\xff"
-    assert decoder.finish() == b"\x7f\xff\xff\xff"
+    for item in parse_embedded_segments(page_info(4)):
+        decoder.decode_segment(item)
+    assert decoder.finish() == b"\xff"
+    assert decode_jbig2(page_info(4), None) == b"\x00"

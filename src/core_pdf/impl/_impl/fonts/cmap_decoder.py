@@ -4,28 +4,28 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from core_pdf.impl._impl.fonts.cmap_tokenizer import (
-    CMapProgram,
-    cmap_metadata,
-    decode_cmap_hex_token,
-)
-from core_pdf_spec.s_09_fonts.cmap_decoder import (
+from core_adobe_fonts.cmap.decoder import (
     CMapDecoder as PdfCMapDecoder,
 )
-from core_pdf_spec.s_09_fonts.cmap_decoder import (
+from core_adobe_fonts.cmap.decoder import (
     CMapResourceResolver,
     CodeRangeT,
 )
-from core_pdf_spec.s_09_fonts.cmap_ranges import (
+from core_adobe_fonts.cmap.ranges import (
     CIDRange,
     range_offset,
     remove_codes_in_range,
     validate_codespace_range,
 )
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import CMapBlock
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import CMapProgram as PdfCMapProgram
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
+from core_adobe_fonts.cmap.tokenizer import CMapBlock
+from core_adobe_fonts.cmap.tokenizer import CMapProgram as PdfCMapProgram
+from core_adobe_fonts.cmap.tokenizer import (
     decode_cmap_hex_token as decode_spec_cmap_hex_token,
+)
+from core_pdf.impl._impl.fonts.cmap_tokenizer import (
+    CMapProgram,
+    cmap_metadata,
+    decode_cmap_hex_token,
 )
 
 

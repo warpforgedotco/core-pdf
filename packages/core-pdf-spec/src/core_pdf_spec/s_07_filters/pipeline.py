@@ -17,7 +17,7 @@ from core_pdf_spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
 from core_pdf_spec.s_07_filters.errors import FilterUnsupportedError
-from core_pdf_spec.s_07_filters.jbig2.codec import decode_jbig2
+from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2
 from core_pdf_spec.s_07_filters.predictors import apply_predictor
 from core_pdf_spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME, PREDICTOR_FILTERS
 

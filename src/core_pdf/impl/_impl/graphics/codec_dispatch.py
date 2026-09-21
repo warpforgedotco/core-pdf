@@ -13,7 +13,7 @@ from core_pdf.impl._impl.graphics.jbig2_recovery import RecoveryJBIG2PageDecoder
 from core_pdf.impl._impl.model.pdf_values import is_pdf_null
 from core_pdf.impl._impl.runtime import codec_backends
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf_spec.s_07_filters.jbig2.codec import decode_jbig2 as decode_strict_jbig2
+from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2 as decode_strict_jbig2
 
 
 def internal_decode(

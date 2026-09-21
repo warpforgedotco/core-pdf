@@ -18,7 +18,7 @@ Open `htmlcov/index.html` for annotated source and branch results. The machine-r
 report is `htmlcov/coverage.json`; the underlying coverage.py database is `.coverage`.
 These generated files are ignored by Git. A normal run replaces the previous results.
 
-Coverage includes all four authored source packages, including modules never imported,
+Coverage includes every authored source package listed in `[tool.coverage.run].source`, including modules never imported,
 and excludes vendored code. Branch coverage is enabled. The headline coverage percentage
 combines statements and branches; JSON also contains their separate percentages.
 Use bare `--cov` to preserve the configured source roots. pytest-cov combines coverage
@@ -75,4 +75,4 @@ ratchet it upward with subsequent complete results.
 Do not update it from focused tests or lower it to accommodate a regression.
 
 Focused local pytest invocations remain lightweight; coverage is not injected into pytest's
-`addopts`. Keep all four source roots and the existing vendor-only omit rule.
+`addopts`. Keep every source root in that list (mirrored exactly by `docs/coverage-baseline.json`) and the existing vendor-only omit rule.

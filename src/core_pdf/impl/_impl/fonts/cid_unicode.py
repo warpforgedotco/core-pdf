@@ -7,6 +7,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import cache
 
+from core_adobe_fonts.cmap.ranges import (
+    code_in_ranges,
+    iter_codespace_range,
+)
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl._impl.fonts.cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
@@ -15,10 +19,6 @@ from core_pdf.impl._impl.fonts.cmap_resources import (
     resolve_cmap_resource,
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
-)
-from core_pdf_spec.s_09_fonts.cmap_ranges import (
-    code_in_ranges,
-    iter_codespace_range,
 )
 
 

@@ -14,6 +14,9 @@ from typing import Any, Iterable
 
 import numpy
 
+from core_adobe_fonts.cmap.ranges import (
+    code_in_ranges,
+)
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl._impl.fonts.cid_unicode import resolve_cid_unicode_map
 from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
@@ -71,9 +74,6 @@ from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
-from core_pdf_spec.s_09_fonts.cmap_ranges import (
-    code_in_ranges,
-)
 from core_pdf_spec.s_09_fonts.dictionaries import (
     FontProgramInputs,
     prepare_font_program_inputs,

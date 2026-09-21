@@ -13,7 +13,7 @@ directory is gitignored. Populate it with:
 | Fixture | Standard | Used by |
 | --- | --- | --- |
 | `itu-t/T.81-JPEG.pdf` | ITU-T T.81 (JPEG) | `DCTDecode` |
-| `itu-t/T.88-JBIG2.pdf` | ITU-T T.88 (JBIG2) | `JBIG2Decode` |
+| `itu-t/T.88-JBIG2.pdf` | ITU-T T.88 (JBIG2) | `core-jbig2`; `JBIG2Decode` |
 | `itu-t/T.4-Group3-Fax.pdf` | ITU-T T.4 (Group 3) | `CCITTFaxDecode` K < 0 |
 | `itu-t/T.6-Group4-Fax.pdf` | ITU-T T.6 (Group 4) | `CCITTFaxDecode` |
 | `itu-t/T.800-JPEG2000.pdf` | ITU-T T.800 (JPEG 2000) | `JPXDecode` |

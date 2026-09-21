@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from core_pdf_spec.s_07_filters.jbig2.bitmap_kernels import compose_packed_bitmap_data
-from core_pdf_spec.s_07_filters.jbig2.codec import (
+from core_jbig2.bitmap import compose_packed_bitmap_data
+from core_jbig2.codec import (
     JBIG2GenericRegionHeader,
     JBIG2PageDecoder,
     Jbig2ParseError,

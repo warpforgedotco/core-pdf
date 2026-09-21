@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf_spec.s_07_filters.predictors import internal_unpack_subbyte_rows
+from core_predictors.samples import unpack_subbyte_rows
 
 
 def unpack_subbyte_image_samples(
@@ -28,7 +28,7 @@ def unpack_subbyte_image_samples(
     )
     if len(packed) < row_bytes * height:
         raise ValueError("invalid image sample data")
-    return internal_unpack_subbyte_rows(
+    return unpack_subbyte_rows(
         packed[: row_bytes * height].reshape(height, row_bytes), row_samples, bits_per_component
     ).reshape(-1)
 

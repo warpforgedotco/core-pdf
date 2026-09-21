@@ -5,20 +5,20 @@ from __future__ import annotations
 import re
 import typing
 
-from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
+from core_adobe_fonts.cmap.tokenizer import (
     CMapBlock,
     CMapToken,
     iter_cmap_tokens,
     scope_cmap_tokens,
 )
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import CMapProgram as PdfCMapProgram
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
+from core_adobe_fonts.cmap.tokenizer import CMapProgram as PdfCMapProgram
+from core_adobe_fonts.cmap.tokenizer import (
     decode_cmap_hex_token as decode_spec_cmap_hex_token,
 )
-from core_pdf_spec.s_09_fonts.cmap_tokenizer import (
+from core_adobe_fonts.cmap.tokenizer import (
     decode_cmap_token as decode_spec_cmap_token,
 )
+from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
 
 internal_LEGACY_EOL_PAIR = re.compile(rb"\r\n|\n\r")
 

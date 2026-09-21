@@ -9,6 +9,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, cast
 
+from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.api.compat._shared import LIGATURES
 from core_pdf.api.compat._text_state import (
     internal_append_directional_text,
@@ -28,7 +29,6 @@ from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
-from core_pdf_spec.s_09_fonts.data.core14 import GLYPH_DATA
 
 Matrix = list[float]
 
