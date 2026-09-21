@@ -70,7 +70,7 @@ class ObjectResolver(SyntaxResolver):
             # object into nearby-offset recovery and could select its neighbor.
             lexer.rewind(offset)
             return lexer.parse_indirect_object()
-        except (PdfDecryptionError, PdfUnsupportedError):
+        except PdfDecryptionError, PdfUnsupportedError:
             raise
         except Exception:
             return self.recover_indirect_object(lexer, offset)
@@ -131,7 +131,7 @@ class ObjectResolver(SyntaxResolver):
             lexer.rewind(offset)
             try:
                 return lexer.parse_indirect_object()
-            except (PdfDecryptionError, PdfUnsupportedError):
+            except PdfDecryptionError, PdfUnsupportedError:
                 raise
             except Exception:
                 continue

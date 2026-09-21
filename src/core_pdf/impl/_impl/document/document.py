@@ -498,7 +498,7 @@ class PdfDocument(
             try:
                 position = seekable.tell()
                 seekable.seek(0)
-            except (OSError, TypeError, ValueError):
+            except OSError, TypeError, ValueError:
                 position = None
                 seekable = None
         try:
@@ -516,7 +516,7 @@ class PdfDocument(
             return None
         try:
             fd = fileno()
-        except (OSError, TypeError, ValueError):
+        except OSError, TypeError, ValueError:
             return None
         try:
             return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
@@ -744,7 +744,7 @@ class PdfDocument(
             if discovered:
                 yield from discovered
                 return
-        except (PdfParseError, ValueError):
+        except PdfParseError, ValueError:
             discovered = self.internal_recovered_page_nodes()
             if discovered:
                 yield from discovered
@@ -757,7 +757,7 @@ class PdfDocument(
                 count = self.resolver.resolve(self.internal_page_tree_root().get("Count"))
                 if type(count) is int and count >= 0:
                     return count
-            except (PdfParseError, ValueError):
+            except PdfParseError, ValueError:
                 pass
         return len(self.build_page_dicts())
 
@@ -1085,7 +1085,7 @@ class PdfDocument(
         for name in targets:
             try:
                 normalize_name(name)
-            except (PdfParseError, ValueError):
+            except PdfParseError, ValueError:
                 # Entries in a name tree are independent. Keep a damaged or
                 # dangling destination unresolved without discarding the rest.
                 normalized[name] = internal_unresolved_destination(name)

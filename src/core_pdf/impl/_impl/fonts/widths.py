@@ -151,7 +151,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
         return internal_recover_font_widths(font, subtype)
     try:
         metrics = pdf_font_widths(font, subtype)
-    except (ValueError, TypeError, IndexError):
+    except ValueError, TypeError, IndexError:
         return internal_recover_font_widths(font, subtype)
     if subtype == "Type0":
         return metrics

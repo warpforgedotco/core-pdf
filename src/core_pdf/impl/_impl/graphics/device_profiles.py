@@ -40,7 +40,7 @@ def default_cmyk_transform() -> IccTransform | None:
             .joinpath(INTERNAL_DEFAULT_CMYK_PROFILE)
             .read_bytes()
         )
-    except (OSError, ModuleNotFoundError):
+    except OSError, ModuleNotFoundError:
         return None
     try:
         transform = parse_icc_transform(profile)
@@ -68,7 +68,7 @@ def cmyk_components_to_srgb(
         try:
             words = numpy.rint(values * 65535).astype(numpy.uint16)
             return transform.apply_uint16(words, rendering=rendering)
-        except (IccProfileError, IccSampleError):
+        except IccProfileError, IccSampleError:
             pass
     return numpy.rint(255 * (1 - values[:, :3]) * (1 - values[:, 3:])).astype(numpy.uint8)
 

@@ -385,7 +385,7 @@ class Pdf(PdfReader):
             )
             try:
                 outline = self.outline
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 outline = []
             self._outlines = [
                 [item.level + 1, item.title, item.page + 1]

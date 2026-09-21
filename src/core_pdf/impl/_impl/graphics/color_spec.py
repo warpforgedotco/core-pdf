@@ -285,7 +285,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                 )
         try:
             return parse_pdf_color_space(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             name = recover_pdf_name(value)
             if name is None and isinstance(value, (list, tuple)) and value:
                 name = recover_pdf_name(value[0])

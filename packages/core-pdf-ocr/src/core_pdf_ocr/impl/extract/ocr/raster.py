@@ -422,7 +422,7 @@ def internal_direct_image_orientation(
         return None
     try:
         points = tuple((float(point[0]), float(point[1])) for point in quad)
-    except (IndexError, TypeError, ValueError):
+    except IndexError, TypeError, ValueError:
         return None
     if not all(math.isfinite(value) for point in points for value in point):
         return None

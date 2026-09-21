@@ -44,7 +44,7 @@ def parse_int(value: object, default: int | None = None) -> int | None:
         return default
     try:
         return int(text)
-    except (ValueError, OverflowError):
+    except ValueError, OverflowError:
         return default
 
 
@@ -76,7 +76,7 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
         return default
     try:
         return float(text)
-    except (ValueError, OverflowError):
+    except ValueError, OverflowError:
         return default
 
 

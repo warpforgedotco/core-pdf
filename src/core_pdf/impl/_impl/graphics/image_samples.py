@@ -91,7 +91,7 @@ def internal_convert_components(
             transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
             if transform is not None and transform.input_channels == values.shape[1]:
                 return transform.apply_uint16(internal_quantize(values, 65535), rendering=rendering)
-        except (IccProfileError, IccSampleError):
+        except IccProfileError, IccSampleError:
             pass
         if space.alternate is not None:
             return internal_convert_components(
@@ -128,7 +128,7 @@ def internal_convert_components(
             return internal_convert_components(
                 tinted, space.alternate, depth + 1, rendering=rendering
             )[inverse]
-        except (TypeError, ValueError, ArithmeticError):
+        except TypeError, ValueError, ArithmeticError:
             gray = internal_quantize(1 - numpy.max(values, axis=1, keepdims=True))
             return numpy.repeat(gray, 3, axis=1)
     if kind in {"Lab", "CalGray", "CalRGB"}:

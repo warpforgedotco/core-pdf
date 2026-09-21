@@ -811,7 +811,7 @@ class Page:
         def convert(element: Any) -> ObjectDict:
             try:
                 page_index = getattr(element, "page_index", None)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 page_index = None
             result: ObjectDict = {
                 "type": getattr(element, "type", None),
@@ -823,14 +823,14 @@ class Page:
             }
             try:
                 children = tuple(element)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 children = ()
             result["children"] = [convert(child) for child in children if hasattr(child, "role")]
             return result
 
         try:
             elements = tuple(tree)
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             elements = ()
         result = []
         for element in elements:
@@ -838,7 +838,7 @@ class Page:
                 continue
             try:
                 page_index = getattr(element, "page_index", None)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 page_index = None
             if page_index is None or page_index == self.page_number - 1:
                 result.append(convert(element))
@@ -1865,7 +1865,7 @@ class PDF(ClosingMixin):
                     page = Page(self, index, doctop, engine_page)
                     self._pages.append(page)
                     doctop += page.height
-            except (IndexError, PdfminerException):
+            except IndexError, PdfminerException:
                 raise
             except Exception as exc:
                 raise PdfminerException(exc) from exc

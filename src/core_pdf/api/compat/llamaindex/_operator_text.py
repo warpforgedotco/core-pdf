@@ -86,7 +86,7 @@ class internal_Font:
         if isinstance(self.encoding, str):
             try:
                 return data.decode(self.encoding, errors="surrogatepass")
-            except (LookupError, UnicodeDecodeError):
+            except LookupError, UnicodeDecodeError:
                 return data.decode(
                     "utf-16-be" if self.encoding == "charmap" else "latin-1",
                     errors="surrogatepass",
@@ -581,7 +581,7 @@ class OperatorTextProjection:
                 state.flush()
                 try:
                     matrix = [float(cast(Any, value)) for value in operands[:6]]
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     matrix = []
                 state.cm = (
                     list(multiply_affine(matrix, state.cm))
@@ -615,7 +615,7 @@ class OperatorTextProjection:
             elif operator == "Tm":
                 try:
                     matrix = [float(cast(Any, value)) for value in operands[:6]]
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     matrix = []
                 state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 state.positioned(state.width / 1000.0)

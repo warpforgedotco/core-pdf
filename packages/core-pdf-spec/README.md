@@ -1,6 +1,6 @@
 # core-pdf-spec
 
-Strict PDF and referenced-standard algorithms for Python 3.13+.
+Strict PDF and referenced-standard algorithms for Python 3.14+.
 
 ```sh
 pip install core-pdf-spec

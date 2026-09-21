@@ -62,7 +62,7 @@ def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None
             continue
         try:
             x0, y0, x1, y1 = (float(cast(Any, part)) for part in value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
     return None
@@ -212,7 +212,7 @@ def internal_structure_actual_text_owner(element: Any) -> tuple[int, str] | None
                 # when a child provides another replacement or an empty string.
                 owner = (marker, actual_text)
             element = getattr(element, "parent", None)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             break
     return owner
 
@@ -227,7 +227,7 @@ def internal_apply_structure_actual_text(
     if structure is internal_STRUCTURE_UNSET:
         try:
             structure = page.structure
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return runs
     if structure is None:
         return runs
@@ -240,7 +240,7 @@ def internal_apply_structure_actual_text(
             continue
         try:
             element = structure[mcid] if 0 <= mcid < len(structure) else None
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             element = None
         owner = internal_structure_actual_text_owner(element)
         if owner is None:

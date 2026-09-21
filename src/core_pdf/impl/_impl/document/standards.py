@@ -81,7 +81,7 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
     version: PdfVersion | None = None
     try:
         version = parse_header_version(data[offset : offset + 9])
-    except (PdfError, ValueError):
+    except PdfError, ValueError:
         diagnostics.append(StandardsDiagnostic("invalid-header", "Invalid PDF version", "header"))
     if offset:
         diagnostics.append(
@@ -119,7 +119,7 @@ def discover_document_standards(
         catalog = internal_resolve_catalog(resolver, trailer)
         if catalog is None:
             raise ValueError("missing catalog")
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         return replace(
             header,
             diagnostics=(
@@ -134,7 +134,7 @@ def discover_document_standards(
             value = resolver.resolve(catalog["Version"])
             declaration = str(value) if isinstance(value, PdfName) else repr(value)
             version = parse_catalog_version(value)
-        except (PdfError, RecursionError, ValueError):
+        except PdfError, RecursionError, ValueError:
             diagnostics.append(
                 StandardsDiagnostic(
                     "invalid-catalog-version", "Invalid catalog /Version", "catalog/Version"
@@ -207,7 +207,7 @@ def bootstrap_security_context(
         current = replace(
             header, effective_version=effective_pdf_version(header.header_version, version)
         )
-    except (PdfError, ValueError, RecursionError):
+    except PdfError, ValueError, RecursionError:
         return None
     finally:
         resolver.close()
@@ -239,7 +239,7 @@ def internal_discover_extensions(
             return ()
         if not isinstance(value, dict):
             raise ValueError("invalid Extensions dictionary")
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-extensions", "Cannot read extension declarations", "catalog/Extensions"
@@ -271,7 +271,7 @@ def internal_discover_extensions(
                     if isinstance(resolved, dict):
                         resolved = {key: resolve(field) for key, field in resolved.items()}
                     extension = parse_extension(str(prefix), resolved)
-                except (PdfError, RecursionError, ValueError):
+                except PdfError, RecursionError, ValueError:
                     diagnostics.append(
                         StandardsDiagnostic(
                             "invalid-extension", "Invalid extension declaration", item_source
@@ -279,7 +279,7 @@ def internal_discover_extensions(
                     )
                 else:
                     extensions.append(extension)
-        except (PdfError, RecursionError, ValueError):
+        except PdfError, RecursionError, ValueError:
             diagnostics.append(
                 StandardsDiagnostic(
                     "invalid-extension", "Cannot resolve extension declaration", source
@@ -357,7 +357,7 @@ def preserve_historical_version(
             if len(sections) >= 1024:
                 raise ValueError("invalid or excessive revision chain")
             sections.append(revision)
-    except (PdfError, ValueError, RecursionError, struct.error, OSError):
+    except PdfError, ValueError, RecursionError, struct.error, OSError:
         diagnostics.append(
             StandardsDiagnostic(
                 "incomplete-version-history",
@@ -380,7 +380,7 @@ def preserve_historical_version(
             if "Version" in catalog:
                 version = parse_catalog_version(resolver.resolve(catalog["Version"]))
                 floor = effective_pdf_version(floor, version)
-        except (PdfError, ValueError, RecursionError):
+        except PdfError, ValueError, RecursionError:
             diagnostics.append(
                 StandardsDiagnostic(
                     "invalid-historical-version",
@@ -414,7 +414,7 @@ def discover_profile_claims(
         stream = catalog_metadata_stream(resolver, catalog) if catalog is not None else None
         if stream is not None and stream.data:
             claims.extend(internal_xmp_claims(stream.data, diagnostics))
-    except (PdfError, RecursionError, ValueError, ET.ParseError, DefusedXmlException):
+    except PdfError, RecursionError, ValueError, ET.ParseError, DefusedXmlException:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-xmp", "Cannot read profile claims from XMP", "catalog/Metadata"
@@ -429,7 +429,7 @@ def discover_profile_claims(
                 if (text := resolver.resolve_str(info.get(key))) is not None
             )
             claims.append(internal_profile_claim("PDF/X", "trailer/Info", properties, diagnostics))
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-profile-info", "Cannot read profile claims from Info", "trailer/Info"

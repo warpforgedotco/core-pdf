@@ -47,7 +47,7 @@ def internal_prepare_document_pages(
             return None
         try:
             return structure_tree.page_structure(page)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return None
 
     fields_by_page: dict[int, list[RawFormField]] = {}

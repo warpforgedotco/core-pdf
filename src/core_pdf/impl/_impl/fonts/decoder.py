@@ -234,7 +234,7 @@ def internal_type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
     try:
         length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
         return Type1FontProgram(font_file.data, length1=length1)
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         return None
 
 
@@ -524,7 +524,7 @@ class FontDecoder:
                     to_unicode_obj.data,
                     usecmap_resolver=resolve_cmap_resource,
                 )
-            except (PdfParseError, ValueError):
+            except PdfParseError, ValueError:
                 to_unicode = None
 
         (
@@ -673,7 +673,7 @@ class FontDecoder:
                         encoding_obj.data,
                         usecmap_resolver=resolve_cmap_resource,
                     )
-                except (PdfParseError, ValueError):
+                except PdfParseError, ValueError:
                     cmap = None
             case dict():
                 base_encoding = recover_pdf_name(encoding_obj.get("BaseEncoding"))
@@ -725,7 +725,7 @@ class FontDecoder:
                         program.builtin_encoding(),
                         program.builtin_encoding_is_authoritative(),
                     )
-                except (PdfParseError, ValueError):
+                except PdfParseError, ValueError:
                     return {}, False
             case _:
                 pass
@@ -737,7 +737,7 @@ class FontDecoder:
             try:
                 encoding = parse_type1_font_program_encoding(font_file.data)
                 return encoding, bool(encoding)
-            except (PdfParseError, ValueError):
+            except PdfParseError, ValueError:
                 return {}, False
         return {}, False
 

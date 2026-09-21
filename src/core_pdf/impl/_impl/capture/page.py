@@ -121,13 +121,13 @@ def capture_annotation_appearances(
             if annotations is None
             else [annotation.dict for annotation in annotations]
         )
-    except (PdfParseError, ValueError):
+    except PdfParseError, ValueError:
         candidates = []
     candidates = list({id(annot): annot for annot in candidates}.values())
     if fields is None:
         try:
             fields = page.get_fields()
-        except (PdfParseError, ValueError):
+        except PdfParseError, ValueError:
             fields = ()
     seen = {id(annot) for annot in candidates}
     for field in fields:
@@ -209,7 +209,7 @@ def capture_annotation_appearances(
                         ),
                     )
                 )
-        except (PdfParseError, ValueError):
+        except PdfParseError, ValueError:
             continue
     return tuple(appearances)
 

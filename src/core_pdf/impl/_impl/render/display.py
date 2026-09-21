@@ -87,7 +87,7 @@ def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...]
     if isinstance(quad, (list, tuple)) and len(quad) >= 3:
         try:
             return tuple((float(point[0]), float(point[1])) for point in quad)
-        except (TypeError, ValueError, IndexError):
+        except TypeError, ValueError, IndexError:
             return None
     items = data.get("items")
     if not isinstance(items, (list, tuple)):
@@ -99,7 +99,7 @@ def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...]
             return None
         try:
             return tuple((float(point[0]), float(point[1])) for point in value)
-        except (TypeError, ValueError, IndexError):
+        except TypeError, ValueError, IndexError:
             return None
     return None
 

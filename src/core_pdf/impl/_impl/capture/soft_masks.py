@@ -87,7 +87,7 @@ def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | No
         )
         state.capture_soft_masks[key] = (mask, graphics, result)
         return result
-    except (PdfParseError, TypeError, ValueError, ArithmeticError):
+    except PdfParseError, TypeError, ValueError, ArithmeticError:
         return None
     finally:
         state.capture_active_mask_groups.remove(group_key)

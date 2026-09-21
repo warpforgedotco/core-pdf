@@ -78,7 +78,7 @@ class CMapDecoder(PdfCMapDecoder):
             try:
                 code = decode_spec_cmap_hex_token(code_token)
                 cid = int(cid_token)
-            except (ValueError, UnicodeDecodeError):
+            except ValueError, UnicodeDecodeError:
                 continue
             if not code or not (0 <= cid <= 0xFFFF):
                 continue
@@ -110,7 +110,7 @@ class CMapDecoder(PdfCMapDecoder):
                 cid = int(cid_token)
                 # Also rejects empty or mismatched start/end lengths.
                 validate_codespace_range(start_bytes, end_bytes)
-            except (ValueError, UnicodeDecodeError):
+            except ValueError, UnicodeDecodeError:
                 continue
             if not (0 <= cid <= 0xFFFF):
                 continue

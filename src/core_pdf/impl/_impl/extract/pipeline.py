@@ -62,13 +62,13 @@ def internal_collected_records(
     records: Iterable[internal_Record]
     try:
         records = fetch()
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         records = ()
     output: list[internal_T] = []
     for index, record in enumerate(records):
         try:
             output.append(build(index, record))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return tuple(output)
 
@@ -116,7 +116,7 @@ class internal_PageExtraction:
                 # An empty strict projection can still hide recoverable raw
                 # annotations (for example a non-array /Annots in recovery mode).
                 annotation_records = tuple(page.get_annotations()) or None
-            except (AttributeError, TypeError, ValueError):
+            except AttributeError, TypeError, ValueError:
                 # Failed strict metadata collection is not an explicit request
                 # to suppress appearances. Let capture enumerate tolerant raw
                 # annotation dictionaries; its output metadata remains empty.

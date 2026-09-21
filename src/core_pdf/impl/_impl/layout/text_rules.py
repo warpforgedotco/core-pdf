@@ -43,7 +43,7 @@ class WordRankIndex(Mapping[str, int]):
             with open(path_or_bytes, "rb") as handle:
                 try:
                     mapped = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
-                except (OSError, ValueError):
+                except OSError, ValueError:
                     mapped = handle.read()
         if len(mapped) < WORD_RANK_HEADER.size:
             if isinstance(mapped, mmap.mmap):
@@ -177,7 +177,7 @@ def internal_gzipped_wordlist_lines(resource: str) -> list[str]:
     res = files(WORDLIST_PACKAGE).joinpath(resource)
     try:
         return gzip.decompress(res.read_bytes()).decode("utf-8").splitlines()
-    except (TypeError, ValueError, OSError, AttributeError):
+    except TypeError, ValueError, OSError, AttributeError:
         from importlib.resources import as_file
 
         with as_file(res) as path_obj, gzip.open(str(path_obj), "rt", encoding="utf-8") as handle:

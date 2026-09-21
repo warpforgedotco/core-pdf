@@ -189,7 +189,7 @@ def _parse_object_at(document: Any, offset: int) -> object | None:
     try:
         lexer.rewind(offset)
         return lexer.parse_indirect_object()
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     finally:
         lexer.close()
@@ -234,7 +234,7 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
                 first_char,
                 tuple(float(cast(Any, width)) for width in widths),
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return None
 
@@ -591,11 +591,11 @@ def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
                     redactions = _page_redactions(page, override_cache)
                 except TTLibError:
                     redactions = _raw_highlight_redactions(page)
-                except (KeyError, TypeError, ValueError):
+                except KeyError, TypeError, ValueError:
                     redactions = []
                 if redactions:
                     output[page.page_number] = redactions
-        except (RecursionError, TTLibError):
+        except RecursionError, TTLibError:
             return {}
     if output and all(
         not _DATE.sub("", str(item["text"])) for findings in output.values() for item in findings

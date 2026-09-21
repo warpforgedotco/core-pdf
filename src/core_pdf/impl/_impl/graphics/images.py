@@ -146,7 +146,7 @@ def internal_decode_mask(source: ImageSource) -> DecodedRaster | None:
         try:
             if float(decode[0]) > float(decode[1]):
                 alpha = 255 - alpha
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
     array = numpy.zeros((height, width, 2), dtype=numpy.uint8)
     array[:, :, 1] = alpha
@@ -293,7 +293,7 @@ def internal_canonical_image_array(
                 alpha=alpha,
                 rendering=rendering,
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         if converted_words.shape[0] != samples.width * samples.height:
             return None
@@ -415,7 +415,7 @@ def decode_pdf_image(
                 alpha=alpha,
                 rendering=rendering,
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])
     try:
@@ -478,7 +478,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
         ):
             try:
                 matte, alpha = internal_decode_matte(source, soft_mask_source)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return None
     decoded = (
         internal_decode_mask(source)

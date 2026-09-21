@@ -135,7 +135,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             else:
                 try:
                     fields = source_page.get_fields()
-                except (PdfError, ValueError):
+                except PdfError, ValueError:
                     fields = ()
             field_regions: list[internal_TextRegion] = []
             for field in fields:

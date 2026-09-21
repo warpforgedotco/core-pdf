@@ -86,7 +86,7 @@ def _font_projection(font: dict[Any, Any]) -> _FontProjection:
                     continue
             try:
                 legacy_widths.append(float(width_value))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 legacy_widths.append(0.0)
     entry = _FontProjection(
         font,
@@ -271,7 +271,7 @@ def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
     encoding = _font_value(decoder.font, "Encoding")
     try:
         data = bytes(getattr(encoding, "decoded_data"))
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         return False
     cmap_name_match = re.search(rb"/CMapName\s*/([^\s<>\[\]()/%]+)", data)
     if cmap_name_match is not None:
@@ -487,7 +487,7 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
             if 0 <= index < len(raw_widths):
                 try:
                     return float(raw_widths[index]) * width_scale
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return 0.0
             return 0.0
     width = float(width_lookup(width_code)) * width_scale

@@ -271,7 +271,7 @@ class internal_PatternTargetMixin:
             if len(target_box) == 4:
                 try:
                     x0, y0, x1, y1 = (float(value) for value in target_box)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return False
             else:
                 x0, y0, x1, y1 = (

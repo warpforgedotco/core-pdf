@@ -38,7 +38,7 @@ def internal_has_malformed_shadowed_definition(
             lexer.rewind(position)
             try:
                 lexer.parse_indirect_object()
-            except (PdfParseError, TypeError, ValueError):
+            except PdfParseError, TypeError, ValueError:
                 return True
             position = data.find(header, position + len(header))
     finally:

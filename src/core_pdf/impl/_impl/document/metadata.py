@@ -58,7 +58,7 @@ def resolve_metadata(
     xmp: XmpNodeRecord | None
     try:
         xmp = resolve_metadata_stream(resolver, trailer, recover=True)
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         # XMP is optional metadata and malformed metadata must not block extraction.
         xmp = {"parse_error": "invalid XMP metadata"}
     return {
@@ -85,7 +85,7 @@ def resolve_info_metadata(
             str(recover_pdf_name(key) or key): cast(MetadataValue, value)
             for key, value in coerced.items()
         }
-    except (PdfError, RecursionError, ValueError):
+    except PdfError, RecursionError, ValueError:
         if recover:
             return {}
         raise

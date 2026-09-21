@@ -134,7 +134,7 @@ def internal_project_page(
     form_ancestor_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
     try:
         page_annotations = page.get_annotations()
-    except (PdfError, ValueError):
+    except PdfError, ValueError:
         page_annotations = []
     annotation_boxes = tuple(
         tuple(annotation.rect) for annotation in page_annotations if annotation.rect is not None

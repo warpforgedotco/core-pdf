@@ -220,7 +220,7 @@ class PdfPage:
         """Size of one default user-space unit in points; never inherited."""
         try:
             return page_user_unit(self.document.resolver.resolve(self.page_dict.get("UserUnit")))
-        except (ValueError, PdfParseError):
+        except ValueError, PdfParseError:
             if not self.document.recovery_enabled:
                 raise
             return 1.0

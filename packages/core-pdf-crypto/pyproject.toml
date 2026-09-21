@@ -7,7 +7,7 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 classifiers = ["Development Status :: 3 - Alpha"]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "asn1crypto>=1.5.1",
     "cryptography>=50.0.0",

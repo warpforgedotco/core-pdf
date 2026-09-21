@@ -128,7 +128,7 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
                 text=True,
                 timeout=5,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             completed = None
         if completed is not None:
             output = f"{completed.stdout}\n{completed.stderr}"
@@ -227,7 +227,7 @@ def internal_hocr_filtered_lines(
         return {}
     try:
         hocr = api.GetHOCRText(0)
-    except (RuntimeError, TypeError):
+    except RuntimeError, TypeError:
         return {}
     if not hocr:
         return {}

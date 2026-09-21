@@ -68,7 +68,7 @@ class internal_RasterFontRepository:
         if face.identifier not in self.internal_provider_programs:
             try:
                 program = TrueTypeFontProgram(face.data, use_cmap=True)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 program = None
             self.internal_provider_programs[face.identifier] = program
         return self.internal_provider_programs[face.identifier]
@@ -77,7 +77,7 @@ class internal_RasterFontRepository:
         if face_name not in self.internal_builtin_programs:
             try:
                 program = internal_builtin_font(face_name)
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 program = None
             self.internal_builtin_programs[face_name] = program
         return self.internal_builtin_programs[face_name]

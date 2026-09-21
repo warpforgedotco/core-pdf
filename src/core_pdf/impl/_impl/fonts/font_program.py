@@ -65,7 +65,7 @@ def internal_cff_font_matrix(
 ) -> Matrix | None:
     try:
         matrix = pdf_cff_font_matrix(font_dict)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return None if matrix is None else Matrix(*matrix)
 
@@ -108,7 +108,7 @@ class CFFFont(PdfCFFFont):
     def read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
         try:
             return super().read_charset(pos, glyph_count)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_charset(pos, glyph_count)
 
     def internal_recover_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
@@ -181,7 +181,7 @@ class CFFFont(PdfCFFFont):
     def read_encoding_codes(self, pos: int) -> dict[int, int]:
         try:
             return super().read_encoding_codes(pos)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_encoding_codes(pos)
 
     def internal_recover_read_encoding_codes(self, pos: int) -> dict[int, int]:
@@ -312,7 +312,7 @@ class CFFFont(PdfCFFFont):
             return self.internal_recover_read_fd_select()
         try:
             return super().read_fd_select()
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_fd_select()
 
     def internal_recover_read_fd_select(self) -> tuple[int, ...]:
@@ -357,7 +357,7 @@ class CFFFont(PdfCFFFont):
     ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
         try:
             return super().read_font_dicts()
-        except (IndexError, OverflowError, TypeError, ValueError):
+        except IndexError, OverflowError, TypeError, ValueError:
             return self.internal_recover_read_font_dicts()
 
     def internal_recover_read_font_dicts(
@@ -383,7 +383,7 @@ class CFFFont(PdfCFFFont):
         for raw_font_dict in raw_font_dicts:
             try:
                 font_dicts.append(self.parse_dict(raw_font_dict))
-            except (IndexError, ValueError):
+            except IndexError, ValueError:
                 # An invalid entry must retain its position because FDSelect
                 # addresses this INDEX by ordinal.
                 font_dicts.append({})
@@ -394,7 +394,7 @@ class CFFFont(PdfCFFFont):
     ) -> list[bytes]:
         try:
             return super().read_private_subrs(font_dict)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_read_private_subrs(font_dict)
 
     def internal_recover_read_private_subrs(
@@ -423,7 +423,7 @@ class CFFFont(PdfCFFFont):
     def local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
         try:
             return super().local_subrs_for_glyph(glyph_id)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return self.internal_recover_local_subrs_for_glyph(glyph_id)
 
     def internal_recover_local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
@@ -435,7 +435,7 @@ class CFFFont(PdfCFFFont):
     def font_matrix(self, glyph_id: int) -> CffFontMatrix:
         try:
             return super().font_matrix(glyph_id)
-        except (IndexError, TypeError, ValueError):
+        except IndexError, TypeError, ValueError:
             return CffFontMatrix(*self.internal_recover_font_matrix(glyph_id))
 
     def internal_recover_font_matrix(self, glyph_id: int) -> Matrix:
@@ -789,7 +789,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors 
             seac=seac,
             random_value=random_value,
         )
-    except (ArithmeticError, IndexError, ValueError):
+    except ArithmeticError, IndexError, ValueError:
         unfinished = False
     if unfinished:
         flush_contour()

@@ -42,7 +42,7 @@ def color_operands_to_srgb(
         if len(converted) == 1:
             converted = numpy.repeat(converted, 3)
         return float(converted[0]) / 255, float(converted[1]) / 255, float(converted[2]) / 255
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -73,7 +73,7 @@ def internal_convert_image_data(
             if not numpy.isfinite(numbers).all():
                 raise ValueError("nonfinite Decode")
             dictionary["Decode"] = numbers.tolist()
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             dictionary.pop("Decode")
     return convert_integer_image(
         memoryview(raw).cast("B"), dictionary, bits_per_component=bits, rendering=rendering

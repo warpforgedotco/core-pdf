@@ -210,7 +210,7 @@ class LegacyTextExtractor:
                 # pypdf applies modern encoding tables even to pre-1.3 headers;
                 # leave font context unset for this compatibility projection.
                 decoder = FontDecoder(self.document.resolver.resolve_font_dict(font))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
             cmap: ToUnicodeCMap | None = None
             to_unicode = self.document.resolver.resolve(font.get("ToUnicode"))
@@ -608,7 +608,7 @@ class LegacyTextExtractor:
             self.flush()
             try:
                 values = [float(cast(Any, value)) for value in operands[:6]]
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 values = []
             self.cm = (
                 list(multiply_affine(values, self.cm))

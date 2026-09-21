@@ -28,7 +28,7 @@ def rect_tuple(value: object) -> Rectangle | None:
                 internal_float_value(rect[2]),
                 internal_float_value(rect[3]),
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
     x0 = getattr(value, "x0", None)
     y0 = getattr(value, "y0", None)
@@ -38,7 +38,7 @@ def rect_tuple(value: object) -> Rectangle | None:
         return None
     try:
         return (float(x0), float(y0), float(x1), float(y1))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -67,7 +67,7 @@ def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | No
     try:
         rect = cast("Sequence[Any]", box)
         x0, y0, x1, y1 = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
-    except (IndexError, KeyError, TypeError, ValueError):
+    except IndexError, KeyError, TypeError, ValueError:
         return None
     if not (math.isfinite(x0) and math.isfinite(y0) and math.isfinite(x1) and math.isfinite(y1)):
         return None

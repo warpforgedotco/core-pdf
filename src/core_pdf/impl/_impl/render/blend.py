@@ -384,7 +384,7 @@ def internal_color_component(value: Any, default: int = 0) -> int:
         return default
     try:
         return max(0, min(255, int(round(float(value) * 255.0))))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -448,7 +448,7 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
             # painted white and `0 0 0 0 k` (white) painted black.
             try:
                 cyan, magenta, yellow, black = (internal_clamp01(float(c)) for c in color)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return 0, 0, 0, alpha
             red, green, blue = cmyk_floats_to_srgb(cyan, magenta, yellow, black)
             return red, green, blue, alpha
