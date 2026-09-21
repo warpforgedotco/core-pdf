@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -47,9 +47,8 @@ def internal_validate_selection_mask(mask: BoolArray, size: int) -> None:
         raise ValueError("observation selection mask must have shape (n,)")
 
 
-def internal_bbox_tuple(row: object) -> tuple[float, float, float, float]:
-    values = cast(numpy.ndarray[Any, Any], row)
-    return (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+def internal_bbox_tuple(row: Any) -> tuple[float, float, float, float]:
+    return (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
 
 
 FULL_PAGE_IMAGE_COVERAGE = 0.90

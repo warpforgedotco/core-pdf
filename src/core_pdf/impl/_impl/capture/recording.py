@@ -374,8 +374,8 @@ class RecordingMethods(RecoveringTextState):
         *,
         glyph_paint: GlyphPaint | None = None,
     ) -> None:
-        decoder = cast(FontDecoder, decoder)
-        glyphs = cast(tuple[DecodedGlyph, ...], glyphs)
+        font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         visible = self.is_text_visible(text)
         if 4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible():
             self.internal_emit_clip_scope_push()
@@ -384,7 +384,7 @@ class RecordingMethods(RecoveringTextState):
         rise = self.graphics.rise
 
         font_scale = fs / 1000.0
-        metrics_decoder = cast(FontDecoder | None, self.graphics.current_decoder)
+        metrics_decoder: FontDecoder | None = self.graphics.current_decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
         descent = metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
         advance_scale = fs * self.graphics.horizontal_scale / 100000.0
@@ -399,21 +399,21 @@ class RecordingMethods(RecoveringTextState):
 
         rot = detect_rotation_from_linear(A, B, C, D)
         seqno = self.sequence
-        scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
+        scale_factor = hypot(C, D) if font_decoder.is_vertical else hypot(A, B)
         effective_font_size = fs * scale_factor
-        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
+        effective_font_height = fs * (hypot(A, B) if font_decoder.is_vertical else hypot(C, D))
         fill_color = self.capture_color(stroke=False) if glyph_paint is None else glyph_paint.fill
         actual_text_span = self.current_capture_actual_text_span()
         captured: GlyphCapture | None = None
         if actual_text_span is None:
             captured = self.record_glyph_observations(
                 text,
-                decoder,
+                font_decoder,
                 rot,
                 visible,
                 fill_color=fill_color,
                 paint=glyph_paint,
-                glyphs=glyphs,
+                glyphs=decoded_glyphs,
                 text_basis=(E, F, A, B, C, D),
                 effective_font_size=effective_font_size,
                 effective_font_height=effective_font_height,
@@ -432,7 +432,7 @@ class RecordingMethods(RecoveringTextState):
             metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
         )
 
-        if decoder.is_vertical:
+        if font_decoder.is_vertical:
             c0_x = descent * A + rise * C + E
             c0_y = descent * B + rise * D + F
             c1_x = ascent * A + rise * C + E
@@ -502,7 +502,7 @@ class RecordingMethods(RecoveringTextState):
             order=seqno,
             stream_order=self.stream_order,
             xobject_depth=self.xobject_depth,
-            is_vertical=decoder.is_vertical,
+            is_vertical=font_decoder.is_vertical,
             rotation_angle=rot,
             visible=visible,
             line_break_before=self.pending_line_break,
@@ -518,7 +518,7 @@ class RecordingMethods(RecoveringTextState):
             new_run.confidence = 1.0
             actual_text_span.add_run(
                 new_run,
-                font_decoder=decoder,
+                font_decoder=font_decoder,
                 effective_font_height=effective_font_height,
             )
         else:

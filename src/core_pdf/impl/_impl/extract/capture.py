@@ -58,7 +58,7 @@ def internal_clip_bbox(run: TextRun) -> tuple[float, float, float, float] | None
         if key != "clip_bbox" or not isinstance(value, (list, tuple)) or len(value) != 4:
             continue
         try:
-            x0, y0, x1, y1 = (float(cast(Any, part)) for part in value)
+            x0, y0, x1, y1 = (float(part) for part in value)
         except TypeError, ValueError:
             return None
         return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None

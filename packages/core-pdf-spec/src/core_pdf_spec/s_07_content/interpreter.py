@@ -930,7 +930,7 @@ class ContentInterpreter:
             return None
         resolved = self.resolver.resolve(value)
         if isinstance(resolved, dict):
-            return cast("dict[str, Any]", resolved)
+            return resolved
         name = self.resolver.resolve_name(value)
         if not name:
             return None
