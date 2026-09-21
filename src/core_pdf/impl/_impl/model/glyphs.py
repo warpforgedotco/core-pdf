@@ -246,11 +246,5 @@ def glyph_cluster_from_observations(
         confidences = [glyph.confidence for glyph in glyphs if glyph.confidence is not None]
         confidence = min(confidences) if confidences else None
     return GlyphCluster(
-        cluster_id=cluster_id,
-        text=text,
-        glyphs=glyphs,
-        advance_bbox=advance_bbox,
-        ink_bbox=ink_bbox,
-        baseline=first.baseline,
-        confidence=confidence,
+        cluster_id, text, glyphs, advance_bbox, ink_bbox, first.baseline, confidence
     )

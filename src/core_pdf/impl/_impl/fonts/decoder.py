@@ -919,16 +919,16 @@ class FontDecoder:
             choice = self.internal_apply_simple_unicode_overrides(choice, chunk)
             glyphs.append(
                 DecodedGlyph(
-                    code_bytes=chunk,
-                    char_code=code,
-                    cid=code,
-                    gid=gid,
-                    unicode=choice.text,
-                    unicode_source=choice.source,
-                    alternates=choice.alternates,
-                    width_code=code,
-                    bitmap_code=code,
-                    split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
+                    chunk,
+                    code,
+                    code,
+                    gid,
+                    choice.text,
+                    code,
+                    choice.source,
+                    choice.alternates,
+                    code,
+                    choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
                 )
             )
         return glyphs
@@ -977,16 +977,16 @@ class FontDecoder:
                     dedupe_alternates((choice.text, *choice.alternates), text),
                 )
         return DecodedGlyph(
-            code_bytes=code_bytes,
-            char_code=char_code,
-            cid=cid,
-            gid=gid,
-            unicode=choice.text,
-            unicode_source=choice.source,
-            alternates=choice.alternates,
-            width_code=cid,
-            bitmap_code=cid,
-            split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
+            code_bytes,
+            char_code,
+            cid,
+            gid,
+            choice.text,
+            cid,
+            choice.source,
+            choice.alternates,
+            cid,
+            choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
         )
 
     def internal_glyph_exists(self, gid: int) -> bool:
