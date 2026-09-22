@@ -32,7 +32,7 @@ from core_pdf.impl.output.model import (
     TextLine,
 )
 
-internal_LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
+LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
 
 
 def node_to_json_dict(
@@ -109,7 +109,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             {
                 "id": block_ids[id(block)],
                 "page_id": page_id,
-                **internal_block_payload(block),
+                **block_payload(block),
                 "line_ids": [line_ids[id(line)] for line in block.lines],
             }
             for block in page_blocks.values()
@@ -207,7 +207,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
     }
 
 
-def internal_map_page_element[ElementResultT](
+def map_page_element[ElementResultT](
     element: PageElement,
     *,
     block: Callable[[Block], ElementResultT],
@@ -224,7 +224,7 @@ def internal_map_page_element[ElementResultT](
     raise TypeError(f"unsupported page element: {type(element).__name__}")
 
 
-def internal_block_payload(block: Block) -> dict[str, JsonValue]:
+def block_payload(block: Block) -> dict[str, JsonValue]:
     return {
         "order": block.order,
         "kind": block.kind.value,
@@ -378,14 +378,14 @@ def bbox_to_json(bbox: tuple[float, float, float, float] | None) -> list[JsonVal
     return list(bbox) if bbox is not None else None
 
 
-def internal_selected_pages(document: Document, pages: PageSelection | None) -> tuple[Page, ...]:
+def selected_pages(document: Document, pages: PageSelection | None) -> tuple[Page, ...]:
     if pages is None:
         return document.pages
     indexes = resolve_page_selection(pages, len(document.pages))
     return tuple(document.pages[index] for index in indexes)
 
 
-def internal_page_lines(page: Page) -> tuple[TextLine, ...]:
+def page_lines(page: Page) -> tuple[TextLine, ...]:
     return tuple(line for block in page.blocks for line in block.lines)
 
 
@@ -393,8 +393,8 @@ def document_to_csv(document: Document, *, pages: PageSelection | None = None) -
     output = StringIO()
     rows = writer(output, lineterminator="\n")
     rows.writerow(("page_number", "line_index", "text", "x0", "y0", "x1", "y1"))
-    for page in internal_selected_pages(document, pages):
-        for index, line in enumerate(internal_page_lines(page)):
+    for page in selected_pages(document, pages):
+        for index, line in enumerate(page_lines(page)):
             bbox = line.bbox
             rows.writerow(
                 (
@@ -414,9 +414,9 @@ def document_to_tei(document: Document, *, pages: PageSelection | None = None) -
     root = Element("TEI")
     text = SubElement(root, "text")
     body = SubElement(text, "body")
-    for page in internal_selected_pages(document, pages):
+    for page in selected_pages(document, pages):
         SubElement(body, "pb", {"n": str(page.page_number)})
-        for line in internal_page_lines(page):
+        for line in page_lines(page):
             paragraph = SubElement(body, "p")
             paragraph.text = line.text
     return tostring(root, encoding="unicode", short_empty_elements=True)
@@ -428,7 +428,7 @@ def document_to_markdown(document: Document) -> str:
 
 def page_to_markdown(page: Page) -> str:
     parts = [
-        internal_map_page_element(
+        map_page_element(
             element,
             block=block_to_markdown,
             table=table_to_html,
@@ -439,7 +439,7 @@ def page_to_markdown(page: Page) -> str:
     return "\n\n".join(parts)
 
 
-def internal_render_styled_line(
+def render_styled_line(
     line: TextLine,
     *,
     escape_text: bool,
@@ -475,8 +475,8 @@ def internal_render_styled_line(
     return "".join(rendered)
 
 
-def internal_markdown_line(line: TextLine, *, start: int = 0) -> str:
-    return internal_render_styled_line(
+def markdown_line(line: TextLine, *, start: int = 0) -> str:
+    return render_styled_line(
         line,
         escape_text=False,
         strikeout=("~~", "~~"),
@@ -486,8 +486,8 @@ def internal_markdown_line(line: TextLine, *, start: int = 0) -> str:
     )
 
 
-def internal_html_line(line: TextLine, *, start: int = 0) -> str:
-    return internal_render_styled_line(
+def html_line(line: TextLine, *, start: int = 0) -> str:
+    return render_styled_line(
         line,
         escape_text=True,
         strikeout=("<del>", "</del>"),
@@ -500,11 +500,11 @@ def internal_html_line(line: TextLine, *, start: int = 0) -> str:
 def block_to_markdown(block: Block) -> str:
     if block.kind is BlockKind.LIST:
         return "\n".join(
-            f"{prefix or '- '}{internal_markdown_line(line, start=len(prefix))}"
+            f"{prefix or '- '}{markdown_line(line, start=len(prefix))}"
             for line in block.lines
-            for prefix in (internal_list_prefix(line.text),)
+            for prefix in (list_prefix(line.text),)
         )
-    text = "\n".join(internal_markdown_line(line) for line in block.lines)
+    text = "\n".join(markdown_line(line) for line in block.lines)
     if block.kind is BlockKind.HEADING:
         return f"{'#' * (block.level or 2)} {text}"
     return text
@@ -517,7 +517,7 @@ def document_to_html(document: Document) -> str:
 
 def page_to_html(page: Page) -> str:
     parts = [
-        internal_map_page_element(
+        map_page_element(
             element,
             block=block_to_html,
             table=table_to_html,
@@ -534,15 +534,14 @@ def block_to_html(block: Block) -> str:
 
     if block.kind is BlockKind.HEADING:
         tag = f"h{block.level or 2}"
-        heading = "<br />".join(internal_html_line(line) for line in block.lines)
+        heading = "<br />".join(html_line(line) for line in block.lines)
         return f"<{tag}{attributes}>{heading}</{tag}>"
     if block.kind is BlockKind.LIST:
         items = "".join(
-            f"<li>{internal_html_line(line, start=len(internal_list_prefix(line.text)))}</li>"
-            for line in block.lines
+            f"<li>{html_line(line, start=len(list_prefix(line.text)))}</li>" for line in block.lines
         )
         return f"<ul{attributes}>{items}</ul>"
-    text = "<br />".join(internal_html_line(line) for line in block.lines)
+    text = "<br />".join(html_line(line) for line in block.lines)
     return f"<p{attributes}>{text}</p>"
 
 
@@ -561,9 +560,9 @@ def table_to_html(table: Table) -> str:
         and all(band.kind == "body" for band in bands[1:])
     ):
         header, *body = table.rows
-        head = "".join(internal_table_cell_to_html(cell, header=True) for cell in header)
+        head = "".join(table_cell_to_html(cell, header=True) for cell in header)
         body_html = "".join(
-            f"<tr>{''.join(internal_table_cell_to_html(cell) for cell in row)}</tr>" for row in body
+            f"<tr>{''.join(table_cell_to_html(cell) for cell in row)}</tr>" for row in body
         )
         return f"{prefix}<table><thead><tr>{head}</tr></thead><tbody>{body_html}</tbody></table>"
 
@@ -572,9 +571,7 @@ def table_to_html(table: Table) -> str:
     for row, band in zip(table.rows, bands, strict=True):
         if band.kind in {"title", "caption"}:
             continue
-        cells = "".join(
-            internal_table_cell_to_html(cell, header=band.kind == "header") for cell in row
-        )
+        cells = "".join(table_cell_to_html(cell, header=band.kind == "header") for cell in row)
         rendered = f'<tr data-row-kind="{escape(band.kind)}">{cells}</tr>'
         (header_rows if band.kind == "header" else body_rows).append(rendered)
     head_html = f"<thead>{''.join(header_rows)}</thead>" if header_rows else ""
@@ -582,7 +579,7 @@ def table_to_html(table: Table) -> str:
     return f"{prefix}<table>{head_html}{body_html}</table>"
 
 
-def internal_table_cell_to_html(cell: TableCell, *, header: bool = False) -> str:
+def table_cell_to_html(cell: TableCell, *, header: bool = False) -> str:
     tag = "th" if header else "td"
     spans = "".join(
         (
@@ -593,8 +590,8 @@ def internal_table_cell_to_html(cell: TableCell, *, header: bool = False) -> str
     return f"<{tag}{spans}>{escape(cell.text)}</{tag}>"
 
 
-def internal_list_prefix(text: str) -> str:
-    match = internal_LIST_PREFIX_RE.match(text)
+def list_prefix(text: str) -> str:
+    match = LIST_PREFIX_RE.match(text)
     return match.group(0) if match is not None else ""
 
 

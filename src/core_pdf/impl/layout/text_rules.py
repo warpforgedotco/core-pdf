@@ -15,9 +15,9 @@ from typing import Any, ClassVar, Self
 
 from core_pdf.impl.model.geometry import interval_overlap
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 WORDLIST_PACKAGE = "core_pdf.impl.layout.data.wordlists"
@@ -29,7 +29,7 @@ WORD_RANK_HEADER = struct.Struct("<8sI")
 UINT32 = struct.Struct("<I")
 
 
-class WordFrequency(internal_Record):
+class WordFrequency(Record):
     __slots__ = ("count", "rank")
 
     count: int
@@ -39,8 +39,8 @@ class WordFrequency(internal_Record):
     __match_args__ = ("count", "rank")
 
     def __init__(self, count: int, rank: int) -> None:
-        internal_frozen_setattr(self, "count", count)
-        internal_frozen_setattr(self, "rank", rank)
+        frozen_setattr(self, "count", count)
+        frozen_setattr(self, "rank", rank)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(count={self.count!r}, rank={self.rank!r})"
@@ -97,15 +97,15 @@ class WordRankIndex(Mapping[str, int]):
         self.internal_count = count
         self.internal_data_start = data_start
 
-    def internal_offset(self, index: int) -> int:
+    def offset(self, index: int) -> int:
         return UINT32.unpack_from(
             self.internal_mmap,
             WORD_RANK_HEADER.size + index * UINT32.size,
         )[0]
 
-    def internal_entry(self, index: int) -> tuple[bytes, int]:
-        start = self.internal_offset(index)
-        stop = self.internal_offset(index + 1)
+    def entry(self, index: int) -> tuple[bytes, int]:
+        start = self.offset(index)
+        stop = self.offset(index + 1)
         absolute_stop = self.internal_data_start + stop
         word = self.internal_mmap[self.internal_data_start + start : absolute_stop - 5]
         rank = UINT32.unpack_from(self.internal_mmap, absolute_stop - UINT32.size)[0]
@@ -117,7 +117,7 @@ class WordRankIndex(Mapping[str, int]):
         high = self.internal_count
         while low < high:
             middle = (low + high) // 2
-            word, rank = self.internal_entry(middle)
+            word, rank = self.entry(middle)
             if word < target:
                 low = middle + 1
             elif word > target:
@@ -134,7 +134,7 @@ class WordRankIndex(Mapping[str, int]):
 
     def __iter__(self) -> Iterator[str]:
         for index in range(self.internal_count):
-            yield self.internal_entry(index)[0].decode("utf-8")
+            yield self.entry(index)[0].decode("utf-8")
 
     def __len__(self) -> int:
         return self.internal_count
@@ -194,7 +194,7 @@ def english_word_ranks() -> Mapping[str, int]:
         return {word: freq.rank for word, freq in english_word_frequencies().items()}
 
 
-def internal_gzipped_wordlist_lines(resource: str) -> list[str]:
+def gzipped_wordlist_lines(resource: str) -> list[str]:
     res = files(WORDLIST_PACKAGE).joinpath(resource)
     try:
         return gzip.decompress(res.read_bytes()).decode("utf-8").splitlines()
@@ -206,7 +206,7 @@ def internal_gzipped_wordlist_lines(resource: str) -> list[str]:
 
 
 def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
-    for rank, line in enumerate(internal_gzipped_wordlist_lines(NORVIG_COUNTS), start=1):
+    for rank, line in enumerate(gzipped_wordlist_lines(NORVIG_COUNTS), start=1):
         parts = line.strip().split()
         if len(parts) != 2:
             continue
@@ -222,7 +222,7 @@ def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
 
 
 def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
-    for rank, line in enumerate(internal_gzipped_wordlist_lines(WORDNINJA_WORDS), start=1):
+    for rank, line in enumerate(gzipped_wordlist_lines(WORDNINJA_WORDS), start=1):
         word = line.strip().casefold()
         if not word or not word.isalpha() or word in frequencies:
             continue

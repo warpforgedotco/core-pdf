@@ -19,7 +19,7 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import lexical_rules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfByteBuffer
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class PdfXRefEntry:
@@ -67,10 +67,10 @@ class ParsedXRefSection:
         entries: XRefTable,
         trailer: PdfDict,
     ) -> None:
-        internal_frozen_setattr(self, "offset", offset)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "entries", entries)
-        internal_frozen_setattr(self, "trailer", trailer)
+        frozen_setattr(self, "offset", offset)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "entries", entries)
+        frozen_setattr(self, "trailer", trailer)
 
     def __repr__(self) -> str:
         return (
@@ -108,7 +108,7 @@ class ParsedXRefSection:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         offset = changes.pop("offset", self.offset)
@@ -131,9 +131,9 @@ class XRefRevision:
     __match_args__ = ("offset", "entries", "trailer")
 
     def __init__(self, offset: int, entries: XRefTable, trailer: PdfDict) -> None:
-        internal_frozen_setattr(self, "offset", offset)
-        internal_frozen_setattr(self, "entries", entries)
-        internal_frozen_setattr(self, "trailer", trailer)
+        frozen_setattr(self, "offset", offset)
+        frozen_setattr(self, "entries", entries)
+        frozen_setattr(self, "trailer", trailer)
 
     def __repr__(self) -> str:
         return (
@@ -169,7 +169,7 @@ class XRefRevision:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         offset = changes.pop("offset", self.offset)
@@ -417,21 +417,21 @@ class XRefScanner:
         if not isinstance(widths, list):
             raise PdfParseError("invalid xref stream W")
         w = cast(list[int], widths)
-        row_size = internal_validate_xref_widths(w)
+        row_size = validate_xref_widths(w)
         index = dictionary.get("Index")
         if index is None:
             index = [0, size]
         if not isinstance(index, list):
             raise PdfParseError("invalid xref stream Index")
         indices = cast(list[int], index)
-        row_count = internal_validate_xref_index(indices, size)
+        row_count = validate_xref_index(indices, size)
         return (
             internal_decode_xref_rows(stream.data, w, indices, row_size, row_count),
             cast(PdfDict, dictionary),
         )
 
 
-def internal_validate_xref_widths(widths: list[int]) -> int:
+def validate_xref_widths(widths: list[int]) -> int:
     if len(widths) != 3 or any(type(width) is not int or width < 0 for width in widths):
         raise PdfParseError("invalid xref stream W")
     if widths[1] == 0:
@@ -439,7 +439,7 @@ def internal_validate_xref_widths(widths: list[int]) -> int:
     return sum(widths)
 
 
-def internal_validate_xref_index(index: list[int], size: int) -> int:
+def validate_xref_index(index: list[int], size: int) -> int:
     if type(size) is not int or size <= 0 or len(index) % 2:
         raise PdfParseError("invalid xref stream Index")
     if any(type(value) is not int or value < 0 for value in index):
@@ -459,7 +459,7 @@ def internal_validate_xref_index(index: list[int], size: int) -> int:
 def decode_xref_row(
     data: bytes, pos: int, widths: list[int], object_number: int
 ) -> tuple[int, PdfXRefEntry, int]:
-    row_size = internal_validate_xref_widths(widths)
+    row_size = validate_xref_widths(widths)
     if object_number < 0:
         raise PdfParseError("invalid xref stream Index")
     end = pos + row_size
@@ -491,8 +491,8 @@ def internal_decode_xref_row(
 
 
 def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> XRefTable:
-    row_count = internal_validate_xref_index(index, size)
-    row_size = internal_validate_xref_widths(w)
+    row_count = validate_xref_index(index, size)
+    row_size = validate_xref_widths(w)
     return internal_decode_xref_rows(data, w, index, row_size, row_count)
 
 
@@ -565,7 +565,7 @@ def parse_object_marker_prefix(
     return obj_start, object_number, generation_number
 
 
-def internal_xref_pointer(trailer: PdfDict, name: str) -> int | None:
+def xref_pointer(trailer: PdfDict, name: str) -> int | None:
     value = trailer.get(name)
     if value is not None and (type(value) is not int or value < 0):
         raise PdfParseError(f"invalid xref section /{name}")
@@ -586,10 +586,10 @@ def iter_xref_revisions(start: int, read_section: XRefSectionReader) -> Iterator
         if section.offset in seen:
             raise PdfParseError("xref section loop detected")
         seen.update((position, section.offset))
-        previous = internal_xref_pointer(section.trailer, "Prev")
+        previous = xref_pointer(section.trailer, "Prev")
         entries = section.entries
         if section.kind == "table":
-            supplemental_offset = internal_xref_pointer(section.trailer, "XRefStm")
+            supplemental_offset = xref_pointer(section.trailer, "XRefStm")
             if supplemental_offset is not None:
                 supplemental = read_section(supplemental_offset, stream_only=True)
                 if supplemental.kind != "stream":

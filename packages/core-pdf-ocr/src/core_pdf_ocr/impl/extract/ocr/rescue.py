@@ -9,24 +9,24 @@ import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import (
+    OCR_RESCUE_DENSE_MIN_CHARACTERS,
+    OCR_RESCUE_DENSE_MIN_CONFIDENCE,
     OCR_RESCUE_LARGE_TEXT_HEIGHT,
     OCR_RESCUE_MIN_CONFIDENCE,
     OCR_RESCUE_MIN_WEAK_INK_RATIO,
     OCR_RESCUE_SATURATED_MEAN_INK,
     OcrPass,
     OcrPassScope,
-    internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
-    internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
 )
-from core_pdf_ocr.impl.extract.ocr.raster import internal_raster_ink_grid
-from core_pdf_ocr.impl.extract.ocr.region_tasks import internal_weak_region_grid_shape
-from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask, internal_Raster
-from core_pdf_ocr.impl.extract.quality import internal_Candidate, internal_text_utility_stats
+from core_pdf_ocr.impl.extract.ocr.raster import raster_ink_grid
+from core_pdf_ocr.impl.extract.ocr.region_tasks import weak_region_grid_shape
+from core_pdf_ocr.impl.extract.ocr.types import OcrTask, Raster
+from core_pdf_ocr.impl.extract.quality import Candidate, text_utility_stats
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-def internal_observation_coverage_grid(
+def observation_coverage_grid(
     observations: ObservationBatch,
     page_box: tuple[float, float, float, float],
     rows: int,
@@ -46,7 +46,7 @@ def internal_observation_coverage_grid(
     )
     utilities = numpy.asarray(
         [
-            internal_text_utility_stats(text, float(confidence)).utility
+            text_utility_stats(text, float(confidence)).utility
             for text, confidence in zip(observations.text, observations.confidence, strict=True)
         ],
         dtype=numpy.float64,
@@ -77,7 +77,7 @@ def internal_observation_coverage_grid(
     return output.astype(numpy.float32, copy=False).reshape(-1)
 
 
-class internal_RescueCoverage:
+class RescueCoverage:
     __slots__ = ("raster_count", "cell_count", "ink", "weak_ink")
 
     raster_count: int
@@ -95,10 +95,10 @@ class internal_RescueCoverage:
         ink: float = 0.0,
         weak_ink: float = 0.0,
     ) -> None:
-        internal_frozen_setattr(self, "raster_count", raster_count)
-        internal_frozen_setattr(self, "cell_count", cell_count)
-        internal_frozen_setattr(self, "ink", ink)
-        internal_frozen_setattr(self, "weak_ink", weak_ink)
+        frozen_setattr(self, "raster_count", raster_count)
+        frozen_setattr(self, "cell_count", cell_count)
+        frozen_setattr(self, "ink", ink)
+        frozen_setattr(self, "weak_ink", weak_ink)
 
     def __repr__(self) -> str:
         return (
@@ -136,7 +136,7 @@ class internal_RescueCoverage:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         raster_count = changes.pop("raster_count", self.raster_count)
@@ -156,11 +156,11 @@ class internal_RescueCoverage:
         return self.weak_ink / max(1e-9, self.ink)
 
 
-def internal_adaptive_rescue_coverage(
-    source_tasks: tuple[internal_OcrTask, ...],
+def adaptive_rescue_coverage(
+    source_tasks: tuple[OcrTask, ...],
     ocr_pass: OcrPass,
     primary: ObservationBatch,
-) -> internal_RescueCoverage:
+) -> RescueCoverage:
     raster_count = 0
     cell_count = 0
     total_ink = 0.0
@@ -171,10 +171,10 @@ def internal_adaptive_rescue_coverage(
         if key in seen:
             continue
         seen.add(key)
-        raster = internal_Raster(task.image, task.resolution)
-        rows, columns = internal_weak_region_grid_shape(raster, ocr_pass, primary)
-        ink = internal_raster_ink_grid(raster, rows, columns)
-        coverage = internal_observation_coverage_grid(primary, task.page_box, rows, columns)
+        raster = Raster(task.image, task.resolution)
+        rows, columns = weak_region_grid_shape(raster, ocr_pass, primary)
+        ink = raster_ink_grid(raster, rows, columns)
+        coverage = observation_coverage_grid(primary, task.page_box, rows, columns)
         utility_limit = max(4.0, float(numpy.sum(coverage)) / (rows * columns) * 0.45)
         occupied = ink >= 0.01
         weak = occupied & (coverage < utility_limit)
@@ -182,7 +182,7 @@ def internal_adaptive_rescue_coverage(
         cell_count += rows * columns
         total_ink += float(numpy.sum(ink, dtype=numpy.float64))
         weak_ink += float(numpy.sum(ink[weak], dtype=numpy.float64))
-    return internal_RescueCoverage(
+    return RescueCoverage(
         raster_count=raster_count,
         cell_count=cell_count,
         ink=total_ink,
@@ -190,7 +190,7 @@ def internal_adaptive_rescue_coverage(
     )
 
 
-def internal_primary_text_is_sufficient(candidate: internal_Candidate) -> bool:
+def primary_text_is_sufficient(candidate: Candidate) -> bool:
     metrics = candidate.metrics
     return (
         metrics.characters < 32
@@ -199,9 +199,9 @@ def internal_primary_text_is_sufficient(candidate: internal_Candidate) -> bool:
     )
 
 
-def internal_adaptive_rescue_decision(
-    candidate: internal_Candidate,
-    source_tasks: tuple[internal_OcrTask, ...],
+def adaptive_rescue_decision(
+    candidate: Candidate,
+    source_tasks: tuple[OcrTask, ...],
     ocr_pass: OcrPass,
 ) -> bool:
     metrics = candidate.metrics
@@ -212,18 +212,18 @@ def internal_adaptive_rescue_decision(
         region_columns=max(3, ocr_pass.region_columns),
         max_regions=max(8, ocr_pass.max_regions),
     )
-    coverage = internal_adaptive_rescue_coverage(
+    coverage = adaptive_rescue_coverage(
         source_tasks,
         coverage_pass,
         candidate.observations,
     )
-    if internal_primary_text_is_sufficient(candidate):
+    if primary_text_is_sufficient(candidate):
         return False
     if coverage.mean_ink >= OCR_RESCUE_SATURATED_MEAN_INK and (
         (metrics.characters >= 1_000 and metrics.mean_confidence >= OCR_RESCUE_MIN_CONFIDENCE)
         or (
-            metrics.characters >= internal_OCR_RESCUE_DENSE_MIN_CHARACTERS
-            and metrics.mean_confidence >= internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE
+            metrics.characters >= OCR_RESCUE_DENSE_MIN_CHARACTERS
+            and metrics.mean_confidence >= OCR_RESCUE_DENSE_MIN_CONFIDENCE
         )
     ):
         return False

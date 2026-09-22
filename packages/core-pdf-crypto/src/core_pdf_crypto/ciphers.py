@@ -16,7 +16,7 @@ AES_GCM_TAG_BYTES = 16
 AES_GCM_MAX_PLAINTEXT_BYTES = (1 << 39) - 256
 
 
-def internal_aes_algorithm(key: bytes) -> algorithms.AES:
+def aes_algorithm(key: bytes) -> algorithms.AES:
     if len(key) not in (16, 32):
         raise ValueError(f"AES key must be 16 or 32 bytes, got {len(key)}")
     return algorithms.AES(key)
@@ -29,7 +29,7 @@ def aes_cbc_encrypt(
     *,
     use_padding: bool,
 ) -> bytes:
-    algorithm = internal_aes_algorithm(key)
+    algorithm = aes_algorithm(key)
     if use_padding:
         padder = padding.PKCS7(algorithm.block_size).padder()
         plaintext = padder.update(plaintext) + padder.finalize()
@@ -44,7 +44,7 @@ def aes_cbc_decrypt(
     *,
     use_padding: bool,
 ) -> bytes:
-    algorithm = internal_aes_algorithm(key)
+    algorithm = aes_algorithm(key)
     try:
         decryptor = Cipher(algorithm, modes.CBC(initialization_vector)).decryptor()
         plaintext = decryptor.update(ciphertext) + decryptor.finalize()
@@ -57,7 +57,7 @@ def aes_cbc_decrypt(
 
 
 def aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
-    algorithm = internal_aes_algorithm(key)
+    algorithm = aes_algorithm(key)
     try:
         decryptor = Cipher(algorithm, modes.ECB()).decryptor()
         return decryptor.update(ciphertext) + decryptor.finalize()

@@ -17,12 +17,12 @@ from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_compat._shared import LIGATURES
 from core_pdf_compat._text_state import (
-    internal_append_directional_text,
-    internal_ensure_line_break,
-    internal_flush_text,
-    internal_legacy_base_table,
-    internal_positioned_text,
-    internal_PREDEFINED_ENCODING_CODECS,
+    PREDEFINED_ENCODING_CODECS,
+    append_directional_text,
+    ensure_line_break,
+    flush_text,
+    legacy_base_table,
+    positioned_text,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
@@ -188,16 +188,16 @@ class LegacyFont:
 
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
         glyphs = self.decoder.decode_glyphs(data)
-        width = sum(self.internal_glyph_width(glyph) for glyph in glyphs)
+        width = sum(self.glyph_width(glyph) for glyph in glyphs)
         mapped_every_glyph = False
         if not self.decoder.is_cid_font and self.encoding_table is not None:
-            parts = tuple(self.internal_simple_glyph_text(glyph) for glyph in glyphs)
+            parts = tuple(self.simple_glyph_text(glyph) for glyph in glyphs)
         elif self.cmap is not None:
             mappings = self.cmap.mappings
             parts = tuple(
                 mappings.get(
                     glyph.code_bytes,
-                    self.internal_glyph_text(glyph),
+                    self.glyph_text(glyph),
                 )
                 for glyph in glyphs
             )
@@ -210,24 +210,24 @@ class LegacyFont:
             errors = "surrogatepass" if self.encoding_codec.startswith("utf-") else "replace"
             parts = tuple(data.decode(self.encoding_codec, errors=errors))
         else:
-            parts = tuple(self.internal_glyph_text(glyph) for glyph in glyphs)
+            parts = tuple(self.glyph_text(glyph) for glyph in glyphs)
         if not any(parts) and not mapped_every_glyph:
             parts = tuple(data.decode("latin-1"))
         return parts, width
 
-    def internal_simple_glyph_text(self, glyph: Any) -> str:
+    def simple_glyph_text(self, glyph: Any) -> str:
         mapped = self.cmap.mappings.get(glyph.code_bytes) if self.cmap is not None else None
         if mapped is not None:
             return mapped
         if len(glyph.code_bytes) != 1:
-            return self.internal_glyph_text(glyph)
+            return self.glyph_text(glyph)
         table = self.encoding_table
         if table is None:
-            return self.internal_glyph_text(glyph)
+            return self.glyph_text(glyph)
         encoded = table[glyph.code_bytes[0]]
         return "".join(self.character_map.get(character, character) for character in encoded)
 
-    def internal_glyph_width(self, glyph: Any) -> float:
+    def glyph_width(self, glyph: Any) -> float:
         table = self.encoding_table
         if not self.decoder.is_cid_font and table is not None and len(glyph.code_bytes) == 1:
             code = glyph.code_bytes[0]
@@ -250,7 +250,7 @@ class LegacyFont:
         width = self.widths.get(width_code, self.default_width)
         return float(width if self.decoder.is_cid_font else int(width))
 
-    def internal_glyph_text(self, glyph: Any) -> str:
+    def glyph_text(self, glyph: Any) -> str:
         fallback = self.difference_fallbacks.get(glyph.code_bytes)
         if fallback is not None and glyph.unicode in {"", "\ufffd"}:
             return fallback
@@ -336,13 +336,11 @@ class LegacyTextExtractor:
                     cmap = ToUnicodeCMap(self.document.resolver.resolve_stream(to_unicode).data)
                 except ValueError:
                     cmap = None
-            encoding_table, encoding_codec, character_map = self.internal_legacy_encoding(
-                font, decoder
-            )
+            encoding_table, encoding_codec, character_map = self.legacy_encoding(font, decoder)
             raw_encoding = self.document.resolver.resolve(font.get("Encoding"))
             width_uses_source_code = decoder.is_cid_font and isinstance(raw_encoding, PdfStream)
             encoding_is_mapping = self.internal_encoding_is_mapping(font)
-            widths, default_width, space_width = self.internal_font_widths(
+            widths, default_width, space_width = self.font_widths(
                 font, decoder, cmap, encoding_table, encoding_is_mapping
             )
             if decoder.is_cid_font:
@@ -378,7 +376,7 @@ class LegacyTextExtractor:
                 encoding_table,
                 encoding_codec,
                 character_map,
-                self.internal_difference_fallbacks(font),
+                self.difference_fallbacks(font),
                 width_uses_source_code,
             )
         return fonts
@@ -466,12 +464,12 @@ class LegacyTextExtractor:
             "ZapfDingbats",
         }
 
-    def internal_legacy_encoding(
+    def legacy_encoding(
         self, font: dict[object, object], decoder: FontDecoder
     ) -> tuple[tuple[str, ...] | None, str | None, dict[str, str]]:
         if decoder.is_cid_font:
             encoding_name = recover_pdf_name(font.get("Encoding") or "") or ""
-            codec = internal_PREDEFINED_ENCODING_CODECS.get(encoding_name)
+            codec = PREDEFINED_ENCODING_CODECS.get(encoding_name)
             if codec is None and "-UCS2-" in encoding_name:
                 codec = "utf-16-be"
             return None, codec, {}
@@ -480,12 +478,12 @@ class LegacyTextExtractor:
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
             table = [chr(code) for code in range(256)]
         else:
-            table = internal_legacy_base_table(decoder.base_encoding or "StandardEncoding")
+            table = legacy_base_table(decoder.base_encoding or "StandardEncoding")
         character_map: dict[str, str] = {}
 
         for code, name in decoder.differences.items():
             if 0 <= code <= 255:
-                table[code] = self.internal_legacy_glyph_name(name)
+                table[code] = self.legacy_glyph_name(name)
 
         subtype = recover_pdf_name(font.get("Subtype") or "")
         descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
@@ -497,12 +495,12 @@ class LegacyTextExtractor:
             and font.get("ToUnicode") is None
             and has_type1_font_file
         ):
-            character_map.update(self.internal_type1_character_map(descriptor))
+            character_map.update(self.type1_character_map(descriptor))
             for character in character_map:
                 table[ord(character)] = character
         return tuple(table), None, character_map
 
-    def internal_type1_character_map(self, descriptor: dict[object, object]) -> dict[str, str]:
+    def type1_character_map(self, descriptor: dict[object, object]) -> dict[str, str]:
         raw_font_file = self.document.resolver.resolve(descriptor.get("FontFile"))
         if not isinstance(raw_font_file, PdfStream):
             return {}
@@ -523,7 +521,7 @@ class LegacyTextExtractor:
                 if not 0 <= code <= 255:
                     continue
                 name = words[2].removeprefix(b"/").decode("latin-1")
-                mapped = self.internal_legacy_glyph_name(name, unknown="")
+                mapped = self.legacy_glyph_name(name, unknown="")
                 if not mapped and name.startswith("uni"):
                     mapped = chr(int(name[3:], 16))
                 if mapped:
@@ -531,7 +529,7 @@ class LegacyTextExtractor:
         return result
 
     @staticmethod
-    def internal_legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
+    def legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
         if name == "negationslash":
             return "⁄"
         if name in {"tildewide", "tildewider", "tildewidest"}:
@@ -549,7 +547,7 @@ class LegacyTextExtractor:
             return mapped
         return f"/{name}" if unknown is None else unknown
 
-    def internal_difference_fallbacks(self, font: dict[object, object]) -> dict[bytes, str]:
+    def difference_fallbacks(self, font: dict[object, object]) -> dict[bytes, str]:
         encoding = self.document.resolver.resolve(font.get("Encoding"))
         differences = (
             self.document.resolver.resolve(encoding.get("Differences"))
@@ -572,7 +570,7 @@ class LegacyTextExtractor:
             code += 1
         return result
 
-    def internal_font_widths(
+    def font_widths(
         self,
         font: dict[object, object],
         decoder: FontDecoder,
@@ -588,9 +586,7 @@ class LegacyTextExtractor:
                 cmap is None
                 and isinstance(char_procs, dict)
                 and any(
-                    not self.internal_legacy_glyph_name(
-                        recover_pdf_name(name) or str(name), unknown=""
-                    )
+                    not self.legacy_glyph_name(recover_pdf_name(name) or str(name), unknown="")
                     for name in char_procs
                 )
             ):
@@ -640,19 +636,17 @@ class LegacyTextExtractor:
         return widths, default_width, 200.0
 
     def flush(self) -> None:
-        self.text, self.output_last = internal_flush_text(
-            self.output_parts, self.text, self.output_last
-        )
+        self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
 
     def add_text(self, value: str) -> None:
         for character in value:
             self.add_text_unit(character)
 
     def add_text_unit(self, value: str) -> None:
-        self.text, self.rtl = internal_append_directional_text(self.text, self.rtl, value)
+        self.text, self.rtl = append_directional_text(self.text, self.rtl, value)
 
     def check_position(self, string_width: float) -> None:
-        self.text, self.output_last = internal_positioned_text(
+        self.text, self.output_last = positioned_text(
             self.output_parts,
             self.text,
             self.output_last,
@@ -782,7 +776,7 @@ class LegacyTextExtractor:
         for operator, operands in parsed:
             if operator == "Do":
                 self.flush()
-                self.output_last = internal_ensure_line_break(self.output_parts, self.output_last)
+                self.output_last = ensure_line_break(self.output_parts, self.output_last)
                 self.internal_form(operands)
                 self.text = ""
             else:

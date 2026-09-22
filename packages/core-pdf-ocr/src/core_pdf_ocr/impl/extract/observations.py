@@ -8,8 +8,8 @@ from core_pdf.impl.capture.records import CapturedDrawing
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.model.text import compact_text, text_tokens
 from core_pdf_ocr.impl.extract.capture import (
-    internal_hidden_text_needs_verification,
-    internal_requires_high_resolution_vector_ocr,
+    hidden_text_needs_verification,
+    requires_high_resolution_vector_ocr,
 )
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
@@ -78,7 +78,7 @@ def maximum_candidate_coverage(
     return output
 
 
-def internal_ocr_scale(capture: PageAnalysis, *, schematic: bool, vector_complexity: int) -> float:
+def ocr_scale(capture: PageAnalysis, *, schematic: bool, vector_complexity: int) -> float:
     if not schematic or vector_complexity < 4_000:
         return 3.0
     if vector_complexity < 150_000:
@@ -86,13 +86,11 @@ def internal_ocr_scale(capture: PageAnalysis, *, schematic: bool, vector_complex
     return 3.5 if capture.evidence.image_count else 4.0
 
 
-def internal_vector_text_scale(capture: PageAnalysis, vector_complexity: int) -> float:
-    return max(
-        4.0, internal_ocr_scale(capture, schematic=True, vector_complexity=vector_complexity)
-    )
+def vector_text_scale(capture: PageAnalysis, vector_complexity: int) -> float:
+    return max(4.0, ocr_scale(capture, schematic=True, vector_complexity=vector_complexity))
 
 
-def internal_schematic_page(
+def schematic_page(
     vector_complexity: int,
     text_density: float,
     text_coverage: float,
@@ -100,7 +98,7 @@ def internal_schematic_page(
     return vector_complexity >= 180 and (text_density < 0.0015 or text_coverage < 0.05)
 
 
-def internal_rotated_native_characters(capture: PageAnalysis) -> int:
+def rotated_native_characters(capture: PageAnalysis) -> int:
     observations = capture.observations
     return sum(
         len(text.strip())
@@ -109,7 +107,7 @@ def internal_rotated_native_characters(capture: PageAnalysis) -> int:
     )
 
 
-def internal_noisy_native_text(evidence: PageEvidence) -> bool:
+def noisy_native_text(evidence: PageEvidence) -> bool:
     quality = evidence.text_quality
     if evidence.visible_native_characters < 24 or quality.token_count < 12:
         return False
@@ -132,7 +130,7 @@ def internal_noisy_native_text(evidence: PageEvidence) -> bool:
     return structure_signal and token_signal and language_signal
 
 
-def internal_native_mapping_is_usable(evidence: PageEvidence) -> bool:
+def native_mapping_is_usable(evidence: PageEvidence) -> bool:
     glyphs = evidence.glyphs
     if glyphs.actual_text_characters >= max(1, int(evidence.native_characters * 0.80)):
         return True
@@ -146,23 +144,21 @@ def internal_native_mapping_is_usable(evidence: PageEvidence) -> bool:
     )
 
 
-def internal_drawing_is_simple_rectangle(drawing: CapturedDrawing) -> bool:
+def drawing_is_simple_rectangle(drawing: CapturedDrawing) -> bool:
     path = drawing.path
     return path is not None and path.axis_aligned_rect() is not None
 
 
-def internal_has_only_simple_vector_rectangles(capture: PageAnalysis) -> bool:
+def has_only_simple_vector_rectangles(capture: PageAnalysis) -> bool:
     drawings = tuple(
         drawing
         for drawing in capture.program.drawings
         if drawing.kind in {"fill", "fillstroke", "stroke"}
     )
-    return len(drawings) >= 32 and all(
-        internal_drawing_is_simple_rectangle(drawing) for drawing in drawings
-    )
+    return len(drawings) >= 32 and all(drawing_is_simple_rectangle(drawing) for drawing in drawings)
 
 
-def internal_vector_native_text_is_trusted(evidence: PageEvidence) -> bool:
+def vector_native_text_is_trusted(evidence: PageEvidence) -> bool:
     glyphs = evidence.glyphs
     if evidence.visible_native_characters < 200 or not glyphs.glyph_count:
         return False
@@ -180,7 +176,7 @@ def internal_vector_native_text_is_trusted(evidence: PageEvidence) -> bool:
     )
 
 
-def internal_fallback_pass(
+def fallback_pass(
     *,
     schematic: bool,
     scale: float,
@@ -239,7 +235,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                     include_native_text=True,
                     parallel_tiles=2,
                 ),
-                internal_fallback_pass(
+                fallback_pass(
                     schematic=False,
                     scale=scale,
                     modes=(6,),
@@ -292,7 +288,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                     region_first=False,
                 ),
             ),
-            verify_hidden_text=internal_hidden_text_needs_verification(evidence),
+            verify_hidden_text=hidden_text_needs_verification(evidence),
         )
 
     if evidence.stroked_vector_text.trusted:
@@ -317,27 +313,23 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
             characters >= 32
             and evidence.image_count == 0
             and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
-            and internal_has_only_simple_vector_rectangles(capture)
+            and native_mapping_is_usable(evidence)
+            and has_only_simple_vector_rectangles(capture)
         ):
             return WorkPlan(
                 PageRoute.NATIVE,
                 reason=PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS,
             )
-        if internal_vector_native_text_is_trusted(evidence):
+        if vector_native_text_is_trusted(evidence):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_VECTOR_TEXT)
-        if (
-            evidence.full_page_image
-            and characters >= 1_000
-            and internal_native_mapping_is_usable(evidence)
-        ):
+        if evidence.full_page_image and characters >= 1_000 and native_mapping_is_usable(evidence):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.FULL_PAGE_IMAGE_NATIVE_TEXT)
         if (
             characters >= 1_000
             and evidence.text_coverage >= 0.15
             and evidence.uncovered_vector_area / max(1.0, evidence.page_area) < 0.08
             and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
+            and native_mapping_is_usable(evidence)
         ):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.MOSTLY_COVERED_NATIVE_TEXT)
         if (
@@ -345,14 +337,14 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
             and evidence.image_count == 0
             and evidence.text_coverage >= 0.20
             and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
+            and native_mapping_is_usable(evidence)
         ):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.NATIVE_TEXT_WITHOUT_IMAGES)
         if (
             characters >= 3_000
             and evidence.text_coverage >= 0.18
             and suspicious_ratio <= 0.02
-            and internal_native_mapping_is_usable(evidence)
+            and native_mapping_is_usable(evidence)
         ):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.DENSE_NATIVE_TEXT)
         return WorkPlan(
@@ -363,9 +355,9 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                     "schematic-regions",
                     OcrPassScope.WEAK_REGIONS,
                     (
-                        min(6.0, internal_vector_text_scale(capture, vector_complexity) * 1.2)
+                        min(6.0, vector_text_scale(capture, vector_complexity) * 1.2)
                         if characters >= 8
-                        else internal_vector_text_scale(capture, vector_complexity)
+                        else vector_text_scale(capture, vector_complexity)
                     ),
                     (PSM_SPARSE_TEXT,),
                     tiles=8,
@@ -378,7 +370,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                 OcrPass(
                     "primary-page",
                     OcrPassScope.PAGE,
-                    internal_vector_text_scale(capture, vector_complexity),
+                    vector_text_scale(capture, vector_complexity),
                     (PSM_AUTO,),
                     minimum_confidence=VECTOR_TEXT_MIN_CONFIDENCE,
                     run_if_additions_below=4,
@@ -391,12 +383,12 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
             fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
         )
 
-    if internal_noisy_native_text(evidence):
+    if noisy_native_text(evidence):
         scale = min(
             4.5,
             max(
                 3.0,
-                internal_ocr_scale(capture, schematic=True, vector_complexity=vector_complexity),
+                ocr_scale(capture, schematic=True, vector_complexity=vector_complexity),
             ),
         )
         return WorkPlan(
@@ -459,12 +451,8 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
         )
 
     if rotated_native:
-        rotated_characters = internal_rotated_native_characters(capture)
-        if (
-            characters >= 1_000
-            and text_coverage >= 0.15
-            and internal_native_mapping_is_usable(evidence)
-        ):
+        rotated_characters = rotated_native_characters(capture)
+        if characters >= 1_000 and text_coverage >= 0.15 and native_mapping_is_usable(evidence):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_ROTATED_TEXT)
         if (
             characters >= 500
@@ -502,7 +490,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
             ),
         )
 
-    mapping_usable = internal_native_mapping_is_usable(evidence)
+    mapping_usable = native_mapping_is_usable(evidence)
     if characters >= 80 and suspicious_ratio <= 0.02 and mapping_usable:
         return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.HEALTHY_NATIVE_TEXT)
     if (
@@ -522,13 +510,13 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
     ):
         return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.CLEAN_SHORT_NATIVE_TEXT)
 
-    schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
+    schematic = schematic_page(vector_complexity, text_density, text_coverage)
     mode = PSM_AUTO if (schematic and vector_complexity >= 150_000) else PSM_SPARSE_TEXT
     image_modes = (mode,)
-    scale = internal_ocr_scale(capture, schematic=schematic, vector_complexity=vector_complexity)
+    scale = ocr_scale(capture, schematic=schematic, vector_complexity=vector_complexity)
     if characters == 0 or suspicious_ratio >= 0.25:
         weak_threshold = 300 if schematic else 3
-        high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
+        high_resolution_vector = schematic and requires_high_resolution_vector_ocr(capture)
         return WorkPlan(
             PageRoute.OCR,
             reason=PagePlanReason.NATIVE_TEXT_UNAVAILABLE,
@@ -561,7 +549,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                     recognize_words=high_resolution_vector,
                     parallel_tiles=2,
                 ),
-                internal_fallback_pass(
+                fallback_pass(
                     schematic=schematic,
                     scale=scale,
                     modes=(6,),
@@ -590,7 +578,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
                 pixel_budget=PRIMARY_OCR_PIXELS,
                 include_native_text=True,
             ),
-            internal_fallback_pass(
+            fallback_pass(
                 schematic=schematic,
                 scale=scale,
                 modes=(
@@ -605,7 +593,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
     )
 
 
-def internal_duplicate_of_native_text(
+def duplicate_of_native_text(
     native_compact: str,
     native_tokens: frozenset[str],
     ocr_text: str,
@@ -668,10 +656,7 @@ def fuse_observations(
         native_compact = "".join(compact_text(text) for text in native.text)
         native_tokens = frozenset(token for text in native.text for token in text_tokens(text))
         duplicate_mask = numpy.fromiter(
-            (
-                internal_duplicate_of_native_text(native_compact, native_tokens, text)
-                for text in ocr.text
-            ),
+            (duplicate_of_native_text(native_compact, native_tokens, text) for text in ocr.text),
             dtype=numpy.bool_,
             count=len(ocr),
         )

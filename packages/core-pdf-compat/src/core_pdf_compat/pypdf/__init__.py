@@ -19,7 +19,7 @@ from core_pdf_compat.pypdf._text import extract_legacy_text
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 
 
-def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
+def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
     literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
     if literal_trailers:
         latest_root = literal_trailers[-1].get("Root")
@@ -66,7 +66,7 @@ class StructuredState(ClosingMixin):
         try:
             if pdf.raw_data.find(b"startxref") < 0:
                 raise ValueError("startxref not found")
-            internal_validate_pypdf_page_tree(pdf)
+            validate_pypdf_page_tree(pdf)
         except Exception:
             pdf.close()
             raise
@@ -167,7 +167,7 @@ class PdfPageObject:
     def __init__(self, document: StructuredState, page: Page) -> None:
         self._document = document
         self._page = page
-        self.internal_text_override: str | None = None
+        self.text_override: str | None = None
         if document.pdf is not None and 0 < page.page_number <= len(document.pdf.pages):
             source_page = document.pdf.pages[page.page_number - 1]
             media_box = source_page.media_box or (0.0, 0.0, page.width, page.height)
@@ -192,8 +192,8 @@ class PdfPageObject:
 
     def extract_text(self, *args: object, **kwargs: object) -> str:  # noqa: C901
         del args, kwargs
-        if self.internal_text_override is not None:
-            return self.internal_text_override
+        if self.text_override is not None:
+            return self.text_override
         source_page = self._document.pages[self._page.page_number - 1]
         if self._document.pdf is not None and self._page is source_page:
             page = self._document.capability_page(self._page.page_number)
@@ -241,7 +241,7 @@ class PdfPageObject:
             annotations=(*self._page.annotations, *overlay.annotations),
             form_fields=(*self._page.form_fields, *overlay.form_fields),
         )
-        self.internal_text_override = "\n".join(filter(None, (base_text, overlay_text)))
+        self.text_override = "\n".join(filter(None, (base_text, overlay_text)))
         return self
 
     @property
@@ -261,7 +261,7 @@ class PdfPageObject:
         return tuple(self._document.capability_page(self._page.page_number).extract_images())
 
 
-class internal_LockedPages:
+class LockedPages:
     def __iter__(self) -> Any:
         raise PdfUnsupportedError("file has not been decrypted")
 
@@ -292,7 +292,7 @@ class PdfReader(ClosingMixin):
             if password:
                 raise
             self._document = cast(Any, None)
-            self.pages = cast(Any, internal_LockedPages())
+            self.pages = cast(Any, LockedPages())
             self.metadata: dict[str, Any] = {}
             self.trailer: dict[str, Any] = {}
             self._decryption_pending = True

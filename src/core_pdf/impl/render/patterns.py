@@ -11,22 +11,20 @@ from core_pdf.impl.capture.records import (
 )
 from core_pdf.impl.graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl.render.blend import (
-    internal_clamp01,
-    internal_color_component,
+    clamp01,
+    color_component,
 )
 from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import DisplayList
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 if TYPE_CHECKING:
-    from core_pdf.impl.render.target import internal_RasterTarget
+    from core_pdf.impl.render.target import RasterTarget
 
 TilingCellCache = dict[tuple[int, bool], tuple[TilingPattern, DisplayList, CapturedPath]]
 
 
-def internal_tiling_cell(
-    target: internal_RasterTarget, pattern: TilingPattern
-) -> tuple[DisplayList, CapturedPath]:
+def tiling_cell(target: RasterTarget, pattern: TilingPattern) -> tuple[DisplayList, CapturedPath]:
     preserve_object_boundaries = target.group_source_shape is not None
     key = (id(pattern), preserve_object_boundaries)
     cached = target.tiling_cell_cache.get(key)
@@ -82,28 +80,28 @@ def radial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: flo
     return max(in_range) if in_range else min(valid, key=lambda t: abs(t - 0.5))
 
 
-def internal_shading_color_rgba(
+def shading_color_rgba(
     color_model: str,
     components: list[float] | tuple[float, ...],
     opacity: Any,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int, int]:
-    alpha = internal_color_component(opacity, 255) if type(opacity) in {int, float} else 255
+    alpha = color_component(opacity, 255) if type(opacity) in {int, float} else 255
     name = color_model or "DeviceRGB"
     if name.endswith("DeviceGray") or len(components) == 1:
-        gray = internal_color_component(components[0] if components else 0.0)
+        gray = color_component(components[0] if components else 0.0)
         return gray, gray, gray, alpha
     if name.endswith("DeviceCMYK") and len(components) >= 4:
-        c, m, y, k = (internal_clamp01(v) for v in components[:4])
+        c, m, y, k = (clamp01(v) for v in components[:4])
         red, green, blue = cmyk_floats_to_srgb(c, m, y, k, rendering=rendering)
         return red, green, blue, alpha
-    rgb = [internal_color_component(c) for c in components[:3]]
+    rgb = [color_component(c) for c in components[:3]]
     while len(rgb) < 3:
         rgb.append(rgb[-1] if rgb else 0)
     return rgb[0], rgb[1], rgb[2], alpha
 
 
-def internal_tiling_pattern_uses_normal_blends(
+def tiling_pattern_uses_normal_blends(
     pattern: TilingPattern, active: set[int] | None = None
 ) -> bool:
     if active is None:
@@ -121,9 +119,9 @@ def internal_tiling_pattern_uses_normal_blends(
             return False
         for drawing in program.drawings:
             for nested in (drawing.fill_pattern, drawing.stroke_pattern):
-                if isinstance(
-                    nested, TilingPattern
-                ) and not internal_tiling_pattern_uses_normal_blends(nested, active):
+                if isinstance(nested, TilingPattern) and not tiling_pattern_uses_normal_blends(
+                    nested, active
+                ):
                     return False
         return True
     finally:

@@ -65,7 +65,7 @@ EMPTY_CONTAINERS: dict[str, object] = {
 }
 
 
-def internal_modules() -> list[ModuleType]:
+def modules() -> list[ModuleType]:
     """Import every first-party module that can be imported in this environment."""
     modules: list[ModuleType] = []
     for root in PACKAGE_ROOTS:
@@ -84,9 +84,9 @@ def internal_modules() -> list[ModuleType]:
     return modules
 
 
-def internal_value_classes() -> dict[str, type[ValueClass]]:
+def value_classes() -> dict[str, type[ValueClass]]:
     classes: dict[str, type[ValueClass]] = {}
-    for module in internal_modules():
+    for module in modules():
         for value in vars(module).values():
             if not isinstance(value, type) or value.__module__ != module.__name__:
                 continue
@@ -96,7 +96,7 @@ def internal_value_classes() -> dict[str, type[ValueClass]]:
     return classes
 
 
-def internal_split_arguments(text: str) -> list[str]:
+def split_arguments(text: str) -> list[str]:
     parts: list[str] = []
     depth = 0
     current = ""
@@ -115,7 +115,7 @@ def internal_split_arguments(text: str) -> list[str]:
     return parts
 
 
-def internal_synthesize(annotation: object) -> object:
+def synthesize(annotation: object) -> object:
     """Build a placeholder value for an annotation, good enough to construct with."""
     text = (annotation if isinstance(annotation, str) else str(annotation)).strip()
     if any(part.strip() == "None" for part in text.split("|")):
@@ -129,13 +129,13 @@ def internal_synthesize(annotation: object) -> object:
     if base in SCALARS:
         return SCALARS[base]
     if base == "tuple" and arguments:
-        items = internal_split_arguments(arguments.rstrip("]"))
+        items = split_arguments(arguments.rstrip("]"))
         if items and items[-1] != "...":
-            return tuple(internal_synthesize(item) for item in items)
+            return tuple(synthesize(item) for item in items)
     return EMPTY_CONTAINERS.get(base)
 
 
-def internal_build(cls: type[ValueClass]) -> ValueClass:
+def build(cls: type[ValueClass]) -> ValueClass:
     """Construct ``cls`` from placeholder values, leaving every default in place."""
     signature = inspect.signature(cls.__init__)
     annotations = cls.__init__.__annotations__
@@ -144,7 +144,7 @@ def internal_build(cls: type[ValueClass]) -> ValueClass:
     for name, parameter in list(signature.parameters.items())[1:]:
         if parameter.default is not inspect.Parameter.empty:
             continue
-        value = internal_synthesize(annotations.get(name, "object"))
+        value = synthesize(annotations.get(name, "object"))
         if parameter.kind is inspect.Parameter.KEYWORD_ONLY:
             kwargs[name] = value
         else:
@@ -152,30 +152,30 @@ def internal_build(cls: type[ValueClass]) -> ValueClass:
     return cls(*args, **kwargs)
 
 
-def internal_buildable() -> dict[str, type[ValueClass]]:
+def buildable() -> dict[str, type[ValueClass]]:
     buildable: dict[str, type[ValueClass]] = {}
-    for name, cls in internal_value_classes().items():
+    for name, cls in value_classes().items():
         try:
-            internal_build(cls)
+            build(cls)
         except Exception:  # noqa: BLE001 - domain validation rejects placeholders
             continue
         buildable[name] = cls
     return buildable
 
 
-VALUE_CLASSES = internal_value_classes()
-BUILDABLE = internal_buildable()
+VALUE_CLASSES = value_classes()
+BUILDABLE = buildable()
 
 
-def internal_is_frozen(cls: type[ValueClass]) -> bool:
+def is_frozen(cls: type[ValueClass]) -> bool:
     return any("__setattr__" in base.__dict__ for base in cls.__mro__[:-1])
 
 
-def internal_defines_eq(cls: type[ValueClass]) -> bool:
+def defines_eq(cls: type[ValueClass]) -> bool:
     return any("__eq__" in base.__dict__ for base in cls.__mro__[:-1])
 
 
-def internal_equal(left: object, right: object) -> bool | None:
+def equal(left: object, right: object) -> bool | None:
     """``left == right``, or ``None`` when a field does not compare to a plain bool."""
     if left is right:
         return True
@@ -212,7 +212,7 @@ def test_repr_names_the_class(name: str) -> None:
     cls = BUILDABLE[name]
     if not any("__repr__" in base.__dict__ for base in cls.__mro__[:-1]):
         return  # the class opted out of a generated repr
-    instance = internal_build(cls)
+    instance = build(cls)
     rendered = repr(instance)
     assert rendered.startswith(f"{type(instance).__qualname__}(")
     assert rendered.endswith(")")
@@ -221,19 +221,19 @@ def test_repr_names_the_class(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(BUILDABLE))
 def test_equality_compares_by_value_and_rejects_other_types(name: str) -> None:
     cls = BUILDABLE[name]
-    instance = internal_build(cls)
+    instance = build(cls)
     assert instance == instance  # noqa: PLR0124 - the identity fast path is the contract
-    if not internal_defines_eq(cls):
+    if not defines_eq(cls):
         return
-    twin = internal_build(cls)
+    twin = build(cls)
     fields_agree = all(
-        internal_equal(getattr(instance, field, None), getattr(twin, field, None)) is not False
+        equal(getattr(instance, field, None), getattr(twin, field, None)) is not False
         for field in cls.__fields__
     )
     if fields_agree:
         # Field-for-field identical instances must compare equal; when a field type
         # compares by identity instead, the twin legitimately differs.
-        assert internal_equal(instance, twin) is not False
+        assert equal(instance, twin) is not False
     assert instance.__eq__(object()) is NotImplemented
     assert instance != object()
 
@@ -241,10 +241,10 @@ def test_equality_compares_by_value_and_rejects_other_types(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(BUILDABLE))
 def test_hashability_follows_mutability(name: str) -> None:
     cls = BUILDABLE[name]
-    instance = internal_build(cls)
-    if not internal_defines_eq(cls):
+    instance = build(cls)
+    if not defines_eq(cls):
         return
-    if not internal_is_frozen(cls):
+    if not is_frozen(cls):
         assert cls.__hash__ is None
         with pytest.raises(TypeError):
             hash(instance)
@@ -253,15 +253,15 @@ def test_hashability_follows_mutability(name: str) -> None:
         digest = hash(instance)
     except TypeError:
         return  # a placeholder field value is itself unhashable
-    assert digest == hash(internal_build(cls))
+    assert digest == hash(build(cls))
 
 
 @pytest.mark.parametrize("name", sorted(BUILDABLE))
 def test_frozen_classes_reject_assignment_and_deletion(name: str) -> None:
     cls = BUILDABLE[name]
-    if not internal_is_frozen(cls):
+    if not is_frozen(cls):
         return
-    instance = internal_build(cls)
+    instance = build(cls)
     field = cls.__fields__[0]
     with pytest.raises(AttributeError, match="cannot assign"):
         setattr(instance, field, None)
@@ -274,13 +274,13 @@ def test_replace_round_trips_and_rejects_unknown_fields(name: str) -> None:
     cls = BUILDABLE[name]
     if "__replace__" not in cls.__dict__:
         return
-    instance = internal_build(cls)
+    instance = build(cls)
     copied = replace(instance)
     assert type(copied) is cls
     for field in cls.__fields__:
         assert hasattr(copied, field) == hasattr(instance, field)
         if hasattr(instance, field):
-            assert internal_equal(getattr(copied, field), getattr(instance, field)) is not False
+            assert equal(getattr(copied, field), getattr(instance, field)) is not False
     with pytest.raises(TypeError, match="unexpected keyword"):
         replace(instance, definitely_not_a_field=None)
 
@@ -288,11 +288,11 @@ def test_replace_round_trips_and_rejects_unknown_fields(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(BUILDABLE))
 def test_frozen_slotted_classes_survive_pickling(name: str) -> None:
     cls = BUILDABLE[name]
-    if not internal_is_frozen(cls) or "__getstate__" not in dir(cls):
+    if not is_frozen(cls) or "__getstate__" not in dir(cls):
         return
     if any(base.__dict__.get("__slots__") is None for base in cls.__mro__[:-1]):
         return  # an unslotted base pickles through __dict__ instead
-    instance = internal_build(cls)
+    instance = build(cls)
     try:
         restored = pickle.loads(pickle.dumps(instance))
     except pickle.PicklingError, AttributeError, TypeError:

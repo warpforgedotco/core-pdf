@@ -8,11 +8,11 @@ from typing import Any, cast
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf_compat.pdfminer._extract import internal_extract_document_pages
+from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 
 from ._classification import (
-    internal_BULLET,
+    BULLET,
     internal_element_class,
 )
 from ._elements import (
@@ -22,23 +22,23 @@ from ._elements import (
     PageBreak,
 )
 from ._regions import (
-    internal_clean_text,
-    internal_combine_list_regions,
-    internal_figure_text_snippets,
-    internal_layout_regions,
-    internal_region_order,
-    internal_TextRegion,
+    TextRegion,
+    clean_text,
+    combine_list_regions,
+    figure_text_snippets,
+    layout_regions,
+    region_order,
 )
 
-internal_GRAPHICS_OPS = re.compile(
+GRAPHICS_OPS = re.compile(
     rb"(?:^|(?<=\s))(?:m|l|c|v|y|h|re|S|s|f|F|f\*|B|B\*|b|b\*|n|W|W\*|cm|q|Q|"
     rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)"
 )
 
-internal_TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
+TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
 
 
-def internal_pdf_too_complex(filename: object, password: str) -> bool:
+def pdf_too_complex(filename: object, password: str) -> bool:
     with PdfDocument.open(cast(Any, filename), password=password) as document:
         strict_xref_error = document.strict_xref_validation_error()
         if strict_xref_error == "invalid hex string" or (
@@ -65,10 +65,10 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
             raw_data = b"".join(stream.data for stream in page.content_streams)
             if len(raw_data) < 100_000:
                 continue
-            graphics = len(internal_GRAPHICS_OPS.findall(raw_data))
+            graphics = len(GRAPHICS_OPS.findall(raw_data))
             if graphics <= 10_000:
                 continue
-            text = len(internal_TEXT_OPS.findall(raw_data))
+            text = len(TEXT_OPS.findall(raw_data))
             if graphics / max(text, 1) > 20.0:
                 return True
     return False
@@ -86,7 +86,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     word_margin = float(cast(Any, kwargs.pop("pdfminer_word_margin", 0.185) or 0.185))
     password = str(kwargs.pop("password", "") or "")
     try:
-        if internal_pdf_too_complex(filename, password):
+        if pdf_too_complex(filename, password):
             return []
     except PdfUnsupportedError as error:
         if str(error) == "Incorrect password":
@@ -103,18 +103,18 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         recovery_scan_all_revisions=False,
     )
     try:
-        pages = internal_extract_document_pages(
+        pages = extract_document_pages(
             document, LAParams(word_margin=word_margin), unstructured_mode=True
         )
         source_pages = iter(document.pages)
         for page in pages:
             source_page = next(source_pages, None)
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
-            regions = internal_layout_regions(text_boxes)
+            regions = layout_regions(text_boxes)
             for figure in (item for item in page if isinstance(item, LTFigure)):
-                for figure_text in internal_figure_text_snippets(figure):
-                    if cleaned_figure_text := internal_clean_text(figure_text):
-                        regions.append(internal_TextRegion(cleaned_figure_text, figure.bbox))
+                for figure_text in figure_text_snippets(figure):
+                    if cleaned_figure_text := clean_text(figure_text):
+                        regions.append(TextRegion(cleaned_figure_text, figure.bbox))
             fields: tuple[Any, ...] | list[Any]
             if source_page is None:
                 fields = ()
@@ -123,27 +123,27 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                     fields = source_page.get_fields()
                 except PdfError, ValueError:
                     fields = ()
-            field_regions: list[internal_TextRegion] = []
+            field_regions: list[TextRegion] = []
             for field in fields:
                 if field.rect is None or field.type not in {"Tx", "Ch"} or not field.value_text:
                     continue
                 left, bottom, right, top = (float(value) for value in field.rect)
                 field_regions.append(
-                    internal_TextRegion(
+                    TextRegion(
                         field.value_text,
                         (left, bottom, right, top),
                     )
                 )
-            regions = internal_combine_list_regions(regions, page.height)
+            regions = combine_list_regions(regions, page.height)
             regions.extend(field_regions)
-            for element_index in internal_region_order(regions, page.height):
+            for element_index in region_order(regions, page.height):
                 region = regions[element_index]
                 text, bbox = region.text, region.bbox
                 element_class = region.element_class or internal_element_class(
                     text, bbox, page.height
                 )
                 if element_class is ListItem and region.element_class is None:
-                    text = internal_BULLET.sub("", text, count=1).strip()
+                    text = BULLET.sub("", text, count=1).strip()
                 metadata = (
                     ElementMetadata(
                         {

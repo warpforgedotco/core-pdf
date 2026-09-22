@@ -19,7 +19,7 @@ from core_pdf_spec.s_14_structure.dictionaries import (
 from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_role
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document.document import PdfDocument, internal_PageLookup
+    from core_pdf.impl.document.document import PageLookup, PdfDocument
     from core_pdf.impl.document.page import PdfPage
 
 
@@ -102,7 +102,7 @@ def structure_key_name(key: Any) -> str:
     return recover_pdf_name(key) or str(key)
 
 
-class internal_StructureNode:
+class StructureNode:
     __slots__ = ("document", "internal_lookup", "kids_value", "props")
 
     def __init__(
@@ -110,14 +110,14 @@ class internal_StructureNode:
         document: PdfDocument[Any],
         props: PdfDict,
         *,
-        internal_lookup: internal_PageLookup[Any] | None = None,
+        internal_lookup: PageLookup[Any] | None = None,
     ) -> None:
         self.document = document
         self.internal_lookup = internal_lookup
         self.props = props if isinstance(props, dict) else {}
         self.kids_value: Any = MISSING
 
-    def internal_kids_page(self) -> PdfPage | None:
+    def kids_page(self) -> PdfPage | None:
         return None
 
     def __iter__(self) -> Iterator[StructureChild]:
@@ -125,7 +125,7 @@ class internal_StructureNode:
             self.kids_value = tuple(
                 make_kids(
                     self.props.get("K"),
-                    self.internal_kids_page(),
+                    self.kids_page(),
                     self.document,
                     internal_lookup=self.internal_lookup,
                 )
@@ -133,7 +133,7 @@ class internal_StructureNode:
         yield from self.kids_value
 
 
-class StructureElement(internal_StructureNode):
+class StructureElement(StructureNode):
     __slots__ = (
         "actual_text_value",
         "alternate_description_value",
@@ -152,7 +152,7 @@ class StructureElement(internal_StructureNode):
         document: PdfDocument[Any],
         props: PdfDict,
         *,
-        internal_lookup: internal_PageLookup[Any] | None = None,
+        internal_lookup: PageLookup[Any] | None = None,
     ) -> None:
         super().__init__(document, props, internal_lookup=internal_lookup)
         self.role_resolution_value: StructureRole | None | object = MISSING
@@ -334,7 +334,7 @@ class StructureElement(internal_StructureNode):
         )
         return self.parent_value
 
-    def internal_kids_page(self) -> PdfPage | None:
+    def kids_page(self) -> PdfPage | None:
         return self.page
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
@@ -346,7 +346,7 @@ class StructureElement(internal_StructureNode):
         return next(self.find_all(matcher), None)
 
 
-class StructureTree(internal_StructureNode):
+class StructureTree(StructureNode):
     __slots__ = ("role_map_value", "parent_tree_value")
 
     role_map_value: dict[str, str] | None
@@ -357,7 +357,7 @@ class StructureTree(internal_StructureNode):
         document: PdfDocument[Any],
         props: PdfDict,
         *,
-        internal_lookup: internal_PageLookup[Any] | None = None,
+        internal_lookup: PageLookup[Any] | None = None,
     ) -> None:
         super().__init__(document, props, internal_lookup=internal_lookup)
         self.role_map_value: dict[str, str] | None = None
@@ -447,7 +447,7 @@ class PageStructure(Sequence[StructureElement | None]):
         page: PdfPage,
         parents: Any,
         *,
-        internal_lookup: internal_PageLookup[Any] | None = None,
+        internal_lookup: PageLookup[Any] | None = None,
     ) -> None:
         self.page = page
         self.internal_lookup = internal_lookup
@@ -523,7 +523,7 @@ def get_kid_page_index(
     document: PdfDocument[Any],
     page: PdfPage | None,
     kid: PdfDict,
-    internal_lookup: internal_PageLookup[Any] | None = None,
+    internal_lookup: PageLookup[Any] | None = None,
 ) -> int | None:
     pg = kid.get("Pg")
     if pg is not None:
@@ -547,7 +547,7 @@ def make_kids(
     document: PdfDocument[Any],
     depth: int = 0,
     *,
-    internal_lookup: internal_PageLookup[Any] | None = None,
+    internal_lookup: PageLookup[Any] | None = None,
 ) -> Iterator[StructureChild]:
     recover_structure = document.recovery_enabled
     stack: list[tuple[Any, int]] = [(kid, depth)]

@@ -8,12 +8,12 @@ from typing import Any, ClassVar, NoReturn, Self
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 WHITESPACE = b"\x00\t\n\x0c\r "
 DELIMITERS = b"()<>[]/%"
-internal_LEGACY_DELIMITERS = b"()<>[]{}/%"
+LEGACY_DELIMITERS = b"()<>[]{}/%"
 
 SEPARATOR_TABLE = bytes([1 if i in WHITESPACE or i in DELIMITERS else 0 for i in range(256)])
 WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
@@ -65,10 +65,10 @@ class LexicalRules:
         delimiters: bytes = DELIMITERS,
         canonical_identifiers: bool = True,
     ) -> None:
-        internal_frozen_setattr(self, "whitespace", whitespace)
-        internal_frozen_setattr(self, "name_escapes", name_escapes)
-        internal_frozen_setattr(self, "delimiters", delimiters)
-        internal_frozen_setattr(self, "canonical_identifiers", canonical_identifiers)
+        frozen_setattr(self, "whitespace", whitespace)
+        frozen_setattr(self, "name_escapes", name_escapes)
+        frozen_setattr(self, "delimiters", delimiters)
+        frozen_setattr(self, "canonical_identifiers", canonical_identifiers)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -126,7 +126,7 @@ class LexicalRules:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         whitespace = changes.pop("whitespace", self.whitespace)
@@ -194,31 +194,25 @@ class LexicalRules:
         )
 
 
-internal_EARLY_RULES = LexicalRules(
-    b"\t\n\x0c\r ", False, internal_LEGACY_DELIMITERS, canonical_identifiers=False
-)
-internal_PDF12_RULES = LexicalRules(
-    b"\t\n\x0c\r ", True, internal_LEGACY_DELIMITERS, canonical_identifiers=False
-)
-internal_PDF1X_RULES = LexicalRules(
-    WHITESPACE, True, internal_LEGACY_DELIMITERS, canonical_identifiers=False
-)
-internal_CURRENT_RULES = LexicalRules(WHITESPACE, name_escapes=True)
+EARLY_RULES = LexicalRules(b"\t\n\x0c\r ", False, LEGACY_DELIMITERS, canonical_identifiers=False)
+PDF12_RULES = LexicalRules(b"\t\n\x0c\r ", True, LEGACY_DELIMITERS, canonical_identifiers=False)
+PDF1X_RULES = LexicalRules(WHITESPACE, True, LEGACY_DELIMITERS, canonical_identifiers=False)
+CURRENT_RULES = LexicalRules(WHITESPACE, name_escapes=True)
 
 
 def lexical_rules(context: SemanticContext | None = None) -> LexicalRules:
     if context is None:
-        return internal_CURRENT_RULES
+        return CURRENT_RULES
     version = context.version
     if version is None or not version.recognized:
         raise PdfUnsupportedError("lexical semantics require a recognized PDF version")
     if version < PdfVersion(1, 2):
-        return internal_EARLY_RULES
+        return EARLY_RULES
     if version < PdfVersion(1, 3):
-        return internal_PDF12_RULES
+        return PDF12_RULES
     if version < PdfVersion(2, 0):
-        return internal_PDF1X_RULES
-    return internal_CURRENT_RULES
+        return PDF1X_RULES
+    return CURRENT_RULES
 
 
 __all__ = (

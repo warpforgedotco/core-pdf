@@ -6,13 +6,13 @@ from collections.abc import Iterable
 from copy import replace
 from typing import TYPE_CHECKING, cast
 
-from core_pdf.impl.extract.capture import internal_STRUCTURE_UNSET
+from core_pdf.impl.extract.capture import STRUCTURE_UNSET
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.extract.pipeline import (
-    internal_PageExtraction as NativePageExtraction,
+    PageExtraction as NativePageExtraction,
 )
 from core_pdf.impl.extract.pipeline import (
-    internal_PageProducts,
+    PageProducts,
 )
 from core_pdf.impl.output.model import Page
 from core_pdf.impl.runtime.execution import ExtractionScope
@@ -21,17 +21,17 @@ from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan
 from core_pdf_ocr.impl.extract.observations import fuse_observations, plan_page
 from core_pdf_ocr.impl.extract.table_detection import extract_tables
-from core_pdf_ocr.impl.extract.table_reconcile import internal_remove_duplicate_tables
+from core_pdf_ocr.impl.extract.table_reconcile import remove_duplicate_tables
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.document.records import RawFormField
     from core_pdf.impl.document.structure import PageStructure
-    from core_pdf.impl.extract.capture import internal_StructureUnset
+    from core_pdf.impl.extract.capture import StructureUnset
     from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 
 
-class internal_PageExtraction(NativePageExtraction):
+class PageExtraction(NativePageExtraction):
     internal_capture_page = staticmethod(capture_page)
 
     @property
@@ -50,7 +50,7 @@ class internal_PageExtraction(NativePageExtraction):
         plan: WorkPlan | None = None,
         recognition: RecognitionResult | None = None,
         fields: Iterable[RawFormField] | None = None,
-        structure: PageStructure | None | internal_StructureUnset = internal_STRUCTURE_UNSET,
+        structure: PageStructure | None | StructureUnset = STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
         stroked_profile: StrokedTextProfile | None = None,
     ) -> None:
@@ -88,20 +88,20 @@ class internal_PageExtraction(NativePageExtraction):
             return recognize_page(self.capture, plan, context, stroked_profile=self.stroked_profile)
         return RecognitionResult(ObservationBatch.empty())
 
-    def run(self, context: ExtractionScope) -> internal_PageProducts:
+    def run(self, context: ExtractionScope) -> PageProducts:
         context.raise_if_cancelled()
         observations = fuse_observations(
             self.capture.observations,
             self.recognize(context).observations,
             self.plan,
         )
-        products = self.internal_layout_products(
+        products = self.layout_products(
             observations,
             extract_tables(self.capture, observations),
             layout=layout_blocks_with_evidence,
         )
-        return replace(products, tables=internal_remove_duplicate_tables(products.tables))
+        return replace(products, tables=remove_duplicate_tables(products.tables))
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
-    return internal_PageExtraction(page).assembled_page(context)
+    return PageExtraction(page).assembled_page(context)

@@ -24,7 +24,7 @@ from core_pdf_spec.standards import PdfVersion, SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 
-def internal_parse(data: bytes, version: str) -> object:
+def parse(data: bytes, version: str) -> object:
     lexer = PdfLexer(data, semantic_context=SemanticContext(PdfVersion.parse(version)))
     try:
         return lexer.parse_object()
@@ -34,7 +34,7 @@ def internal_parse(data: bytes, version: str) -> object:
 
 @pytest.mark.parametrize("version", ["1.0", "1.1"])
 def test_legacy_names_keep_literal_number_signs_in_keys_and_values(version: str) -> None:
-    assert internal_parse(b"<< /A#42 /C#44 /AB /other /# /#zz >>", version) == {
+    assert parse(b"<< /A#42 /C#44 /AB /other /# /#zz >>", version) == {
         "A#42": PdfName.of("C#44"),
         "AB": PdfName.of("other"),
         "#": PdfName.of("#zz"),
@@ -43,30 +43,30 @@ def test_legacy_names_keep_literal_number_signs_in_keys_and_values(version: str)
 
 @pytest.mark.parametrize("version", ["1.2", "1.3", "1.7", "2.0"])
 def test_modern_names_decode_escapes_and_reject_malformed_ones(version: str) -> None:
-    assert internal_parse(b"<< /A#42 /C#44 >>", version) == {"AB": PdfName.of("CD")}
+    assert parse(b"<< /A#42 /C#44 >>", version) == {"AB": PdfName.of("CD")}
     for name in (b"/#", b"/#zz", b"/#00"):
         with pytest.raises(PdfParseError):
-            internal_parse(name, version)
+            parse(name, version)
 
 
 @pytest.mark.parametrize("version", ["1.0", "1.1", "1.2"])
 @pytest.mark.parametrize("data", [b"[12\0 34]", b"<4\0 1>", b"\0true"])
 def test_earlier_whitespace_does_not_silently_consume_nul(version: str, data: bytes) -> None:
     with pytest.raises(PdfParseError):
-        internal_parse(data, version)
+        parse(data, version)
 
 
 @pytest.mark.parametrize("version", ["1.3", "1.7", "2.0"])
 def test_nul_whitespace_works_in_arrays_hex_strings_and_keywords(version: str) -> None:
-    assert internal_parse(b"[12\0 34]", version) == [12, 34]
-    assert internal_parse(b"<4\0 1>", version) == PdfString(b"A", is_literal=False)
-    assert internal_parse(b"\0true", version) is True
+    assert parse(b"[12\0 34]", version) == [12, 34]
+    assert parse(b"<4\0 1>", version) == PdfString(b"A", is_literal=False)
+    assert parse(b"\0true", version) is True
 
 
 @pytest.mark.parametrize("version", ["1.0", "1.2", "1.3", "2.0"])
 def test_comments_literal_data_and_standard_whitespace_are_shared(version: str) -> None:
-    assert internal_parse(b"% comment\0with NUL\n[1\t2\r3\n4\f5 6]", version) == [1, 2, 3, 4, 5, 6]
-    assert internal_parse(b"(data\0stays)", version) == PdfString(b"data\0stays", is_literal=True)
+    assert parse(b"% comment\0with NUL\n[1\t2\r3\n4\f5 6]", version) == [1, 2, 3, 4, 5, 6]
+    assert parse(b"(data\0stays)", version) == PdfString(b"data\0stays", is_literal=True)
 
 
 @pytest.mark.parametrize("strided", [False, True])

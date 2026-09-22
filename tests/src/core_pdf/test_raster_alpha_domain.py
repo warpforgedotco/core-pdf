@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl.render import target as raster
-from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.clipping import ClipState
 
 
 def rounded_ratio(numerator: int, denominator: int) -> int:
@@ -19,8 +19,8 @@ def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
     )
     pixels = bytearray(256 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 256, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=1, scale=1, width=256, height=1)
-    target = raster.internal_RasterTarget(
+    clip = ClipState(crop_x0=0, crop_y1=1, scale=1, width=256, height=1)
+    target = raster.RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -81,8 +81,8 @@ def test_non_normal_pixel_blending_matches_rational_composition(
     destination = (90, 160, 240)
     pixels = bytearray((*destination, destination_alpha))
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 1, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=1, scale=1, width=1, height=1)
-    target = raster.internal_RasterTarget(
+    clip = ClipState(crop_x0=0, crop_y1=1, scale=1, width=1, height=1)
+    target = raster.RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -120,8 +120,8 @@ def test_non_normal_pixel_blending_matches_rational_composition(
 def test_pixel_routes_track_shape_independently_from_paint_alpha(route, alpha):
     pixels = bytearray(4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 1, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=1, scale=1, width=1, height=1)
-    target = raster.internal_RasterTarget(
+    clip = ClipState(crop_x0=0, crop_y1=1, scale=1, width=1, height=1)
+    target = raster.RasterTarget(
         pixels,
         None,
         clip=clip,

@@ -5,11 +5,11 @@ from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
 from core_pdf_spec.s_09_fonts.dictionaries import (
+    font_descriptor,
     get_descendant,
-    internal_font_descriptor,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 MIN_CID = 0
@@ -124,14 +124,12 @@ class FontMetrics:
         default_vertical_origin_y: float,
         vertical_metrics: dict[int, tuple[float, float, float]],
     ) -> None:
-        internal_frozen_setattr(self, "widths", widths)
-        internal_frozen_setattr(self, "default_width", default_width)
-        internal_frozen_setattr(self, "default_width_explicit", default_width_explicit)
-        internal_frozen_setattr(
-            self, "default_vertical_displacement_y", default_vertical_displacement_y
-        )
-        internal_frozen_setattr(self, "default_vertical_origin_y", default_vertical_origin_y)
-        internal_frozen_setattr(self, "vertical_metrics", vertical_metrics)
+        frozen_setattr(self, "widths", widths)
+        frozen_setattr(self, "default_width", default_width)
+        frozen_setattr(self, "default_width_explicit", default_width_explicit)
+        frozen_setattr(self, "default_vertical_displacement_y", default_vertical_displacement_y)
+        frozen_setattr(self, "default_vertical_origin_y", default_vertical_origin_y)
+        frozen_setattr(self, "vertical_metrics", vertical_metrics)
 
     def __repr__(self) -> str:
         return (
@@ -182,7 +180,7 @@ class FontMetrics:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         widths = changes.pop("widths", self.widths)
@@ -264,7 +262,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             vy,
             vertical,
         )
-    descriptor = internal_font_descriptor(font.get("FontDescriptor")) or {}
+    descriptor = font_descriptor(font.get("FontDescriptor")) or {}
     missing_width = descriptor.get("MissingWidth")
     default = (
         0.0 if missing_width is None else require_pdf_number(missing_width, "invalid MissingWidth")

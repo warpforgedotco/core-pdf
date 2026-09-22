@@ -223,7 +223,7 @@ class RecordingMethods(RecoveringTextState):
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
-        if self.internal_text_paint_mode(check_colorants=False) in NON_PAINTING_RENDER_MODES:
+        if self.text_paint_mode(check_colorants=False) in NON_PAINTING_RENDER_MODES:
             return False
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
@@ -268,7 +268,7 @@ class RecordingMethods(RecoveringTextState):
         scale = self.graphics_scale()
         return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 
-    def internal_is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
+    def is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
         for clip in (self.clip_bbox, self.page_clip):
             if clip is None:
                 continue
@@ -277,15 +277,15 @@ class RecordingMethods(RecoveringTextState):
         return False
 
     def update_pending_run(self, new_run: TextRun) -> None:
-        if not self.internal_is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
+        if not self.is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
             self.run_accumulator.append(new_run)
 
-    def internal_glyph_paint(self, fill_color: tuple[float, ...] | None) -> GlyphPaint:
+    def glyph_paint(self, fill_color: tuple[float, ...] | None) -> GlyphPaint:
         return GlyphPaint(
             clip_bbox=self.clip_bbox,
             page_clip=self.page_clip,
             fill=fill_color,
-            render_mode=self.internal_text_paint_mode(),
+            render_mode=self.text_paint_mode(),
             fill_opacity=self.graphics.fill_opacity,
             stroke_color=self.capture_color(stroke=True),
             stroke_opacity=self.graphics.stroke_opacity,
@@ -334,7 +334,7 @@ class RecordingMethods(RecoveringTextState):
             effective_font_height=effective_font_height,
         )
         if paint is None:
-            paint = self.internal_glyph_paint(fill_color)
+            paint = self.glyph_paint(fill_color)
         provenance = (
             ("source", self.capture_source),
             ("stream_order", self.stream_order),
@@ -398,7 +398,7 @@ class RecordingMethods(RecoveringTextState):
             )
         )
 
-    def internal_emit_clip_scope_push(self) -> None:
+    def emit_clip_scope_push(self) -> None:
         if not self.capture_graphics_stack or self.capture_graphics_stack[-1].clip_scope_emitted:
             return
         self.capture_graphics_stack[-1].clip_scope_emitted = True
@@ -421,7 +421,7 @@ class RecordingMethods(RecoveringTextState):
         decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         visible = self.is_text_visible(text)
         if 4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible():
-            self.internal_emit_clip_scope_push()
+            self.emit_clip_scope_push()
 
         fs = self.graphics.font_size
         rise = self.graphics.rise
@@ -579,10 +579,8 @@ class RecordingMethods(RecoveringTextState):
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not self.is_graphics_visible():
             return
-        fills = kind in {"fill", "fillstroke"} and not self.internal_initial_pattern(stroke=False)
-        strokes = kind in {"stroke", "fillstroke"} and not self.internal_initial_pattern(
-            stroke=True
-        )
+        fills = kind in {"fill", "fillstroke"} and not self.initial_pattern(stroke=False)
+        strokes = kind in {"stroke", "fillstroke"} and not self.initial_pattern(stroke=True)
         if not fills and not strokes:
             return
         kind = "fillstroke" if fills and strokes else "fill" if fills else "stroke"
@@ -642,7 +640,7 @@ class RecordingMethods(RecoveringTextState):
         if clip_bbox is not None:
             self.clip_bbox = intersect_bbox(self.clip_bbox, clip_bbox)
         if self.is_graphics_visible():
-            self.internal_emit_clip_scope_push()
+            self.emit_clip_scope_push()
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
@@ -678,7 +676,7 @@ class RecordingMethods(RecoveringTextState):
         xobj_dict = xobj.dictionary
         if self.is_graphics_visible():
             image_is_stencil = self.resolver.resolve(xobj_dict.get("ImageMask")) is True
-            if image_is_stencil and self.internal_initial_pattern(stroke=False):
+            if image_is_stencil and self.initial_pattern(stroke=False):
                 return
             width = self.resolver.resolve_int(xobj_dict.get("Width")) or 0
             height = self.resolver.resolve_int(xobj_dict.get("Height")) or 0
@@ -721,7 +719,7 @@ class RecordingMethods(RecoveringTextState):
     def paint_inline_image(self, state: object, image: InlineImage) -> None:
         if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
-            if dictionary.get("ImageMask") is True and self.internal_initial_pattern(stroke=False):
+            if dictionary.get("ImageMask") is True and self.initial_pattern(stroke=False):
                 return
             data = getattr(image, "data", b"")
             color_name = recover_pdf_name(dictionary.get("ColorSpace"))
@@ -952,17 +950,17 @@ class RecordingMethods(RecoveringTextState):
             self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
 
-    def internal_initial_pattern(self, *, stroke: bool) -> bool:
+    def initial_pattern(self, *, stroke: bool) -> bool:
         space = self.graphics.stroke_space if stroke else self.graphics.fill_space
         pattern = self.graphics.stroke_pattern if stroke else self.graphics.fill_pattern
         return space.kind == "Pattern" and pattern is None
 
-    def internal_text_paint_mode(self, *, check_colorants: bool = True) -> int:
+    def text_paint_mode(self, *, check_colorants: bool = True) -> int:
         mode = self.graphics.render_mode
         if mode not in range(8):
             return mode
-        fills = mode in {0, 2, 4, 6} and not self.internal_initial_pattern(stroke=False)
-        strokes = mode in {1, 2, 5, 6} and not self.internal_initial_pattern(stroke=True)
+        fills = mode in {0, 2, 4, 6} and not self.initial_pattern(stroke=False)
+        strokes = mode in {1, 2, 5, 6} and not self.initial_pattern(stroke=True)
         if check_colorants:
             fills = fills and color_space_paints(self.graphics.fill_space)
             strokes = strokes and color_space_paints(self.graphics.stroke_space)

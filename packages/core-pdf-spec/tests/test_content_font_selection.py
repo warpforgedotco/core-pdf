@@ -169,8 +169,8 @@ def test_type3_resource_scope_distinguishes_absent_and_empty(scope: str) -> None
     )
     if "empty" in scope:
         with pytest.raises(PdfParseError, match="XObject resource must be a stream"):
-            state.internal_render_type3_glyphs(b"A", cast(Any, decoder))
+            state.render_type3_glyphs(b"A", cast(Any, decoder))
         assert cast(Sink, state.sink).images == []
     else:
-        state.internal_render_type3_glyphs(b"A", cast(Any, decoder))
+        state.render_type3_glyphs(b"A", cast(Any, decoder))
         assert cast(Sink, state.sink).images == [outer if scope == "absent" else local]

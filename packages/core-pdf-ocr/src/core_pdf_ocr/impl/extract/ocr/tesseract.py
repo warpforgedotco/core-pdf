@@ -27,30 +27,30 @@ from core_pdf.impl.runtime.array_views import contiguous_bytes, finite_median
 from core_pdf_ocr.impl.extract.contracts import PRIMARY_OCR_PIXELS, ObservationSource
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_smooth
 from core_pdf_ocr.impl.extract.ocr.types import (
-    internal_map_ocr_box,
-    internal_OcrTask,
-    internal_Raster,
-    internal_raster_rectangle_page_box,
+    OcrTask,
+    Raster,
+    map_ocr_box,
+    raster_rectangle_page_box,
 )
-from core_pdf_ocr.impl.extract.quality import internal_Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.quality import Candidate, internal_candidate
 
 os.environ["OMP_THREAD_LIMIT"] = "1"
 
-internal_OCR_SIGNALS_READY = False
-internal_MAIN_THREAD_MESSAGE = (
+OCR_SIGNALS_READY = False
+MAIN_THREAD_MESSAGE = (
     "core_pdf must initialize OCR on the main thread; import PdfDocument before starting OCR"
 )
 
 
-def internal_prepare_ocr_signals() -> None:
-    global internal_OCR_SIGNALS_READY
-    if internal_OCR_SIGNALS_READY:
+def prepare_ocr_signals() -> None:
+    global OCR_SIGNALS_READY
+    if OCR_SIGNALS_READY:
         return
     if threading.current_thread() is not threading.main_thread():
-        raise RuntimeError(internal_MAIN_THREAD_MESSAGE)
+        raise RuntimeError(MAIN_THREAD_MESSAGE)
     with suppress(ImportError):
         import_module("cysignals.signals")
-    internal_OCR_SIGNALS_READY = True
+    OCR_SIGNALS_READY = True
 
 
 OCR_TIMEOUT_MILLISECONDS = 12_000
@@ -59,30 +59,30 @@ OCR_TIMEOUT_MAX_MILLISECONDS = 30_000
 OCR_TIMEOUT_RETRY_PIXELS = 4_000_000
 
 
-def internal_import_tesserocr() -> Any:
+def import_tesserocr() -> Any:
     if "tesserocr" not in sys.modules:
-        internal_prepare_ocr_signals()
+        prepare_ocr_signals()
     return import_module("tesserocr")
 
 
-def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
+def valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
     candidate = Path(path).expanduser()
     if (candidate / "eng.traineddata").is_file():
         return candidate.resolve()
     return None
 
 
-def internal_tessdata_path() -> str:
-    resolved_path, error_message = internal_resolve_tessdata_path()
+def tessdata_path() -> str:
+    resolved_path, error_message = resolve_tessdata_path()
     if resolved_path is None:
         raise RuntimeError(error_message)
     return resolved_path
 
 
-def internal_resolve_tessdata_path() -> tuple[str | None, str]:
+def resolve_tessdata_path() -> tuple[str | None, str]:
     configured = os.environ.get("TESSDATA_PREFIX")
     if configured:
-        resolved = internal_valid_tessdata_path(configured)
+        resolved = valid_tessdata_path(configured)
         if resolved is None:
             return (
                 None,
@@ -91,11 +91,11 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
         return str(resolved), ""
 
     try:
-        default_path, languages = internal_import_tesserocr().get_languages()
+        default_path, languages = import_tesserocr().get_languages()
     except RuntimeError:
         default_path, languages = "", ()
     if "eng" in languages:
-        resolved = internal_valid_tessdata_path(default_path)
+        resolved = valid_tessdata_path(default_path)
         if resolved is not None:
             return str(resolved), ""
 
@@ -115,7 +115,7 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
             output = f"{completed.stdout}\n{completed.stderr}"
             match = re.search(r'List of available languages in "([^"]+)"', output)
             if match is not None:
-                resolved = internal_valid_tessdata_path(match.group(1))
+                resolved = valid_tessdata_path(match.group(1))
                 if resolved is not None:
                     return str(resolved), ""
 
@@ -127,9 +127,9 @@ def internal_resolve_tessdata_path() -> tuple[str | None, str]:
 
 
 def internal_api(mode: int) -> Any:
-    tesserocr = internal_import_tesserocr()
+    tesserocr = import_tesserocr()
     api = tesserocr.PyTessBaseAPI(
-        path=internal_tessdata_path(),
+        path=tessdata_path(),
         psm=mode,
         oem=tesserocr.OEM.LSTM_ONLY,
     )
@@ -139,21 +139,21 @@ def internal_api(mode: int) -> Any:
     return api
 
 
-internal_HOCR_BBOX_RE = re.compile(r"bbox (\d+) (\d+) (\d+) (\d+)")
-internal_HOCR_CONFIDENCE_RE = re.compile(r"(?:x_conf|x_wconf) (-?\d+(?:\.\d+)?)")
+HOCR_BBOX_RE = re.compile(r"bbox (\d+) (\d+) (\d+) (\d+)")
+HOCR_CONFIDENCE_RE = re.compile(r"(?:x_conf|x_wconf) (-?\d+(?:\.\d+)?)")
 
 
-class internal_HocrCharacterParser(HTMLParser):
+class HocrCharacterParser(HTMLParser):
     def __init__(self, threshold: float) -> None:
         super().__init__(convert_charrefs=True)
         self.threshold = threshold
         self.lines: dict[tuple[int, int, int, int], str] = {}
-        self.internal_line_box: tuple[int, int, int, int] | None = None
-        self.internal_words: list[str] = []
+        self.line_box: tuple[int, int, int, int] | None = None
+        self.words: list[str] = []
         self.internal_chars: list[str] = []
-        self.internal_char_confidence = threshold
-        self.internal_in_char = False
-        self.internal_in_word = False
+        self.char_confidence = threshold
+        self.in_char = False
+        self.in_word = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "span":
@@ -166,42 +166,40 @@ class internal_HocrCharacterParser(HTMLParser):
                 title = value or ""
         classes = class_value.split()
         if "ocr_line" in classes:
-            match = internal_HOCR_BBOX_RE.search(title)
-            self.internal_line_box = None
+            match = HOCR_BBOX_RE.search(title)
+            self.line_box = None
             if match:
                 left, top, right, bottom = (int(value) for value in match.groups())
-                self.internal_line_box = (left, top, right, bottom)
-            self.internal_words = []
+                self.line_box = (left, top, right, bottom)
+            self.words = []
         elif "ocrx_word" in classes:
-            self.internal_in_word = True
+            self.in_word = True
             self.internal_chars = []
-        elif "ocrx_cinfo" in classes and self.internal_in_word:
-            match = internal_HOCR_CONFIDENCE_RE.search(title)
-            self.internal_char_confidence = float(match.group(1)) if match else 0.0
-            self.internal_in_char = True
+        elif "ocrx_cinfo" in classes and self.in_word:
+            match = HOCR_CONFIDENCE_RE.search(title)
+            self.char_confidence = float(match.group(1)) if match else 0.0
+            self.in_char = True
 
     def handle_data(self, data: str) -> None:
-        if self.internal_in_char and self.internal_char_confidence >= self.threshold:
+        if self.in_char and self.char_confidence >= self.threshold:
             self.internal_chars.append(data)
 
     def handle_endtag(self, tag: str) -> None:
         if tag != "span":
             return
-        if self.internal_in_char:
-            self.internal_in_char = False
-        elif self.internal_in_word:
-            self.internal_words.append("".join(self.internal_chars))
+        if self.in_char:
+            self.in_char = False
+        elif self.in_word:
+            self.words.append("".join(self.internal_chars))
             self.internal_chars = []
-            self.internal_in_word = False
-        elif self.internal_line_box is not None:
-            text = " ".join(word for word in self.internal_words if word).strip()
-            self.lines[self.internal_line_box] = text
-            self.internal_line_box = None
+            self.in_word = False
+        elif self.line_box is not None:
+            text = " ".join(word for word in self.words if word).strip()
+            self.lines[self.line_box] = text
+            self.line_box = None
 
 
-def internal_hocr_filtered_lines(
-    api: Any, threshold: float | None
-) -> dict[tuple[int, int, int, int], str]:
+def hocr_filtered_lines(api: Any, threshold: float | None) -> dict[tuple[int, int, int, int], str]:
     if threshold is None or not hasattr(api, "GetHOCRText"):
         return {}
     try:
@@ -210,14 +208,12 @@ def internal_hocr_filtered_lines(
         return {}
     if not hocr:
         return {}
-    parser = internal_HocrCharacterParser(threshold)
+    parser = HocrCharacterParser(threshold)
     parser.feed(hocr.decode("utf-8", "replace") if isinstance(hocr, bytes) else hocr)
     return parser.lines
 
 
-def internal_acceptable_text(
-    text: str, confidence: float, minimum_confidence: float = 20.0
-) -> bool:
+def acceptable_text(text: str, confidence: float, minimum_confidence: float = 20.0) -> bool:
     if not math.isfinite(confidence) or confidence < minimum_confidence or not text:
         return False
     stripped = collapse_ws(text)
@@ -258,10 +254,10 @@ def internal_acceptable_text(
     return not (length >= 8 and same_char_count == length)
 
 
-def internal_select_character_filtered_candidate(
-    raw: internal_Candidate,
-    filtered: internal_Candidate,
-) -> internal_Candidate:
+def select_character_filtered_candidate(
+    raw: Candidate,
+    filtered: Candidate,
+) -> Candidate:
     raw_metrics = raw.metrics
     filtered_metrics = filtered.metrics
     if not len(filtered.observations):
@@ -275,11 +271,11 @@ def internal_select_character_filtered_candidate(
     return filtered
 
 
-def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> ObservationBatch:
+def recognized_symbols(api: Any, task: OcrTask) -> ObservationBatch:
     iterator = api.GetIterator()
     if iterator is None:
         return ObservationBatch.empty()
-    level = internal_import_tesserocr().RIL.SYMBOL
+    level = import_tesserocr().RIL.SYMBOL
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     confidences: list[float] = []
@@ -294,7 +290,7 @@ def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> Observation
             bbox = None
         if bbox is not None and len(text) == 1 and text.isprintable() and math.isfinite(confidence):
             texts.append(text)
-            boxes.append(internal_map_ocr_box(task, bbox))
+            boxes.append(map_ocr_box(task, bbox))
             confidences.append(confidence)
         if not iterator.Next(level):
             break
@@ -308,7 +304,7 @@ def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> Observation
 
 
 @contextmanager
-def internal_suppress_c_stderr() -> Iterator[None]:
+def suppress_c_stderr() -> Iterator[None]:
     devnull_fd = None
     stderr_fd = None
     with suppress(OSError):
@@ -327,7 +323,7 @@ def internal_suppress_c_stderr() -> Iterator[None]:
                 os.close(devnull_fd)
 
 
-def internal_recognition_timeout(task: internal_OcrTask) -> int:
+def recognition_timeout(task: OcrTask) -> int:
     pixels = max(1, task.rectangle[2] * task.rectangle[3])
     excess_megapixels = max(0, pixels - PRIMARY_OCR_PIXELS) / 1_000_000
     budget = OCR_TIMEOUT_MILLISECONDS + int(
@@ -337,7 +333,7 @@ def internal_recognition_timeout(task: internal_OcrTask) -> int:
 
 
 @contextmanager
-def internal_owned_api(mode: int) -> Iterator[Any]:
+def owned_api(mode: int) -> Iterator[Any]:
     api = internal_api(mode)
     try:
         yield api
@@ -347,16 +343,16 @@ def internal_owned_api(mode: int) -> Iterator[Any]:
             end()
 
 
-def internal_recognize(
-    task: internal_OcrTask,
+def recognize(
+    task: OcrTask,
     *,
     api_override: Any | None = None,
     image_prepared: bool = False,
-) -> internal_Candidate:
+) -> Candidate:
     if api_override is None:
-        with internal_owned_api(task.mode) as api:
-            return internal_recognize(task, api_override=api, image_prepared=image_prepared)
-    tesserocr = internal_import_tesserocr()
+        with owned_api(task.mode) as api:
+            return recognize(task, api_override=api, image_prepared=image_prepared)
+    tesserocr = import_tesserocr()
     api = api_override
     api.SetPageSegMode(task.mode)
     if not image_prepared:
@@ -375,12 +371,12 @@ def internal_recognize(
     w = max(1, int(right - x0))
     h = max(1, int(bottom - y0))
     if image_prepared or (x0, y0, w, h) != (0, 0, task.image.width, task.image.height):
-        with internal_suppress_c_stderr():
+        with suppress_c_stderr():
             api.SetRectangle(x0, y0, w, h)
     api.SetSourceResolution(task.resolution)
-    timeout_milliseconds = internal_recognition_timeout(task)
+    timeout_milliseconds = recognition_timeout(task)
     recognition_started = time.perf_counter()
-    with internal_suppress_c_stderr():
+    with suppress_c_stderr():
         recognized = api.Recognize(timeout=timeout_milliseconds)
     recognition_elapsed = time.perf_counter() - recognition_started
     if recognized:
@@ -394,7 +390,7 @@ def internal_recognize(
     filtered_lines = (
         {}
         if task.recognize_words
-        else internal_hocr_filtered_lines(api, task.character_confidence_threshold)
+        else hocr_filtered_lines(api, task.character_confidence_threshold)
     )
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
@@ -423,7 +419,7 @@ def internal_recognize(
                 confidence = 0.0
                 bbox = None
             text = collapse_ws(text)
-            if bbox is not None and internal_acceptable_text(
+            if bbox is not None and acceptable_text(
                 text,
                 confidence,
                 task.minimum_confidence,
@@ -433,12 +429,12 @@ def internal_recognize(
                 filtered = filtered_lines.get(bbox_key)
                 filtered_text = collapse_ws(filtered) if filtered is not None else text
                 texts.append(text)
-                mapped_box = internal_map_ocr_box(task, (x0, y0, x1, y1))
+                mapped_box = map_ocr_box(task, (x0, y0, x1, y1))
                 boxes.append(mapped_box)
                 confidences.append(confidence)
                 line_breaks.append(pending_line_break)
                 pending_line_break = False
-                if internal_acceptable_text(
+                if acceptable_text(
                     filtered_text,
                     confidence,
                     task.minimum_confidence,
@@ -451,7 +447,7 @@ def internal_recognize(
             if not iterator.Next(level):
                 break
     symbols = (
-        internal_recognized_symbols(api, task)
+        recognized_symbols(api, task)
         if recognized and task.collect_symbols
         else ObservationBatch.empty()
     )
@@ -493,29 +489,29 @@ def internal_recognize(
         recognition_status=recognition_status,
         median_text_height=median_text_height,
     )
-    return internal_select_character_filtered_candidate(candidate, filtered_candidate)
+    return select_character_filtered_candidate(candidate, filtered_candidate)
 
 
-def internal_recognize_group(
-    tasks: tuple[internal_OcrTask, ...],
+def recognize_group(
+    tasks: tuple[OcrTask, ...],
     *,
     raise_if_cancelled: Callable[[], None] | None = None,
-) -> tuple[internal_Candidate, ...]:
+) -> tuple[Candidate, ...]:
     if not tasks:
         return ()
     if raise_if_cancelled is not None:
         raise_if_cancelled()
     first = tasks[0]
-    with internal_owned_api(first.mode) as api:
-        candidates = [internal_recognize(first, api_override=api)]
+    with owned_api(first.mode) as api:
+        candidates = [recognize(first, api_override=api)]
         for task in tasks[1:]:
             if raise_if_cancelled is not None:
                 raise_if_cancelled()
-            candidates.append(internal_recognize(task, api_override=api, image_prepared=True))
+            candidates.append(recognize(task, api_override=api, image_prepared=True))
         return tuple(candidates)
 
 
-def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask | None:
+def timeout_recovery_task(task: OcrTask) -> OcrTask | None:
     x, y, width, height = task.rectangle
     pixels = max(1, width * height)
     if pixels <= OCR_TIMEOUT_RETRY_PIXELS:
@@ -537,8 +533,8 @@ def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask |
         target_height,
         task.image.channels,
     )
-    page_box = internal_raster_rectangle_page_box(
-        internal_Raster(task.image, task.resolution),
+    page_box = raster_rectangle_page_box(
+        Raster(task.image, task.resolution),
         task.page_box,
         task.rectangle,
     )
@@ -551,17 +547,17 @@ def internal_timeout_recovery_task(task: internal_OcrTask) -> internal_OcrTask |
     )
 
 
-def internal_recover_timed_out_tasks(
-    tasks: tuple[internal_OcrTask, ...],
-    candidates: tuple[internal_Candidate, ...],
-    recognize: Callable[[tuple[internal_OcrTask, ...]], tuple[internal_Candidate, ...]],
-) -> tuple[internal_Candidate, ...]:
+def recover_timed_out_tasks(
+    tasks: tuple[OcrTask, ...],
+    candidates: tuple[Candidate, ...],
+    recognize: Callable[[tuple[OcrTask, ...]], tuple[Candidate, ...]],
+) -> tuple[Candidate, ...]:
     retry_indexes: list[int] = []
-    retry_tasks: list[internal_OcrTask] = []
+    retry_tasks: list[OcrTask] = []
     for index, (task, candidate) in enumerate(zip(tasks, candidates, strict=False)):
         if candidate.recognition_status != "timeout" or len(candidate.observations):
             continue
-        retry = internal_timeout_recovery_task(task)
+        retry = timeout_recovery_task(task)
         if retry is not None:
             retry_indexes.append(index)
             retry_tasks.append(retry)

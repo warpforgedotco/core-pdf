@@ -160,7 +160,7 @@ def test_profile_skips_missing_paths_bounds_and_invalid_indexes() -> None:
         == strokes.StrokedTextProfile()
     )
     with pytest.raises(ValueError, match="empty group"):
-        strokes.internal_required_bbox(())
+        strokes.required_bbox(())
 
 
 def test_isolated_glyphs_are_separate_from_multi_glyph_seed_runs() -> None:
@@ -180,7 +180,7 @@ def test_conflicting_anchored_words_do_not_teach_an_ambiguous_glyph() -> None:
     assert [o.text for o in decoded.observations] == ["AB", "AB"]
 
 
-def internal_single(
+def single(
     points: list[tuple[float, float]], *, closed: bool = False
 ) -> strokes.StrokedTextProfile:
     drawing = CapturedDrawing(
@@ -189,16 +189,16 @@ def internal_single(
     return strokes.profile_stroked_text((drawing,), (0,))
 
 
-def internal_signature(profile: strokes.StrokedTextProfile) -> strokes.GlyphSignature:
+def signature(profile: strokes.StrokedTextProfile) -> strokes.GlyphSignature:
     signature = profile.run_profiles[0].signatures[0]
     assert signature is not None
     return signature
 
 
 def test_approximate_mapping_accepts_small_unique_variants_without_mutating_input() -> None:
-    exact = internal_single([(0, 4), (1, 0), (2, 4)])
-    variant = internal_single([(0, 4), (1.12, 0), (2, 4)])
-    mapping = {internal_signature(exact): "A"}
+    exact = single([(0, 4), (1, 0), (2, 4)])
+    variant = single([(0, 4), (1.12, 0), (2, 4)])
+    mapping = {signature(exact): "A"}
     decoded = strokes.decode_stroked_text_profile_with_alphabet(variant, mapping)
     assert [o.text for o in decoded.observations] == ["A"]
     assert decoded.approximate_signatures == 1
@@ -207,15 +207,15 @@ def test_approximate_mapping_accepts_small_unique_variants_without_mutating_inpu
 
 
 def test_approximate_mapping_rejects_multiple_labels_and_excessive_distance() -> None:
-    left = internal_single([(0, 4), (0.88, 0), (2, 4)])
-    center = internal_single([(0, 4), (1, 0), (2, 4)])
-    right = internal_single([(0, 4), (1.12, 0), (2, 4)])
-    ambiguous = {internal_signature(left): "A", internal_signature(right): "X"}
+    left = single([(0, 4), (0.88, 0), (2, 4)])
+    center = single([(0, 4), (1, 0), (2, 4)])
+    right = single([(0, 4), (1.12, 0), (2, 4)])
+    ambiguous = {signature(left): "A", signature(right): "X"}
     assert strokes.decode_stroked_text_profile_with_alphabet(center, ambiguous).observations == ()
-    far = internal_single([(0, 4), (1.5, 0), (2, 4)])
+    far = single([(0, 4), (1.5, 0), (2, 4)])
     assert (
         strokes.decode_stroked_text_profile_with_alphabet(
-            far, {internal_signature(center): "A"}
+            far, {signature(center): "A"}
         ).observations
         == ()
     )
@@ -227,12 +227,12 @@ def test_approximate_mapping_rejects_multiple_labels_and_excessive_distance() ->
 def test_signature_comparison_requires_same_topology(
     points: list[tuple[float, float]], closed: bool
 ) -> None:
-    original = internal_signature(internal_single([(0, 4), (1, 0), (2, 4)]))
-    different = internal_signature(internal_single(points, closed=closed))
-    assert strokes.internal_signature_distance(original, different) is None
-    assert strokes.internal_signature_distance(original, ()) is None
-    assert strokes.internal_signature_distance(original, ((),)) is None
-    assert strokes.internal_signature_distance((), ()) == (0, 0)
+    original = signature(single([(0, 4), (1, 0), (2, 4)]))
+    different = signature(single(points, closed=closed))
+    assert strokes.signature_distance(original, different) is None
+    assert strokes.signature_distance(original, ()) is None
+    assert strokes.signature_distance(original, ((),)) is None
+    assert strokes.signature_distance((), ()) == (0, 0)
 
 
 @pytest.mark.parametrize(
@@ -242,11 +242,9 @@ def test_signature_comparison_requires_same_topology(
 def test_isolated_run_requires_glyph_like_dimensions(
     width: float, height: float, isolated: bool
 ) -> None:
-    profile = internal_single([(0, 0), (width, height)])
+    profile = single([(0, 0), (width, height)])
     assert bool(strokes.stroked_text_isolated_runs(profile)) is isolated
-    decoded = strokes.decode_stroked_text_profile_with_alphabet(
-        profile, {internal_signature(profile): "I"}
-    )
+    decoded = strokes.decode_stroked_text_profile_with_alphabet(profile, {signature(profile): "I"})
     if width / height < 0.25:
         assert decoded.observations == ()
 
@@ -283,7 +281,7 @@ def test_overlapping_path_components_form_one_glyph() -> None:
     profile = strokes.profile_stroked_text(drawings, (0, 1, 2))
     assert profile.seed_runs[0].glyph_count == 2
     assert len(profile.run_profiles[0].glyphs[0]) == 2
-    records = strokes.internal_group_overlapping_x(profile.records)
+    records = strokes.group_overlapping_x(profile.records)
     assert [len(glyph) for glyph in records] == [2, 1]
     separated = strokes.profile_stroked_text(drawings, (0, 2))
     assert len(separated.run_profiles) == 2
@@ -339,14 +337,14 @@ def test_anchored_learning_reaches_all_supported_glyphs_in_long_chain() -> None:
     }
     words = ("AB", "AB", *(alphabet[i : i + 3] for i in range(1, 20, 2)))
     samples = tuple(
-        strokes.internal_SeedSample(
+        strokes.SeedSample(
             strokes.StrokedTextSeed(word, (0, 0, 5, 4), 95, 1 if i == 1 else 0),
             word,
             tuple(signatures[char] for char in word),
         )
         for i, word in enumerate(words)
     )
-    mapping, initial, accepted = strokes.internal_consensus_mapping(samples)
+    mapping, initial, accepted = strokes.consensus_mapping(samples)
     assert initial == 2
     assert mapping == {signature: char for char, signature in signatures.items()}
     assert accepted == 2

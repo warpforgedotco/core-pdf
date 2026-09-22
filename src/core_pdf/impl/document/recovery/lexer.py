@@ -56,12 +56,12 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 }
 
 
-def internal_reader_lexical_rules(rules: LexicalRules) -> LexicalRules:
+def reader_lexical_rules(rules: LexicalRules) -> LexicalRules:
     return replace(rules, whitespace=WHITESPACE, canonical_identifiers=False)
 
 
-internal_READER_RULES: dict[LexicalRules, LexicalRules] = {
-    rules: internal_reader_lexical_rules(rules)
+READER_RULES: dict[LexicalRules, LexicalRules] = {
+    rules: reader_lexical_rules(rules)
     for rules in {
         lexical_rules(None),
         *(
@@ -72,11 +72,11 @@ internal_READER_RULES: dict[LexicalRules, LexicalRules] = {
 }
 
 
-def internal_drop_unknown_escape(_byte: int) -> bytes:
+def drop_unknown_escape(_byte: int) -> bytes:
     return b""
 
 
-def internal_reader_eol_pair(first: int, second: int) -> bool:
+def reader_eol_pair(first: int, second: int) -> bool:
     return (first == 13 and second == 10) or (first == 10 and second == 13)
 
 
@@ -108,8 +108,8 @@ class PdfLexer(SyntaxLexer):
         if context is not None and (context.version is None or not context.version.recognized):
             context = None
         rules = lexical_rules(context)
-        reader_rules = internal_READER_RULES.get(rules)
-        return internal_reader_lexical_rules(rules) if reader_rules is None else reader_rules
+        reader_rules = READER_RULES.get(rules)
+        return reader_lexical_rules(rules) if reader_rules is None else reader_rules
 
     def read_string(
         self,
@@ -123,8 +123,8 @@ class PdfLexer(SyntaxLexer):
             source if type(source) is bytes else self.raw_data,
             self.pos,
             self.data_len,
-            unknown_escape=internal_drop_unknown_escape if drop_unknown_escapes else unknown_escape,
-            eol_pair=internal_reader_eol_pair if eol_pair is None else eol_pair,
+            unknown_escape=drop_unknown_escape if drop_unknown_escapes else unknown_escape,
+            eol_pair=reader_eol_pair if eol_pair is None else eol_pair,
         )
         if value is None:
             raise PdfParseError("unterminated string")
@@ -263,14 +263,14 @@ class PdfLexer(SyntaxLexer):
         data_start = self.pos
         raw_data: bytes | memoryview
         if type(length) is not int or length < 0:
-            recovered = self.internal_recover_stream_data(data_start)
+            recovered = self.recover_stream_data(data_start)
             if recovered is None:
                 raise PdfParseError("invalid stream length")
             raw_data = recovered
         else:
             raw_data = self.read_bytes(length)
             if len(raw_data) != length:
-                recovered = self.internal_recover_stream_data(data_start)
+                recovered = self.recover_stream_data(data_start)
                 if recovered is None:
                     raw_data = bytes(raw_data)
                     self.rewind(self.data_len)
@@ -278,25 +278,25 @@ class PdfLexer(SyntaxLexer):
                     raw_data = recovered
             else:
                 self.pos = self.skip_ignored_at(self.pos)
-                if not self.internal_at_endstream():
-                    recovered = self.internal_recover_stream_data(data_start, preferred=self.pos)
+                if not self.at_endstream():
+                    recovered = self.recover_stream_data(data_start, preferred=self.pos)
                     if recovered is None:
                         self.rewind(self.data_len)
                     else:
                         raw_data = recovered
-        if self.internal_at_endstream():
+        if self.at_endstream():
             self.advance(9)
 
         return raw_data
 
-    def internal_at_endstream(self) -> bool:
+    def at_endstream(self) -> bool:
         return self.raw_data[
             self.pos : self.pos + 9
         ] == b"endstream" or matches_keyword_with_one_substitution(
             self.raw_data, self.pos, b"endstream"
         )
 
-    def internal_recover_stream_data(
+    def recover_stream_data(
         self, data_start: int, *, preferred: int | None = None
     ) -> bytes | memoryview | None:
         endstream_pos = self.find_stream_end(data_start, preferred=preferred)
@@ -309,7 +309,7 @@ class PdfLexer(SyntaxLexer):
             return self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
         return None
 
-    def internal_find_keyword_candidate(
+    def find_keyword_candidate(
         self,
         keyword: bytes,
         start: int,
@@ -350,7 +350,7 @@ class PdfLexer(SyntaxLexer):
         source_buffer = self.source_buffer
         search_buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
         search_start = data_start if preferred is None else preferred
-        candidate, raw_candidate = self.internal_find_keyword_candidate(
+        candidate, raw_candidate = self.find_keyword_candidate(
             b"endstream",
             search_start,
             self.data_len,
@@ -361,7 +361,7 @@ class PdfLexer(SyntaxLexer):
         if preferred is None:
             return candidate if candidate >= 0 else raw_candidate
 
-        previous, previous_raw = self.internal_find_keyword_candidate(
+        previous, previous_raw = self.find_keyword_candidate(
             b"endstream",
             data_start,
             preferred,
@@ -380,7 +380,7 @@ class PdfLexer(SyntaxLexer):
         return raw_candidate if raw_candidate >= 0 else previous_raw
 
     def find_object_end(self, data_start: int) -> int:
-        candidate, raw_candidate = self.internal_find_keyword_candidate(
+        candidate, raw_candidate = self.find_keyword_candidate(
             b"endobj",
             data_start,
             self.data_len,

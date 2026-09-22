@@ -15,7 +15,7 @@ from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, merge_xref_sections
 
 
-def internal_pdfminer_resolvable_pages(  # noqa: C901
+def pdfminer_resolvable_pages(  # noqa: C901
     document: PdfDocument,
 ) -> Iterator[tuple[int, PdfPage]]:
     data = bytes(document.raw_data)

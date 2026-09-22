@@ -14,12 +14,12 @@ from core_pdf.impl.capture.records import (
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import (
     RASTER_CONTROL_KINDS,
     DisplayList,
-    internal_display_item_box,
+    display_item_box,
 )
 from core_pdf.impl.render.model import (
     DisplayItem,
@@ -29,7 +29,7 @@ from core_pdf.impl.render.model import (
     RasterImage,
     RenderOptions,
 )
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.target import RasterTarget
 from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
@@ -37,7 +37,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.standards import SemanticContext
 
 
-class internal_RenderablePage(Protocol):
+class RenderablePage(Protocol):
     @property
     def width(self) -> float: ...
 
@@ -48,14 +48,14 @@ class internal_RenderablePage(Protocol):
     def media_box(self) -> tuple[float, float, float, float] | None: ...
 
 
-def internal_raster_scale(value: float) -> float:
+def raster_scale(value: float) -> float:
     scale = float(value)
     if not isfinite(scale) or scale <= 0.0:
         raise ValueError("raster scale must be a positive finite number")
     return scale
 
 
-def internal_pixel_dimension(length: float, scale: float) -> int:
+def pixel_dimension(length: float, scale: float) -> int:
     pixels = length * scale
     if not isfinite(pixels):
         raise PdfRasterTooLargeError(
@@ -172,7 +172,7 @@ class RenderedPage:
             user_unit=user_unit,
         )
 
-    def internal_render_items(
+    def render_items(
         self,
         crop: tuple[float, float, float, float] | None,
         *,
@@ -184,7 +184,7 @@ class RenderedPage:
         for item in self.display_list.items:
             if type(item) is DisplayListItem and item.kind == "text":
                 continue
-            box = internal_display_item_box(item, scale=scale)
+            box = display_item_box(item, scale=scale)
             always_render = box is None or (
                 type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS
             )
@@ -215,16 +215,16 @@ class RenderedPage:
         *,
         crop: tuple[float, float, float, float] | None = None,
     ) -> tuple[int, int]:
-        scale = internal_raster_scale(scale)
+        scale = raster_scale(scale)
         effective_crop = self.internal_effective_crop(crop)
         if effective_crop is not None:
             device_scale = scale * self.user_unit
-            width = internal_pixel_dimension(effective_crop[2] - effective_crop[0], device_scale)
-            height = internal_pixel_dimension(effective_crop[3] - effective_crop[1], device_scale)
+            width = pixel_dimension(effective_crop[2] - effective_crop[0], device_scale)
+            height = pixel_dimension(effective_crop[3] - effective_crop[1], device_scale)
             return width, height
         return (
-            internal_pixel_dimension(self.width, scale),
-            internal_pixel_dimension(self.height, scale),
+            pixel_dimension(self.width, scale),
+            pixel_dimension(self.height, scale),
         )
 
     def validate_raster_size(
@@ -253,11 +253,11 @@ class RenderedPage:
         max_pixels: int | None = None,
         crop: tuple[float, float, float, float] | None = None,
     ) -> RasterImage:
-        scale = internal_raster_scale(scale)
+        scale = raster_scale(scale)
         self.validate_raster_size(scale, max_pixels, crop=crop)
         crop = self.internal_effective_crop(crop)
         if crop is not None:
-            crop_x0, crop_y0, internal_crop_x1, crop_y1 = crop
+            crop_x0, crop_y0, crop_x1, crop_y1 = crop
         else:
             crop_x0 = 0.0
             crop_y0 = 0.0
@@ -271,14 +271,14 @@ class RenderedPage:
         page_group_alpha = self.metadata.get("group_alpha")
         if not is_pdf_number(page_group_alpha):
             page_group_alpha = None
-        clip_state = internal_ClipState(
+        clip_state = ClipState(
             crop_x0=crop_x0,
             crop_y1=crop_y1,
             scale=device_scale,
             width=width,
             height=height,
         )
-        raster_target = internal_RasterTarget(
+        raster_target = RasterTarget(
             pixels,
             page_group_alpha,
             clip=clip_state,
@@ -292,7 +292,7 @@ class RenderedPage:
             semantic_context=self.semantic_context,
         )
         rotate = self.rotate % 360
-        raster_target.paint_items(self.internal_render_items(crop, scale=device_scale))
+        raster_target.paint_items(self.render_items(crop, scale=device_scale))
         while len(raster_target.buffer_stack) > 1:
             raster_target.composite_group(raster_target.pop_group())
         if rotate in {90, 180, 270}:
@@ -333,7 +333,7 @@ class RenderedPage:
 
 
 def compose_page(
-    page: internal_RenderablePage,
+    page: RenderablePage,
     options: RenderOptions | None = None,
     *,
     page_program: PageProgram | None = None,

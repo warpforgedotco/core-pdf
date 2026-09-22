@@ -23,9 +23,9 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
     profile_stroked_text,
 )
 from core_pdf_ocr.impl.extract.ocr.types import (
-    internal_PackedStrokedTextRaster,
-    internal_Raster,
-    internal_StrokedTextCell,
+    PackedStrokedTextRaster,
+    Raster,
+    StrokedTextCell,
 )
 from core_pdf_ocr.impl.extract.quality import internal_candidate
 
@@ -42,10 +42,10 @@ def internal_batch(
 
 
 def internal_packed(
-    cells: tuple[internal_StrokedTextCell, ...],
-) -> internal_PackedStrokedTextRaster:
-    return internal_PackedStrokedTextRaster(
-        internal_Raster(RasterImage(b"\xff", 1, 1, 1), 72), (0, 0, 100, 100), cells
+    cells: tuple[StrokedTextCell, ...],
+) -> PackedStrokedTextRaster:
+    return PackedStrokedTextRaster(
+        Raster(RasterImage(b"\xff", 1, 1, 1), 72), (0, 0, 100, 100), cells
     )
 
 
@@ -55,14 +55,14 @@ def test_shelf_packing_orders_by_height_and_wraps_without_rescaling() -> None:
         StrokedTextRun((0, 0, 30, 8), (20,), 3),
         StrokedTextRun((0, 50, 20, 54), (5,), 2),
     )
-    cells, height = vector.internal_pack_stroked_text_runs(runs, width=60)
+    cells, height = vector.pack_stroked_text_runs(runs, width=60)
     assert [c.drawing_indexes for c in cells] == [(20,), (5,), (10,)]
     assert [c.packed_box for c in cells] == [(8, 8, 38, 16), (8, 24, 28, 28), (36, 24, 56, 28)]
     assert height == 36
     for cell in cells:
         assert cell.source_box[2] - cell.source_box[0] == cell.packed_box[2] - cell.packed_box[0]
         assert cell.source_box[3] - cell.source_box[1] == cell.packed_box[3] - cell.packed_box[1]
-    assert vector.internal_pack_stroked_text_runs(()) == ((), 0)
+    assert vector.pack_stroked_text_runs(()) == ((), 0)
 
 
 def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> None:
@@ -76,11 +76,11 @@ def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> 
     )
     packed = internal_packed(
         (
-            internal_StrokedTextCell((100, 200, 120, 210), (10, 10, 30, 20), (7, 8)),
-            internal_StrokedTextCell((200, 300, 220, 310), (34, 10, 54, 20), (9,)),
+            StrokedTextCell((100, 200, 120, 210), (10, 10, 30, 20), (7, 8)),
+            StrokedTextCell((200, 300, 220, 310), (34, 10, 54, 20), (9,)),
         )
     )
-    mapped, dropped = vector.internal_remap_stroked_vector_observations(observations, packed)
+    mapped, dropped = vector.remap_stroked_vector_observations(observations, packed)
     assert mapped.text == ("A1",)
     assert mapped.bbox.tolist() == [[101, 201, 105, 204]]
     assert mapped.confidence.tolist() == [91]
@@ -89,9 +89,7 @@ def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> 
     assert mapped.line_break_before.tolist() == [True]
     assert mapped.references[0] is reference
     assert dropped == 2
-    empty, count = vector.internal_remap_stroked_vector_observations(
-        observations, internal_packed(())
-    )
+    empty, count = vector.remap_stroked_vector_observations(observations, internal_packed(()))
     assert len(empty) == 0
     assert count == 3
 
@@ -109,19 +107,17 @@ def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> 
     ],
 )
 def test_isolated_pin_labels_require_short_digit_bearing_text(text: str, valid: bool) -> None:
-    assert vector.internal_isolated_pin_label(text) is valid
+    assert vector.isolated_pin_label(text) is valid
 
 
 def test_candidate_remapping_filters_words_but_retains_symbol_evidence() -> None:
     batch = internal_batch(("A", "12"), ((10, 10, 12, 12), (14, 10, 16, 12)))
     candidate = internal_candidate(6, batch, symbols=batch)
-    packed = internal_packed(
-        (internal_StrokedTextCell((100, 100, 120, 110), (8, 8, 28, 18), (5,)),)
-    )
-    result, dropped = vector.internal_remap_stroked_vector_candidate(
+    packed = internal_packed((StrokedTextCell((100, 100, 120, 110), (8, 8, 28, 18), (5,)),))
+    result, dropped = vector.remap_stroked_vector_candidate(
         candidate, packed, digit_bearing_only=True
     )
-    unfiltered, _ = vector.internal_remap_stroked_vector_candidate(candidate, packed)
+    unfiltered, _ = vector.remap_stroked_vector_candidate(candidate, packed)
     assert unfiltered.observations.text == ("A", "12")
     assert result.observations.text == ("12",)
     assert result.symbols.text == ("A", "12")
@@ -149,7 +145,7 @@ def test_bounded_edit_distance_preserves_insertions_deletions_and_substitutions(
     maximum: int,
     expected: int,
 ) -> None:
-    assert vector.internal_bounded_edit_distance(left, right, maximum) == expected
+    assert vector.bounded_edit_distance(left, right, maximum) == expected
 
 
 @pytest.mark.parametrize(
@@ -178,7 +174,7 @@ def test_vector_substitution_requires_confidence_overlap_and_lexical_agreement(
     allowed: bool,
 ) -> None:
     assert (
-        vector.internal_stroked_vector_substitution(
+        vector.stroked_vector_substitution(
             recognized,
             decoded,
             confidence=confidence,
@@ -201,14 +197,14 @@ def test_packed_decode_gate_checks_each_threshold(
         learned_signatures=learned,
         observations=(observation,) * observations,
     )
-    assert vector.internal_packed_stroked_vector_decode_gate(decoded, cells)
-    assert not vector.internal_packed_stroked_vector_decode_gate(
+    assert vector.packed_stroked_vector_decode_gate(decoded, cells)
+    assert not vector.packed_stroked_vector_decode_gate(
         replace(decoded, aligned_seeds=aligned - 1), cells
     )
-    assert not vector.internal_packed_stroked_vector_decode_gate(
+    assert not vector.packed_stroked_vector_decode_gate(
         replace(decoded, learned_signatures=learned - 1), cells
     )
-    assert not vector.internal_packed_stroked_vector_decode_gate(
+    assert not vector.packed_stroked_vector_decode_gate(
         replace(decoded, observations=decoded.observations[:-1]), cells
     )
 
@@ -266,9 +262,7 @@ def test_packed_raster_contains_ink_and_respects_pixel_budget(
     if general:
         drawings = tuple(replace(d, line_cap=0) for d in capture.program.drawings)
         capture = replace(capture, program=PageProgram(CapturedProgram(drawings=drawings)))
-    packed = vector.internal_stroked_vector_text_raster(
-        capture, 4, profile=profile, max_pixels=20000
-    )
+    packed = vector.stroked_vector_text_raster(capture, 4, profile=profile, max_pixels=20000)
     assert packed is not None
     assert len(packed.cells) == 2
     assert packed.raster.width * packed.raster.height <= 20000
@@ -282,7 +276,7 @@ def test_full_layer_raster_clips_padding_to_page_bounds(
     vector_capture: tuple[PageAnalysis, StrokedTextProfile],
 ) -> None:
     capture, _ = vector_capture
-    region = vector.internal_full_stroked_vector_text_raster(capture, 4, max_pixels=1000)
+    region = vector.full_stroked_vector_text_raster(capture, 4, max_pixels=1000)
     assert region is not None
     assert region.page_box == (0, 0, 9, 18)
     assert region.raster.width * region.raster.height <= 1000
@@ -294,12 +288,10 @@ def test_untrusted_or_absent_vector_evidence_does_not_rasterize(
     ocr_capture: PageAnalysis,
 ) -> None:
     capture, profile = vector_capture
-    assert vector.internal_stroked_vector_text_raster(ocr_capture, 2, profile=profile) is None
-    assert vector.internal_stroked_vector_text_raster(capture, 2, profile=None) is None
-    assert (
-        vector.internal_stroked_vector_text_raster(capture, 2, profile=StrokedTextProfile()) is None
-    )
-    assert vector.internal_full_stroked_vector_text_raster(ocr_capture, 2) is None
+    assert vector.stroked_vector_text_raster(ocr_capture, 2, profile=profile) is None
+    assert vector.stroked_vector_text_raster(capture, 2, profile=None) is None
+    assert vector.stroked_vector_text_raster(capture, 2, profile=StrokedTextProfile()) is None
+    assert vector.full_stroked_vector_text_raster(ocr_capture, 2) is None
 
 
 @pytest.mark.parametrize("wide", [False, True])
@@ -314,7 +306,7 @@ def test_isolated_raster_boosts_small_glyphs_and_renders_both_orientations(
     )
     capture = replace(capture, program=PageProgram(CapturedProgram(drawings=(drawing,))))
     profile = profile_stroked_text((drawing,), (0,))
-    packed = vector.internal_stroked_vector_text_raster(
+    packed = vector.stroked_vector_text_raster(
         capture, 1, profile=profile, variant="isolated", max_pixels=300000
     )
     assert packed is not None
@@ -333,13 +325,13 @@ def test_symbol_seeds_sort_characters_and_require_a_complete_known_run(
         ((3, 0, 5, 4), (0, 0, 2, 4), (0, 10, 2, 14), (3, 10, 5, 14), (0, 0, 1, 1)),
         sequences=(0, 0, 2, 2, 999),
     )
-    seeds = vector.internal_stroked_vector_symbol_seeds(profile, symbols)
+    seeds = vector.stroked_vector_symbol_seeds(profile, symbols)
     assert len(seeds) == 1
     assert seeds[0].text == "AB"
     assert seeds[0].sequence == 0
     assert seeds[0].bbox == (0, 0, 5, 4)
     assert seeds[0].confidence == 95
-    assert vector.internal_stroked_vector_symbol_seeds(profile, ObservationBatch.empty()) == ()
+    assert vector.stroked_vector_symbol_seeds(profile, ObservationBatch.empty()) == ()
 
 
 @pytest.mark.parametrize("with_symbols", [False, True])
@@ -350,19 +342,16 @@ def test_vector_adapter_learns_from_words_and_supplemental_symbols(
     _, profile = vector_capture
     words = internal_batch(("AB", "AB"), ((0, 0, 5, 4), (0, 10, 5, 14)), sequences=(0, 2))
     symbols = internal_batch(("A", "B"), ((0, 10, 2, 14), (3, 10, 5, 14)), sequences=(2, 2))
-    decoded = vector.internal_decode_stroked_vector_text(
-        profile, words, symbols if with_symbols else None
-    )
+    decoded = vector.decode_stroked_vector_text(profile, words, symbols if with_symbols else None)
     assert [o.text for o in decoded.observations] == ["AB", "AB"]
     assert decoded.learned_signatures == 2
-    result, alphabet = vector.internal_recover_stroked_vector_text(profile, words)
+    result, alphabet = vector.recover_stroked_vector_text(profile, words)
     assert result is words
     assert len(alphabet) == 2
-    assert vector.internal_decode_stroked_vector_text(None, words) == StrokedTextDecode()
-    assert vector.internal_recover_stroked_vector_text(None, words) == (words, ())
+    assert vector.decode_stroked_vector_text(None, words) == StrokedTextDecode()
+    assert vector.recover_stroked_vector_text(None, words) == (words, ())
     assert (
-        vector.internal_decode_stroked_vector_text(profile, ObservationBatch.empty())
-        == StrokedTextDecode()
+        vector.decode_stroked_vector_text(profile, ObservationBatch.empty()) == StrokedTextDecode()
     )
 
 
@@ -379,8 +368,8 @@ def test_recovery_replaces_a_misread_word_and_adds_unrecognized_runs(
             StrokedTextObservation("AC", (0, 0, 5, 4), 4, 5),
         )
     )
-    monkeypatch.setattr(vector, "internal_decode_stroked_vector_text", lambda *_: decoded)
-    result, _ = vector.internal_recover_stroked_vector_text(profile, original)
+    monkeypatch.setattr(vector, "decode_stroked_vector_text", lambda *_: decoded)
+    result, _ = vector.recover_stroked_vector_text(profile, original)
     assert result.text == ("note", "AB", "BA")
     assert result.source.tolist() == [
         ObservationSource.OCR,
@@ -398,24 +387,24 @@ def test_nonpositive_pixel_budgets_fail_before_allocating(
     budget: int,
 ) -> None:
     from core_pdf.impl.render.page import RenderedPage
-    from core_pdf_ocr.impl.extract.ocr.raster import internal_fit_raster_scale
+    from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
 
     rendered = RenderedPage(
         page_number=1, width=100, height=100, rotate=0, display_list=DisplayList(100, 100)
     )
     with pytest.raises(ValueError, match="pixel budget"):
-        internal_fit_raster_scale(rendered, 2, budget)
+        fit_raster_scale(rendered, 2, budget)
 
 
 @pytest.mark.parametrize("budget", [1, 17, 101])
 def test_pixel_fitting_handles_single_pixel_axes(budget: int) -> None:
     from core_pdf.impl.render.page import RenderedPage
-    from core_pdf_ocr.impl.extract.ocr.raster import internal_fit_raster_scale
+    from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
 
     rendered = RenderedPage(
         page_number=1, width=0.01, height=100, rotate=0, display_list=DisplayList(0.01, 100)
     )
-    scale = internal_fit_raster_scale(rendered, 2, budget)
+    scale = fit_raster_scale(rendered, 2, budget)
     width, height = rendered.unrotated_raster_size(scale)
     assert width == 1
     assert 1 <= width * height <= budget
@@ -427,7 +416,7 @@ def test_dense_seed_montage_uses_tighter_vertical_spacing(
     capture, profile = vector_capture
     run = profile.seed_runs[0]
     dense = replace(profile, seed_runs=(run,) * 96)
-    packed = vector.internal_stroked_vector_text_raster(capture, 1, profile=dense)
+    packed = vector.stroked_vector_text_raster(capture, 1, profile=dense)
     assert packed is not None
     assert len(packed.cells) == 96
     assert packed.cells[0].packed_box[1] == 4
@@ -439,6 +428,6 @@ def test_packed_raster_skips_missing_path_geometry(
     capture, profile = vector_capture
     drawings = tuple(replace(d, path=None, bbox=None) for d in capture.program.drawings)
     capture = replace(capture, program=PageProgram(CapturedProgram(drawings=drawings)))
-    packed = vector.internal_stroked_vector_text_raster(capture, 1, profile=profile)
+    packed = vector.stroked_vector_text_raster(capture, 1, profile=profile)
     assert packed is not None
     assert min(packed.raster.image.pixels) == 255

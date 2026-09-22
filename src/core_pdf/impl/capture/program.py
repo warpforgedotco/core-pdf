@@ -13,9 +13,9 @@ from core_pdf.impl.capture.records import (
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 PageCommand: TypeAlias = (
@@ -23,7 +23,7 @@ PageCommand: TypeAlias = (
 )
 
 
-class CapturedProgram(internal_Record):
+class CapturedProgram(Record):
     __slots__ = (
         "runs",
         "glyphs",
@@ -63,12 +63,12 @@ class CapturedProgram(internal_Record):
         *,
         text_boundaries: tuple[CapturedTextBoundary, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "runs", runs)
-        internal_frozen_setattr(self, "glyphs", glyphs)
-        internal_frozen_setattr(self, "drawings", drawings)
-        internal_frozen_setattr(self, "inline_images", inline_images)
-        internal_frozen_setattr(self, "lines", lines)
-        internal_frozen_setattr(self, "text_boundaries", text_boundaries)
+        frozen_setattr(self, "runs", runs)
+        frozen_setattr(self, "glyphs", glyphs)
+        frozen_setattr(self, "drawings", drawings)
+        frozen_setattr(self, "inline_images", inline_images)
+        frozen_setattr(self, "lines", lines)
+        frozen_setattr(self, "text_boundaries", text_boundaries)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -164,7 +164,7 @@ class CapturedProgram(internal_Record):
         object.__setattr__(self, "commands", tuple(commands))
 
 
-class AppearanceProgram(internal_Record):
+class AppearanceProgram(Record):
     __slots__ = ("kind", "source", "clip_bbox", "program")
 
     kind: Literal["widget", "annotation"]
@@ -182,10 +182,10 @@ class AppearanceProgram(internal_Record):
         clip_bbox: tuple[float, float, float, float],
         program: CapturedProgram,
     ) -> None:
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "source", source)
-        internal_frozen_setattr(self, "clip_bbox", clip_bbox)
-        internal_frozen_setattr(self, "program", program)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "source", source)
+        frozen_setattr(self, "clip_bbox", clip_bbox)
+        frozen_setattr(self, "program", program)
 
     def __repr__(self) -> str:
         return (
@@ -222,7 +222,7 @@ class AppearanceProgram(internal_Record):
         return self.__class__(kind, source, clip_bbox, program)
 
 
-class PageProgram(internal_Record):
+class PageProgram(Record):
     __slots__ = (
         "body",
         "appearances",
@@ -263,8 +263,8 @@ class PageProgram(internal_Record):
         body: CapturedProgram | None = None,
         appearances: tuple[AppearanceProgram, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "body", CapturedProgram() if body is None else body)
-        internal_frozen_setattr(self, "appearances", appearances)
+        frozen_setattr(self, "body", CapturedProgram() if body is None else body)
+        frozen_setattr(self, "appearances", appearances)
         self._post_init()
 
     def __repr__(self) -> str:

@@ -11,7 +11,7 @@ from core_pdf_spec.s_07_security.standard import StandardSecurityHandler
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import MISSING, PdfByteBuffer, PdfName, PdfString
 
-internal_HEXADECIMAL_DIGITS = frozenset(b"0123456789ABCDEFabcdef")
+HEXADECIMAL_DIGITS = frozenset(b"0123456789ABCDEFabcdef")
 
 
 def validate_pdf_mac_if_present(
@@ -31,7 +31,7 @@ def validate_pdf_mac_if_present(
         raise PdfDecryptionError("Invalid PDF MAC")
 
     try:
-        internal_validate_standalone_pdf_mac(
+        validate_standalone_pdf_mac(
             raw_data,
             cast(PdfDict, raw_auth_code),
             handler.file_key,
@@ -71,7 +71,7 @@ def validate_pdf_mac_extension(declarations: object) -> None:
     raise PdfDecryptionError("Invalid PDF MAC extension declaration")
 
 
-def internal_validate_standalone_pdf_mac(
+def validate_standalone_pdf_mac(
     raw_data: PdfByteBuffer,
     auth_code: PdfDict,
     file_key: bytes,
@@ -88,11 +88,11 @@ def internal_validate_standalone_pdf_mac(
     if "SigObjRef" in auth_code:
         raise ValueError("standalone PDF MAC cannot contain SigObjRef")
 
-    byte_range, token = internal_extract_standalone_token(raw_data, auth_code)
+    byte_range, token = extract_standalone_token(raw_data, auth_code)
     validate_pdf_mac_token(raw_data, byte_range, token, file_key, kdf_salt)
 
 
-def internal_extract_standalone_token(
+def extract_standalone_token(
     raw_data: PdfByteBuffer,
     auth_code: PdfDict,
 ) -> tuple[tuple[int, int, int, int], bytes]:
@@ -124,7 +124,7 @@ def internal_extract_standalone_token(
         len(serialized_mac) != (2 * len(raw_mac.data)) + 2
         or not serialized_mac.startswith(b"<")
         or not serialized_mac.endswith(b">")
-        or any(byte not in internal_HEXADECIMAL_DIGITS for byte in encoded_token)
+        or any(byte not in HEXADECIMAL_DIGITS for byte in encoded_token)
         or bytes.fromhex(encoded_token.decode("ascii")) != raw_mac.data
     ):
         raise ValueError("invalid serialized standalone PDF MAC")

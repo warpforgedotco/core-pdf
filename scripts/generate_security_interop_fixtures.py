@@ -11,17 +11,17 @@ import subprocess
 from pathlib import Path
 from typing import Any, ClassVar, NoReturn, Self
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-internal_DEFAULT_OUTPUT = internal_REPOSITORY_ROOT / "tests" / "fixtures" / "security_interop"
-internal_EXPECTED_TEXT = "Security Interoperability"
-internal_EXPECTED_TITLE = "Core PDF Security Fixture"
-internal_XMP_MARKER = "security-xmp-marker"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OUTPUT = REPOSITORY_ROOT / "tests" / "fixtures" / "security_interop"
+EXPECTED_TEXT = "Security Interoperability"
+EXPECTED_TITLE = "Core PDF Security Fixture"
+XMP_MARKER = "security-xmp-marker"
 
 
-class internal_FixtureSpec:
+class FixtureSpec:
     filename: str
     algorithm: str
     revision: int
@@ -67,15 +67,15 @@ class internal_FixtureSpec:
         qpdf_options: tuple[str, ...] = (),
         weak_crypto: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "filename", filename)
-        internal_frozen_setattr(self, "algorithm", algorithm)
-        internal_frozen_setattr(self, "revision", revision)
-        internal_frozen_setattr(self, "bits", bits)
-        internal_frozen_setattr(self, "user_password", user_password)
-        internal_frozen_setattr(self, "owner_password", owner_password)
-        internal_frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
-        internal_frozen_setattr(self, "qpdf_options", qpdf_options)
-        internal_frozen_setattr(self, "weak_crypto", weak_crypto)
+        frozen_setattr(self, "filename", filename)
+        frozen_setattr(self, "algorithm", algorithm)
+        frozen_setattr(self, "revision", revision)
+        frozen_setattr(self, "bits", bits)
+        frozen_setattr(self, "user_password", user_password)
+        frozen_setattr(self, "owner_password", owner_password)
+        frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
+        frozen_setattr(self, "qpdf_options", qpdf_options)
+        frozen_setattr(self, "weak_crypto", weak_crypto)
 
     def __repr__(self) -> str:
         return (
@@ -155,8 +155,8 @@ class internal_FixtureSpec:
         )
 
 
-internal_FIXTURES = (
-    internal_FixtureSpec(
+FIXTURES = (
+    FixtureSpec(
         filename="rc4-40-r2.pdf",
         algorithm="RC4-40",
         revision=2,
@@ -165,7 +165,7 @@ internal_FIXTURES = (
         owner_password="owner-40",
         weak_crypto=True,
     ),
-    internal_FixtureSpec(
+    FixtureSpec(
         filename="rc4-128-r3.pdf",
         algorithm="RC4-128",
         revision=3,
@@ -175,7 +175,7 @@ internal_FIXTURES = (
         qpdf_options=("--use-aes=n",),
         weak_crypto=True,
     ),
-    internal_FixtureSpec(
+    FixtureSpec(
         filename="aes-128-r4-cleartext-metadata.pdf",
         algorithm="AES-128",
         revision=4,
@@ -185,7 +185,7 @@ internal_FIXTURES = (
         encrypt_metadata=False,
         qpdf_options=("--use-aes=y", "--force-V4", "--cleartext-metadata"),
     ),
-    internal_FixtureSpec(
+    FixtureSpec(
         filename="aes-256-r5.pdf",
         algorithm="AES-256",
         revision=5,
@@ -194,7 +194,7 @@ internal_FIXTURES = (
         owner_password="owner-r5",
         qpdf_options=("--force-R5",),
     ),
-    internal_FixtureSpec(
+    FixtureSpec(
         filename="aes-256-r6.pdf",
         algorithm="AES-256",
         revision=6,
@@ -202,7 +202,7 @@ internal_FIXTURES = (
         user_password="user-r6",
         owner_password="owner-r6",
     ),
-    internal_FixtureSpec(
+    FixtureSpec(
         filename="aes-256-r6-blank-user.pdf",
         algorithm="AES-256",
         revision=6,
@@ -220,7 +220,7 @@ def internal_stream(contents: bytes, *, extra_attributes: bytes = b"") -> bytes:
     return b"<< " + attributes + b" >>\nstream\n" + contents + b"\nendstream"
 
 
-def internal_source_pdf() -> bytes:
+def source_pdf() -> bytes:
     page_contents = b"BT\n/F1 18 Tf\n72 720 Td\n(Security Interoperability) Tj\nET\n"
     xmp = (
         b'<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -274,11 +274,11 @@ def internal_source_pdf() -> bytes:
     return bytes(output)
 
 
-def internal_qpdf_command(
+def qpdf_command(
     qpdf: str,
     source: Path,
     destination: Path,
-    fixture: internal_FixtureSpec,
+    fixture: FixtureSpec,
 ) -> list[str]:
     command = [
         qpdf,
@@ -302,8 +302,8 @@ def internal_qpdf_command(
     return command
 
 
-def internal_display_command(fixture: internal_FixtureSpec) -> list[str]:
-    return internal_qpdf_command(
+def display_command(fixture: FixtureSpec) -> list[str]:
+    return qpdf_command(
         "qpdf",
         Path("source.pdf"),
         Path(fixture.filename),
@@ -311,14 +311,14 @@ def internal_display_command(fixture: internal_FixtureSpec) -> list[str]:
     )
 
 
-def internal_sha256(path: Path) -> str:
+def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def internal_generate(qpdf: str, output_directory: Path) -> None:
+def generate(qpdf: str, output_directory: Path) -> None:
     output_directory.mkdir(parents=True, exist_ok=True)
     source = output_directory / "source.pdf"
-    source.write_bytes(internal_source_pdf())
+    source.write_bytes(source_pdf())
 
     version_result = subprocess.run(
         [qpdf, "--version"],
@@ -328,10 +328,10 @@ def internal_generate(qpdf: str, output_directory: Path) -> None:
     )
     qpdf_version = version_result.stdout.splitlines()[0].removeprefix("qpdf version ")
     records: list[dict[str, object]] = []
-    for fixture in internal_FIXTURES:
+    for fixture in FIXTURES:
         destination = output_directory / fixture.filename
         subprocess.run(
-            internal_qpdf_command(qpdf, source, destination, fixture),
+            qpdf_command(qpdf, source, destination, fixture),
             check=True,
         )
         subprocess.run(
@@ -341,8 +341,8 @@ def internal_generate(qpdf: str, output_directory: Path) -> None:
         )
         record = {name: getattr(fixture, name) for name in fixture.__fields__}
         record["qpdf_options"] = list(fixture.qpdf_options)
-        record["command"] = internal_display_command(fixture)
-        record["sha256"] = internal_sha256(destination)
+        record["command"] = display_command(fixture)
+        record["sha256"] = sha256(destination)
         records.append(record)
 
     manifest = {
@@ -353,12 +353,12 @@ def internal_generate(qpdf: str, output_directory: Path) -> None:
         },
         "source": {
             "filename": source.name,
-            "sha256": internal_sha256(source),
+            "sha256": sha256(source),
         },
         "expected": {
-            "text": internal_EXPECTED_TEXT,
-            "info_title": internal_EXPECTED_TITLE,
-            "xmp_marker": internal_XMP_MARKER,
+            "text": EXPECTED_TEXT,
+            "info_title": EXPECTED_TITLE,
+            "xmp_marker": XMP_MARKER,
         },
         "fixtures": records,
     }
@@ -368,7 +368,7 @@ def internal_generate(qpdf: str, output_directory: Path) -> None:
     )
 
 
-def internal_parse_args() -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--qpdf",
@@ -378,17 +378,17 @@ def internal_parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=internal_DEFAULT_OUTPUT,
+        default=DEFAULT_OUTPUT,
         help="fixture output directory",
     )
     return parser.parse_args()
 
 
 def main() -> None:
-    args = internal_parse_args()
+    args = parse_args()
     if not args.qpdf:
         raise SystemExit("qpdf was not found; install it or pass --qpdf")
-    internal_generate(args.qpdf, args.output.resolve())
+    generate(args.qpdf, args.output.resolve())
 
 
 if __name__ == "__main__":

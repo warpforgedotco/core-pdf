@@ -52,7 +52,7 @@ def field_value_text(resolver: FieldResolver, value: object) -> str:
     return "\n".join(parts)
 
 
-def internal_field_record(
+def field_record(
     resolver: FieldResolver,
     node: PdfDict,
     parent_name: str,
@@ -112,7 +112,7 @@ def collect_field_records(
             raise ValueError("invalid AcroForm field entry")
         seen.add(id(current_node))
         current_node = cast(PdfDict, current_node)
-        record = internal_field_record(
+        record = field_record(
             resolver,
             current_node,
             parent_name,
@@ -132,7 +132,7 @@ def collect_field_records(
                 stack.append(
                     (
                         "record",
-                        internal_field_record(
+                        field_record(
                             resolver,
                             resolved_kid,
                             record.name,

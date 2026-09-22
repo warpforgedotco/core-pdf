@@ -26,13 +26,13 @@ from core_pdf.impl.render.model import (
     ImagePaintItem,
     PathPaintItem,
 )
-from core_pdf.impl.render.paths import internal_translate_rect
+from core_pdf.impl.render.paths import translate_rect
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
 
-def internal_glyph_outline_path(
+def glyph_outline_path(
     glyph: GlyphObservation,
 ) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
     if not glyph.paint_glyph:
@@ -51,7 +51,7 @@ def internal_glyph_outline_path(
         arrays = array_resolver(code, glyph.gid, glyph.text)
         if arrays is None:
             return None
-        return internal_transformed_outline(arrays, transform)
+        return transformed_outline(arrays, transform)
     resolver = getattr(decoder, "glyph_outline", None)
     if not callable(resolver):
         return None
@@ -74,7 +74,7 @@ def internal_glyph_outline_path(
     return path, path.bbox(), None
 
 
-def internal_transformed_outline(
+def transformed_outline(
     arrays: GlyphOutlineArrays, transform: Matrix6
 ) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
     a, b, c, d, e, f = transform
@@ -111,7 +111,7 @@ def internal_transformed_outline(
     return path, (min(tx), min(ty), max(tx), max(ty)), edges
 
 
-def internal_append_glyph_paint(
+def append_glyph_paint(
     display_list: DisplayList,
     glyph: GlyphObservation,
     clipping_subpaths: list[CapturedSubpath],
@@ -125,7 +125,7 @@ def internal_append_glyph_paint(
         return True
     if not include_paint and mode < 4:
         return True
-    outline = internal_glyph_outline_path(glyph)
+    outline = glyph_outline_path(glyph)
     if outline is None:
         return False
     path, bbox, edge_array = outline
@@ -294,7 +294,7 @@ def append_captured_program(
             if glyph_group_open:
                 begin_text_group(glyph.seqno, knockout=False)
             try:
-                if internal_append_glyph_paint(
+                if append_glyph_paint(
                     display_list,
                     glyph,
                     text_clipping_subpaths,
@@ -369,7 +369,7 @@ def append_captured_program(
     finish_text(len(commands))
 
 
-def internal_translated_soft_mask(
+def translated_soft_mask(
     mask: CapturedSoftMask | None, tx: float, ty: float
 ) -> CapturedSoftMask | None:
     if mask is None or (tx == 0 and ty == 0):
@@ -383,7 +383,7 @@ def translated_command(
     if isinstance(item, PathPaintItem):
         return replace(
             item,
-            bbox=internal_translate_rect(item.bbox, tx, ty),
+            bbox=translate_rect(item.bbox, tx, ty),
             path=item.path.translated(tx, ty) if isinstance(item.path, CapturedPath) else item.path,
             edge_array=(
                 item.edge_array + numpy.array((tx, ty, tx, ty))
@@ -391,23 +391,23 @@ def translated_command(
                 else None
             ),
             blend_mode=item.blend_mode or parent_blend_mode,
-            graphics_soft_mask=internal_translated_soft_mask(item.graphics_soft_mask, tx, ty),
+            graphics_soft_mask=translated_soft_mask(item.graphics_soft_mask, tx, ty),
         )
     if isinstance(item, ImagePaintItem):
         return replace(
             item,
-            bbox=internal_translate_rect(item.bbox, tx, ty),
+            bbox=translate_rect(item.bbox, tx, ty),
             quad=tuple((x + tx, y + ty) for x, y in item.quad) if item.quad else None,
-            image_clip=internal_translate_rect(item.image_clip, tx, ty),
+            image_clip=translate_rect(item.image_clip, tx, ty),
             blend_mode=item.blend_mode or parent_blend_mode,
-            graphics_soft_mask=internal_translated_soft_mask(item.graphics_soft_mask, tx, ty),
+            graphics_soft_mask=translated_soft_mask(item.graphics_soft_mask, tx, ty),
         )
     data: dict[str, Any] = dict(item.data)
     if (mask := data.get("graphics_soft_mask")) is not None:
-        data["graphics_soft_mask"] = internal_translated_soft_mask(mask, tx, ty)
+        data["graphics_soft_mask"] = translated_soft_mask(mask, tx, ty)
     for key in ("bbox", "rect"):
         if key in data:
-            data[key] = internal_translate_rect(data[key], tx, ty)
+            data[key] = translate_rect(data[key], tx, ty)
     path = data.get("path")
     if isinstance(path, CapturedPath):
         data["path"] = path.translated(tx, ty)
@@ -423,7 +423,7 @@ def translated_command(
                     coords[index + 1] += ty
             dictionary["Coords"] = coords
         if "BBox" in dictionary:
-            dictionary["BBox"] = internal_translate_rect(dictionary["BBox"], tx, ty)
+            dictionary["BBox"] = translate_rect(dictionary["BBox"], tx, ty)
         data["dictionary"] = dictionary
     data["blend_mode"] = data.get("blend_mode") or parent_blend_mode
     return DisplayListItem(item.kind, item.seqno, data)

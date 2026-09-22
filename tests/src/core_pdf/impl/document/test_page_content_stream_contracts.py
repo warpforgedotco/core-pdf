@@ -8,7 +8,7 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
-class internal_RecordingExecutor:
+class RecordingExecutor:
     def __init__(self, failures: set[bytes]) -> None:
         self.failures = failures
         self.calls: list[bytes] = []
@@ -64,7 +64,7 @@ def test_content_consumption_retries_or_skips_only_when_safe(
         page = document.pages[0]
         page.contents = [internal_stream(data) for data in streams]
         state = TextState(document)
-        executor = internal_RecordingExecutor(failures)
+        executor = RecordingExecutor(failures)
         cast(Any, state).stream_executor = executor
         if raises:
             with pytest.raises(PdfParseError, match="injected"):

@@ -333,7 +333,7 @@ class PdfLexer:
         raw, end = scanned
         self.pos = end
         if is_number_token(raw):
-            return self.internal_parse_number_or_reference(raw, end)
+            return self.parse_number_or_reference(raw, end)
         return self.parse_keyword(raw)
 
     def parse_object_at(self, position: int) -> Any:
@@ -450,9 +450,7 @@ class PdfLexer:
     def parse_real_token(self, token: bytes | memoryview) -> float:
         return parse_real_token(token)
 
-    def internal_parse_number_or_reference(
-        self, raw: bytes, end: int
-    ) -> int | float | PdfReference:
+    def parse_number_or_reference(self, raw: bytes, end: int) -> int | float | PdfReference:
         if b"." in raw:
             return self.parse_real_token(raw)
         next_pos = self.skip_ignored_at(end)
@@ -526,7 +524,7 @@ class PdfLexer:
             raw, end = scanned
             self.pos = end
             if is_number_token(raw):
-                values.append(self.internal_parse_number_or_reference(raw, end))
+                values.append(self.parse_number_or_reference(raw, end))
                 continue
             values.append(self.parse_keyword(raw))
 

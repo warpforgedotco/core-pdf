@@ -27,7 +27,7 @@ def parse_truetype_program(data: bytes) -> TTFont:
     return font
 
 
-def internal_fonttools_bbox(
+def fonttools_bbox(
     font: Any,
     glyph_id: int,
     scale: float,
@@ -42,7 +42,7 @@ def internal_fonttools_bbox(
     return float(x_min), float(y_min), float(x_max), float(y_max)
 
 
-def internal_glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] | None:
+def glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] | None:
     glyph = glyf[glyph_name]
     if glyph.numberOfContours == 0:
         return None
@@ -56,10 +56,10 @@ def internal_glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float
     )
 
 
-internal_GLYPH_HEADER = struct.Struct(">hhhhh")
+GLYPH_HEADER = struct.Struct(">hhhhh")
 
 
-def internal_raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
+def raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
     try:
         locations = font["loca"]
         reader = font.reader
@@ -69,16 +69,16 @@ def internal_raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
     return locations, glyph_data
 
 
-def internal_glyph_header_bbox(
+def glyph_header_bbox(
     locations: Any, glyph_data: bytes, gid: int
 ) -> tuple[float, float, float, float] | None:
     if gid < 0 or gid + 1 >= len(locations):
         return None
     start = locations[gid]
     end = locations[gid + 1]
-    if end - start < internal_GLYPH_HEADER.size or end > len(glyph_data):
+    if end - start < GLYPH_HEADER.size or end > len(glyph_data):
         return None
-    contours, x_min, y_min, x_max, y_max = internal_GLYPH_HEADER.unpack_from(glyph_data, start)
+    contours, x_min, y_min, x_max, y_max = GLYPH_HEADER.unpack_from(glyph_data, start)
     if contours == 0:
         return None
     return (float(x_min), float(y_min), float(x_max), float(y_max))
@@ -87,15 +87,15 @@ def internal_glyph_header_bbox(
 FONT_PROGRAM_ERRORS = Exception
 
 
-def internal_fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
     glyph_name = font.getGlyphName(glyph_id)
     glyph_set = font.getGlyphSet()
     pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
     glyph_set[glyph_name].draw(pen)
-    return tuple(tuple(contour) for contour in internal_recording_to_contours(pen.value))
+    return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
 
 
-class internal_FontToolsOutlineAccess:
+class FontToolsOutlineAccess:
     __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
 
     def __init__(self, font: TTFont) -> None:
@@ -113,14 +113,14 @@ class internal_FontToolsOutlineAccess:
 
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
         try:
-            contours = internal_fonttools_contours(self.font, glyph_id)
+            contours = fonttools_contours(self.font, glyph_id)
             return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
         except FONT_PROGRAM_ERRORS:
             return ()
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
-            return internal_fonttools_bbox(self.font, glyph_id, self.scale)
+            return fonttools_bbox(self.font, glyph_id, self.scale)
         except FONT_PROGRAM_ERRORS:
             return None
 
@@ -132,7 +132,7 @@ class internal_FontToolsOutlineAccess:
         )
 
 
-class internal_RecoverableFontTableWarningFilter(logging.Filter):
+class RecoverableFontTableWarningFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
         return not (
@@ -145,14 +145,14 @@ class internal_RecoverableFontTableWarningFilter(logging.Filter):
         )
 
 
-internal_FONT_TABLE_WARNING_FILTER = internal_RecoverableFontTableWarningFilter()
+FONT_TABLE_WARNING_FILTER = RecoverableFontTableWarningFilter()
 for logger_name in (
     "fontTools.ttLib.tables._p_o_s_t",
     "fontTools.ttLib.tables._h_e_a_d",
     "core_pdf._vendor.fontTools.ttLib.tables._p_o_s_t",
     "core_pdf._vendor.fontTools.ttLib.tables._h_e_a_d",
 ):
-    logging.getLogger(logger_name).addFilter(internal_FONT_TABLE_WARNING_FILTER)
+    logging.getLogger(logger_name).addFilter(FONT_TABLE_WARNING_FILTER)
 
 
 class TrueTypeFontProgram:
@@ -167,7 +167,7 @@ class TrueTypeFontProgram:
         "outlines",
         "glyph_locations",
         "glyph_table_data",
-        "internal_composite_bbox_cache",
+        "composite_bbox_cache",
     )
 
     def __init__(
@@ -178,31 +178,31 @@ class TrueTypeFontProgram:
         use_cmap: bool = False,
     ) -> None:
         self.data = data
-        self.internal_composite_bbox_cache: dict[
+        self.composite_bbox_cache: dict[
             int, tuple[tuple[float, float, float, float] | None, bool]
         ] = {}
-        self.font = internal_tt_font_from_data(data)
+        self.font = tt_font_from_data(data)
         if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
             raise ValueError("invalid TrueType glyph tables")
-        internal_ensure_glyph_order(self.font)
+        ensure_glyph_order(self.font)
         self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
-        self.glyph_locations, self.glyph_table_data = internal_raw_glyph_locations(self.font)
-        self.outlines = internal_FontToolsOutlineAccess(self.font)
+        self.glyph_locations, self.glyph_table_data = raw_glyph_locations(self.font)
+        self.outlines = FontToolsOutlineAccess(self.font)
         self.cid_to_gid = cid_to_gid
-        self.unicode_cmap = internal_best_unicode_gid_cmap(self.font)
-        self.glyph_to_unicode = internal_invert_unicode_cmap(self.unicode_cmap)
+        self.unicode_cmap = best_unicode_gid_cmap(self.font)
+        self.glyph_to_unicode = invert_unicode_cmap(self.unicode_cmap)
         if use_cmap:
-            self.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
+            self.cmap = self.unicode_cmap or code_gid_cmap(self.font)
         else:
             self.cmap = {}
 
-    def internal_variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
+    def variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
         variant = object.__new__(TrueTypeFontProgram)
         for name in TrueTypeFontProgram.__slots__:
             setattr(variant, name, getattr(self, name))
         variant.cid_to_gid = cid_to_gid
         if use_cmap:
-            variant.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
+            variant.cmap = self.unicode_cmap or code_gid_cmap(self.font)
         else:
             variant.cmap = {}
         return variant
@@ -240,7 +240,7 @@ class TrueTypeFontProgram:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
 
     def glyph_bbox_for_gid(self, gid: int) -> tuple[float, float, float, float] | None:
-        bbox = internal_glyph_header_bbox(self.glyph_locations, self.glyph_table_data, gid)
+        bbox = glyph_header_bbox(self.glyph_locations, self.glyph_table_data, gid)
         if bbox is None:
             return None
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
@@ -250,21 +250,21 @@ class TrueTypeFontProgram:
         return (x0 * scale, y0 * scale, x1 * scale, y1 * scale)
 
     def glyph_contours(self, gid: int) -> list[list[Point]]:
-        return [list(contour) for contour in self.internal_glyph_contours_for_gid(gid)]
+        return [list(contour) for contour in self.glyph_contours_for_gid(gid)]
 
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         return self.outlines.normalized_glyph_contours(gid)
 
-    def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
+    def glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         try:
-            return internal_fonttools_contours(self.font, gid)
+            return fonttools_contours(self.font, gid)
         except FONT_PROGRAM_ERRORS:
             return ()
 
     def composite_body_bbox(
         self, gid: int
     ) -> tuple[tuple[float, float, float, float] | None, bool]:
-        cache = self.internal_composite_bbox_cache
+        cache = self.composite_bbox_cache
         try:
             return cache[gid]
         except KeyError:
@@ -284,7 +284,7 @@ class TrueTypeFontProgram:
             has_dot = False
             for component in glyph.components:
                 component_name, transform = component.getComponentInfo()
-                bbox = internal_glyph_bbox(glyf, component_name)
+                bbox = glyph_bbox(glyf, component_name)
                 if bbox is None:
                     continue
                 xx, xy, yx, yy, dx, dy = transform
@@ -299,43 +299,41 @@ class TrueTypeFontProgram:
             return (None, False)
 
 
-internal_PROGRAM_CACHE_LIMIT = 64
-internal_program_cache = threading.local()
+PROGRAM_CACHE_LIMIT = 64
+program_cache = threading.local()
 
 
 def cached_truetype_program(
     data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
 ) -> TrueTypeFontProgram:
-    programs: dict[object, TrueTypeFontProgram] | None = getattr(
-        internal_program_cache, "programs", None
-    )
+    programs: dict[object, TrueTypeFontProgram] | None = getattr(program_cache, "programs", None)
     if programs is None:
-        programs = internal_program_cache.programs = {}
+        programs = program_cache.programs = {}
     key: object = (data, cid_to_gid, use_cmap)
     program = programs.get(key)
     if program is None:
         base = programs.get(data)
         if base is None:
-            if len(programs) >= internal_PROGRAM_CACHE_LIMIT:
+            if len(programs) >= PROGRAM_CACHE_LIMIT:
                 programs.clear()
             base = programs[data] = TrueTypeFontProgram(data)
         program = (
             base
             if cid_to_gid is None and not use_cmap
-            else base.internal_variant(cid_to_gid, use_cmap=use_cmap)
+            else base.variant(cid_to_gid, use_cmap=use_cmap)
         )
         programs[key] = program
     return program
 
 
-def internal_tt_font_from_data(data: bytes) -> TTFont:
+def tt_font_from_data(data: bytes) -> TTFont:
     try:
         return parse_truetype_program(data)
     except FONT_PROGRAM_ERRORS as exc:
         raise ValueError("invalid TrueType font program") from exc
 
 
-def internal_ensure_glyph_order(font: TTFont) -> None:
+def ensure_glyph_order(font: TTFont) -> None:
     try:
         font.getGlyphOrder()
         return
@@ -350,7 +348,7 @@ def internal_ensure_glyph_order(font: TTFont) -> None:
     font.setGlyphOrder([".notdef", *(f"glyph{gid:05d}" for gid in range(1, glyph_count))])
 
 
-def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
+def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
     symbol_fallback = False
     try:
         cmap_table = font["cmap"]
@@ -382,7 +380,7 @@ def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
     return mapping
 
 
-def internal_code_gid_cmap(font: TTFont) -> dict[int, int]:
+def code_gid_cmap(font: TTFont) -> dict[int, int]:
     try:
         cmap_table = font["cmap"]
         reverse_glyph_map = font.getReverseGlyphMap()
@@ -420,27 +418,27 @@ def internal_code_gid_cmap(font: TTFont) -> dict[int, int]:
     return {}
 
 
-def internal_invert_unicode_cmap(cmap: dict[int, int]) -> dict[int, str]:
+def invert_unicode_cmap(cmap: dict[int, int]) -> dict[int, str]:
     by_gid: dict[int, str] = {}
     for codepoint, gid in cmap.items():
         if gid <= 0 or not is_unicode_scalar(codepoint):
             continue
         char = chr(codepoint)
         previous = by_gid.get(gid)
-        if previous is None or internal_prefer_unicode_text(char, previous):
+        if previous is None or prefer_unicode_text(char, previous):
             by_gid[gid] = char
     return by_gid
 
 
-def internal_prefer_unicode_text(candidate: str, current: str) -> bool:
-    candidate_score = internal_unicode_text_score(candidate)
-    current_score = internal_unicode_text_score(current)
+def prefer_unicode_text(candidate: str, current: str) -> bool:
+    candidate_score = unicode_text_score(candidate)
+    current_score = unicode_text_score(current)
     if candidate_score != current_score:
         return candidate_score > current_score
     return ord(candidate) < ord(current)
 
 
-def internal_unicode_text_score(char: str) -> int:
+def unicode_text_score(char: str) -> int:
     code = ord(char)
     if char.isalnum():
         return 5
@@ -455,7 +453,7 @@ def internal_unicode_text_score(char: str) -> int:
     return 2
 
 
-def internal_recording_to_contours(
+def recording_to_contours(
     recording: list[tuple[str, tuple[Any, ...]]],
 ) -> list[list[Point]]:
     contours: list[list[Point]] = []
@@ -466,7 +464,7 @@ def internal_recording_to_contours(
         match operator:
             case "moveTo":
                 if contour:
-                    contours.append(internal_close_contour(contour))
+                    contours.append(close_contour(contour))
                 start = internal_point(operands[0])
                 current = start
                 contour = [start]
@@ -474,17 +472,17 @@ def internal_recording_to_contours(
                 current = internal_point(operands[0])
                 contour.append(current)
             case "qCurveTo" if current is not None:
-                current = internal_append_quadratic(contour, current, start, operands)
+                current = append_quadratic(contour, current, start, operands)
             case "curveTo" if current is not None:
-                current = internal_append_cubic(contour, current, operands)
+                current = append_cubic(contour, current, operands)
             case "closePath" | "endPath":
                 if contour:
-                    contours.append(internal_close_contour(contour))
+                    contours.append(close_contour(contour))
                     contour = []
                     current = None
                     start = None
     if contour:
-        contours.append(internal_close_contour(contour))
+        contours.append(close_contour(contour))
     return [contour for contour in contours if len(contour) >= 3]
 
 
@@ -493,7 +491,7 @@ def internal_point(value: Any) -> Point:
     return (float(x), float(y))
 
 
-def internal_append_quadratic(
+def append_quadratic(
     contour: list[Point],
     current: Point,
     start: Point | None,
@@ -523,12 +521,12 @@ def internal_append_quadratic(
                 (control[1] + controls[index + 1][1]) * 0.5,
             )
         )
-        contour.extend(internal_flatten_quadratic(segment_start, control, segment_end))
+        contour.extend(flatten_quadratic(segment_start, control, segment_end))
         segment_start = segment_end
     return end
 
 
-def internal_append_cubic(contour: list[Point], current: Point, operands: tuple[Any, ...]) -> Point:
+def append_cubic(contour: list[Point], current: Point, operands: tuple[Any, ...]) -> Point:
     if len(operands) % 3:
         return current
     segment_start = current
@@ -536,18 +534,18 @@ def internal_append_cubic(contour: list[Point], current: Point, operands: tuple[
         c1 = internal_point(operands[index])
         c2 = internal_point(operands[index + 1])
         end = internal_point(operands[index + 2])
-        contour.extend(internal_flatten_cubic(segment_start, c1, c2, end))
+        contour.extend(flatten_cubic(segment_start, c1, c2, end))
         segment_start = end
     return segment_start
 
 
-def internal_close_contour(contour: list[Point]) -> list[Point]:
+def close_contour(contour: list[Point]) -> list[Point]:
     if contour and contour[0] != contour[-1]:
         return [*contour, contour[0]]
     return contour
 
 
-def internal_flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 6) -> list[Point]:
+def flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 6) -> list[Point]:
     out: list[Point] = []
     for i in range(1, segments + 1):
         t = i / segments
@@ -561,9 +559,7 @@ def internal_flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 
     return out
 
 
-def internal_flatten_cubic(
-    p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8
-) -> list[Point]:
+def flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8) -> list[Point]:
     out: list[Point] = []
     for i in range(1, segments + 1):
         t = i / segments

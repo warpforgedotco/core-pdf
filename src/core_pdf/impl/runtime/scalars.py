@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import overload
 
 
-def internal_scalar_text(value: object) -> str | None:
+def scalar_text(value: object) -> str | None:
     if type(value) is bool:
         return None
     if type(value) is memoryview:
@@ -31,7 +31,7 @@ def parse_int(value: object, default: int) -> int: ...
 def parse_int(value: object, default: int | None = None) -> int | None:
     if type(value) is int:
         return value
-    text = internal_scalar_text(value)
+    text = scalar_text(value)
     if text is None:
         return default
     try:
@@ -63,7 +63,7 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
             return float(value)
         except OverflowError:
             return default
-    text = internal_scalar_text(value)
+    text = scalar_text(value)
     if text is None:
         return default
     try:

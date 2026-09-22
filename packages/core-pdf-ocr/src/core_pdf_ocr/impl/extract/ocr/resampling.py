@@ -10,9 +10,7 @@ import numpy
 from core_pdf.impl.runtime.array_views import nearest_indices, readonly
 
 
-def internal_validate_resampling_shape(
-    samples: numpy.ndarray[Any, Any], height: int, width: int
-) -> None:
+def validate_resampling_shape(samples: numpy.ndarray[Any, Any], height: int, width: int) -> None:
     if height <= 0 or width <= 0:
         raise ValueError("resampling dimensions must be positive")
     if samples.ndim not in (2, 3):
@@ -24,7 +22,7 @@ def internal_validate_resampling_shape(
 def resample_nearest(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    internal_validate_resampling_shape(samples, height, width)
+    validate_resampling_shape(samples, height, width)
     if samples.shape[:2] == (height, width) and samples.flags.c_contiguous:
         return samples
     y_indexes = nearest_indices(height, samples.shape[0])
@@ -33,7 +31,7 @@ def resample_nearest(
     return numpy.ascontiguousarray(rows.take(x_indexes, axis=1))
 
 
-def internal_box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]:
+def box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]:
     edges = numpy.arange(output_count + 1, dtype=numpy.intp) * source_count // output_count
     starts = numpy.minimum(edges[:-1], source_count - 1)
     stops = numpy.maximum(edges[1:], starts + 1)
@@ -41,17 +39,17 @@ def internal_box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]
     return readonly(starts), readonly(counts)
 
 
-def internal_box_axis(
+def box_axis(
     samples: numpy.ndarray[Any, Any], output_count: int, axis: int
 ) -> numpy.ndarray[Any, Any]:
-    starts, counts = internal_box_bounds(output_count, samples.shape[axis])
+    starts, counts = box_bounds(output_count, samples.shape[axis])
     totals = numpy.add.reduceat(samples, starts, axis=axis, dtype=numpy.float32)
     shape = [1] * totals.ndim
     shape[axis] = output_count
     return totals / counts.reshape(shape)
 
 
-def internal_resample_separable(
+def resample_separable(
     samples: numpy.ndarray[Any, Any],
     height: int,
     width: int,
@@ -71,13 +69,13 @@ def internal_resample_separable(
 def resample_box(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    internal_validate_resampling_shape(samples, height, width)
+    validate_resampling_shape(samples, height, width)
     if height > samples.shape[0] or width > samples.shape[1]:
         raise ValueError("resample_box only reduces; use resample_bilinear to enlarge")
-    return internal_resample_separable(samples, height, width, internal_box_axis)
+    return resample_separable(samples, height, width, box_axis)
 
 
-def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, Any, Any]:
+def bilinear_taps(output_count: int, source_count: int) -> tuple[Any, Any, Any]:
     if source_count == 1:
         zeros = readonly(numpy.zeros(output_count, dtype=numpy.intp))
         weights = readonly(numpy.zeros(output_count, dtype=numpy.float32))
@@ -93,10 +91,10 @@ def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, A
     return readonly(lower), readonly(upper), readonly(weights)
 
 
-def internal_bilinear_axis(
+def bilinear_axis(
     samples: numpy.ndarray[Any, Any], output_count: int, axis: int
 ) -> numpy.ndarray[Any, Any]:
-    lower, upper, weights = internal_bilinear_taps(output_count, samples.shape[axis])
+    lower, upper, weights = bilinear_taps(output_count, samples.shape[axis])
     shape = [1] * samples.ndim
     shape[axis] = output_count
     blend = weights.reshape(shape)
@@ -108,14 +106,14 @@ def internal_bilinear_axis(
 def resample_bilinear(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    internal_validate_resampling_shape(samples, height, width)
-    return internal_resample_separable(samples, height, width, internal_bilinear_axis)
+    validate_resampling_shape(samples, height, width)
+    return resample_separable(samples, height, width, bilinear_axis)
 
 
 def resample_smooth(
     samples: numpy.ndarray[Any, Any], height: int, width: int
 ) -> numpy.ndarray[Any, Any]:
-    internal_validate_resampling_shape(samples, height, width)
+    validate_resampling_shape(samples, height, width)
     if height <= samples.shape[0] and width <= samples.shape[1]:
         return resample_box(samples, height, width)
     if height >= samples.shape[0] and width >= samples.shape[1]:

@@ -5,14 +5,14 @@ import pytest
 
 from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import CapturedPath, CapturedSoftMask, CapturedSubpath
-from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.commands import translated_command
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import DisplayListItem, PathPaintItem
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_triangle_item():
+def triangle_item():
     path = CapturedPath([CapturedSubpath([(1, 1), (4, 1), (2, 4)], closed=True)])
     edges = np.asarray(path.fill_edges(), dtype=np.float64)
     edges.flags.writeable = False
@@ -23,13 +23,13 @@ def internal_triangle_item():
     return item
 
 
-def internal_render(item):
+def render(item):
     pixels = bytearray(12 * 12 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
-    target = internal_RasterTarget(
+    target = RasterTarget(
         pixels,
         None,
-        clip=internal_ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12),
+        clip=ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12),
         width=12,
         height=12,
         scale=1,
@@ -44,13 +44,13 @@ def internal_render(item):
 
 @pytest.mark.parametrize(("tx", "ty"), [(0, 0), (4, 0), (0, 4), (3, 5), (-1, -1), (0.25, 0.75)])
 def test_translated_cached_edges_match_path_geometry_and_raster(tx, ty):
-    original = internal_triangle_item()
+    original = triangle_item()
     original_edges = original.edge_array.copy()
     placed = translated_command(original, tx, ty)
     assert isinstance(placed, PathPaintItem)
     np.testing.assert_array_equal(placed.edge_array, np.asarray(placed.path.fill_edges()))
-    actual = internal_render(placed)
-    expected = internal_render(replace(placed, edge_array=None))
+    actual = render(placed)
+    expected = render(replace(placed, edge_array=None))
     assert expected[:, :, 3].any()
     np.testing.assert_array_equal(actual, expected)
     np.testing.assert_array_equal(original.edge_array, original_edges)
@@ -63,7 +63,7 @@ def test_translated_cached_edges_match_path_geometry_and_raster(tx, ty):
 def test_path_translation_preserves_mask_program_and_explicit_blend(own_blend, tx, ty):
     mask = CapturedSoftMask(CapturedProgram(), offset=(5, 6))
     original = replace(
-        internal_triangle_item(), edge_array=None, blend_mode=own_blend, graphics_soft_mask=mask
+        triangle_item(), edge_array=None, blend_mode=own_blend, graphics_soft_mask=mask
     )
     placed = translated_command(original, tx, ty, "Screen")
     assert isinstance(placed, PathPaintItem)
@@ -103,7 +103,7 @@ def test_shading_translation_moves_centres_and_bounds_without_changing_radii(
 
 
 def test_generic_clip_translation_retains_shared_mask_capture_and_source_path():
-    path = internal_triangle_item().path
+    path = triangle_item().path
     mask = CapturedSoftMask(CapturedProgram())
     original = DisplayListItem("clip", 1, {"path": path, "bbox": None, "graphics_soft_mask": mask})
     placed = translated_command(original, 2, 3)

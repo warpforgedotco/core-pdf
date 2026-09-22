@@ -3,15 +3,15 @@ import pytest
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render import target as render_target
-from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render.target import RasterTarget
 
 
 def internal_target(clip_kind):
     width, height = 48, 20
     pixels = bytearray(width * height * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(height, width, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
+    clip = ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
             [(2, 2), (40, 2), (40, 16), (2, 16)]
@@ -19,7 +19,7 @@ def internal_target(clip_kind):
             else [(2, 2), (43, 2), (2, 18)]
         )
         clip.push(CapturedPath([CapturedSubpath(points, closed=True)]), "nonzero")
-    return internal_RasterTarget(
+    return RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -33,7 +33,7 @@ def internal_target(clip_kind):
     ), view
 
 
-def internal_in_clip(x, y, kind):
+def in_clip(x, y, kind):
     if kind == "none":
         return True
     if kind == "rect":
@@ -66,7 +66,7 @@ def test_scanline_holes_and_clipping_match_geometry(
                 outer = 1 <= x < 46 and 1 <= y < 18
                 inner = 10 <= x < 30 and 5 <= y < 14
                 hole = inner and (opposite_inner or fill_rule == "evenodd")
-                if outer and not hole and internal_in_clip(x, y, clip_kind):
+                if outer and not hole and in_clip(x, y, clip_kind):
                     expected[row, column] = color
     np.testing.assert_array_equal(actual, expected)
 
@@ -115,7 +115,7 @@ def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
     expected = np.zeros_like(actual)
     for row in range(20):
         for column in range(48):
-            if not internal_in_clip(column + 0.5, 19.5 - row, clip_kind):
+            if not in_clip(column + 0.5, 19.5 - row, clip_kind):
                 continue
             covered = 0
             for sy in range(4):
@@ -158,7 +158,7 @@ def test_black_polygon_shortcut_preserves_integer_holes(
             x, y = column + 0.5, 19.5 - row
             outer_inside = 1 <= x < 46 and 1 <= y < 19
             hole = 10 <= x < 30 and 5 <= y < 14 and (opposite_inner or fill_rule == "evenodd")
-            if outer_inside and not hole and internal_in_clip(x, y, clip_kind):
+            if outer_inside and not hole and in_clip(x, y, clip_kind):
                 expected[row, column] = (0, 0, 0, 255)
     np.testing.assert_array_equal(actual, expected)
 

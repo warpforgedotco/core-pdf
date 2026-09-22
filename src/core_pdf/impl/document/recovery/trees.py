@@ -29,7 +29,7 @@ def iter_number_tree_items(
             value = resolve(value)
             return value if type(value) is int else None
 
-    yield from internal_iter_tree_items(
+    yield from iter_tree_items(
         node,
         resolve,
         decode,
@@ -57,7 +57,7 @@ def iter_name_tree_items(
     depth: int = 0,
     seen: set[int] | None = None,
 ) -> Iterator[tuple[str, object]]:
-    yield from internal_iter_tree_items(
+    yield from iter_tree_items(
         node,
         resolve,
         decode_name,
@@ -76,7 +76,7 @@ def iter_name_tree_items(
 TreeKeyT = TypeVar("TreeKeyT")
 
 
-def internal_iter_tree_items[TreeKeyT](
+def iter_tree_items[TreeKeyT](
     node: object,
     resolve: ResolveFn,
     decode_key: Callable[[object], TreeKeyT | None],

@@ -4,7 +4,7 @@ from core_pdf.impl.graphics.color_spec import (
     cs_param_floats,
     describe_color_space,
     internal_color_space_paints,
-    internal_nchannel_process,
+    nchannel_process,
     parse_color_space,
     recover_image_bits_per_component,
 )
@@ -157,7 +157,7 @@ def test_devicen_rejects_nonarray_names_during_full_parsing():
 
 def test_nchannel_without_a_process_has_no_process_only_projection():
     space = ColorSpace("DeviceN", (), devicen_attributes=DeviceNAttributes("NChannel", None, {}))
-    assert internal_nchannel_process(space) is None
+    assert nchannel_process(space) is None
 
 
 @pytest.mark.parametrize("kind", ["Lab", "ICCBased"])

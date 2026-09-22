@@ -20,35 +20,35 @@ from core_pdf_ocr.impl.extract.contracts import (
     WorkPlan,
 )
 from core_pdf_ocr.impl.extract.ocr.raster import (
-    internal_adaptive_ocr_raster,
-    internal_compact_ocr_image,
-    internal_raster_ink_grid,
-    internal_rendered_page_raster,
-    internal_visible_intensity,
+    adaptive_ocr_raster,
+    compact_ocr_image,
+    raster_ink_grid,
+    rendered_page_raster,
+    visible_intensity,
 )
 from core_pdf_ocr.impl.extract.ocr.regions import (
     OCR_DIRECT_REGION_MIN_COVERAGE,
-    internal_dominant_image_region,
-    internal_merge_ocr_regions,
-    internal_page_image_regions,
+    dominant_image_region,
+    merge_ocr_regions,
+    page_image_regions,
 )
 from core_pdf_ocr.impl.extract.ocr.types import (
-    internal_OcrRegion,
-    internal_OcrTask,
-    internal_Raster,
-    internal_raster_rectangle_page_box,
+    OcrRegion,
+    OcrTask,
+    Raster,
+    raster_rectangle_page_box,
 )
-from core_pdf_ocr.impl.extract.quality import internal_text_utility_stats
+from core_pdf_ocr.impl.extract.quality import text_utility_stats
 
 OCR_BATCH_MAX_TASKS = 16
 OCR_BATCH_MAX_PIXELS = 8_000_000
 
 
-def internal_ocr_task_groups(
-    tasks: tuple[internal_OcrTask, ...],
-) -> tuple[tuple[internal_OcrTask, ...], ...]:
-    groups: list[tuple[internal_OcrTask, ...]] = []
-    current: list[internal_OcrTask] = []
+def ocr_task_groups(
+    tasks: tuple[OcrTask, ...],
+) -> tuple[tuple[OcrTask, ...], ...]:
+    groups: list[tuple[OcrTask, ...]] = []
+    current: list[OcrTask] = []
     current_pixels = 0
     for task in tasks:
         pixels = task.rectangle[2] * task.rectangle[3]
@@ -68,15 +68,15 @@ def internal_ocr_task_groups(
     return tuple(groups)
 
 
-def internal_tile_tasks(
-    raster: internal_Raster,
+def tile_tasks(
+    raster: Raster,
     page_box: tuple[float, float, float, float],
     ocr_pass: OcrPass,
     *,
     compact_image: bool | str = False,
-) -> tuple[internal_OcrTask, ...]:
+) -> tuple[OcrTask, ...]:
     if ocr_pass.preprocess == "binary-clean":
-        raster = internal_adaptive_ocr_raster(raster)
+        raster = adaptive_ocr_raster(raster)
     requested_tiles = ocr_pass.tiles if ocr_pass.scope is OcrPassScope.TILES else 1
     tiles = max(1, min(requested_tiles, raster.height))
     if tiles == 1:
@@ -93,26 +93,24 @@ def internal_tile_tasks(
             )
             for tile_index in range(tiles)
         )
-    return internal_rectangle_tasks(
-        raster, page_box, ocr_pass, rectangles, compact_image=compact_image
-    )
+    return rectangle_tasks(raster, page_box, ocr_pass, rectangles, compact_image=compact_image)
 
 
-def internal_rectangle_tasks(
-    raster: internal_Raster,
+def rectangle_tasks(
+    raster: Raster,
     page_box: tuple[float, float, float, float],
     ocr_pass: OcrPass,
     rectangles: tuple[tuple[int, int, int, int], ...],
     *,
     compact_image: bool | str,
-) -> tuple[internal_OcrTask, ...]:
+) -> tuple[OcrTask, ...]:
     image = (
-        internal_compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
+        compact_ocr_image(raster.image, grayscale=compact_image == "grayscale")
         if compact_image
         else raster.image
     )
     return tuple(
-        internal_OcrTask(
+        OcrTask(
             mode=mode,
             image=image,
             rectangle=rectangle,
@@ -128,11 +126,11 @@ def internal_rectangle_tasks(
     )
 
 
-def internal_estimated_text_height(raster: internal_Raster) -> float:
+def estimated_text_height(raster: Raster) -> float:
     pixels = raster.image.array()
     sample_step = max(1, math.ceil(math.sqrt(raster.width * raster.height / 1_000_000)))
     sampled = pixels[::sample_step, ::sample_step]
-    gray = internal_visible_intensity(sampled)
+    gray = visible_intensity(sampled)
     background = float(numpy.percentile(gray, 90.0))
     threshold = max(80.0, min(225.0, background - 24.0))
     ink = gray < threshold
@@ -162,7 +160,7 @@ def internal_estimated_text_height(raster: internal_Raster) -> float:
     return finite_median(typical if len(typical) else values) * sample_step
 
 
-def internal_observation_utility_grid(
+def observation_utility_grid(
     observations: ObservationBatch,
     page_box: tuple[float, float, float, float],
     rows: int,
@@ -192,7 +190,7 @@ def internal_observation_utility_grid(
     )
     utility = numpy.fromiter(
         (
-            internal_text_utility_stats(text, float(confidence)).utility
+            text_utility_stats(text, float(confidence)).utility
             for text, confidence in zip(
                 (
                     text
@@ -213,8 +211,8 @@ def internal_observation_utility_grid(
     ).astype(numpy.float32, copy=False)
 
 
-def internal_weak_region_grid_shape(
-    raster: internal_Raster,
+def weak_region_grid_shape(
+    raster: Raster,
     ocr_pass: OcrPass,
     primary: ObservationBatch,
 ) -> tuple[int, int]:
@@ -226,15 +224,15 @@ def internal_weak_region_grid_shape(
     return rows, columns
 
 
-def internal_weak_region_rectangles(
-    raster: internal_Raster,
+def weak_region_rectangles(
+    raster: Raster,
     page_box: tuple[float, float, float, float],
     ocr_pass: OcrPass,
     primary: ObservationBatch,
 ) -> tuple[tuple[int, int, int, int], ...]:
-    rows, columns = internal_weak_region_grid_shape(raster, ocr_pass, primary)
-    ink = internal_raster_ink_grid(raster, rows, columns)
-    utility = internal_observation_utility_grid(primary, page_box, rows, columns)
+    rows, columns = weak_region_grid_shape(raster, ocr_pass, primary)
+    ink = raster_ink_grid(raster, rows, columns)
+    utility = observation_utility_grid(primary, page_box, rows, columns)
     expected_utility = float(numpy.sum(utility)) / max(1, rows * columns)
     utility_limit = max(4.0, expected_utility * 0.45)
     eligible = numpy.flatnonzero((ink >= 0.01) & (utility < utility_limit))
@@ -277,24 +275,24 @@ def internal_weak_region_rectangles(
     return tuple(rectangles)
 
 
-def internal_weak_region_tasks(
-    raster: internal_Raster,
+def weak_region_tasks(
+    raster: Raster,
     page_box: tuple[float, float, float, float],
     ocr_pass: OcrPass,
     primary: ObservationBatch,
     *,
     compact_image: bool | str = False,
-) -> tuple[internal_OcrTask, ...]:
-    return internal_rectangle_tasks(
+) -> tuple[OcrTask, ...]:
+    return rectangle_tasks(
         raster,
         page_box,
         ocr_pass,
-        internal_weak_region_rectangles(raster, page_box, ocr_pass, primary),
+        weak_region_rectangles(raster, page_box, ocr_pass, primary),
         compact_image=compact_image,
     )
 
 
-def internal_direct_scan_allowed(capture: PageAnalysis, plan: WorkPlan) -> bool:
+def direct_scan_allowed(capture: PageAnalysis, plan: WorkPlan) -> bool:
     evidence = capture.evidence
     if not plan.allow_direct_image_ocr:
         return False
@@ -303,30 +301,30 @@ def internal_direct_scan_allowed(capture: PageAnalysis, plan: WorkPlan) -> bool:
     return bool(evidence.full_page_image) and not evidence.visible_native_characters
 
 
-def internal_candidate_region_tasks(
+def candidate_region_tasks(
     capture: PageAnalysis,
-    regions: tuple[internal_OcrRegion, ...],
+    regions: tuple[OcrRegion, ...],
     ocr_pass: OcrPass,
     *,
     rendered: Any,
     compact_image: bool | str,
-) -> tuple[internal_OcrTask, ...]:
-    direct_regions = internal_page_image_regions(
+) -> tuple[OcrTask, ...]:
+    direct_regions = page_image_regions(
         capture,
         minimum_area_ratio=0.02,
         max_pixels=ocr_pass.pixel_budget,
     )
     if not direct_regions:
-        dominant = internal_dominant_image_region(
+        dominant = dominant_image_region(
             capture,
             max_pixels=ocr_pass.pixel_budget,
         )
         if dominant is not None:
             direct_regions = (dominant,)
-    tasks: list[internal_OcrTask] = []
+    tasks: list[OcrTask] = []
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
     for region in regions:
-        raster: internal_Raster | None
+        raster: Raster | None
         matching_direct = tuple(
             candidate
             for candidate in direct_regions
@@ -351,7 +349,7 @@ def internal_candidate_region_tasks(
             raster = direct.raster
             raster_box = direct.page_box
         else:
-            raster = internal_rendered_page_raster(
+            raster = rendered_page_raster(
                 capture,
                 ocr_pass.scale,
                 crop=region.page_box,
@@ -384,7 +382,7 @@ def internal_candidate_region_tasks(
             else replace(region_pass, tiles=max(1, tile_count))
         )
         tasks.extend(
-            internal_tile_tasks(
+            tile_tasks(
                 raster,
                 raster_box,
                 task_pass,
@@ -394,43 +392,43 @@ def internal_candidate_region_tasks(
     return tuple(tasks)
 
 
-def internal_high_resolution_weak_region_tasks(
+def high_resolution_weak_region_tasks(
     capture: PageAnalysis,
-    source_tasks: tuple[internal_OcrTask, ...],
+    source_tasks: tuple[OcrTask, ...],
     ocr_pass: OcrPass,
     primary: ObservationBatch,
     *,
     rendered: Any,
     compact_image: bool | str,
-) -> tuple[internal_OcrTask, ...]:
-    source_rasters: dict[tuple[int, tuple[float, float, float, float], int], internal_Raster] = {}
+) -> tuple[OcrTask, ...]:
+    source_rasters: dict[tuple[int, tuple[float, float, float, float], int], Raster] = {}
     for task in source_tasks:
         source_rasters.setdefault(
             (id(task.image), task.page_box, task.resolution),
-            internal_Raster(task.image, task.resolution),
+            Raster(task.image, task.resolution),
         )
-    weak_regions: list[internal_OcrRegion] = []
+    weak_regions: list[OcrRegion] = []
     for (_, page_box, _), source_raster in source_rasters.items():
         weak_regions.extend(
-            internal_OcrRegion(
-                internal_raster_rectangle_page_box(source_raster, page_box, rectangle),
+            OcrRegion(
+                raster_rectangle_page_box(source_raster, page_box, rectangle),
                 1.0,
                 ("adaptive-weak-region",),
             )
-            for rectangle in internal_weak_region_rectangles(
+            for rectangle in weak_region_rectangles(
                 source_raster,
                 page_box,
                 ocr_pass,
                 primary,
             )
         )
-    regions = internal_merge_ocr_regions(weak_regions)
+    regions = merge_ocr_regions(weak_regions)
     if not regions:
         return ()
     region_pass = replace(ocr_pass, scope=OcrPassScope.TILES, tiles=1)
-    tasks: list[internal_OcrTask] = []
+    tasks: list[OcrTask] = []
     for region in regions:
-        raster = internal_rendered_page_raster(
+        raster = rendered_page_raster(
             capture,
             ocr_pass.scale,
             crop=region.page_box,
@@ -440,7 +438,7 @@ def internal_high_resolution_weak_region_tasks(
         if raster is None:
             continue
         tasks.extend(
-            internal_tile_tasks(
+            tile_tasks(
                 raster,
                 region.page_box,
                 region_pass,

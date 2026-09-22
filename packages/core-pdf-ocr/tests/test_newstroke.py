@@ -10,7 +10,7 @@ from core_pdf_ocr.impl.extract.ocr import newstroke
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 
-def internal_line(points: list[tuple[float, float]]) -> CapturedDrawing:
+def line(points: list[tuple[float, float]]) -> CapturedDrawing:
     return CapturedDrawing(
         0,
         None,
@@ -43,7 +43,7 @@ def internal_text(text: str, y: float = 0, angle: int = 0) -> tuple[CapturedDraw
             a, b = rotation
             point = (x * a - v * b, x * b + v * a)
             if previous is not None:
-                drawings.append(internal_line([previous, point]))
+                drawings.append(line([previous, point]))
             previous = point
         cursor += right - left
     return tuple(drawings)
@@ -113,18 +113,18 @@ def test_small_vector_page_retains_candidate_evidence_without_decoding() -> None
     "drawing",
     [
         CapturedDrawing(0, None, None),
-        internal_line([]),
-        internal_line([(0, 0)]),
-        internal_line([(0, 0), (0, 0)]),
-        internal_line([(0, 0), (1, 1), (2, 2)]),
-        replace(internal_line([(0, 0), (1, 1)]), stroke_opacity=0),
-        replace(internal_line([(0, 0), (1, 1)]), line_width=0),
+        line([]),
+        line([(0, 0)]),
+        line([(0, 0), (0, 0)]),
+        line([(0, 0), (1, 1), (2, 2)]),
+        replace(line([(0, 0), (1, 1)]), stroke_opacity=0),
+        replace(line([(0, 0), (1, 1)]), line_width=0),
         replace(
-            internal_line([(0, 0), (1, 1)]),
+            line([(0, 0), (1, 1)]),
             path=CapturedPath([CapturedSubpath([(0, 0), (1, 1)], closed=True)]),
         ),
         replace(
-            internal_line([(0, 0), (1, 1)]),
+            line([(0, 0), (1, 1)]),
             path=CapturedPath(
                 [CapturedSubpath([(0, 0), (1, 1)]), CapturedSubpath([(2, 2), (3, 3)])]
             ),
@@ -132,7 +132,7 @@ def test_small_vector_page_retains_candidate_evidence_without_decoding() -> None
     ],
 )
 def test_non_candidate_drawings_remain_sequence_barriers(drawing: CapturedDrawing) -> None:
-    valid = internal_line([(0, 0), (1, 1)])
+    valid = line([(0, 0), (1, 1)])
     segments, styles, count = newstroke.internal_segments((valid, drawing, valid))
     assert count == 2
     assert len(styles) == 1
@@ -142,8 +142,8 @@ def test_non_candidate_drawings_remain_sequence_barriers(drawing: CapturedDrawin
 
 @pytest.mark.parametrize(("gap", "expected"), [(0, True), (0.019, True), (0.021, False)])
 def test_segment_continuity_respects_line_width(gap: float, expected: bool) -> None:
-    first = internal_line([(0, 0), (1, 1)])
-    second = internal_line([(1 + gap, 1), (2, 2)])
+    first = line([(0, 0), (1, 1)])
+    second = line([(1 + gap, 1), (2, 2)])
     segments, _, _ = newstroke.internal_segments((first, second))
     assert newstroke.internal_continuity(segments) == (expected,)
     second.stroke_color = (1.0,)
@@ -152,10 +152,10 @@ def test_segment_continuity_respects_line_width(gap: float, expected: bool) -> N
     assert newstroke.internal_continuity(segments) == (False,)
 
 
-def internal_arrays(
+def arrays(
     drawings: tuple[CapturedDrawing, ...],
 ) -> tuple[
-    tuple[newstroke.internal_Segment | None, ...],
+    tuple[newstroke.Segment | None, ...],
     tuple[tuple[object, ...], ...],
     numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     numpy.ndarray[Any, numpy.dtype[numpy.int16]],
@@ -186,22 +186,22 @@ def test_fitted_glyph_rejects_implausible_size_aspect_and_shear(
 ) -> None:
     template = next(t for t in newstroke.internal_templates().all if t.char == "R")
     transformed = template.segments @ numpy.asarray(matrix)
-    drawings = tuple(internal_line([tuple(left), tuple(right)]) for left, right in transformed)
-    segments, _, points, styles = internal_arrays(drawings)
-    assert newstroke.internal_fit_match(segments, 0, template, points, styles) is None
+    drawings = tuple(line([tuple(left), tuple(right)]) for left, right in transformed)
+    segments, _, points, styles = arrays(drawings)
+    assert newstroke.fit_match(segments, 0, template, points, styles) is None
 
 
 def test_fitted_and_fixed_glyph_reject_corrupted_shape_and_style() -> None:
     template = next(t for t in newstroke.internal_templates().all if t.char == "R")
     drawings = internal_text("R")
-    segments, _, points, styles = internal_arrays(drawings)
-    fitted = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    segments, _, points, styles = arrays(drawings)
+    fitted = newstroke.fit_match(segments, 0, template, points, styles)
     assert fitted is not None
     assert fitted.char == "R"
     assert fitted.error < 1e-12
     assert fitted.transform.scale == pytest.approx(0.5)
     continuity = newstroke.internal_continuity(segments)
-    fixed = newstroke.internal_fixed_template_match(
+    fixed = newstroke.fixed_template_match(
         segments,
         continuity,
         template,
@@ -215,9 +215,9 @@ def test_fitted_and_fixed_glyph_reject_corrupted_shape_and_style() -> None:
     assert fixed.error < 1e-12
     corrupted = points.copy()
     corrupted[-1, 1] += (1, -1)
-    assert newstroke.internal_fit_match(segments, 0, template, corrupted, styles) is None
+    assert newstroke.fit_match(segments, 0, template, corrupted, styles) is None
     assert (
-        newstroke.internal_fixed_template_match(
+        newstroke.fixed_template_match(
             segments,
             continuity,
             template,
@@ -231,9 +231,9 @@ def test_fitted_and_fixed_glyph_reject_corrupted_shape_and_style() -> None:
     )
     mismatched = styles.copy()
     mismatched[-1] = 1
-    assert newstroke.internal_fit_match(segments, 0, template, points, mismatched) is None
+    assert newstroke.fit_match(segments, 0, template, points, mismatched) is None
     assert (
-        newstroke.internal_fixed_template_match(
+        newstroke.fixed_template_match(
             segments,
             continuity,
             template,
@@ -245,21 +245,19 @@ def test_fitted_and_fixed_glyph_reject_corrupted_shape_and_style() -> None:
         )
         is None
     )
-    assert (
-        newstroke.internal_fit_match(segments[:-1], 0, template, points[:-1], styles[:-1]) is None
-    )
+    assert newstroke.fit_match(segments[:-1], 0, template, points[:-1], styles[:-1]) is None
 
 
 @pytest.mark.parametrize("text", ["IR123", "I HR12  3", "RHPI"])
 def test_decode_around_robust_seed_recovers_prefixes_spaces_and_longest_glyph(text: str) -> None:
     drawings = internal_text(text)
-    segments, styles, points, style_ids = internal_arrays(drawings)
+    segments, styles, points, style_ids = arrays(drawings)
     templates = newstroke.internal_templates()
     template = next(t for t in templates.robust if t.char == "R")
     start = len(internal_text(text[: text.index("R")]))
-    seed = newstroke.internal_fit_match(segments, start, template, points, style_ids)
+    seed = newstroke.fit_match(segments, start, template, points, style_ids)
     assert seed is not None
-    matches = newstroke.internal_decode_around(
+    matches = newstroke.decode_around(
         segments,
         newstroke.internal_continuity(segments),
         templates,
@@ -268,8 +266,8 @@ def test_decode_around_robust_seed_recovers_prefixes_spaces_and_longest_glyph(te
         points,
         style_ids,
     )
-    assert newstroke.internal_sequence_text(matches) == text
-    run = newstroke.internal_sequence_run(matches, segments, styles, 7)
+    assert newstroke.sequence_text(matches) == text
+    run = newstroke.sequence_run(matches, segments, styles, 7)
     assert run.text == text
     assert run.order == 7
     assert matches[0].start == 0
@@ -292,23 +290,23 @@ def test_cursor_accepts_only_aligned_zero_one_or_two_spaces(
     x: float, y: float, follows: bool
 ) -> None:
     template = next(t for t in newstroke.internal_templates().robust if t.char == "R")
-    segments, _, points, styles = internal_arrays(internal_text("R"))
-    previous = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    segments, _, points, styles = arrays(internal_text("R"))
+    previous = newstroke.fit_match(segments, 0, template, points, styles)
     assert previous is not None
     current = replace(
         previous,
         translation=previous.translation
         + numpy.asarray((previous.width + x, y)) @ previous.transform.matrix,
     )
-    assert newstroke.internal_cursor_follows(previous, current) is follows
+    assert newstroke.cursor_follows(previous, current) is follows
 
 
 def test_empty_match_sequence_has_no_text() -> None:
-    assert newstroke.internal_sequence_text(()) == ""
+    assert newstroke.sequence_text(()) == ""
 
 
 def test_many_unrelated_segments_cannot_become_trusted_text() -> None:
-    drawing = internal_line([(0, 0), (100, 100)])
+    drawing = line([(0, 0), (100, 100)])
     result = newstroke.decode_newstroke_drawings((drawing,) * 10000)
     assert result.candidate_segments == 10000
     assert result.matched_segments == 0
@@ -352,17 +350,17 @@ def test_dense_page_preserves_barriers_and_separate_stroke_styles() -> None:
 def test_fixed_match_rejects_ambiguous_templates() -> None:
     templates = newstroke.internal_templates()
     template = next(t for t in templates.robust if t.char == "R")
-    segments, _, points, styles = internal_arrays(internal_text("R"))
-    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    segments, _, points, styles = arrays(internal_text("R"))
+    seed = newstroke.fit_match(segments, 0, template, points, styles)
     assert seed is not None
     delta = template.segments[0, 1] - template.segments[0, 0]
-    ambiguous = newstroke.internal_TemplateSet(
+    ambiguous = newstroke.TemplateSet(
         (template, replace(template, char="X")),
         (template,),
         {(int(delta[0]), int(delta[1])): (template, replace(template, char="X"))},
     )
     assert (
-        newstroke.internal_fixed_match(
+        newstroke.fixed_match(
             segments,
             newstroke.internal_continuity(segments),
             ambiguous,
@@ -379,37 +377,29 @@ def test_fixed_match_rejects_ambiguous_templates() -> None:
 def test_matchers_reject_barrier_at_start_and_stale_seed() -> None:
     templates = newstroke.internal_templates()
     template = next(t for t in templates.robust if t.char == "R")
-    segments, _, points, styles = internal_arrays(internal_text("R"))
-    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    segments, _, points, styles = arrays(internal_text("R"))
+    seed = newstroke.fit_match(segments, 0, template, points, styles)
     assert seed is not None
     blocked = (None, *segments[1:])
     continuity = newstroke.internal_continuity(blocked)
-    assert newstroke.internal_fit_match(blocked, 0, template, points, styles) is None
+    assert newstroke.fit_match(blocked, 0, template, points, styles) is None
     assert (
-        newstroke.internal_fixed_match(
-            blocked, continuity, templates, 0, seed.transform, 0, points, styles
-        )
+        newstroke.fixed_match(blocked, continuity, templates, 0, seed.transform, 0, points, styles)
         is None
     )
-    assert (
-        newstroke.internal_decode_forward(blocked, continuity, templates, seed, points, styles)
-        == ()
-    )
-    assert (
-        newstroke.internal_decode_around(blocked, continuity, templates, seed, 0, points, styles)
-        == ()
-    )
+    assert newstroke.decode_forward(blocked, continuity, templates, seed, points, styles) == ()
+    assert newstroke.decode_around(blocked, continuity, templates, seed, 0, points, styles) == ()
 
 
 def test_fixed_match_declines_delta_without_any_template() -> None:
     templates = newstroke.internal_templates()
     template = next(t for t in templates.robust if t.char == "R")
-    segments, _, points, styles = internal_arrays(internal_text("R"))
-    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    segments, _, points, styles = arrays(internal_text("R"))
+    seed = newstroke.fit_match(segments, 0, template, points, styles)
     assert seed is not None
     empty = replace(templates, by_first_delta={})
     assert (
-        newstroke.internal_fixed_match(
+        newstroke.fixed_match(
             segments,
             newstroke.internal_continuity(segments),
             empty,
@@ -426,12 +416,12 @@ def test_fixed_match_declines_delta_without_any_template() -> None:
 def test_backward_decode_stops_at_ambiguous_preceding_glyph() -> None:
     templates = newstroke.internal_templates()
     template = next(t for t in templates.robust if t.char == "R")
-    segments, _, points, styles = internal_arrays(internal_text("RR"))
+    segments, _, points, styles = arrays(internal_text("RR"))
     start = len(internal_text("R"))
-    seed = newstroke.internal_fit_match(segments, start, template, points, styles)
+    seed = newstroke.fit_match(segments, start, template, points, styles)
     assert seed is not None
     ambiguous = replace(templates, all=(template, replace(template, char="X")))
-    matches = newstroke.internal_decode_around(
+    matches = newstroke.decode_around(
         segments, newstroke.internal_continuity(segments), ambiguous, seed, 0, points, styles
     )
     assert len(matches) == 1
@@ -465,8 +455,8 @@ def test_isolated_glyphs_do_not_become_decoded_sequences_on_dense_page() -> None
 def test_fixed_match_rejects_fractional_template_delta() -> None:
     templates = newstroke.internal_templates()
     template = next(t for t in templates.robust if t.char == "R")
-    segments, _, points, styles = internal_arrays(internal_text("R"))
-    seed = newstroke.internal_fit_match(segments, 0, template, points, styles)
+    segments, _, points, styles = arrays(internal_text("R"))
+    seed = newstroke.fit_match(segments, 0, template, points, styles)
     assert seed is not None
     first = segments[0]
     assert first is not None
@@ -474,7 +464,7 @@ def test_fixed_match_rejects_fractional_template_delta() -> None:
     points = points.copy()
     points[0, 1, 0] += 0.15
     assert (
-        newstroke.internal_fixed_match(
+        newstroke.fixed_match(
             changed,
             newstroke.internal_continuity(changed),
             templates,

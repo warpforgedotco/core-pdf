@@ -8,17 +8,17 @@ from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.model.geometry import bbox_union, overlap_ratio_of
 
 from ._capture import (
-    internal_pdfminer_page_program,
-    internal_pdfminer_validate_page_resources,
+    pdfminer_page_program,
+    pdfminer_validate_page_resources,
 )
 from ._fonts import (
     _font_value,
     _pdfminer_builtin_width,
-    internal_pdfminer_descent,
-    internal_pdfminer_embedded_cmap_is_unusable,
-    internal_pdfminer_font_name,
-    internal_pdfminer_glyph_text,
-    internal_pdfminer_ligature_overrides,
+    pdfminer_descent,
+    pdfminer_embedded_cmap_is_unusable,
+    pdfminer_font_name,
+    pdfminer_glyph_text,
+    pdfminer_ligature_overrides,
 )
 from ._layout import (
     LAParams,
@@ -105,7 +105,7 @@ def _pdfminer_layout_figure_box(
     return (x0, y0, x1, y1)
 
 
-def internal_project_page(
+def project_page(
     page: PdfPage,
     params: LAParams,
     *,
@@ -116,10 +116,10 @@ def internal_project_page(
     page_media_box = page.media_box or (0.0, 0.0, page_width, page_height)
     chars: list[LTChar] = []
     if not unstructured_mode:
-        internal_pdfminer_validate_page_resources(page)
-    products = internal_pdfminer_page_program(page)
+        pdfminer_validate_page_resources(page)
+    products = pdfminer_page_program(page)
     projected_glyphs: tuple[Any, ...] = products.glyphs
-    ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
+    ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
     runs = sorted(products.runs, key=lambda run: run.seqno)
     run_sequences = [run.seqno for run in runs]
     figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
@@ -136,7 +136,7 @@ def internal_project_page(
     )
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
     for glyph_index, glyph in enumerate(projected_glyphs):
-        if not unstructured_mode and internal_pdfminer_embedded_cmap_is_unusable(glyph):
+        if not unstructured_mode and pdfminer_embedded_cmap_is_unusable(glyph):
             continue
         glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
         if _pdfminer_form_glyph_is_clipped(glyph_provenance):
@@ -149,7 +149,7 @@ def internal_project_page(
         ligature = ligatures.get(id(glyph))
         x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
         baseline = ligature[2] if ligature is not None else glyph.baseline
-        text = ligature[0] if ligature is not None else internal_pdfminer_glyph_text(glyph)
+        text = ligature[0] if ligature is not None else pdfminer_glyph_text(glyph)
         if not text:
             continue
         effective_font_size = glyph.effective_font_size or glyph.font_size
@@ -294,7 +294,7 @@ def internal_project_page(
                 ),
             )
             text_rise = float(glyph_provenance.get("text_rise", 0.0))
-            descent = internal_pdfminer_descent(glyph) * glyph.font_size + text_rise
+            descent = pdfminer_descent(glyph) * glyph.font_size + text_rise
             top = descent + glyph.font_size
             advance = normalized_width * horizontal_scale * glyph.font_size
             media_left, media_bottom, _media_right, _media_top = page_media_box
@@ -357,7 +357,7 @@ def internal_project_page(
         character = LTChar(
             (x0, y0, x1, y1),
             text,
-            internal_pdfminer_font_name(glyph),
+            pdfminer_font_name(glyph),
             effective_font_height,
         )
         provenance = (

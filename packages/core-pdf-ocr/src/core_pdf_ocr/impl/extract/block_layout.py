@@ -15,15 +15,15 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.types import TextWord
 from core_pdf_ocr.impl.extract.contracts import ObservationSource
 
-internal_SOURCE_LABELS = {
+SOURCE_LABELS = {
     int(ObservationSource.NATIVE): "native",
     int(ObservationSource.OCR): "ocr",
 }
-internal_OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
+OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
 
 
-def internal_group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy.ndarray:
-    if not bool((observations.source[indexes] == internal_OCR_SOURCE).any()):
+def group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy.ndarray:
+    if not bool((observations.source[indexes] == OCR_SOURCE).any()):
         return indexes
     rotation = int(observations.rotation[indexes[0]]) % 360
     boxes = observations.bbox[indexes]
@@ -53,20 +53,20 @@ def internal_group_order(observations: ObservationBatch, indexes: numpy.ndarray)
     return indexes[order]
 
 
-def internal_group_text_and_words(
+def group_text_and_words(
     observations: ObservationBatch,
     indexes: numpy.ndarray,
     *,
     may_contain_ocr: bool = True,
 ) -> tuple[str, tuple[TextWord, ...]]:
     if may_contain_ocr:
-        indexes = internal_group_order(observations, indexes)
-    return native_layout.internal_group_text_and_words(observations, indexes)
+        indexes = group_order(observations, indexes)
+    return native_layout.group_text_and_words(observations, indexes)
 
 
-def internal_build_lines(observations: ObservationBatch) -> native_layout.internal_BuiltLines:
-    return native_layout.internal_build_lines(
-        observations, source_labels=internal_SOURCE_LABELS, group_order=internal_group_order
+def build_lines(observations: ObservationBatch) -> native_layout.BuiltLines:
+    return native_layout.build_lines(
+        observations, source_labels=SOURCE_LABELS, group_order=group_order
     )
 
 
@@ -86,8 +86,8 @@ def layout_blocks(
         rotation=rotation,
         page_width=page_width,
         page_height=page_height,
-        source_labels=internal_SOURCE_LABELS,
-        group_order=internal_group_order,
+        source_labels=SOURCE_LABELS,
+        group_order=group_order,
     )
 
 
@@ -107,6 +107,6 @@ def layout_blocks_with_evidence(
         rotation=rotation,
         page_width=page_width,
         page_height=page_height,
-        source_labels=internal_SOURCE_LABELS,
-        group_order=internal_group_order,
+        source_labels=SOURCE_LABELS,
+        group_order=group_order,
     )

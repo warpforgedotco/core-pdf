@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-internal_CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
+CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
     "BT": ("op_BT", ""),
     "ET": ("op_ET", ""),
     "T*": ("op_T_star", ""),
@@ -76,14 +76,10 @@ internal_CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {
     "n": ("op_paint_clear", ""),
 }
 
-CONTENT_OPERATOR_HANDLERS = {
-    name: handler for name, (handler, _) in internal_CONTENT_OPERATORS.items()
-}
+CONTENT_OPERATOR_HANDLERS = {name: handler for name, (handler, _) in CONTENT_OPERATORS.items()}
 
 CONTENT_OPERATOR_SIGNATURES = {
-    name: signature
-    for name, (_, signature) in internal_CONTENT_OPERATORS.items()
-    if signature is not None
+    name: signature for name, (_, signature) in CONTENT_OPERATORS.items() if signature is not None
 }
 
 INLINE_IMAGE_DATA_OPERATORS = frozenset({b"ID", b"EI"})

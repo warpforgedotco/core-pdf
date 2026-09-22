@@ -32,7 +32,7 @@ def normalize_color_components(spec: ColorSpace, components: Sequence[object]) -
         for value in components
     )
     if spec.kind == "Indexed":
-        return (float(internal_indexed_color_index(values[0], spec.hival)),)
+        return (float(indexed_color_index(values[0], spec.hival)),)
     ranges = spec.component_ranges
     return tuple(
         max(low, min(high, value)) for value, (low, high) in zip(values, ranges, strict=True)
@@ -51,7 +51,7 @@ def initial_color_components(spec: ColorSpace) -> tuple[float, ...] | None:
     return normalize_color_components(spec, (initial,) * count)
 
 
-def internal_indexed_color_index(value: float, hival: int) -> int:
+def indexed_color_index(value: float, hival: int) -> int:
     return max(0, min(hival, int(value + 0.5)))
 
 
@@ -61,7 +61,7 @@ def indexed_color_components(spec: ColorSpace, value: float) -> tuple[float, ...
     components = len(spec.base.component_ranges)
     if spec.lookup is None or components <= 0:
         raise ValueError("invalid Indexed color lookup")
-    index = internal_indexed_color_index(
+    index = indexed_color_index(
         require_pdf_number(value, "invalid Indexed color component"), spec.hival
     )
     entry = spec.lookup[index * components : (index + 1) * components]

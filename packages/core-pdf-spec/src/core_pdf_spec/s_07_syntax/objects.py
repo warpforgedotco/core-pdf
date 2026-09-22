@@ -19,7 +19,7 @@ from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfReference
 
 
-class internal_ObjectStreamLexer(PdfLexer):
+class ObjectStreamLexer(PdfLexer):
     __slots__ = ()
 
     def parse_stream(self, dictionary: PdfDict) -> PdfStream:
@@ -33,8 +33,8 @@ class PdfObjectStream:
         "index",
         "lock",
         "semantic_context",
-        "internal_object_numbers",
-        "internal_ends",
+        "object_numbers",
+        "ends",
     )
 
     def __init__(
@@ -48,9 +48,9 @@ class PdfObjectStream:
         self.objects: ObjectCache = {}
         self.raw_body = body
         self.index = index_map
-        self.internal_object_numbers = tuple(index_map)
+        self.object_numbers = tuple(index_map)
         offsets = sorted(set(index_map.values()))
-        self.internal_ends = dict(zip(offsets, [*offsets[1:], len(body)], strict=True))
+        self.ends = dict(zip(offsets, [*offsets[1:], len(body)], strict=True))
         self.lock = threading.RLock()
 
     def read_header(
@@ -89,14 +89,14 @@ class PdfObjectStream:
         return index
 
     def create_lexer(self, body: bytes | memoryview) -> PdfLexer:
-        return internal_ObjectStreamLexer(body, semantic_context=self.semantic_context)
+        return ObjectStreamLexer(body, semantic_context=self.semantic_context)
 
     def close(self) -> None:
         with self.lock:
             self.objects.clear()
             self.index.clear()
-            self.internal_object_numbers = ()
-            self.internal_ends.clear()
+            self.object_numbers = ()
+            self.ends.clear()
             self.raw_body = b""
 
     def get(self, reference: int | PdfReference, default: Any = None) -> Any:
@@ -111,7 +111,7 @@ class PdfObjectStream:
             if obj_num not in self.index:
                 return default
             rel_offset = self.index[obj_num]
-            result = self.parse_object_at(rel_offset, self.internal_ends[rel_offset])
+            result = self.parse_object_at(rel_offset, self.ends[rel_offset])
             self.objects[obj_num] = result
             return result
 
@@ -119,9 +119,9 @@ class PdfObjectStream:
         with self.lock:
             if (
                 type(index) is not int
-                or not 0 <= index < len(self.internal_object_numbers)
+                or not 0 <= index < len(self.object_numbers)
                 or expected_reference.generation_number != 0
-                or self.internal_object_numbers[index] != expected_reference.object_number
+                or self.object_numbers[index] != expected_reference.object_number
             ):
                 raise PdfParseError("invalid compressed object reference")
             return self.get(expected_reference)
@@ -138,7 +138,7 @@ class PdfObjectStream:
             offset = self.index.get(object_number)
             if offset is None:
                 return None
-            return self.raw_body[offset : self.internal_ends[offset]]
+            return self.raw_body[offset : self.ends[offset]]
 
     def parse_object_at(self, offset: int, end: int) -> Any:
         if not 0 <= offset < end <= len(self.raw_body):

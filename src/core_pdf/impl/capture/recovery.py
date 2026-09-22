@@ -99,8 +99,8 @@ class CaptureRecovery:
         return lexer.pos if lexer.pos > start else None
 
 
-internal_KEYWORD_TOKENS = frozenset((b"BI", b"true", b"false", b"null"))
-internal_OBJECT_KEYWORDS = frozenset(("R", "obj", "endobj", "stream", "endstream"))
+KEYWORD_TOKENS = frozenset((b"BI", b"true", b"false", b"null"))
+OBJECT_KEYWORDS = frozenset(("R", "obj", "endobj", "stream", "endstream"))
 
 
 def iter_content_operations(
@@ -135,14 +135,14 @@ def iter_content_operations(
                 if len(operands) < 16:
                     operands.append(name)
                 continue
-            elif word not in internal_KEYWORD_TOKENS:
+            elif word not in KEYWORD_TOKENS:
                 lexer.pos = match.end()
                 op_name = operators.get(word)
                 if op_name is None:
                     op_name = operators[word] = word.decode("latin-1")
                 operation = (op_name, tuple(operands))
                 operands.clear()
-                if op_name not in internal_OBJECT_KEYWORDS:
+                if op_name not in OBJECT_KEYWORDS:
                     yield operation
                 continue
         try:
@@ -193,5 +193,5 @@ def iter_content_operations(
             continue
         operation = (op_name, tuple(operands))
         operands.clear()
-        if op_name not in internal_OBJECT_KEYWORDS:
+        if op_name not in OBJECT_KEYWORDS:
             yield operation

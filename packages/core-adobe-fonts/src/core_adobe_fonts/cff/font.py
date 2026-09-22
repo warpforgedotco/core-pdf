@@ -76,7 +76,7 @@ CFF_EXPERT_ENCODING_CODES = tuple(
 )
 
 
-def internal_cff_offset(values: list[float] | None, context: str) -> int:
+def cff_offset(values: list[float] | None, context: str) -> int:
     if not values or len(values) != 1:
         raise ValueError(f"invalid CFF {context}")
     value = values[0]
@@ -157,7 +157,7 @@ class CFFFont:
         values = self.top_dict.get(operator)
         if values is None and default is not None:
             return default
-        return internal_cff_offset(values, "dictionary offset")
+        return cff_offset(values, "dictionary offset")
 
     def read_index(self, pos: int) -> tuple[list[bytes], int]:
         data = memoryview(self.data)
@@ -413,7 +413,7 @@ class CFFFont:
         if not self.is_cid_keyed:
             return (0,) * count
         values = self.top_dict.get((12, 37))
-        pos = internal_cff_offset(values, "FDSelect offset")
+        pos = cff_offset(values, "FDSelect offset")
         if not 0 <= pos < len(self.data):
             raise ValueError("invalid CFF FDSelect offset")
         fmt = self.data[pos]
@@ -448,7 +448,7 @@ class CFFFont:
         if not self.is_cid_keyed:
             return ()
         values = self.top_dict.get((12, 36))
-        items, _ = self.read_index(internal_cff_offset(values, "FDArray offset"))
+        items, _ = self.read_index(cff_offset(values, "FDArray offset"))
         return tuple(self.parse_dict(item) for item in items)
 
     def read_private_subrs(
@@ -468,7 +468,7 @@ class CFFFont:
         subrs = private_dict.get(19)
         if subrs is None:
             return []
-        items, _ = self.read_index(offset + internal_cff_offset(subrs, "Subrs offset"))
+        items, _ = self.read_index(offset + cff_offset(subrs, "Subrs offset"))
         return items
 
     def local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:

@@ -8,7 +8,7 @@ import pytest
 from core_pdf.impl.capture.program import CapturedProgram, PageProgram
 from core_pdf.impl.extract.contracts import GlyphEvidence, ObservationBatch
 from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
+from core_pdf.impl.runtime.execution import ExtractionCancelled, ExtractionScope
 from core_pdf_ocr.impl.extract import selection
 from core_pdf_ocr.impl.extract.contracts import (
     PageAnalysis,
@@ -66,15 +66,15 @@ def test_cross_page_stroke_learning_uses_richest_seed_and_falls_back_when_needed
     decoded_recognition = RecognitionResult(ObservationBatch.empty())
     monkeypatch.setattr(selection, "decode_stroked_text_profile_with_alphabet", decode)
     monkeypatch.setattr(
-        selection, "internal_document_stroked_recognition", lambda decoded: decoded_recognition
+        selection, "document_stroked_recognition", lambda decoded: decoded_recognition
     )
-    results = selection.internal_prepare_document_stroked_mappings(
+    results = selection.prepare_document_stroked_mappings(
         cast(Any, extractions), captures, ExtractionScope()
     )
     assert calls == ([1] if sufficient else [1, 0])
     assert results[1] is recognition
     assert results[0] is (decoded_recognition if sufficient else recognition)
-    assert not selection.internal_prepare_document_stroked_mappings(
+    assert not selection.prepare_document_stroked_mappings(
         cast(Any, extractions[:1]), captures[:1], ExtractionScope()
     )
 
@@ -121,7 +121,7 @@ def test_cross_page_font_learning_votes_and_seed_reuse(ocr_capture: PageAnalysis
         SimpleNamespace(recognize=lambda context, index=index: recognize(index, context))
         for index in range(3)
     )
-    font = selection.internal_prepare_document_font_mappings(
+    font = selection.prepare_document_font_mappings(
         cast(Any, extractions), captures, ExtractionScope()
     )
     assert calls == [0, 1]
@@ -133,7 +133,7 @@ def test_cross_page_font_learning_votes_and_seed_reuse(ocr_capture: PageAnalysis
         cast(Any, font.learned_unicode)[decoder] = {}
     with pytest.raises(TypeError):
         cast(Any, font.learned_unicode[decoder])[b"\x00"] = "X"
-    isolated = selection.internal_prepare_document_font_mappings(
+    isolated = selection.prepare_document_font_mappings(
         cast(Any, extractions[2:]), captures[2:], ExtractionScope()
     )
     assert not isolated.learned_unicode
@@ -155,7 +155,7 @@ def test_font_mapping_requires_repeated_unambiguous_votes(
     counts: dict[str, int], expected: str | None
 ) -> None:
     decoder = object()
-    result = selection.internal_resolve_document_font_mappings({decoder: {b"a": Counter(counts)}})
+    result = selection.resolve_document_font_mappings({decoder: {b"a": Counter(counts)}})
     assert result.get(decoder, {}).get(b"a") == expected
 
 
@@ -170,7 +170,7 @@ def test_font_vote_geometry_and_confidence_filters(ocr_capture: PageAnalysis) ->
         ("ABCDEFGH", (0, 100, 78, 110), 99),
     ]:
         ocr = ObservationBatch.from_columns((text,), (box,), source=1, confidence=(confidence,))
-        assert not selection.internal_font_mapping_votes(capture, ocr)
+        assert not selection.font_mapping_votes(capture, ocr)
     known = replace(
         capture,
         program=PageProgram(
@@ -185,7 +185,7 @@ def test_font_vote_geometry_and_confidence_filters(ocr_capture: PageAnalysis) ->
     ocr = ObservationBatch.from_columns(
         ("ABCDEFGH",), ((0, 0, 78, 10),), source=1, confidence=(99,)
     )
-    assert not selection.internal_font_mapping_votes(known, ocr)
+    assert not selection.font_mapping_votes(known, ocr)
 
 
 def test_enrichment_only_rebuilds_changed_pages_and_reuses_seed_recognition(
@@ -221,21 +221,21 @@ def test_enrichment_only_rebuilds_changed_pages_and_reuses_seed_recognition(
         assert program is captures[1].program
         return captures[1]
 
-    monkeypatch.setattr(selection, "internal_PageExtraction", build)
-    monkeypatch.setattr(selection, "internal_capture_from_program", recapture)
-    font = selection.internal_FontEnrichment(
+    monkeypatch.setattr(selection, "PageExtraction", build)
+    monkeypatch.setattr(selection, "capture_from_program", recapture)
+    font = selection.FontEnrichment(
         learned_unicode={decoder: {b"a": "A"}},
         recognition_by_index={0: recognition},
     )
-    result = selection.internal_apply_font_enrichment(cast(Any, bases), captures, font)
+    result = selection.apply_font_enrichment(cast(Any, bases), captures, font)
     assert result[2] is bases[2]
     assert rebuilt[0]["recognition"] is recognition
     assert "recognition" not in rebuilt[1]
     assert "plan" not in rebuilt[1]
     assert overlays == [font.learned_unicode]
     assert all(base.capture is capture for base, capture in zip(bases, captures, strict=True))
-    assert selection.internal_apply_stroked_enrichment(cast(Any, bases), {}) is bases
-    stroked = selection.internal_apply_stroked_enrichment(cast(Any, bases), {1: recognition})
+    assert selection.apply_stroked_enrichment(cast(Any, bases), {}) is bases
+    stroked = selection.apply_stroked_enrichment(cast(Any, bases), {1: recognition})
     assert stroked[0] is bases[0]
     assert stroked[2] is bases[2]
     assert rebuilt[-1]["recognition"] is recognition
@@ -251,13 +251,13 @@ def test_selection_cancellation_stops_before_second_seed(ocr_capture: PageAnalys
         return RecognitionResult(ObservationBatch.empty())
 
     extractions = (SimpleNamespace(recognize=recognize),) * 2
-    with pytest.raises(internal_ExtractionCancelled):
-        selection.internal_prepare_document_font_mappings(
+    with pytest.raises(ExtractionCancelled):
+        selection.prepare_document_font_mappings(
             cast(Any, extractions), captures, ExtractionScope(cancelled=lambda: bool(calls))
         )
     assert calls == [1]
-    with pytest.raises(internal_ExtractionCancelled):
-        selection.internal_capture_document_pages(
+    with pytest.raises(ExtractionCancelled):
+        selection.capture_document_pages(
             cast(Any, extractions), ExtractionScope(cancelled=lambda: True)
         )
 
@@ -266,9 +266,9 @@ def test_stroked_alphabet_conflicts_remain_excluded() -> None:
     alphabet: dict[Any, str] = {}
     ambiguous: set[Any] = set()
     signature = cast(Any, (1, 2))
-    selection.internal_merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "A"),))
-    selection.internal_merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "B"),))
-    selection.internal_merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "A"),))
+    selection.merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "A"),))
+    selection.merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "B"),))
+    selection.merge_document_stroked_alphabet(alphabet, ambiguous, ((signature, "A"),))
     assert alphabet == {}
     assert ambiguous == {signature}
 
@@ -284,8 +284,8 @@ def test_cancelled_stroke_enrichment_stops_even_with_cached_recognition(
     )
     recognition = RecognitionResult(ObservationBatch.empty())
     extractions = (SimpleNamespace(recognition_result=recognition),) * 2
-    with pytest.raises(internal_ExtractionCancelled):
-        selection.internal_prepare_document_stroked_mappings(
+    with pytest.raises(ExtractionCancelled):
+        selection.prepare_document_stroked_mappings(
             cast(Any, extractions), (capture, capture), ExtractionScope(cancelled=lambda: True)
         )
 
@@ -304,24 +304,24 @@ def test_unknown_decoder_counts_ignore_unusable_and_already_mapped_glyphs(ocr_ca
         replace(valid, text="A", unicode_source="to_unicode"),
     )
     capture = replace(capture, program=PageProgram(CapturedProgram(glyphs=variants)))
-    assert selection.internal_unknown_decoder_counts(capture) == Counter({decoder: 1})
-    assert not selection.internal_unknown_decoder_counts(ocr_capture)
+    assert selection.unknown_decoder_counts(capture) == Counter({decoder: 1})
+    assert not selection.unknown_decoder_counts(ocr_capture)
 
 
 def test_small_decoder_samples_do_not_seed_document_learning(ocr_capture) -> None:
     decoder = object()
     captures = (captured_glyphs(ocr_capture, decoder, 7), captured_glyphs(ocr_capture, decoder, 24))
-    assert selection.internal_document_font_seed_indexes(captures) == ()
+    assert selection.document_font_seed_indexes(captures) == ()
 
 
 def test_font_votes_skip_empty_glyphs_and_nonprintable_predictions(ocr_capture) -> None:
-    assert not selection.internal_font_mapping_votes(ocr_capture, ObservationBatch.empty())
+    assert not selection.font_mapping_votes(ocr_capture, ObservationBatch.empty())
     decoder = object()
     capture = captured_glyphs(ocr_capture, decoder, 3)
     observations = ObservationBatch.from_columns(
         ("A\x00C",), ((0, 0, 28, 10),), source=1, confidence=(99,)
     )
-    votes = selection.internal_font_mapping_votes(capture, observations)
+    votes = selection.font_mapping_votes(capture, observations)
     assert dict(votes[decoder]) == {b"\x00": Counter(A=1), b"\x02": Counter(C=1)}
 
 
@@ -332,7 +332,7 @@ def test_structural_decode_becomes_positioned_recognition_with_shared_alphabet()
     decoded = StrokedTextDecode(
         observations=(StrokedTextObservation("AB", (10, 20, 30, 40), 7, 8),), alphabet=alphabet
     )
-    result = selection.internal_document_stroked_recognition(decoded)
+    result = selection.document_stroked_recognition(decoded)
     assert result.observations.text == ("AB",)
     assert result.observations.bbox.tolist() == [[10, 20, 30, 40]]
     assert result.observations.sequence.tolist() == [7]
@@ -349,7 +349,7 @@ def test_cached_stroke_results_are_reused_without_recognition(ocr_capture) -> No
     )
     recognition = RecognitionResult(ObservationBatch.empty())
     extractions = tuple(SimpleNamespace(recognition_result=recognition) for _ in range(2))
-    result = selection.internal_prepare_document_stroked_mappings(
+    result = selection.prepare_document_stroked_mappings(
         cast(Any, extractions), (capture, capture), ExtractionScope()
     )
     assert result[0] is result[1] is recognition
@@ -384,8 +384,8 @@ def test_document_selection_captures_only_for_multiple_pages_and_keeps_exact_ord
         assert actual_context is context
         return assembled
 
-    monkeypatch.setattr(selection, "internal_prepare_document_pages", prepare)
-    monkeypatch.setattr(selection, "internal_assemble_document", assemble)
+    monkeypatch.setattr(selection, "prepare_document_pages", prepare)
+    monkeypatch.setattr(selection, "assemble_document", assemble)
     assert selection.extract_document(cast(Any, document), context, cast(Any, pages)) is assembled
     if count == 1:
         assert captures == []
@@ -404,7 +404,7 @@ def test_stroked_enrichment_replaces_only_selected_page_and_preserves_context(oc
         internal_stroked_profile=None,
     )
     recognition = RecognitionResult(ObservationBatch.empty())
-    result = selection.internal_apply_stroked_enrichment(cast(Any, (base, base)), {1: recognition})
+    result = selection.apply_stroked_enrichment(cast(Any, (base, base)), {1: recognition})
     assert result[0] is base
     assert result[1].capture.program is ocr_capture.program
     assert result[1].capture.observations is ocr_capture.observations

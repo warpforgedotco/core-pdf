@@ -6,7 +6,7 @@ from core_pdf.impl.render import target as render_target
 from tests.src.core_pdf.test_pattern_rendering import internal_target
 
 
-def internal_expected_coverage(cap: int, clipped: bool) -> np.ndarray:
+def expected_coverage(cap: int, clipped: bool) -> np.ndarray:
     length = np.hypot(9, 7)
     tangent = np.array([9, 7]) / length
     normal = np.array([-7, 9]) / length
@@ -41,7 +41,7 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
     monkeypatch: pytest.MonkeyPatch, cap: int, alpha: int, clipped: bool, reverse: bool
 ) -> None:
     results = []
-    coverage = internal_expected_coverage(cap, clipped)
+    coverage = expected_coverage(cap, clipped)
     for route in ("scalar", "vector", "blend"):
         monkeypatch.setattr(
             render_target, "RASTER_KERNEL_MIN_PIXEL_AREA", 10_000 if route == "scalar" else 0

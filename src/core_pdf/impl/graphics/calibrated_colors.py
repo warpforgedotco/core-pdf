@@ -9,8 +9,8 @@ import numpy
 from core_pdf.impl.graphics.color_math import d50_xyz_to_srgb
 from core_pdf.impl.graphics.icc_profiles import (
     IccProfileError,
-    internal_cms_options,
-    internal_srgb_profile,
+    cms_options,
+    srgb_profile,
 )
 from core_pdf_spec.s_08_graphics.color_math import compensate_black_point_xyz, xyz_to_lab_components
 from core_pdf_spec.s_08_graphics.color_rendering import (
@@ -21,7 +21,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
 
 
 @lru_cache(maxsize=64)
-def internal_lab_profile(white: tuple[float, float, float]) -> bytes:
+def lab_profile(white: tuple[float, float, float]) -> bytes:
     total = sum(white)
     return bytes(
         imagecodecs.cms_profile("lab4", whitepoint=(white[0] / total, white[1] / total, white[1]))
@@ -42,12 +42,12 @@ def calibrated_xyz_to_srgb(
     if use_black_point_compensation(rendering, default=True) and any(black):
         values = compensate_black_point_xyz(values, white, black, (0.0, 0.0, 0.0))
     lab = xyz_to_lab_components(values, white)
-    intent, flags = internal_cms_options(rendering)
+    intent, flags = cms_options(rendering)
     try:
         converted = imagecodecs.cms_transform(
             numpy.ascontiguousarray(lab).reshape(-1, 1, 3),
-            internal_lab_profile(white),
-            internal_srgb_profile(),
+            lab_profile(white),
+            srgb_profile(),
             colorspace="lab",
             outcolorspace="rgb",
             outdtype=numpy.uint8,

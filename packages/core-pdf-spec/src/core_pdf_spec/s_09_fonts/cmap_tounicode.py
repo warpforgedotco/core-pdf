@@ -16,7 +16,7 @@ from core_adobe_fonts.cmap.tokenizer import (
     decode_cmap_hex_token,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 def decode_utf16be(data: bytes) -> str:
@@ -39,9 +39,9 @@ class ParsedToUnicodeCMap:
         mappings: dict[bytes, str],
         usecmap_name: str | None,
     ) -> None:
-        internal_frozen_setattr(self, "code_space_ranges", code_space_ranges)
-        internal_frozen_setattr(self, "mappings", mappings)
-        internal_frozen_setattr(self, "usecmap_name", usecmap_name)
+        frozen_setattr(self, "code_space_ranges", code_space_ranges)
+        frozen_setattr(self, "mappings", mappings)
+        frozen_setattr(self, "usecmap_name", usecmap_name)
 
     def __repr__(self) -> str:
         return (
@@ -77,7 +77,7 @@ class ParsedToUnicodeCMap:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         code_space_ranges = changes.pop("code_space_ranges", self.code_space_ranges)
@@ -99,9 +99,9 @@ class CMapMappingRecord:
     __match_args__ = ("source", "destination", "source_end")
 
     def __init__(self, source: bytes, destination: bytes, source_end: bytes | None = None) -> None:
-        internal_frozen_setattr(self, "source", source)
-        internal_frozen_setattr(self, "destination", destination)
-        internal_frozen_setattr(self, "source_end", source_end)
+        frozen_setattr(self, "source", source)
+        frozen_setattr(self, "destination", destination)
+        frozen_setattr(self, "source_end", source_end)
 
     def __repr__(self) -> str:
         return (
@@ -137,7 +137,7 @@ class CMapMappingRecord:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         source = changes.pop("source", self.source)
@@ -159,9 +159,9 @@ class CMapMappingBlock:
     __match_args__ = ("operator", "operands", "stride")
 
     def __init__(self, operator: bytes, operands: tuple[bytes, ...], stride: int) -> None:
-        internal_frozen_setattr(self, "operator", operator)
-        internal_frozen_setattr(self, "operands", operands)
-        internal_frozen_setattr(self, "stride", stride)
+        frozen_setattr(self, "operator", operator)
+        frozen_setattr(self, "operands", operands)
+        frozen_setattr(self, "stride", stride)
 
     def __repr__(self) -> str:
         return (
@@ -197,7 +197,7 @@ class CMapMappingBlock:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         operator = changes.pop("operator", self.operator)
@@ -251,9 +251,9 @@ class CMapSourceRange:
     __match_args__ = ("first", "last", "width")
 
     def __init__(self, first: int, last: int, width: int) -> None:
-        internal_frozen_setattr(self, "first", first)
-        internal_frozen_setattr(self, "last", last)
-        internal_frozen_setattr(self, "width", width)
+        frozen_setattr(self, "first", first)
+        frozen_setattr(self, "last", last)
+        frozen_setattr(self, "width", width)
 
     def __repr__(self) -> str:
         return (
@@ -285,7 +285,7 @@ class CMapSourceRange:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         first = changes.pop("first", self.first)

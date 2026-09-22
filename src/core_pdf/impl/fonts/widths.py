@@ -9,7 +9,7 @@ from typing import Any
 from core_pdf.impl.fonts.cmap_widths import (
     MAX_CID,
     MIN_CID,
-    internal_clipped_cid_bounds,
+    clipped_cid_bounds,
     parse_cid_widths,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -29,7 +29,7 @@ def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
     return None
 
 
-def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
+def recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     widths: Mapping[int, float] = {}
     missing_width = font.get("MissingWidth")
     if missing_width is None:
@@ -82,7 +82,7 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
                                 width = parse_float(w2[index + 2], default_vertical_displacement_y)
                                 vx = parse_float(w2[index + 3], 0.0)
                                 vy = parse_float(w2[index + 4], 0.0)
-                                bounds = internal_clipped_cid_bounds(first, last)
+                                bounds = clipped_cid_bounds(first, last)
                                 if bounds is not None:
                                     clipped_first, clipped_last = bounds
                                     for cid in range(clipped_first, clipped_last + 1):
@@ -138,11 +138,11 @@ def internal_recover_font_widths(font: dict[Any, Any], subtype: str | None) -> F
 
 def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     if font.get("MissingWidth") is not None:
-        return internal_recover_font_widths(font, subtype)
+        return recover_font_widths(font, subtype)
     try:
         metrics = pdf_font_widths(font, subtype)
     except ValueError, TypeError, IndexError:
-        return internal_recover_font_widths(font, subtype)
+        return recover_font_widths(font, subtype)
     if subtype == "Type0":
         return metrics
     if not metrics.default_width_explicit:

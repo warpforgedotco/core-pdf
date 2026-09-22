@@ -9,7 +9,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_number_arr
 from core_postscript.calculator import compile_calculator
 
 
-def internal_bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]:
+def bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]:
     values = require_pdf_number_array(value, f"invalid calculator {kind}")
     if not values or len(values) % 2:
         raise ValueError(f"invalid calculator {kind}")
@@ -19,9 +19,9 @@ def internal_bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]
     return bounds
 
 
-def internal_compile_calculator_function(function: PdfStream) -> Callable[..., tuple[float, ...]]:
-    domains = internal_bounds(function.dictionary.get("Domain"), "domain")
-    ranges = internal_bounds(function.dictionary.get("Range"), "range")
+def compile_calculator_function(function: PdfStream) -> Callable[..., tuple[float, ...]]:
+    domains = bounds(function.dictionary.get("Domain"), "domain")
+    ranges = bounds(function.dictionary.get("Range"), "range")
     return compile_calculator(function.data, domains, ranges)
 
 

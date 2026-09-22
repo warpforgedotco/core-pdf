@@ -8,11 +8,11 @@ from core_pdf import PdfDocument as CorePdfDocument
 from core_pdf import PdfPage as CorePdfPage
 from core_pdf.impl.output.model import Document, Page
 from core_pdf.impl.runtime.execution import ExtractionScope
-from core_pdf_ocr.impl.extract.ocr.tesseract import internal_prepare_ocr_signals
+from core_pdf_ocr.impl.extract.ocr.tesseract import prepare_ocr_signals
 from core_pdf_ocr.impl.extract.pipeline import extract_page
 from core_pdf_ocr.impl.extract.selection import extract_document
 
-internal_prepare_ocr_signals()
+prepare_ocr_signals()
 
 
 class PdfPage(CorePdfPage):

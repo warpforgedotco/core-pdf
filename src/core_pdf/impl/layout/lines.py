@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import Rectangle, TextWord
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
         LayoutLineTextSegment,
     )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class LayoutLine:
@@ -160,7 +160,7 @@ def layout_line_segment_char_bbox(
     return (char_x0, y0, char_x0 + step, y1)
 
 
-class LayoutGeometryIssue(internal_Record):
+class LayoutGeometryIssue(Record):
     __slots__ = ("code", "severity", "subject", "bbox", "message", "details", "repairable")
 
     code: str
@@ -192,13 +192,13 @@ class LayoutGeometryIssue(internal_Record):
         details: tuple[tuple[str, object], ...] = (),
         repairable: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "code", code)
-        internal_frozen_setattr(self, "severity", severity)
-        internal_frozen_setattr(self, "subject", subject)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "message", message)
-        internal_frozen_setattr(self, "details", details)
-        internal_frozen_setattr(self, "repairable", repairable)
+        frozen_setattr(self, "code", code)
+        frozen_setattr(self, "severity", severity)
+        frozen_setattr(self, "subject", subject)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "message", message)
+        frozen_setattr(self, "details", details)
+        frozen_setattr(self, "repairable", repairable)
 
     def __repr__(self) -> str:
         return (
@@ -254,7 +254,7 @@ class LayoutGeometryIssue(internal_Record):
         return self.__class__(code, severity, subject, bbox, message, details, repairable)
 
 
-class LayoutGeometrySummary(internal_Record):
+class LayoutGeometrySummary(Record):
     __slots__ = (
         "issue_count",
         "error_count",
@@ -297,12 +297,12 @@ class LayoutGeometrySummary(internal_Record):
         text_run_count: int,
         line_count: int,
     ) -> None:
-        internal_frozen_setattr(self, "issue_count", issue_count)
-        internal_frozen_setattr(self, "error_count", error_count)
-        internal_frozen_setattr(self, "warning_count", warning_count)
-        internal_frozen_setattr(self, "repairable_count", repairable_count)
-        internal_frozen_setattr(self, "text_run_count", text_run_count)
-        internal_frozen_setattr(self, "line_count", line_count)
+        frozen_setattr(self, "issue_count", issue_count)
+        frozen_setattr(self, "error_count", error_count)
+        frozen_setattr(self, "warning_count", warning_count)
+        frozen_setattr(self, "repairable_count", repairable_count)
+        frozen_setattr(self, "text_run_count", text_run_count)
+        frozen_setattr(self, "line_count", line_count)
 
     def __repr__(self) -> str:
         return (

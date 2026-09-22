@@ -12,25 +12,25 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core_pdf_crypto.errors import UnsupportedAlgorithmError
 
-internal_AUTHENTICATED_DATA_OID = "1.2.840.113549.1.9.16.1.2"
-internal_CONTENT_TYPE_ATTRIBUTE_OID = "1.2.840.113549.1.9.3"
-internal_MESSAGE_DIGEST_ATTRIBUTE_OID = "1.2.840.113549.1.9.4"
-internal_CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID = "1.2.840.113549.1.9.52"
-internal_PDF_MAC_INTEGRITY_INFO_OID = "1.0.32004.1.0"
-internal_PDF_MAC_WRAP_KDF_OID = "1.0.32004.1.1"
-internal_AES_256_KEY_WRAP_OID = "2.16.840.1.101.3.4.1.45"
-internal_HMAC_SHA256_OID = "1.2.840.113549.2.9"
-internal_SHA256_OID = "2.16.840.1.101.3.4.2.1"
-internal_SHA384_OID = "2.16.840.1.101.3.4.2.2"
-internal_SHA512_OID = "2.16.840.1.101.3.4.2.3"
-internal_SHA3_256_OID = "2.16.840.1.101.3.4.2.8"
-internal_SHA3_384_OID = "2.16.840.1.101.3.4.2.9"
-internal_SHA3_512_OID = "2.16.840.1.101.3.4.2.10"
-internal_PDF_MAC_KDF_SALT_BYTES = 32
-internal_PDF_MAC_KEK_BYTES = 32
-internal_PDF_MAC_KEY_BYTES = 32
-internal_PDF_MAC_WRAPPED_KEY_BYTES = 40
-internal_PDF_MAC_HKDF_INFO = b"PDFMAC"
+AUTHENTICATED_DATA_OID = "1.2.840.113549.1.9.16.1.2"
+CONTENT_TYPE_ATTRIBUTE_OID = "1.2.840.113549.1.9.3"
+MESSAGE_DIGEST_ATTRIBUTE_OID = "1.2.840.113549.1.9.4"
+CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID = "1.2.840.113549.1.9.52"
+PDF_MAC_INTEGRITY_INFO_OID = "1.0.32004.1.0"
+PDF_MAC_WRAP_KDF_OID = "1.0.32004.1.1"
+AES_256_KEY_WRAP_OID = "2.16.840.1.101.3.4.1.45"
+HMAC_SHA256_OID = "1.2.840.113549.2.9"
+SHA256_OID = "2.16.840.1.101.3.4.2.1"
+SHA384_OID = "2.16.840.1.101.3.4.2.2"
+SHA512_OID = "2.16.840.1.101.3.4.2.3"
+SHA3_256_OID = "2.16.840.1.101.3.4.2.8"
+SHA3_384_OID = "2.16.840.1.101.3.4.2.9"
+SHA3_512_OID = "2.16.840.1.101.3.4.2.10"
+PDF_MAC_KDF_SALT_BYTES = 32
+PDF_MAC_KEK_BYTES = 32
+PDF_MAC_KEY_BYTES = 32
+PDF_MAC_WRAPPED_KEY_BYTES = 40
+PDF_MAC_HKDF_INFO = b"PDFMAC"
 
 
 class PdfMacIntegrityInfo(core.Sequence):
@@ -53,7 +53,7 @@ def validate_pdf_mac_token(
     kdf_salt: bytes,
 ) -> None:
     content_info = parse_der(token, cms.ContentInfo)
-    if content_info["content_type"].dotted != internal_AUTHENTICATED_DATA_OID:
+    if content_info["content_type"].dotted != AUTHENTICATED_DATA_OID:
         raise ValueError("PDF MAC token is not CMS AuthenticatedData")
     auth_data = content_info["content"]
     if not isinstance(auth_data, cms.AuthenticatedData):
@@ -76,7 +76,7 @@ def validate_authenticated_data(
         raise ValueError("PDF MAC cannot contain unauthenticated attributes")
 
     hash_algorithm = digest_algorithm(auth_data["digest_algorithm"])
-    internal_validate_mac_algorithm(auth_data["mac_algorithm"])
+    validate_mac_algorithm(auth_data["mac_algorithm"])
     encapsulated_content = internal_encapsulated_content(auth_data)
     integrity_info = parse_der(encapsulated_content, PdfMacIntegrityInfo)
 
@@ -89,7 +89,7 @@ def validate_authenticated_data(
     if not isinstance(auth_attrs, cms.CMSAttributes):
         raise ValueError("PDF MAC authenticated attributes are missing")
     received_mac = auth_data["mac"].native
-    if not isinstance(received_mac, bytes) or len(received_mac) != internal_PDF_MAC_KEY_BYTES:
+    if not isinstance(received_mac, bytes) or len(received_mac) != PDF_MAC_KEY_BYTES:
         raise ValueError("invalid PDF MAC value")
 
     verifier = hmac.HMAC(mac_key, hashes.SHA256())
@@ -99,13 +99,13 @@ def validate_authenticated_data(
     except InvalidSignature as exc:
         raise ValueError("PDF MAC verification failed") from exc
 
-    internal_validate_authenticated_attributes(
+    validate_authenticated_attributes(
         auth_attrs,
         auth_data,
         encapsulated_content,
         hash_algorithm,
     )
-    internal_validate_integrity_info(
+    validate_integrity_info(
         integrity_info,
         digest_byte_range(raw_data, byte_range, hash_algorithm),
     )
@@ -127,62 +127,59 @@ def unwrap_mac_key(
     kdf = password_info["key_derivation_algorithm"]
     if isinstance(kdf, core.Void):
         raise ValueError("PDF MAC key derivation algorithm is missing")
-    internal_require_algorithm(
+    require_algorithm(
         kdf,
-        internal_PDF_MAC_WRAP_KDF_OID,
+        PDF_MAC_WRAP_KDF_OID,
         require_absent_parameters=True,
     )
-    internal_require_algorithm(
+    require_algorithm(
         password_info["key_encryption_algorithm"],
-        internal_AES_256_KEY_WRAP_OID,
+        AES_256_KEY_WRAP_OID,
         require_absent_parameters=True,
     )
 
     encrypted_key = password_info["encrypted_key"].native
-    if (
-        not isinstance(encrypted_key, bytes)
-        or len(encrypted_key) != internal_PDF_MAC_WRAPPED_KEY_BYTES
-    ):
+    if not isinstance(encrypted_key, bytes) or len(encrypted_key) != PDF_MAC_WRAPPED_KEY_BYTES:
         raise ValueError("invalid wrapped PDF MAC key")
-    if len(kdf_salt) != internal_PDF_MAC_KDF_SALT_BYTES:
+    if len(kdf_salt) != PDF_MAC_KDF_SALT_BYTES:
         raise ValueError("invalid PDF MAC KDFSalt")
 
     key_encryption_key = HKDF(
         algorithm=hashes.SHA256(),
-        length=internal_PDF_MAC_KEK_BYTES,
+        length=PDF_MAC_KEK_BYTES,
         salt=kdf_salt,
-        info=internal_PDF_MAC_HKDF_INFO,
+        info=PDF_MAC_HKDF_INFO,
     ).derive(file_key)
     try:
         mac_key = keywrap.aes_key_unwrap(key_encryption_key, encrypted_key)
     except keywrap.InvalidUnwrap as exc:
         raise ValueError("PDF MAC key unwrap failed") from exc
-    if len(mac_key) != internal_PDF_MAC_KEY_BYTES:
+    if len(mac_key) != PDF_MAC_KEY_BYTES:
         raise ValueError("invalid unwrapped PDF MAC key")
     return mac_key
 
 
-def internal_validate_authenticated_attributes(
+def validate_authenticated_attributes(
     attributes: cms.CMSAttributes,
     auth_data: cms.AuthenticatedData,
     encapsulated_content: bytes,
     hash_algorithm: hashes.HashAlgorithm,
 ) -> None:
-    content_type = internal_unique_attribute(attributes, internal_CONTENT_TYPE_ATTRIBUTE_OID)
+    content_type = unique_attribute(attributes, CONTENT_TYPE_ATTRIBUTE_OID)
     if not isinstance(content_type, cms.ContentType):
         raise ValueError("invalid PDF MAC content-type attribute")
-    if content_type.dotted != internal_PDF_MAC_INTEGRITY_INFO_OID:
+    if content_type.dotted != PDF_MAC_INTEGRITY_INFO_OID:
         raise ValueError("incorrect PDF MAC content-type attribute")
 
-    message_digest = internal_unique_attribute(attributes, internal_MESSAGE_DIGEST_ATTRIBUTE_OID)
+    message_digest = unique_attribute(attributes, MESSAGE_DIGEST_ATTRIBUTE_OID)
     if not isinstance(message_digest, core.OctetString):
         raise ValueError("invalid PDF MAC message-digest attribute")
     if message_digest.native != digest(encapsulated_content, hash_algorithm):
         raise ValueError("incorrect PDF MAC message-digest attribute")
 
-    algorithm_protection = internal_unique_attribute(
+    algorithm_protection = unique_attribute(
         attributes,
-        internal_CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID,
+        CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID,
         required=False,
     )
     if algorithm_protection is None:
@@ -193,19 +190,19 @@ def internal_validate_authenticated_attributes(
         raise ValueError("PDF MAC algorithm protection cannot name a signature algorithm")
     if isinstance(algorithm_protection["mac_algorithm"], core.Void):
         raise ValueError("PDF MAC algorithm protection is missing its MAC algorithm")
-    if not internal_algorithm_identifiers_match(
+    if not algorithm_identifiers_match(
         algorithm_protection["digest_algorithm"],
         auth_data["digest_algorithm"],
     ):
         raise ValueError("PDF MAC digest algorithm is not protected")
-    if not internal_algorithm_identifiers_match(
+    if not algorithm_identifiers_match(
         algorithm_protection["mac_algorithm"],
         auth_data["mac_algorithm"],
     ):
         raise ValueError("PDF MAC algorithm is not protected")
 
 
-def internal_validate_integrity_info(
+def validate_integrity_info(
     integrity_info: PdfMacIntegrityInfo,
     document_digest: bytes,
 ) -> None:
@@ -219,7 +216,7 @@ def internal_validate_integrity_info(
 
 def internal_encapsulated_content(auth_data: cms.AuthenticatedData) -> bytes:
     content_info = auth_data["encap_content_info"]
-    if content_info["content_type"].dotted != internal_PDF_MAC_INTEGRITY_INFO_OID:
+    if content_info["content_type"].dotted != PDF_MAC_INTEGRITY_INFO_OID:
         raise ValueError("incorrect PDF MAC encapsulated content type")
     content = content_info["content"]
     if isinstance(content, core.Void):
@@ -227,7 +224,7 @@ def internal_encapsulated_content(auth_data: cms.AuthenticatedData) -> bytes:
     return bytes(content)
 
 
-def internal_unique_attribute(
+def unique_attribute(
     attributes: cms.CMSAttributes,
     oid: str,
     *,
@@ -242,24 +239,24 @@ def internal_unique_attribute(
 
 
 def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
-    oid = internal_require_algorithm(identifier, None, require_absent_parameters=False)
+    oid = require_algorithm(identifier, None, require_absent_parameters=False)
     match oid:
-        case value if value == internal_SHA256_OID:
+        case value if value == SHA256_OID:
             algorithm: hashes.HashAlgorithm = hashes.SHA256()
-        case value if value == internal_SHA384_OID:
+        case value if value == SHA384_OID:
             algorithm = hashes.SHA384()
-        case value if value == internal_SHA512_OID:
+        case value if value == SHA512_OID:
             algorithm = hashes.SHA512()
-        case value if value == internal_SHA3_256_OID:
+        case value if value == SHA3_256_OID:
             algorithm = hashes.SHA3_256()
-        case value if value == internal_SHA3_384_OID:
+        case value if value == SHA3_384_OID:
             algorithm = hashes.SHA3_384()
-        case value if value == internal_SHA3_512_OID:
+        case value if value == SHA3_512_OID:
             algorithm = hashes.SHA3_512()
         case _:
             raise UnsupportedAlgorithmError(f"Unsupported PDF MAC digest algorithm: {oid}")
     parameters = identifier["parameters"]
-    if oid in {internal_SHA3_256_OID, internal_SHA3_384_OID, internal_SHA3_512_OID}:
+    if oid in {SHA3_256_OID, SHA3_384_OID, SHA3_512_OID}:
         valid_parameters = isinstance(parameters, core.Void)
     else:
         valid_parameters = isinstance(parameters, (core.Void, core.Null))
@@ -268,10 +265,10 @@ def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
     return algorithm
 
 
-def internal_validate_mac_algorithm(identifier: Any) -> None:
-    internal_require_algorithm(
+def validate_mac_algorithm(identifier: Any) -> None:
+    require_algorithm(
         identifier,
-        internal_HMAC_SHA256_OID,
+        HMAC_SHA256_OID,
         require_absent_parameters=False,
     )
     parameters = identifier["parameters"]
@@ -282,7 +279,7 @@ def internal_validate_mac_algorithm(identifier: Any) -> None:
         raise ValueError("invalid PDF MAC algorithm parameters")
 
 
-def internal_require_algorithm(
+def require_algorithm(
     identifier: Any,
     expected_oid: str | None,
     *,
@@ -297,7 +294,7 @@ def internal_require_algorithm(
     return cast(str, oid)
 
 
-def internal_algorithm_identifiers_match(left: Any, right: Any) -> bool:
+def algorithm_identifiers_match(left: Any, right: Any) -> bool:
     if left["algorithm"].dotted != right["algorithm"].dotted:
         return False
     left_parameters = left["parameters"]

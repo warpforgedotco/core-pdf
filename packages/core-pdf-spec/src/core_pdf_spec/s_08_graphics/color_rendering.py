@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Literal, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 RenderingIntent = Literal[
@@ -52,8 +52,8 @@ class ColorRendering:
         intent: RenderingIntent = "RelativeColorimetric",
         black_point_compensation: BlackPointCompensation = "Default",
     ) -> None:
-        internal_frozen_setattr(self, "intent", intent)
-        internal_frozen_setattr(self, "black_point_compensation", black_point_compensation)
+        frozen_setattr(self, "intent", intent)
+        frozen_setattr(self, "black_point_compensation", black_point_compensation)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -88,7 +88,7 @@ class ColorRendering:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         intent = changes.pop("intent", self.intent)

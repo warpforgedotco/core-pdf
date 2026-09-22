@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
 
 from core_pdf.impl.document.page_links import resolve_destination_value
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
-from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
+from core_pdf.impl.extract.capture import STRUCTURE_UNSET, capture_page
 from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     PageAnalysis,
@@ -28,19 +28,19 @@ from core_pdf.impl.output.model import (
     Page,
     Table,
 )
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.execution import ExtractionScope
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.document.records import RawAnnotation, RawFormField
     from core_pdf.impl.document.structure import PageStructure
-    from core_pdf.impl.extract.capture import internal_StructureUnset
+    from core_pdf.impl.extract.capture import StructureUnset
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_Layout(Protocol):
+class Layout(Protocol):
     def __call__(
         self,
         observations: ObservationBatch,
@@ -53,16 +53,16 @@ class internal_Layout(Protocol):
     ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]: ...
 
 
-def internal_collected_records[internal_Record, internal_T](
-    fetch: Callable[[], Iterable[internal_Record]],
-    build: Callable[[int, internal_Record], internal_T],
-) -> tuple[internal_T, ...]:
-    records: Iterable[internal_Record]
+def collected_records[Record, T](
+    fetch: Callable[[], Iterable[Record]],
+    build: Callable[[int, Record], T],
+) -> tuple[T, ...]:
+    records: Iterable[Record]
     try:
         records = fetch()
     except TypeError, ValueError:
         records = ()
-    output: list[internal_T] = []
+    output: list[T] = []
     for index, record in enumerate(records):
         try:
             output.append(build(index, record))
@@ -71,7 +71,7 @@ def internal_collected_records[internal_Record, internal_T](
     return tuple(output)
 
 
-class internal_PageProducts(internal_Record):
+class PageProducts(Record):
     __slots__ = ("tables", "blocks", "order_evidence")
 
     tables: tuple[Table, ...]
@@ -87,9 +87,9 @@ class internal_PageProducts(internal_Record):
         blocks: tuple[ParsedBlock, ...],
         order_evidence: ReadingOrderEvidence,
     ) -> None:
-        internal_frozen_setattr(self, "tables", tables)
-        internal_frozen_setattr(self, "blocks", blocks)
-        internal_frozen_setattr(self, "order_evidence", order_evidence)
+        frozen_setattr(self, "tables", tables)
+        frozen_setattr(self, "blocks", blocks)
+        frozen_setattr(self, "order_evidence", order_evidence)
 
     def __repr__(self) -> str:
         return (
@@ -123,7 +123,7 @@ class internal_PageProducts(internal_Record):
         return self.__class__(tables, blocks, order_evidence)
 
 
-class internal_PageExtraction:
+class PageExtraction:
     internal_capture_page = staticmethod(capture_page)
 
     @property
@@ -140,7 +140,7 @@ class internal_PageExtraction:
         *,
         capture: PageAnalysis | None = None,
         fields: Iterable[RawFormField] | None = None,
-        structure: PageStructure | None | internal_StructureUnset = internal_STRUCTURE_UNSET,
+        structure: PageStructure | None | StructureUnset = STRUCTURE_UNSET,
         hidden_layers: frozenset[str] | None = None,
     ) -> None:
         self.page = page
@@ -165,21 +165,21 @@ class internal_PageExtraction:
                 annotations=annotation_records,
             )
 
-    def run(self, context: ExtractionScope) -> internal_PageProducts:
+    def run(self, context: ExtractionScope) -> PageProducts:
         context.raise_if_cancelled()
         observations = self.capture.observations
-        return self.internal_layout_products(
+        return self.layout_products(
             observations,
             extract_tables(self.capture, observations),
         )
 
-    def internal_layout_products(
+    def layout_products(
         self,
         observations: ObservationBatch,
         tables: tuple[Table, ...],
         *,
-        layout: internal_Layout = layout_blocks_with_evidence,
-    ) -> internal_PageProducts:
+        layout: Layout = layout_blocks_with_evidence,
+    ) -> PageProducts:
         capture = self.capture
         table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
         image_obstacles = tuple(
@@ -198,7 +198,7 @@ class internal_PageExtraction:
             page_width=capture.width,
             page_height=capture.height,
         )
-        return internal_PageProducts(tables, blocks, order_evidence)
+        return PageProducts(tables, blocks, order_evidence)
 
     def assembled_page(self, context: ExtractionScope) -> Page:
         capture = self.capture
@@ -229,7 +229,7 @@ class internal_PageExtraction:
         resolver = self.page.document.resolver
         raw_annotations = capture.annotations or ()
         resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
-        annotations = internal_collected_records(
+        annotations = collected_records(
             lambda: raw_annotations,
             lambda _index, record: Annotation(
                 subtype=record.subtype,
@@ -238,7 +238,7 @@ class internal_PageExtraction:
                 destination=resolve_destination_value(resolver, record.dest or record.action),
             ),
         )
-        links = internal_collected_records(
+        links = collected_records(
             lambda: self.page.get_links(resolved_annotation_dicts),
             lambda _index, record: Link(
                 bbox=record.bbox,
@@ -249,7 +249,7 @@ class internal_PageExtraction:
         )
         source_fields = capture.fields
         fetch_fields = self.page.get_fields if source_fields is None else lambda: source_fields
-        field_records = internal_collected_records(
+        field_records = collected_records(
             fetch_fields,
             lambda index, record: FormField(
                 name=record.name,
@@ -277,4 +277,4 @@ class internal_PageExtraction:
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
-    return internal_PageExtraction(page).assembled_page(context)
+    return PageExtraction(page).assembled_page(context)

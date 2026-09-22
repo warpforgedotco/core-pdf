@@ -21,7 +21,7 @@ def internal_glyph(text: str, font: object, *, x: float = 0, seqno: int = 0) -> 
     )
 
 
-def internal_cluster(text: str, *glyphs: GlyphObservation) -> GlyphCluster:
+def cluster(text: str, *glyphs: GlyphObservation) -> GlyphCluster:
     box = glyphs[0].advance_bbox if glyphs else (0, 0, 5, 10)
     return GlyphCluster(0, text, glyphs, box, box, None, 0.9)
 
@@ -34,9 +34,9 @@ def test_learned_overlay_preserves_spacing_geometry_and_original_clusters() -> N
     font = object()
     first = internal_glyph("a", font)
     second = replace(internal_glyph("b", font, x=10), code_bytes=b"b")
-    run = internal_run(" a  b ", internal_cluster("a", first), internal_cluster("b", second))
+    run = internal_run(" a  b ", cluster("a", first), cluster("b", second))
     replacements: dict[int, str] = {}
-    result = capture.internal_apply_learned_unicode_to_run(
+    result = capture.apply_learned_unicode_to_run(
         run, {font: {b"a": "A"}}, glyph_replacements=replacements
     )
     assert result.text == " A  b "
@@ -50,10 +50,10 @@ def test_learned_overlay_preserves_spacing_geometry_and_original_clusters() -> N
 @pytest.mark.parametrize("replacement", ["", "AB", " ", "\n", "\x00"])
 def test_unusable_learned_values_cannot_replace_a_glyph(replacement: str) -> None:
     font = object()
-    run = internal_run("a", internal_cluster("a", internal_glyph("a", font)))
+    run = internal_run("a", cluster("a", internal_glyph("a", font)))
     applied: dict[int, str] = {}
     assert (
-        capture.internal_apply_learned_unicode_to_run(
+        capture.apply_learned_unicode_to_run(
             run, {font: {b"a": replacement}}, glyph_replacements=applied
         )
         is run
@@ -64,21 +64,19 @@ def test_unusable_learned_values_cannot_replace_a_glyph(replacement: str) -> Non
 @pytest.mark.parametrize("source", ["actual_text", "structure_actual_text"])
 def test_actual_text_takes_precedence_over_learned_unicode(source: str) -> None:
     font = object()
-    run = internal_run("a", internal_cluster("a", internal_glyph("a", font))).replace(
+    run = internal_run("a", cluster("a", internal_glyph("a", font))).replace(
         provenance=(("unicode_source", source),)
     )
-    assert capture.internal_apply_learned_unicode_to_run(run, {font: {b"a": "X"}}) is run
+    assert capture.apply_learned_unicode_to_run(run, {font: {b"a": "X"}}) is run
 
 
 @pytest.mark.parametrize("text", ["missing", "prefix a", "a suffix"])
 def test_unaligned_clusters_leave_text_and_replacement_map_untouched(text: str) -> None:
     font = object()
-    run = internal_run(text, internal_cluster("a", internal_glyph("a", font)))
+    run = internal_run(text, cluster("a", internal_glyph("a", font)))
     applied = {999: "preserved"}
     assert (
-        capture.internal_apply_learned_unicode_to_run(
-            run, {font: {b"a": "X"}}, glyph_replacements=applied
-        )
+        capture.apply_learned_unicode_to_run(run, {font: {b"a": "X"}}, glyph_replacements=applied)
         is run
     )
     assert applied == {999: "preserved"}
@@ -102,10 +100,10 @@ def test_overlay_respects_text_show_order_and_rotation(
     first = internal_glyph("a", font, x=first_x)
     second = internal_glyph("a", font, x=second_x, seqno=1)
     run = replace(
-        internal_run("aa", internal_cluster("a", first), internal_cluster("a", second)),
+        internal_run("aa", cluster("a", first), cluster("a", second)),
         rotation_angle=rotation,
     )
-    result = capture.internal_apply_learned_unicode_to_run(run, {font: {b"a": "X"}})
+    result = capture.apply_learned_unicode_to_run(run, {font: {b"a": "X"}})
     assert result.text == ("XX" if allowed else "aa")
     if not allowed:
         assert result is run
@@ -115,14 +113,14 @@ def test_ligature_replacement_is_applied_once_and_updates_glyph_counts() -> None
     font = object()
     first = internal_glyph("f", font)
     second = internal_glyph("i", font)
-    run = internal_run("fi", internal_cluster("fi", first, second))
+    run = internal_run("fi", cluster("fi", first, second))
     applied: dict[int, str] = {}
-    result = capture.internal_apply_learned_unicode_to_run(
+    result = capture.apply_learned_unicode_to_run(
         run, {font: {b"a": "A"}}, glyph_replacements=applied
     )
     assert result.text == "A"
     assert applied == {id(first): "A", id(second): ""}
-    evidence = capture.internal_glyph_evidence_fields((first, second), (result,), applied)
+    evidence = capture.glyph_evidence_fields((first, second), (result,), applied)
     assert evidence.glyph_count == 1
     assert evidence.semantic_characters == 1
     assert evidence.authoritative_glyphs == 0
@@ -136,28 +134,23 @@ def test_mixed_source_clusters_cannot_receive_one_learned_replacement(different_
     second = internal_glyph("i", object() if different_font else font)
     if not different_font:
         second = replace(second, code_bytes=b"other")
-    run = internal_run("fi", internal_cluster("fi", first, second))
-    assert capture.internal_apply_learned_unicode_to_run(run, {font: {b"a": "A"}}) is run
+    run = internal_run("fi", cluster("fi", first, second))
+    assert capture.apply_learned_unicode_to_run(run, {font: {b"a": "A"}}) is run
 
 
 def test_empty_unmapped_and_unchanged_clusters_preserve_identity() -> None:
     font = object()
     glyph = internal_glyph("a", font)
-    run = internal_run("a", internal_cluster(""), internal_cluster("a", glyph))
-    assert capture.internal_apply_learned_unicode_to_run(run) is run
-    assert capture.internal_apply_learned_unicode_to_run(run, {object(): {b"a": "X"}}) is run
+    run = internal_run("a", cluster(""), cluster("a", glyph))
+    assert capture.apply_learned_unicode_to_run(run) is run
+    assert capture.apply_learned_unicode_to_run(run, {object(): {b"a": "X"}}) is run
     applied: dict[int, str] = {}
     assert (
-        capture.internal_apply_learned_unicode_to_run(
-            run, {font: {b"a": "a"}}, glyph_replacements=applied
-        )
+        capture.apply_learned_unicode_to_run(run, {font: {b"a": "a"}}, glyph_replacements=applied)
         is run
     )
     assert applied == {id(glyph): "a"}
-    assert (
-        capture.internal_apply_learned_unicode_to_run(internal_run("a"), {font: {b"a": "X"}}).text
-        == "a"
-    )
+    assert capture.apply_learned_unicode_to_run(internal_run("a"), {font: {b"a": "X"}}).text == "a"
 
 
 @pytest.mark.parametrize(
@@ -169,7 +162,7 @@ def test_repaired_glyph_evidence_reclassifies_only_applied_substitutions(
 ) -> None:
     glyph = replace(internal_glyph(text, object()), unicode_source=source, confidence=confidence)
     untouched = internal_glyph("Z", object())
-    evidence = capture.internal_glyph_evidence_fields((glyph, untouched), (), {id(glyph): "X"})
+    evidence = capture.glyph_evidence_fields((glyph, untouched), (), {id(glyph): "X"})
     assert evidence.glyph_count == 2
     assert evidence.semantic_characters == 2
     assert evidence.authoritative_glyphs == 1
@@ -180,7 +173,7 @@ def test_repaired_glyph_evidence_reclassifies_only_applied_substitutions(
         == evidence.low_confidence_glyphs
         == 0
     )
-    native = capture.internal_glyph_evidence_fields((glyph,), (), {})
+    native = capture.glyph_evidence_fields((glyph,), (), {})
     assert native.glyph_count == 1
 
 
@@ -194,7 +187,7 @@ def test_program_capture_applies_unicode_before_observations_and_evidence(learne
 
     font = object()
     glyph = internal_glyph("a", font)
-    run = internal_run("a", internal_cluster("a", glyph))
+    run = internal_run("a", cluster("a", glyph))
     image = CapturedDrawing(
         1,
         None,
@@ -205,7 +198,7 @@ def test_program_capture_applies_unicode_before_observations_and_evidence(learne
     )
     program = PageProgram(CapturedProgram(runs=(run,), glyphs=(glyph,), drawings=(image,)))
     page = SimpleNamespace(width=100, height=200, rotation=0)
-    result = capture.internal_capture_from_program(
+    result = capture.capture_from_program(
         page,
         program,
         structure=None,
@@ -253,7 +246,7 @@ def test_capture_enrichment_promotes_only_trusted_template_results(
         return decoded
 
     monkeypatch.setattr(capture, "decode_newstroke_drawings", decode)
-    result = capture.internal_capture_from_program(
+    result = capture.capture_from_program(
         SimpleNamespace(width=100, height=200, rotation=0), program, structure=None
     )
     assert calls == [program.drawings]
@@ -293,9 +286,9 @@ def test_public_capture_entry_point_passes_selection_options(
 def test_cluster_without_observations_preserves_text_beside_a_learned_cluster() -> None:
     font = object()
     glyph = internal_glyph("b", font)
-    run = internal_run("ab", internal_cluster("a"), internal_cluster("b", glyph))
+    run = internal_run("ab", cluster("a"), cluster("b", glyph))
     applied: dict[int, str] = {}
-    result = capture.internal_apply_learned_unicode_to_run(
+    result = capture.apply_learned_unicode_to_run(
         run, {font: {b"a": "B"}}, glyph_replacements=applied
     )
     assert result.text == "aB"
@@ -310,9 +303,9 @@ def test_learned_cluster_attributes_replacement_to_first_nonblank_observation(le
     blank = internal_glyph(leading, font)
     visible = internal_glyph("f", font)
     trailing = internal_glyph("i", font)
-    run = internal_run("fi", internal_cluster("fi", blank, visible, trailing))
+    run = internal_run("fi", cluster("fi", blank, visible, trailing))
     applied: dict[int, str] = {}
-    result = capture.internal_apply_learned_unicode_to_run(
+    result = capture.apply_learned_unicode_to_run(
         run, {font: {b"a": "A"}}, glyph_replacements=applied
     )
     assert result.text == "A"
@@ -323,9 +316,9 @@ def test_learned_cluster_attributes_replacement_to_first_nonblank_observation(le
 def test_blank_observations_do_not_receive_invented_text_attribution() -> None:
     font = object()
     glyphs = (internal_glyph("", font), internal_glyph(" ", font))
-    run = internal_run("a", internal_cluster("a", *glyphs))
+    run = internal_run("a", cluster("a", *glyphs))
     applied: dict[int, str] = {}
-    result = capture.internal_apply_learned_unicode_to_run(
+    result = capture.apply_learned_unicode_to_run(
         run, {font: {b"a": "A"}}, glyph_replacements=applied
     )
     assert result.text == "A"

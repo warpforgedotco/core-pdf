@@ -30,18 +30,18 @@ from core_pdf.impl.graphics.filter_registry import (
 from core_pdf.impl.graphics.image_models import DecodedImage
 from core_pdf.impl.graphics.stream_decoding import decode_one_filter, decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_NATIVE_ARRAY_DECODERS = {
+NATIVE_ARRAY_DECODERS = {
     "jpeg": decode_jpeg_image,
     "jpx": decode_jpx_image,
 }
 
 
-class internal_NativeImagePlan(internal_Record):
+class NativeImagePlan(Record):
     __slots__ = ("decoder", "params", "output_shape")
 
     decoder: FilterDecoder
@@ -57,9 +57,9 @@ class internal_NativeImagePlan(internal_Record):
         params: object,
         output_shape: tuple[int, ...] | None,
     ) -> None:
-        internal_frozen_setattr(self, "decoder", decoder)
-        internal_frozen_setattr(self, "params", params)
-        internal_frozen_setattr(self, "output_shape", output_shape)
+        frozen_setattr(self, "decoder", decoder)
+        frozen_setattr(self, "params", params)
+        frozen_setattr(self, "output_shape", output_shape)
 
     def __repr__(self) -> str:
         return (
@@ -93,7 +93,7 @@ class internal_NativeImagePlan(internal_Record):
         return self.__class__(decoder, params, output_shape)
 
 
-def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePlan | None:
+def prepare_native_image(dictionary: object) -> NativeImagePlan | None:
     stream_spec = normalize_stream_decode_spec(dictionary)
     if len(stream_spec.steps) != 1:
         return None
@@ -125,7 +125,7 @@ def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePla
         and components is not None
     ):
         shape = (height, width) if components == 1 else (height, width, components)
-    return internal_NativeImagePlan(decoder, step.params, shape)
+    return NativeImagePlan(decoder, step.params, shape)
 
 
 def decode_stream_image_data(
@@ -151,7 +151,7 @@ def decode_stream_image_data(
                 return DecodedImage(array, "jpx")
         except Exception:
             return None
-    plan = internal_prepare_native_image(dictionary)
+    plan = prepare_native_image(dictionary)
     if plan is None:
         return None
     decoder = plan.decoder
@@ -159,7 +159,7 @@ def decode_stream_image_data(
     output_shape = plan.output_shape
     source = data
     try:
-        array_decoder = internal_NATIVE_ARRAY_DECODERS.get(decoder)
+        array_decoder = NATIVE_ARRAY_DECODERS.get(decoder)
         if decoder == "jpx":
             return DecodedImage(decode_jpx_image(source, preserve_precision=True), decoder)
         if array_decoder is not None:

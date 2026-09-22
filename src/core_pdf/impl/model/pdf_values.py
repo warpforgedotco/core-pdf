@@ -26,7 +26,7 @@ def coerce_to_bytes(value: object) -> bytes:
     raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
 
 
-class internal_CoercionFrame:
+class CoercionFrame:
     __slots__ = ("original", "entries", "values", "pending", "changed")
 
     original: object
@@ -106,7 +106,7 @@ def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None
 
     active: set[int] = set()
     completed: dict[int, tuple[object, object]] = {}
-    stack: list[internal_CoercionFrame] = []
+    stack: list[CoercionFrame] = []
 
     def enter(item: object) -> tuple[bool, object]:
         decoded_item = decode_scalar(item)
@@ -125,7 +125,7 @@ def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None
         else:
             entries = iter(enumerate(cast(list[object] | tuple[object, ...], item)))
         active.add(marker)
-        stack.append(internal_CoercionFrame(item, entries))
+        stack.append(CoercionFrame(item, entries))
         return False, None
 
     ready, result = enter(value)

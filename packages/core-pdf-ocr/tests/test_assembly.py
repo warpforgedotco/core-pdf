@@ -9,7 +9,7 @@ from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract import pipeline
 from core_pdf_ocr.impl.extract.contracts import PageRoute, RecognitionResult, WorkPlan
-from core_pdf_ocr.impl.extract.table_reconcile import internal_remove_duplicate_tables
+from core_pdf_ocr.impl.extract.table_reconcile import remove_duplicate_tables
 
 
 def chart(order: int, text: str, *, synthetic: bool = True) -> Table:
@@ -25,8 +25,8 @@ def test_table_reconciliation_prefers_real_tables_and_preserves_survivor_order()
     duplicate = chart(0, "Revenue sales income profit")
     real = chart(1, "Revenue sales income profit", synthetic=False)
     separate = replace(chart(2, "Cost labor rent materials"), bbox=(100.0, 10.0, 180.0, 40.0))
-    assert internal_remove_duplicate_tables((duplicate, real, separate)) == (real, separate)
-    assert internal_remove_duplicate_tables((duplicate, duplicate)) == (duplicate,)
+    assert remove_duplicate_tables((duplicate, real, separate)) == (real, separate)
+    assert remove_duplicate_tables((duplicate, duplicate)) == (duplicate,)
 
 
 @pytest.mark.parametrize("route", [PageRoute.NATIVE, PageRoute.OCR])
@@ -48,7 +48,7 @@ def test_ocr_assembly_reconciles_tables_after_using_original_layout_obstacles(
     monkeypatch.setattr(pipeline, "extract_tables", lambda *args: tables)
     monkeypatch.setattr(pipeline, "layout_blocks_with_evidence", layout)
     with PdfDocument(text_pdf_bytes) as document:
-        extraction = pipeline.internal_PageExtraction(
+        extraction = pipeline.PageExtraction(
             document.pages[0],
             plan=WorkPlan(route),
             recognition=RecognitionResult(

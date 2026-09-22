@@ -29,10 +29,10 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, NoReturn
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_FrozenFields:
+class FrozenFields:
     """Rejects assignment and deletion, as ``@dataclass(frozen=True)`` does.
 
     Raises ``AttributeError`` rather than ``FrozenInstanceError`` so the guard
@@ -48,7 +48,7 @@ class internal_FrozenFields:
         raise AttributeError(f"cannot delete field {name!r}")
 
 
-class internal_PickleFields:
+class PickleFields:
     """Pickle support for slotted classes whose ``__setattr__`` refuses writes."""
 
     __slots__ = ()
@@ -60,10 +60,10 @@ class internal_PickleFields:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
 
-class internal_Record(internal_FrozenFields, internal_PickleFields):
+class Record(FrozenFields, PickleFields):
     """Frozen and picklable: the pair nearly every value class here wants."""
 
     __slots__ = ()

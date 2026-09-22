@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Self
 
 import numpy
 
-from core_pdf.impl.extract.table_cleanup import internal_table_with_bands
+from core_pdf.impl.extract.table_cleanup import table_with_bands
 from core_pdf.impl.model.geometry import (
     bbox_area,
     bbox_union,
@@ -18,13 +18,13 @@ from core_pdf.impl.model.geometry import (
 from core_pdf.impl.model.spatial import SpatialFrame
 from core_pdf.impl.model.text import collapse_ws, complete_text_covered, content_tokens
 from core_pdf.impl.output.model import Block, Table, TableCell
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import Rectangle
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-def internal_remove_block_duplicate_table_rows(
+def remove_block_duplicate_table_rows(
     blocks: list[Block],
     tables: tuple[Table, ...],
 ) -> tuple[Table, ...]:
@@ -76,7 +76,7 @@ def internal_remove_block_duplicate_table_rows(
             )
             for index, old_index in enumerate(kept_row_indexes)
         )
-        projected = internal_table_with_bands(replace(table, rows=rows))
+        projected = table_with_bands(replace(table, rows=rows))
         if table.row_bands:
             projected = replace(
                 projected,
@@ -89,7 +89,7 @@ def internal_remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-class internal_IndexedRow(internal_Record):
+class IndexedRow(Record):
     __slots__ = ("cells", "texts", "tokens", "frame_indexes")
 
     cells: tuple[TableCell, ...]
@@ -107,10 +107,10 @@ class internal_IndexedRow(internal_Record):
         tokens: tuple[tuple[str, ...], ...],
         frame_indexes: tuple[int, ...],
     ) -> None:
-        internal_frozen_setattr(self, "cells", cells)
-        internal_frozen_setattr(self, "texts", texts)
-        internal_frozen_setattr(self, "tokens", tokens)
-        internal_frozen_setattr(self, "frame_indexes", frame_indexes)
+        frozen_setattr(self, "cells", cells)
+        frozen_setattr(self, "texts", texts)
+        frozen_setattr(self, "tokens", tokens)
+        frozen_setattr(self, "frame_indexes", frame_indexes)
 
     def __repr__(self) -> str:
         return (
@@ -147,11 +147,11 @@ class internal_IndexedRow(internal_Record):
         return self.__class__(cells, texts, tokens, frame_indexes)
 
 
-class internal_TableIndex(internal_Record):
+class TableIndex(Record):
     __slots__ = ("table", "rows", "frame")
 
     table: Table
-    rows: tuple[internal_IndexedRow, ...]
+    rows: tuple[IndexedRow, ...]
     frame: SpatialFrame | None
 
     __fields__: ClassVar[tuple[str, ...]] = ("table", "rows", "frame")
@@ -160,12 +160,12 @@ class internal_TableIndex(internal_Record):
     def __init__(
         self,
         table: Table,
-        rows: tuple[internal_IndexedRow, ...],
+        rows: tuple[IndexedRow, ...],
         frame: SpatialFrame | None,
     ) -> None:
-        internal_frozen_setattr(self, "table", table)
-        internal_frozen_setattr(self, "rows", rows)
-        internal_frozen_setattr(self, "frame", frame)
+        frozen_setattr(self, "table", table)
+        frozen_setattr(self, "rows", rows)
+        frozen_setattr(self, "frame", frame)
 
     def __repr__(self) -> str:
         return (
@@ -195,8 +195,8 @@ class internal_TableIndex(internal_Record):
         return self.__class__(table, rows, frame)
 
     @classmethod
-    def build(cls, table: Table) -> internal_TableIndex:
-        rows: list[internal_IndexedRow] = []
+    def build(cls, table: Table) -> TableIndex:
+        rows: list[IndexedRow] = []
         boxes: list[Rectangle] = []
         for row in table.rows:
             cells = tuple(cell for cell in row if cell.text)
@@ -209,7 +209,7 @@ class internal_TableIndex(internal_Record):
                     indexes.append(len(boxes))
                     boxes.append(cell.bbox)
             rows.append(
-                internal_IndexedRow(
+                IndexedRow(
                     cells,
                     texts,
                     tuple(content_tokens(text) for text in texts),
@@ -220,7 +220,7 @@ class internal_TableIndex(internal_Record):
         return cls(table, tuple(rows), frame)
 
 
-def internal_line_duplicates_table(text: str, box: Rectangle, index: internal_TableIndex) -> bool:
+def line_duplicates_table(text: str, box: Rectangle, index: TableIndex) -> bool:
     table = index.table
     normalized = collapse_ws(text)
     if not normalized or table.bbox is None or overlap_ratio_of(box, table.bbox) < 0.90:
@@ -291,7 +291,7 @@ def internal_line_duplicates_table(text: str, box: Rectangle, index: internal_Ta
     )
 
 
-def internal_remove_table_duplicate_blocks(
+def remove_table_duplicate_blocks(
     blocks: list[Block],
     tables: tuple[Table, ...],
 ) -> list[Block]:
@@ -303,14 +303,14 @@ def internal_remove_table_duplicate_blocks(
     table_frame = SpatialFrame.from_boxes(
         table.bbox for table in located_tables if table.bbox is not None
     )
-    indexes = [internal_TableIndex.build(table) for table in located_tables]
+    indexes = [TableIndex.build(table) for table in located_tables]
     deduplicated: list[Block] = []
     for block in blocks:
         kept_lines = []
         for line in block.lines:
             box = line.bbox or (block.bbox if len(block.lines) == 1 else None)
             if box is None or not any(
-                internal_line_duplicates_table(line.text, box, indexes[int(index)])
+                line_duplicates_table(line.text, box, indexes[int(index)])
                 for index in table_frame.matching_overlap_min(box, 0.90)
             ):
                 kept_lines.append(line)
@@ -326,10 +326,10 @@ def internal_remove_table_duplicate_blocks(
     return deduplicated
 
 
-def internal_project_text_and_tables(
+def project_text_and_tables(
     blocks: list[Block],
     parsed_tables: tuple[Table, ...],
 ) -> tuple[list[Block], tuple[Table, ...]]:
-    text_blocks = internal_remove_table_duplicate_blocks(blocks, parsed_tables)
-    projected_tables = internal_remove_block_duplicate_table_rows(text_blocks, parsed_tables)
+    text_blocks = remove_table_duplicate_blocks(blocks, parsed_tables)
+    projected_tables = remove_block_duplicate_table_rows(text_blocks, parsed_tables)
     return text_blocks, projected_tables

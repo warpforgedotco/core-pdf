@@ -36,10 +36,10 @@ def test_scalar_numpy_and_dispatch_match_pixel_composition(operator, width, posi
         rows, width, x, y, image_width, image_height, stride, initial, operator
     )
     scalar, bulk, dispatched = (bytearray(initial) for _ in range(3))
-    kernels.internal_compose_packed_bitmap_scalar(
+    kernels.compose_packed_bitmap_scalar(
         rows, width, x, y, image_width, image_height, stride, scalar, operator
     )
-    kernels.internal_compose_packed_bitmap_numpy(
+    kernels.compose_packed_bitmap_numpy(
         packed, 4, row_bytes, width, x, y, image_width, image_height, stride, bulk, operator
     )
     kernels.compose_packed_bitmap_data(

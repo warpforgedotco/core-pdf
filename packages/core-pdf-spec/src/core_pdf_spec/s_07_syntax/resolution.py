@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Self, cast
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfReference
 
-internal_CONTAINER_TYPES = (dict, list, tuple, PdfStream)
+CONTAINER_TYPES = (dict, list, tuple, PdfStream)
 
 
 def resolve_reference_chain(value: object, resolve: Callable[[object], object]) -> object:
@@ -24,7 +24,7 @@ def resolve_reference_chain(value: object, resolve: Callable[[object], object]) 
     return value
 
 
-class internal_ResolutionNode:
+class ResolutionNode:
     __slots__ = ("original", "values", "keys", "parents", "changed")
 
     original: object
@@ -87,7 +87,7 @@ class internal_ResolutionNode:
         return self.__class__(original, values, keys, parents, changed)
 
 
-def internal_resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:
+def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:
     reference_values: dict[tuple[int, int], object] = {}
 
     def resolve_once(reference: object) -> object:
@@ -98,10 +98,10 @@ def internal_resolve_object_graph(value: object, resolve: Callable[[object], obj
         return reference_values[marker]
 
     root = resolve_reference_chain(value, resolve_once)
-    if type(root) not in internal_CONTAINER_TYPES:
+    if type(root) not in CONTAINER_TYPES:
         return root
 
-    nodes = {id(root): internal_ResolutionNode(root)}
+    nodes = {id(root): ResolutionNode(root)}
     pending = [id(root)]
     while pending:
         marker = pending.pop()
@@ -122,11 +122,11 @@ def internal_resolve_object_graph(value: object, resolve: Callable[[object], obj
             node.values.append(resolved)
             if resolved is not item:
                 node.changed = True
-            if type(resolved) in internal_CONTAINER_TYPES:
+            if type(resolved) in CONTAINER_TYPES:
                 child_marker = id(resolved)
                 child = nodes.get(child_marker)
                 if child is None:
-                    child = nodes[child_marker] = internal_ResolutionNode(resolved)
+                    child = nodes[child_marker] = ResolutionNode(resolved)
                     pending.append(child_marker)
                 child.parents.add(marker)
 
@@ -154,8 +154,7 @@ def internal_resolve_object_graph(value: object, resolve: Callable[[object], obj
         if not node.changed or type(node.original) is PdfStream:
             continue
         resolved_values = [
-            results[id(item)] if type(item) in internal_CONTAINER_TYPES else item
-            for item in node.values
+            results[id(item)] if type(item) in CONTAINER_TYPES else item for item in node.values
         ]
         if type(node.original) is dict:
             cast(dict[object, object], results[marker]).update(

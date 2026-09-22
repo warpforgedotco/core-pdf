@@ -8,14 +8,14 @@ from typing import Any, ClassVar, Self
 import imagecodecs
 import numpy
 
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,
     use_black_point_compensation,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
@@ -29,7 +29,7 @@ class IccSampleError(ValueError):
     pass
 
 
-internal_INTENT_CODES = {
+INTENT_CODES = {
     "Perceptual": 0,
     "RelativeColorimetric": 1,
     "Saturation": 2,
@@ -37,9 +37,9 @@ internal_INTENT_CODES = {
 }
 
 
-def internal_cms_options(rendering: ColorRendering) -> tuple[int, int]:
+def cms_options(rendering: ColorRendering) -> tuple[int, int]:
     flags = 0x0100 | (0x2000 if use_black_point_compensation(rendering, default=True) else 0)
-    return internal_INTENT_CODES[rendering.intent], flags
+    return INTENT_CODES[rendering.intent], flags
 
 
 INTERNAL_COLOR_SPACE_NAMES = {
@@ -57,11 +57,11 @@ INTERNAL_ALTERNATE_COLOR_SPACES = {
 
 
 @cache
-def internal_srgb_profile() -> bytes:
+def srgb_profile() -> bytes:
     return bytes(imagecodecs.cms_profile("srgb"))
 
 
-class IccTransform(internal_Record):
+class IccTransform(Record):
     __slots__ = ("profile", "color_space", "input_channels")
 
     profile: bytes
@@ -72,9 +72,9 @@ class IccTransform(internal_Record):
     __match_args__ = ("profile", "color_space", "input_channels")
 
     def __init__(self, profile: bytes, color_space: str, input_channels: int) -> None:
-        internal_frozen_setattr(self, "profile", profile)
-        internal_frozen_setattr(self, "color_space", color_space)
-        internal_frozen_setattr(self, "input_channels", input_channels)
+        frozen_setattr(self, "profile", profile)
+        frozen_setattr(self, "color_space", color_space)
+        frozen_setattr(self, "input_channels", input_channels)
 
     def __repr__(self) -> str:
         return (
@@ -107,10 +107,10 @@ class IccTransform(internal_Record):
             raise IccSampleError("samples must have uint16 dtype")
         if samples.ndim != 2 or samples.shape[1] != self.input_channels:
             raise IccSampleError(f"samples must have shape (count, {self.input_channels})")
-        return internal_transform(self, samples, rendering)
+        return transform(self, samples, rendering)
 
 
-def internal_transform(
+def transform(
     transform: IccTransform,
     samples: numpy.ndarray[Any, Any],
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
@@ -118,12 +118,12 @@ def internal_transform(
     rows, channels = samples.shape
     if rows == 0:
         return numpy.empty((0, 3), dtype=numpy.uint8)
-    intent, flags = internal_cms_options(rendering)
+    intent, flags = cms_options(rendering)
     try:
         converted = imagecodecs.cms_transform(
             numpy.ascontiguousarray(samples).reshape(rows, 1, channels),
             transform.profile,
-            internal_srgb_profile(),
+            srgb_profile(),
             colorspace=transform.color_space.lower(),
             outcolorspace="rgb",
             outdtype=numpy.uint8,

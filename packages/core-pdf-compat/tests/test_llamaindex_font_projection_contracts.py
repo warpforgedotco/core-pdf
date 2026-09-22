@@ -4,9 +4,9 @@ import pytest
 
 from core_pdf.impl.fonts.decoder import FontDecoder
 from core_pdf_compat.llamaindex._operator_text import (
+    Font,
     OperatorTextProjection,
-    internal_difference_text,
-    internal_Font,
+    difference_text,
     internal_glyph_name_to_unicode,
 )
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
@@ -92,7 +92,7 @@ def test_legacy_glyph_aliases_preserve_facade_specific_spelling(name, expected):
     ],
 )
 def test_encoding_differences_distinguish_names_from_unicode(name, code, expected):
-    assert internal_difference_text(name, code) == expected
+    assert difference_text(name, code) == expected
 
 
 @pytest.mark.parametrize(
@@ -107,13 +107,13 @@ def test_encoding_differences_distinguish_names_from_unicode(name, code, expecte
 def test_font_encoding_fallbacks_preserve_bytes_when_the_declared_codec_fails(
     encoding, data, expected
 ):
-    font = internal_Font(FontDecoder({}), " ", 200, encoding, {}, {}, 500)
+    font = Font(FontDecoder({}), " ", 200, encoding, {}, {}, 500)
     assert font.encoded(data) == expected
 
 
 def test_mapped_text_expansion_does_not_change_encoded_character_widths():
     encoding = tuple(chr(code) for code in range(256))
-    font = internal_Font(FontDecoder({}), "_", 250, encoding, {"A": "fi", "_": " "}, {65: 600}, 400)
+    font = Font(FontDecoder({}), "_", 250, encoding, {"A": "fi", "_": " "}, {65: 600}, 400)
     assert font.decode_parts(b"A_B") == (("fi", " ", "B"), 1250)
 
 
@@ -172,7 +172,7 @@ def test_valid_optional_cmap_and_visible_space_projection(projection):
 def test_type3_interpretability_depends_on_mapping_or_recognized_glyph_names(
     projection, font, expected
 ):
-    assert projection.internal_type3_interpretable(font) is expected
+    assert projection.type3_interpretable(font) is expected
 
 
 @pytest.mark.parametrize(

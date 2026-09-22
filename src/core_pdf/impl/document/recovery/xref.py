@@ -73,7 +73,7 @@ def parse_object_marker_prefix(
     return obj_start, object_number, generation
 
 
-def internal_validate_xref_numbers(offset: int, generation: int) -> None:
+def validate_xref_numbers(offset: int, generation: int) -> None:
     if offset < 0:
         raise PdfParseError("invalid xref table entry")
     if not 0 <= generation <= 65535:
@@ -91,7 +91,7 @@ def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
         generation = int(parts[1])
     except ValueError as exc:
         raise PdfParseError("invalid xref table entry") from exc
-    internal_validate_xref_numbers(offset, generation)
+    validate_xref_numbers(offset, generation)
     if len(parts) == 2:
         return offset, generation, offset != 0
     if parts[2] == b"n":
@@ -112,7 +112,7 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
             except ValueError:
                 pass
             else:
-                internal_validate_xref_numbers(offset, generation)
+                validate_xref_numbers(offset, generation)
                 next_pos = pos + 18
                 if next_pos < n:
                     while next_pos < n and data[next_pos] in (9, 32):

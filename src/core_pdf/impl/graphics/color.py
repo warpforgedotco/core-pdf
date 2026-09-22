@@ -13,8 +13,8 @@ from core_pdf.impl.graphics.color_spec import (
     recover_image_bits_per_component,
 )
 from core_pdf.impl.graphics.image_samples import (
+    convert_components,
     convert_integer_image,
-    internal_convert_components,
 )
 from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.runtime.scalars import parse_int
@@ -34,7 +34,7 @@ def color_operands_to_srgb(
     ):
         return None
     try:
-        converted = internal_convert_components(
+        converted = convert_components(
             numpy.asarray([components], dtype=numpy.float64), spec, rendering=rendering
         )[0]
         if len(converted) == 1:
@@ -44,7 +44,7 @@ def color_operands_to_srgb(
         return None
 
 
-def internal_convert_image_data(
+def convert_image_data(
     raw: ByteBuffer,
     image_dict: ImageDict,
     *,
@@ -54,7 +54,7 @@ def internal_convert_image_data(
     bits = recover_image_bits_per_component(image_dict)
     if bits not in {1, 2, 4, 8, 16} or not spec.component_ranges:
         return None
-    fast = internal_simple_device_color_fast_path(raw, spec, image_dict, bits)
+    fast = simple_device_color_fast_path(raw, spec, image_dict, bits)
     if fast is not None and image_dict.get("Mask") is None:
         return fast
     dictionary = dict(image_dict)
@@ -75,7 +75,7 @@ def internal_convert_image_data(
     ).reshape(-1)
 
 
-def internal_simple_device_color_fast_path(
+def simple_device_color_fast_path(
     raw: ByteBuffer,
     spec: ColorSpace,
     image_dict: ImageDict,
@@ -87,8 +87,8 @@ def internal_simple_device_color_fast_path(
         return None
     if image_dict.get("Decode") is not None:
         return None
-    width = internal_image_dimension(image_dict, "Width")
-    height = internal_image_dimension(image_dict, "Height")
+    width = image_dimension(image_dict, "Width")
+    height = image_dimension(image_dict, "Height")
     if width <= 0 or height <= 0:
         return None
     expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
@@ -97,18 +97,18 @@ def internal_simple_device_color_fast_path(
     return raw
 
 
-def internal_convert_cmyk(
+def convert_cmyk(
     raw: ByteBuffer,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
     if len(raw) % 4:
         raise ValueError("invalid color sample data")
-    return internal_convert_components(
+    return convert_components(
         uint8_view(raw).reshape(-1, 4).astype(numpy.float64) / 255,
         parse_color_space("DeviceCMYK"),
     ).reshape(-1)
 
 
-def internal_image_dimension(image_dict: ImageDict, key: str) -> int:
+def image_dimension(image_dict: ImageDict, key: str) -> int:
     value = image_dict.get(key)
     if type(value) is bool:
         return 0

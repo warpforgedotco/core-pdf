@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.document.document import PdfDocument, internal_check_security_aliases
+from core_pdf.impl.document.document import PdfDocument, check_security_aliases
 from core_pdf.impl.exceptions import PdfDocumentClosedError, PdfSourceError, PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.types import PdfDict
 
@@ -18,9 +18,7 @@ def test_security_alias_collisions_are_rejected_regardless_of_order(
     pairs = [(literal, {}), (escaped, {})]
     with PdfDocument(text_pdf_bytes) as document:
         with pytest.raises(PdfUnsupportedError, match="Ambiguous security dictionary"):
-            internal_check_security_aliases(
-                dict(reversed(pairs) if reverse else pairs), document.resolver
-            )
+            check_security_aliases(dict(reversed(pairs) if reverse else pairs), document.resolver)
 
 
 @pytest.mark.parametrize("outer", ["Encrypt", "Encr#79pt", "AuthCode", "Auth#43ode"])
@@ -31,7 +29,7 @@ def test_security_dictionary_alias_checks_reach_nested_dictionaries(text_pdf_byt
         values = {"CF": {"StdCF": values}}
     with PdfDocument(text_pdf_bytes) as document:
         with pytest.raises(PdfUnsupportedError, match="Ambiguous security dictionary"):
-            internal_check_security_aliases({outer: values}, document.resolver)
+            check_security_aliases({outer: values}, document.resolver)
 
 
 @pytest.mark.parametrize("outer", ["Encrypt", "AuthCode", "Root"])
@@ -42,7 +40,7 @@ def test_security_alias_walk_is_cycle_safe_and_ignores_unrelated_trailer_entries
     values["Self"] = values
     trailer: PdfDict = {outer: values, "Unrelated": {"Foo": 1, "F#6fo": 2}}
     with PdfDocument(text_pdf_bytes) as document:
-        internal_check_security_aliases(trailer, document.resolver)
+        check_security_aliases(trailer, document.resolver)
 
 
 @pytest.mark.parametrize("kind", ["bytes", "bytearray", "memoryview", "literal", "reader"])

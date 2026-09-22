@@ -4,7 +4,7 @@ import pytest
 from core_pdf.impl.render import blend
 
 
-def internal_source_over(destination, source, mode=None):
+def source_over(destination, source, mode=None):
     sr, sg, sb, sa = source
     if sa == 0:
         return tuple(destination)
@@ -36,8 +36,8 @@ def test_solid_blend_writes_through_strided_views(mode, source_alpha, destinatio
     destination = (51, 102, 153, destination_alpha)
     target[:] = destination
     source = (204, 85, 34, source_alpha)
-    blend.internal_blend_solid_array_numpy(target, source, mode)
-    expected = internal_source_over(destination, source, mode)
+    blend.blend_solid_array_numpy(target, source, mode)
+    expected = source_over(destination, source, mode)
     np.testing.assert_array_equal(target, np.broadcast_to(expected, target.shape))
     np.testing.assert_array_equal(backing[:, ::2], 17)
 
@@ -50,9 +50,9 @@ def test_normal_fast_path_matches_source_over_on_strided_views(source_alpha, des
     destination = (51, 102, 153, destination_alpha)
     target[:] = destination
     source = (204, 85, 34, source_alpha)
-    blend.internal_blend_normal_solid_array_numpy(target, source)
+    blend.blend_normal_solid_array_numpy(target, source)
     np.testing.assert_array_equal(
-        target, np.broadcast_to(internal_source_over(destination, source), target.shape)
+        target, np.broadcast_to(source_over(destination, source), target.shape)
     )
     np.testing.assert_array_equal(backing[:, ::2], 17)
 
@@ -77,10 +77,10 @@ def test_group_blending_rounds_each_alpha_stage_and_preserves_unpainted_pixels(
             for scale in (source_scale, target_scale):
                 if scale is not None:
                     alpha = max(0, min(255, round(alpha * scale)))
-            expected[row, col] = internal_source_over(
+            expected[row, col] = source_over(
                 tuple(int(v) for v in target[row, col]), (204, 85, 34, alpha), mode
             )
-    blend.internal_composite_blended_group_numpy(target, source, source_scale, target_scale, mode)
+    blend.composite_blended_group_numpy(target, source, source_scale, target_scale, mode)
     np.testing.assert_array_equal(target, expected)
     np.testing.assert_array_equal(backing[:, 1::2], 17)
     assert source[0, 1, 3] == 129
@@ -97,8 +97,8 @@ def test_normal_group_routes_match_general_compositing(
         [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=np.uint8
     )
     expected = destination.copy()
-    blend.internal_composite_blended_group_numpy(expected, source, source_scale, target_scale, None)
-    blend.internal_composite_normal_group_numpy(destination, source, source_scale, target_scale)
+    blend.composite_blended_group_numpy(expected, source, source_scale, target_scale, None)
+    blend.composite_normal_group_numpy(destination, source, source_scale, target_scale)
     np.testing.assert_array_equal(destination, expected)
 
 
@@ -108,13 +108,13 @@ def test_coverage_alpha_is_capped_by_source_opacity_and_zero_coverage_preserves_
     expected = np.array(
         [
             [
-                internal_source_over((51, 102, 153, alpha), (204, 85, 34, min(coverage, 128)))
+                source_over((51, 102, 153, alpha), (204, 85, 34, min(coverage, 128)))
                 for alpha in (0, 255)
             ]
         ],
         dtype=np.uint8,
     )
-    blend.internal_blend_normal_alpha_array_numpy(
+    blend.blend_normal_alpha_array_numpy(
         target, (204, 85, 34, 128), np.full((1, 2), coverage, dtype=np.uint8)
     )
     np.testing.assert_array_equal(target, expected)

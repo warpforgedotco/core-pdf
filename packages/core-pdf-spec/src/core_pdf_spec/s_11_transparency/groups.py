@@ -9,7 +9,7 @@ import numpy
 GroupSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
 
 
-def internal_unit_range(*arrays: numpy.ndarray[Any, Any]) -> bool:
+def unit_range(*arrays: numpy.ndarray[Any, Any]) -> bool:
     for values in arrays:
         if values.size and not (values.min() >= 0.0 and values.max() <= 1.0):
             return False
@@ -37,7 +37,7 @@ def remove_group_backdrop(
         or complete.shape != color.shape[:-1]
         or initial.shape != complete.shape
         or accumulated.shape != complete.shape
-        or (validate and not internal_unit_range(color, complete, backdrop, initial, accumulated))
+        or (validate and not unit_range(color, complete, backdrop, initial, accumulated))
     ):
         raise ValueError("invalid transparency group samples")
     backdrop_weight = (1.0 - accumulated) * initial
@@ -87,7 +87,7 @@ def composite_knockout_element(
         or (
             validate
             and (
-                not internal_unit_range(
+                not unit_range(
                     color,
                     complete,
                     backdrop,

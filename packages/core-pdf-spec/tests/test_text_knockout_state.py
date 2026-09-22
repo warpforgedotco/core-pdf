@@ -172,7 +172,7 @@ def test_failed_child_entry_preserves_parent_text_scope() -> None:
     assert sink.events == [("begin", True, True)]
 
 
-def internal_type3_font(stream: PdfStream, resources: PdfDict | None = None) -> Any:
+def type3_font(stream: PdfStream, resources: PdfDict | None = None) -> Any:
     return SimpleNamespace(
         font={"CharProcs": {"A": stream, "B": stream}, "Resources": resources or {}},
         font_matrix=IDENTITY_MATRIX,
@@ -185,8 +185,8 @@ def test_type3_boundaries_enclose_all_commands_in_each_executed_glyph() -> None:
     state, sink = internal_state()
     state.op_BT((), 0)
     glyph = PdfStream(raw_data=b"0 0 d0 /False gs 0 0 1 1 re f BT /True gs 0 0 1 1 re f ET")
-    font = internal_type3_font(glyph, {"ExtGState": {"False": {"TK": False}, "True": {"TK": True}}})
-    state.internal_render_type3_glyphs(b"ABC", font)
+    font = type3_font(glyph, {"ExtGState": {"False": {"TK": False}, "True": {"TK": True}}})
+    state.render_type3_glyphs(b"ABC", font)
     assert sink.events == [("begin", True, True)] + 2 * [
         ("type3-glyph-begin", True, True),
         ("fill", False, False),
@@ -213,9 +213,7 @@ def test_type3_boundary_closes_after_failed_CharProc_and_state_restoration(failu
     )
     snapshot = state.capture_stream_state()
     with pytest.raises(FilterUnsupportedError if failure == "decode" else PdfParseError):
-        state.internal_render_type3_glyphs(
-            b"A", internal_type3_font(glyph, {"ExtGState": {"False": {"TK": False}}})
-        )
+        state.render_type3_glyphs(b"A", type3_font(glyph, {"ExtGState": {"False": {"TK": False}}}))
     assert sink.events[1] == ("type3-glyph-begin", True, True)
     assert sink.events[-1] == ("type3-glyph-end", True, True)
     assert state.capture_stream_state() == snapshot
@@ -226,9 +224,7 @@ def test_type3_boundary_closes_after_failed_CharProc_and_state_restoration(failu
 def test_invisible_type3_text_emits_no_glyph_boundaries() -> None:
     state, sink = internal_state()
     state.graphics.render_mode = 3
-    state.internal_render_type3_glyphs(
-        b"A", internal_type3_font(PdfStream(raw_data=b"0 0 1 1 re f"))
-    )
+    state.render_type3_glyphs(b"A", type3_font(PdfStream(raw_data=b"0 0 1 1 re f")))
     assert not sink.events
 
 

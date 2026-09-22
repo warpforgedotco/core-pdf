@@ -6,7 +6,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl.types import PdfName
 
 
-def internal_annotation() -> dict[str, Any]:
+def annotation() -> dict[str, Any]:
     return {"Subtype": PdfName(b"Link"), "Rect": [10, 20, 30, 40], "Contents": b"note"}
 
 
@@ -17,8 +17,8 @@ def test_annotation_validation_and_recovery(
 ) -> None:
     with PdfDocument(text_pdf_bytes) as document:
         document.xref_was_recovered = recover
-        valid = internal_annotation()
-        malformed = internal_annotation()
+        valid = annotation()
+        malformed = annotation()
         malformed["Rect"] = b"invalid"
         annots = (
             valid
@@ -57,7 +57,7 @@ def test_annotation_destination_precedence_and_action_identity(
     text_pdf_bytes: bytes, direct: bool, action_kind: str | None
 ) -> None:
     with PdfDocument(text_pdf_bytes) as document:
-        annot = internal_annotation()
+        annot = annotation()
         action = (
             {"S": PdfName(action_kind.encode()), "D": b"action-target"} if action_kind else None
         )

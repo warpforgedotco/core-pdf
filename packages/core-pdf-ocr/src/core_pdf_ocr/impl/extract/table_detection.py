@@ -9,40 +9,40 @@ import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.extract.table_detection import (
-    internal_detect_tables,
-    internal_finalize_tables,
-    internal_TableAnalysis,
+    TableAnalysis,
+    detect_tables,
+    finalize_tables,
 )
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
 from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.types import Rectangle
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis
 
-internal_CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
-internal_CHART_DUPLICATE_OVERLAP = 0.5
+CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
+CHART_DUPLICATE_OVERLAP = 0.5
 
 
 def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
     evidence = capture.evidence
     if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
         return ()
-    analysis = internal_TableAnalysis.build(observations, capture.width)
-    tables = internal_detect_tables(capture, analysis)
+    analysis = TableAnalysis.build(observations, capture.width)
+    tables = detect_tables(capture, analysis)
     chart_table = extract_chart_table(capture, observations)
     if chart_table is not None:
         tables = (*tables, chart_table)
-    return internal_finalize_tables(tables, analysis)
+    return finalize_tables(tables, analysis)
 
 
-def internal_chart_cell_texts(text: str) -> tuple[str, ...]:
+def chart_cell_texts(text: str) -> tuple[str, ...]:
     tokens = tuple(part for part in text.split() if part)
-    numeric_count = sum(bool(internal_CHART_NUMERIC_TOKEN.fullmatch(part)) for part in tokens)
+    numeric_count = sum(bool(CHART_NUMERIC_TOKEN.fullmatch(part)) for part in tokens)
     if len(tokens) >= 4 and numeric_count >= 3:
         return tokens
     return (text,)
 
 
-def internal_chart_cell_center_y(cell: TableCell) -> float:
+def chart_cell_center_y(cell: TableCell) -> float:
     box = cell.bbox or (0.0, 0.0, 0.0, 0.0)
     return (box[1] + box[3]) / 2
 
@@ -68,12 +68,12 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
     for text, box in sorted(chart_observations, key=lambda item: item[1][0]):
         matching_boxes = seen.setdefault(text.casefold(), [])
         if any(
-            overlap_ratio_min_exact(box, previous) >= internal_CHART_DUPLICATE_OVERLAP
+            overlap_ratio_min_exact(box, previous) >= CHART_DUPLICATE_OVERLAP
             for previous in matching_boxes
         ):
             continue
         matching_boxes.append(box)
-        parts = internal_chart_cell_texts(text)
+        parts = chart_cell_texts(text)
         if len(parts) == 1:
             boxes.append(box)
             cells.append(TableCell(row=0, column=len(cells), text=text, bbox=box))
@@ -89,9 +89,9 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
     row_groups: list[tuple[float, list[TableCell]]] = []
     for cell in sorted(
         cells,
-        key=lambda item: (-internal_chart_cell_center_y(item), item.column),
+        key=lambda item: (-chart_cell_center_y(item), item.column),
     ):
-        center_y = internal_chart_cell_center_y(cell)
+        center_y = chart_cell_center_y(cell)
         if not row_groups or abs(row_groups[-1][0] - center_y) > row_tolerance:
             row_groups.append((center_y, [cell]))
         else:

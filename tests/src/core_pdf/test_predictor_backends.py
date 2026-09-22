@@ -18,7 +18,7 @@ def test_png_codec_and_fallback(
             raise outcome
         return outcome
 
-    monkeypatch.setattr(reader, "internal_png_predict_codec", codec)
+    monkeypatch.setattr(reader, "png_predict_codec", codec)
     assert reader.png_predict(
         buffer_type(b"\x00\x05\x07"), columns=2, colors=1, bits_per_component=8
     ) == (outcome if isinstance(outcome, bytes) else b"\x05\x07")
@@ -27,7 +27,7 @@ def test_png_codec_and_fallback(
 def test_png_fallback_preserves_empty_truncated_and_damaged_row_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(reader, "internal_png_predict_codec", lambda *args, **kwargs: None)
+    monkeypatch.setattr(reader, "png_predict_codec", lambda *args, **kwargs: None)
     options = {"columns": 2, "colors": 1, "bits_per_component": 8}
     assert reader.png_predict(b"", **options) == b""
     assert reader.png_predict(b"\x00\x05\x07\x00", **options) == b"\x05\x07"

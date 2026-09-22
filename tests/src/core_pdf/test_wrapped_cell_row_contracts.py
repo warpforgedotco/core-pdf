@@ -2,7 +2,7 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.extract.table_cleanup import internal_merge_wrapped_cell_rows
+from core_pdf.impl.extract.table_cleanup import merge_wrapped_cell_rows
 from core_pdf.impl.output.model import Table, TableCell
 
 
@@ -38,7 +38,7 @@ def internal_table(tall=30, *, ragged=False, missing_box=False, blank=False):
 @pytest.mark.parametrize("blank", [False, True])
 def test_wrapped_cells_merge_by_column_and_union_geometry(tall, ragged, missing_box, blank):
     original = internal_table(tall, ragged=ragged, missing_box=missing_box, blank=blank)
-    merged = internal_merge_wrapped_cell_rows(original)
+    merged = merge_wrapped_cell_rows(original)
     assert len(merged.rows) == 2
     for row_index, row in enumerate(merged.rows):
         assert len(row) == 5
@@ -91,7 +91,7 @@ def test_wrapped_cell_repair_requires_positive_geometry_and_text_evidence(reason
         table = replace(
             table, rows=(tuple(replace(cell, bbox=None) for cell in table.rows[0]), *table.rows[1:])
         )
-    assert internal_merge_wrapped_cell_rows(table) is table
+    assert merge_wrapped_cell_rows(table) is table
 
 
 @pytest.mark.parametrize("one_group", [False, True])
@@ -115,4 +115,4 @@ def test_a_single_group_or_only_singleton_groups_does_not_rewrite_the_table(one_
             )
         )
     table = replace(table, rows=tuple(rows))
-    assert internal_merge_wrapped_cell_rows(table) is table
+    assert merge_wrapped_cell_rows(table) is table

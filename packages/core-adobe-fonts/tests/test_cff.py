@@ -15,7 +15,7 @@ from core_adobe_fonts.cff.font import (
 )
 
 
-def internal_execute_type2(
+def execute_type2(
     program: bytes,
     events: list[tuple[str, tuple[float, ...]]],
     *,
@@ -77,7 +77,7 @@ def test_cff_parses_without_font_backend_and_keeps_standard_encoding() -> None:
 
 def test_type2_operators_emit_exact_displacements() -> None:
     events: list[tuple[str, tuple[float, ...]]] = []
-    assert internal_execute_type2(bytes([149, 159, 21, 169, 139, 5, 14]), events) is False
+    assert execute_type2(bytes([149, 159, 21, 169, 139, 5, 14]), events) is False
     assert events == [("move", (10.0, 20.0)), ("line", (30.0, 0.0)), ("flush", ())]
 
 
@@ -96,7 +96,7 @@ def test_type2_axis_lines_alternate_and_clear_operands(
     values = [10, 20, 30, 40][:count]
     program = bytes([139, 139, 21, *(value + 139 for value in values), operator, 144, 22, 14])
     events: list[tuple[str, tuple[float, ...]]] = []
-    assert internal_execute_type2(program, events) is False
+    assert execute_type2(program, events) is False
     assert events == [
         ("move", (0.0, 0.0)),
         *(("line", point) for point in expected[:count]),
@@ -109,7 +109,7 @@ def test_type2_axis_lines_alternate_and_clear_operands(
 @pytest.mark.parametrize("prefix", [b"\x95", b"\x8b\x8b\x15"], ids=["no-point", "no-operands"])
 def test_type2_axis_lines_reject_missing_point_or_operands(operator: int, prefix: bytes) -> None:
     with pytest.raises(ValueError, match="invalid Type 2"):
-        internal_execute_type2(prefix + bytes([operator]), [])
+        execute_type2(prefix + bytes([operator]), [])
 
 
 @pytest.mark.parametrize("operator", [10, 29], ids=["local", "global"])
@@ -122,7 +122,7 @@ def test_type2_subroutines_share_operands_and_use_their_own_bias(
     program = bytes([149, 159, 21, 169, 179, 28]) + (-bias).to_bytes(2, "big", signed=True)
     events: list[tuple[str, tuple[float, ...]]] = []
     assert (
-        internal_execute_type2(
+        execute_type2(
             program + bytes([operator, 5, 14]), events, local_subrs=local, global_subrs=global_
         )
         is False
@@ -143,7 +143,7 @@ def test_type2_subroutines_share_operands_and_use_their_own_bias(
 )
 def test_type2_subroutines_reject_invalid_indices(operator: int, operand: bytes) -> None:
     with pytest.raises(ValueError, match="invalid Type 2"):
-        internal_execute_type2(
+        execute_type2(
             operand + bytes([operator]), [], local_subrs=(b"\x0b",), global_subrs=(b"\x0b",)
         )
 
@@ -154,10 +154,10 @@ def test_type2_subroutine_depth_limit(operator: int, depth: int) -> None:
     subrs = tuple(bytes([33 + index, operator, 11]) for index in range(depth - 1)) + (b"\x0b",)
     program = bytes([32, operator, 14])
     if depth == 10:
-        assert internal_execute_type2(program, [], local_subrs=subrs, global_subrs=subrs) is False
+        assert execute_type2(program, [], local_subrs=subrs, global_subrs=subrs) is False
     else:
         with pytest.raises(ValueError, match="invalid Type 2"):
-            internal_execute_type2(program, [], local_subrs=subrs, global_subrs=subrs)
+            execute_type2(program, [], local_subrs=subrs, global_subrs=subrs)
 
 
 @pytest.mark.parametrize("operators", [(10,), (29,), (10, 10), (10, 29), (29, 10), (29, 29)])
@@ -171,7 +171,7 @@ def test_type2_subroutine_endchar_completes_all_enclosing_calls(operators: tuple
         )
     events: list[tuple[str, tuple[float, ...]]] = []
     assert (
-        internal_execute_type2(
+        execute_type2(
             bytes([139, 139, 21, 32, operators[0], 149, 139, 21, 149, 6, 14]),
             events,
             local_subrs=tuple(subrs[10]),
@@ -231,7 +231,7 @@ def test_cff_dict_rejects_unconsumed_operands() -> None:
 def test_type2_arithmetic_and_logic_drive_emitted_geometry(operator, operands, expected):
     program = type2_operands(*operands) + bytes([12, operator, 22, 14])
     events = []
-    assert internal_execute_type2(program, events) is False
+    assert execute_type2(program, events) is False
     assert events == [("move", (expected, 0)), ("flush", ())]
 
 
@@ -253,7 +253,7 @@ def test_type2_arithmetic_and_logic_drive_emitted_geometry(operator, operands, e
 )
 def test_type2_stack_operations_preserve_operand_order(program, expected):
     events = []
-    internal_execute_type2(program + b"\x15\x0e", events)
+    execute_type2(program + b"\x15\x0e", events)
     assert events == [("move", expected), ("flush", ())]
 
 
@@ -262,10 +262,10 @@ def test_type2_transient_storage_is_shared_with_subroutines_but_reset_per_glyph(
     put = type2_operands(23, index) + b"\x0c\x14\x0b"
     get = type2_operands(index) + b"\x0c\x15\x16\x0e"
     events = []
-    internal_execute_type2(type2_operands(-107) + b"\x0a" + get, events, local_subrs=(put,))
+    execute_type2(type2_operands(-107) + b"\x0a" + get, events, local_subrs=(put,))
     assert events == [("move", (23, 0)), ("flush", ())]
     events.clear()
-    internal_execute_type2(get, events)
+    execute_type2(get, events)
     assert events == [("move", (0, 0)), ("flush", ())]
 
 
@@ -291,7 +291,7 @@ def test_type2_transient_storage_is_shared_with_subroutines_but_reset_per_glyph(
 def test_type2_invalid_arithmetic_and_indices_raise_before_emitting_geometry(operator, operands):
     events = []
     with pytest.raises(ValueError, match="invalid Type 2 charstring"):
-        internal_execute_type2(type2_operands(*operands) + bytes([12, operator]), events)
+        execute_type2(type2_operands(*operands) + bytes([12, operator]), events)
     assert events == []
 
 
@@ -300,7 +300,7 @@ def test_type2_invalid_arithmetic_and_indices_raise_before_emitting_geometry(ope
 )
 def test_type2_stack_underflow_has_consistent_error_family(operator):
     with pytest.raises(ValueError, match="invalid Type 2 charstring"):
-        internal_execute_type2(bytes([12, operator]), [])
+        execute_type2(bytes([12, operator]), [])
 
 
 @pytest.mark.parametrize(
@@ -316,7 +316,7 @@ def test_type2_stack_underflow_has_consistent_error_family(operator):
 def test_type2_flex_emits_two_curves_and_clears_operands(operator, operands, curves):
     events = []
     program = type2_operands(0, 0) + b"\x15" + type2_operands(*operands) + bytes([12, operator])
-    internal_execute_type2(program + type2_operands(2) + b"\x16\x0e", events)
+    execute_type2(program + type2_operands(2) + b"\x16\x0e", events)
     assert events == [
         ("move", (0, 0)),
         *(("curve", points) for points in curves),
@@ -330,21 +330,21 @@ def test_type2_flex_emits_two_curves_and_clears_operands(operator, operands, cur
 def test_type2_flex_rejects_missing_point_or_wrong_arity(operator, current_point):
     prefix = type2_operands(0, 0) + b"\x15" if current_point else b""
     with pytest.raises(ValueError, match="invalid Type 2 charstring"):
-        internal_execute_type2(prefix + type2_operands(1, 2) + bytes([12, operator]), [])
+        execute_type2(prefix + type2_operands(1, 2) + bytes([12, operator]), [])
 
 
 @pytest.mark.parametrize("operator", [4, 22])
 @pytest.mark.parametrize("width", [(), (50,)])
 def test_type2_axis_move_consumes_optional_width_only_on_first_move(operator, width):
     events = []
-    internal_execute_type2(
+    execute_type2(
         type2_operands(*width, 7) + bytes([operator]) + type2_operands(9) + bytes([operator, 14]),
         events,
     )
     expected = [(0, 7), (0, 9)] if operator == 4 else [(7, 0), (9, 0)]
     assert events == [("move", expected[0]), ("move", expected[1]), ("flush", ())]
     with pytest.raises(ValueError, match="invalid Type 2 charstring"):
-        internal_execute_type2(
+        execute_type2(
             type2_operands(7) + bytes([operator]) + type2_operands(50, 9) + bytes([operator]), []
         )
 
@@ -360,7 +360,7 @@ def test_type2_parallel_tangent_curves_apply_optional_offset_to_first_curve(oper
         else [(1, extra, 2, 3, 4, 0), (5, 0, 6, 7, 8, 0)]
     )
     events = []
-    internal_execute_type2(
+    execute_type2(
         type2_operands(0, 0) + b"\x15" + type2_operands(*values) + bytes([operator, 14]), events
     )
     assert events == [("move", (0, 0)), *(("curve", points) for points in curves), ("flush", ())]
@@ -370,7 +370,7 @@ def test_type2_parallel_tangent_curves_apply_optional_offset_to_first_curve(oper
 @pytest.mark.parametrize("count", [0, 3, 6])
 def test_type2_axis_operators_reject_wrong_operand_counts(operator, count):
     with pytest.raises(ValueError, match="invalid Type 2 charstring"):
-        internal_execute_type2(
+        execute_type2(
             type2_operands(0, 0) + b"\x15" + type2_operands(*range(count)) + bytes([operator]), []
         )
 
@@ -457,10 +457,10 @@ def test_cff_numbers_reject_incomplete_and_wrong_context_encodings(encoded, dict
 def test_type2_operand_stack_limit_has_positive_control(count):
     program = type2_operands(*range(count)) + b"\x0c\0\x0e"
     if count == 48:
-        assert internal_execute_type2(program, []) is False
+        assert execute_type2(program, []) is False
     else:
         with pytest.raises(ValueError, match="invalid Type 2 charstring"):
-            internal_execute_type2(program, [])
+            execute_type2(program, [])
 
 
 @pytest.mark.parametrize("value", [True, "1", b"1", float("inf"), float("nan"), 10**400])

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.document.document import PdfDocument, internal_PageLookup
+from core_pdf.impl.document.document import PageLookup, PdfDocument
 from core_pdf.impl.types import PdfReference
 
 
@@ -17,7 +17,7 @@ def test_page_lookup_recognizes_supported_aliases(text_pdf_bytes, mode):
             target = {"StructParents": 7}
         else:
             target = {"Contents": original["Contents"]}
-        lookup = internal_PageLookup(document)
+        lookup = PageLookup(document)
         assert lookup.page_index_for(target) == 0
         assert lookup.page_index_for(target) == 0
         assert lookup.nodes is lookup.nodes

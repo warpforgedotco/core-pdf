@@ -7,18 +7,18 @@ from core_pdf.impl.model.text import complete_text_covered, content_tokens
 from core_pdf.impl.output.model import Table
 
 
-def internal_is_synthetic_chart(table: Table) -> bool:
+def is_synthetic_chart(table: Table) -> bool:
     return table.metadata.get("source") == "chart-ocr" and bool(table.metadata.get("synthetic"))
 
 
-def internal_remove_duplicate_tables(
+def remove_duplicate_tables(
     tables: tuple[Table, ...],
 ) -> tuple[Table, ...]:
     text_tokens = tuple(
         content_tokens(" ".join(cell.text for row in table.rows for cell in row))
         for table in tables
     )
-    synthetic = tuple(internal_is_synthetic_chart(table) for table in tables)
+    synthetic = tuple(is_synthetic_chart(table) for table in tables)
     ranked = sorted(
         range(len(tables)),
         key=lambda index: (

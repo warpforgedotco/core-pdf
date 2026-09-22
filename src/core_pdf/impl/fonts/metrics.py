@@ -6,7 +6,7 @@ import contextlib
 from collections.abc import Mapping
 from typing import Any
 
-from core_pdf.impl.fonts.data.metrics import FONT_DATA, internal_METRIC_RECORD_NAMES
+from core_pdf.impl.fonts.data.metrics import FONT_DATA, METRIC_RECORD_NAMES
 from core_pdf.impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts.widths import get_descendant
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
@@ -23,9 +23,7 @@ def standard_14_widths(
         if decode_table is not None
         else None
     )
-    canonical = (
-        internal_METRIC_RECORD_NAMES.get(base_font_name, base_font_name) if base_font_name else None
-    )
+    canonical = METRIC_RECORD_NAMES.get(base_font_name, base_font_name) if base_font_name else None
     return pdf_standard_14_widths(canonical, literal)
 
 

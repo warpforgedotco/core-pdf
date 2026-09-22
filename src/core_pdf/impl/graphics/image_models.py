@@ -6,12 +6,12 @@ from typing import Any, ClassVar, Self
 
 import numpy
 
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class DecodedImage(internal_Record):
+class DecodedImage(Record):
     __slots__ = ("array", "source")
 
     array: numpy.ndarray[Any, Any]
@@ -21,8 +21,8 @@ class DecodedImage(internal_Record):
     __match_args__ = ("array", "source")
 
     def __init__(self, array: numpy.ndarray[Any, Any], source: str) -> None:
-        internal_frozen_setattr(self, "array", array)
-        internal_frozen_setattr(self, "source", source)
+        frozen_setattr(self, "array", array)
+        frozen_setattr(self, "source", source)
         self._post_init()
 
     def __repr__(self) -> str:

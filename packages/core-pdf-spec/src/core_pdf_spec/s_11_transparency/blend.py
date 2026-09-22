@@ -13,7 +13,7 @@ BlendMode = Literal["ColorDodge", "ColorBurn"]
 BlendSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
 
 
-def internal_revised_blending(context: SemanticContext | None) -> bool:
+def revised_blending(context: SemanticContext | None) -> bool:
     if context is None:
         return True
     version = context.version
@@ -37,7 +37,7 @@ def blend_component(
     *,
     context: SemanticContext | None = None,
 ) -> float:
-    revised = internal_revised_blending(context)
+    revised = revised_blending(context)
     if not 0.0 <= backdrop <= 1.0 or not 0.0 <= source <= 1.0:
         raise ValueError("blend components must be finite and between zero and one")
     if mode == "ColorDodge":
@@ -62,7 +62,7 @@ def blend_components(
     *,
     context: SemanticContext | None = None,
 ) -> BlendSamples:
-    revised = internal_revised_blending(context)
+    revised = revised_blending(context)
     cb, cs = numpy.broadcast_arrays(
         numpy.asarray(backdrop, dtype=numpy.float64), numpy.asarray(source, dtype=numpy.float64)
     )

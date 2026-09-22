@@ -11,7 +11,7 @@ from core_pdf.impl.document.recovery.resources import (
 )
 from core_pdf.impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.graphics.color_spec import parse_color_space
-from core_pdf.impl.graphics.functions import internal_compile_pdf_function
+from core_pdf.impl.graphics.functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -32,7 +32,7 @@ FontCompanions = dict[str, tuple[tuple[int, int], ...]]
 FontCompanionsCache = dict[int, tuple[dict[str, object], FontCompanions]]
 
 
-def internal_font_companions(
+def font_companions(
     fonts: dict[str, object],
     resolve: typing.Callable[[object], object],
     cache: FontCompanionsCache,
@@ -56,7 +56,7 @@ def internal_font_companions(
     return companions
 
 
-def internal_font_signature(
+def font_signature(
     font_ref: PdfReference,
     font_obj: object,
     resources: object,
@@ -73,7 +73,7 @@ def internal_font_signature(
     base_name = strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
     companions: tuple[tuple[int, int], ...] = ()
     if base_name:
-        companions = internal_font_companions(fonts, resolve, companions_cache).get(base_name, ())
+        companions = font_companions(fonts, resolve, companions_cache).get(base_name, ())
     return (font_ref.object_number, font_ref.generation_number, companions)
 
 
@@ -85,13 +85,13 @@ class RecoveringTextState(ContentInterpreter):
             value,
             self.resolver,
             ctm=self.graphics.ctm,
-            compile_function=internal_compile_pdf_function,
+            compile_function=compile_pdf_function,
         )
 
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
     ) -> ContentStreamFrame | None:
-        handler = self.operator_overrides.get(name) or self.internal_default_handlers.get(name)
+        handler = self.operator_overrides.get(name) or self.default_handlers.get(name)
         return handler(operands, depth) if handler is not None else None
 
     capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
@@ -133,11 +133,11 @@ class RecoveringTextState(ContentInterpreter):
                 return decoder
 
         document_decoders: dict[object, object] | None = getattr(
-            getattr(self, "document", None), "internal_font_decoders", None
+            getattr(self, "document", None), "font_decoders", None
         )
         signature = None
         if document_decoders is not None and isinstance(font_obj_ref, PdfReference):
-            signature = internal_font_signature(
+            signature = font_signature(
                 font_obj_ref,
                 font_obj,
                 resources,

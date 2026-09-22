@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.graphics.functions import internal_compile_pdf_function
+from core_pdf.impl.graphics.functions import compile_pdf_function
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -17,13 +17,13 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
     ],
 )
 def test_callable_and_constant_adapters_preserve_output_shape(function, expected):
-    assert internal_compile_pdf_function(function)(0.25) == expected
+    assert compile_pdf_function(function)(0.25) == expected
 
 
 @pytest.mark.parametrize("value", [None, 42, [], [None], [lambda x: x, None]])
 def test_unsupported_function_inputs_fail_during_compilation(value):
     with pytest.raises(ValueError, match="invalid PDF function"):
-        internal_compile_pdf_function(value)
+        compile_pdf_function(value)
 
 
 @pytest.mark.parametrize("x", [0, 0.25, 1])
@@ -40,7 +40,7 @@ def test_exponential_defaults_and_component_extension_are_shared(
     x, start, end, expected_start, expected_end
 ):
     function = {"FunctionType": "2", "C0": start, "C1": end, "Range": [0, 0.1]}
-    actual = internal_compile_pdf_function(function)(x)
+    actual = compile_pdf_function(function)(x)
     assert actual == pytest.approx(
         tuple(a + x * (b - a) for a, b in zip(expected_start, expected_end, strict=True))
     )
@@ -62,7 +62,7 @@ def test_exponential_defaults_and_component_extension_are_shared(
 def test_unordered_stitching_preserves_first_match_and_degenerate_intervals(bounds, x, expected):
     parts = [{"FunctionType": 2, "C0": [offset], "C1": [offset + 1]} for offset in (0, 10, 20)]
     function = {"FunctionType": 3, "Domain": [0, 1], "Bounds": bounds, "Functions": parts}
-    evaluate = internal_compile_pdf_function(function)
+    evaluate = compile_pdf_function(function)
     assert evaluate(x) == pytest.approx((expected,))
     with pytest.raises(ValueError, match="input count"):
         evaluate(x, x)
@@ -73,7 +73,7 @@ def test_stitching_repeats_missing_parts_and_defaults_missing_encode_values(x):
     part = {"FunctionType": 2, "C0": [0], "C1": [1]}
     function = {"FunctionType": 3, "Bounds": [0.5], "Functions": [part], "Encode": [1, 0]}
     expected = 1 - 2 * max(0, x) if x < 0.5 else 2 * min(1, x) - 1
-    assert internal_compile_pdf_function(function)(x) == pytest.approx((expected,))
+    assert compile_pdf_function(function)(x) == pytest.approx((expected,))
     assert function["Functions"] == [part]
     assert function["Encode"] == [1, 0]
 
@@ -93,7 +93,7 @@ def test_known_stream_failures_are_labeled_and_keep_their_cause(kind, failure_ty
 
     stream = PdfStream({"FunctionType": kind}, b"data", decoder=decode)
     with pytest.raises(ValueError, match="sampled" if kind == 0 else "calculator") as caught:
-        internal_compile_pdf_function(stream)
+        compile_pdf_function(stream)
     assert caught.value.__cause__ is failure
     assert calls == [1]
 
@@ -106,7 +106,7 @@ def test_unexpected_decoder_defects_are_not_reclassified_as_numeric_errors(kind)
         raise failure
 
     with pytest.raises(RuntimeError) as caught:
-        internal_compile_pdf_function(PdfStream({"FunctionType": kind}, decoder=decode))
+        compile_pdf_function(PdfStream({"FunctionType": kind}, decoder=decode))
     assert caught.value is failure
 
 
@@ -117,7 +117,7 @@ def test_sampled_functions_reject_an_unusable_input_domain(domain):
         b"\x00\xff",
     )
     with pytest.raises(ValueError):
-        internal_compile_pdf_function(stream)
+        compile_pdf_function(stream)
 
 
 def test_sampled_functions_default_unusable_encode_pairs_to_sample_extents():
@@ -132,7 +132,7 @@ def test_sampled_functions_default_unusable_encode_pairs_to_sample_extents():
         },
         b"\x00\xff",
     )
-    evaluate = internal_compile_pdf_function(stream)
+    evaluate = compile_pdf_function(stream)
     assert [evaluate(x) for x in (0, 0.5, 1)] == [(0.0,), (0.5,), (1.0,)]
 
 
@@ -149,10 +149,10 @@ def test_sampled_functions_reject_nonfinite_decode_values():
         b"\x00\xff",
     )
     with pytest.raises(ValueError):
-        internal_compile_pdf_function(stream)
+        compile_pdf_function(stream)
 
 
 @pytest.mark.parametrize("parts", [None, []])
 def test_stitching_without_subfunctions_is_not_recoverable(parts):
     with pytest.raises(ValueError):
-        internal_compile_pdf_function({"FunctionType": 3, "Functions": parts})
+        compile_pdf_function({"FunctionType": 3, "Functions": parts})

@@ -19,9 +19,9 @@ from core_pdf.impl.runtime.array_views import (
 )
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
-from core_pdf_ocr.impl.extract.ocr.types import internal_Raster
+from core_pdf_ocr.impl.extract.ocr.types import Raster
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 DIRECT_OCR_TARGET_RESOLUTION = 400
@@ -33,7 +33,7 @@ DIRECT_OCR_MIN_UPSCALE = 1.05
 DIRECT_OCR_WHOLE_SCALE_TOLERANCE = 0.06
 
 
-def internal_visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+def visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
     channels = samples.shape[2]
     if channels == 1:
         return samples[:, :, 0]
@@ -44,16 +44,14 @@ def internal_visible_intensity(samples: numpy.ndarray[Any, Any]) -> numpy.ndarra
     return numpy.min(samples, axis=2)
 
 
-def internal_raster_ink_grid(
-    raster: internal_Raster, rows: int, columns: int
-) -> numpy.ndarray[Any, Any]:
+def raster_ink_grid(raster: Raster, rows: int, columns: int) -> numpy.ndarray[Any, Any]:
     if rows <= 0 or columns <= 0:
         return numpy.zeros(max(0, rows * columns), dtype=numpy.float32)
     pixels = raster.image.array()
     y_step = max(1, raster.height // 512)
     x_step = max(1, raster.width // 512)
     sampled = pixels[::y_step, ::x_step]
-    intensity = internal_visible_intensity(sampled)
+    intensity = visible_intensity(sampled)
     ink = intensity < 245
     integral = numpy.pad(
         ink.cumsum(axis=0, dtype=numpy.int32).cumsum(axis=1, dtype=numpy.int32),
@@ -80,7 +78,7 @@ LUMA_GREEN = 150
 LUMA_BLUE = 29
 
 
-def internal_luma(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+def luma(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
     gray = samples[:, :, 0].astype(numpy.uint16)
     gray *= LUMA_RED
     channel = samples[:, :, 1].astype(numpy.uint16)
@@ -94,7 +92,7 @@ def internal_luma(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
     return gray.astype(numpy.uint8)
 
 
-def internal_flatten_onto_white(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+def flatten_onto_white(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
     alpha = samples[:, :, 3].astype(numpy.uint16)
     flattened = numpy.empty(samples.shape[:2] + (3,), dtype=numpy.uint8)
     for index in range(3):
@@ -107,13 +105,11 @@ def internal_flatten_onto_white(samples: numpy.ndarray[Any, Any]) -> numpy.ndarr
     return flattened
 
 
-def internal_compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -> RasterImage:
+def compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -> RasterImage:
     if image.channels == 3 and grayscale:
         if image.width * image.height < 5_000_000:
             return image
-        return RasterImage(
-            contiguous_bytes(internal_luma(image.array())), image.width, image.height, 1
-        )
+        return RasterImage(contiguous_bytes(luma(image.array())), image.width, image.height, 1)
     if image.channels not in {2, 4}:
         return image
     samples = image.array()
@@ -131,8 +127,8 @@ def internal_compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -
         distance_from_white //= 255
         gray_alpha = 255 - distance_from_white.astype(numpy.uint8)
         return RasterImage(contiguous_bytes(gray_alpha), image.width, image.height, 1)
-    colour = samples if opaque else internal_flatten_onto_white(samples)
-    return RasterImage(contiguous_bytes(internal_luma(colour)), image.width, image.height, 1)
+    colour = samples if opaque else flatten_onto_white(samples)
+    return RasterImage(contiguous_bytes(luma(colour)), image.width, image.height, 1)
 
 
 OCR_IMAGE_TEXT_SAMPLE_PIXELS = 300_000
@@ -156,7 +152,7 @@ OCR_IMAGE_TEXT_STRONG_HORIZONTAL_EDGES = 0.09
 OCR_IMAGE_TEXT_MIN_HORIZONTAL_EDGE_SHARE = 0.85
 
 
-class internal_RasterTextSignal:
+class RasterTextSignal:
     __slots__ = ("likely_text", "horizontal_edge_ratio")
 
     likely_text: bool
@@ -166,8 +162,8 @@ class internal_RasterTextSignal:
     __match_args__ = ("likely_text", "horizontal_edge_ratio")
 
     def __init__(self, likely_text: bool, horizontal_edge_ratio: float) -> None:
-        internal_frozen_setattr(self, "likely_text", likely_text)
-        internal_frozen_setattr(self, "horizontal_edge_ratio", horizontal_edge_ratio)
+        frozen_setattr(self, "likely_text", likely_text)
+        frozen_setattr(self, "horizontal_edge_ratio", horizontal_edge_ratio)
 
     def __repr__(self) -> str:
         return (
@@ -201,7 +197,7 @@ class internal_RasterTextSignal:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         likely_text = changes.pop("likely_text", self.likely_text)
@@ -211,14 +207,14 @@ class internal_RasterTextSignal:
         return self.__class__(likely_text, horizontal_edge_ratio)
 
 
-def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal:
+def raster_text_signal(image: RasterImage) -> RasterTextSignal:
     pixels = image.array()
     sample_step = max(
         1,
         math.ceil(math.sqrt(image.width * image.height / OCR_IMAGE_TEXT_SAMPLE_PIXELS)),
     )
     sampled = pixels[::sample_step, ::sample_step]
-    gray = internal_visible_intensity(sampled)
+    gray = visible_intensity(sampled)
 
     gray_16 = gray.astype(numpy.int16)
     horizontal_edges = (
@@ -252,15 +248,15 @@ def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal
             and not strongly_structured
         ):
             likely_text = False
-    return internal_RasterTextSignal(
+    return RasterTextSignal(
         likely_text=likely_text,
         horizontal_edge_ratio=horizontal_edges,
     )
 
 
-def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
+def adaptive_ocr_raster(raster: Raster) -> Raster:
     pixels = raster.image.array()
-    gray = internal_visible_intensity(pixels).astype(numpy.float32)
+    gray = visible_intensity(pixels).astype(numpy.float32)
     radius = max(8, min(24, min(raster.width, raster.height) // 80))
     integral = numpy.pad(gray, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
     y = numpy.arange(raster.height)
@@ -278,20 +274,20 @@ def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
     local_area = ((y1 - y0)[:, None] * (x1 - x0)[None, :]).astype(numpy.float32)
     threshold = local_sum / local_area - 9.0
     binary = numpy.where(gray <= threshold, numpy.uint8(0), numpy.uint8(255))
-    return internal_Raster(
+    return Raster(
         RasterImage(contiguous_bytes(binary), raster.width, raster.height, 1),
         raster.resolution,
     )
 
 
-def internal_decoded_image_raster(
+def decoded_image_raster(
     image: CapturedDrawing,
     display_area: float,
     *,
     user_unit: float = 1.0,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
-) -> internal_Raster | None:
+) -> Raster | None:
     source = image.image_source
     shared = decode_image(source) if source is not None else None
     samples: numpy.ndarray[Any, Any] | None
@@ -374,7 +370,7 @@ def internal_decoded_image_raster(
     if data is None:
         assert samples is not None
         data = contiguous_bytes(samples)
-    return internal_Raster(RasterImage(data, width, height, channels), resolution)
+    return Raster(RasterImage(data, width, height, channels), resolution)
 
 
 class DirectImageOrientation(StrEnum):
@@ -388,7 +384,7 @@ class DirectImageOrientation(StrEnum):
     TRANSPOSE_FLIP_XY = "transpose-flip-xy"
 
 
-internal_DIRECT_IMAGE_ORIENTATIONS: dict[DirectImageOrientation, tuple[int, int, int, int]] = {
+DIRECT_IMAGE_ORIENTATIONS: dict[DirectImageOrientation, tuple[int, int, int, int]] = {
     DirectImageOrientation.IDENTITY: (0, 1, 2, 3),
     DirectImageOrientation.FLIP_X: (1, 0, 3, 2),
     DirectImageOrientation.FLIP_Y: (2, 3, 0, 1),
@@ -400,7 +396,7 @@ internal_DIRECT_IMAGE_ORIENTATIONS: dict[DirectImageOrientation, tuple[int, int,
 }
 
 
-def internal_direct_image_orientation(
+def direct_image_orientation(
     image: CapturedDrawing,
     *,
     maximum_axis_deviation: float = 1e-5,
@@ -446,37 +442,37 @@ def internal_direct_image_orientation(
     return next(
         (
             orientation
-            for orientation, corners in internal_DIRECT_IMAGE_ORIENTATIONS.items()
+            for orientation, corners in DIRECT_IMAGE_ORIENTATIONS.items()
             if corners == orientation_corners
         ),
         None,
     )
 
 
-def internal_orient_direct_image_raster(
+def orient_direct_image_raster(
     image: CapturedDrawing,
-    raster: internal_Raster,
+    raster: Raster,
     *,
     orientation: DirectImageOrientation | None = None,
-) -> internal_Raster:
-    orientation = orientation or internal_direct_image_orientation(image)
+) -> Raster:
+    orientation = orientation or direct_image_orientation(image)
     if orientation is None or orientation is DirectImageOrientation.IDENTITY:
         return raster
     samples = raster.image.array()
-    origin, right, below, _ = internal_DIRECT_IMAGE_ORIENTATIONS[orientation]
+    origin, right, below, _ = DIRECT_IMAGE_ORIENTATIONS[orientation]
     oriented = samples.transpose(1, 0, 2) if abs(right - origin) == 2 else samples
     if right < origin:
         oriented = oriented[:, ::-1]
     if below < origin:
         oriented = oriented[::-1]
     height, width, channels = oriented.shape
-    return internal_Raster(
+    return Raster(
         RasterImage(contiguous_bytes(oriented), int(width), int(height), int(channels)),
         raster.resolution,
     )
 
 
-def internal_fit_raster_scale(
+def fit_raster_scale(
     rendered: Any,
     scale: float,
     max_pixels: int,
@@ -492,14 +488,14 @@ def internal_fit_raster_scale(
     return scale
 
 
-def internal_rendered_page_raster(
+def rendered_page_raster(
     capture: PageAnalysis,
     requested_scale: float,
     *,
     rendered: Any,
     crop: tuple[float, float, float, float] | None = None,
     max_pixels: int = MAX_OCR_PIXELS,
-) -> internal_Raster | None:
+) -> Raster | None:
     page = capture.page
     if crop is None:
         raster_area = max(1.0, float(page.width) * float(page.height))
@@ -508,7 +504,7 @@ def internal_rendered_page_raster(
     user_unit = float(getattr(page, "user_unit", 1.0))
     safe_scale = math.sqrt(max_pixels / raster_area) * 0.999 / user_unit
     scale = min(requested_scale, safe_scale)
-    scale = internal_fit_raster_scale(rendered, scale, max_pixels, crop=crop)
+    scale = fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     try:
         data = rendered.rasterize(
             background=(255, 255, 255, 255),
@@ -518,13 +514,13 @@ def internal_rendered_page_raster(
         )
     except IndexError:
         return None
-    return internal_Raster(
+    return Raster(
         data,
         max(70, int(round(72.0 * scale))),
     )
 
 
-def internal_safe_image_crop(capture: PageAnalysis) -> tuple[float, float, float, float] | None:
+def safe_image_crop(capture: PageAnalysis) -> tuple[float, float, float, float] | None:
     evidence = capture.evidence
     if not evidence.image_boxes or not (
         evidence.full_page_image or evidence.image_area_ratio >= 0.65

@@ -11,7 +11,7 @@ from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl.model.runs import TextRun
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 FIT_ERROR = 0.08
@@ -75,13 +75,13 @@ class NewstrokeDecode:
         sequences: int = 0,
         maximum_error: float = 0.0,
     ) -> None:
-        internal_frozen_setattr(self, "runs", runs)
-        internal_frozen_setattr(self, "candidate_segments", candidate_segments)
-        internal_frozen_setattr(self, "matched_segments", matched_segments)
-        internal_frozen_setattr(self, "glyphs", glyphs)
-        internal_frozen_setattr(self, "characters", characters)
-        internal_frozen_setattr(self, "sequences", sequences)
-        internal_frozen_setattr(self, "maximum_error", maximum_error)
+        frozen_setattr(self, "runs", runs)
+        frozen_setattr(self, "candidate_segments", candidate_segments)
+        frozen_setattr(self, "matched_segments", matched_segments)
+        frozen_setattr(self, "glyphs", glyphs)
+        frozen_setattr(self, "characters", characters)
+        frozen_setattr(self, "sequences", sequences)
+        frozen_setattr(self, "maximum_error", maximum_error)
 
     def __repr__(self) -> str:
         return (
@@ -135,7 +135,7 @@ class NewstrokeDecode:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         runs = changes.pop("runs", self.runs)
@@ -173,7 +173,7 @@ class NewstrokeDecode:
         )
 
 
-class internal_Template:
+class Template:
     __slots__ = (
         "char",
         "width",
@@ -226,14 +226,14 @@ class internal_Template:
         centroid_x: float,
         centroid_y: float,
     ) -> None:
-        internal_frozen_setattr(self, "char", char)
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "segments", segments)
-        internal_frozen_setattr(self, "continuity", continuity)
-        internal_frozen_setattr(self, "solver", solver)
-        internal_frozen_setattr(self, "points", points)
-        internal_frozen_setattr(self, "centroid_x", centroid_x)
-        internal_frozen_setattr(self, "centroid_y", centroid_y)
+        frozen_setattr(self, "char", char)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "segments", segments)
+        frozen_setattr(self, "continuity", continuity)
+        frozen_setattr(self, "solver", solver)
+        frozen_setattr(self, "points", points)
+        frozen_setattr(self, "centroid_x", centroid_x)
+        frozen_setattr(self, "centroid_y", centroid_y)
 
     def __repr__(self) -> str:
         return (
@@ -290,7 +290,7 @@ class internal_Template:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         char = changes.pop("char", self.char)
@@ -315,25 +315,25 @@ class internal_Template:
         )
 
 
-class internal_TemplateSet:
+class TemplateSet:
     __slots__ = ("all", "robust", "by_first_delta")
 
-    all: tuple[internal_Template, ...]
-    robust: tuple[internal_Template, ...]
-    by_first_delta: dict[tuple[int, int], tuple[internal_Template, ...]]
+    all: tuple[Template, ...]
+    robust: tuple[Template, ...]
+    by_first_delta: dict[tuple[int, int], tuple[Template, ...]]
 
     __fields__: ClassVar[tuple[str, ...]] = ("all", "robust", "by_first_delta")
     __match_args__ = ("all", "robust", "by_first_delta")
 
     def __init__(
         self,
-        all: tuple[internal_Template, ...],
-        robust: tuple[internal_Template, ...],
-        by_first_delta: dict[tuple[int, int], tuple[internal_Template, ...]],
+        all: tuple[Template, ...],
+        robust: tuple[Template, ...],
+        by_first_delta: dict[tuple[int, int], tuple[Template, ...]],
     ) -> None:
-        internal_frozen_setattr(self, "all", all)
-        internal_frozen_setattr(self, "robust", robust)
-        internal_frozen_setattr(self, "by_first_delta", by_first_delta)
+        frozen_setattr(self, "all", all)
+        frozen_setattr(self, "robust", robust)
+        frozen_setattr(self, "by_first_delta", by_first_delta)
 
     def __repr__(self) -> str:
         return (
@@ -369,7 +369,7 @@ class internal_TemplateSet:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         all = changes.pop("all", self.all)
@@ -380,7 +380,7 @@ class internal_TemplateSet:
         return self.__class__(all, robust, by_first_delta)
 
 
-class internal_Segment:
+class Segment:
     __slots__ = ("x0", "y0", "x1", "y1", "style", "line_width")
 
     x0: float
@@ -402,12 +402,12 @@ class internal_Segment:
         style: int,
         line_width: float,
     ) -> None:
-        internal_frozen_setattr(self, "x0", x0)
-        internal_frozen_setattr(self, "y0", y0)
-        internal_frozen_setattr(self, "x1", x1)
-        internal_frozen_setattr(self, "y1", y1)
-        internal_frozen_setattr(self, "style", style)
-        internal_frozen_setattr(self, "line_width", line_width)
+        frozen_setattr(self, "x0", x0)
+        frozen_setattr(self, "y0", y0)
+        frozen_setattr(self, "x1", x1)
+        frozen_setattr(self, "y1", y1)
+        frozen_setattr(self, "style", style)
+        frozen_setattr(self, "line_width", line_width)
 
     def __repr__(self) -> str:
         return (
@@ -449,7 +449,7 @@ class internal_Segment:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         x0 = changes.pop("x0", self.x0)
@@ -463,7 +463,7 @@ class internal_Segment:
         return self.__class__(x0, y0, x1, y1, style, line_width)
 
 
-class internal_Transform:
+class Transform:
     __slots__ = ("matrix", "inverse", "scale", "x_scale", "y_scale")
 
     matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
@@ -483,11 +483,11 @@ class internal_Transform:
         x_scale: float,
         y_scale: float,
     ) -> None:
-        internal_frozen_setattr(self, "matrix", matrix)
-        internal_frozen_setattr(self, "inverse", inverse)
-        internal_frozen_setattr(self, "scale", scale)
-        internal_frozen_setattr(self, "x_scale", x_scale)
-        internal_frozen_setattr(self, "y_scale", y_scale)
+        frozen_setattr(self, "matrix", matrix)
+        frozen_setattr(self, "inverse", inverse)
+        frozen_setattr(self, "scale", scale)
+        frozen_setattr(self, "x_scale", x_scale)
+        frozen_setattr(self, "y_scale", y_scale)
 
     def __repr__(self) -> str:
         return (
@@ -527,7 +527,7 @@ class internal_Transform:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         matrix = changes.pop("matrix", self.matrix)
@@ -540,14 +540,14 @@ class internal_Transform:
         return self.__class__(matrix, inverse, scale, x_scale, y_scale)
 
 
-class internal_Match:
+class Match:
     __slots__ = ("char", "start", "stop", "width", "transform", "translation", "error")
 
     char: str
     start: int
     stop: int
     width: float
-    transform: internal_Transform
+    transform: Transform
     translation: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     error: float
 
@@ -568,17 +568,17 @@ class internal_Match:
         start: int,
         stop: int,
         width: float,
-        transform: internal_Transform,
+        transform: Transform,
         translation: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
         error: float,
     ) -> None:
-        internal_frozen_setattr(self, "char", char)
-        internal_frozen_setattr(self, "start", start)
-        internal_frozen_setattr(self, "stop", stop)
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "transform", transform)
-        internal_frozen_setattr(self, "translation", translation)
-        internal_frozen_setattr(self, "error", error)
+        frozen_setattr(self, "char", char)
+        frozen_setattr(self, "start", start)
+        frozen_setattr(self, "stop", stop)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "transform", transform)
+        frozen_setattr(self, "translation", translation)
+        frozen_setattr(self, "error", error)
 
     def __repr__(self) -> str:
         return (
@@ -632,7 +632,7 @@ class internal_Match:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         char = changes.pop("char", self.char)
@@ -647,9 +647,9 @@ class internal_Match:
         return self.__class__(char, start, stop, width, transform, translation, error)
 
 
-def internal_templates() -> internal_TemplateSet:
-    templates: list[internal_Template] = []
-    by_first_delta: dict[tuple[int, int], list[internal_Template]] = {}
+def internal_templates() -> TemplateSet:
+    templates: list[Template] = []
+    by_first_delta: dict[tuple[int, int], list[Template]] = {}
     encoded_glyphs = (
         *((chr(offset + 32), encoded) for offset, encoded in enumerate(NEWSTROKE_ASCII)),
         *NEWSTROKE_ASCII_ALTERNATES.items(),
@@ -688,7 +688,7 @@ def internal_templates() -> internal_TemplateSet:
         )
         source = segments.reshape((-1, 2))
         design = numpy.column_stack((source, numpy.ones(len(source))))
-        template = internal_Template(
+        template = Template(
             character,
             float(end_x - start_x),
             segments,
@@ -702,14 +702,14 @@ def internal_templates() -> internal_TemplateSet:
         delta = segments[0, 1] - segments[0, 0]
         by_first_delta.setdefault((int(delta[0]), int(delta[1])), []).append(template)
     all_templates = tuple(templates)
-    return internal_TemplateSet(
+    return TemplateSet(
         all_templates,
         tuple(template for template in all_templates if len(template.segments) >= 5),
         {key: tuple(value) for key, value in by_first_delta.items()},
     )
 
 
-def internal_drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
+def drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
     style = drawing.stroke_style_key()
     if style is None or style[1] <= 0.0 or style[2] <= 0.0:
         return None
@@ -718,8 +718,8 @@ def internal_drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | Non
 
 def internal_segments(
     drawings: tuple[CapturedDrawing, ...],
-) -> tuple[tuple[internal_Segment | None, ...], tuple[tuple[object, ...], ...], int]:
-    segments: list[internal_Segment | None] = []
+) -> tuple[tuple[Segment | None, ...], tuple[tuple[object, ...], ...], int]:
+    segments: list[Segment | None] = []
     style_ids: dict[tuple[object, ...], int] = {}
     styles: list[tuple[object, ...]] = []
     candidate_count = 0
@@ -734,7 +734,7 @@ def internal_segments(
         ):
             segments.append(None)
             continue
-        style = internal_drawing_style(drawing)
+        style = drawing_style(drawing)
         if style is None:
             segments.append(None)
             continue
@@ -748,7 +748,7 @@ def internal_segments(
             style_ids[style] = style_id
             styles.append(style)
         segments.append(
-            internal_Segment(
+            Segment(
                 float(x0),
                 float(y0),
                 float(x1),
@@ -761,7 +761,7 @@ def internal_segments(
     return tuple(segments), tuple(styles), candidate_count
 
 
-def internal_continuity(segments: tuple[internal_Segment | None, ...]) -> tuple[bool, ...]:
+def internal_continuity(segments: tuple[Segment | None, ...]) -> tuple[bool, ...]:
     result: list[bool] = []
     for left, right in zip(segments, segments[1:], strict=False):
         if left is None or right is None or left.style != right.style:
@@ -774,8 +774,8 @@ def internal_continuity(segments: tuple[internal_Segment | None, ...]) -> tuple[
     return tuple(result)
 
 
-def internal_window(
-    segments: tuple[internal_Segment | None, ...],
+def window(
+    segments: tuple[Segment | None, ...],
     start: int,
     size: int,
     style: int,
@@ -788,19 +788,17 @@ def internal_window(
     return point_data[start:stop]
 
 
-def internal_fit_match(
-    segments: tuple[internal_Segment | None, ...],
+def fit_match(
+    segments: tuple[Segment | None, ...],
     start: int,
-    template: internal_Template,
+    template: Template,
     point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
-) -> internal_Match | None:
+) -> Match | None:
     first = segments[start]
     if first is None:
         return None
-    actual = internal_window(
-        segments, start, len(template.segments), first.style, point_data, style_data
-    )
+    actual = window(segments, start, len(template.segments), first.style, point_data, style_data)
     if actual is None:
         return None
     source = template.points
@@ -836,8 +834,8 @@ def internal_fit_match(
         return None
     determinant = a * d - b * c
     inverse = numpy.asarray(((d, -b), (-c, a)), dtype=numpy.float64) / determinant
-    transform = internal_Transform(matrix, inverse, scale, x_scale, y_scale)
-    return internal_Match(
+    transform = Transform(matrix, inverse, scale, x_scale, y_scale)
+    return Match(
         template.char,
         start,
         start + len(template.segments),
@@ -848,20 +846,20 @@ def internal_fit_match(
     )
 
 
-def internal_fixed_template_match(
-    segments: tuple[internal_Segment | None, ...],
+def fixed_template_match(
+    segments: tuple[Segment | None, ...],
     continuity: tuple[bool, ...],
-    template: internal_Template,
+    template: Template,
     start: int,
-    transform: internal_Transform,
+    transform: Transform,
     style: int,
     point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
-) -> internal_Match | None:
+) -> Match | None:
     size = len(template.segments)
     if continuity[start : start + size - 1] != template.continuity:
         return None
-    actual = internal_window(segments, start, size, style, point_data, style_data)
+    actual = window(segments, start, size, style, point_data, style_data)
     if actual is None:
         return None
     source = template.points
@@ -886,7 +884,7 @@ def internal_fixed_template_match(
     )
     if error > FIXED_ERROR:
         return None
-    return internal_Match(
+    return Match(
         template.char,
         start,
         start + size,
@@ -897,16 +895,16 @@ def internal_fixed_template_match(
     )
 
 
-def internal_fixed_match(
-    segments: tuple[internal_Segment | None, ...],
+def fixed_match(
+    segments: tuple[Segment | None, ...],
     continuity: tuple[bool, ...],
-    templates: internal_TemplateSet,
+    templates: TemplateSet,
     start: int,
-    transform: internal_Transform,
+    transform: Transform,
     style: int,
     point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
-) -> internal_Match | None:
+) -> Match | None:
     first = segments[start]
     if first is None:
         return None
@@ -919,9 +917,9 @@ def internal_fixed_match(
     rounded_dy = round(raw_dy)
     if max(abs(raw_dx - rounded_dx), abs(raw_dy - rounded_dy)) > 0.20:
         return None
-    candidates: list[internal_Match] = []
+    candidates: list[Match] = []
     for template in templates.by_first_delta.get((rounded_dx, rounded_dy), ()):
-        candidate = internal_fixed_template_match(
+        candidate = fixed_template_match(
             segments,
             continuity,
             template,
@@ -947,7 +945,7 @@ def internal_fixed_match(
     return best
 
 
-def internal_cursor_follows(previous: internal_Match, current: internal_Match) -> bool:
+def cursor_follows(previous: Match, current: Match) -> bool:
     expected = previous.translation + previous.width * previous.transform.matrix[0]
     offset = (current.translation - expected) @ previous.transform.inverse
     y_offset = abs(float(offset[1]))
@@ -960,21 +958,21 @@ def internal_cursor_follows(previous: internal_Match, current: internal_Match) -
     return 0 <= spaces <= 2 and abs(x_offset - spaces * RAW_SPACE_WIDTH) <= CURSOR_ERROR
 
 
-def internal_decode_forward(
-    segments: tuple[internal_Segment | None, ...],
+def decode_forward(
+    segments: tuple[Segment | None, ...],
     continuity: tuple[bool, ...],
-    templates: internal_TemplateSet,
-    seed: internal_Match,
+    templates: TemplateSet,
+    seed: Match,
     point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
-) -> tuple[internal_Match, ...]:
+) -> tuple[Match, ...]:
     result = [seed]
     first = segments[seed.start]
     if first is None:
         return ()
     position = seed.stop
     while position < len(segments):
-        candidate = internal_fixed_match(
+        candidate = fixed_match(
             segments,
             continuity,
             templates,
@@ -984,37 +982,35 @@ def internal_decode_forward(
             point_data,
             style_data,
         )
-        if candidate is None or not internal_cursor_follows(result[-1], candidate):
+        if candidate is None or not cursor_follows(result[-1], candidate):
             break
         result.append(candidate)
         position = candidate.stop
     return tuple(result)
 
 
-def internal_decode_around(
-    segments: tuple[internal_Segment | None, ...],
+def decode_around(
+    segments: tuple[Segment | None, ...],
     continuity: tuple[bool, ...],
-    templates: internal_TemplateSet,
-    seed: internal_Match,
+    templates: TemplateSet,
+    seed: Match,
     minimum_start: int,
     point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
-) -> tuple[internal_Match, ...]:
-    result = list(
-        internal_decode_forward(segments, continuity, templates, seed, point_data, style_data)
-    )
+) -> tuple[Match, ...]:
+    result = list(decode_forward(segments, continuity, templates, seed, point_data, style_data))
     first = segments[seed.start]
     if first is None:
         return ()
     position = seed.start
-    prepend: list[internal_Match] = []
+    prepend: list[Match] = []
     while position > minimum_start:
-        candidates: list[internal_Match] = []
+        candidates: list[Match] = []
         for template in templates.all:
             start = position - len(template.segments)
             if start < minimum_start:
                 continue
-            candidate = internal_fixed_template_match(
+            candidate = fixed_template_match(
                 segments,
                 continuity,
                 template,
@@ -1025,7 +1021,7 @@ def internal_decode_around(
                 style_data,
             )
             anchor = prepend[-1] if prepend else result[0]
-            if candidate is not None and internal_cursor_follows(candidate, anchor):
+            if candidate is not None and cursor_follows(candidate, anchor):
                 candidates.append(candidate)
         if not candidates:
             break
@@ -1044,7 +1040,7 @@ def internal_decode_around(
     return tuple(prepend) + tuple(result)
 
 
-def internal_sequence_text(matches: tuple[internal_Match, ...]) -> str:
+def sequence_text(matches: tuple[Match, ...]) -> str:
     if not matches:
         return ""
     parts = [matches[0].char]
@@ -1058,9 +1054,9 @@ def internal_sequence_text(matches: tuple[internal_Match, ...]) -> str:
     return "".join(parts)
 
 
-def internal_sequence_run(
-    matches: tuple[internal_Match, ...],
-    segments: tuple[internal_Segment | None, ...],
+def sequence_run(
+    matches: tuple[Match, ...],
+    segments: tuple[Segment | None, ...],
     styles: tuple[tuple[object, ...], ...],
     order: int,
 ) -> TextRun:
@@ -1104,7 +1100,7 @@ def internal_sequence_run(
     )
     maximum_error = max(match.error for match in matches)
     return TextRun(
-        text=internal_sequence_text(matches),
+        text=sequence_text(matches),
         x0=x0,
         y0=y0,
         x1=x1,
@@ -1144,8 +1140,8 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
         if segment is not None:
             point_data[index] = ((segment.x0, segment.y0), (segment.x1, segment.y1))
             style_data[index] = segment.style
-    sequences: list[tuple[internal_Match, ...]] = []
-    known_transforms: dict[int, list[internal_Transform]] = {}
+    sequences: list[tuple[Match, ...]] = []
+    known_transforms: dict[int, list[Transform]] = {}
     position = 0
     available_start = 0
     while position < len(segments):
@@ -1153,9 +1149,9 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
         if first is None:
             position += 1
             continue
-        seeds: list[internal_Match] = []
+        seeds: list[Match] = []
         for transform in known_transforms.get(first.style, ()):
-            seed = internal_fixed_match(
+            seed = fixed_match(
                 segments,
                 continuity,
                 templates,
@@ -1172,12 +1168,12 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
                 size = len(template.segments)
                 if continuity[position : position + size - 1] != template.continuity:
                     continue
-                seed = internal_fit_match(segments, position, template, point_data, style_data)
+                seed = fit_match(segments, position, template, point_data, style_data)
                 if seed is not None:
                     seeds.append(seed)
-        candidates: list[tuple[tuple[int, int, float], tuple[internal_Match, ...]]] = []
+        candidates: list[tuple[tuple[int, int, float], tuple[Match, ...]]] = []
         for seed in seeds:
-            decoded = internal_decode_around(
+            decoded = decode_around(
                 segments,
                 continuity,
                 templates,
@@ -1214,8 +1210,7 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
     matched_segments = sum(sequence[-1].stop - sequence[0].start for sequence in sequences)
     glyphs = sum(len(sequence) for sequence in sequences)
     runs = tuple(
-        internal_sequence_run(sequence, segments, styles, order)
-        for order, sequence in enumerate(sequences)
+        sequence_run(sequence, segments, styles, order) for order, sequence in enumerate(sequences)
     )
     characters = sum(not character.isspace() for run in runs for character in run.text)
     maximum_error = max(

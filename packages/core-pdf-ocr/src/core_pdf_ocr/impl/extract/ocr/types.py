@@ -6,10 +6,10 @@ from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl.render.model import RasterImage
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_Raster:
+class Raster:
     __slots__ = ("image", "resolution")
 
     image: RasterImage
@@ -19,8 +19,8 @@ class internal_Raster:
     __match_args__ = ("image", "resolution")
 
     def __init__(self, image: RasterImage, resolution: int) -> None:
-        internal_frozen_setattr(self, "image", image)
-        internal_frozen_setattr(self, "resolution", resolution)
+        frozen_setattr(self, "image", image)
+        frozen_setattr(self, "resolution", resolution)
 
     def __repr__(self) -> str:
         return (
@@ -48,7 +48,7 @@ class internal_Raster:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         image = changes.pop("image", self.image)
@@ -66,10 +66,10 @@ class internal_Raster:
         return self.image.height
 
 
-class internal_RasterRegion:
+class RasterRegion:
     __slots__ = ("raster", "page_box")
 
-    raster: internal_Raster
+    raster: Raster
     page_box: tuple[float, float, float, float]
 
     __fields__: ClassVar[tuple[str, ...]] = ("raster", "page_box")
@@ -77,11 +77,11 @@ class internal_RasterRegion:
 
     def __init__(
         self,
-        raster: internal_Raster,
+        raster: Raster,
         page_box: tuple[float, float, float, float],
     ) -> None:
-        internal_frozen_setattr(self, "raster", raster)
-        internal_frozen_setattr(self, "page_box", page_box)
+        frozen_setattr(self, "raster", raster)
+        frozen_setattr(self, "page_box", page_box)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(raster={self.raster!r}, page_box={self.page_box!r})"
@@ -107,7 +107,7 @@ class internal_RasterRegion:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         raster = changes.pop("raster", self.raster)
@@ -117,7 +117,7 @@ class internal_RasterRegion:
         return self.__class__(raster, page_box)
 
 
-class internal_StrokedTextCell:
+class StrokedTextCell:
     __slots__ = ("source_box", "packed_box", "drawing_indexes")
 
     source_box: tuple[float, float, float, float]
@@ -133,9 +133,9 @@ class internal_StrokedTextCell:
         packed_box: tuple[float, float, float, float],
         drawing_indexes: tuple[int, ...],
     ) -> None:
-        internal_frozen_setattr(self, "source_box", source_box)
-        internal_frozen_setattr(self, "packed_box", packed_box)
-        internal_frozen_setattr(self, "drawing_indexes", drawing_indexes)
+        frozen_setattr(self, "source_box", source_box)
+        frozen_setattr(self, "packed_box", packed_box)
+        frozen_setattr(self, "drawing_indexes", drawing_indexes)
 
     def __repr__(self) -> str:
         return (
@@ -171,7 +171,7 @@ class internal_StrokedTextCell:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         source_box = changes.pop("source_box", self.source_box)
@@ -182,25 +182,25 @@ class internal_StrokedTextCell:
         return self.__class__(source_box, packed_box, drawing_indexes)
 
 
-class internal_PackedStrokedTextRaster:
+class PackedStrokedTextRaster:
     __slots__ = ("raster", "packed_box", "cells")
 
-    raster: internal_Raster
+    raster: Raster
     packed_box: tuple[float, float, float, float]
-    cells: tuple[internal_StrokedTextCell, ...]
+    cells: tuple[StrokedTextCell, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = ("raster", "packed_box", "cells")
     __match_args__ = ("raster", "packed_box", "cells")
 
     def __init__(
         self,
-        raster: internal_Raster,
+        raster: Raster,
         packed_box: tuple[float, float, float, float],
-        cells: tuple[internal_StrokedTextCell, ...],
+        cells: tuple[StrokedTextCell, ...],
     ) -> None:
-        internal_frozen_setattr(self, "raster", raster)
-        internal_frozen_setattr(self, "packed_box", packed_box)
-        internal_frozen_setattr(self, "cells", cells)
+        frozen_setattr(self, "raster", raster)
+        frozen_setattr(self, "packed_box", packed_box)
+        frozen_setattr(self, "cells", cells)
 
     def __repr__(self) -> str:
         return (
@@ -236,7 +236,7 @@ class internal_PackedStrokedTextRaster:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         raster = changes.pop("raster", self.raster)
@@ -247,7 +247,7 @@ class internal_PackedStrokedTextRaster:
         return self.__class__(raster, packed_box, cells)
 
 
-class internal_OcrRegion:
+class OcrRegion:
     __slots__ = ("page_box", "score", "reasons")
 
     page_box: tuple[float, float, float, float]
@@ -263,9 +263,9 @@ class internal_OcrRegion:
         score: float,
         reasons: tuple[str, ...],
     ) -> None:
-        internal_frozen_setattr(self, "page_box", page_box)
-        internal_frozen_setattr(self, "score", score)
-        internal_frozen_setattr(self, "reasons", reasons)
+        frozen_setattr(self, "page_box", page_box)
+        frozen_setattr(self, "score", score)
+        frozen_setattr(self, "reasons", reasons)
 
     def __repr__(self) -> str:
         return (
@@ -301,7 +301,7 @@ class internal_OcrRegion:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         page_box = changes.pop("page_box", self.page_box)
@@ -317,7 +317,7 @@ class internal_OcrRegion:
         return max(0.0, x1 - x0) * max(0.0, y1 - y0)
 
 
-class internal_OcrTask:
+class OcrTask:
     __slots__ = (
         "mode",
         "image",
@@ -375,17 +375,15 @@ class internal_OcrTask:
         recognize_words: bool = False,
         collect_symbols: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "mode", mode)
-        internal_frozen_setattr(self, "image", image)
-        internal_frozen_setattr(self, "rectangle", rectangle)
-        internal_frozen_setattr(self, "page_box", page_box)
-        internal_frozen_setattr(self, "resolution", resolution)
-        internal_frozen_setattr(self, "minimum_confidence", minimum_confidence)
-        internal_frozen_setattr(
-            self, "character_confidence_threshold", character_confidence_threshold
-        )
-        internal_frozen_setattr(self, "recognize_words", recognize_words)
-        internal_frozen_setattr(self, "collect_symbols", collect_symbols)
+        frozen_setattr(self, "mode", mode)
+        frozen_setattr(self, "image", image)
+        frozen_setattr(self, "rectangle", rectangle)
+        frozen_setattr(self, "page_box", page_box)
+        frozen_setattr(self, "resolution", resolution)
+        frozen_setattr(self, "minimum_confidence", minimum_confidence)
+        frozen_setattr(self, "character_confidence_threshold", character_confidence_threshold)
+        frozen_setattr(self, "recognize_words", recognize_words)
+        frozen_setattr(self, "collect_symbols", collect_symbols)
 
     def __repr__(self) -> str:
         return (
@@ -445,7 +443,7 @@ class internal_OcrTask:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         mode = changes.pop("mode", self.mode)
@@ -474,7 +472,7 @@ class internal_OcrTask:
         )
 
 
-def internal_pixel_box_to_page_box(
+def pixel_box_to_page_box(
     bbox: tuple[int, int, int, int],
     image_width: int,
     image_height: int,
@@ -492,14 +490,14 @@ def internal_pixel_box_to_page_box(
     )
 
 
-def internal_map_ocr_box(
-    task: internal_OcrTask,
+def map_ocr_box(
+    task: OcrTask,
     bbox: tuple[int, int, int, int],
 ) -> tuple[float, float, float, float]:
-    return internal_pixel_box_to_page_box(bbox, task.image.width, task.image.height, task.page_box)
+    return pixel_box_to_page_box(bbox, task.image.width, task.image.height, task.page_box)
 
 
-def internal_ocr_region_box(
+def ocr_region_box(
     box: tuple[float, float, float, float],
     *,
     page_width: float,
@@ -516,12 +514,12 @@ def internal_ocr_region_box(
     return clipped if clipped[2] > clipped[0] and clipped[3] > clipped[1] else None
 
 
-def internal_raster_rectangle_page_box(
-    raster: internal_Raster,
+def raster_rectangle_page_box(
+    raster: Raster,
     page_box: tuple[float, float, float, float],
     rectangle: tuple[int, int, int, int],
 ) -> tuple[float, float, float, float]:
     x, y, width, height = rectangle
-    return internal_pixel_box_to_page_box(
+    return pixel_box_to_page_box(
         (x, y, x + width, y + height), raster.width, raster.height, page_box
     )

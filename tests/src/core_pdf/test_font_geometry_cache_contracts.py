@@ -1,7 +1,7 @@
 import numpy
 import pytest
 
-from core_pdf.impl.fonts.decoder import FontDecoder, internal_outline_arrays
+from core_pdf.impl.fonts.decoder import FontDecoder, outline_arrays
 
 
 @pytest.mark.parametrize("code", [-1, -99])
@@ -37,7 +37,7 @@ def test_outline_cache_keys_include_explicit_gid_and_text_and_cache_empty_result
         calls.append((code, gid, text))
         return contours
 
-    monkeypatch.setattr(FontDecoder, "internal_glyph_outline_uncached", resolve)
+    monkeypatch.setattr(FontDecoder, "glyph_outline_uncached", resolve)
     decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
     keys = [(65, None, "A"), (65, 0, "A"), (65, 0, "B"), (66, 0, "B")]
     for key in keys:
@@ -63,7 +63,7 @@ def test_bbox_cache_keeps_missing_results_and_is_per_decoder(monkeypatch, missin
         calls.append(code)
         return box
 
-    monkeypatch.setattr(FontDecoder, "internal_glyph_bbox_uncached", resolve)
+    monkeypatch.setattr(FontDecoder, "glyph_bbox_uncached", resolve)
     for _ in range(2):
         decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
         assert decoder.glyph_bbox(65) == box
@@ -72,7 +72,7 @@ def test_bbox_cache_keeps_missing_results_and_is_per_decoder(monkeypatch, missin
 
 
 def test_linear_transform_cache_is_bounded_without_changing_geometry():
-    arrays = internal_outline_arrays(((), ((9.0, 9.0),), ((1.0, 2.0), (3.0, 4.0))))
+    arrays = outline_arrays(((), ((9.0, 9.0),), ((1.0, 2.0), (3.0, 4.0))))
     assert arrays is not None
     assert arrays.spans == ((0, 2),)
     original = arrays.linear_columns(1, 2, 3, 4)
@@ -100,7 +100,7 @@ def test_failed_outline_lookup_is_retried_without_caching_partial_state(monkeypa
             raise ValueError("broken font")
         return contours
 
-    monkeypatch.setattr(FontDecoder, "internal_glyph_outline_uncached", resolve)
+    monkeypatch.setattr(FontDecoder, "glyph_outline_uncached", resolve)
     decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
     with pytest.raises(ValueError, match="broken font"):
         decoder.glyph_outline_arrays(65)
@@ -111,7 +111,7 @@ def test_failed_outline_lookup_is_retried_without_caching_partial_state(monkeypa
 
 
 def test_missing_glyph_identity_does_not_request_fallback_outline(monkeypatch):
-    monkeypatch.setattr(FontDecoder, "internal_resolve_glyph_id_for_code", lambda self, code: None)
+    monkeypatch.setattr(FontDecoder, "resolve_glyph_id_for_code", lambda self, code: None)
     decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
     assert decoder.glyph_id_for_code(65) is None
     assert decoder.glyph_outline(65, text="A") == ()

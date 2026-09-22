@@ -8,7 +8,7 @@ from core_predictors.errors import PredictorError
 from core_predictors.samples import unpack_subbyte_rows
 
 
-def internal_tiff_predict_words(
+def tiff_predict_words(
     data: bytes | memoryview, columns: int, colors: int, dtype: numpy.dtype
 ) -> bytes:
     bytes_per_row = colors * columns * dtype.itemsize
@@ -28,11 +28,11 @@ def internal_tiff_predict_words(
 
 
 def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    return internal_tiff_predict_words(data, columns, colors, numpy.dtype("u1"))
+    return tiff_predict_words(data, columns, colors, numpy.dtype("u1"))
 
 
 def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    return internal_tiff_predict_words(data, columns, colors, numpy.dtype(">u2"))
+    return tiff_predict_words(data, columns, colors, numpy.dtype(">u2"))
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:

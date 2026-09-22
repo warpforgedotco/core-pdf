@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class LayoutLineTextSegment(internal_Record):
+class LayoutLineTextSegment(Record):
     __slots__ = ("text", "separator_before", "advance_bbox", "rotation_angle")
 
     text: str
@@ -35,10 +35,10 @@ class LayoutLineTextSegment(internal_Record):
         advance_bbox: tuple[float, float, float, float],
         rotation_angle: int,
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "separator_before", separator_before)
-        internal_frozen_setattr(self, "advance_bbox", advance_bbox)
-        internal_frozen_setattr(self, "rotation_angle", rotation_angle)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "separator_before", separator_before)
+        frozen_setattr(self, "advance_bbox", advance_bbox)
+        frozen_setattr(self, "rotation_angle", rotation_angle)
 
     def __repr__(self) -> str:
         return (
@@ -75,7 +75,7 @@ class LayoutLineTextSegment(internal_Record):
         return self.__class__(text, separator_before, advance_bbox, rotation_angle)
 
 
-class LayoutLineText(internal_Record):
+class LayoutLineText(Record):
     __slots__ = ("text", "segments")
 
     text: str
@@ -85,8 +85,8 @@ class LayoutLineText(internal_Record):
     __match_args__ = ("text", "segments")
 
     def __init__(self, text: str, segments: tuple[LayoutLineTextSegment, ...]) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "segments", segments)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "segments", segments)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(text={self.text!r}, segments={self.segments!r})"

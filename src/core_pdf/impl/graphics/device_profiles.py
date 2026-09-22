@@ -67,10 +67,10 @@ def cmyk_floats_to_srgb(
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int]:
     return internal_cmyk_bytes_to_srgb(
-        internal_component_byte(cyan),
-        internal_component_byte(magenta),
-        internal_component_byte(yellow),
-        internal_component_byte(black),
+        component_byte(cyan),
+        component_byte(magenta),
+        component_byte(yellow),
+        component_byte(black),
         rendering,
     )
 
@@ -88,5 +88,5 @@ def internal_cmyk_bytes_to_srgb(
     return int(red), int(green), int(blue)
 
 
-def internal_component_byte(value: float) -> int:
+def component_byte(value: float) -> int:
     return max(0, min(255, int(round(value * 255.0))))

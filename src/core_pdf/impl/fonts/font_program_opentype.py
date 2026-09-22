@@ -5,7 +5,7 @@ from io import BytesIO
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
-    internal_FontToolsOutlineAccess,
+    FontToolsOutlineAccess,
 )
 from core_pdf.impl.fonts.raster_kernel import Point
 
@@ -26,7 +26,7 @@ class OpenTypeFontProgram:
     def __init__(self, data: bytes) -> None:
         try:
             self.font = parse_opentype_program(data)
-            self.outlines = internal_FontToolsOutlineAccess(self.font)
+            self.outlines = FontToolsOutlineAccess(self.font)
             if "CFF2" in self.font and "fvar" in self.font:
                 del self.font["fvar"]
         except FONT_PROGRAM_ERRORS as exc:

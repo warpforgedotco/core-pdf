@@ -14,48 +14,48 @@ from core_pdf_crypto.ciphers import (
 )
 from core_pdf_crypto.errors import DecryptionError
 
-internal_KEY = bytes(range(32))
-internal_IV = bytes(range(16))
+KEY = bytes(range(32))
+IV = bytes(range(16))
 
 
 def test_aes_gcm_decrypts_the_iso_32003_serialized_form() -> None:
     nonce = b"\x07" * AES_GCM_IV_BYTES
-    ciphertext_and_tag = AESGCM(internal_KEY).encrypt(nonce, b"plain text", None)
+    ciphertext_and_tag = AESGCM(KEY).encrypt(nonce, b"plain text", None)
     assert len(ciphertext_and_tag) == len(b"plain text") + AES_GCM_TAG_BYTES
-    assert aes_gcm_decrypt(internal_KEY, nonce + ciphertext_and_tag) == b"plain text"
+    assert aes_gcm_decrypt(KEY, nonce + ciphertext_and_tag) == b"plain text"
 
 
 def test_aes_gcm_rejects_tampered_tag_and_short_input() -> None:
     nonce = b"\x07" * AES_GCM_IV_BYTES
-    data = nonce + AESGCM(internal_KEY).encrypt(nonce, b"plain text", None)
+    data = nonce + AESGCM(KEY).encrypt(nonce, b"plain text", None)
     damaged = data[:-1] + bytes([data[-1] ^ 1])
     with pytest.raises(DecryptionError):
-        aes_gcm_decrypt(internal_KEY, damaged)
+        aes_gcm_decrypt(KEY, damaged)
     with pytest.raises(DecryptionError):
-        aes_gcm_decrypt(internal_KEY, nonce)
+        aes_gcm_decrypt(KEY, nonce)
 
 
 def test_aes_gcm_requires_a_256_bit_key() -> None:
     with pytest.raises(ValueError, match="32 bytes"):
-        aes_gcm_decrypt(internal_KEY[:16], b"\0" * 28)
+        aes_gcm_decrypt(KEY[:16], b"\0" * 28)
 
 
 def test_aes_cbc_round_trips_with_and_without_padding() -> None:
-    padded = aes_cbc_encrypt(internal_KEY[:16], internal_IV, b"seven b", use_padding=True)
+    padded = aes_cbc_encrypt(KEY[:16], IV, b"seven b", use_padding=True)
     assert len(padded) == 16
-    assert aes_cbc_decrypt(internal_KEY[:16], internal_IV, padded, use_padding=True) == b"seven b"
-    block = aes_cbc_encrypt(internal_KEY, internal_IV, b"x" * 32, use_padding=False)
-    assert aes_cbc_decrypt(internal_KEY, internal_IV, block, use_padding=False) == b"x" * 32
+    assert aes_cbc_decrypt(KEY[:16], IV, padded, use_padding=True) == b"seven b"
+    block = aes_cbc_encrypt(KEY, IV, b"x" * 32, use_padding=False)
+    assert aes_cbc_decrypt(KEY, IV, block, use_padding=False) == b"x" * 32
 
 
 def test_aes_cbc_reports_bad_padding_as_decryption_error() -> None:
     with pytest.raises(DecryptionError):
-        aes_cbc_decrypt(internal_KEY[:16], internal_IV, b"\0" * 16, use_padding=True)
+        aes_cbc_decrypt(KEY[:16], IV, b"\0" * 16, use_padding=True)
 
 
 def test_aes_ecb_rejects_partial_blocks() -> None:
     with pytest.raises(DecryptionError):
-        aes_ecb_decrypt(internal_KEY, b"\0" * 15)
+        aes_ecb_decrypt(KEY, b"\0" * 15)
 
 
 def test_rc4_is_an_involution_with_a_known_vector() -> None:

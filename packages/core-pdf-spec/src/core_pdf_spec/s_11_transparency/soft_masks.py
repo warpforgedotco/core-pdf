@@ -18,7 +18,7 @@ from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_pdf_spec.types import PdfReference
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class SoftMask:
@@ -50,12 +50,12 @@ class SoftMask:
         backdrop_color: tuple[float, ...] | None = None,
         color_space: ColorSpace | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "subtype", subtype)
-        internal_frozen_setattr(self, "group", group)
-        internal_frozen_setattr(self, "ctm", ctm)
-        internal_frozen_setattr(self, "transfer", transfer)
-        internal_frozen_setattr(self, "backdrop_color", backdrop_color)
-        internal_frozen_setattr(self, "color_space", color_space)
+        frozen_setattr(self, "subtype", subtype)
+        frozen_setattr(self, "group", group)
+        frozen_setattr(self, "ctm", ctm)
+        frozen_setattr(self, "transfer", transfer)
+        frozen_setattr(self, "backdrop_color", backdrop_color)
+        frozen_setattr(self, "color_space", color_space)
 
     def __repr__(self) -> str:
         return (
@@ -106,7 +106,7 @@ class SoftMask:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         subtype = changes.pop("subtype", self.subtype)
@@ -120,7 +120,7 @@ class SoftMask:
         return self.__class__(subtype, group, ctm, transfer, backdrop_color, color_space)
 
 
-def internal_resolve(value: object, resolver: PdfValueResolver) -> object:
+def resolve(value: object, resolver: PdfValueResolver) -> object:
     seen: set[tuple[int, int]] = set()
     while isinstance(value, PdfReference):
         key = (value.object_number, value.generation_number)
@@ -131,17 +131,17 @@ def internal_resolve(value: object, resolver: PdfValueResolver) -> object:
     return value
 
 
-def internal_array(value: object, resolver: PdfValueResolver) -> object:
-    value = internal_resolve(value, resolver)
+def array(value: object, resolver: PdfValueResolver) -> object:
+    value = resolve(value, resolver)
     if isinstance(value, (list, tuple)):
-        return tuple(internal_resolve(item, resolver) for item in value)
+        return tuple(resolve(item, resolver) for item in value)
     return value
 
 
-def internal_function(
+def function(
     value: object, resolver: PdfValueResolver, active: set[int]
 ) -> dict[object, object] | PdfStream:
-    value = internal_resolve(value, resolver)
+    value = resolve(value, resolver)
     if not isinstance(value, (dict, PdfStream)):
         raise ValueError("soft-mask transfer must be a function or Identity")
     identity = id(value)
@@ -154,10 +154,10 @@ def internal_function(
         )
         for key in ("FunctionType", "BitsPerSample", "Order", "N"):
             if key in dictionary:
-                dictionary[key] = internal_resolve(dictionary[key], resolver)
+                dictionary[key] = resolve(dictionary[key], resolver)
         for key in ("Domain", "Range", "Size", "Encode", "Decode", "C0", "C1", "Bounds"):
             if key in dictionary:
-                dictionary[key] = internal_array(dictionary[key], resolver)
+                dictionary[key] = array(dictionary[key], resolver)
         function_type = require_pdf_integer(dictionary.get("FunctionType"))
         domain = require_pdf_number_array(dictionary.get("Domain"))
         if len(domain) != 2 or domain[1] < domain[0]:
@@ -173,12 +173,10 @@ def internal_function(
                 if len(require_pdf_number_array(dictionary.get(key, default))) != 1:
                     raise ValueError("soft-mask transfer must have one output")
         elif function_type == 3:
-            children = internal_resolve(dictionary.get("Functions"), resolver)
+            children = resolve(dictionary.get("Functions"), resolver)
             if not isinstance(children, (list, tuple)) or not children:
                 raise ValueError("invalid soft-mask stitching function")
-            dictionary["Functions"] = tuple(
-                internal_function(child, resolver, active) for child in children
-            )
+            dictionary["Functions"] = tuple(function(child, resolver, active) for child in children)
         elif function_type not in {0, 4}:
             raise ValueError("unsupported soft-mask transfer function")
         if function_type in {0, 4} and not isinstance(value, PdfStream):
@@ -188,15 +186,15 @@ def internal_function(
         active.remove(identity)
 
 
-def internal_transfer(
+def transfer(
     value: object,
     resolver: PdfValueResolver,
     compile_function: Callable[[object], PdfFunctionEvaluator],
 ) -> PdfFunctionEvaluator | None:
-    value = internal_resolve(value, resolver)
+    value = resolve(value, resolver)
     if value is None or resolver.resolve_name(value) == "Identity":
         return None
-    evaluate = compile_function(internal_function(value, resolver, set()))
+    evaluate = compile_function(function(value, resolver, set()))
 
     def transfer(*inputs: float) -> tuple[float, ...]:
         if len(inputs) != 1:
@@ -211,7 +209,7 @@ def internal_transfer(
 
 
 def internal_color_space(value: object, resolver: PdfValueResolver) -> ColorSpace:
-    value = internal_array(value, resolver)
+    value = array(value, resolver)
     kind = resolver.resolve_name(value[0] if isinstance(value, tuple) and value else value)
     if kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "CalGray", "CalRGB", "ICCBased"}:
         raise ValueError("invalid soft-mask blending color space")
@@ -222,11 +220,11 @@ def internal_color_space(value: object, resolver: PdfValueResolver) -> ColorSpac
             prepared = dict(dictionary)
             for key in ("WhitePoint", "BlackPoint", "Gamma", "Matrix", "Range"):
                 if key in prepared:
-                    prepared[key] = internal_array(prepared[key], resolver)
+                    prepared[key] = array(prepared[key], resolver)
             if "N" in prepared:
-                prepared["N"] = internal_resolve(prepared["N"], resolver)
+                prepared["N"] = resolve(prepared["N"], resolver)
             if "Alternate" in prepared:
-                prepared["Alternate"] = internal_array(prepared["Alternate"], resolver)
+                prepared["Alternate"] = array(prepared["Alternate"], resolver)
             value = (
                 value[0],
                 source.replace(dictionary=prepared) if isinstance(source, PdfStream) else prepared,
@@ -246,51 +244,51 @@ def parse_soft_mask(
     ctm: Matrix,
     compile_function: Callable[[object], PdfFunctionEvaluator] = compile_pdf_function,
 ) -> SoftMask | None:
-    value = internal_resolve(value, resolver)
+    value = resolve(value, resolver)
     if resolver.resolve_name(value) == "None":
         return None
     if not isinstance(value, dict):
         raise ValueError("soft mask must be a dictionary or None")
-    mask_type = internal_resolve(value.get("Type"), resolver)
+    mask_type = resolve(value.get("Type"), resolver)
     if mask_type is not None and resolver.resolve_name(mask_type) != "Mask":
         raise ValueError("invalid soft-mask dictionary Type")
     subtype = resolver.resolve_name(value.get("S"))
     if subtype not in {"Alpha", "Luminosity"}:
         raise ValueError("invalid soft-mask subtype")
-    group = internal_resolve(value.get("G"), resolver)
+    group = resolve(value.get("G"), resolver)
     if (
         not isinstance(group, PdfStream)
         or resolver.resolve_name(group.dictionary.get("Subtype")) != "Form"
     ):
         raise ValueError("soft mask requires a Form XObject")
-    group_type = internal_resolve(group.dictionary.get("Type"), resolver)
+    group_type = resolve(group.dictionary.get("Type"), resolver)
     if group_type is not None and resolver.resolve_name(group_type) != "XObject":
         raise ValueError("invalid soft-mask Form Type")
-    attributes = internal_resolve(group.dictionary.get("Group"), resolver)
+    attributes = resolve(group.dictionary.get("Group"), resolver)
     if (
         not isinstance(attributes, dict)
         or resolver.resolve_name(attributes.get("S")) != "Transparency"
     ):
         raise ValueError("soft mask requires a transparency group")
     for key in ("I", "K"):
-        flag = internal_resolve(attributes.get(key), resolver)
+        flag = resolve(attributes.get(key), resolver)
         if flag is not None and not isinstance(flag, bool):
             raise ValueError("invalid soft-mask group flag")
-    bbox = require_pdf_number_array(internal_array(group.dictionary.get("BBox"), resolver))
+    bbox = require_pdf_number_array(array(group.dictionary.get("BBox"), resolver))
     if len(bbox) != 4:
         raise ValueError("soft-mask Form requires a BBox")
-    matrix = internal_array(group.dictionary.get("Matrix"), resolver)
+    matrix = array(group.dictionary.get("Matrix"), resolver)
     if matrix is not None:
         Matrix.from_operand(matrix)
     color_space = None
     backdrop_color = None
     if subtype == "Luminosity":
         color_space = internal_color_space(attributes.get("CS"), resolver)
-        backdrop = internal_resolve(value.get("BC"), resolver)
+        backdrop = resolve(value.get("BC"), resolver)
         backdrop_color = (
             initial_color_components(color_space)
             if backdrop is None
-            else require_pdf_number_array(internal_array(backdrop, resolver))
+            else require_pdf_number_array(array(backdrop, resolver))
         )
         if backdrop_color is None or len(backdrop_color) != len(color_space.component_ranges):
             raise ValueError("invalid soft-mask backdrop component count")
@@ -298,7 +296,7 @@ def parse_soft_mask(
         "Alpha" if subtype == "Alpha" else "Luminosity",
         group,
         ctm,
-        internal_transfer(value.get("TR"), resolver, compile_function),
+        transfer(value.get("TR"), resolver, compile_function),
         backdrop_color,
         color_space,
     )

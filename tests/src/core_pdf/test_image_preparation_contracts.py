@@ -95,7 +95,7 @@ def test_matte_alpha_decodes_original_sample_precision(bits, raw, decode):
     mask = SoftMask(
         raw, {"Width": 2, "Height": 1, "BitsPerComponent": bits, "Matte": [0.5], "Decode": decode}
     )
-    matte, alpha = images.internal_decode_matte(source, mask)
+    matte, alpha = images.decode_matte(source, mask)
     assert matte == (0.5,)
     np.testing.assert_array_equal(alpha, [1, 0] if decode == (1, 0) else [0, 1])
 
@@ -107,7 +107,7 @@ def test_invalid_matte_dimensions_and_decode_are_rejected(changes):
     source = ImageSource(b"", {"Width": 2, "Height": 1})
     dictionary = {"Width": 2, "Height": 1, "BitsPerComponent": 8, "Matte": [0.5], **changes}
     with pytest.raises(ValueError, match="matte requires matching|soft mask Decode"):
-        images.internal_decode_matte(source, SoftMask(b"\0\xff", dictionary))
+        images.decode_matte(source, SoftMask(b"\0\xff", dictionary))
 
 
 @pytest.mark.parametrize(("model", "channels"), [("DeviceGray", 1), ("DeviceRGB", 3)])

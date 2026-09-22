@@ -141,7 +141,7 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
     return bytes(out)
 
 
-def internal_ascii85_tail(accumulator: int, digits: int) -> bytes:
+def ascii85_tail(accumulator: int, digits: int) -> bytes:
     if not digits:
         return b""
     if digits == 1:
@@ -182,7 +182,7 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                     decoded.extend(acc.to_bytes(4, "big"))
                     acc = 0
                     digits = 0
-            decoded.extend(internal_ascii85_tail(acc, digits))
+            decoded.extend(ascii85_tail(acc, digits))
             return bytes(decoded)
 
         clean_len = len(clean)
@@ -226,7 +226,7 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
         acc = 0
         for byte in clean[full_end:]:
             acc = acc * 85 + (byte - 33)
-        tail = internal_ascii85_tail(acc, clean_len - full_end)
+        tail = ascii85_tail(acc, clean_len - full_end)
         decoded[out_pos : out_pos + len(tail)] = tail
         return bytes(decoded[: out_pos + len(tail)])
     except (ValueError, binascii.Error) as exc:

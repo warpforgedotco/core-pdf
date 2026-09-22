@@ -11,7 +11,7 @@ from core_pdf_spec.s_08_graphics.pdf_function import (
     compile_pdf_function,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class ShadingSpec:
@@ -67,14 +67,14 @@ class ShadingSpec:
         bbox: tuple[float, float, float, float] | None,
         evaluator: PdfFunctionEvaluator,
     ) -> None:
-        internal_frozen_setattr(self, "shading_type", shading_type)
-        internal_frozen_setattr(self, "coords", coords)
-        internal_frozen_setattr(self, "domain", domain)
-        internal_frozen_setattr(self, "extend_start", extend_start)
-        internal_frozen_setattr(self, "extend_end", extend_end)
-        internal_frozen_setattr(self, "color_space", color_space)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "evaluator", evaluator)
+        frozen_setattr(self, "shading_type", shading_type)
+        frozen_setattr(self, "coords", coords)
+        frozen_setattr(self, "domain", domain)
+        frozen_setattr(self, "extend_start", extend_start)
+        frozen_setattr(self, "extend_end", extend_end)
+        frozen_setattr(self, "color_space", color_space)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "evaluator", evaluator)
 
     def __repr__(self) -> str:
         return (
@@ -128,7 +128,7 @@ class ShadingSpec:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         shading_type = changes.pop("shading_type", self.shading_type)

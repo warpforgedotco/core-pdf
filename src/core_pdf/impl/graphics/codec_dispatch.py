@@ -15,7 +15,7 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupporte
 from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2 as decode_strict_jbig2
 
 
-def internal_decode(
+def decode(
     call: Callable[..., numpy.ndarray[Any, Any]], *args: Any, **kwargs: Any
 ) -> numpy.ndarray[Any, Any]:
     try:
@@ -29,7 +29,7 @@ def internal_decode(
 def decode_jpeg_image(
     data: bytes | memoryview, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    return internal_decode(codec_backends.decode_jpeg_image, data, out=out)
+    return decode(codec_backends.decode_jpeg_image, data, out=out)
 
 
 def decode_jpx_image(
@@ -38,7 +38,7 @@ def decode_jpx_image(
     out: numpy.ndarray[Any, Any] | None = None,
     preserve_precision: bool = False,
 ) -> numpy.ndarray[Any, Any]:
-    return internal_decode(
+    return decode(
         codec_backends.decode_jpx_image, data, out=out, preserve_precision=preserve_precision
     )
 
@@ -54,7 +54,7 @@ def decode_jpx(data: bytes, parms: object) -> bytes:
 def decode_ccitt_fax_image(
     data: bytes | memoryview, parms: FilterParams, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    array = internal_decode(
+    array = decode(
         codec_backends.decode_ccitt_fax_image,
         data,
         width=parms.columns if parms.has_columns else 1728,

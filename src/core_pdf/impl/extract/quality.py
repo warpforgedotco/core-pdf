@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.extract.contracts import TextQualityStats
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class TextAnalysis(internal_Record):
+class TextAnalysis(Record):
     __slots__ = ("quality", "characters", "suspicious_characters")
 
     quality: TextQualityStats
@@ -26,9 +26,9 @@ class TextAnalysis(internal_Record):
         characters: int = 0,
         suspicious_characters: int = 0,
     ) -> None:
-        internal_frozen_setattr(self, "quality", TextQualityStats() if quality is None else quality)
-        internal_frozen_setattr(self, "characters", characters)
-        internal_frozen_setattr(self, "suspicious_characters", suspicious_characters)
+        frozen_setattr(self, "quality", TextQualityStats() if quality is None else quality)
+        frozen_setattr(self, "characters", characters)
+        frozen_setattr(self, "suspicious_characters", suspicious_characters)
 
     def __repr__(self) -> str:
         return (
@@ -62,10 +62,10 @@ class TextAnalysis(internal_Record):
         return self.__class__(quality, characters, suspicious_characters)
 
 
-internal_ASCII_VOWELS = frozenset("aeiouAEIOU")
+ASCII_VOWELS = frozenset("aeiouAEIOU")
 
 
-def internal_analyze_text(text: str) -> TextAnalysis:
+def analyze_text(text: str) -> TextAnalysis:
     tokens = text.split()
     if not tokens:
         return TextAnalysis()
@@ -82,7 +82,7 @@ def internal_analyze_text(text: str) -> TextAnalysis:
         if token.isascii() and token.isprintable():
             nonspace += len(token)
             if token.isalpha():
-                if len(token) >= 3 and not internal_ASCII_VOWELS.isdisjoint(token):
+                if len(token) >= 3 and not ASCII_VOWELS.isdisjoint(token):
                     wordlike += 1
                 continue
             if token.isdigit():

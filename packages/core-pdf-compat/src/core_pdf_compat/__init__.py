@@ -3,10 +3,10 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-internal_MODULES = frozenset(
+MODULES = frozenset(
     {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "pypdf", "unstructured", "xray"}
 )
-internal_EXPORTS = {
+EXPORTS = {
     **{
         name: ("pdfminer", name)
         for name in (
@@ -38,11 +38,11 @@ internal_EXPORTS = {
 
 
 def __getattr__(name: str) -> Any:
-    if name in internal_MODULES:
+    if name in MODULES:
         value = import_module(f"{__name__}.{name}")
     else:
         try:
-            module_name, attribute = internal_EXPORTS[name]
+            module_name, attribute = EXPORTS[name]
         except KeyError:
             raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
         value = getattr(import_module(f"{__name__}.{module_name}"), attribute)
@@ -50,4 +50,4 @@ def __getattr__(name: str) -> Any:
     return value
 
 
-__all__ = tuple(sorted((*internal_MODULES, *internal_EXPORTS)))
+__all__ = tuple(sorted((*MODULES, *EXPORTS)))

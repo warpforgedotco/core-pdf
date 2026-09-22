@@ -7,13 +7,13 @@ from typing import Any, ClassVar, Self
 
 import numpy
 
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.array_views import finite_median
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_LayoutRegion(internal_Record):
+class LayoutRegion(Record):
     __slots__ = ("indexes", "x_start_order", "y_start_order", "y_center_order")
 
     indexes: numpy.ndarray
@@ -36,10 +36,10 @@ class internal_LayoutRegion(internal_Record):
         y_start_order: numpy.ndarray,
         y_center_order: numpy.ndarray,
     ) -> None:
-        internal_frozen_setattr(self, "indexes", indexes)
-        internal_frozen_setattr(self, "x_start_order", x_start_order)
-        internal_frozen_setattr(self, "y_start_order", y_start_order)
-        internal_frozen_setattr(self, "y_center_order", y_center_order)
+        frozen_setattr(self, "indexes", indexes)
+        frozen_setattr(self, "x_start_order", x_start_order)
+        frozen_setattr(self, "y_start_order", y_start_order)
+        frozen_setattr(self, "y_center_order", y_center_order)
 
     def __repr__(self) -> str:
         return (
@@ -76,7 +76,7 @@ class internal_LayoutRegion(internal_Record):
         return self.__class__(indexes, x_start_order, y_start_order, y_center_order)
 
 
-class internal_LayoutGeometry:
+class LayoutGeometry:
     __slots__ = ("boxes", "x_centers", "y_centers", "heights", "marks", "row_ids")
 
     boxes: numpy.ndarray
@@ -152,7 +152,7 @@ class internal_LayoutGeometry:
         return self.__class__(boxes, x_centers, y_centers, heights, marks, row_ids)
 
     @classmethod
-    def create(cls, boxes: numpy.ndarray) -> internal_LayoutGeometry:
+    def create(cls, boxes: numpy.ndarray) -> LayoutGeometry:
         x_centers = (boxes[:, 0] + boxes[:, 2]) * 0.5
         y_centers = (boxes[:, 1] + boxes[:, 3]) * 0.5
         return cls(
@@ -164,18 +164,16 @@ class internal_LayoutGeometry:
             row_ids=numpy.empty(len(boxes), dtype=numpy.int64),
         )
 
-    def region(
-        self, indexes: numpy.ndarray, parent: internal_LayoutRegion | None = None
-    ) -> internal_LayoutRegion:
+    def region(self, indexes: numpy.ndarray, parent: LayoutRegion | None = None) -> LayoutRegion:
         if parent is None:
-            return internal_LayoutRegion(
+            return LayoutRegion(
                 indexes=indexes,
                 x_start_order=indexes[numpy.argsort(self.boxes[indexes, 0], kind="stable")],
                 y_start_order=indexes[numpy.argsort(self.boxes[indexes, 1], kind="stable")],
                 y_center_order=indexes[numpy.argsort(-self.y_centers[indexes], kind="stable")],
             )
         self.marks[indexes] = True
-        region = internal_LayoutRegion(
+        region = LayoutRegion(
             indexes=indexes,
             x_start_order=parent.x_start_order[self.marks[parent.x_start_order]],
             y_start_order=parent.y_start_order[self.marks[parent.y_start_order]],
@@ -185,7 +183,7 @@ class internal_LayoutGeometry:
         return region
 
 
-def internal_projection_gap_from_sorted(
+def projection_gap_from_sorted(
     sorted_starts: numpy.ndarray,
     sorted_ends: numpy.ndarray,
     axis: int,
@@ -203,7 +201,7 @@ def internal_projection_gap_from_sorted(
     return (best_gap, best_cut) if best_gap >= minimum_gap else None
 
 
-def internal_best_projection_gap(
+def best_projection_gap(
     boxes: numpy.ndarray,
     axis: int,
     minimum_gap: float,
@@ -211,17 +209,17 @@ def internal_best_projection_gap(
     starts = boxes[:, axis]
     ends = boxes[:, axis + 2]
     order = numpy.argsort(starts, kind="stable")
-    return internal_projection_gap_from_sorted(starts[order], ends[order], axis, minimum_gap)
+    return projection_gap_from_sorted(starts[order], ends[order], axis, minimum_gap)
 
 
-def internal_best_region_projection_gap(
-    geometry: internal_LayoutGeometry,
-    region: internal_LayoutRegion,
+def best_region_projection_gap(
+    geometry: LayoutGeometry,
+    region: LayoutRegion,
     axis: int,
     minimum_gap: float,
 ) -> tuple[float, float] | None:
     order = region.x_start_order if axis == 0 else region.y_start_order
-    return internal_projection_gap_from_sorted(
+    return projection_gap_from_sorted(
         geometry.boxes[order, axis],
         geometry.boxes[order, axis + 2],
         axis,
@@ -229,7 +227,7 @@ def internal_best_region_projection_gap(
     )
 
 
-def internal_gutter_tolerating_contained_boxes(
+def gutter_tolerating_contained_boxes(
     region_boxes: numpy.ndarray, minimum_gap: float
 ) -> float | None:
     count = len(region_boxes)
@@ -240,7 +238,7 @@ def internal_gutter_tolerating_contained_boxes(
     if right - left <= minimum_gap * 2:
         return None
     positions = numpy.linspace(left, right, 256)
-    crossing = internal_interval_crossing_counts(region_boxes, positions)
+    crossing = interval_crossing_counts(region_boxes, positions)
     allowed = max(1, count // 20)
     quiet = crossing <= allowed
     if not quiet.any():
@@ -283,9 +281,7 @@ def internal_gutter_tolerating_contained_boxes(
     return (best[0] + best[1]) * 0.5
 
 
-def internal_interval_crossing_counts(
-    boxes: numpy.ndarray, positions: numpy.ndarray
-) -> numpy.ndarray:
+def interval_crossing_counts(boxes: numpy.ndarray, positions: numpy.ndarray) -> numpy.ndarray:
     sorted_starts = numpy.sort(boxes[:, 0])
     sorted_ends = numpy.sort(boxes[:, 2])
     return numpy.searchsorted(sorted_starts, positions, side="left") - numpy.searchsorted(
@@ -293,14 +289,14 @@ def internal_interval_crossing_counts(
     )
 
 
-def internal_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
+def column_gap_minimum(region_boxes: numpy.ndarray) -> float:
     if not len(region_boxes):
         return 12.0
     median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
     return max(12.0, median_width * 0.05)
 
 
-def internal_narrow_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
+def narrow_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
     if not len(region_boxes):
         return 12.0
     median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
@@ -308,7 +304,7 @@ def internal_narrow_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
     return max(6.0, min(12.0, median_width * 0.08), median_height * 0.9)
 
 
-def internal_columnar_split_alignment(region_boxes: numpy.ndarray, cut: float) -> bool:
+def columnar_split_alignment(region_boxes: numpy.ndarray, cut: float) -> bool:
     centers = (region_boxes[:, 0] + region_boxes[:, 2]) * 0.5
     left = region_boxes[centers < cut]
     right = region_boxes[centers >= cut]
@@ -327,19 +323,19 @@ def internal_columnar_split_alignment(region_boxes: numpy.ndarray, cut: float) -
     return min(left_width, right_width) >= max(left_width, right_width) * 0.5
 
 
-def internal_narrow_projection_gap(
+def narrow_projection_gap(
     region_boxes: numpy.ndarray,
 ) -> tuple[float, float] | None:
-    narrow_minimum = internal_narrow_column_gap_minimum(region_boxes)
-    if narrow_minimum >= internal_column_gap_minimum(region_boxes):
+    narrow_minimum = narrow_column_gap_minimum(region_boxes)
+    if narrow_minimum >= column_gap_minimum(region_boxes):
         return None
-    narrow = internal_best_projection_gap(region_boxes, 0, narrow_minimum)
-    if narrow is None or not internal_columnar_split_alignment(region_boxes, narrow[1]):
+    narrow = best_projection_gap(region_boxes, 0, narrow_minimum)
+    if narrow is None or not columnar_split_alignment(region_boxes, narrow[1]):
         return None
     return narrow
 
 
-def internal_peel_spanning_band(
+def peel_spanning_band(
     indexes: numpy.ndarray,
     boxes: numpy.ndarray,
     median_height: float,
@@ -371,12 +367,12 @@ def internal_peel_spanning_band(
         if len(remainder_indexes) < 2:
             return None
         remainder = boxes[remainder_indexes]
-        gutter = internal_best_projection_gap(remainder, 0, internal_column_gap_minimum(remainder))
+        gutter = best_projection_gap(remainder, 0, column_gap_minimum(remainder))
         if gutter is None:
-            gutter = internal_narrow_projection_gap(remainder)
+            gutter = narrow_projection_gap(remainder)
         if gutter is not None:
             if from_bottom:
-                if not internal_columnar_split_alignment(remainder, gutter[1]):
+                if not columnar_split_alignment(remainder, gutter[1]):
                     continue
                 centers = (remainder[:, 0] + remainder[:, 2]) * 0.5
                 left_count = int(numpy.count_nonzero(centers < gutter[1]))
@@ -386,7 +382,7 @@ def internal_peel_spanning_band(
     return None
 
 
-def internal_assign_row_bands(
+def assign_row_bands(
     order: numpy.ndarray,
     centers: numpy.ndarray,
     tolerance: float,
@@ -403,21 +399,19 @@ def internal_assign_row_bands(
         row_ids[item] = current_row
 
 
-def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> numpy.ndarray:
-    geometry = internal_LayoutGeometry.create(boxes)
-    return internal_row_order_region(geometry, geometry.region(indexes))
+def row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> numpy.ndarray:
+    geometry = LayoutGeometry.create(boxes)
+    return row_order_region(geometry, geometry.region(indexes))
 
 
-def internal_row_order_region(
-    geometry: internal_LayoutGeometry, region: internal_LayoutRegion
-) -> numpy.ndarray:
+def row_order_region(geometry: LayoutGeometry, region: LayoutRegion) -> numpy.ndarray:
     indexes = region.indexes
     if len(indexes) < 2:
         return indexes
     tolerance = max(1.0, finite_median(geometry.heights[indexes]) * 0.5)
     if not math.isfinite(tolerance):
         tolerance = 1.0
-    internal_assign_row_bands(
+    assign_row_bands(
         region.y_center_order,
         geometry.y_centers,
         tolerance,
@@ -471,7 +465,7 @@ def internal_obstacle_partition(
     return None
 
 
-def internal_xy_cut_regions(
+def xy_cut_regions(
     indexes: numpy.ndarray,
     boxes: numpy.ndarray,
     obstacles: tuple[tuple[float, float, float, float], ...],
@@ -479,20 +473,20 @@ def internal_xy_cut_regions(
     *,
     depth: int = 0,
     used_obstacles: frozenset[int] = frozenset(),
-    geometry: internal_LayoutGeometry | None = None,
-    parent_region: internal_LayoutRegion | None = None,
+    geometry: LayoutGeometry | None = None,
+    parent_region: LayoutRegion | None = None,
 ) -> list[numpy.ndarray]:
     if geometry is None:
-        geometry = internal_LayoutGeometry.create(boxes)
+        geometry = LayoutGeometry.create(boxes)
     current_region = geometry.region(indexes, parent_region)
     if len(indexes) <= 2 or depth >= 32:
-        return [internal_row_order_region(geometry, current_region)]
+        return [row_order_region(geometry, current_region)]
 
     def recurse(
         group: numpy.ndarray,
         used: frozenset[int] = used_obstacles,
     ) -> list[numpy.ndarray]:
-        return internal_xy_cut_regions(
+        return xy_cut_regions(
             group,
             boxes,
             obstacles,
@@ -515,22 +509,22 @@ def internal_xy_cut_regions(
         return [region for group in groups for region in recurse(group, next_used_obstacles)]
 
     region_boxes = boxes[indexes]
-    horizontal = internal_best_region_projection_gap(
+    horizontal = best_region_projection_gap(
         geometry, current_region, 1, max(3.0, median_height * 0.90)
     )
-    vertical = internal_best_region_projection_gap(
-        geometry, current_region, 0, internal_column_gap_minimum(region_boxes)
+    vertical = best_region_projection_gap(
+        geometry, current_region, 0, column_gap_minimum(region_boxes)
     )
     if vertical is None:
-        vertical = internal_narrow_projection_gap(region_boxes)
+        vertical = narrow_projection_gap(region_boxes)
     candidates: list[tuple[float, int, float]] = []
     if horizontal is not None:
         candidates.append((horizontal[0] / median_height * 1.15, 1, horizontal[1]))
     if vertical is not None:
         candidates.append((vertical[0] / median_height, 0, vertical[1]))
     if not candidates:
-        tolerant_cut = internal_gutter_tolerating_contained_boxes(
-            region_boxes, internal_column_gap_minimum(region_boxes)
+        tolerant_cut = gutter_tolerating_contained_boxes(
+            region_boxes, column_gap_minimum(region_boxes)
         )
         if tolerant_cut is not None:
             centers_x = geometry.x_centers[indexes]
@@ -538,27 +532,27 @@ def internal_xy_cut_regions(
             right = indexes[centers_x >= tolerant_cut]
             if len(left) and len(right):
                 return [region for group in (left, right) for region in recurse(group)]
-        peeled = internal_peel_spanning_band(indexes, boxes, median_height)
+        peeled = peel_spanning_band(indexes, boxes, median_height)
         if peeled is not None:
             band, remainder = peeled
             return [
-                internal_row_order_region(geometry, geometry.region(band, current_region)),
+                row_order_region(geometry, geometry.region(band, current_region)),
                 *recurse(remainder),
             ]
-        peeled = internal_peel_spanning_band(indexes, boxes, median_height, from_bottom=True)
+        peeled = peel_spanning_band(indexes, boxes, median_height, from_bottom=True)
         if peeled is not None:
             band, remainder = peeled
             return [
                 *recurse(remainder),
-                internal_row_order_region(geometry, geometry.region(band, current_region)),
+                row_order_region(geometry, geometry.region(band, current_region)),
             ]
-        return [internal_row_order_region(geometry, current_region)]
+        return [row_order_region(geometry, current_region)]
 
     _, axis, cut = max(candidates, key=lambda item: item[0])
     centers = (geometry.x_centers if axis == 0 else geometry.y_centers)[indexes]
     first = indexes[centers < cut]
     second = indexes[centers >= cut]
     if not len(first) or not len(second):
-        return [internal_row_order_region(geometry, current_region)]
+        return [row_order_region(geometry, current_region)]
     ordered_groups = (second, first) if axis == 1 else (first, second)
     return [region for group in ordered_groups for region in recurse(group)]

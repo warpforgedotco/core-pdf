@@ -4,7 +4,7 @@ import pytest
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render import target as target_module
 from core_pdf.impl.render.model import DisplayListItem
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.target import RasterTarget
 from tests.src.core_pdf.test_pattern_rendering import internal_target
 
 
@@ -77,16 +77,16 @@ def test_paint_failure_restores_shape_and_group_state(monkeypatch, failure):
     def fail(*args, **kwargs):
         raise RuntimeError("injected rendering failure")
 
-    monkeypatch.setattr(target_module, "internal_graphics_soft_mask", lambda item: object())
+    monkeypatch.setattr(target_module, "graphics_soft_mask", lambda item: object())
     monkeypatch.setattr(
         target_module,
-        "internal_resolve_soft_mask",
+        "resolve_soft_mask",
         fail if failure == "prepare" else lambda *a: np.ones((2, 2), dtype=np.float32),
     )
     if failure == "paint":
-        monkeypatch.setattr(internal_RasterTarget, "internal_paint_item", fail)
+        monkeypatch.setattr(RasterTarget, "internal_paint_item", fail)
     elif failure == "composite":
-        monkeypatch.setattr(internal_RasterTarget, "composite_group", fail)
+        monkeypatch.setattr(RasterTarget, "composite_group", fail)
     with pytest.raises(RuntimeError, match="injected"):
         target.paint_item(DisplayListItem("shading", 0, {"alpha_is_shape": True}))
     assert (target.paint_alpha_is_shape, target.shape_alpha) == (False, 0.25)
@@ -109,7 +109,7 @@ def test_scope_failure_restores_clip_and_unwinds_all_groups(monkeypatch, failure
     if failure == "clip":
         monkeypatch.setattr(type(target.clip), "push", fail)
     elif failure == "composite":
-        monkeypatch.setattr(internal_RasterTarget, "composite_group", fail)
+        monkeypatch.setattr(RasterTarget, "composite_group", fail)
 
     def items():
         yield DisplayListItem("group-begin", 0)

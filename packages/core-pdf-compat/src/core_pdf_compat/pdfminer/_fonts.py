@@ -131,16 +131,16 @@ class _FontProjection:
         )
 
 
-internal_FONT_PROJECTION_CACHE_MAX_ENTRIES = 128
+FONT_PROJECTION_CACHE_MAX_ENTRIES = 128
 
-internal_FONT_PROJECTION_CACHE: OrderedDict[int, _FontProjection] = OrderedDict()
+FONT_PROJECTION_CACHE: OrderedDict[int, _FontProjection] = OrderedDict()
 
 
 def _font_projection(font: dict[Any, Any]) -> _FontProjection:
     cache_key = id(font)
-    entry = internal_FONT_PROJECTION_CACHE.get(cache_key)
+    entry = FONT_PROJECTION_CACHE.get(cache_key)
     if entry is not None and entry.font is font:
-        internal_FONT_PROJECTION_CACHE.move_to_end(cache_key)
+        FONT_PROJECTION_CACHE.move_to_end(cache_key)
         return entry
     values: dict[str, Any] = {}
     for raw_key, value in font.items():
@@ -170,9 +170,9 @@ def _font_projection(font: dict[Any, Any]) -> _FontProjection:
         first_char if isinstance(first_char, int) else 0,
         recovered_malformed_token,
     )
-    internal_FONT_PROJECTION_CACHE[cache_key] = entry
-    while len(internal_FONT_PROJECTION_CACHE) > internal_FONT_PROJECTION_CACHE_MAX_ENTRIES:
-        internal_FONT_PROJECTION_CACHE.popitem(last=False)
+    FONT_PROJECTION_CACHE[cache_key] = entry
+    while len(FONT_PROJECTION_CACHE) > FONT_PROJECTION_CACHE_MAX_ENTRIES:
+        FONT_PROJECTION_CACHE.popitem(last=False)
     return entry
 
 
@@ -235,7 +235,7 @@ def _pdfminer_to_unicode_text(glyph: Any, to_unicode: Any) -> str | None:
     return None
 
 
-def internal_pdfminer_glyph_text(glyph: Any) -> str:
+def pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.unicode_source == "actual_text" and glyph.text == "\ufeff":
         return ""
     if glyph.unicode_source == "actual_text" and glyph.alternates:
@@ -314,7 +314,7 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
     return glyph.text
 
 
-def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
+def pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
     decoder = glyph.font_decoder
     if not getattr(decoder, "is_cid_font", False):
         return False
@@ -334,7 +334,7 @@ def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
     return re.search(rb"/[!-~]+\s+usecmap\b", data) is None
 
 
-def internal_pdfminer_ligature_overrides(
+def pdfminer_ligature_overrides(
     glyphs: tuple[Any, ...],
 ) -> tuple[
     dict[
@@ -448,7 +448,7 @@ def internal_pdfminer_ligature_overrides(
 
 def _pdfminer_builtin_width(glyph: Any) -> float | None:
     decoder = glyph.font_decoder
-    projected_text = internal_pdfminer_glyph_text(glyph)
+    projected_text = pdfminer_glyph_text(glyph)
     font = decoder.font
     projection = _font_projection(font) if isinstance(font, dict) else None
     values = projection.values if projection is not None else {}
@@ -491,7 +491,7 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
 
 
-def internal_pdfminer_normalized_width(glyph: Any) -> float:
+def pdfminer_normalized_width(glyph: Any) -> float:
     width_code = (
         glyph.cid
         if getattr(glyph.font_decoder, "is_cid_font", False)
@@ -532,7 +532,7 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
     return width
 
 
-def internal_pdfminer_font_name(glyph: Any) -> str:
+def pdfminer_font_name(glyph: Any) -> str:
     base_font = str(_font_value(glyph.font_decoder.font, "BaseFont") or "")
     builtin_metrics = FONT_DATA.get(base_font)
     if isinstance(builtin_metrics, dict):
@@ -544,7 +544,7 @@ def internal_pdfminer_font_name(glyph: Any) -> str:
     return str(glyph.font_name)
 
 
-def internal_pdfminer_descent(glyph: Any) -> float:
+def pdfminer_descent(glyph: Any) -> float:
     decoder = glyph.font_decoder
     descent_scale = 0.001
     descent_value = float(getattr(decoder, "descent", -200.0))

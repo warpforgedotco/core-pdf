@@ -287,10 +287,10 @@ def test_rotation_route_distinguishes_minor_labels_from_page_orientation(
 def test_schematic_raster_scale_thresholds(
     ocr_capture, schematic, complexity, images, scale
 ) -> None:
-    from core_pdf_ocr.impl.extract.observations import internal_ocr_scale
+    from core_pdf_ocr.impl.extract.observations import ocr_scale
 
     capture = replace(ocr_capture, evidence=replace(ocr_capture.evidence, image_count=images))
-    assert internal_ocr_scale(capture, schematic=schematic, vector_complexity=complexity) == scale
+    assert ocr_scale(capture, schematic=schematic, vector_complexity=complexity) == scale
 
 
 @pytest.mark.parametrize(
@@ -307,7 +307,7 @@ def test_schematic_raster_scale_thresholds(
 def test_noisy_native_policy_requires_structure_tokens_and_language_evidence(
     ocr_capture, characters, tokens, short, wordlike, suspicious, expected
 ) -> None:
-    from core_pdf_ocr.impl.extract.observations import internal_noisy_native_text
+    from core_pdf_ocr.impl.extract.observations import noisy_native_text
 
     evidence = replace(
         ocr_capture.evidence,
@@ -319,7 +319,7 @@ def test_noisy_native_policy_requires_structure_tokens_and_language_evidence(
             token_count=tokens, short_token_ratio=short, wordlike_ratio=wordlike
         ),
     )
-    assert internal_noisy_native_text(evidence) is expected
+    assert noisy_native_text(evidence) is expected
     if expected:
         result = plan_page(replace(ocr_capture, evidence=evidence))
         assert result.reason is PagePlanReason.NOISY_NATIVE_TEXT
@@ -328,15 +328,15 @@ def test_noisy_native_policy_requires_structure_tokens_and_language_evidence(
 
 def test_actual_text_override_can_make_an_unmapped_native_layer_usable(ocr_capture) -> None:
     from core_pdf.impl.extract.contracts import GlyphEvidence
-    from core_pdf_ocr.impl.extract.observations import internal_native_mapping_is_usable
+    from core_pdf_ocr.impl.extract.observations import native_mapping_is_usable
 
     evidence = replace(
         ocr_capture.evidence,
         native_characters=100,
         glyphs=GlyphEvidence(glyph_count=100, unknown_glyphs=100, actual_text_characters=80),
     )
-    assert internal_native_mapping_is_usable(evidence)
-    assert not internal_native_mapping_is_usable(
+    assert native_mapping_is_usable(evidence)
+    assert not native_mapping_is_usable(
         replace(evidence, glyphs=replace(evidence.glyphs, actual_text_characters=79))
     )
 

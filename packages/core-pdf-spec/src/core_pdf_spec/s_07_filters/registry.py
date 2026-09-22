@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Literal, NoReturn, Self, TypeAlias
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 FilterDecoder: TypeAlias = Literal[
@@ -47,11 +47,11 @@ class FilterDescriptor:
         ccitt: bool = False,
         wants_image_dictionary: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "name", name)
-        internal_frozen_setattr(self, "decoder", decoder)
-        internal_frozen_setattr(self, "predictor", predictor)
-        internal_frozen_setattr(self, "ccitt", ccitt)
-        internal_frozen_setattr(self, "wants_image_dictionary", wants_image_dictionary)
+        frozen_setattr(self, "name", name)
+        frozen_setattr(self, "decoder", decoder)
+        frozen_setattr(self, "predictor", predictor)
+        frozen_setattr(self, "ccitt", ccitt)
+        frozen_setattr(self, "wants_image_dictionary", wants_image_dictionary)
 
     def __repr__(self) -> str:
         return (
@@ -99,7 +99,7 @@ class FilterDescriptor:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         name = changes.pop("name", self.name)

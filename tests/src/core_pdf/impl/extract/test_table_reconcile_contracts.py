@@ -1,7 +1,7 @@
 from core_pdf.impl.extract.table_reconcile import (
-    internal_line_duplicates_table,
-    internal_remove_table_duplicate_blocks,
-    internal_TableIndex,
+    TableIndex,
+    line_duplicates_table,
+    remove_table_duplicate_blocks,
 )
 from core_pdf.impl.output.model import Block, BlockKind, Table, TableCell, TextLine
 
@@ -43,25 +43,25 @@ def test_line_matching_one_cell_is_a_duplicate() -> None:
     table = internal_table(
         [[("alpha", (0.0, 20.0, 50.0, 40.0)), ("beta", (50.0, 20.0, 100.0, 40.0))]]
     )
-    index = internal_TableIndex.build(table)
-    assert internal_line_duplicates_table("alpha", (0.0, 20.0, 50.0, 40.0), index)
-    assert internal_line_duplicates_table("alpha beta", (0.0, 20.0, 100.0, 40.0), index)
-    assert not internal_line_duplicates_table("gamma", (0.0, 20.0, 50.0, 40.0), index)
-    assert not internal_line_duplicates_table("alpha", (0.0, 0.0, 50.0, 10.0), index)
+    index = TableIndex.build(table)
+    assert line_duplicates_table("alpha", (0.0, 20.0, 50.0, 40.0), index)
+    assert line_duplicates_table("alpha beta", (0.0, 20.0, 100.0, 40.0), index)
+    assert not line_duplicates_table("gamma", (0.0, 20.0, 50.0, 40.0), index)
+    assert not line_duplicates_table("alpha", (0.0, 0.0, 50.0, 10.0), index)
 
 
 def test_cells_without_geometry_fall_back_to_text_coverage() -> None:
     table = internal_table([[("alpha", None), ("beta", None)]])
-    index = internal_TableIndex.build(table)
+    index = TableIndex.build(table)
     assert index.frame is None
-    assert internal_line_duplicates_table("alpha beta", (0.0, 0.0, 100.0, 40.0), index)
-    assert not internal_line_duplicates_table("alpha", (0.0, 0.0, 100.0, 40.0), index)
+    assert line_duplicates_table("alpha beta", (0.0, 0.0, 100.0, 40.0), index)
+    assert not line_duplicates_table("alpha", (0.0, 0.0, 100.0, 40.0), index)
 
 
 def test_zero_area_line_box_never_covers_a_cell() -> None:
     table = internal_table([[("alpha", (0.0, 20.0, 50.0, 40.0))]])
-    index = internal_TableIndex.build(table)
-    assert not internal_line_duplicates_table("alpha", (10.0, 30.0, 10.0, 30.0), index)
+    index = TableIndex.build(table)
+    assert not line_duplicates_table("alpha", (10.0, 30.0, 10.0, 30.0), index)
 
 
 def test_duplicate_lines_are_removed_from_blocks_and_others_kept() -> None:
@@ -69,8 +69,8 @@ def test_duplicate_lines_are_removed_from_blocks_and_others_kept() -> None:
         [[("alpha", (0.0, 20.0, 50.0, 40.0)), ("beta", (50.0, 20.0, 100.0, 40.0))]]
     )
     block = internal_block([("alpha", (0.0, 20.0, 50.0, 40.0)), ("prose", (0.0, 60.0, 50.0, 80.0))])
-    deduplicated = internal_remove_table_duplicate_blocks([block], (table,))
+    deduplicated = remove_table_duplicate_blocks([block], (table,))
     assert [line.text for line in deduplicated[0].lines] == ["prose"]
     assert deduplicated[0].bbox == (0.0, 60.0, 50.0, 80.0)
     untouched = internal_block([("prose", (0.0, 60.0, 50.0, 80.0))])
-    assert internal_remove_table_duplicate_blocks([untouched], (table,)) == [untouched]
+    assert remove_table_duplicate_blocks([untouched], (table,)) == [untouched]

@@ -14,11 +14,11 @@ from typing import Any, ClassVar, Literal, NoReturn, Self, cast
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf_spec.s_07_security.ciphers import (
-    internal_aes_cbc_decrypt,
-    internal_aes_cbc_encrypt,
-    internal_aes_ecb_decrypt,
-    internal_aes_gcm_decrypt,
-    internal_rc4_crypt,
+    aes_cbc_decrypt,
+    aes_cbc_encrypt,
+    aes_ecb_decrypt,
+    aes_gcm_decrypt,
+    rc4_crypt,
 )
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -29,16 +29,16 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
 )
 from core_pdf_spec.types import MISSING
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
+CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 
-internal_PASSWORD_PADDING = (
+PASSWORD_PADDING = (
     b"\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56\xff\xfa\x01\x08"
     b"\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c\xa9\xfe\x64\x53\x69\x7a"
 )
-internal_SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
+SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
     stringprep.in_table_c12,
     stringprep.in_table_c21_c22,
     stringprep.in_table_c3,
@@ -51,10 +51,10 @@ internal_SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
     stringprep.in_table_a1,
 )
 
-internal_SUPPORTED_RC4_KEY_BITS = (40, 56, 64, 80, 128)
-internal_REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
-internal_PDF_MAC_PERMISSION_BIT = 13
-internal_PDF_MAC_PERMISSION_MASK = 1 << (internal_PDF_MAC_PERMISSION_BIT - 1)
+SUPPORTED_RC4_KEY_BITS = (40, 56, 64, 80, 128)
+REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
+PDF_MAC_PERMISSION_BIT = 13
+PDF_MAC_PERMISSION_MASK = 1 << (PDF_MAC_PERMISSION_BIT - 1)
 
 
 class StandardSecurityConfig:
@@ -89,7 +89,7 @@ class StandardSecurityConfig:
     stream_filter: str
     string_filter: str
     embedded_file_filter: str
-    crypt_filters: Mapping[str, internal_CryptMethod]
+    crypt_filters: Mapping[str, CryptMethod]
     owner_encrypted_key: bytes
     user_encrypted_key: bytes
     encrypted_permissions: bytes
@@ -148,30 +148,30 @@ class StandardSecurityConfig:
         stream_filter: str,
         string_filter: str,
         embedded_file_filter: str,
-        crypt_filters: Mapping[str, internal_CryptMethod],
+        crypt_filters: Mapping[str, CryptMethod],
         owner_encrypted_key: bytes,
         user_encrypted_key: bytes,
         encrypted_permissions: bytes,
         kdf_salt: bytes | None = None,
         pdf_mac_required: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "version", version)
-        internal_frozen_setattr(self, "revision", revision)
-        internal_frozen_setattr(self, "permissions", permissions)
-        internal_frozen_setattr(self, "owner_entry", owner_entry)
-        internal_frozen_setattr(self, "user_entry", user_entry)
-        internal_frozen_setattr(self, "length_bits", length_bits)
-        internal_frozen_setattr(self, "document_id", document_id)
-        internal_frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
-        internal_frozen_setattr(self, "stream_filter", stream_filter)
-        internal_frozen_setattr(self, "string_filter", string_filter)
-        internal_frozen_setattr(self, "embedded_file_filter", embedded_file_filter)
-        internal_frozen_setattr(self, "crypt_filters", crypt_filters)
-        internal_frozen_setattr(self, "owner_encrypted_key", owner_encrypted_key)
-        internal_frozen_setattr(self, "user_encrypted_key", user_encrypted_key)
-        internal_frozen_setattr(self, "encrypted_permissions", encrypted_permissions)
-        internal_frozen_setattr(self, "kdf_salt", kdf_salt)
-        internal_frozen_setattr(self, "pdf_mac_required", pdf_mac_required)
+        frozen_setattr(self, "version", version)
+        frozen_setattr(self, "revision", revision)
+        frozen_setattr(self, "permissions", permissions)
+        frozen_setattr(self, "owner_entry", owner_entry)
+        frozen_setattr(self, "user_entry", user_entry)
+        frozen_setattr(self, "length_bits", length_bits)
+        frozen_setattr(self, "document_id", document_id)
+        frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
+        frozen_setattr(self, "stream_filter", stream_filter)
+        frozen_setattr(self, "string_filter", string_filter)
+        frozen_setattr(self, "embedded_file_filter", embedded_file_filter)
+        frozen_setattr(self, "crypt_filters", crypt_filters)
+        frozen_setattr(self, "owner_encrypted_key", owner_encrypted_key)
+        frozen_setattr(self, "user_encrypted_key", user_encrypted_key)
+        frozen_setattr(self, "encrypted_permissions", encrypted_permissions)
+        frozen_setattr(self, "kdf_salt", kdf_salt)
+        frozen_setattr(self, "pdf_mac_required", pdf_mac_required)
 
     def __repr__(self) -> str:
         return (
@@ -255,7 +255,7 @@ class StandardSecurityConfig:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         version = changes.pop("version", self.version)
@@ -308,8 +308,8 @@ class StandardSecurityHandler:
     __match_args__ = ("config", "file_key")
 
     def __init__(self, config: StandardSecurityConfig, file_key: bytes) -> None:
-        internal_frozen_setattr(self, "config", config)
-        internal_frozen_setattr(self, "file_key", file_key)
+        frozen_setattr(self, "config", config)
+        frozen_setattr(self, "file_key", file_key)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(config={self.config!r}, file_key={self.file_key!r})"
@@ -335,7 +335,7 @@ class StandardSecurityHandler:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         config = changes.pop("config", self.config)
@@ -354,7 +354,7 @@ class StandardSecurityHandler:
     ) -> bytes:
         config = self.config
         if config.version in (1, 2):
-            return internal_rc4_crypt(self.object_key(object_number, generation_number), data)
+            return rc4_crypt(self.object_key(object_number, generation_number), data)
 
         default_stream_filter = config.stream_filter
         if attrs is not None:
@@ -366,33 +366,33 @@ class StandardSecurityHandler:
 
         if name is None:
             name = (
-                internal_stream_crypt_filter_name(attrs, default_stream_filter)
+                stream_crypt_filter_name(attrs, default_stream_filter)
                 if attrs is not None
                 else config.string_filter
             )
-        method = internal_resolve_crypt_method(name, config.crypt_filters)
+        method = resolve_crypt_method(name, config.crypt_filters)
         match method:
             case None:
                 return data
             case "V2":
-                return internal_rc4_crypt(self.object_key(object_number, generation_number), data)
+                return rc4_crypt(self.object_key(object_number, generation_number), data)
             case "AESV2":
                 key = self.object_key(object_number, generation_number, b"sAlT")
-                return internal_aes_cbc_decrypt(
+                return aes_cbc_decrypt(
                     key,
                     data[:16],
                     data[16:],
                     use_padding=True,
                 )
             case "AESV3":
-                return internal_aes_cbc_decrypt(
+                return aes_cbc_decrypt(
                     self.file_key,
                     data[:16],
                     data[16:],
                     use_padding=True,
                 )
             case "AESV4":
-                return internal_aes_gcm_decrypt(self.file_key, data)
+                return aes_gcm_decrypt(self.file_key, data)
 
     def object_key(
         self,
@@ -431,45 +431,43 @@ def create_standard_security_handler(
         raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={version}")
 
     try:
-        config = internal_parse_config(document_id, params, version, supported_revisions)
+        config = parse_config(document_id, params, version, supported_revisions)
     except (TypeError, ValueError) as exc:
         raise PdfUnsupportedError("Invalid encryption dictionary") from exc
-    file_key = internal_authenticate(config, password)
+    file_key = authenticate(config, password)
     if file_key is None:
         raise PdfUnsupportedError("Incorrect password")
-    if config.revision >= 5 and not internal_validate_permissions(config, file_key):
+    if config.revision >= 5 and not validate_permissions(config, file_key):
         raise PdfDecryptionError("Invalid encryption permissions")
     return StandardSecurityHandler(config, file_key)
 
 
-def internal_parse_config(
+def parse_config(
     document_id: Sequence[object],
     params: PdfDict,
     version: int,
     supported_revisions: tuple[int, ...],
 ) -> StandardSecurityConfig:
-    revision = internal_required_int(params, "R")
+    revision = required_int(params, "R")
     if revision not in supported_revisions:
         raise ValueError(f"unsupported Standard Security revision R={revision} for V={version}")
 
     raw_permissions = params.get("P", MISSING)
     if raw_permissions is MISSING or raw_permissions is None:
         raise ValueError("missing encryption permissions")
-    permissions = internal_parse_int(raw_permissions, "P")
+    permissions = parse_int(raw_permissions, "P")
     if not -(1 << 31) <= permissions <= (1 << 32) - 1:
         raise ValueError("encryption permissions are outside the 32-bit range")
     if permissions < 0:
         permissions += 1 << 32
 
     pdf_mac_supported_version = version in (5, 6)
-    pdf_mac_required = pdf_mac_supported_version and not (
-        permissions & internal_PDF_MAC_PERMISSION_MASK
-    )
+    pdf_mac_required = pdf_mac_supported_version and not (permissions & PDF_MAC_PERMISSION_MASK)
 
     if version == 1 and revision == 2:
         revision_3_required = any(
             permissions & (1 << (bit_position - 1)) == 0
-            for bit_position in internal_REVISION_3_PERMISSION_BITS
+            for bit_position in REVISION_3_PERMISSION_BITS
         )
         if revision_3_required:
             raise ValueError(
@@ -478,8 +476,8 @@ def internal_parse_config(
             )
 
     entry_length = 32 if revision <= 4 else 48
-    owner_entry = internal_required_bytes(params, "O", entry_length)
-    user_entry = internal_required_bytes(params, "U", entry_length)
+    owner_entry = required_bytes(params, "O", entry_length)
+    user_entry = required_bytes(params, "U", entry_length)
     first_document_id = coerce_to_bytes(document_id[0]) if document_id else b""
 
     raw_length = params.get("Length", MISSING)
@@ -494,14 +492,14 @@ def internal_parse_config(
             case _:
                 raise ValueError(f"encryption key length is not defined for V={version}")
     else:
-        length_bits = internal_parse_int(raw_length, "Length")
+        length_bits = parse_int(raw_length, "Length")
 
     match version:
         case 1:
             if length_bits != 40:
                 raise ValueError(f"invalid V=1 encryption key length: {length_bits}")
         case 2:
-            if length_bits not in internal_SUPPORTED_RC4_KEY_BITS:
+            if length_bits not in SUPPORTED_RC4_KEY_BITS:
                 raise ValueError(
                     f"unsupported legacy RC4 key length for the cryptography backend: {length_bits}"
                 )
@@ -516,7 +514,7 @@ def internal_parse_config(
     stream_filter = "Identity"
     string_filter = "Identity"
     embedded_file_filter = "Identity"
-    crypt_filters: Mapping[str, internal_CryptMethod] = MappingProxyType({})
+    crypt_filters: Mapping[str, CryptMethod] = MappingProxyType({})
     owner_encrypted_key = b""
     user_encrypted_key = b""
     encrypted_permissions = b""
@@ -529,15 +527,15 @@ def internal_parse_config(
             string_filter,
             embedded_file_filter,
             crypt_filters,
-        ) = internal_parse_crypt_filters(params, version)
+        ) = parse_crypt_filters(params, version)
     if version in (5, 6):
-        owner_encrypted_key = internal_required_bytes(params, "OE", 32)
-        user_encrypted_key = internal_required_bytes(params, "UE", 32)
-        encrypted_permissions = internal_required_bytes(params, "Perms", 16)
+        owner_encrypted_key = required_bytes(params, "OE", 32)
+        user_encrypted_key = required_bytes(params, "UE", 32)
+        encrypted_permissions = required_bytes(params, "Perms", 16)
 
         raw_kdf_salt = params.get("KDFSalt", MISSING)
         if raw_kdf_salt is not MISSING:
-            kdf_salt = internal_required_bytes(params, "KDFSalt", 32)
+            kdf_salt = required_bytes(params, "KDFSalt", 32)
         if pdf_mac_required and kdf_salt is None:
             raise ValueError("PDF MAC requires a 32-byte KDFSalt")
     elif params.get("KDFSalt", MISSING) is not MISSING:
@@ -564,10 +562,10 @@ def internal_parse_config(
     )
 
 
-def internal_parse_crypt_filters(
+def parse_crypt_filters(
     params: PdfDict,
     version: int,
-) -> tuple[bool, str, str, str, Mapping[str, internal_CryptMethod]]:
+) -> tuple[bool, str, str, str, Mapping[str, CryptMethod]]:
     raw_filters = params.get("CF", MISSING)
     if raw_filters is MISSING:
         filters: PdfDict = {}
@@ -585,9 +583,9 @@ def internal_parse_crypt_filters(
             allowed_methods = {"AESV4"}
         case _:
             raise ValueError(f"crypt filters are not defined for V={version}")
-    crypt_filters: dict[str, internal_CryptMethod] = {}
+    crypt_filters: dict[str, CryptMethod] = {}
     for raw_name, raw_config in filters.items():
-        filter_name = internal_name(raw_name)
+        filter_name = name(raw_name)
         if not filter_name:
             raise ValueError("invalid crypt filter name")
         if filter_name == "Identity":
@@ -599,35 +597,35 @@ def internal_parse_crypt_filters(
         filter_config = cast(PdfDict, raw_config)
 
         raw_type = filter_config.get("Type", MISSING)
-        if raw_type is not MISSING and internal_name(raw_type) != "CryptFilter":
+        if raw_type is not MISSING and name(raw_type) != "CryptFilter":
             raise ValueError(f"invalid crypt filter type: {filter_name}")
 
-        method_name = internal_name(filter_config.get("CFM", "None"))
+        method_name = name(filter_config.get("CFM", "None"))
         if method_name not in allowed_methods:
             raise ValueError(f"unknown crypt filter method: {method_name}")
 
-        auth_event = internal_name(filter_config.get("AuthEvent", "DocOpen"))
+        auth_event = name(filter_config.get("AuthEvent", "DocOpen"))
         if auth_event != "DocOpen":
             raise ValueError(f"unsupported Standard Security authorization event: {auth_event}")
 
         raw_filter_length = filter_config.get("Length", MISSING)
         expected_filter_length = 32 if method_name in {"AESV3", "AESV4"} else 16
         if raw_filter_length is not MISSING:
-            filter_length = internal_parse_int(raw_filter_length, "CF/Length")
+            filter_length = parse_int(raw_filter_length, "CF/Length")
             if filter_length != expected_filter_length:
                 raise ValueError(f"invalid {method_name} crypt filter length: {filter_length}")
 
-        crypt_filters[filter_name] = cast(internal_CryptMethod, method_name)
+        crypt_filters[filter_name] = cast(CryptMethod, method_name)
 
     if version == 6 and "AESV4" not in crypt_filters.values():
         raise ValueError("V=6 requires at least one AESV4 crypt filter")
 
     raw_stream_filter = params.get("StmF", MISSING)
-    stream_filter = internal_name("Identity" if raw_stream_filter is MISSING else raw_stream_filter)
+    stream_filter = name("Identity" if raw_stream_filter is MISSING else raw_stream_filter)
     raw_string_filter = params.get("StrF", MISSING)
-    string_filter = internal_name("Identity" if raw_string_filter is MISSING else raw_string_filter)
+    string_filter = name("Identity" if raw_string_filter is MISSING else raw_string_filter)
     raw_embedded_file_filter = params.get("EFF", MISSING)
-    embedded_file_filter = internal_name(
+    embedded_file_filter = name(
         stream_filter if raw_embedded_file_filter is MISSING else raw_embedded_file_filter
     )
 
@@ -655,7 +653,7 @@ def internal_parse_crypt_filters(
     )
 
 
-def internal_stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> str:
+def stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> str:
     spec = normalize_stream_decode_spec(attrs)
     crypt_indexes = [index for index, step in enumerate(spec.steps) if step.name == "Crypt"]
     if not crypt_indexes:
@@ -677,10 +675,10 @@ def internal_stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> st
     return filter_name
 
 
-def internal_resolve_crypt_method(
+def resolve_crypt_method(
     name: str,
-    crypt_filters: Mapping[str, internal_CryptMethod],
-) -> internal_CryptMethod | None:
+    crypt_filters: Mapping[str, CryptMethod],
+) -> CryptMethod | None:
     if name == "Identity":
         return None
     method = crypt_filters.get(name)
@@ -689,51 +687,51 @@ def internal_resolve_crypt_method(
     return method
 
 
-def internal_authenticate(
+def authenticate(
     config: StandardSecurityConfig,
     password: str,
 ) -> bytes | None:
     match config.revision:
         case 2 | 3 | 4:
-            return internal_authenticate_legacy(config, password)
+            return authenticate_legacy(config, password)
         case 5 | 6 | 7:
-            return internal_authenticate_modern(config, password)
+            return authenticate_modern(config, password)
         case _:
             raise ValueError(f"unsupported Standard Security revision R={config.revision}")
 
 
-def internal_authenticate_legacy(
+def authenticate_legacy(
     config: StandardSecurityConfig,
     password: str,
 ) -> bytes | None:
     password_bytes = password.encode("latin-1")
-    key = internal_authenticate_legacy_user(config, password_bytes)
+    key = authenticate_legacy_user(config, password_bytes)
     if key is not None:
         return key
 
-    digest = md5(internal_pad_password(password_bytes)).digest()
+    digest = md5(pad_password(password_bytes)).digest()
     key_length = 5
     if config.revision >= 3:
-        digest = internal_md5_50_rounds(digest)
+        digest = md5_50_rounds(digest)
         key_length = config.length_bits // 8
     owner_key = digest[:key_length]
     if config.revision == 2:
-        user_password = internal_rc4_crypt(owner_key, config.owner_entry)
+        user_password = rc4_crypt(owner_key, config.owner_entry)
     else:
-        user_password = internal_rc4_cascade(
+        user_password = rc4_cascade(
             owner_key,
             config.owner_entry,
             range(19, -1, -1),
         )
-    return internal_authenticate_legacy_user(config, user_password)
+    return authenticate_legacy_user(config, user_password)
 
 
-def internal_authenticate_legacy_user(
+def authenticate_legacy_user(
     config: StandardSecurityConfig,
     password: bytes,
 ) -> bytes | None:
-    key = internal_legacy_file_key(config, password)
-    expected = internal_legacy_user_entry(config, key)
+    key = legacy_file_key(config, password)
+    expected = legacy_user_entry(config, key)
     if config.revision == 2:
         valid = compare_digest(expected, config.user_entry)
     else:
@@ -741,11 +739,11 @@ def internal_authenticate_legacy_user(
     return key if valid else None
 
 
-def internal_legacy_file_key(
+def legacy_file_key(
     config: StandardSecurityConfig,
     password: bytes,
 ) -> bytes:
-    digest = md5(internal_pad_password(password))
+    digest = md5(pad_password(password))
     digest.update(config.owner_entry)
     digest.update(struct.pack("<L", config.permissions))
     digest.update(config.document_id)
@@ -755,44 +753,44 @@ def internal_legacy_file_key(
     key_length = 5
     if config.revision >= 3:
         key_length = config.length_bits // 8
-        result = internal_md5_50_rounds(result, key_length)
+        result = md5_50_rounds(result, key_length)
     return result[:key_length]
 
 
-def internal_legacy_user_entry(
+def legacy_user_entry(
     config: StandardSecurityConfig,
     key: bytes,
 ) -> bytes:
     if config.revision == 2:
-        return internal_rc4_crypt(key, internal_PASSWORD_PADDING)
-    digest = md5(internal_PASSWORD_PADDING)
+        return rc4_crypt(key, PASSWORD_PADDING)
+    digest = md5(PASSWORD_PADDING)
     digest.update(config.document_id)
-    result = internal_rc4_crypt(key, digest.digest())
-    result = internal_rc4_cascade(key, result, range(1, 20))
+    result = rc4_crypt(key, digest.digest())
+    result = rc4_cascade(key, result, range(1, 20))
     return result + result
 
 
-def internal_pad_password(password: bytes) -> bytes:
-    return (password + internal_PASSWORD_PADDING)[:32]
+def pad_password(password: bytes) -> bytes:
+    return (password + PASSWORD_PADDING)[:32]
 
 
-def internal_md5_50_rounds(digest: bytes, keep: int = 16) -> bytes:
+def md5_50_rounds(digest: bytes, keep: int = 16) -> bytes:
     for _ in range(50):
         digest = md5(digest[:keep]).digest()
     return digest
 
 
-def internal_rc4_cascade(key: bytes, data: bytes, indexes: range) -> bytes:
+def rc4_cascade(key: bytes, data: bytes, indexes: range) -> bytes:
     for index in indexes:
-        data = internal_rc4_crypt(bytes(byte ^ index for byte in key), data)
+        data = rc4_crypt(bytes(byte ^ index for byte in key), data)
     return data
 
 
-def internal_authenticate_modern(
+def authenticate_modern(
     config: StandardSecurityConfig,
     password: str,
 ) -> bytes | None:
-    password_bytes = internal_normalize_password(password, config.revision)
+    password_bytes = normalize_password(password, config.revision)
     owner_hash = config.owner_entry[:32]
     owner_validation_salt = config.owner_entry[32:40]
     owner_key_salt = config.owner_entry[40:]
@@ -813,7 +811,7 @@ def internal_authenticate_modern(
             owner_key_salt,
             config.user_entry,
         )
-        return internal_aes_cbc_decrypt(
+        return aes_cbc_decrypt(
             password_hash,
             bytes(16),
             config.owner_encrypted_key,
@@ -831,7 +829,7 @@ def internal_authenticate_modern(
             password_bytes,
             user_key_salt,
         )
-        return internal_aes_cbc_decrypt(
+        return aes_cbc_decrypt(
             password_hash,
             bytes(16),
             config.user_encrypted_key,
@@ -840,19 +838,19 @@ def internal_authenticate_modern(
     return None
 
 
-def internal_validate_permissions(
+def validate_permissions(
     config: StandardSecurityConfig,
     file_key: bytes,
 ) -> bool:
-    decrypted = internal_aes_ecb_decrypt(file_key, config.encrypted_permissions)
+    decrypted = aes_ecb_decrypt(file_key, config.encrypted_permissions)
     metadata_flag = b"T" if config.encrypt_metadata else b"F"
     expected = struct.pack("<L", config.permissions) + (b"\xff" * 4) + metadata_flag + b"adb"
     return compare_digest(decrypted[:12], expected)
 
 
-def internal_normalize_password(password: str, revision: int) -> bytes:
+def normalize_password(password: str, revision: int) -> bytes:
     if revision in (6, 7) and password:
-        password = internal_saslprep(password)
+        password = saslprep(password)
     return password.encode("utf-8")[:127]
 
 
@@ -868,10 +866,10 @@ def internal_password_hash(
         if vector is not None:
             digest.update(vector)
         return digest.digest()
-    return internal_r6_password_hash(password, salt[:8], vector)
+    return r6_password_hash(password, salt[:8], vector)
 
 
-def internal_r6_password_hash(
+def r6_password_hash(
     password: bytes,
     salt: bytes,
     vector: bytes | None = None,
@@ -885,24 +883,24 @@ def internal_r6_password_hash(
     round_number = last_byte = 0
     while round_number < 64 or last_byte > round_number - 32:
         repeated = (password + result + (vector or b"")) * 64
-        encrypted = internal_aes_cbc_encrypt(
+        encrypted = aes_cbc_encrypt(
             result[:16],
             result[16:32],
             repeated,
             use_padding=False,
         )
-        next_hash = hashes[internal_bytes_mod_3(encrypted[:16])]
+        next_hash = hashes[bytes_mod_3(encrypted[:16])]
         result = next_hash(encrypted).digest()
         last_byte = encrypted[-1]
         round_number += 1
     return result[:32]
 
 
-def internal_bytes_mod_3(value: bytes) -> int:
+def bytes_mod_3(value: bytes) -> int:
     return sum(byte % 3 for byte in value) % 3
 
 
-def internal_saslprep(data: str) -> str:
+def saslprep(data: str) -> str:
     in_table_c12 = stringprep.in_table_c12
     in_table_b1 = stringprep.in_table_b1
     data = "".join(
@@ -912,7 +910,7 @@ def internal_saslprep(data: str) -> str:
     if not data:
         return data
 
-    prohibited = internal_SASLPREP_PROHIBITED
+    prohibited = SASLPREP_PROHIBITED
     in_table_d1 = stringprep.in_table_d1
     if in_table_d1(data[0]):
         if not in_table_d1(data[-1]):
@@ -943,14 +941,14 @@ def internal_supported_revisions(version: int) -> tuple[int, ...] | None:
             return None
 
 
-def internal_required_int(params: PdfDict, key: str) -> int:
+def required_int(params: PdfDict, key: str) -> int:
     raw_value = params.get(key)
     if raw_value is None:
         raise ValueError(f"missing encryption dictionary value {key}")
-    return internal_parse_int(raw_value, key)
+    return parse_int(raw_value, key)
 
 
-def internal_required_bytes(params: PdfDict, key: str, length: int) -> bytes:
+def required_bytes(params: PdfDict, key: str, length: int) -> bytes:
     raw_value = params.get(key, MISSING)
     if raw_value is MISSING or raw_value is None:
         raise ValueError(f"missing encryption dictionary value {key}")
@@ -963,11 +961,11 @@ def internal_required_bytes(params: PdfDict, key: str, length: int) -> bytes:
     return value
 
 
-def internal_parse_int(value: object, field_name: str) -> int:
+def parse_int(value: object, field_name: str) -> int:
     return require_pdf_integer(value, f"invalid encryption dictionary value {field_name}")
 
 
-def internal_name(value: object) -> str:
+def name(value: object) -> str:
     return decoded_name(value, "") or ""
 
 

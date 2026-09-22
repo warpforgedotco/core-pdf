@@ -5,12 +5,12 @@ from core_pdf.impl.fonts.font_program import (
     CFFFont,
     CFFGlyphFeature,
     CFFUnicodeRepairIndex,
+    contours_bbox,
+    cubic_sample_times,
+    feature_from_contours,
     glyph_feature_distance,
-    internal_contours_bbox,
-    internal_cubic_sample_times,
-    internal_feature_from_contours,
-    internal_repair_candidate,
     is_repairable_to_unicode_label,
+    repair_candidate,
 )
 
 
@@ -141,7 +141,7 @@ def test_unicode_repair_requires_specific_confusion_and_strict_threshold(
 ) -> None:
     feature = CFFGlyphFeature(((0, 0),), 1.0, 1)
     assert (
-        internal_repair_candidate(
+        repair_candidate(
             1, label, {1: feature, 2: feature}, {1: label, 2: candidate}, {2: distance}
         )
         == expected
@@ -153,33 +153,33 @@ def test_unicode_repair_requires_a_better_shape_than_same_label() -> None:
     features = dict.fromkeys(range(1, 7), feature)
     features[6] = EMPTY_FEATURE
     labels = {1: "5", 2: "5", 3: "Z", 4: "fi", 5: "!", 6: "A"}
-    assert internal_repair_candidate(1, "5", features, labels, {2: 1.0, 3: 0.64}) == "Z"
-    assert internal_repair_candidate(1, "5", features, labels, {2: 1.0, 3: 0.66}) is None
-    assert internal_repair_candidate(9, "£", features, labels) is None
-    assert internal_repair_candidate(1, "5", features, {1: "5", 2: "5"}) is None
+    assert repair_candidate(1, "5", features, labels, {2: 1.0, 3: 0.64}) == "Z"
+    assert repair_candidate(1, "5", features, labels, {2: 1.0, 3: 0.66}) is None
+    assert repair_candidate(9, "£", features, labels) is None
+    assert repair_candidate(1, "5", features, {1: "5", 2: "5"}) is None
 
 
 def test_glyph_features_are_translation_invariant_and_detect_shape_changes() -> None:
     rectangle = [[(0.0, 0.0), (10.0, 0.0), (10.0, 20.0), (0.0, 20.0)]]
     translated = [[(x + 123, y - 456) for x, y in rectangle[0]]]
-    first = internal_feature_from_contours(rectangle)
-    assert first == internal_feature_from_contours(translated)
+    first = feature_from_contours(rectangle)
+    assert first == feature_from_contours(translated)
     assert first.aspect == 0.5
     assert first.contours == 1
     assert first.cells == ((0, 0), (0, 23), (17, 0), (17, 23))
     assert glyph_feature_distance(first, first) == 0.0
-    triangle = internal_feature_from_contours([[(0, 0), (10, 0), (5, 20)]])
+    triangle = feature_from_contours([[(0, 0), (10, 0), (5, 20)]])
     assert glyph_feature_distance(first, triangle) > 0.0
-    assert internal_feature_from_contours([]) == EMPTY_FEATURE
-    assert internal_feature_from_contours([[]]) == EMPTY_FEATURE
-    assert internal_contours_bbox(()) is None
-    assert internal_contours_bbox(tuple(tuple(c) for c in translated)) == (123, -456, 133, -436)
+    assert feature_from_contours([]) == EMPTY_FEATURE
+    assert feature_from_contours([[]]) == EMPTY_FEATURE
+    assert contours_bbox(()) is None
+    assert contours_bbox(tuple(tuple(c) for c in translated)) == (123, -456, 133, -436)
 
 
 def test_cubic_flattening_keeps_extrema_and_refines_curves() -> None:
-    assert internal_cubic_sample_times((0, 0), (1, 1), (2, 2), (3, 3)) == (1.0,)
-    assert internal_cubic_sample_times((0, 0), (0, 0), (0, 0), (0, 0)) == (1.0,)
-    times = internal_cubic_sample_times((0, 0), (0, 100), (100, 100), (100, 0))
+    assert cubic_sample_times((0, 0), (1, 1), (2, 2), (3, 3)) == (1.0,)
+    assert cubic_sample_times((0, 0), (0, 0), (0, 0), (0, 0)) == (1.0,)
+    times = cubic_sample_times((0, 0), (0, 100), (100, 100), (100, 0))
     assert 0.5 in times
     assert times == tuple(sorted(set(times)))
     assert len(times) > 4
@@ -221,7 +221,7 @@ def test_glyph_outline_and_bounds_agree_for_terminated_and_unterminated_paths(
     font = CFFFont(None)
     font.charstrings = [bytes([139, 139, 21, 149, 139, 139, 159, 129, 139, 5]) + ending]
     assert font.glyph_bbox_for_gid(0) == (0, 0, 10, 20)
-    assert internal_contours_bbox(font.normalized_glyph_contours(0)) == (0, 0, 10, 20)
+    assert contours_bbox(font.normalized_glyph_contours(0)) == (0, 0, 10, 20)
     assert font.glyph_feature(0).aspect == 0.5
     assert any(font.glyph_bitmap_for_gid(0))
     assert font.glyph_bbox_for_gid(99) is None
@@ -241,7 +241,7 @@ def test_transformed_curve_bounds_match_flattened_outline(matrix: list[float]) -
     font = CFFFont(None)
     font.charstrings = [bytes([139, 139, 21, 139, 239, 239, 139, 139, 39, 8, 14])]
     font.top_dict = {(12, 7): matrix}
-    assert font.glyph_bbox_for_gid(0) == internal_contours_bbox(font.normalized_glyph_contours(0))
+    assert font.glyph_bbox_for_gid(0) == contours_bbox(font.normalized_glyph_contours(0))
     expected = (0, 0, 200, 225) if matrix[0] else (-75, 0, 0, 100)
     assert font.glyph_bbox_for_gid(0) == pytest.approx(expected)
 
@@ -340,8 +340,8 @@ def test_accent_components_are_translated_before_bounds_and_rasterization() -> N
     font.cid_to_gid = {STANDARD_GLYPH_SIDS["A"]: 1, STANDARD_GLYPH_SIDS["B"]: 2}
     assert font.normalized_glyph_contours(3) == (((0, 0), (10, 20)), ((30, 40), (35, 45)))
     assert font.glyph_bbox_for_gid(3) == (0, 0, 35, 45)
-    assert font.internal_seac_contours(-1, 999, 0, 0) == ()
-    assert font.internal_seac_contours(67, 68, 0, 0) == ()
+    assert font.seac_contours(-1, 999, 0, 0) == ()
+    assert font.seac_contours(67, 68, 0, 0) == ()
     font.is_cid_keyed = True
     assert font.normalized_glyph_contours(3) == ()
 
@@ -394,6 +394,6 @@ def test_charset_multiple_ranges_preserve_separate_cid_intervals() -> None:
 
 
 def test_glyph_feature_grid_handles_subunit_dimensions() -> None:
-    feature = internal_feature_from_contours([[(0, 0), (0.5, 0.5)]])
+    feature = feature_from_contours([[(0, 0), (0.5, 0.5)]])
     assert feature.cells == ((0, 0), (8, 12))
     assert feature.aspect == 1.0

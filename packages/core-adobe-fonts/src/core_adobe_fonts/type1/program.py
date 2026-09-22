@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 
-internal_HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
+HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 
 
 def decrypt_type1(data: bytes, key: int) -> bytes:
@@ -28,7 +28,7 @@ def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
             raise ValueError("Type 1 eexec section is missing")
         encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
     sample = encrypted[:4]
-    if sample and all(byte in internal_HEX_BYTES for byte in sample):
+    if sample and all(byte in HEX_BYTES for byte in sample):
         compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
         if len(compact) % 2:
             raise ValueError("odd Type 1 hexadecimal eexec payload")

@@ -34,7 +34,7 @@ def effective_pdf_version(
     )
 
 
-def internal_optional_string(dictionary: dict, key: str) -> str | None:
+def optional_string(dictionary: dict, key: str) -> str | None:
     value = dictionary.get(key)
     if value is None:
         return None
@@ -61,8 +61,8 @@ def parse_extension(prefix: str, value: object) -> PdfExtension:
         prefix,
         PdfVersion.parse(base.value),
         level,
-        internal_optional_string(value, "URL"),
-        internal_optional_string(value, "ExtensionRevision"),
+        optional_string(value, "URL"),
+        optional_string(value, "ExtensionRevision"),
     )
 
 

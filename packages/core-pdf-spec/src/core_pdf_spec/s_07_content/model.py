@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.streams import ContentStreamFrame
     from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 NON_PAINTING_RENDER_MODES = frozenset({3, 7})
@@ -47,10 +47,10 @@ class PathCommand:
         ctm: Matrix = IDENTITY_MATRIX,
         flatness: float = 0.0,
     ) -> None:
-        internal_frozen_setattr(self, "operator", operator)
-        internal_frozen_setattr(self, "operands", operands)
-        internal_frozen_setattr(self, "ctm", ctm)
-        internal_frozen_setattr(self, "flatness", flatness)
+        frozen_setattr(self, "operator", operator)
+        frozen_setattr(self, "operands", operands)
+        frozen_setattr(self, "ctm", ctm)
+        frozen_setattr(self, "flatness", flatness)
 
     def __repr__(self) -> str:
         return (
@@ -88,7 +88,7 @@ class PathCommand:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         operator = changes.pop("operator", self.operator)
@@ -155,8 +155,8 @@ class ShadingPattern:
     __match_args__ = ("dictionary",)
 
     def __init__(self, dictionary: PdfDict, *, extgstate: PdfDict | None = None) -> None:
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "extgstate", extgstate)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "extgstate", extgstate)
 
     def __repr__(self) -> str:
         return (
@@ -187,7 +187,7 @@ class ShadingPattern:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         dictionary = changes.pop("dictionary", self.dictionary)
@@ -263,17 +263,17 @@ class TilingPattern:
         alpha_is_shape: bool = False,
         text_knockout: bool = True,
     ) -> None:
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "x_step", x_step)
-        internal_frozen_setattr(self, "y_step", y_step)
-        internal_frozen_setattr(self, "stream", stream)
-        internal_frozen_setattr(self, "resources", resources)
-        internal_frozen_setattr(self, "matrix", matrix)
-        internal_frozen_setattr(self, "paint_type", paint_type)
-        internal_frozen_setattr(self, "base_color", base_color)
-        internal_frozen_setattr(self, "base_color_spec", base_color_spec)
-        internal_frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        internal_frozen_setattr(self, "text_knockout", text_knockout)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "x_step", x_step)
+        frozen_setattr(self, "y_step", y_step)
+        frozen_setattr(self, "stream", stream)
+        frozen_setattr(self, "resources", resources)
+        frozen_setattr(self, "matrix", matrix)
+        frozen_setattr(self, "paint_type", paint_type)
+        frozen_setattr(self, "base_color", base_color)
+        frozen_setattr(self, "base_color_spec", base_color_spec)
+        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
+        frozen_setattr(self, "text_knockout", text_knockout)
 
     def __repr__(self) -> str:
         return (
@@ -339,7 +339,7 @@ class TilingPattern:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         bbox = changes.pop("bbox", self.bbox)
@@ -772,22 +772,20 @@ class GraphicsState:
 
     @property
     def color_rendering(self) -> ColorRendering:
-        return internal_color_rendering(self.render_intent, self.black_point_compensation)
+        return color_rendering(self.render_intent, self.black_point_compensation)
 
     def __copy__(self) -> GraphicsState:
         new = object.__new__(GraphicsState)
-        for name in internal_GRAPHICS_STATE_FIELD_NAMES:
+        for name in GRAPHICS_STATE_FIELD_NAMES:
             setattr(new, name, getattr(self, name))
         return new
 
 
-internal_GRAPHICS_STATE_FIELD_NAMES = GraphicsState.__fields__
+GRAPHICS_STATE_FIELD_NAMES = GraphicsState.__fields__
 
 
 @lru_cache(maxsize=64)
-def internal_color_rendering(
-    intent: str | None, black_point: BlackPointCompensation
-) -> ColorRendering:
+def color_rendering(intent: str | None, black_point: BlackPointCompensation) -> ColorRendering:
     return ColorRendering(parse_rendering_intent(intent or "RelativeColorimetric"), black_point)
 
 

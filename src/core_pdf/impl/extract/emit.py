@@ -8,12 +8,12 @@ from statistics import fmean
 
 from core_pdf.impl.capture.records import CapturedDrawing
 from core_pdf.impl.extract.block_layout import (
-    internal_has_repeated_block_columns,
+    has_repeated_block_columns,
     layout_element_order,
 )
 from core_pdf.impl.extract.contracts import ParsedBlock
 from core_pdf.impl.extract.table_reconcile import (
-    internal_project_text_and_tables,
+    project_text_and_tables,
 )
 from core_pdf.impl.model.geometry import (
     bbox_intersects,
@@ -32,7 +32,7 @@ from core_pdf.impl.output.model import (
 )
 
 
-def internal_caption_for(
+def caption_for(
     caption_blocks: tuple[Block, ...],
     target_bbox: tuple[float, float, float, float] | None,
 ) -> Block | None:
@@ -54,7 +54,7 @@ def internal_caption_for(
     return min(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
-def internal_attach_semantic_context(
+def attach_semantic_context(
     blocks: tuple[Block, ...],
     tables: list[Table],
     figures: list[Figure],
@@ -64,7 +64,7 @@ def internal_attach_semantic_context(
 
     def context(order: int, bbox: tuple[float, float, float, float] | None) -> dict[str, object]:
         metadata: dict[str, object] = {}
-        caption = internal_caption_for(captions, bbox)
+        caption = caption_for(captions, bbox)
         if caption is not None:
             metadata["caption"] = caption.text
             metadata["caption_order"] = caption.order
@@ -97,19 +97,17 @@ def internal_attach_semantic_context(
     return tables, figures
 
 
-def internal_block_inside_page(block: Block, width: float, height: float) -> bool:
+def block_inside_page(block: Block, width: float, height: float) -> bool:
     if block.bbox is None:
         return True
     return bbox_intersects(block.bbox, (0.0, 0.0, width, height))
 
 
-def internal_remove_off_page_blocks(
-    blocks: list[Block], width: float, height: float
-) -> list[Block]:
-    return [block for block in blocks if internal_block_inside_page(block, width, height)]
+def remove_off_page_blocks(blocks: list[Block], width: float, height: float) -> list[Block]:
+    return [block for block in blocks if block_inside_page(block, width, height)]
 
 
-def internal_line_decoration_flags(
+def line_decoration_flags(
     line: TextLine,
     decoration_boxes: tuple[tuple[float, float, float], ...],
 ) -> dict[str, bool]:
@@ -130,7 +128,7 @@ def internal_line_decoration_flags(
     return flags
 
 
-def internal_line_decoration_bbox(
+def line_decoration_bbox(
     drawing: CapturedDrawing,
 ) -> tuple[float, float, float, float] | None:
     bbox = drawing.bbox if drawing.bbox is not None else drawing.rect
@@ -145,7 +143,7 @@ def internal_normalized_blocks(
         (bbox[0], bbox[2], (bbox[1] + bbox[3]) * 0.5)
         for drawing in drawings
         if drawing.kind in {"fill", "fillstroke", "stroke"}
-        and (bbox := internal_line_decoration_bbox(drawing)) is not None
+        and (bbox := line_decoration_bbox(drawing)) is not None
         and bbox[2] - bbox[0] >= 2.0
         and bbox[3] - bbox[1] <= 2.5
     )
@@ -159,7 +157,7 @@ def internal_normalized_blocks(
         sources = tuple(dict.fromkeys(parsed.line.source for parsed in parsed_block.lines))
         lines: list[TextLine] = []
         for parsed in parsed_block.lines:
-            flags = internal_line_decoration_flags(parsed.line, decoration_boxes)
+            flags = line_decoration_flags(parsed.line, decoration_boxes)
             lines.append(
                 replace(
                     parsed.line,
@@ -199,15 +197,13 @@ def assemble_page(
     drawings: tuple[CapturedDrawing, ...] = (),
 ) -> Page:
     normalized_blocks = internal_normalized_blocks(blocks, drawings)
-    normalized_blocks = internal_remove_off_page_blocks(
+    normalized_blocks = remove_off_page_blocks(
         normalized_blocks,
         width,
         height,
     )
-    normalized_blocks, projected_tables = internal_project_text_and_tables(
-        normalized_blocks, tables
-    )
-    return internal_compose_page(
+    normalized_blocks, projected_tables = project_text_and_tables(normalized_blocks, tables)
+    return compose_page(
         blocks,
         normalized_blocks,
         projected_tables,
@@ -222,7 +218,7 @@ def assemble_page(
     )
 
 
-def internal_compose_page(
+def compose_page(
     blocks: tuple[ParsedBlock, ...],
     normalized_blocks: list[Block],
     projected_tables: tuple[Table, ...],
@@ -247,7 +243,7 @@ def internal_compose_page(
     ordered_tables: list[Table] = []
     ordered_figures: list[Figure] = []
     element_boxes = tuple(item[2] for item in elements)
-    if full_page_image and len(element_boxes) > 1 and internal_has_repeated_block_columns(blocks):
+    if full_page_image and len(element_boxes) > 1 and has_repeated_block_columns(blocks):
         element_order = tuple(
             sorted(
                 range(len(element_boxes)),
@@ -257,7 +253,7 @@ def internal_compose_page(
     else:
         element_order = layout_element_order(element_boxes, rotation, width, height)
     for order, index in enumerate(element_order):
-        kind, element, internal_bbox = elements[index]
+        kind, element, bbox = elements[index]
         if kind == "block":
             assert isinstance(element, Block)
             ordered_blocks.append(replace(element, order=order))
@@ -267,7 +263,7 @@ def internal_compose_page(
         else:
             assert isinstance(element, Figure)
             ordered_figures.append(replace(element, order=order))
-    ordered_tables, ordered_figures = internal_attach_semantic_context(
+    ordered_tables, ordered_figures = attach_semantic_context(
         tuple(ordered_blocks), ordered_tables, ordered_figures
     )
     header_parts = [

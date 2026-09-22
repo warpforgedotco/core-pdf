@@ -7,17 +7,17 @@ import re
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any, ClassVar, NoReturn, Self
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 STACK_LIMIT = 100
 NESTING_LIMIT = 255
-internal_INT_MIN = -(1 << 31)
-internal_INT_MAX = (1 << 31) - 1
-internal_INT_MASK = (1 << 32) - 1
-internal_NUMBER = re.compile(rb"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
-internal_WHITESPACE = b"\x00\t\n\f\r "
-internal_UNARY = frozenset(
+INT_MIN = -(1 << 31)
+INT_MAX = (1 << 31) - 1
+INT_MASK = (1 << 32) - 1
+NUMBER = re.compile(rb"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
+WHITESPACE = b"\x00\t\n\f\r "
+UNARY = frozenset(
     (
         "abs",
         "ceiling",
@@ -34,10 +34,10 @@ internal_UNARY = frozenset(
         "cvr",
     )
 )
-internal_BINARY = frozenset(("add", "sub", "mul", "div", "idiv", "mod", "atan", "exp"))
+BINARY = frozenset(("add", "sub", "mul", "div", "idiv", "mod", "atan", "exp"))
 OPERATORS = (
-    internal_UNARY
-    | internal_BINARY
+    UNARY
+    | BINARY
     | frozenset(
         (
             "eq",
@@ -61,26 +61,26 @@ OPERATORS = (
     )
 )
 
-type internal_Operand = int | float | bool
-type internal_Instruction = internal_Operand | str | internal_Conditional
+type Operand = int | float | bool
+type Instruction = Operand | str | Conditional
 
 
-class internal_Conditional:
+class Conditional:
     __slots__ = ("when_true", "when_false")
 
-    when_true: tuple[internal_Instruction, ...]
-    when_false: tuple[internal_Instruction, ...]
+    when_true: tuple[Instruction, ...]
+    when_false: tuple[Instruction, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = ("when_true", "when_false")
     __match_args__ = ("when_true", "when_false")
 
     def __init__(
         self,
-        when_true: tuple[internal_Instruction, ...],
-        when_false: tuple[internal_Instruction, ...] = (),
+        when_true: tuple[Instruction, ...],
+        when_false: tuple[Instruction, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "when_true", when_true)
-        internal_frozen_setattr(self, "when_false", when_false)
+        frozen_setattr(self, "when_true", when_true)
+        frozen_setattr(self, "when_false", when_false)
 
     def __repr__(self) -> str:
         return (
@@ -111,7 +111,7 @@ class internal_Conditional:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         when_true = changes.pop("when_true", self.when_true)
@@ -125,7 +125,7 @@ def internal_tokens(source: bytes) -> Iterator[bytes]:
     position = 0
     while position < len(source):
         byte = source[position]
-        if byte in internal_WHITESPACE:
+        if byte in WHITESPACE:
             position += 1
         elif byte == 37:
             position += 1
@@ -136,42 +136,40 @@ def internal_tokens(source: bytes) -> Iterator[bytes]:
             position += 1
         else:
             start = position
-            while position < len(source) and source[position] not in internal_WHITESPACE + b"{}%":
+            while position < len(source) and source[position] not in WHITESPACE + b"{}%":
                 position += 1
             yield source[start:position]
 
 
-def internal_parse(source: bytes) -> tuple[internal_Instruction, ...]:
+def parse(source: bytes) -> tuple[Instruction, ...]:
     tokens = iter(internal_tokens(source))
 
-    def block(depth: int) -> tuple[internal_Instruction, ...]:
+    def block(depth: int) -> tuple[Instruction, ...]:
         if depth > NESTING_LIMIT:
             raise ValueError("calculator brace nesting limit exceeded")
-        instructions: list[internal_Instruction] = []
+        instructions: list[Instruction] = []
         for token in tokens:
             if token == b"}":
                 return tuple(instructions)
             if token == b"{":
                 when_true = block(depth + 1)
                 operator = next(tokens, None)
-                when_false: tuple[internal_Instruction, ...] = ()
+                when_false: tuple[Instruction, ...] = ()
                 if operator == b"{":
                     when_false = block(depth + 1)
                     if next(tokens, None) != b"ifelse":
                         raise ValueError("calculator blocks require ifelse")
                 elif operator != b"if":
                     raise ValueError("calculator block requires if")
-                instructions.append(internal_Conditional(when_true, when_false))
+                instructions.append(Conditional(when_true, when_false))
             elif token in {b"true", b"false"}:
                 instructions.append(token == b"true")
-            elif internal_NUMBER.fullmatch(token):
+            elif NUMBER.fullmatch(token):
                 number = float(token)
                 if not math.isfinite(number):
                     raise ValueError("calculator number exceeds real representation")
                 instructions.append(
-                    int(number)
-                    if b"." not in token and internal_INT_MIN <= number <= internal_INT_MAX
-                    else number
+                    int(number) if b"." not in token and INT_MIN <= number <= INT_MAX else number
                 )
             else:
                 try:
@@ -191,37 +189,37 @@ def internal_parse(source: bytes) -> tuple[internal_Instruction, ...]:
     return program
 
 
-def internal_integer(value: internal_Operand) -> int:
+def integer(value: Operand) -> int:
     if type(value) is not int:
         raise ValueError("calculator operator requires integer operands")
     return value
 
 
-def internal_number(value: internal_Operand) -> int | float:
+def internal_number(value: Operand) -> int | float:
     if isinstance(value, bool):
         raise ValueError("calculator operator requires numeric operands")
     return value
 
 
-def internal_promote(value: int | float) -> int | float:
+def promote(value: int | float) -> int | float:
     if not math.isfinite(value):
         raise ValueError("calculator arithmetic exceeds real representation")
-    if isinstance(value, int) and not internal_INT_MIN <= value <= internal_INT_MAX:
+    if isinstance(value, int) and not INT_MIN <= value <= INT_MAX:
         return float(value)
     return value
 
 
-def internal_unary(operator: str, value: internal_Operand) -> int | float:
+def unary(operator: str, value: Operand) -> int | float:
     number = internal_number(value)
     if operator == "abs":
-        return internal_promote(abs(number))
+        return promote(abs(number))
     if operator == "neg":
-        return internal_promote(-number)
+        return promote(-number)
     if operator == "cvr":
         return float(number)
     if operator == "cvi":
         integer = math.trunc(number)
-        if not internal_INT_MIN <= integer <= internal_INT_MAX:
+        if not INT_MIN <= integer <= INT_MAX:
             raise ValueError("calculator cvi exceeds integer representation")
         return integer
     if operator in {"ceiling", "floor", "round", "truncate"}:
@@ -248,34 +246,34 @@ def internal_unary(operator: str, value: internal_Operand) -> int | float:
     return math.log10(number)
 
 
-def internal_binary(operator: str, left: internal_Operand, right: internal_Operand) -> int | float:
+def binary(operator: str, left: Operand, right: Operand) -> int | float:
     first, second = internal_number(left), internal_number(right)
     if operator == "add":
-        return internal_promote(first + second)
+        return promote(first + second)
     if operator == "sub":
-        return internal_promote(first - second)
+        return promote(first - second)
     if operator == "mul":
-        return internal_promote(first * second)
+        return promote(first * second)
     if operator == "div":
-        return internal_promote(first / second)
+        return promote(first / second)
     if operator in {"idiv", "mod"}:
-        numerator, denominator = internal_integer(left), internal_integer(right)
+        numerator, denominator = integer(left), integer(right)
         quotient = abs(numerator) // abs(denominator)
         if (numerator < 0) != (denominator < 0):
             quotient = -quotient
         if operator == "mod":
             return numerator - quotient * denominator
-        if not internal_INT_MIN <= quotient <= internal_INT_MAX:
+        if not INT_MIN <= quotient <= INT_MAX:
             raise ValueError("calculator idiv exceeds integer representation")
         return quotient
     if operator == "atan":
         if first == second == 0:
             raise ValueError("calculator atan is undefined at zero")
         return math.degrees(math.atan2(first, second)) % 360.0
-    return internal_promote(math.pow(first, second))
+    return promote(math.pow(first, second))
 
 
-def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
+def operator(operator: str, stack: list[Operand]) -> None:
     if operator == "pop":
         stack.pop()
     elif operator == "dup":
@@ -283,7 +281,7 @@ def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
     elif operator == "exch":
         stack[-2], stack[-1] = stack[-1], stack[-2]
     elif operator == "copy":
-        count = internal_integer(stack.pop())
+        count = integer(stack.pop())
         if not 0 <= count <= len(stack):
             raise ValueError("invalid calculator copy count")
         if len(stack) + count > STACK_LIMIT:
@@ -291,13 +289,13 @@ def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
         if count:
             stack.extend(stack[-count:])
     elif operator == "index":
-        index = internal_integer(stack.pop())
+        index = integer(stack.pop())
         if not 0 <= index < len(stack):
             raise ValueError("invalid calculator index")
         stack.append(stack[-index - 1])
     elif operator == "roll":
-        shift = internal_integer(stack.pop())
-        count = internal_integer(stack.pop())
+        shift = integer(stack.pop())
+        count = integer(stack.pop())
         if not 0 <= count <= len(stack):
             raise ValueError("invalid calculator roll count")
         if count and (shift := shift % count):
@@ -305,11 +303,11 @@ def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
             stack[-count:] = values[-shift:] + values[:-shift]
     elif operator == "not":
         value = stack.pop()
-        stack.append(not value if isinstance(value, bool) else ~internal_integer(value))
+        stack.append(not value if isinstance(value, bool) else ~integer(value))
     elif operator in {"and", "or", "xor"}:
         right, left = stack.pop(), stack.pop()
         if not (isinstance(left, bool) and isinstance(right, bool)):
-            left, right = internal_integer(left), internal_integer(right)
+            left, right = integer(left), integer(right)
         stack.append(
             left & right
             if operator == "and"
@@ -318,13 +316,13 @@ def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
             else left ^ right
         )
     elif operator == "bitshift":
-        shift, value = internal_integer(stack.pop()), internal_integer(stack.pop())
-        bits = value & internal_INT_MASK
+        shift, value = integer(stack.pop()), integer(stack.pop())
+        bits = value & INT_MASK
         if abs(shift) >= 32:
             bits = 0
         else:
-            bits = (bits << shift) & internal_INT_MASK if shift >= 0 else bits >> -shift
-        stack.append(bits if bits <= internal_INT_MAX else bits - (1 << 32))
+            bits = (bits << shift) & INT_MASK if shift >= 0 else bits >> -shift
+        stack.append(bits if bits <= INT_MAX else bits - (1 << 32))
     elif operator in {"eq", "ne"}:
         right, left = stack.pop(), stack.pop()
         equal = isinstance(left, bool) == isinstance(right, bool) and left == right
@@ -340,14 +338,14 @@ def internal_operator(operator: str, stack: list[internal_Operand]) -> None:
             if operator == "lt"
             else left <= right
         )
-    elif operator in internal_UNARY:
-        stack.append(internal_unary(operator, stack.pop()))
+    elif operator in UNARY:
+        stack.append(unary(operator, stack.pop()))
     else:
         right, left = stack.pop(), stack.pop()
-        stack.append(internal_binary(operator, left, right))
+        stack.append(binary(operator, left, right))
 
 
-def internal_require_real(value: object) -> float:
+def require_real(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError("invalid calculator input")
     try:
@@ -359,15 +357,13 @@ def internal_require_real(value: object) -> float:
     return result
 
 
-def internal_bounds(
-    value: Sequence[tuple[float, float]], kind: str
-) -> tuple[tuple[float, float], ...]:
+def bounds(value: Sequence[tuple[float, float]], kind: str) -> tuple[tuple[float, float], ...]:
     bounds = tuple((lower, upper) for lower, upper in value)
     if not bounds:
         raise ValueError(f"invalid calculator {kind}")
     for lower, upper in bounds:
         try:
-            ordered = internal_require_real(lower) <= internal_require_real(upper)
+            ordered = require_real(lower) <= require_real(upper)
         except ValueError:
             raise ValueError(f"invalid calculator {kind}") from None
         if not ordered:
@@ -380,17 +376,17 @@ def compile_calculator(
     domains: Sequence[tuple[float, float]],
     ranges: Sequence[tuple[float, float]],
 ) -> Callable[..., tuple[float, ...]]:
-    domains = internal_bounds(domains, "domain")
-    ranges = internal_bounds(ranges, "range")
+    domains = bounds(domains, "domain")
+    ranges = bounds(ranges, "range")
     if max(len(domains), len(ranges)) > STACK_LIMIT:
         raise ValueError("calculator operand stack limit exceeded")
-    program = internal_parse(source)
+    program = parse(source)
 
     def evaluate(*inputs: float) -> tuple[float, ...]:
         if len(inputs) != len(domains):
             raise ValueError("invalid calculator input count")
-        stack: list[internal_Operand] = [
-            max(lower, min(upper, internal_require_real(value)))
+        stack: list[Operand] = [
+            max(lower, min(upper, require_real(value)))
             for value, (lower, upper) in zip(inputs, domains, strict=True)
         ]
         frames = [iter(program)]
@@ -399,7 +395,7 @@ def compile_calculator(
                 instruction = next(frames[-1], None)
                 if instruction is None:
                     frames.pop()
-                elif isinstance(instruction, internal_Conditional):
+                elif isinstance(instruction, Conditional):
                     condition = stack.pop()
                     if not isinstance(condition, bool):
                         raise ValueError("calculator condition requires a boolean")
@@ -407,7 +403,7 @@ def compile_calculator(
                         iter(instruction.when_true if condition else instruction.when_false)
                     )
                 elif isinstance(instruction, str):
-                    internal_operator(instruction, stack)
+                    operator(instruction, stack)
                 else:
                     stack.append(instruction)
                 if len(stack) > STACK_LIMIT:

@@ -22,12 +22,12 @@ from core_pdf_validate.models import (
     RuleResult,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 __all__ = ["VeraPdfBackend"]
 
-internal_PROFILES: dict[str, tuple[str, str, str]] = {
+PROFILES: dict[str, tuple[str, str, str]] = {
     "pdfa-1a": ("1a", "PDF/A-1a validation profile", "ISO 19005-1:2005"),
     "pdfa-1b": ("1b", "PDF/A-1b validation profile", "ISO 19005-1:2005"),
     "pdfa-2a": ("2a", "PDF/A-2a validation profile", "ISO 19005-2:2011"),
@@ -48,8 +48,8 @@ internal_PROFILES: dict[str, tuple[str, str, str]] = {
         "WTPDF 1.0:2024",
     ),
 }
-internal_VERSION = "1.30.2"
-internal_MACHINE_LIMIT = "Only the pinned engine's machine-checkable profile rules were evaluated."
+VERSION = "1.30.2"
+MACHINE_LIMIT = "Only the pinned engine's machine-checkable profile rules were evaluated."
 
 
 def internal_number(element: ElementTree.Element, name: str) -> int:
@@ -59,7 +59,7 @@ def internal_number(element: ElementTree.Element, name: str) -> int:
     return int(value)
 
 
-def internal_one(element: ElementTree.Element, path: str) -> ElementTree.Element:
+def one(element: ElementTree.Element, path: str) -> ElementTree.Element:
     found = element.findall(path)
     if len(found) != 1:
         raise ValueError(f"Expected exactly one {path}")
@@ -105,7 +105,7 @@ def internal_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...]
     return tuple(rules), truncated
 
 
-def internal_parse_report(
+def parse_report(
     raw: bytes,
     *,
     profile: str,
@@ -130,27 +130,27 @@ def internal_parse_report(
         root = SafeElementTree.fromstring(raw, forbid_dtd=True)
         if root.tag != "report":
             raise ValueError("Unknown XML report root or namespace")
-        releases = internal_one(root, "buildInformation").findall("releaseDetails")
+        releases = one(root, "buildInformation").findall("releaseDetails")
         core_versions = [item.get("version") for item in releases if item.get("id") == "core"]
         model_versions = [
             item.get("version") for item in releases if item.get("id") == "validation-model"
         ]
         if len(core_versions) == 1:
             version = core_versions[0]
-        if core_versions != [internal_VERSION] or model_versions != [internal_VERSION]:
+        if core_versions != [VERSION] or model_versions != [VERSION]:
             return failed("unsupported_engine", "Expected veraPDF core and model version 1.30.2")
         if returncode not in (0, 1):
             return failed("engine_error", f"veraPDF exited with status {returncode}")
-        job = internal_one(root, "jobs/job")
-        report = internal_one(job, "validationReport")
-        if report.get("profileName", "").casefold() != internal_PROFILES[profile][1].casefold():
+        job = one(root, "jobs/job")
+        report = one(job, "validationReport")
+        if report.get("profileName", "").casefold() != PROFILES[profile][1].casefold():
             raise ValueError("Report profile does not match the explicit target")
         if report.get("jobEndStatus") != "normal":
             return failed("incomplete", "Validation did not finish normally")
         compliant = report.get("isCompliant")
         if compliant not in ("true", "false"):
             raise ValueError("Missing or invalid isCompliant flag")
-        details = internal_one(report, "details")
+        details = one(report, "details")
         passed_rules = internal_number(details, "passedRules")
         failed_rules = internal_number(details, "failedRules")
         passed_checks = internal_number(details, "passedChecks")
@@ -162,7 +162,7 @@ def internal_parse_report(
             raise ValueError("Inconsistent conformance and failure counts")
         if returncode != (0 if passes else 1):
             raise ValueError("Exit status contradicts report conformance")
-        summary = internal_one(root, "batchSummary")
+        summary = one(root, "batchSummary")
         if internal_number(summary, "totalJobs") != 1:
             raise ValueError("Report is not for one source document")
         if any(
@@ -175,7 +175,7 @@ def internal_parse_report(
             )
         ):
             return failed("incomplete", "Batch summary reports incomplete processing")
-        validation_summary = internal_one(summary, "validationReports")
+        validation_summary = one(summary, "validationReports")
         if internal_number(validation_summary, "failedJobs") != 0:
             return failed("incomplete", "Batch summary reports failed validation jobs")
         if (
@@ -187,7 +187,7 @@ def internal_parse_report(
         rules, truncated = internal_rules(details)
         if sum(rule.status == "failed" for rule in rules) != failed_rules:
             raise ValueError("Reported failed rules disagree with summary")
-        limitations = [internal_MACHINE_LIMIT]
+        limitations = [MACHINE_LIMIT]
         if profile.startswith(("pdfua-", "wtpdf-")):
             limitations.append(
                 "Human review is still required for semantic correctness and accessibility."
@@ -223,8 +223,8 @@ class VeraPdfBackend:
         executable: str | os.PathLike[str] = "verapdf",
         timeout: float = 60.0,
     ) -> None:
-        internal_frozen_setattr(self, "executable", executable)
-        internal_frozen_setattr(self, "timeout", timeout)
+        frozen_setattr(self, "executable", executable)
+        frozen_setattr(self, "timeout", timeout)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -256,7 +256,7 @@ class VeraPdfBackend:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         executable = changes.pop("executable", self.executable)
@@ -266,9 +266,9 @@ class VeraPdfBackend:
         return self.__class__(executable, timeout)
 
     name: ClassVar[str] = "veraPDF"
-    supported_engine_versions: ClassVar[tuple[str, ...]] = (internal_VERSION,)
+    supported_engine_versions: ClassVar[tuple[str, ...]] = (VERSION,)
     supported_profiles: ClassVar[tuple[ProfileSupport, ...]] = tuple(
-        ProfileSupport(identifier, values[2]) for identifier, values in internal_PROFILES.items()
+        ProfileSupport(identifier, values[2]) for identifier, values in PROFILES.items()
     )
 
     def _post_init(self) -> None:
@@ -279,11 +279,11 @@ class VeraPdfBackend:
 
     def validate(self, source: Path, *, profile: str) -> ProfileResult:
         result = self.internal_validate(source, profile=profile)
-        capability = internal_PROFILES.get(profile)
+        capability = PROFILES.get(profile)
         return replace(result, profile_edition=capability[2] if capability is not None else None)
 
     def internal_validate(self, source: Path, *, profile: str) -> ProfileResult:
-        if profile not in internal_PROFILES:
+        if profile not in PROFILES:
             return ProfileResult(
                 profile,
                 "unsupported_profile",
@@ -296,7 +296,7 @@ class VeraPdfBackend:
             "--format",
             "xml",
             "--flavour",
-            internal_PROFILES[profile][0],
+            PROFILES[profile][0],
             "--maxfailures",
             "-1",
             str(source.resolve()),
@@ -327,7 +327,7 @@ class VeraPdfBackend:
                         raw_report=stdout,
                         stderr=stderr,
                     )
-                return internal_parse_report(
+                return parse_report(
                     stdout,
                     profile=profile,
                     returncode=process.returncode,

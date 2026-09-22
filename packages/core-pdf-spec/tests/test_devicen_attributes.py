@@ -17,12 +17,12 @@ from core_pdf_spec.standards import PdfVersion, SemanticContext
 from core_pdf_spec.types import PdfName
 
 
-def internal_tint() -> dict[str, object]:
+def tint() -> dict[str, object]:
     return {"FunctionType": 2, "Domain": [0, 1], "N": 1, "C0": [0], "C1": [1]}
 
 
-def internal_spot(name: str) -> list[object]:
-    return ["Separation", name, "DeviceGray", internal_tint()]
+def spot(name: str) -> list[object]:
+    return ["Separation", name, "DeviceGray", tint()]
 
 
 def internal_attributes(
@@ -32,7 +32,7 @@ def internal_attributes(
 
 
 def internal_space(names: tuple[str, ...], attributes: object) -> list[object]:
-    return ["DeviceN", list(names), "DeviceGray", internal_tint(), attributes]
+    return ["DeviceN", list(names), "DeviceGray", tint(), attributes]
 
 
 def test_new_models_and_parser_are_public_chapter_exports() -> None:
@@ -59,14 +59,14 @@ def test_nchannel_rgb_preserves_process_space_order_and_raw_attributes() -> None
     assert attributes.process.components == ("R", "G", "B")
     assert cast(dict[str, object], space.params["Attributes"])["MixingHints"] is hints
     with pytest.raises(TypeError):
-        cast(Any, attributes.colorants)["Spot"] = parse_color_space(internal_spot("Spot"))
+        cast(Any, attributes.colorants)["Spot"] = parse_color_space(spot("Spot"))
     with pytest.raises(AttributeError):
         cast(Any, attributes.process).components = ()
 
 
 @pytest.mark.parametrize("version", [None, PdfVersion(1, 3), PdfVersion(1, 6), PdfVersion(2, 0)])
 def test_colorants_metadata_is_not_gated_at_pdf_16(version: PdfVersion | None) -> None:
-    raw = {"Colorants": {"Spot": internal_spot("Spot"), "Unused": internal_spot("Unused")}}
+    raw = {"Colorants": {"Spot": spot("Spot"), "Unused": spot("Unused")}}
     space = parse_color_space(
         internal_space(("Spot", "Other"), raw),
         context=SemanticContext(version) if version is not None else None,
@@ -78,7 +78,7 @@ def test_colorants_metadata_is_not_gated_at_pdf_16(version: PdfVersion | None) -
 
 
 def test_absent_attributes_and_null_optional_entries_keep_their_defaults() -> None:
-    space = parse_color_space(["DeviceN", ["Spot"], "DeviceGray", internal_tint()])
+    space = parse_color_space(["DeviceN", ["Spot"], "DeviceGray", tint()])
     assert space.devicen_attributes is None
     attributes = parse_device_n_attributes(
         {"Subtype": None, "Process": None, "Colorants": None, "MixingHints": None}, ("Spot",)
@@ -103,13 +103,13 @@ def test_devicen_rejects_all_and_duplicate_actual_colorants(
         raw.pop()
     with pytest.raises(ValueError, match="DeviceN colorant names"):
         parse_color_space(raw)
-    assert parse_color_space(internal_spot("All")).colorants == ("All",)
+    assert parse_color_space(spot("All")).colorants == ("All",)
 
 
 def test_nchannel_forbids_none_even_if_a_separation_describes_it() -> None:
     with pytest.raises(ValueError, match="None is not allowed"):
         parse_device_n_attributes(
-            {"Subtype": "NChannel", "Colorants": {"None": internal_spot("None")}}, ("None",)
+            {"Subtype": "NChannel", "Colorants": {"None": spot("None")}}, ("None",)
         )
 
 
@@ -141,7 +141,7 @@ def test_cmyk_process_components_may_be_subset_and_reordered(
 
 def test_cmyk_reserved_names_and_arbitrary_aliases_both_identify_process_components() -> None:
     raw = internal_attributes("DeviceCMYK", ("C", "M", "Y", "K"))
-    raw["Colorants"] = {"Cyan": 42, "K": ["not a Separation"], "Unused": internal_spot("Unused")}
+    raw["Colorants"] = {"Cyan": 42, "K": ["not a Separation"], "Unused": spot("Unused")}
     attributes = parse_device_n_attributes(raw, ("K", "Cyan", "Yellow"))
     assert attributes.process is not None
     assert attributes.process.component_indices == (1, None, 2, 0)
@@ -173,7 +173,7 @@ def test_non_cmyk_process_components_must_be_complete_contiguous_and_ordered(
     names: tuple[str, ...],
 ) -> None:
     raw = internal_attributes()
-    raw["Colorants"] = {"Spot": internal_spot("Spot")}
+    raw["Colorants"] = {"Spot": spot("Spot")}
     with pytest.raises(ValueError, match="complete and in natural order"):
         parse_device_n_attributes(raw, names)
 
@@ -188,7 +188,7 @@ def test_non_cmyk_process_components_must_be_complete_contiguous_and_ordered(
 )
 def test_non_cmyk_process_can_use_aliases_and_have_adjacent_spots(process_space: object) -> None:
     raw = internal_attributes(process_space, ("ProcessRed", "ProcessGreen", "ProcessBlue"))
-    raw["Colorants"] = {"Red": internal_spot("Red"), "Other": internal_spot("Other")}
+    raw["Colorants"] = {"Red": spot("Red"), "Other": spot("Other")}
     attributes = parse_device_n_attributes(
         raw, ("Red", "ProcessRed", "ProcessGreen", "ProcessBlue", "Other")
     )
@@ -210,7 +210,7 @@ def test_gray_process_uses_one_naturally_ordered_component(process_space: object
         ["Lab", {"WhitePoint": [1, 1, 1]}],
         "Pattern",
         ["Indexed", "DeviceGray", 0, b"\0"],
-        internal_spot("Spot"),
+        spot("Spot"),
         internal_space(("Spot",), {}),
     ],
 )
@@ -221,7 +221,7 @@ def test_process_space_excludes_lab_and_all_special_color_spaces(process_space: 
 
 @pytest.mark.parametrize("names", [("Cyan",), ("R", "G", "B", "Cyan")])
 def test_nchannel_reserved_cmyk_names_cannot_be_declared_spots(names: tuple[str, ...]) -> None:
-    raw = {"Subtype": "NChannel", "Colorants": {"Cyan": internal_spot("Cyan")}}
+    raw = {"Subtype": "NChannel", "Colorants": {"Cyan": spot("Cyan")}}
     if len(names) == 4:
         raw.update(internal_attributes())
     with pytest.raises(ValueError, match="process"):
@@ -231,20 +231,20 @@ def test_nchannel_reserved_cmyk_names_cannot_be_declared_spots(names: tuple[str,
 def test_all_spot_nchannel_requires_matching_definitions_and_allows_extra_spots() -> None:
     raw = {
         "Subtype": "NChannel",
-        "Colorants": {"Spot": internal_spot("Spot"), "Unused": internal_spot("Unused")},
+        "Colorants": {"Spot": spot("Spot"), "Unused": spot("Unused")},
     }
     attributes = parse_device_n_attributes(raw, ("Spot",))
     assert attributes.process is None
     assert set(attributes.colorants) == {"Spot", "Unused"}
 
 
-@pytest.mark.parametrize("colorants", [None, {}, {"Spot": None}, {"Other": internal_spot("Other")}])
+@pytest.mark.parametrize("colorants", [None, {}, {"Spot": None}, {"Other": spot("Other")}])
 def test_nchannel_spot_colorants_must_all_be_described(colorants: object) -> None:
     with pytest.raises(ValueError, match="spot colorants require"):
         parse_device_n_attributes({"Subtype": "NChannel", "Colorants": colorants}, ("Spot",))
 
 
-@pytest.mark.parametrize("value", ["DeviceRGB", internal_spot("Other"), 42])
+@pytest.mark.parametrize("value", ["DeviceRGB", spot("Other"), 42])
 def test_colorants_entries_must_be_matching_separation_spaces(value: object) -> None:
     with pytest.raises(ValueError):
         parse_device_n_attributes({"Colorants": {"Spot": value}}, ("Spot",))
@@ -288,7 +288,7 @@ def test_process_cycle_to_parent_color_space_is_rejected() -> None:
         {"Process": {"ColorSpace": "DeviceRGB", "Components": ["R", "R", "B"]}},
         {"Process": {"ColorSpace": "DeviceRGB", "Components": ["R", "G", 42]}},
         {"Colorants": []},
-        {"Colorants": {42: internal_spot("Spot")}},
+        {"Colorants": {42: spot("Spot")}},
         {"MixingHints": []},
     ],
 )

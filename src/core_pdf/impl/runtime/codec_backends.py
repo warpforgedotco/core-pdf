@@ -20,7 +20,7 @@ class CodecUnsupportedError(ValueError):
     pass
 
 
-def internal_env_int(name: str, default: int) -> int:
+def env_int(name: str, default: int) -> int:
     configured = os.environ.get(name)
     if configured:
         try:
@@ -30,7 +30,7 @@ def internal_env_int(name: str, default: int) -> int:
     return default
 
 
-def internal_raise_codec_error(
+def raise_codec_error(
     data: bytes | memoryview,
     exc: BaseException,
     *,
@@ -48,7 +48,7 @@ def internal_raise_codec_error(
     raise CodecUnsupportedError(f"unsupported {name} stream") from exc
 
 
-def internal_normalize_imagecodecs_array(
+def normalize_imagecodecs_array(
     decoded: object,
     *,
     name: str,
@@ -83,8 +83,8 @@ def decode_jpeg_image(
     try:
         decoded = imagecodecs.jpeg_decode(data, out=out)
     except Exception as exc:  # pragma: no cover
-        internal_raise_codec_error(data, exc, check=imagecodecs.jpeg_check, name="JPEG")
-    return internal_normalize_imagecodecs_array(decoded, name="JPEG")
+        raise_codec_error(data, exc, check=imagecodecs.jpeg_check, name="JPEG")
+    return normalize_imagecodecs_array(decoded, name="JPEG")
 
 
 def decode_jpx_image(
@@ -97,17 +97,17 @@ def decode_jpx_image(
         decoded = imagecodecs.jpeg2k_decode(
             data,
             out=out,
-            numthreads=internal_jpx_thread_count(),
+            numthreads=jpx_thread_count(),
         )
     except Exception as exc:  # pragma: no cover
-        internal_raise_codec_error(data, exc, check=imagecodecs.jpeg2k_check, name="JPX")
-    return internal_normalize_imagecodecs_array(
+        raise_codec_error(data, exc, check=imagecodecs.jpeg2k_check, name="JPX")
+    return normalize_imagecodecs_array(
         decoded, name="JPX", allow_float=True, preserve_uint16=preserve_precision
     )
 
 
-def internal_jpx_thread_count() -> int:
-    return min(4, internal_env_int("CORE_PDF_JPX_THREADS", max(1, min(4, os.cpu_count() or 1))))
+def jpx_thread_count() -> int:
+    return min(4, env_int("CORE_PDF_JPX_THREADS", max(1, min(4, os.cpu_count() or 1))))
 
 
 def decode_ccitt_fax_image(
@@ -137,19 +137,19 @@ def decode_ccitt_fax_image(
                 out=out,
             )
     except Exception as exc:  # pragma: no cover
-        internal_raise_codec_error(data, exc, check=decoder_check, name="CCITT")
+        raise_codec_error(data, exc, check=decoder_check, name="CCITT")
     array = numpy.asarray(decoded)
     if array.ndim != 2 or array.shape[1] != width or array.dtype != numpy.uint8:
         raise CodecUnsupportedError("CCITT decoder returned an unsupported image")
     return array
 
 
-internal_PNG_COLOR_TYPES = {1: 0, 3: 2, 4: 6}
-internal_PNG_MAX_DIMENSION = 1_000_000
-internal_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_COLOR_TYPES = {1: 0, 3: 2, 4: 6}
+PNG_MAX_DIMENSION = 1_000_000
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
-def internal_png_chunk(tag: bytes, payload: bytes) -> bytes:
+def png_chunk(tag: bytes, payload: bytes) -> bytes:
     return (
         struct.pack(">I", len(payload))
         + tag
@@ -158,34 +158,34 @@ def internal_png_chunk(tag: bytes, payload: bytes) -> bytes:
     )
 
 
-def internal_png_predict_codec(
+def png_predict_codec(
     data: bytes | memoryview,
     *,
     columns: int,
     colors: int,
     bits_per_component: int,
 ) -> bytes | None:
-    color_type = internal_PNG_COLOR_TYPES.get(colors)
+    color_type = PNG_COLOR_TYPES.get(colors)
     if color_type is None:
         return None
     if bits_per_component not in (8, 16) and (
         color_type != 0 or (columns * bits_per_component) % 8
     ):
         return None
-    if not 1 <= columns <= internal_PNG_MAX_DIMENSION:
+    if not 1 <= columns <= PNG_MAX_DIMENSION:
         return None
     row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
     rows = len(data) // (row_length + 1)
-    if not 1 <= rows <= internal_PNG_MAX_DIMENSION:
+    if not 1 <= rows <= PNG_MAX_DIMENSION:
         return None
     body = memoryview(data)[: rows * (row_length + 1)]
     header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
     png = b"".join(
         (
-            internal_PNG_SIGNATURE,
-            internal_png_chunk(b"IHDR", header),
-            internal_png_chunk(b"IDAT", zlib.compress(body, 0)),
-            internal_png_chunk(b"IEND", b""),
+            PNG_SIGNATURE,
+            png_chunk(b"IHDR", header),
+            png_chunk(b"IDAT", zlib.compress(body, 0)),
+            png_chunk(b"IEND", b""),
         )
     )
     decoded = numpy.asarray(imagecodecs.png_decode(png))
@@ -203,7 +203,7 @@ def internal_png_predict_codec(
     return packed.tobytes()
 
 
-def internal_tiff_predict(
+def tiff_predict(
     data: bytes | memoryview, columns: int, colors: int, dtype: str, sample_bytes: int
 ) -> bytes:
     bytes_per_row = colors * columns * sample_bytes
@@ -221,11 +221,11 @@ def internal_tiff_predict(
 
 
 def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    return internal_tiff_predict(data, columns, colors, "u1", 1)
+    return tiff_predict(data, columns, colors, "u1", 1)
 
 
 def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    return internal_tiff_predict(data, columns, colors, ">u2", 2)
+    return tiff_predict(data, columns, colors, ">u2", 2)
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:

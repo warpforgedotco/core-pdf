@@ -124,15 +124,15 @@ def internal_color_space_paints(value: object) -> bool:
     return True
 
 
-def internal_nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
+def nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
     attributes = space.devicen_attributes
     if space.kind != "DeviceN" or attributes is None or attributes.subtype != "NChannel":
         return None
     return attributes
 
 
-def internal_nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
-    attributes = internal_nchannel_attributes(space)
+def nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
+    attributes = nchannel_attributes(space)
     if attributes is None:
         return None
     process = attributes.process
@@ -198,7 +198,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                         {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(count), active
                     )
                 ranges = (
-                    internal_recovery_ranges(source.get("Range"), count, (0.0, 1.0) * count)
+                    recovery_ranges(source.get("Range"), count, (0.0, 1.0) * count)
                     if count in {1, 3, 4}
                     else ()
                 )
@@ -229,7 +229,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                 ranges = (
                     (
                         (0.0, 100.0),
-                        *internal_recovery_ranges(source.get("Range"), 2, (-100.0, 100.0) * 2),
+                        *recovery_ranges(source.get("Range"), 2, (-100.0, 100.0) * 2),
                     )
                     if kind == "Lab"
                     else ((0.0, 1.0),) * (1 if kind == "CalGray" else 3)
@@ -283,7 +283,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
             active.remove(marker)
 
 
-def internal_recovery_ranges(
+def recovery_ranges(
     raw: object, count: int, default: tuple[float, ...]
 ) -> tuple[tuple[float, float], ...]:
     values = cs_param_floats(

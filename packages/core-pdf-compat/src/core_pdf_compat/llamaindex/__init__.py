@@ -12,10 +12,10 @@ from core_pdf.impl.document.recovery.xref import XRefScanner
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
-from ..pypdf import internal_validate_pypdf_page_tree
+from ..pypdf import validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class MetadataMode(StrEnum):
@@ -113,13 +113,13 @@ class Document(_MetadataMixin):
         metadata_template: str = "{metadata}",
         text_template: str = "{metadata_str}\n\n{content}",
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        internal_frozen_setattr(self, "id_", id_)
-        internal_frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
-        internal_frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
-        internal_frozen_setattr(self, "metadata_template", metadata_template)
-        internal_frozen_setattr(self, "text_template", text_template)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        frozen_setattr(self, "id_", id_)
+        frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
+        frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
+        frozen_setattr(self, "metadata_template", metadata_template)
+        frozen_setattr(self, "text_template", text_template)
 
     def __repr__(self) -> str:
         return (
@@ -173,7 +173,7 @@ class Document(_MetadataMixin):
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
@@ -265,17 +265,15 @@ class Node(_MetadataMixin):
         metadata_template: str = "{metadata}",
         text_template: str = "{metadata_str}\n\n{content}",
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "node_id", node_id)
-        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        internal_frozen_setattr(
-            self, "relationships", {} if relationships is None else relationships
-        )
-        internal_frozen_setattr(self, "id_", id_)
-        internal_frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
-        internal_frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
-        internal_frozen_setattr(self, "metadata_template", metadata_template)
-        internal_frozen_setattr(self, "text_template", text_template)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "node_id", node_id)
+        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        frozen_setattr(self, "relationships", {} if relationships is None else relationships)
+        frozen_setattr(self, "id_", id_)
+        frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
+        frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
+        frozen_setattr(self, "metadata_template", metadata_template)
+        frozen_setattr(self, "text_template", text_template)
 
     def __repr__(self) -> str:
         return (
@@ -335,7 +333,7 @@ class Node(_MetadataMixin):
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
@@ -400,7 +398,7 @@ def load_data(
     if XRefScanner.find_startxref(source_data) is None:
         raise ValueError("PDF does not contain a startxref marker")
     with PdfDocument.open(source_data) as pdf:
-        internal_validate_pypdf_page_tree(pdf)
+        validate_pypdf_page_tree(pdf)
         pages = pdf.pages
         for page in pages:
             for stream in page.content_streams:

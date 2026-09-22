@@ -69,7 +69,7 @@ from core_pdf.impl.fonts.widths import (
 )
 from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
@@ -88,7 +88,7 @@ from core_pdf_spec.standards import SemanticContext
 if typing.TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontProgram
@@ -116,7 +116,7 @@ def resolve_base_font_name(font: dict[str, Any], subtype: str | None) -> str | N
     return descriptor_font_name(font, subtype)
 
 
-def internal_tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
+def tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
     if inputs.subtype not in {"CIDFontType2", "TrueType"}:
         return None
     font_file = inputs.font_file2
@@ -153,7 +153,7 @@ def single_code_mapping(
     return mapping
 
 
-def internal_cff_font(inputs: FontProgramInputs) -> CFFFont | None:
+def cff_font(inputs: FontProgramInputs) -> CFFFont | None:
     if inputs.descendant is not None:
         if inputs.subtype != "CIDFontType0":
             return None
@@ -169,7 +169,7 @@ def internal_cff_font(inputs: FontProgramInputs) -> CFFFont | None:
     if subtype == "OpenType":
         if font_data is None:
             return None
-        font_data = internal_extract_cff_table(font_data)
+        font_data = extract_cff_table(font_data)
         if font_data is None:
             return None
     try:
@@ -204,7 +204,7 @@ def build_cff_unicode_repair_index(
     return CFFUnicodeRepairIndex(font_program, mapping_items)
 
 
-def internal_extract_cff_table(data: bytes) -> bytes | None:
+def extract_cff_table(data: bytes) -> bytes | None:
     font: TTFont | None = None
     try:
         font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
@@ -221,7 +221,7 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
                 font.close()
 
 
-def internal_type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
+def type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
     if inputs.original_subtype not in {"Type1", "MMType1"}:
         return None
     font_file = inputs.font_file
@@ -235,7 +235,7 @@ def internal_type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:
         return None
 
 
-def internal_opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | None:
+def opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | None:
     font_file = inputs.font_file3
     if font_file is None:
         return None
@@ -247,7 +247,7 @@ def internal_opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | N
         return None
 
 
-def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
+def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     try:
         inputs = prepare_font_program_inputs(font)
     except ValueError:
@@ -278,10 +278,10 @@ def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | No
         if (subtype, original_subtype) != (inputs.subtype, inputs.original_subtype):
             inputs = replace(inputs, subtype=subtype, original_subtype=original_subtype)
     for resolver in (
-        internal_cff_font,
-        internal_tt_font,
-        internal_type1_font,
-        internal_opentype_font,
+        cff_font,
+        tt_font,
+        type1_font,
+        opentype_font,
     ):
         program = resolver(inputs)
         if program is not None:
@@ -335,16 +335,16 @@ class DecodedGlyph(DecodedFontGlyph):
         bitmap_code: int,
         split_unicode: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "code_bytes", code_bytes)
-        internal_frozen_setattr(self, "char_code", char_code)
-        internal_frozen_setattr(self, "cid", cid)
-        internal_frozen_setattr(self, "gid", gid)
-        internal_frozen_setattr(self, "unicode", unicode)
-        internal_frozen_setattr(self, "width_code", width_code)
-        internal_frozen_setattr(self, "unicode_source", unicode_source)
-        internal_frozen_setattr(self, "alternates", alternates)
-        internal_frozen_setattr(self, "bitmap_code", bitmap_code)
-        internal_frozen_setattr(self, "split_unicode", split_unicode)
+        frozen_setattr(self, "code_bytes", code_bytes)
+        frozen_setattr(self, "char_code", char_code)
+        frozen_setattr(self, "cid", cid)
+        frozen_setattr(self, "gid", gid)
+        frozen_setattr(self, "unicode", unicode)
+        frozen_setattr(self, "width_code", width_code)
+        frozen_setattr(self, "unicode_source", unicode_source)
+        frozen_setattr(self, "alternates", alternates)
+        frozen_setattr(self, "bitmap_code", bitmap_code)
+        frozen_setattr(self, "split_unicode", split_unicode)
 
     def __repr__(self) -> str:
         return (
@@ -423,12 +423,12 @@ class DecodedGlyph(DecodedFontGlyph):
         )
 
 
-internal_UNRESOLVED_UNICODE_SOURCES = frozenset(
+UNRESOLVED_UNICODE_SOURCES = frozenset(
     {UnicodeSource.IDENTITY, UnicodeSource.REPLACEMENT, UnicodeSource.FALLBACK_NUL}
 )
 
 
-class UnicodeChoice(internal_Record):
+class UnicodeChoice(Record):
     __slots__ = ("text", "source", "alternates")
 
     text: str
@@ -439,9 +439,9 @@ class UnicodeChoice(internal_Record):
     __match_args__ = ("text", "source", "alternates")
 
     def __init__(self, text: str, source: UnicodeSource, alternates: tuple[str, ...] = ()) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "source", source)
-        internal_frozen_setattr(self, "alternates", alternates)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "source", source)
+        frozen_setattr(self, "alternates", alternates)
 
     def __repr__(self) -> str:
         return (
@@ -506,7 +506,7 @@ def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> l
     return chunks
 
 
-def internal_font_is_vertical(
+def font_is_vertical(
     font: dict[str, Any],
     subtype: str | None,
     base_encoding: str | None,
@@ -555,7 +555,7 @@ class GlyphOutlineArrays:
         key = (a, b, c, d)
         columns = self.linear.get(key)
         if columns is None:
-            if len(self.linear) >= internal_LINEAR_CACHE_LIMIT:
+            if len(self.linear) >= LINEAR_CACHE_LIMIT:
                 self.linear.clear()
             xs = self.xs
             ys = self.ys
@@ -563,10 +563,10 @@ class GlyphOutlineArrays:
         return columns
 
 
-internal_LINEAR_CACHE_LIMIT = 256
+LINEAR_CACHE_LIMIT = 256
 
 
-def internal_outline_arrays(
+def outline_arrays(
     contours: tuple[tuple[tuple[float, float], ...], ...],
 ) -> GlyphOutlineArrays | None:
     xs: list[float] = []
@@ -607,7 +607,7 @@ class FontDecoder:
         "widths",
         "default_width",
         "internal_width_fallback",
-        "internal_space_width_fallback",
+        "space_width_fallback",
         "default_vertical_displacement_y",
         "default_vertical_origin_y",
         "vertical_metrics",
@@ -621,11 +621,11 @@ class FontDecoder:
         "cff_unicode_repairs",
         "font_program",
         "raster_font_provider",
-        "internal_glyph_bbox_cache",
-        "internal_glyph_outline_cache",
-        "internal_glyph_outline_array_cache",
-        "internal_glyph_id_cache",
-        "internal_unicode_choice_cache",
+        "glyph_bbox_cache",
+        "glyph_outline_cache",
+        "glyph_outline_array_cache",
+        "glyph_id_cache",
+        "unicode_choice_cache",
     )
 
     font: dict[str, Any]
@@ -646,7 +646,7 @@ class FontDecoder:
     widths: Mapping[int, float]
     default_width: float
     internal_width_fallback: float
-    internal_space_width_fallback: float
+    space_width_fallback: float
     default_vertical_displacement_y: float
     default_vertical_origin_y: float
     vertical_metrics: dict[int, tuple[float, float, float]]
@@ -660,13 +660,13 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
-    internal_glyph_bbox_cache: dict[int, Rectangle | None]
-    internal_glyph_outline_cache: dict[
+    glyph_bbox_cache: dict[int, Rectangle | None]
+    glyph_outline_cache: dict[
         tuple[int, int | None, str], tuple[tuple[tuple[float, float], ...], ...]
     ]
-    internal_glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
-    internal_glyph_id_cache: dict[int, int | None]
-    internal_unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
+    glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
+    glyph_id_cache: dict[int, int | None]
+    unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "font",
@@ -687,7 +687,7 @@ class FontDecoder:
         "widths",
         "default_width",
         "internal_width_fallback",
-        "internal_space_width_fallback",
+        "space_width_fallback",
         "default_vertical_displacement_y",
         "default_vertical_origin_y",
         "vertical_metrics",
@@ -701,11 +701,11 @@ class FontDecoder:
         "cff_unicode_repairs",
         "font_program",
         "raster_font_provider",
-        "internal_glyph_bbox_cache",
-        "internal_glyph_outline_cache",
-        "internal_glyph_outline_array_cache",
-        "internal_glyph_id_cache",
-        "internal_unicode_choice_cache",
+        "glyph_bbox_cache",
+        "glyph_outline_cache",
+        "glyph_outline_array_cache",
+        "glyph_id_cache",
+        "unicode_choice_cache",
     )
 
     def __init__(
@@ -720,20 +720,20 @@ class FontDecoder:
         self.semantic_context = semantic_context
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
-        self.internal_initialize()
+        self.initialize()
 
-    def internal_initialize(self) -> None:
-        self.internal_glyph_bbox_cache = {}
-        self.internal_glyph_outline_cache = {}
-        self.internal_glyph_outline_array_cache = {}
-        self.internal_glyph_id_cache = {}
-        self.internal_unicode_choice_cache = {}
+    def initialize(self) -> None:
+        self.glyph_bbox_cache = {}
+        self.glyph_outline_cache = {}
+        self.glyph_outline_array_cache = {}
+        self.glyph_id_cache = {}
+        self.unicode_choice_cache = {}
         font = self.font
         subtype = font.get("Subtype")
         if subtype is not None:
             subtype = recover_pdf_name(subtype)
 
-        self.font_program = internal_font_program_for_pdf_font(font)
+        self.font_program = font_program_for_pdf_font(font)
 
         to_unicode_obj = font.get("ToUnicode")
         to_unicode = None
@@ -760,7 +760,7 @@ class FontDecoder:
         is_cid_font = subtype == "Type0" and get_descendant(font) is not None
 
         base_font_name = resolve_base_font_name(font, subtype)
-        is_vertical = internal_font_is_vertical(font, subtype, base_encoding, base_font_name, cmap)
+        is_vertical = font_is_vertical(font, subtype, base_encoding, base_font_name, cmap)
 
         ascent, descent = parse_font_metrics(font, subtype, base_font_name, widths)
 
@@ -799,7 +799,7 @@ class FontDecoder:
 
         self.to_unicode = to_unicode
         self.cmap = cmap
-        self.cid_registry, self.cid_ordering = self.internal_cid_system_info(font)
+        self.cid_registry, self.cid_ordering = self.cid_system_info(font)
         self.base_encoding = base_encoding
         self.differences = differences
         self.encoding_differences = (
@@ -814,10 +814,10 @@ class FontDecoder:
         self.default_width = default_width
         if default_width_explicit:
             self.internal_width_fallback = default_width
-            self.internal_space_width_fallback = default_width
+            self.space_width_fallback = default_width
         else:
             self.internal_width_fallback = default_width if default_width > 0.0 else 1000.0
-            self.internal_space_width_fallback = default_width if default_width > 0.0 else 250.0
+            self.space_width_fallback = default_width if default_width > 0.0 else 250.0
         self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
         self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
         self.vertical_metrics = font_metrics.vertical_metrics
@@ -837,7 +837,7 @@ class FontDecoder:
         self.cff_unicode_repairs = {}
 
     @staticmethod
-    def internal_cid_system_info_string(value: object) -> str | None:
+    def cid_system_info_string(value: object) -> str | None:
         if isinstance(value, PdfString):
             return value.data.decode("latin-1")
         normalized = recover_pdf_name(value)
@@ -848,7 +848,7 @@ class FontDecoder:
         return None
 
     @classmethod
-    def internal_cid_system_info(
+    def cid_system_info(
         cls,
         font: dict[str, Any],
     ) -> tuple[str | None, str | None]:
@@ -858,8 +858,8 @@ class FontDecoder:
             system_info = font.get("CIDSystemInfo")
         if not isinstance(system_info, dict):
             return None, None
-        registry = cls.internal_cid_system_info_string(system_info.get("Registry"))
-        ordering = cls.internal_cid_system_info_string(system_info.get("Ordering"))
+        registry = cls.cid_system_info_string(system_info.get("Registry"))
+        ordering = cls.cid_system_info_string(system_info.get("Ordering"))
         return registry, ordering
 
     def parse_encoding(
@@ -900,18 +900,18 @@ class FontDecoder:
             case _:
                 base_encoding = recover_pdf_name(encoding_obj)
                 base_encoding_explicit = base_encoding is not None
-                cmap = self.internal_named_cmap(base_encoding)
+                cmap = self.named_cmap(base_encoding)
         if base_encoding is None and subtype == "Type3":
             base_encoding = "StandardEncoding"
         builtin: dict[int, str] = {}
         builtin_authoritative = False
         if subtype in ("Type1", "MMType1") and not base_encoding_explicit:
-            builtin, builtin_authoritative = self.internal_builtin_font_encoding(font)
+            builtin, builtin_authoritative = self.builtin_font_encoding(font)
         if base_encoding is None and subtype in ("Type1", "MMType1"):
             base_encoding = "StandardEncoding"
         return cmap, base_encoding, differences, builtin, builtin_authoritative
 
-    def internal_builtin_font_encoding(self, font: dict[str, Any]) -> tuple[dict[int, str], bool]:
+    def builtin_font_encoding(self, font: dict[str, Any]) -> tuple[dict[int, str], bool]:
         match self.font_program:
             case CFFFont() as program:
                 try:
@@ -935,7 +935,7 @@ class FontDecoder:
                 return {}, False
         return {}, False
 
-    def internal_named_cmap(self, base_encoding: str | None) -> CMapDecoder | None:
+    def named_cmap(self, base_encoding: str | None) -> CMapDecoder | None:
         if base_encoding is None:
             return None
         return resolve_cmap_decoder(base_encoding)
@@ -958,24 +958,24 @@ class FontDecoder:
         if not data:
             return ()
         if self.is_cid_font:
-            glyphs = self.internal_decode_cid_glyphs(bytes(data))
+            glyphs = self.decode_cid_glyphs(bytes(data))
         else:
-            glyphs = self.internal_decode_simple_glyphs(data)
+            glyphs = self.decode_simple_glyphs(data)
         return tuple(glyphs)
 
-    def internal_unicode_choice_for_code(
+    def unicode_choice_for_code(
         self, code_bytes: bytes, fallback_code: int, gid: int | None = None
     ) -> UnicodeChoice:
         key = (code_bytes, fallback_code, gid)
-        cache = self.internal_unicode_choice_cache
+        cache = self.unicode_choice_cache
         choice = cache.get(key)
         if choice is None:
-            choice = cache[key] = self.internal_resolve_unicode_choice_for_code(
+            choice = cache[key] = self.resolve_unicode_choice_for_code(
                 code_bytes, fallback_code, gid
             )
         return choice
 
-    def internal_resolve_unicode_choice_for_code(
+    def resolve_unicode_choice_for_code(
         self, code_bytes: bytes, fallback_code: int, gid: int | None
     ) -> UnicodeChoice:
         alternates: list[str] = []
@@ -986,7 +986,7 @@ class FontDecoder:
                 alternates.append(to_unicode_text)
 
         if to_unicode_text is not None and not has_invalid_unicode_mapping(to_unicode_text):
-            visual_punctuation = self.internal_visual_punctuation_for_code(
+            visual_punctuation = self.visual_punctuation_for_code(
                 to_unicode_text,
                 fallback_code=fallback_code,
             )
@@ -1011,7 +1011,7 @@ class FontDecoder:
             )
 
         if gid is not None:
-            tt_text = self.internal_true_type_unicode_for_gid(gid)
+            tt_text = self.true_type_unicode_for_gid(gid)
             if tt_text == to_unicode_text == "\ufffd":
                 return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
             if tt_text and not has_untrusted_unicode_semantics(tt_text):
@@ -1067,14 +1067,14 @@ class FontDecoder:
         source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
-    def internal_true_type_unicode_for_gid(self, gid: int) -> str:
+    def true_type_unicode_for_gid(self, gid: int) -> str:
         match self.font_program:
             case TrueTypeFontProgram() as program:
                 return program.unicode_for_gid(gid)
             case _:
                 return ""
 
-    def internal_visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
+    def visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
         if len(text) != 1 or not unicodedata.category(text).startswith("M"):
             return None
         match self.font_program:
@@ -1091,7 +1091,7 @@ class FontDecoder:
             return None
         return "–"
 
-    def internal_apply_simple_unicode_overrides(
+    def apply_simple_unicode_overrides(
         self, choice: UnicodeChoice, code_bytes: bytes
     ) -> UnicodeChoice:
         text = choice.text
@@ -1107,7 +1107,7 @@ class FontDecoder:
                     and mapped
                     and text != mapped
                     and (
-                        choice.source in internal_UNRESOLVED_UNICODE_SOURCES
+                        choice.source in UNRESOLVED_UNICODE_SOURCES
                         or should_prefer_glyph_name_mapping(
                             text,
                             mapped,
@@ -1122,7 +1122,7 @@ class FontDecoder:
                     code_bytes,
                     glyph_decode_table,
                     authoritative=self.glyph_decode_table_authoritative,
-                    fallback_mapping=choice.source in internal_UNRESOLVED_UNICODE_SOURCES,
+                    fallback_mapping=choice.source in UNRESOLVED_UNICODE_SOURCES,
                 )
         if self.ligature_overrides:
             lo = self.ligature_overrides
@@ -1135,9 +1135,7 @@ class FontDecoder:
             dedupe_alternates((choice.text, *choice.alternates), text),
         )
 
-    def internal_decode_simple_glyphs(
-        self, data: bytes | bytearray | memoryview
-    ) -> list[DecodedGlyph]:
+    def decode_simple_glyphs(self, data: bytes | bytearray | memoryview) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
@@ -1146,7 +1144,7 @@ class FontDecoder:
             chunk = SINGLE_BYTES[code]
             gid = self.glyph_id_for_code(code)
             if self.to_unicode is not None:
-                choice = self.internal_unicode_choice_for_code(chunk, code, gid)
+                choice = self.unicode_choice_for_code(chunk, code, gid)
             elif table is not None:
                 text = table[code]
                 undefined = not text or (
@@ -1157,8 +1155,8 @@ class FontDecoder:
                     UnicodeSource.UNDEFINED if undefined else UnicodeSource.ENCODING,
                 )
             else:
-                choice = self.internal_unicode_choice_for_code(chunk, code, gid)
-            choice = self.internal_apply_simple_unicode_overrides(choice, chunk)
+                choice = self.unicode_choice_for_code(chunk, code, gid)
+            choice = self.apply_simple_unicode_overrides(choice, chunk)
             glyphs.append(
                 DecodedGlyph(
                     chunk,
@@ -1175,7 +1173,7 @@ class FontDecoder:
             )
         return glyphs
 
-    def internal_decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
+    def decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
         entries = self.cmap.decode_entries(data) if self.cmap is not None else []
         if not entries:
             chunks = split_code_bytes(data, self.to_unicode)
@@ -1194,21 +1192,21 @@ class FontDecoder:
                 current = self.cff_unicode_repairs
                 changed = {code for code, text in repairs.items() if current.get(code) != text}
                 if changed:
-                    cache = self.internal_unicode_choice_cache
+                    cache = self.unicode_choice_cache
                     for key in [key for key in cache if key[0] in changed]:
                         del cache[key]
                     current.update(repairs)
-        return [self.internal_build_cid_glyph(code_bytes, cid) for code_bytes, cid in entries]
+        return [self.build_cid_glyph(code_bytes, cid) for code_bytes, cid in entries]
 
-    def internal_build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
+    def build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
         char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
         gid = self.glyph_id_for_code(cid)
-        if gid is not None and gid != 0 and not self.internal_glyph_exists(gid):
+        if gid is not None and gid != 0 and not self.glyph_exists(gid):
             notdef_cid = self.cmap.mapped_notdef(code_bytes) if self.cmap else None
             if notdef_cid is not None:
                 cid = notdef_cid
                 gid = self.glyph_id_for_code(cid)
-        choice = self.internal_unicode_choice_for_code(code_bytes, cid, gid)
+        choice = self.unicode_choice_for_code(code_bytes, cid, gid)
         if self.ligature_overrides:
             lo = self.ligature_overrides
             text = "".join(lo.get(ord(ch), ch) for ch in choice.text)
@@ -1231,19 +1229,19 @@ class FontDecoder:
             choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
         )
 
-    def internal_glyph_exists(self, gid: int) -> bool:
+    def glyph_exists(self, gid: int) -> bool:
         program = self.font_program
         return program.has_glyph_id(gid) if program is not None else True
 
     def glyph_id_for_code(self, code: int) -> int | None:
-        cache = self.internal_glyph_id_cache
+        cache = self.glyph_id_cache
         try:
             return cache[code]
         except KeyError:
-            gid = cache[code] = self.internal_resolve_glyph_id_for_code(code)
+            gid = cache[code] = self.resolve_glyph_id_for_code(code)
             return gid
 
-    def internal_resolve_glyph_id_for_code(self, code: int) -> int | None:
+    def resolve_glyph_id_for_code(self, code: int) -> int | None:
         match self.font_program:
             case CFFFont() as program:
                 if self.is_cid_font:
@@ -1277,14 +1275,14 @@ class FontDecoder:
         return ".notdef"
 
     def glyph_bbox(self, code: int) -> Rectangle | None:
-        cache = self.internal_glyph_bbox_cache
+        cache = self.glyph_bbox_cache
         try:
             return cache[code]
         except KeyError:
-            box = cache[code] = self.internal_glyph_bbox_uncached(code)
+            box = cache[code] = self.glyph_bbox_uncached(code)
             return box
 
-    def internal_glyph_bbox_uncached(self, code: int) -> Rectangle | None:
+    def glyph_bbox_uncached(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
         program = self.font_program
@@ -1325,11 +1323,11 @@ class FontDecoder:
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
         if code < 0:
             return ()
-        cache = self.internal_glyph_outline_cache
+        cache = self.glyph_outline_cache
         key = (code, gid, text)
         contours = cache.get(key)
         if contours is None:
-            contours = cache[key] = self.internal_glyph_outline_uncached(code, gid, text)
+            contours = cache[key] = self.glyph_outline_uncached(code, gid, text)
         return contours
 
     def glyph_outline_arrays(
@@ -1337,15 +1335,15 @@ class FontDecoder:
     ) -> GlyphOutlineArrays | None:
         if code < 0:
             return None
-        cache = self.internal_glyph_outline_array_cache
+        cache = self.glyph_outline_array_cache
         key = (code, gid, text)
         try:
             return cache[key]
         except KeyError:
-            arrays = cache[key] = internal_outline_arrays(self.glyph_outline(code, gid, text))
+            arrays = cache[key] = outline_arrays(self.glyph_outline(code, gid, text))
             return arrays
 
-    def internal_glyph_outline_uncached(
+    def glyph_outline_uncached(
         self, code: int, gid: int | None, text: str
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
         glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
@@ -1365,9 +1363,7 @@ class FontDecoder:
         )
 
     def glyph_width(self, code: int) -> float:
-        fallback = (
-            self.internal_space_width_fallback if code == 32 else self.internal_width_fallback
-        )
+        fallback = self.space_width_fallback if code == 32 else self.internal_width_fallback
         return self.widths.get(code, fallback)
 
     def glyph_advance_vector(
@@ -1416,7 +1412,7 @@ class FontDecoder:
 
         total_x = 0.0
         width_fallback = self.internal_width_fallback
-        space_fallback = self.internal_space_width_fallback
+        space_fallback = self.space_width_fallback
         width_for = self.widths.get
         for glyph in glyphs:
             code = glyph.width_code

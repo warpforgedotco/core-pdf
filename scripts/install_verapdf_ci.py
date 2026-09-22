@@ -12,9 +12,9 @@ from pathlib import Path
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
-internal_VERSION = "1.30.2"
-internal_URL = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.2-installer.zip"
-internal_SHA256 = "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838"
+VERSION = "1.30.2"
+URL = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.2-installer.zip"
+SHA256 = "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838"
 
 
 def internal_configuration(destination: Path) -> bytes:
@@ -61,19 +61,19 @@ def main() -> None:
         if archive is None:
             archive = work / "installer.zip"
             with (
-                urllib.request.urlopen(internal_URL, timeout=120) as response,
+                urllib.request.urlopen(URL, timeout=120) as response,
                 archive.open("wb") as output,
             ):
                 shutil.copyfileobj(response, output)
         with archive.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
-        if digest != internal_SHA256:
+        if digest != SHA256:
             raise ValueError(f"veraPDF installer SHA256 mismatch: {digest}")
 
-        jar_name = f"verapdf-izpack-installer-{internal_VERSION}.jar"
+        jar_name = f"verapdf-izpack-installer-{VERSION}.jar"
         jar = work / jar_name
         with ZipFile(archive) as package:
-            jar.write_bytes(package.read(f"verapdf-greenfield-{internal_VERSION}/{jar_name}"))
+            jar.write_bytes(package.read(f"verapdf-greenfield-{VERSION}/{jar_name}"))
         configuration = work / "install.xml"
         configuration.write_bytes(internal_configuration(destination))
         destination.mkdir(parents=True)
@@ -92,7 +92,7 @@ def main() -> None:
         executable = destination / "verapdf"
         if not executable.is_file():
             raise RuntimeError("veraPDF installer did not produce the CLI executable")
-        print(f"Installed veraPDF {internal_VERSION}: {executable}")
+        print(f"Installed veraPDF {VERSION}: {executable}")
 
 
 if __name__ == "__main__":

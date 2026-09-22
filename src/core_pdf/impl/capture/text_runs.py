@@ -9,25 +9,25 @@ from core_pdf.impl.model.glyphs import GlyphCluster
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import word_gap_threshold
 
-internal_NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
-internal_NO_SPACE_AFTER = frozenset("([{")
+NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
+NO_SPACE_AFTER = frozenset("([{")
 
 
 def is_garbage_text(text: str) -> bool:
     return all(ord(char) < 32 or 0xE000 <= ord(char) <= 0xF8FF for char in text)
 
 
-def internal_gap_separator(left: str, right: str, gap: float, run: TextRun) -> str:
+def gap_separator(left: str, right: str, gap: float, run: TextRun) -> str:
     if gap <= word_gap_threshold(run.space_width, run.font_size):
         return ""
     if not left or not right or left[-1].isspace() or right[0].isspace():
         return ""
-    if right[0] in internal_NO_SPACE_BEFORE or left[-1] in internal_NO_SPACE_AFTER:
+    if right[0] in NO_SPACE_BEFORE or left[-1] in NO_SPACE_AFTER:
         return ""
     return " "
 
 
-def internal_can_merge_cross_font_word(left: str, right: str) -> bool:
+def can_merge_cross_font_word(left: str, right: str) -> bool:
     return (
         bool(left and right)
         and (left[-1].isalnum() or left[-1] == "_")
@@ -35,7 +35,7 @@ def internal_can_merge_cross_font_word(left: str, right: str) -> bool:
     )
 
 
-class internal_PendingRun:
+class PendingRun:
     __slots__ = ("run", "parts", "clusters", "head", "tail")
 
     def __init__(self, run: TextRun) -> None:
@@ -63,7 +63,7 @@ class internal_PendingRun:
         if not -2.0 <= gap < threshold:
             return False
         if reverse:
-            separator = internal_gap_separator(new_run.text, self.head, gap, self.run)
+            separator = gap_separator(new_run.text, self.head, gap, self.run)
             added = new_run.text + separator
             self.parts.appendleft(added)
             if added:
@@ -71,7 +71,7 @@ class internal_PendingRun:
             if not self.tail:
                 self.tail = added[-1:]
         else:
-            separator = internal_gap_separator(self.tail, new_run.text, gap, self.run)
+            separator = gap_separator(self.tail, new_run.text, gap, self.run)
             added = separator + new_run.text
             self.parts.append(added)
             if not self.head:
@@ -98,8 +98,8 @@ class internal_PendingRun:
             and font_size == new_run.font_size
             and (
                 pending.font_name == new_run.font_name
-                or internal_can_merge_cross_font_word(self.tail, new_run.text)
-                or internal_can_merge_cross_font_word(new_run.text, self.head)
+                or can_merge_cross_font_word(self.tail, new_run.text)
+                or can_merge_cross_font_word(new_run.text, self.head)
             )
             and pending.fill_color == new_run.fill_color
         )
@@ -130,13 +130,13 @@ class RunAccumulator:
 
     def __init__(self, output: list[TextRun]) -> None:
         self.output = output
-        self.pending: internal_PendingRun | None = None
+        self.pending: PendingRun | None = None
 
     def append(self, run: TextRun) -> None:
         if self.pending is not None and self.pending.try_append(run):
             return
         self.flush()
-        self.pending = internal_PendingRun(run)
+        self.pending = PendingRun(run)
 
     def flush(self) -> None:
         if self.pending is not None:

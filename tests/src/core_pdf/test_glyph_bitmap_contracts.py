@@ -1,17 +1,17 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render.target import RasterTarget
 
 
 def internal_target():
     pixels = bytearray(12 * 12 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
-    return internal_RasterTarget(
+    return RasterTarget(
         pixels,
         None,
-        clip=internal_ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12),
+        clip=ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12),
         width=12,
         height=12,
         scale=1,

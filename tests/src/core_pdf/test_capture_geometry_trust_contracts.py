@@ -3,9 +3,9 @@ from copy import replace
 import pytest
 
 from core_pdf.impl.extract.capture import (
-    internal_hidden_text_is_trusted,
-    internal_layout_bbox_for_run,
-    internal_promote_hidden_run,
+    hidden_text_is_trusted,
+    layout_bbox_for_run,
+    promote_hidden_run,
 )
 from core_pdf.impl.extract.contracts import GlyphEvidence, TextQualityStats
 from core_pdf.impl.model.glyphs import GlyphCluster
@@ -35,7 +35,7 @@ def run() -> TextRun:
 @pytest.mark.parametrize("baseline", [None, (10, 20, 50, 20), (10, 18, 50, 22)])
 def test_large_font_bounds_use_occurrence_ink_and_baseline(font_size, baseline):
     source = run().replace(font_size=font_size, baseline=baseline)
-    assert internal_layout_bbox_for_run(source) == (10, 18, 50, 25 if baseline is None else 28)
+    assert layout_bbox_for_run(source) == (10, 18, 50, 25 if baseline is None else 28)
     assert (source.y0, source.y1) == (-100, 100)
     assert source.ink_bbox == (12, 18, 48, 25)
 
@@ -54,7 +54,7 @@ def test_geometry_stays_intact_without_evidence_of_inflated_font_bounds(reason):
         "large-ink": {"ink_bbox": (12, -40, 48, 40)},
     }
     source = source.replace(**changes[reason])
-    assert internal_layout_bbox_for_run(source) == (source.x0, source.y0, source.x1, source.y1)
+    assert layout_bbox_for_run(source) == (source.x0, source.y0, source.x1, source.y1)
 
 
 def test_nonblank_cluster_ink_overrides_font_wide_run_ink():
@@ -66,7 +66,7 @@ def test_nonblank_cluster_ink_overrides_font_wide_run_ink():
         1, " ", (), source.advance_bbox, (10, -100, 50, 100), source.baseline, None
     )
     source = source.replace(glyph_clusters=(visible, blank))
-    assert internal_layout_bbox_for_run(source) == (10, 15, 50, 30)
+    assert layout_bbox_for_run(source) == (10, 15, 50, 30)
 
 
 @pytest.mark.parametrize(
@@ -125,7 +125,7 @@ def test_hidden_text_requires_sufficient_clean_semantic_evidence(case, expected)
         elif case == "noisy":
             quality = replace(quality, symbol_ratio=1)
     assert (
-        internal_hidden_text_is_trusted(
+        hidden_text_is_trusted(
             native_characters=native,
             painted_characters=painted,
             suspicious_characters=suspicious,
@@ -138,7 +138,7 @@ def test_hidden_text_requires_sufficient_clean_semantic_evidence(case, expected)
 
 def test_hidden_text_promotion_preserves_capture_visibility_and_geometry():
     source = run().replace(visible=False, inside_active_clip=False)
-    promoted = internal_promote_hidden_run(source)
+    promoted = promote_hidden_run(source)
     assert promoted.visible
     assert not promoted.inside_active_clip
     assert not source.visible

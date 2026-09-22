@@ -20,7 +20,7 @@ def internal_stream(program: bytes, **entries: object) -> PdfStream:
     return PdfStream(dictionary, program)
 
 
-def internal_constant(expression: str, outputs: int = 1) -> PdfFunctionEvaluator:
+def constant(expression: str, outputs: int = 1) -> PdfFunctionEvaluator:
     return compile_pdf_function(
         internal_stream(
             ("{ pop " + expression + " }").encode("ascii"), Range=[-1e100, 1e100] * outputs

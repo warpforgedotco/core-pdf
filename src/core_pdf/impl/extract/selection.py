@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
-from core_pdf.impl.extract.pipeline import internal_PageExtraction
+from core_pdf.impl.extract.pipeline import PageExtraction
 from core_pdf.impl.output.model import SCHEMA_VERSION, Document, Page
 from core_pdf.impl.runtime.execution import ExtractionScope
 
@@ -16,10 +16,10 @@ if TYPE_CHECKING:
     from core_pdf.impl.document.records import RawFormField
     from core_pdf.impl.document.structure import PageStructure
 
-internal_Extraction = TypeVar("internal_Extraction", bound=internal_PageExtraction, covariant=True)
+Extraction = TypeVar("Extraction", bound=PageExtraction, covariant=True)
 
 
-class internal_ExtractionBuilder(Protocol[internal_Extraction]):
+class ExtractionBuilder(Protocol[Extraction]):
     def __call__(
         self,
         page: PdfPage,
@@ -27,14 +27,14 @@ class internal_ExtractionBuilder(Protocol[internal_Extraction]):
         fields: Iterable[RawFormField],
         structure: PageStructure | None,
         hidden_layers: frozenset[str],
-    ) -> internal_Extraction: ...
+    ) -> Extraction: ...
 
 
-def internal_prepare_document_pages[internal_Extraction: internal_PageExtraction](
+def prepare_document_pages[Extraction: PageExtraction](
     document: PdfDocument[Any],
     pages: Sequence[PdfPage],
-    build: internal_ExtractionBuilder[internal_Extraction],
-) -> tuple[internal_Extraction, ...]:
+    build: ExtractionBuilder[Extraction],
+) -> tuple[Extraction, ...]:
     hidden_layers = document.oc_hidden_layers() if pages else frozenset()
     structure_tree = None
     with suppress(IndexError, TypeError, ValueError):
@@ -62,9 +62,9 @@ def internal_prepare_document_pages[internal_Extraction: internal_PageExtraction
     )
 
 
-def internal_assemble_document(
+def assemble_document(
     document: PdfDocument[Any],
-    extractions: tuple[internal_PageExtraction, ...],
+    extractions: tuple[PageExtraction, ...],
     context: ExtractionScope,
 ) -> Document:
     pages: list[Page] = []
@@ -85,5 +85,5 @@ def internal_assemble_document(
 def extract_document(
     document: PdfDocument[Any], context: ExtractionScope, pages: Sequence[PdfPage]
 ) -> Document:
-    extractions = internal_prepare_document_pages(document, tuple(pages), internal_PageExtraction)
-    return internal_assemble_document(document, extractions, context)
+    extractions = prepare_document_pages(document, tuple(pages), PageExtraction)
+    return assemble_document(document, extractions, context)

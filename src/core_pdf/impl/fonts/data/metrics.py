@@ -1,7 +1,7 @@
 from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
 
-internal_METRIC_RECORD_NAMES: dict[str, str] = {
+METRIC_RECORD_NAMES: dict[str, str] = {
     "Arial": "Helvetica",
     "Arial,Bold": "Helvetica-Bold",
     "Arial,BoldItalic": "Helvetica-BoldOblique",
@@ -31,5 +31,5 @@ internal_METRIC_RECORD_NAMES: dict[str, str] = {
 }
 
 FONT_DATA: dict[str, Core14FontMetrics] = {
-    name: PDF_FONT_DATA[record] for name, record in internal_METRIC_RECORD_NAMES.items()
+    name: PDF_FONT_DATA[record] for name, record in METRIC_RECORD_NAMES.items()
 }

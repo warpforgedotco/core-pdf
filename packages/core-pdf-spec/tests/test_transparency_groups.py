@@ -8,7 +8,7 @@ import pytest
 from core_pdf_spec.s_11_transparency.groups import remove_group_backdrop
 
 
-def internal_composite(
+def composite(
     backdrop: numpy.ndarray,
     backdrop_alpha: numpy.ndarray,
     source: numpy.ndarray,
@@ -47,7 +47,7 @@ def test_group_source_retains_inner_blend_interaction_with_initial_backdrop() ->
     backdrop = numpy.asarray([[0.8, 0.3, 0.1]])
     initial = numpy.asarray([0.4])
     source_alpha = numpy.asarray([0.25])
-    rendered, complete = internal_composite(
+    rendered, complete = composite(
         backdrop, initial, numpy.asarray([[0.25, 0.5, 0.9]]), source_alpha, "Multiply"
     )
     color, alpha = remove_group_backdrop(rendered, complete, backdrop, initial, source_alpha)
@@ -62,16 +62,16 @@ def test_nonisolated_group_matches_ungrouped_painting(
 ) -> None:
     backdrop = numpy.asarray([[0.15, 0.75, 0.4]])
     initial = numpy.asarray([initial_alpha])
-    first, first_alpha = internal_composite(
+    first, first_alpha = composite(
         backdrop, initial, numpy.asarray([[1.0, 0.1, 0.3]]), numpy.asarray([0.4]), mode
     )
-    rendered, complete = internal_composite(
+    rendered, complete = composite(
         first, first_alpha, numpy.asarray([[0.2, 0.5, 0.9]]), numpy.asarray([0.5]), mode
     )
     color, alpha = remove_group_backdrop(
         rendered, complete, backdrop, initial, numpy.asarray([0.7])
     )
-    recomposed, recomposed_alpha = internal_composite(backdrop, initial, color, alpha)
+    recomposed, recomposed_alpha = composite(backdrop, initial, color, alpha)
     numpy.testing.assert_allclose(recomposed, rendered)
     numpy.testing.assert_allclose(recomposed_alpha, complete)
 
@@ -83,10 +83,10 @@ def test_outer_opacity_applies_once_after_multiple_group_elements(
 ) -> None:
     backdrop = numpy.asarray([[0.2, 0.6, 0.8]])
     initial = numpy.asarray([initial_alpha])
-    first, first_alpha = internal_composite(
+    first, first_alpha = composite(
         backdrop, initial, numpy.asarray([[1.0, 0.0, 0.0]]), numpy.asarray([0.5])
     )
-    rendered, complete = internal_composite(
+    rendered, complete = composite(
         first,
         first_alpha,
         numpy.asarray([[0.0, 1.0, 0.0]]),
@@ -96,7 +96,7 @@ def test_outer_opacity_applies_once_after_multiple_group_elements(
     color, alpha = remove_group_backdrop(
         rendered, complete, backdrop, initial, numpy.asarray([0.75])
     )
-    actual, actual_alpha = internal_composite(backdrop, initial, color, alpha * opacity)
+    actual, actual_alpha = composite(backdrop, initial, color, alpha * opacity)
     expected_premultiplied = (
         opacity * rendered * complete[..., None] + (1.0 - opacity) * backdrop * initial[..., None]
     )
@@ -114,7 +114,7 @@ def test_outer_blend_uses_removed_source_and_only_group_alpha() -> None:
         initial,
         numpy.asarray([0.75]),
     )
-    actual, actual_alpha = internal_composite(backdrop, initial, color, alpha * 0.4, "Screen")
+    actual, actual_alpha = composite(backdrop, initial, color, alpha * 0.4, "Screen")
     numpy.testing.assert_allclose(actual, [[0.28, 0.624, 0.8]])
     numpy.testing.assert_array_equal(actual_alpha, [1.0])
 
@@ -125,22 +125,22 @@ def test_nested_nonisolated_groups_remove_their_own_initial_backdrop(
 ) -> None:
     backdrop = numpy.asarray([[0.2, 0.4, 0.7]])
     initial = numpy.asarray([initial_alpha])
-    first, first_alpha = internal_composite(
+    first, first_alpha = composite(
         backdrop, initial, numpy.asarray([[0.6, 0.2, 0.5]]), numpy.asarray([0.2]), "Screen"
     )
-    nested, nested_complete = internal_composite(
+    nested, nested_complete = composite(
         first, first_alpha, numpy.asarray([[0.1, 0.9, 0.3]]), numpy.asarray([0.4]), "Multiply"
     )
     nested_color, nested_alpha = remove_group_backdrop(
         nested, nested_complete, first, first_alpha, numpy.asarray([0.4])
     )
-    nested_output, nested_output_alpha = internal_composite(
+    nested_output, nested_output_alpha = composite(
         first, first_alpha, nested_color, nested_alpha * 0.5
     )
     parent_color, parent_alpha = remove_group_backdrop(
         nested_output, nested_output_alpha, backdrop, initial, numpy.asarray([0.36])
     )
-    recomposed, recomposed_alpha = internal_composite(backdrop, initial, parent_color, parent_alpha)
+    recomposed, recomposed_alpha = composite(backdrop, initial, parent_color, parent_alpha)
     numpy.testing.assert_allclose(recomposed, nested_output)
     numpy.testing.assert_allclose(recomposed_alpha, nested_output_alpha)
 
