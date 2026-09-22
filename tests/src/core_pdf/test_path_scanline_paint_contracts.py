@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render import path_fill_target
+from core_pdf.impl.render import target as render_target
 from core_pdf.impl.render.clipping import internal_ClipState
 from core_pdf.impl.render.target import internal_RasterTarget
 
@@ -50,7 +50,7 @@ def internal_in_clip(x, y, kind):
 def test_scanline_holes_and_clipping_match_geometry(
     monkeypatch, threshold, clip_kind, mode, alpha, fill_rule, opposite_inner
 ):
-    monkeypatch.setattr(path_fill_target, "RASTER_NUMPY_SPAN_MIN_PIXELS", threshold)
+    monkeypatch.setattr(render_target, "RASTER_NUMPY_SPAN_MIN_PIXELS", threshold)
     target, actual = internal_target(clip_kind)
     edges = [(46, 1, 46, 18), (1, 18, 1, 1), (30, 5, 30, 14), (10, 14, 10, 5)]
     if opposite_inner:
