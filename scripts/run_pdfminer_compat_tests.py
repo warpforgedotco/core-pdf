@@ -16,7 +16,7 @@ UPSTREAM_ENV_MARKER = "CORE_PDF_PDFMINER_UPSTREAM_ENV"
 
 
 def internal_install_core_pdf_facade() -> None:
-    from core_pdf.api.compat import pdfminer as facade
+    from core_pdf_compat import pdfminer as facade
 
     package = ModuleType("pdfminer")
     package.__path__ = []

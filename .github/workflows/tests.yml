@@ -166,6 +166,38 @@ jobs:
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
+  core-isolation:
+    # Core must never import or discover its companions: with only core-pdf and
+    # its declared dependencies installed, core-pdf-ocr, core-pdf-validate, and
+    # core-pdf-compat must be absent and the engine must still import.
+    name: Core installs without its companions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.17"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install only core and the test tools
+        run: uv sync --locked --package core-pdf --group test
+
+      - name: Prove the companions are absent
+        run: uv run --locked --no-sync python scripts/check_package_isolation.py core-pdf
+
+      - name: Import the engine
+        run: uv run --locked --no-sync python -c "import core_pdf; core_pdf.PdfDocument"
+
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
   workspace:
     name: Workspace suite / Python 3.14
     runs-on: ubuntu-latest

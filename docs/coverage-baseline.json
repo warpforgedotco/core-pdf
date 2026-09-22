@@ -2,6 +2,7 @@
   "sources": [
     "src/core_pdf",
     "packages/core-pdf-ocr/src/core_pdf_ocr",
+    "packages/core-pdf-compat/src/core_pdf_compat",
     "packages/core-pdf-spec/src/core_pdf_spec",
     "packages/core-pdf-validate/src/core_pdf_validate",
     "packages/core-predictors/src/core_predictors",

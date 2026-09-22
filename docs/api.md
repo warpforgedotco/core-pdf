@@ -61,7 +61,7 @@ with PdfDocument.open("document.pdf") as document:
 
 ## OCR extraction
 
-`core_pdf.PdfDocument` and the compatibility facades extract PDF-native text only,
+`core_pdf.PdfDocument` and the `core-pdf-compat` facades extract PDF-native text only,
 including existing hidden text layers. Image-only or flattened vector text needs the
 separate `core-pdf-ocr` package. Installing it does not change core's behavior.
 
@@ -90,16 +90,18 @@ else raises a `TypeError` naming the offending path rather than being stringifie
 
 ## Compatibility facades
 
-`core_pdf.api.compat` holds local projections of common third-party PDF interfaces:
+`core_pdf_compat` holds local projections of common third-party PDF interfaces:
 `pdfminer`, `pdfplumber`, `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray.
 Each facade imports independently; the package root resolves its convenience exports
 lazily. They reproduce useful high-level behavior, not every upstream implementation
-detail or private API.
+detail or private API. The facades ship in the separately installable `core-pdf-compat`
+package, which pins the exact core release because they use internal core stages; core
+never imports or discovers them.
 
 ```python
-from core_pdf.api.compat import inspect_xray
-from core_pdf.api.compat.pdfminer import extract_text
-from core_pdf.api.compat.pdfplumber import open as open_pdf
+from core_pdf_compat import inspect_xray
+from core_pdf_compat.pdfminer import extract_text
+from core_pdf_compat.pdfplumber import open as open_pdf
 
 print(extract_text("document.pdf"))
 with open_pdf("document.pdf") as pdf:
@@ -118,7 +120,7 @@ and rejects unknown options. Table discovery and debugging share this normalizat
 `PageImage.show()` displays the current annotated page through Pillow's platform viewer.
 It uses the same PNG pixels as `save()` and `_repr_png_()`; viewer exceptions propagate.
 Pillow ships in the optional `pdfplumber` extra and is imported only when display is
-requested; without it `show()` raises `ImportError` naming `core-pdf[pdfplumber]`. Rendering,
+requested; without it `show()` raises `ImportError` naming `core-pdf-compat[pdfplumber]`. Rendering,
 drawing, `save()`, and `_repr_png_()` do not require Pillow. Display integration tests
 intercept the viewer call and verify image contents without opening windows.
 
@@ -131,21 +133,21 @@ its distinct page selection and lazy iterator/resource lifetime.
 
 The Unstructured facade needs the `unstructured` extra with spaCy and the pinned
 `en_core_web_sm` 3.8.0 model; the [README](../README.md) has the install commands.
-Importing `core_pdf.api.compat.unstructured`, any of its element classes, or the parent
+Importing `core_pdf_compat.unstructured`, any of its element classes, or the parent
 package's `partition_pdf` loads that pipeline once and reuses it. A missing dependency
 or model raises an `ImportError` with the original cause. There is no lexical fallback
-and no runtime model download. Importing `core_pdf`, `core_pdf.api.compat`, or another
+and no runtime model download. Importing `core_pdf`, `core_pdf_compat`, or another
 facade never loads the model.
 
 ### Compatibility validation
 
-Differential tests in `tests/src/core_pdf/api/compat/differential` compare each facade
+Differential tests in `packages/core-pdf-compat/tests/differential` compare each facade
 with its reference library. By default each facade runs on its own upstream fixture
 corpus, plus selected cross-corpus redaction cases for x-ray:
 
 ```sh
 git submodule update --init --recursive
-uv run --locked --extra unstructured --group test --group vendor-test pytest -n auto
+uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
 Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run every facade against every fixture.

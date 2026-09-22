@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "core-pdf-compat"
+version = "0.0.7"
+description = "Third-party PDF API compatibility facades for core-pdf"
+authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+requires-python = ">=3.14"
+classifiers = ["Development Status :: 3 - Alpha"]
+dependencies = [
+    "core-pdf==0.0.7",
+    "core-pdf-spec>=0.5.0,<0.6.0",
+    "core-adobe-fonts>=0.1.0,<0.2.0",
+    "numpy>=2.5.1",
+]
+
+[project.optional-dependencies]
+unstructured = [
+    "en-core-web-sm==3.8.0",
+    "spacy>=3.8.15,<3.9.0",
+]
+pdfplumber = [
+    "pillow>=12.2.0",
+]
+
+[project.urls]
+Repository = "https://github.com/core-experiments/core-pdf"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core_pdf_compat = ["py.typed"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["**/__pycache__/*", "**/*.pyc"]
+
+[tool.uv.sources]
+core-pdf = { workspace = true }
+core-pdf-spec = { workspace = true }
+core-adobe-fonts = { workspace = true }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
