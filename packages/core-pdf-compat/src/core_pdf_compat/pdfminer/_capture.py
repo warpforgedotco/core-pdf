@@ -4,14 +4,14 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from core_pdf import PdfPage
-from core_pdf.impl._impl.capture.glyphs import GlyphPaint
-from core_pdf.impl._impl.capture.interpreter import TextState
-from core_pdf.impl._impl.capture.program import CapturedProgram
-from core_pdf.impl._impl.capture.recovery import CaptureRecovery
-from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf.impl.capture.glyphs import GlyphPaint
+from core_pdf.impl.capture.interpreter import TextState
+from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.recovery import CaptureRecovery
+from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfError, PdfParseError
+from core_pdf.impl.fonts.decoder import FontDecoder
+from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_content.operations import ContentOperands
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame

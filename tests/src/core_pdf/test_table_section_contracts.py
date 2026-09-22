@@ -1,7 +1,7 @@
 import pytest
 
-from core_pdf.impl._impl.extract import table_cleanup as cleanup
-from core_pdf.impl._impl.output.model import Table, TableAssociatedText, TableCell
+from core_pdf.impl.extract import table_cleanup as cleanup
+from core_pdf.impl.output.model import Table, TableAssociatedText, TableCell
 
 
 def internal_table(texts, *, geometry=True, source="stream"):

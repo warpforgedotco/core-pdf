@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl._impl.layout import text_rules as rules
+from core_pdf.impl.layout import text_rules as rules
 
 
 def internal_index_bytes(entries: dict[str, int]) -> bytes:

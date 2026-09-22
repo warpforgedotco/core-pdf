@@ -9,41 +9,41 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl._impl.capture.program import PageProgram
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedLine
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
+from core_pdf.impl.extract.capture import (
     capture_page as native_capture_page,
 )
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.extract.capture import (
     internal_capture_from_program as native_capture_from_program,
 )
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.extract.capture import (
     internal_capture_runs,
     internal_observations_from_runs,
     internal_promoted_hidden_runs,
     internal_run_uses_actual_text,
     internal_STRUCTURE_UNSET,
 )
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.extract.capture import (
     internal_glyph_evidence_fields as native_glyph_evidence_fields,
 )
-from core_pdf.impl._impl.extract.contracts import (
+from core_pdf.impl.extract.contracts import (
     GlyphEvidence,
     ObservationBatch,
 )
-from core_pdf.impl._impl.extract.contracts import (
+from core_pdf.impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl._impl.extract.quality import internal_analyze_text
-from core_pdf.impl._impl.graphics.filter_registry import declared_filter_names
-from core_pdf.impl._impl.model.geometry import bbox_union, rect_tuple
-from core_pdf.impl._impl.model.glyphs import (
+from core_pdf.impl.extract.quality import internal_analyze_text
+from core_pdf.impl.graphics.filter_registry import declared_filter_names
+from core_pdf.impl.model.geometry import bbox_union, rect_tuple
+from core_pdf.impl.model.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
-from core_pdf.impl._impl.model.runs import TextRun
-from core_pdf.impl._impl.model.text import normalize_extracted_text
+from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.model.text import normalize_extracted_text
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     PageAnalysis,

@@ -7,8 +7,8 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
-from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.capture import internal_promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,

@@ -4,8 +4,8 @@ from bisect import bisect_left, bisect_right
 from typing import Any, cast
 
 from core_pdf import PdfPage
-from core_pdf.impl._impl.model.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.model.geometry import bbox_union, overlap_ratio_of
 
 from ._capture import (
     internal_pdfminer_page_program,

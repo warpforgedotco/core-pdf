@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.graphics.color import color_operands_to_srgb, internal_convert_image_data
-from core_pdf.impl._impl.graphics.color_spec import parse_color_space
-from core_pdf.impl._impl.graphics.image_samples import convert_integer_samples
+from core_pdf.impl.graphics.color import color_operands_to_srgb, internal_convert_image_data
+from core_pdf.impl.graphics.color_spec import parse_color_space
+from core_pdf.impl.graphics.image_samples import convert_integer_samples
 
 
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_soft_mask_precedes_colour_key_mask():
 @pytest.mark.parametrize("fallback", [False, True])
 @pytest.mark.parametrize("inks", [(0, 0, 0, 0), (19, 64, 201, 128), (255, 255, 255, 255)])
 def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fallback, inks):
-    from core_pdf.impl._impl.graphics import device_profiles
+    from core_pdf.impl.graphics import device_profiles
 
     device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()
     try:

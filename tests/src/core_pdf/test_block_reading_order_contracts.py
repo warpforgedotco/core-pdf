@@ -1,12 +1,12 @@
 import pytest
 
-from core_pdf.impl._impl.extract.block_layout import (
+from core_pdf.impl.extract.block_layout import (
     internal_column_major_prose,
     internal_interleave_columnar_blocks,
     internal_transpose_numeric_table_blocks,
 )
-from core_pdf.impl._impl.extract.contracts import ParsedBlock, ParsedLine
-from core_pdf.impl._impl.output.model import TextLine
+from core_pdf.impl.extract.contracts import ParsedBlock, ParsedLine
+from core_pdf.impl.output.model import TextLine
 
 
 def internal_grid(columns, rows, *, numeric=False, column_major=False, jitter=0):

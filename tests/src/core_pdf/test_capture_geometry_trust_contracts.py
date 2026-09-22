@@ -2,14 +2,14 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.extract.capture import (
     internal_hidden_text_is_trusted,
     internal_layout_bbox_for_run,
     internal_promote_hidden_run,
 )
-from core_pdf.impl._impl.extract.contracts import GlyphEvidence, TextQualityStats
-from core_pdf.impl._impl.model.glyphs import GlyphCluster
-from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.extract.contracts import GlyphEvidence, TextQualityStats
+from core_pdf.impl.model.glyphs import GlyphCluster
+from core_pdf.impl.model.runs import TextRun
 
 
 def run() -> TextRun:

@@ -2,14 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.extract.capture import (
     internal_apply_structure_actual_text,
     internal_run_mcid,
     internal_run_uses_actual_text,
     internal_structure_actual_text_owner,
 )
-from core_pdf.impl._impl.model.glyphs import GlyphCluster
-from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.model.glyphs import GlyphCluster
+from core_pdf.impl.model.runs import TextRun
 
 
 def run(text: str, mcid: object = 0, x: float = 0) -> TextRun:

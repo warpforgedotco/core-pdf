@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl._impl.graphics.color_spec import (
+from core_pdf.impl.graphics.color_spec import (
     cs_param_floats,
     describe_color_space,
     internal_color_space_paints,

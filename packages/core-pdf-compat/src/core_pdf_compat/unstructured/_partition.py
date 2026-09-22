@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl._impl.pdf_names import recover_pdf_name
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
+from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_compat.pdfminer._extract import internal_extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 

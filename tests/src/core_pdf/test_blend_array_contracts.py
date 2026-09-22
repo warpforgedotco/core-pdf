@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.render import blend
+from core_pdf.impl.render import blend
 
 
 def internal_source_over(destination, source, mode=None):

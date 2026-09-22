@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl._impl.fonts import decoder
+from core_pdf.impl.fonts import decoder
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 

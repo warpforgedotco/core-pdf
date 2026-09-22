@@ -9,8 +9,8 @@ import pytest
 from PIL import Image
 
 from core_pdf import PdfDocument as NativePdfDocument
-from core_pdf.impl._impl.render.model import RasterImage
-from core_pdf.impl._impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
+from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
 from core_pdf_ocr import PdfDocument
 from core_pdf_ocr.impl.extract.ocr import tesseract
 from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask

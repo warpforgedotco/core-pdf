@@ -6,15 +6,25 @@ from typing import TYPE_CHECKING
 from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
-    from core_pdf.impl._impl.document.document import DocumentAdapter, PdfDocument
-    from core_pdf.impl._impl.document.page import PdfPage
-    from core_pdf.impl._impl.fonts.fallback import (
+    from core_pdf.impl.document.document import DocumentAdapter, PdfDocument
+    from core_pdf.impl.document.page import PdfPage
+    from core_pdf.impl.exceptions import (
+        PdfContractError,
+        PdfDecryptionError,
+        PdfDocumentClosedError,
+        PdfError,
+        PdfParseError,
+        PdfRasterTooLargeError,
+        PdfSourceError,
+        PdfUnsupportedError,
+    )
+    from core_pdf.impl.fonts.fallback import (
         PdfRasterFontFace,
         PdfRasterFontProvider,
         PdfRasterFontRequest,
     )
-    from core_pdf.impl._impl.model.page_selection import PageSelection
-    from core_pdf.impl._impl.output.model import (
+    from core_pdf.impl.model.page_selection import PageSelection
+    from core_pdf.impl.output.model import (
         ContentNode,
         Document,
         DocumentTableView,
@@ -27,16 +37,6 @@ if TYPE_CHECKING:
         TextLineReference,
         TextView,
     )
-    from core_pdf.impl.exceptions import (
-        PdfContractError,
-        PdfDecryptionError,
-        PdfDocumentClosedError,
-        PdfError,
-        PdfParseError,
-        PdfRasterTooLargeError,
-        PdfSourceError,
-        PdfUnsupportedError,
-    )
     from core_pdf.impl.types import (
         DrawingRecord,
         ImageMetadata,
@@ -45,40 +45,40 @@ if TYPE_CHECKING:
         TextWord,
     )
 internal_EXPORTS = {
-    "DocumentAdapter": ("core_pdf.impl._impl.document.document", "DocumentAdapter"),
-    "Document": ("core_pdf.impl._impl.output.model", "Document"),
-    "PageSelection": ("core_pdf.impl._impl.model.page_selection", "PageSelection"),
-    "PdfDocument": ("core_pdf.impl._impl.document.document", "PdfDocument"),
+    "DocumentAdapter": ("core_pdf.impl.document.document", "DocumentAdapter"),
+    "Document": ("core_pdf.impl.output.model", "Document"),
+    "PageSelection": ("core_pdf.impl.model.page_selection", "PageSelection"),
+    "PdfDocument": ("core_pdf.impl.document.document", "PdfDocument"),
     "PdfRasterFontFace": (
-        "core_pdf.impl._impl.fonts.fallback",
+        "core_pdf.impl.fonts.fallback",
         "PdfRasterFontFace",
     ),
     "PdfRasterFontProvider": (
-        "core_pdf.impl._impl.fonts.fallback",
+        "core_pdf.impl.fonts.fallback",
         "PdfRasterFontProvider",
     ),
     "PdfRasterFontRequest": (
-        "core_pdf.impl._impl.fonts.fallback",
+        "core_pdf.impl.fonts.fallback",
         "PdfRasterFontRequest",
     ),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.exceptions", "PdfContractError"),
-    "ContentNode": ("core_pdf.impl._impl.output.model", "ContentNode"),
-    "DocumentTableView": ("core_pdf.impl._impl.output.model", "DocumentTableView"),
-    "DocumentTextView": ("core_pdf.impl._impl.output.model", "DocumentTextView"),
+    "ContentNode": ("core_pdf.impl.output.model", "ContentNode"),
+    "DocumentTableView": ("core_pdf.impl.output.model", "DocumentTableView"),
+    "DocumentTextView": ("core_pdf.impl.output.model", "DocumentTextView"),
     "DrawingRecord": ("core_pdf.impl.types", "DrawingRecord"),
     "ImageMetadata": ("core_pdf.impl.types", "ImageMetadata"),
     "ImageRecord": ("core_pdf.impl.types", "ImageRecord"),
     "PageScoped": ("core_pdf.impl.types", "PageScoped"),
-    "TableView": ("core_pdf.impl._impl.output.model", "TableView"),
-    "TableReference": ("core_pdf.impl._impl.output.model", "TableReference"),
-    "TableAssociatedText": ("core_pdf.impl._impl.output.model", "TableAssociatedText"),
-    "TableColumnBand": ("core_pdf.impl._impl.output.model", "TableColumnBand"),
-    "TableRowBand": ("core_pdf.impl._impl.output.model", "TableRowBand"),
-    "TextView": ("core_pdf.impl._impl.output.model", "TextView"),
+    "TableView": ("core_pdf.impl.output.model", "TableView"),
+    "TableReference": ("core_pdf.impl.output.model", "TableReference"),
+    "TableAssociatedText": ("core_pdf.impl.output.model", "TableAssociatedText"),
+    "TableColumnBand": ("core_pdf.impl.output.model", "TableColumnBand"),
+    "TableRowBand": ("core_pdf.impl.output.model", "TableRowBand"),
+    "TextView": ("core_pdf.impl.output.model", "TextView"),
     "TextWord": ("core_pdf.impl.types", "TextWord"),
-    "TextLineReference": ("core_pdf.impl._impl.output.model", "TextLineReference"),
-    "PdfPage": ("core_pdf.impl._impl.document.page", "PdfPage"),
+    "TextLineReference": ("core_pdf.impl.output.model", "TextLineReference"),
+    "PdfPage": ("core_pdf.impl.document.page", "PdfPage"),
     "PdfDecryptionError": ("core_pdf.impl.exceptions", "PdfDecryptionError"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),

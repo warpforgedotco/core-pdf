@@ -4,7 +4,7 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII
 from core_pdf_ocr.impl.extract.ocr import newstroke
 from core_pdf_spec.s_08_graphics.matrix import Matrix

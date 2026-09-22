@@ -2,8 +2,8 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl._impl.capture.program import PageProgram
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
+from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, PageEvidence
 
 

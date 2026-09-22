@@ -2,15 +2,15 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl._impl.capture.records import (
+from core_pdf.impl.capture.program import CapturedProgram, PageProgram
+from core_pdf.impl.capture.records import (
     CapturedDrawing,
     CapturedLine,
     CapturedPath,
     CapturedSubpath,
     ShadingPattern,
 )
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract import capture
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, StrokedVectorTextEvidence
 
@@ -225,7 +225,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
     field: str,
     value: object,
 ) -> None:
-    from core_pdf.impl._impl.extract.contracts import GlyphEvidence, TextQualityStats
+    from core_pdf.impl.extract.contracts import GlyphEvidence, TextQualityStats
 
     evidence = replace(
         ocr_capture.evidence,
@@ -250,7 +250,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
 def test_template_text_promotion_preserves_program_drawings_and_updates_evidence(
     ocr_capture: PageAnalysis,
 ) -> None:
-    from core_pdf.impl._impl.model.runs import TextRun
+    from core_pdf.impl.model.runs import TextRun
     from core_pdf_ocr.impl.extract.ocr.newstroke import NewstrokeDecode
 
     run = TextRun("R123", 10, 20, 30, 25, 10, 25, 5, 2, 0, 0, 0)
@@ -274,7 +274,7 @@ def test_template_text_promotion_preserves_program_drawings_and_updates_evidence
 def test_promoted_hidden_text_prefers_normalized_observation_references(
     ocr_capture: PageAnalysis,
 ) -> None:
-    from core_pdf.impl._impl.model.runs import TextRun
+    from core_pdf.impl.model.runs import TextRun
 
     raw = TextRun("old", 10, 20, 30, 25, 10, 25, 5, 2, 0, 0, 0, visible=False)
     normalized = replace(raw, text="new")

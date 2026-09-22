@@ -3,7 +3,7 @@ from copy import replace
 import numpy
 import pytest
 
-from core_pdf.impl._impl.render.model import RasterImage
+from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis
 from core_pdf_ocr.impl.extract.ocr import raster
 from core_pdf_ocr.impl.extract.ocr.types import internal_Raster

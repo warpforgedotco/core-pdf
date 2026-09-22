@@ -5,7 +5,7 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl._impl.model.geometry import flip_rect_vertical
+from core_pdf.impl.model.geometry import flip_rect_vertical
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
