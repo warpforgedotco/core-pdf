@@ -11,8 +11,6 @@ from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
 
 
 def internal_float_value(value: object) -> float:
-    if isinstance(value, bool):
-        return float(value)
     if isinstance(value, (int, float, str, bytes, bytearray)):
         return float(value)
     raise TypeError(f"expected float-compatible value, got {type(value).__name__}")
