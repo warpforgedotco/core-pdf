@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import replace
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document.page_links import resolve_destination_value
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
@@ -91,15 +91,6 @@ class PageProducts(Record):
         frozen_setattr(self, "blocks", blocks)
         frozen_setattr(self, "order_evidence", order_evidence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"tables={self.tables!r}, "
-            f"blocks={self.blocks!r}, "
-            f"order_evidence={self.order_evidence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -113,14 +104,6 @@ class PageProducts(Record):
 
     def __hash__(self) -> int:
         return hash((self.tables, self.blocks, self.order_evidence))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        tables = changes.pop("tables", self.tables)
-        blocks = changes.pop("blocks", self.blocks)
-        order_evidence = changes.pop("order_evidence", self.order_evidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(tables, blocks, order_evidence)
 
 
 class PageExtraction:

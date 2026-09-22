@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from copy import replace
 from heapq import heappop, heappush
-from typing import Any, ClassVar, Self, cast
+from typing import ClassVar, cast
 
 import numpy
 
@@ -29,7 +29,7 @@ from core_pdf.impl.model.text import (
     text_word_tokens,
 )
 from core_pdf.impl.output.model import TextLine, TextSpan
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.types import TextWord
 
@@ -57,15 +57,6 @@ class LineGroupPlan(Record):
         frozen_setattr(self, "starts", starts)
         frozen_setattr(self, "stops", stops)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"indexes={self.indexes!r}, "
-            f"starts={self.starts!r}, "
-            f"stops={self.stops!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -79,14 +70,6 @@ class LineGroupPlan(Record):
 
     def __hash__(self) -> int:
         return hash((self.indexes, self.starts, self.stops))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        indexes = changes.pop("indexes", self.indexes)
-        starts = changes.pop("starts", self.starts)
-        stops = changes.pop("stops", self.stops)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(indexes, starts, stops)
 
 
 class BuiltLines(Record):
@@ -102,9 +85,6 @@ class BuiltLines(Record):
         frozen_setattr(self, "lines", lines)
         frozen_setattr(self, "boxes", boxes)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(lines={self.lines!r}, boxes={self.boxes!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -114,13 +94,6 @@ class BuiltLines(Record):
 
     def __hash__(self) -> int:
         return hash((self.lines, self.boxes))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        lines = changes.pop("lines", self.lines)
-        boxes = changes.pop("boxes", self.boxes)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(lines, boxes)
 
 
 def line_group_indexes(observations: ObservationBatch) -> LineGroupPlan:
@@ -898,16 +871,6 @@ class LayoutRegion(Record):
         frozen_setattr(self, "y_start_order", y_start_order)
         frozen_setattr(self, "y_center_order", y_center_order)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"indexes={self.indexes!r}, "
-            f"x_start_order={self.x_start_order!r}, "
-            f"y_start_order={self.y_start_order!r}, "
-            f"y_center_order={self.y_center_order!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -923,17 +886,8 @@ class LayoutRegion(Record):
     def __hash__(self) -> int:
         return hash((self.indexes, self.x_start_order, self.y_start_order, self.y_center_order))
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        indexes = changes.pop("indexes", self.indexes)
-        x_start_order = changes.pop("x_start_order", self.x_start_order)
-        y_start_order = changes.pop("y_start_order", self.y_start_order)
-        y_center_order = changes.pop("y_center_order", self.y_center_order)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(indexes, x_start_order, y_start_order, y_center_order)
 
-
-class LayoutGeometry:
+class LayoutGeometry(ReplaceFields, ReprFields):
     __slots__ = ("boxes", "x_centers", "y_centers", "heights", "marks", "row_ids")
 
     boxes: numpy.ndarray
@@ -969,18 +923,6 @@ class LayoutGeometry:
         self.marks = marks
         self.row_ids = row_ids
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"boxes={self.boxes!r}, "
-            f"x_centers={self.x_centers!r}, "
-            f"y_centers={self.y_centers!r}, "
-            f"heights={self.heights!r}, "
-            f"marks={self.marks!r}, "
-            f"row_ids={self.row_ids!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -996,17 +938,6 @@ class LayoutGeometry:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        boxes = changes.pop("boxes", self.boxes)
-        x_centers = changes.pop("x_centers", self.x_centers)
-        y_centers = changes.pop("y_centers", self.y_centers)
-        heights = changes.pop("heights", self.heights)
-        marks = changes.pop("marks", self.marks)
-        row_ids = changes.pop("row_ids", self.row_ids)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(boxes, x_centers, y_centers, heights, marks, row_ids)
 
     @classmethod
     def create(cls, boxes: numpy.ndarray) -> LayoutGeometry:

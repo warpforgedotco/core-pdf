@@ -8,6 +8,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
+from core_pdf.impl.model.geometry import intersect_bbox
 from core_pdf.impl.runtime.array_views import UInt8Array, uint8_view
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
@@ -362,10 +363,8 @@ def intersect_box(
     a: tuple[float, float, float, float],
     b: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float] | None:
-    x0 = max(a[0], b[0])
-    y0 = max(a[1], b[1])
-    x1 = min(a[2], b[2])
-    y1 = min(a[3], b[3])
+    """`intersect_bbox` for two known rectangles, with empty results as None."""
+    x0, y0, x1, y1 = intersect_bbox(a, b) or a
     if x1 <= x0 or y1 <= y0:
         return None
     return x0, y0, x1, y1

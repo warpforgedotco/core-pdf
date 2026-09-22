@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, ReprFields
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster
@@ -40,16 +40,6 @@ class LayoutLineTextSegment(Record):
         frozen_setattr(self, "advance_bbox", advance_bbox)
         frozen_setattr(self, "rotation_angle", rotation_angle)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"separator_before={self.separator_before!r}, "
-            f"advance_bbox={self.advance_bbox!r}, "
-            f"rotation_angle={self.rotation_angle!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -65,15 +55,6 @@ class LayoutLineTextSegment(Record):
     def __hash__(self) -> int:
         return hash((self.text, self.separator_before, self.advance_bbox, self.rotation_angle))
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        separator_before = changes.pop("separator_before", self.separator_before)
-        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
-        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, separator_before, advance_bbox, rotation_angle)
-
 
 class LayoutLineText(Record):
     __slots__ = ("text", "segments")
@@ -88,9 +69,6 @@ class LayoutLineText(Record):
         frozen_setattr(self, "text", text)
         frozen_setattr(self, "segments", segments)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(text={self.text!r}, segments={self.segments!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -101,13 +79,6 @@ class LayoutLineText(Record):
     def __hash__(self) -> int:
         return hash((self.text, self.segments))
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        segments = changes.pop("segments", self.segments)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, segments)
-
 
 EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 
@@ -115,7 +86,7 @@ EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 
-class TextRun:
+class TextRun(ReprFields):
     __slots__ = (
         "text",
         "x0",
@@ -228,38 +199,6 @@ class TextRun:
         "confidence",
         "glyph_clusters",
     )
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"x0={self.x0!r}, "
-            f"y0={self.y0!r}, "
-            f"x1={self.x1!r}, "
-            f"y1={self.y1!r}, "
-            f"tx={self.tx!r}, "
-            f"ty={self.ty!r}, "
-            f"font_size={self.font_size!r}, "
-            f"space_width={self.space_width!r}, "
-            f"font_name={self.font_name!r}, "
-            f"order={self.order!r}, "
-            f"stream_order={self.stream_order!r}, "
-            f"xobject_depth={self.xobject_depth!r}, "
-            f"is_vertical={self.is_vertical!r}, "
-            f"rotation_angle={self.rotation_angle!r}, "
-            f"visible={self.visible!r}, "
-            f"inside_active_clip={self.inside_active_clip!r}, "
-            f"line_break_before={self.line_break_before!r}, "
-            f"seqno={self.seqno!r}, "
-            f"fill_color={self.fill_color!r}, "
-            f"advance_bbox={self.advance_bbox!r}, "
-            f"ink_bbox={self.ink_bbox!r}, "
-            f"baseline={self.baseline!r}, "
-            f"provenance={self.provenance!r}, "
-            f"confidence={self.confidence!r}, "
-            f"glyph_clusters={self.glyph_clusters!r}"
-            ")"
-        )
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)

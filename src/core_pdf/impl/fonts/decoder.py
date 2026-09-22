@@ -11,7 +11,7 @@ from contextlib import suppress
 from copy import replace
 from functools import cache
 from io import BytesIO
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import numpy
 
@@ -64,7 +64,7 @@ from core_pdf.impl.fonts.widths import (
 )
 from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
@@ -284,7 +284,7 @@ def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     return None
 
 
-class DecodedGlyph(DecodedFontGlyph):
+class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
     __slots__ = ("unicode_source", "alternates", "bitmap_code", "split_unicode")
 
     unicode_source: str
@@ -341,22 +341,6 @@ class DecodedGlyph(DecodedFontGlyph):
         frozen_setattr(self, "bitmap_code", bitmap_code)
         frozen_setattr(self, "split_unicode", split_unicode)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"code_bytes={self.code_bytes!r}, "
-            f"char_code={self.char_code!r}, "
-            f"cid={self.cid!r}, "
-            f"gid={self.gid!r}, "
-            f"unicode={self.unicode!r}, "
-            f"width_code={self.width_code!r}, "
-            f"unicode_source={self.unicode_source!r}, "
-            f"alternates={self.alternates!r}, "
-            f"bitmap_code={self.bitmap_code!r}, "
-            f"split_unicode={self.split_unicode!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -391,32 +375,6 @@ class DecodedGlyph(DecodedFontGlyph):
             )
         )
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        code_bytes = changes.pop("code_bytes", self.code_bytes)
-        char_code = changes.pop("char_code", self.char_code)
-        cid = changes.pop("cid", self.cid)
-        gid = changes.pop("gid", self.gid)
-        unicode = changes.pop("unicode", self.unicode)
-        width_code = changes.pop("width_code", self.width_code)
-        unicode_source = changes.pop("unicode_source", self.unicode_source)
-        alternates = changes.pop("alternates", self.alternates)
-        bitmap_code = changes.pop("bitmap_code", self.bitmap_code)
-        split_unicode = changes.pop("split_unicode", self.split_unicode)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            code_bytes,
-            char_code,
-            cid,
-            gid,
-            unicode,
-            width_code,
-            unicode_source,
-            alternates,
-            bitmap_code,
-            split_unicode,
-        )
-
 
 UNRESOLVED_UNICODE_SOURCES = frozenset(
     {UnicodeSource.IDENTITY, UnicodeSource.REPLACEMENT, UnicodeSource.FALLBACK_NUL}
@@ -438,15 +396,6 @@ class UnicodeChoice(Record):
         frozen_setattr(self, "source", source)
         frozen_setattr(self, "alternates", alternates)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"source={self.source!r}, "
-            f"alternates={self.alternates!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -460,14 +409,6 @@ class UnicodeChoice(Record):
 
     def __hash__(self) -> int:
         return hash((self.text, self.source, self.alternates))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        source = changes.pop("source", self.source)
-        alternates = changes.pop("alternates", self.alternates)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, source, alternates)
 
 
 SINGLE_BYTES = tuple(bytes((value,)) for value in range(256))
@@ -1443,11 +1384,6 @@ class CompactCMap(Record):
     def __init__(self, effective_codes_by_cid: dict[int, tuple[bytes, ...]]) -> None:
         frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}(effective_codes_by_cid={self.effective_codes_by_cid!r})"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1457,12 +1393,6 @@ class CompactCMap(Record):
 
     def __hash__(self) -> int:
         return hash((self.effective_codes_by_cid,))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        effective_codes_by_cid = changes.pop("effective_codes_by_cid", self.effective_codes_by_cid)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(effective_codes_by_cid)
 
     def codes_for_cid(self, cid: int) -> tuple[bytes, ...]:
         return self.effective_codes_by_cid.get(cid, ())

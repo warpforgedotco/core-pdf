@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self, cast
+from typing import ClassVar, cast
 
 from core_pdf.impl.graphics.filter_registry import (
     CCITT_FILTERS,
@@ -10,6 +10,7 @@ from core_pdf.impl.graphics.filter_registry import (
 )
 from core_pdf.impl.model.pdf_values import is_pdf_null
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.records import ReplaceFields, ReprFields
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
@@ -19,7 +20,7 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError
 frozen_setattr = object.__setattr__
 
 
-class FilterParams(PdfFilterParams):
+class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
     __slots__ = ()
 
     __fields__: ClassVar[tuple[str, ...]] = (
@@ -79,24 +80,6 @@ class FilterParams(PdfFilterParams):
         frozen_setattr(self, "has_columns", has_columns)
         frozen_setattr(self, "jbig2_globals", jbig2_globals)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"early_change={self.early_change!r}, "
-            f"predictor={self.predictor!r}, "
-            f"columns={self.columns!r}, "
-            f"colors={self.colors!r}, "
-            f"bits_per_component={self.bits_per_component!r}, "
-            f"k={self.k!r}, "
-            f"damaged_rows_before_error={self.damaged_rows_before_error!r}, "
-            f"black_is_1={self.black_is_1!r}, "
-            f"rows={self.rows!r}, "
-            f"encoded_byte_align={self.encoded_byte_align!r}, "
-            f"has_columns={self.has_columns!r}, "
-            f"jbig2_globals={self.jbig2_globals!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -133,38 +116,6 @@ class FilterParams(PdfFilterParams):
                 self.has_columns,
                 self.jbig2_globals,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        early_change = changes.pop("early_change", self.early_change)
-        predictor = changes.pop("predictor", self.predictor)
-        columns = changes.pop("columns", self.columns)
-        colors = changes.pop("colors", self.colors)
-        bits_per_component = changes.pop("bits_per_component", self.bits_per_component)
-        k = changes.pop("k", self.k)
-        damaged_rows_before_error = changes.pop(
-            "damaged_rows_before_error", self.damaged_rows_before_error
-        )
-        black_is_1 = changes.pop("black_is_1", self.black_is_1)
-        rows = changes.pop("rows", self.rows)
-        encoded_byte_align = changes.pop("encoded_byte_align", self.encoded_byte_align)
-        has_columns = changes.pop("has_columns", self.has_columns)
-        jbig2_globals = changes.pop("jbig2_globals", self.jbig2_globals)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            early_change,
-            predictor,
-            columns,
-            colors,
-            bits_per_component,
-            k,
-            damaged_rows_before_error,
-            black_is_1,
-            rows,
-            encoded_byte_align,
-            has_columns,
-            jbig2_globals,
         )
 
     @classmethod

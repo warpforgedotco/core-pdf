@@ -101,20 +101,12 @@ class ObjectResolver(SyntaxResolver):
         return None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
-        if type(value) is int:
-            return float(value)
-        if type(value) is float:
-            return value
-        if type(value) is bool:
-            return default
         return parse_float(self.resolve(value), default=default)
 
     def resolve_name(self, value: object) -> str | None:
         return recover_pdf_name(resolve_reference_chain(value, self.resolve))
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
-        if type(value) is int:
-            return value
         return parse_int(self.resolve(value), default)
 
     def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:

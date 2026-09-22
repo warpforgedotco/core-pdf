@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import cache, lru_cache
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import imagecodecs
 import numpy
@@ -75,23 +75,6 @@ class IccTransform(Record):
         frozen_setattr(self, "profile", profile)
         frozen_setattr(self, "color_space", color_space)
         frozen_setattr(self, "input_channels", input_channels)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"profile={self.profile!r}, "
-            f"color_space={self.color_space!r}, "
-            f"input_channels={self.input_channels!r}"
-            ")"
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        profile = changes.pop("profile", self.profile)
-        color_space = changes.pop("color_space", self.color_space)
-        input_channels = changes.pop("input_channels", self.input_channels)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(profile, color_space, input_channels)
 
     @property
     def alternate_color_space(self) -> str:

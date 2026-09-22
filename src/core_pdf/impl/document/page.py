@@ -36,6 +36,7 @@ from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl.runtime.scalars import clamp01
 from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
@@ -357,7 +358,7 @@ class PdfPage:
         ca = self.document.resolver.resolve_float(group.get("ca"), default=None)
         if ca is None:
             return None
-        return max(0.0, min(1.0, ca))
+        return clamp01(ca)
 
     @property
     def structure(self) -> PageStructure:

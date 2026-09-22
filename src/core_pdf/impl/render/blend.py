@@ -6,7 +6,8 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.graphics.device_profiles import cmyk_floats_to_srgb
+from core_pdf.impl.graphics.device_profiles import cmyk_floats_to_srgb, component_byte
+from core_pdf.impl.runtime.scalars import clamp01
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
 from core_pdf_spec.standards import PdfVersion, SemanticContext
@@ -293,16 +294,13 @@ def composite_normal_group_numpy(
 
 
 def color_component(value: Any, default: int = 0) -> int:
+    """The tolerant form of `component_byte`, for values off a content stream."""
     if type(value) is bool:
         return default
     try:
-        return max(0, min(255, int(round(float(value) * 255.0))))
+        return component_byte(float(value))
     except TypeError, ValueError:
         return default
-
-
-def clamp01(value: float) -> float:
-    return max(0.0, min(1.0, value))
 
 
 def resolve_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:

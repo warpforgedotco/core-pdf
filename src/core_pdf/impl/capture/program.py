@@ -71,19 +71,6 @@ class CapturedProgram(Record):
         frozen_setattr(self, "text_boundaries", text_boundaries)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"runs={self.runs!r}, "
-            f"glyphs={self.glyphs!r}, "
-            f"drawings={self.drawings!r}, "
-            f"inline_images={self.inline_images!r}, "
-            f"lines={self.lines!r}, "
-            f"text_boundaries={self.text_boundaries!r}, "
-            f"commands={self.commands!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -187,16 +174,6 @@ class AppearanceProgram(Record):
         frozen_setattr(self, "clip_bbox", clip_bbox)
         frozen_setattr(self, "program", program)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"kind={self.kind!r}, "
-            f"source={self.source!r}, "
-            f"clip_bbox={self.clip_bbox!r}, "
-            f"program={self.program!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -211,15 +188,6 @@ class AppearanceProgram(Record):
 
     def __hash__(self) -> int:
         return hash((self.kind, self.source, self.clip_bbox, self.program))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        kind = changes.pop("kind", self.kind)
-        source = changes.pop("source", self.source)
-        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
-        program = changes.pop("program", self.program)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(kind, source, clip_bbox, program)
 
 
 class PageProgram(Record):
@@ -266,21 +234,6 @@ class PageProgram(Record):
         frozen_setattr(self, "body", CapturedProgram() if body is None else body)
         frozen_setattr(self, "appearances", appearances)
         self._post_init()
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"body={self.body!r}, "
-            f"appearances={self.appearances!r}, "
-            f"runs={self.runs!r}, "
-            f"glyphs={self.glyphs!r}, "
-            f"drawings={self.drawings!r}, "
-            f"inline_images={self.inline_images!r}, "
-            f"lines={self.lines!r}, "
-            f"text_boundaries={self.text_boundaries!r}, "
-            f"commands={self.commands!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import replace
 from itertools import islice
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar
 
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
@@ -200,19 +200,6 @@ class LayoutGeometryIssue(Record):
         frozen_setattr(self, "details", details)
         frozen_setattr(self, "repairable", repairable)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"code={self.code!r}, "
-            f"severity={self.severity!r}, "
-            f"subject={self.subject!r}, "
-            f"bbox={self.bbox!r}, "
-            f"message={self.message!r}, "
-            f"details={self.details!r}, "
-            f"repairable={self.repairable!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -240,18 +227,6 @@ class LayoutGeometryIssue(Record):
                 self.repairable,
             )
         )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        code = changes.pop("code", self.code)
-        severity = changes.pop("severity", self.severity)
-        subject = changes.pop("subject", self.subject)
-        bbox = changes.pop("bbox", self.bbox)
-        message = changes.pop("message", self.message)
-        details = changes.pop("details", self.details)
-        repairable = changes.pop("repairable", self.repairable)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(code, severity, subject, bbox, message, details, repairable)
 
 
 class LayoutGeometrySummary(Record):
@@ -304,18 +279,6 @@ class LayoutGeometrySummary(Record):
         frozen_setattr(self, "text_run_count", text_run_count)
         frozen_setattr(self, "line_count", line_count)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"issue_count={self.issue_count!r}, "
-            f"error_count={self.error_count!r}, "
-            f"warning_count={self.warning_count!r}, "
-            f"repairable_count={self.repairable_count!r}, "
-            f"text_run_count={self.text_run_count!r}, "
-            f"line_count={self.line_count!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -340,24 +303,6 @@ class LayoutGeometrySummary(Record):
                 self.text_run_count,
                 self.line_count,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        issue_count = changes.pop("issue_count", self.issue_count)
-        error_count = changes.pop("error_count", self.error_count)
-        warning_count = changes.pop("warning_count", self.warning_count)
-        repairable_count = changes.pop("repairable_count", self.repairable_count)
-        text_run_count = changes.pop("text_run_count", self.text_run_count)
-        line_count = changes.pop("line_count", self.line_count)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            issue_count,
-            error_count,
-            warning_count,
-            repairable_count,
-            text_run_count,
-            line_count,
         )
 
 

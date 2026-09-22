@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Self
 import numpy
 
 from core_pdf.impl.capture.records import CapturedSoftMask, PatternPaint
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.render.blend import clamp01
 from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -17,7 +17,7 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 frozen_setattr = object.__setattr__
 
 
-class RenderOptions:
+class RenderOptions(ReplaceFields, ReprFields):
     __slots__ = (
         "page_number",
         "rotate",
@@ -68,18 +68,6 @@ class RenderOptions:
         self.include_text = include_text
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_number={self.page_number!r}, "
-            f"rotate={self.rotate!r}, "
-            f"crop={self.crop!r}, "
-            f"include_annotations={self.include_annotations!r}, "
-            f"include_layers={self.include_layers!r}, "
-            f"include_text={self.include_text!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -96,31 +84,13 @@ class RenderOptions:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_number = changes.pop("page_number", self.page_number)
-        rotate = changes.pop("rotate", self.rotate)
-        crop = changes.pop("crop", self.crop)
-        include_annotations = changes.pop("include_annotations", self.include_annotations)
-        include_layers = changes.pop("include_layers", self.include_layers)
-        include_text = changes.pop("include_text", self.include_text)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            page_number,
-            rotate,
-            crop,
-            include_annotations,
-            include_layers,
-            include_text,
-        )
-
     def _post_init(self) -> None:
         if self.rotate % 90:
             raise ValueError("render rotation must be a multiple of 90 degrees")
         self.rotate %= 360
 
 
-class DisplayListItem:
+class DisplayListItem(ReplaceFields, ReprFields):
     __slots__ = ("kind", "seqno", "data")
 
     kind: str
@@ -135,15 +105,6 @@ class DisplayListItem:
         self.seqno = seqno
         self.data = {} if data is None else data
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"kind={self.kind!r}, "
-            f"seqno={self.seqno!r}, "
-            f"data={self.data!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -152,14 +113,6 @@ class DisplayListItem:
         return self.kind == other.kind and self.seqno == other.seqno and self.data == other.data
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        kind = changes.pop("kind", self.kind)
-        seqno = changes.pop("seqno", self.seqno)
-        data = changes.pop("data", self.data)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(kind, seqno, data)
 
 
 class PathPaintKind(IntEnum):
@@ -183,7 +136,7 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
-class PathPaintItem:
+class PathPaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",
         "seqno",
@@ -323,81 +276,6 @@ class PathPaintItem:
         self.graphics_soft_mask = graphics_soft_mask
         self.edge_array = edge_array
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"paint_kind={self.paint_kind!r}, "
-            f"seqno={self.seqno!r}, "
-            f"bbox={self.bbox!r}, "
-            f"path={self.path!r}, "
-            f"fill={self.fill!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"stroke_color={self.stroke_color!r}, "
-            f"stroke_opacity={self.stroke_opacity!r}, "
-            f"line_width={self.line_width!r}, "
-            f"line_cap={self.line_cap!r}, "
-            f"line_join={self.line_join!r}, "
-            f"dash_pattern={self.dash_pattern!r}, "
-            f"fill_rule={self.fill_rule!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"soft_mask_alpha={self.soft_mask_alpha!r}, "
-            f"coalesced_path={self.coalesced_path!r}, "
-            f"fill_pattern={self.fill_pattern!r}, "
-            f"stroke_pattern={self.stroke_pattern!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"graphics_soft_mask={self.graphics_soft_mask!r}, "
-            f"edge_array={self.edge_array!r}"
-            ")"
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        paint_kind = changes.pop("paint_kind", self.paint_kind)
-        seqno = changes.pop("seqno", self.seqno)
-        bbox = changes.pop("bbox", self.bbox)
-        path = changes.pop("path", self.path)
-        fill = changes.pop("fill", self.fill)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        stroke_color = changes.pop("stroke_color", self.stroke_color)
-        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
-        line_width = changes.pop("line_width", self.line_width)
-        line_cap = changes.pop("line_cap", self.line_cap)
-        line_join = changes.pop("line_join", self.line_join)
-        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
-        fill_rule = changes.pop("fill_rule", self.fill_rule)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        soft_mask_alpha = changes.pop("soft_mask_alpha", self.soft_mask_alpha)
-        coalesced_path = changes.pop("coalesced_path", self.coalesced_path)
-        fill_pattern = changes.pop("fill_pattern", self.fill_pattern)
-        stroke_pattern = changes.pop("stroke_pattern", self.stroke_pattern)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
-        edge_array = changes.pop("edge_array", self.edge_array)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            paint_kind,
-            seqno,
-            bbox,
-            path,
-            fill,
-            fill_opacity,
-            stroke_color,
-            stroke_opacity,
-            line_width,
-            line_cap,
-            line_join,
-            dash_pattern,
-            fill_rule,
-            blend_mode,
-            soft_mask_alpha,
-            coalesced_path,
-            fill_pattern,
-            stroke_pattern,
-            alpha_is_shape,
-            graphics_soft_mask,
-            edge_array,
-        )
-
     @property
     def kind(self) -> str:
         return PATH_PAINT_NAMES[int(self.paint_kind)]
@@ -424,7 +302,7 @@ class PathPaintItem:
         }
 
 
-class ImagePaintItem:
+class ImagePaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",
         "seqno",
@@ -528,27 +406,6 @@ class ImagePaintItem:
         self.alpha_is_shape = alpha_is_shape
         self.graphics_soft_mask = graphics_soft_mask
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"paint_kind={self.paint_kind!r}, "
-            f"seqno={self.seqno!r}, "
-            f"bbox={self.bbox!r}, "
-            f"source={self.source!r}, "
-            f"quad={self.quad!r}, "
-            f"fill={self.fill!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"soft_mask_alpha={self.soft_mask_alpha!r}, "
-            f"image_clip={self.image_clip!r}, "
-            f"source_metadata={self.source_metadata!r}, "
-            f"ctm={self.ctm!r}, "
-            f"xobject_depth={self.xobject_depth!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"graphics_soft_mask={self.graphics_soft_mask!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -573,42 +430,6 @@ class ImagePaintItem:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        paint_kind = changes.pop("paint_kind", self.paint_kind)
-        seqno = changes.pop("seqno", self.seqno)
-        bbox = changes.pop("bbox", self.bbox)
-        source = changes.pop("source", self.source)
-        quad = changes.pop("quad", self.quad)
-        fill = changes.pop("fill", self.fill)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        soft_mask_alpha = changes.pop("soft_mask_alpha", self.soft_mask_alpha)
-        image_clip = changes.pop("image_clip", self.image_clip)
-        source_metadata = changes.pop("source_metadata", self.source_metadata)
-        ctm = changes.pop("ctm", self.ctm)
-        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            paint_kind,
-            seqno,
-            bbox,
-            source,
-            quad,
-            fill,
-            fill_opacity,
-            blend_mode,
-            soft_mask_alpha,
-            image_clip,
-            source_metadata,
-            ctm,
-            xobject_depth,
-            alpha_is_shape,
-            graphics_soft_mask,
-        )
 
     @property
     def kind(self) -> str:
@@ -702,22 +523,6 @@ class RasterGroup(Record):
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "mask_alpha", mask_alpha)
         frozen_setattr(self, "paint_window", [] if paint_window is None else paint_window)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"pixels={self.pixels!r}, "
-            f"composite_alpha={self.composite_alpha!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"backdrop={self.backdrop!r}, "
-            f"source_alpha={self.source_alpha!r}, "
-            f"source_shape={self.source_shape!r}, "
-            f"knockout={self.knockout!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"mask_alpha={self.mask_alpha!r}, "
-            f"paint_window={self.paint_window!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -820,16 +625,6 @@ class RasterImage(Record):
         frozen_setattr(self, "channels", channels)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"pixels={self.pixels!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"channels={self.channels!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -844,15 +639,6 @@ class RasterImage(Record):
 
     def __hash__(self) -> int:
         return hash((self.pixels, self.width, self.height, self.channels))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        pixels = changes.pop("pixels", self.pixels)
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        channels = changes.pop("channels", self.channels)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(pixels, width, height, channels)
 
     def _post_init(self) -> None:
         if self.width <= 0 or self.height <= 0 or self.channels <= 0:

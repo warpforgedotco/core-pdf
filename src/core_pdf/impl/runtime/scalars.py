@@ -91,3 +91,7 @@ def parse_box(value: object) -> tuple[float, float, float, float] | None:
         )
     except ValueError:
         return None
+
+
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))

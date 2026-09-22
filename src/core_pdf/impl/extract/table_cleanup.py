@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from copy import replace
 from functools import cached_property
 from statistics import fmean
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 import numpy
 
@@ -25,7 +25,7 @@ from core_pdf.impl.output.model import (
     TableColumnBand,
     TableRowBand,
 )
-from core_pdf.impl.records import FrozenFields
+from core_pdf.impl.records import FrozenFields, ReplaceFields, ReprFields
 from core_pdf.impl.runtime.array_views import finite_median
 
 TABLE_MERGE_GAP = 36.0
@@ -569,7 +569,7 @@ def character_spaced_cell(text: str) -> bool:
     return single_character / len(tokens) >= 0.50
 
 
-class TableFacts(FrozenFields):
+class TableFacts(FrozenFields, ReplaceFields, ReprFields):
     row_count: int
     nonempty_rows: int
     populated_rows: int
@@ -620,20 +620,6 @@ class TableFacts(FrozenFields):
         frozen_setattr(self, "single_cell_rows", single_cell_rows)
         frozen_setattr(self, "filled_texts", filled_texts)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"row_count={self.row_count!r}, "
-            f"nonempty_rows={self.nonempty_rows!r}, "
-            f"populated_rows={self.populated_rows!r}, "
-            f"columns={self.columns!r}, "
-            f"spanned_columns={self.spanned_columns!r}, "
-            f"cell_count={self.cell_count!r}, "
-            f"single_cell_rows={self.single_cell_rows!r}, "
-            f"filled_texts={self.filled_texts!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -662,28 +648,6 @@ class TableFacts(FrozenFields):
                 self.single_cell_rows,
                 self.filled_texts,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        row_count = changes.pop("row_count", self.row_count)
-        nonempty_rows = changes.pop("nonempty_rows", self.nonempty_rows)
-        populated_rows = changes.pop("populated_rows", self.populated_rows)
-        columns = changes.pop("columns", self.columns)
-        spanned_columns = changes.pop("spanned_columns", self.spanned_columns)
-        cell_count = changes.pop("cell_count", self.cell_count)
-        single_cell_rows = changes.pop("single_cell_rows", self.single_cell_rows)
-        filled_texts = changes.pop("filled_texts", self.filled_texts)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            row_count,
-            nonempty_rows,
-            populated_rows,
-            columns,
-            spanned_columns,
-            cell_count,
-            single_cell_rows,
-            filled_texts,
         )
 
     @classmethod

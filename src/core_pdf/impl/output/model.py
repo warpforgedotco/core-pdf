@@ -85,18 +85,6 @@ class TableCell(Record):
         frozen_setattr(self, "column_span", column_span)
         frozen_setattr(self, "bbox", bbox)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"row={self.row!r}, "
-            f"column={self.column!r}, "
-            f"text={self.text!r}, "
-            f"row_span={self.row_span!r}, "
-            f"column_span={self.column_span!r}, "
-            f"bbox={self.bbox!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -113,17 +101,6 @@ class TableCell(Record):
 
     def __hash__(self) -> int:
         return hash((self.row, self.column, self.text, self.row_span, self.column_span, self.bbox))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        row = changes.pop("row", self.row)
-        column = changes.pop("column", self.column)
-        text = changes.pop("text", self.text)
-        row_span = changes.pop("row_span", self.row_span)
-        column_span = changes.pop("column_span", self.column_span)
-        bbox = changes.pop("bbox", self.bbox)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(row, column, text, row_span, column_span, bbox)
 
 
 class TableRowBand(Record):
@@ -149,16 +126,6 @@ class TableRowBand(Record):
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "confidence", confidence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"index={self.index!r}, "
-            f"bbox={self.bbox!r}, "
-            f"kind={self.kind!r}, "
-            f"confidence={self.confidence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -173,15 +140,6 @@ class TableRowBand(Record):
 
     def __hash__(self) -> int:
         return hash((self.index, self.bbox, self.kind, self.confidence))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        index = changes.pop("index", self.index)
-        bbox = changes.pop("bbox", self.bbox)
-        kind = changes.pop("kind", self.kind)
-        confidence = changes.pop("confidence", self.confidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(index, bbox, kind, confidence)
 
 
 class TableColumnBand(Record):
@@ -204,15 +162,6 @@ class TableColumnBand(Record):
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "confidence", confidence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"index={self.index!r}, "
-            f"bbox={self.bbox!r}, "
-            f"confidence={self.confidence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -226,14 +175,6 @@ class TableColumnBand(Record):
 
     def __hash__(self) -> int:
         return hash((self.index, self.bbox, self.confidence))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        index = changes.pop("index", self.index)
-        bbox = changes.pop("bbox", self.bbox)
-        confidence = changes.pop("confidence", self.confidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(index, bbox, confidence)
 
 
 class TableAssociatedText(Record):
@@ -259,16 +200,6 @@ class TableAssociatedText(Record):
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "confidence", confidence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"bbox={self.bbox!r}, "
-            f"kind={self.kind!r}, "
-            f"confidence={self.confidence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -283,15 +214,6 @@ class TableAssociatedText(Record):
 
     def __hash__(self) -> int:
         return hash((self.text, self.bbox, self.kind, self.confidence))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        bbox = changes.pop("bbox", self.bbox)
-        kind = changes.pop("kind", self.kind)
-        confidence = changes.pop("confidence", self.confidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, bbox, kind, confidence)
 
 
 class Table(Record):
@@ -363,21 +285,6 @@ class Table(Record):
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"order={self.order!r}, "
-            f"rows={self.rows!r}, "
-            f"bbox={self.bbox!r}, "
-            f"confidence={self.confidence!r}, "
-            f"title={self.title!r}, "
-            f"caption={self.caption!r}, "
-            f"row_bands={self.row_bands!r}, "
-            f"column_bands={self.column_bands!r}, "
-            f"metadata={self.metadata!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -408,30 +315,6 @@ class Table(Record):
                 self.column_bands,
                 self.metadata,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        order = changes.pop("order", self.order)
-        rows = changes.pop("rows", self.rows)
-        bbox = changes.pop("bbox", self.bbox)
-        confidence = changes.pop("confidence", self.confidence)
-        title = changes.pop("title", self.title)
-        caption = changes.pop("caption", self.caption)
-        row_bands = changes.pop("row_bands", self.row_bands)
-        column_bands = changes.pop("column_bands", self.column_bands)
-        metadata = changes.pop("metadata", self.metadata)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            order,
-            rows,
-            bbox,
-            confidence,
-            title,
-            caption,
-            row_bands,
-            column_bands,
-            metadata,
         )
 
     def _post_init(self) -> None:
@@ -480,16 +363,6 @@ class Figure(Record):
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"order={self.order!r}, "
-            f"bbox={self.bbox!r}, "
-            f"kind={self.kind!r}, "
-            f"metadata={self.metadata!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -504,15 +377,6 @@ class Figure(Record):
 
     def __hash__(self) -> int:
         return hash((self.order, self.bbox, self.kind, self.metadata))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        order = changes.pop("order", self.order)
-        bbox = changes.pop("bbox", self.bbox)
-        kind = changes.pop("kind", self.kind)
-        metadata = changes.pop("metadata", self.metadata)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(order, bbox, kind, metadata)
 
     def _post_init(self) -> None:
         object.__setattr__(self, "metadata", freeze(self.metadata))
@@ -541,16 +405,6 @@ class Link(Record):
         frozen_setattr(self, "link_type", link_type)
         frozen_setattr(self, "text", text)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"bbox={self.bbox!r}, "
-            f"url={self.url!r}, "
-            f"link_type={self.link_type!r}, "
-            f"text={self.text!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -565,15 +419,6 @@ class Link(Record):
 
     def __hash__(self) -> int:
         return hash((self.bbox, self.url, self.link_type, self.text))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        bbox = changes.pop("bbox", self.bbox)
-        url = changes.pop("url", self.url)
-        link_type = changes.pop("link_type", self.link_type)
-        text = changes.pop("text", self.text)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(bbox, url, link_type, text)
 
 
 class Annotation(Record):
@@ -600,16 +445,6 @@ class Annotation(Record):
         frozen_setattr(self, "destination", destination)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"subtype={self.subtype!r}, "
-            f"bbox={self.bbox!r}, "
-            f"contents={self.contents!r}, "
-            f"destination={self.destination!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -624,15 +459,6 @@ class Annotation(Record):
 
     def __hash__(self) -> int:
         return hash((self.subtype, self.bbox, self.contents, self.destination))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        subtype = changes.pop("subtype", self.subtype)
-        bbox = changes.pop("bbox", self.bbox)
-        contents = changes.pop("contents", self.contents)
-        destination = changes.pop("destination", self.destination)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(subtype, bbox, contents, destination)
 
     def _post_init(self) -> None:
         object.__setattr__(self, "destination", freeze(self.destination))
@@ -706,21 +532,6 @@ class FormField(Record):
         frozen_setattr(self, "no_export", no_export)
         frozen_setattr(self, "options", options)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"name={self.name!r}, "
-            f"field_type={self.field_type!r}, "
-            f"value_text={self.value_text!r}, "
-            f"bbox={self.bbox!r}, "
-            f"field_index={self.field_index!r}, "
-            f"required={self.required!r}, "
-            f"read_only={self.read_only!r}, "
-            f"no_export={self.no_export!r}, "
-            f"options={self.options!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -751,30 +562,6 @@ class FormField(Record):
                 self.no_export,
                 self.options,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        name = changes.pop("name", self.name)
-        field_type = changes.pop("field_type", self.field_type)
-        value_text = changes.pop("value_text", self.value_text)
-        bbox = changes.pop("bbox", self.bbox)
-        field_index = changes.pop("field_index", self.field_index)
-        required = changes.pop("required", self.required)
-        read_only = changes.pop("read_only", self.read_only)
-        no_export = changes.pop("no_export", self.no_export)
-        options = changes.pop("options", self.options)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            name,
-            field_type,
-            value_text,
-            bbox,
-            field_index,
-            required,
-            read_only,
-            no_export,
-            options,
         )
 
 
@@ -840,20 +627,6 @@ class TextSpan(Record):
         frozen_setattr(self, "superscript", superscript)
         frozen_setattr(self, "subscript", subscript)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"bold={self.bold!r}, "
-            f"italic={self.italic!r}, "
-            f"underline={self.underline!r}, "
-            f"strikeout={self.strikeout!r}, "
-            f"mark={self.mark!r}, "
-            f"superscript={self.superscript!r}, "
-            f"subscript={self.subscript!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -882,28 +655,6 @@ class TextSpan(Record):
                 self.superscript,
                 self.subscript,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        bold = changes.pop("bold", self.bold)
-        italic = changes.pop("italic", self.italic)
-        underline = changes.pop("underline", self.underline)
-        strikeout = changes.pop("strikeout", self.strikeout)
-        mark = changes.pop("mark", self.mark)
-        superscript = changes.pop("superscript", self.superscript)
-        subscript = changes.pop("subscript", self.subscript)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            text,
-            bold,
-            italic,
-            underline,
-            strikeout,
-            mark,
-            superscript,
-            subscript,
         )
 
 
@@ -1036,31 +787,6 @@ class TextLine(Record):
         frozen_setattr(self, "words", words)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"break_before={self.break_before!r}, "
-            f"bbox={self.bbox!r}, "
-            f"advance_bbox={self.advance_bbox!r}, "
-            f"ink_bbox={self.ink_bbox!r}, "
-            f"kind={self.kind!r}, "
-            f"source={self.source!r}, "
-            f"confidence={self.confidence!r}, "
-            f"baseline={self.baseline!r}, "
-            f"contributing_sources={self.contributing_sources!r}, "
-            f"bold={self.bold!r}, "
-            f"italic={self.italic!r}, "
-            f"underline={self.underline!r}, "
-            f"strikeout={self.strikeout!r}, "
-            f"mark={self.mark!r}, "
-            f"superscript={self.superscript!r}, "
-            f"subscript={self.subscript!r}, "
-            f"spans={self.spans!r}, "
-            f"words={self.words!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1111,50 +837,6 @@ class TextLine(Record):
                 self.spans,
                 self.words,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        break_before = changes.pop("break_before", self.break_before)
-        bbox = changes.pop("bbox", self.bbox)
-        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
-        ink_bbox = changes.pop("ink_bbox", self.ink_bbox)
-        kind = changes.pop("kind", self.kind)
-        source = changes.pop("source", self.source)
-        confidence = changes.pop("confidence", self.confidence)
-        baseline = changes.pop("baseline", self.baseline)
-        contributing_sources = changes.pop("contributing_sources", self.contributing_sources)
-        bold = changes.pop("bold", self.bold)
-        italic = changes.pop("italic", self.italic)
-        underline = changes.pop("underline", self.underline)
-        strikeout = changes.pop("strikeout", self.strikeout)
-        mark = changes.pop("mark", self.mark)
-        superscript = changes.pop("superscript", self.superscript)
-        subscript = changes.pop("subscript", self.subscript)
-        spans = changes.pop("spans", self.spans)
-        words = changes.pop("words", self.words)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            text,
-            break_before,
-            bbox,
-            advance_bbox,
-            ink_bbox,
-            kind,
-            source,
-            confidence,
-            baseline,
-            contributing_sources,
-            bold,
-            italic,
-            underline,
-            strikeout,
-            mark,
-            superscript,
-            subscript,
-            spans,
-            words,
         )
 
     def _post_init(self) -> None:
@@ -1256,21 +938,6 @@ class Block(Record):
         frozen_setattr(self, "level", level)
         frozen_setattr(self, "provenance", provenance)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"order={self.order!r}, "
-            f"kind={self.kind!r}, "
-            f"lines={self.lines!r}, "
-            f"bbox={self.bbox!r}, "
-            f"column_index={self.column_index!r}, "
-            f"rotation={self.rotation!r}, "
-            f"confidence={self.confidence!r}, "
-            f"level={self.level!r}, "
-            f"provenance={self.provenance!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1301,30 +968,6 @@ class Block(Record):
                 self.level,
                 self.provenance,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        order = changes.pop("order", self.order)
-        kind = changes.pop("kind", self.kind)
-        lines = changes.pop("lines", self.lines)
-        bbox = changes.pop("bbox", self.bbox)
-        column_index = changes.pop("column_index", self.column_index)
-        rotation = changes.pop("rotation", self.rotation)
-        confidence = changes.pop("confidence", self.confidence)
-        level = changes.pop("level", self.level)
-        provenance = changes.pop("provenance", self.provenance)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            order,
-            kind,
-            lines,
-            bbox,
-            column_index,
-            rotation,
-            confidence,
-            level,
-            provenance,
         )
 
     @property
@@ -1363,16 +1006,6 @@ class ContentNode(Record):
         frozen_setattr(self, "payload", payload)
         frozen_setattr(self, "page_number", page_number)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"node_id={self.node_id!r}, "
-            f"kind={self.kind!r}, "
-            f"payload={self.payload!r}, "
-            f"page_number={self.page_number!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1387,15 +1020,6 @@ class ContentNode(Record):
 
     def __hash__(self) -> int:
         return hash((self.node_id, self.kind, self.payload, self.page_number))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        node_id = changes.pop("node_id", self.node_id)
-        kind = changes.pop("kind", self.kind)
-        payload = changes.pop("payload", self.payload)
-        page_number = changes.pop("page_number", self.page_number)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(node_id, kind, payload, page_number)
 
     @property
     def bbox(self) -> Rectangle | None:
@@ -1424,14 +1048,6 @@ class TextView(Record):
         frozen_setattr(self, "elements", elements)
         frozen_setattr(self, "page_number", page_number)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"elements={self.elements!r}, "
-            f"page_number={self.page_number!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1441,13 +1057,6 @@ class TextView(Record):
 
     def __hash__(self) -> int:
         return hash((self.elements, self.page_number))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        elements = changes.pop("elements", self.elements)
-        page_number = changes.pop("page_number", self.page_number)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(elements, page_number)
 
     @property
     def lines(self) -> tuple[TextLine, ...]:
@@ -1507,15 +1116,6 @@ class TextLineReference(Record):
         frozen_setattr(self, "line_index", line_index)
         frozen_setattr(self, "line", line)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_number={self.page_number!r}, "
-            f"line_index={self.line_index!r}, "
-            f"line={self.line!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1529,14 +1129,6 @@ class TextLineReference(Record):
 
     def __hash__(self) -> int:
         return hash((self.page_number, self.line_index, self.line))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_number = changes.pop("page_number", self.page_number)
-        line_index = changes.pop("line_index", self.line_index)
-        line = changes.pop("line", self.line)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(page_number, line_index, line)
 
 
 class TableView(Record):
@@ -1552,14 +1144,6 @@ class TableView(Record):
         frozen_setattr(self, "tables", tables)
         frozen_setattr(self, "page_number", page_number)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"tables={self.tables!r}, "
-            f"page_number={self.page_number!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1569,13 +1153,6 @@ class TableView(Record):
 
     def __hash__(self) -> int:
         return hash((self.tables, self.page_number))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        tables = changes.pop("tables", self.tables)
-        page_number = changes.pop("page_number", self.page_number)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(tables, page_number)
 
 
 class TableReference(Record):
@@ -1593,15 +1170,6 @@ class TableReference(Record):
         frozen_setattr(self, "table_index", table_index)
         frozen_setattr(self, "table", table)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_number={self.page_number!r}, "
-            f"table_index={self.table_index!r}, "
-            f"table={self.table!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1616,14 +1184,6 @@ class TableReference(Record):
     def __hash__(self) -> int:
         return hash((self.page_number, self.table_index, self.table))
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_number = changes.pop("page_number", self.page_number)
-        table_index = changes.pop("table_index", self.table_index)
-        table = changes.pop("table", self.table)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(page_number, table_index, table)
-
 
 class DocumentTextView(Record):
     __slots__ = ("pages",)
@@ -1636,9 +1196,6 @@ class DocumentTextView(Record):
     def __init__(self, pages: tuple[TextView, ...]) -> None:
         frozen_setattr(self, "pages", pages)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(pages={self.pages!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1648,12 +1205,6 @@ class DocumentTextView(Record):
 
     def __hash__(self) -> int:
         return hash((self.pages,))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        pages = changes.pop("pages", self.pages)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(pages)
 
     @property
     def lines(self) -> tuple[TextLine, ...]:
@@ -1698,9 +1249,6 @@ class DocumentTableView(Record):
     def __init__(self, pages: tuple[TableView, ...]) -> None:
         frozen_setattr(self, "pages", pages)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(pages={self.pages!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1710,12 +1258,6 @@ class DocumentTableView(Record):
 
     def __hash__(self) -> int:
         return hash((self.pages,))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        pages = changes.pop("pages", self.pages)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(pages)
 
     @property
     def tables(self) -> tuple[Table, ...]:
@@ -2070,16 +1612,6 @@ class Diagnostic(Record):
         frozen_setattr(self, "severity", severity)
         frozen_setattr(self, "page_number", page_number)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"code={self.code!r}, "
-            f"message={self.message!r}, "
-            f"severity={self.severity!r}, "
-            f"page_number={self.page_number!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -2094,15 +1626,6 @@ class Diagnostic(Record):
 
     def __hash__(self) -> int:
         return hash((self.code, self.message, self.severity, self.page_number))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        code = changes.pop("code", self.code)
-        message = changes.pop("message", self.message)
-        severity = changes.pop("severity", self.severity)
-        page_number = changes.pop("page_number", self.page_number)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(code, message, severity, page_number)
 
 
 class Document(Record):
@@ -2129,16 +1652,6 @@ class Document(Record):
         frozen_setattr(self, "schema_version", schema_version)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"pages={self.pages!r}, "
-            f"metadata={self.metadata!r}, "
-            f"diagnostics={self.diagnostics!r}, "
-            f"schema_version={self.schema_version!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -2153,15 +1666,6 @@ class Document(Record):
 
     def __hash__(self) -> int:
         return hash((self.pages, self.metadata, self.diagnostics, self.schema_version))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        pages = changes.pop("pages", self.pages)
-        metadata = changes.pop("metadata", self.metadata)
-        diagnostics = changes.pop("diagnostics", self.diagnostics)
-        schema_version = changes.pop("schema_version", self.schema_version)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(pages, metadata, diagnostics, schema_version)
 
     def _post_init(self) -> None:
         if self.schema_version != SCHEMA_VERSION:

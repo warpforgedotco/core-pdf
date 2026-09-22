@@ -39,24 +39,21 @@ def rect_tuple(value: object) -> Rectangle | None:
         return None
 
 
+def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    overlap = min(a1, b1) - max(a0, b0)
+    return max(0.0, overlap)
+
+
 def bbox_area(bbox: Sequence[float]) -> float:
-    if type(bbox) is tuple and len(bbox) == 4:
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        return (max(0.0, w)) * (max(0.0, h))
-    w = float(bbox[2]) - float(bbox[0])
-    h = float(bbox[3]) - float(bbox[1])
-    return (max(0.0, w)) * (max(0.0, h))
+    width = float(bbox[2]) - float(bbox[0])
+    height = float(bbox[3]) - float(bbox[1])
+    return max(0.0, width) * max(0.0, height)
 
 
 def bbox_intersection_area(left: Sequence[float], right: Sequence[float]) -> float:
-    if type(left) is tuple and type(right) is tuple and len(left) == 4 and len(right) == 4:
-        w = min(left[2], right[2]) - max(left[0], right[0])
-        h = min(left[3], right[3]) - max(left[1], right[1])
-        return (max(0.0, w)) * (max(0.0, h))
-    w = min(float(left[2]), float(right[2])) - max(float(left[0]), float(right[0]))
-    h = min(float(left[3]), float(right[3])) - max(float(left[1]), float(right[1]))
-    return (max(0.0, w)) * (max(0.0, h))
+    width = interval_overlap(float(left[0]), float(left[2]), float(right[0]), float(right[2]))
+    height = interval_overlap(float(left[1]), float(left[3]), float(right[1]), float(right[3]))
+    return width * height
 
 
 def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | None:
@@ -98,24 +95,10 @@ def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle
     )
 
 
-def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
-    overlap = min(a1, b1) - max(a0, b0)
-    return max(0.0, overlap)
-
-
 def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
     result: Rectangle | None = None
     for box in boxes:
-        x0, y0, x1, y1 = (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
-        if result is None:
-            result = (x0, y0, x1, y1)
-        else:
-            result = (
-                min(x0, result[0]),
-                min(y0, result[1]),
-                max(x1, result[2]),
-                max(y1, result[3]),
-            )
+        result = union_bbox(result, (float(box[0]), float(box[1]), float(box[2]), float(box[3])))
     return result
 
 

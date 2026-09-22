@@ -2,32 +2,22 @@
 """Shared behaviour for the hand-written value classes.
 
 Every value class in the engine declares a ``__fields__`` tuple and hand-writes
-the dunders ``@dataclass`` would generate. The three hot ones -- ``__init__``,
-``__eq__`` and ``__hash__`` -- stay unrolled in each class. The rest carry no
-per-instance advantage from being restated, so they live here.
+the dunders ``@dataclass`` would generate. Everything that can be driven from
+``__fields__`` alone lives here instead, so a class body carries its fields and
+its own behaviour rather than a hundred lines of restated protocol.
 
-``__setattr__``, ``__delattr__``, ``__getstate__`` and ``__setstate__`` were
-byte-identical in every class that had them, and inheriting them costs nothing
-measurable.
+Only ``__init__``, ``__eq__`` and ``__hash__`` stay unrolled per class: the
+first because each class has its own parameter list and defaults, the other two
+because a field-driven version would have to build a tuple on every comparison.
 
-``__repr__`` and ``__replace__`` are deliberately *not* here, and the reason is
-not the arithmetic they do. A method defined once on a shared base is one code
-object reached from ~90 receiver types, so the interpreter's inline caches
-cannot specialise it the way they specialise a method that belongs to a single
-class. Measured in one process against the unrolled originals, a shared
-``__repr__`` cost between 11% and 61% even when the formatting itself was a
-single ``%``-interpolation over an ``operator.attrgetter``, and every shared
-``__replace__`` lost by at least an eighth on the common one-change call. Both
-run inside the render and extract loops, so each class keeps its own.
-
-The four below are exempt from that argument: the guards do no field work at
-all, and the pickle pair already read ``self.__fields__`` at call time, so
-nothing was being specialised for them to lose.
+A locally defined dunder always wins, so a class whose ``__repr__`` hides part
+of its state, or whose ``__replace__`` cannot rebuild from its fields
+positionally, simply keeps its own.
 """
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn
+from typing import Any, ClassVar, NoReturn, Self
 
 frozen_setattr = object.__setattr__
 
@@ -63,7 +53,34 @@ class PickleFields:
             frozen_setattr(self, name, value)
 
 
-class Record(FrozenFields, PickleFields):
-    """Frozen and picklable: the pair nearly every value class here wants."""
+class ReprFields:
+    """``Qualname(field=value, ...)`` over every declared field, in order."""
+
+    __slots__ = ()
+
+    __fields__: ClassVar[tuple[str, ...]]
+
+    def __repr__(self) -> str:
+        fields = ", ".join([f"{name}={getattr(self, name)!r}" for name in self.__fields__])
+        return f"{self.__class__.__qualname__}({fields})"
+
+
+class ReplaceFields:
+    """``copy.replace`` for classes whose ``__init__`` takes the fields
+    positionally, in ``__fields__`` order."""
+
+    __slots__ = ()
+
+    __fields__: ClassVar[tuple[str, ...]]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        values = [changes.pop(name, getattr(self, name)) for name in self.__fields__]
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(*values)
+
+
+class Record(FrozenFields, PickleFields, ReprFields, ReplaceFields):
+    """The whole set: frozen, picklable, field-printing, field-replacing."""
 
     __slots__ = ()

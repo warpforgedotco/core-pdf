@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy
 
@@ -137,22 +137,6 @@ class ObservationBatch(Record):
         frozen_setattr(self, "references", references)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"bbox={self.bbox!r}, "
-            f"source={self.source!r}, "
-            f"confidence={self.confidence!r}, "
-            f"sequence={self.sequence!r}, "
-            f"visible={self.visible!r}, "
-            f"rotation={self.rotation!r}, "
-            f"font_size={self.font_size!r}, "
-            f"line_break_before={self.line_break_before!r}, "
-            f"references={self.references!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -185,32 +169,6 @@ class ObservationBatch(Record):
                 self.line_break_before,
                 self.references,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        bbox = changes.pop("bbox", self.bbox)
-        source = changes.pop("source", self.source)
-        confidence = changes.pop("confidence", self.confidence)
-        sequence = changes.pop("sequence", self.sequence)
-        visible = changes.pop("visible", self.visible)
-        rotation = changes.pop("rotation", self.rotation)
-        font_size = changes.pop("font_size", self.font_size)
-        line_break_before = changes.pop("line_break_before", self.line_break_before)
-        references = changes.pop("references", self.references)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            text,
-            bbox,
-            source,
-            confidence,
-            sequence,
-            visible,
-            rotation,
-            font_size,
-            line_break_before,
-            references,
         )
 
     def _post_init(self) -> None:
@@ -451,18 +409,6 @@ class TextQualityStats(Record):
         frozen_setattr(self, "non_ascii_ratio", non_ascii_ratio)
         frozen_setattr(self, "digit_token_ratio", digit_token_ratio)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"token_count={self.token_count!r}, "
-            f"wordlike_ratio={self.wordlike_ratio!r}, "
-            f"short_token_ratio={self.short_token_ratio!r}, "
-            f"symbol_ratio={self.symbol_ratio!r}, "
-            f"non_ascii_ratio={self.non_ascii_ratio!r}, "
-            f"digit_token_ratio={self.digit_token_ratio!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -487,24 +433,6 @@ class TextQualityStats(Record):
                 self.non_ascii_ratio,
                 self.digit_token_ratio,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        token_count = changes.pop("token_count", self.token_count)
-        wordlike_ratio = changes.pop("wordlike_ratio", self.wordlike_ratio)
-        short_token_ratio = changes.pop("short_token_ratio", self.short_token_ratio)
-        symbol_ratio = changes.pop("symbol_ratio", self.symbol_ratio)
-        non_ascii_ratio = changes.pop("non_ascii_ratio", self.non_ascii_ratio)
-        digit_token_ratio = changes.pop("digit_token_ratio", self.digit_token_ratio)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            token_count,
-            wordlike_ratio,
-            short_token_ratio,
-            symbol_ratio,
-            non_ascii_ratio,
-            digit_token_ratio,
         )
 
     @property
@@ -584,20 +512,6 @@ class GlyphEvidence(Record):
         frozen_setattr(self, "low_confidence_glyphs", low_confidence_glyphs)
         frozen_setattr(self, "actual_text_characters", actual_text_characters)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"glyph_count={self.glyph_count!r}, "
-            f"semantic_characters={self.semantic_characters!r}, "
-            f"authoritative_glyphs={self.authoritative_glyphs!r}, "
-            f"heuristic_glyphs={self.heuristic_glyphs!r}, "
-            f"unknown_glyphs={self.unknown_glyphs!r}, "
-            f"unsupported_glyphs={self.unsupported_glyphs!r}, "
-            f"low_confidence_glyphs={self.low_confidence_glyphs!r}, "
-            f"actual_text_characters={self.actual_text_characters!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -626,28 +540,6 @@ class GlyphEvidence(Record):
                 self.low_confidence_glyphs,
                 self.actual_text_characters,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        glyph_count = changes.pop("glyph_count", self.glyph_count)
-        semantic_characters = changes.pop("semantic_characters", self.semantic_characters)
-        authoritative_glyphs = changes.pop("authoritative_glyphs", self.authoritative_glyphs)
-        heuristic_glyphs = changes.pop("heuristic_glyphs", self.heuristic_glyphs)
-        unknown_glyphs = changes.pop("unknown_glyphs", self.unknown_glyphs)
-        unsupported_glyphs = changes.pop("unsupported_glyphs", self.unsupported_glyphs)
-        low_confidence_glyphs = changes.pop("low_confidence_glyphs", self.low_confidence_glyphs)
-        actual_text_characters = changes.pop("actual_text_characters", self.actual_text_characters)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            glyph_count,
-            semantic_characters,
-            authoritative_glyphs,
-            heuristic_glyphs,
-            unknown_glyphs,
-            unsupported_glyphs,
-            low_confidence_glyphs,
-            actual_text_characters,
         )
 
     @property
@@ -782,26 +674,6 @@ class PageEvidence(Record):
         frozen_setattr(self, "painted_native_characters", painted_native_characters)
         frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_area={self.page_area!r}, "
-            f"native_characters={self.native_characters!r}, "
-            f"visible_native_characters={self.visible_native_characters!r}, "
-            f"suspicious_characters={self.suspicious_characters!r}, "
-            f"image_count={self.image_count!r}, "
-            f"image_area_ratio={self.image_area_ratio!r}, "
-            f"image_boxes={self.image_boxes!r}, "
-            f"text_coverage={self.text_coverage!r}, "
-            f"full_page_image={self.full_page_image!r}, "
-            f"text_quality={self.text_quality!r}, "
-            f"all_text_quality={self.all_text_quality!r}, "
-            f"glyphs={self.glyphs!r}, "
-            f"painted_native_characters={self.painted_native_characters!r}, "
-            f"trusted_hidden_text={self.trusted_hidden_text!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -842,44 +714,6 @@ class PageEvidence(Record):
                 self.painted_native_characters,
                 self.trusted_hidden_text,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_area = changes.pop("page_area", self.page_area)
-        native_characters = changes.pop("native_characters", self.native_characters)
-        visible_native_characters = changes.pop(
-            "visible_native_characters", self.visible_native_characters
-        )
-        suspicious_characters = changes.pop("suspicious_characters", self.suspicious_characters)
-        image_count = changes.pop("image_count", self.image_count)
-        image_area_ratio = changes.pop("image_area_ratio", self.image_area_ratio)
-        image_boxes = changes.pop("image_boxes", self.image_boxes)
-        text_coverage = changes.pop("text_coverage", self.text_coverage)
-        full_page_image = changes.pop("full_page_image", self.full_page_image)
-        text_quality = changes.pop("text_quality", self.text_quality)
-        all_text_quality = changes.pop("all_text_quality", self.all_text_quality)
-        glyphs = changes.pop("glyphs", self.glyphs)
-        painted_native_characters = changes.pop(
-            "painted_native_characters", self.painted_native_characters
-        )
-        trusted_hidden_text = changes.pop("trusted_hidden_text", self.trusted_hidden_text)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            page_area,
-            native_characters,
-            visible_native_characters,
-            suspicious_characters,
-            image_count,
-            image_area_ratio,
-            image_boxes,
-            text_coverage,
-            full_page_image,
-            text_quality,
-            all_text_quality,
-            glyphs,
-            painted_native_characters,
-            trusted_hidden_text,
         )
 
     @property
@@ -968,21 +802,6 @@ class PageAnalysis(Record):
         frozen_setattr(self, "observations", observations)
         frozen_setattr(self, "evidence", evidence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page={self.page!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"rotation={self.rotation!r}, "
-            f"fields={self.fields!r}, "
-            f"annotations={self.annotations!r}, "
-            f"program={self.program!r}, "
-            f"observations={self.observations!r}, "
-            f"evidence={self.evidence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1015,30 +834,6 @@ class PageAnalysis(Record):
             )
         )
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        page = changes.pop("page", self.page)
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        rotation = changes.pop("rotation", self.rotation)
-        fields = changes.pop("fields", self.fields)
-        annotations = changes.pop("annotations", self.annotations)
-        program = changes.pop("program", self.program)
-        observations = changes.pop("observations", self.observations)
-        evidence = changes.pop("evidence", self.evidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            page,
-            width,
-            height,
-            rotation,
-            fields,
-            annotations,
-            program,
-            observations,
-            evidence,
-        )
-
 
 class ParsedLine(Record):
     __slots__ = ("line", "sequence", "rotation", "font_size")
@@ -1064,16 +859,6 @@ class ParsedLine(Record):
         frozen_setattr(self, "font_size", font_size)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"line={self.line!r}, "
-            f"sequence={self.sequence!r}, "
-            f"rotation={self.rotation!r}, "
-            f"font_size={self.font_size!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1088,15 +873,6 @@ class ParsedLine(Record):
 
     def __hash__(self) -> int:
         return hash((self.line, self.sequence, self.rotation, self.font_size))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        line = changes.pop("line", self.line)
-        sequence = changes.pop("sequence", self.sequence)
-        rotation = changes.pop("rotation", self.rotation)
-        font_size = changes.pop("font_size", self.font_size)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(line, sequence, rotation, font_size)
 
     def _post_init(self) -> None:
         if self.line.bbox is None:
@@ -1129,17 +905,6 @@ class ParsedBlock(Record):
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "level", level)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"lines={self.lines!r}, "
-            f"bbox={self.bbox!r}, "
-            f"column_index={self.column_index!r}, "
-            f"kind={self.kind!r}, "
-            f"level={self.level!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1155,16 +920,6 @@ class ParsedBlock(Record):
 
     def __hash__(self) -> int:
         return hash((self.lines, self.bbox, self.column_index, self.kind, self.level))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        lines = changes.pop("lines", self.lines)
-        bbox = changes.pop("bbox", self.bbox)
-        column_index = changes.pop("column_index", self.column_index)
-        kind = changes.pop("kind", self.kind)
-        level = changes.pop("level", self.level)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(lines, bbox, column_index, kind, level)
 
 
 class ReadingOrderEvidence(Record):
@@ -1235,21 +990,6 @@ class ReadingOrderEvidence(Record):
         frozen_setattr(self, "confidence", confidence)
         frozen_setattr(self, "strategy", strategy)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"line_count={self.line_count!r}, "
-            f"source_inversions={self.source_inversions!r}, "
-            f"source_inversion_ratio={self.source_inversion_ratio!r}, "
-            f"column_count={self.column_count!r}, "
-            f"rotation_count={self.rotation_count!r}, "
-            f"repaired={self.repaired!r}, "
-            f"ambiguous={self.ambiguous!r}, "
-            f"confidence={self.confidence!r}, "
-            f"strategy={self.strategy!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1280,28 +1020,4 @@ class ReadingOrderEvidence(Record):
                 self.confidence,
                 self.strategy,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        line_count = changes.pop("line_count", self.line_count)
-        source_inversions = changes.pop("source_inversions", self.source_inversions)
-        source_inversion_ratio = changes.pop("source_inversion_ratio", self.source_inversion_ratio)
-        column_count = changes.pop("column_count", self.column_count)
-        rotation_count = changes.pop("rotation_count", self.rotation_count)
-        repaired = changes.pop("repaired", self.repaired)
-        ambiguous = changes.pop("ambiguous", self.ambiguous)
-        confidence = changes.pop("confidence", self.confidence)
-        strategy = changes.pop("strategy", self.strategy)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            line_count,
-            source_inversions,
-            source_inversion_ratio,
-            column_count,
-            rotation_count,
-            repaired,
-            ambiguous,
-            confidence,
-            strategy,
         )
