@@ -1339,6 +1339,7 @@ class Page(Record):
         "user_unit",
         "_elements",
     )
+    __repr_fields__: ClassVar[tuple[str, ...]] = __fields__[:-1]
     __match_args__ = (
         "page_number",
         "page_label",
@@ -1404,31 +1405,6 @@ class Page(Record):
         frozen_setattr(self, "user_unit", user_unit)
         frozen_setattr(self, "_elements", ())
         self._post_init()
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_number={self.page_number!r}, "
-            f"page_label={self.page_label!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"rotation={self.rotation!r}, "
-            f"blocks={self.blocks!r}, "
-            f"page_class={self.page_class!r}, "
-            f"base_route={self.base_route!r}, "
-            f"confidence={self.confidence!r}, "
-            f"tables={self.tables!r}, "
-            f"figures={self.figures!r}, "
-            f"links={self.links!r}, "
-            f"annotations={self.annotations!r}, "
-            f"form_fields={self.form_fields!r}, "
-            f"header={self.header!r}, "
-            f"footer={self.footer!r}, "
-            f"diagnostics={self.diagnostics!r}, "
-            f"cropbox={self.cropbox!r}, "
-            f"user_unit={self.user_unit!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

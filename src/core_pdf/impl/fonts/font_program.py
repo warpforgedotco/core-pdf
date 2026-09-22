@@ -118,17 +118,16 @@ CUBIC_FLATNESS = 0.25
 CUBIC_MAX_DEPTH = 12
 
 
-DEFAULT_CFF_FONT_MATRIX = Matrix(*DEFAULT_CFF_MATRIX)
+DEFAULT_CFF_FONT_MATRIX = DEFAULT_CFF_MATRIX
 
 
 def cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
-) -> Matrix | None:
+) -> CffFontMatrix | None:
     try:
-        matrix = pdf_cff_font_matrix(font_dict)
+        return pdf_cff_font_matrix(font_dict)
     except TypeError, ValueError:
         return None
-    return None if matrix is None else Matrix(*matrix)
 
 
 class CFFFont(PdfCFFFont):
@@ -445,13 +444,9 @@ class CFFFont(PdfCFFFont):
         return ()
 
     def font_matrix(self, glyph_id: int) -> CffFontMatrix:
-        return with_recovery(
-            super().font_matrix,
-            lambda gid: CffFontMatrix(*self.recover_font_matrix(gid)),
-            glyph_id,
-        )
+        return with_recovery(super().font_matrix, self.recover_font_matrix, glyph_id)
 
-    def recover_font_matrix(self, glyph_id: int) -> Matrix:
+    def recover_font_matrix(self, glyph_id: int) -> CffFontMatrix:
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
         top_matrix = cff_font_matrix(self.top_dict)
         font_dict = self.font_dicts[fd_index] if 0 <= fd_index < len(self.font_dicts) else None

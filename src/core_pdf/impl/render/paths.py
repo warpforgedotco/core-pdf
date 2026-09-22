@@ -364,10 +364,10 @@ def intersect_box(
     b: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float] | None:
     """`intersect_bbox` for two known rectangles, with empty results as None."""
-    x0, y0, x1, y1 = intersect_bbox(a, b) or a
-    if x1 <= x0 or y1 <= y0:
+    box = intersect_bbox(a, b)
+    if box is None or box[2] <= box[0] or box[3] <= box[1]:
         return None
-    return x0, y0, x1, y1
+    return box
 
 
 def translate_rect(rect: Any, tx: float, ty: float) -> Any:

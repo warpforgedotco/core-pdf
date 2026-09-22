@@ -54,14 +54,21 @@ class PickleFields:
 
 
 class ReprFields:
-    """``Qualname(field=value, ...)`` over every declared field, in order."""
+    """``Qualname(field=value, ...)`` over the declared fields, in order.
+
+    A class that should not print all of them -- a cached closure, a private
+    backing field -- narrows the list with ``__repr_fields__`` rather than
+    hand-writing the whole method.
+    """
 
     __slots__ = ()
 
     __fields__: ClassVar[tuple[str, ...]]
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = None
 
     def __repr__(self) -> str:
-        fields = ", ".join([f"{name}={getattr(self, name)!r}" for name in self.__fields__])
+        names = self.__repr_fields__ if self.__repr_fields__ is not None else self.__fields__
+        fields = ", ".join([f"{name}={getattr(self, name)!r}" for name in names])
         return f"{self.__class__.__qualname__}({fields})"
 
 
