@@ -792,11 +792,7 @@ class ContentInterpreter:
     def set_device_color(
         self, operands: ContentOperands, space: ColorSpace, *, stroke: bool
     ) -> None:
-        # Takes the space itself rather than its name: every colour operator in
-        # a content stream lands here, and looking the name up meant building a
-        # fresh mapping on each one. The component count comes from the space
-        # for the same reason it is no longer a parameter -- one source of
-        # truth, and nothing to disagree with.
+        # The count comes from the space so the two cannot disagree.
         count = len(space.component_ranges)
         if self.type3_uncolored or len(operands) < count:
             return
