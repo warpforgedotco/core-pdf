@@ -741,22 +741,24 @@ class LegacyTextExtractor:
             case "TJ":
                 threshold = self.current_space_width * 0.95
                 for item in cast(list[object], operands[0] if operands else []):
-                    if isinstance(item, PdfString):
-                        self.show(bytes(item.data))
-                    elif isinstance(item, PdfName):
-                        self.add_text(f"/{item.value}")
-                    elif (
-                        isinstance(item, (int, float))
-                        and abs(float(item)) >= threshold
-                        and self.text
-                        and not self.text.endswith(" ")
-                    ):
-                        self.add_text(" ")
-                        self.accumulated_width += (
-                            self.font.synthetic_space_width if self.font is not None else 250.0
-                        ) * self.font_size
-                        self.actual_height = self.font_size
-                        self.check_position(0.0)
+                    match item:
+                        case PdfString(data=data):
+                            self.show(bytes(data))
+                        case PdfName(value=name):
+                            self.add_text(f"/{name}")
+                        # a number only matters when it kerns wide enough to read
+                        # as a space, and only between visible text
+                        case int() | float() if (
+                            abs(float(item)) >= threshold
+                            and self.text
+                            and not self.text.endswith(" ")
+                        ):
+                            self.add_text(" ")
+                            self.accumulated_width += (
+                                self.font.synthetic_space_width if self.font is not None else 250.0
+                            ) * self.font_size
+                            self.actual_height = self.font_size
+                            self.check_position(0.0)
             case "'":
                 self.process("T*", ())
                 self.process("Tj", operands)
