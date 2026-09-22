@@ -486,6 +486,8 @@ class internal_RasterTarget(
             self.internal_record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
+        if buffer is self.page_buffer:
+            return self.page_pixels
         return uint8_image_view(buffer, (self.height, self.width, 4))
 
     def record_source_shape(

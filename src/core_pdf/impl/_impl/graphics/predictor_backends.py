@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import core_predictors.png as strict
+import core_predictors.tiff as strict_tiff
 from core_pdf.impl._impl.graphics.decode_compat import FilterParams
-from core_pdf.impl._impl.runtime.codec_backends import internal_png_predict_codec
+from core_pdf.impl._impl.runtime.codec_backends import (
+    internal_png_predict_codec,
+    tiff_predict_8,
+    tiff_predict_16,
+    tiff_predict_bits,
+)
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf_spec.s_07_filters.predictors import SUPPORTED_PREDICTOR_BITS
 from core_predictors.errors import PredictorError, UnsupportedPngFilterError
@@ -100,16 +106,15 @@ def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
 def tiff_predict(
     data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
 ) -> bytes:
-    from core_pdf.impl._impl.runtime.codec_backends import (
-        tiff_predict_8,
-        tiff_predict_16,
-        tiff_predict_bits,
+    try:
+        if bits_per_component == 8:
+            return tiff_predict_8(data, columns, colors)
+        if bits_per_component == 16:
+            return tiff_predict_16(data, columns, colors)
+        if bits_per_component in {1, 2, 4}:
+            return tiff_predict_bits(data, columns, colors, bits_per_component)
+    except Exception:
+        pass
+    return strict_tiff.tiff_predict(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
     )
-
-    if bits_per_component == 8:
-        return tiff_predict_8(data, columns, colors)
-    if bits_per_component == 16:
-        return tiff_predict_16(data, columns, colors)
-    if bits_per_component not in {1, 2, 4}:
-        raise PredictorError(f"invalid TIFF predictor bits {bits_per_component}")
-    return tiff_predict_bits(data, columns, colors, bits_per_component)

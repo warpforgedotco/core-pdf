@@ -52,10 +52,6 @@ INTERNAL_ALTERNATE_COLOR_SPACES = {
     "CMYK": "DeviceCMYK",
 }
 
-INTERNAL_DEDUPLICATE_MIN_ROWS = 4096
-
-INTERNAL_DEDUPLICATE_MAX_DISTINCT = 0.9
-
 
 @cache
 def internal_srgb_profile() -> bytes:
@@ -71,20 +67,6 @@ class IccTransform:
     @property
     def alternate_color_space(self) -> str:
         return INTERNAL_ALTERNATE_COLOR_SPACES.get(self.color_space, "DeviceRGB")
-
-    def apply_uint8(
-        self, samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
-    ) -> ByteSamples:
-        channels = self.input_channels
-        if samples.dtype != numpy.dtype(numpy.uint8):
-            raise IccSampleError("samples must have uint8 dtype")
-        if samples.ndim != 2 or samples.shape[1] != channels:
-            raise IccSampleError(f"samples must have shape (count, {channels})")
-        if channels <= 4 and len(samples) > INTERNAL_DEDUPLICATE_MIN_ROWS:
-            distinct, inverse = internal_distinct_byte_rows(samples)
-            if len(distinct) < len(samples) * INTERNAL_DEDUPLICATE_MAX_DISTINCT:
-                return internal_transform(self, distinct, rendering)[inverse]
-        return internal_transform(self, samples, rendering)
 
     def apply_uint16(
         self,
@@ -141,29 +123,3 @@ def internal_parse_icc_transform(profile: bytes) -> IccTransform:
     if str(info.get("pcs") or "") not in INTERNAL_PCS_NAMES:
         raise IccProfileError("unsupported or malformed ICC profile")
     return IccTransform(profile=profile, color_space=color_space, input_channels=channels)
-
-
-def internal_distinct_byte_rows(
-    samples: ByteSamples,
-) -> tuple[ByteSamples, numpy.ndarray[Any, Any]]:
-    channels = samples.shape[1]
-    if channels > 4:
-        raise IccSampleError("cannot pack more than four channels into one key")
-    keys = numpy.zeros(len(samples), dtype=numpy.uint32)
-    for index in range(channels):
-        keys <<= numpy.uint32(8)
-        keys |= samples[:, index]
-    inverse: numpy.ndarray[Any, Any]
-    if channels <= 3:
-        present = numpy.zeros(1 << (8 * channels), dtype=numpy.bool_)
-        present[keys] = True
-        unique_keys = numpy.flatnonzero(present).astype(numpy.uint32)
-        ranks = numpy.cumsum(present, dtype=numpy.int32)
-        inverse = ranks[keys] - 1
-    else:
-        unique_keys, inverse = numpy.unique(keys, return_inverse=True)
-    distinct = numpy.empty((len(unique_keys), channels), dtype=numpy.uint8)
-    for index in range(channels):
-        shift = numpy.uint32(8 * (channels - 1 - index))
-        distinct[:, index] = ((unique_keys >> shift) & numpy.uint32(0xFF)).astype(numpy.uint8)
-    return distinct, inverse

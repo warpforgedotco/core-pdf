@@ -12,7 +12,7 @@ from core_pdf.impl._impl.capture.records import (
 )
 from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl._impl.graphics.shading import PreparedShading, prepare_shading
-from core_pdf.impl._impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.model.geometry import normalize_rect, rect_tuple
 from core_pdf.impl._impl.render.blend import (
     internal_clamp01,
     internal_color_component,
@@ -156,8 +156,7 @@ class internal_PatternTargetMixin:
             box = rect_tuple(data.get("bbox"))
         if box is None:
             box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
-        x0, y0, x1, y1 = box
-        return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
+        return normalize_rect(box)
 
     def paint_shading(
         self: internal_RasterState, data: dict[str, Any], blend_mode: str | None

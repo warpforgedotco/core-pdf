@@ -321,11 +321,9 @@ def internal_obstacle_partition(
     region_height = max(1.0, region_box[3] - region_box[1])
     centers_x = (region[:, 0] + region[:, 2]) * 0.5
     centers_y = (region[:, 1] + region[:, 3]) * 0.5
-    for raw_obstacle_index in range(len(obstacles)):
-        current_obstacle_index = int(raw_obstacle_index)
+    for current_obstacle_index, obstacle in enumerate(obstacles):
         if current_obstacle_index in used_obstacles:
             continue
-        obstacle = obstacles[current_obstacle_index]
         x0, y0, x1, y1 = obstacle
         obstacle_width = max(0.0, x1 - x0)
         obstacle_height = max(0.0, y1 - y0)

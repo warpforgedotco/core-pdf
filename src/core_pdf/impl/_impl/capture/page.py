@@ -9,7 +9,7 @@ from core_pdf.impl._impl.capture.interpreter import TextState
 from core_pdf.impl._impl.capture.program import AppearanceProgram, CapturedProgram, PageProgram
 from core_pdf.impl._impl.document.records import RawAnnotation, RawFormField
 from core_pdf.impl._impl.document.recovery.resources import resolve_resource_dict
-from core_pdf.impl._impl.model.geometry import transform_bbox
+from core_pdf.impl._impl.model.geometry import normalize_rect, transform_bbox
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_document.annotation_appearance import (
     ANNOTATION_FLAG_HIDDEN,
@@ -71,17 +71,6 @@ def internal_should_render(document: Any, annot: dict) -> bool:
     return True
 
 
-def internal_normalized_rect(
-    rect: tuple[float, float, float, float],
-) -> tuple[float, float, float, float]:
-    return (
-        min(rect[0], rect[2]),
-        min(rect[1], rect[3]),
-        max(rect[0], rect[2]),
-        max(rect[1], rect[3]),
-    )
-
-
 def capture_annotation_appearances(
     page: Any,
     state: TextState,
@@ -126,7 +115,7 @@ def capture_annotation_appearances(
             rect = document.resolver.resolve_box(annot.get("Rect"))
             if rect is None:
                 continue
-            rect = internal_normalized_rect(rect)
+            rect = normalize_rect(rect)
 
             raw_matrix = document.resolver.deep_resolve(stream.dictionary.get("Matrix"))
             if isinstance(raw_matrix, (list, tuple)) and len(raw_matrix) > 6:

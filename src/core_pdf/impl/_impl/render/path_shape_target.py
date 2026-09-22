@@ -99,9 +99,9 @@ class internal_PathShapeTargetMixin:
         normal_fast = blend_mode is None
         normal_target = pixel_view(pixels) if normal_fast else None
         if rectangular_clip and normal_fast and ix1 > ix0 and iy1 > iy0:
-            target_pixels = pixel_view(pixels)
+            assert normal_target is not None
             internal_blend_normal_solid_array_numpy(
-                target_pixels[iy0:iy1, ix0:ix1],
+                normal_target[iy0:iy1, ix0:ix1],
                 rgba,
             )
             self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])

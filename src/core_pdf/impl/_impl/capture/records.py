@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from core_pdf.impl._impl.model.geometry import bbox_union, points_bbox
+from core_pdf.impl._impl.model.geometry import bbox_union, normalize_rect, points_bbox
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -280,7 +280,7 @@ class CapturedDrawing:
         x0, y0, x1, y1 = bbox
         if x0 <= x1 and y0 <= y1:
             return bbox
-        return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+        return normalize_rect(bbox)
 
 
 def marker_drawing(

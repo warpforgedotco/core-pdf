@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol
 
 from core_pdf.impl._impl.document.page_links import resolve_destination_value
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
@@ -35,9 +35,6 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.document.records import RawAnnotation, RawFormField
     from core_pdf.impl._impl.document.structure import PageStructure
     from core_pdf.impl._impl.extract.capture import internal_StructureUnset
-
-internal_T = TypeVar("internal_T")
-internal_Record = TypeVar("internal_Record")
 
 
 class internal_Layout(Protocol):

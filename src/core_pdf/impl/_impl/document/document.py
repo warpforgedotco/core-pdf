@@ -222,7 +222,6 @@ class PdfDocument(
 
     __slots__ = (
         "source",
-        "password",
         "raw_data",
         "xref",
         "trailer_dict",
@@ -245,7 +244,6 @@ class PdfDocument(
     )
 
     source: PdfSource
-    password: str
     raw_data: bytes | mmap.mmap
     xref: dict[int, PdfXRefEntry]
     trailer_dict: PdfDict
@@ -280,7 +278,6 @@ class PdfDocument(
         self.internal_operation_cancelled = threading.Event()
         self.internal_active_operations = 0
         self.source = source
-        self.password = password
         self.file_handle = None
         self.raw_data = b""
         self.decipher = None

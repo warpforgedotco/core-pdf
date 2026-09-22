@@ -160,6 +160,11 @@ def overlap_ratio_of(subject: Sequence[float], container: Sequence[float]) -> fl
     return bbox_intersection_area(subject, container) / subject_area
 
 
+def normalize_rect(rect: Sequence[float]) -> Rectangle:
+    x0, y0, x1, y1 = rect
+    return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+
+
 def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
     return (
         float(rect[0]),
@@ -181,6 +186,7 @@ __all__ = (
     "internal_float_value",
     "intersect_bbox",
     "interval_overlap",
+    "normalize_rect",
     "overlap_ratio_min",
     "overlap_ratio_min_exact",
     "overlap_ratio_of",

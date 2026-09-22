@@ -111,33 +111,16 @@ def internal_remove_off_page_blocks(
 
 def internal_line_decoration_flags(
     line: TextLine,
-    drawings: tuple[CapturedDrawing, ...],
-    *,
-    decoration_boxes: tuple[tuple[float, float, float, float], ...] | None = None,
+    decoration_boxes: tuple[tuple[float, float, float], ...],
 ) -> dict[str, bool]:
     if line.bbox is None:
         return {}
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
     flags = {"underline": False, "strikeout": False}
-    candidates = decoration_boxes
-    if candidates is None:
-        candidates = tuple(
-            bbox
-            for drawing in drawings
-            if drawing.kind in {"fill", "fillstroke", "stroke"}
-            and (bbox := internal_line_decoration_bbox(drawing)) is not None
-        )
-    for bbox in candidates:
-        dx0, dy0, dx1, dy1 = bbox
-        width = dx1 - dx0
-        height = dy1 - dy0
-        if width < 2.0 or height > 2.5:
+    for dx0, dx1, center_y in decoration_boxes:
+        if interval_overlap(x0, x1, dx0, dx1) / (dx1 - dx0) < 0.75:
             continue
-        overlap = interval_overlap(x0, x1, dx0, dx1) / width
-        if overlap < 0.75:
-            continue
-        center_y = (dy0 + dy1) * 0.5
         if y0 - 3.0 <= center_y <= y0 + 1.5:
             flags["underline"] = True
         elif y0 + line_height * 0.25 <= center_y <= y0 + line_height * 0.75:
@@ -159,10 +142,12 @@ def internal_normalized_blocks(
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
     decoration_boxes = tuple(
-        bbox
+        (bbox[0], bbox[2], (bbox[1] + bbox[3]) * 0.5)
         for drawing in drawings
         if drawing.kind in {"fill", "fillstroke", "stroke"}
         and (bbox := internal_line_decoration_bbox(drawing)) is not None
+        and bbox[2] - bbox[0] >= 2.0
+        and bbox[3] - bbox[1] <= 2.5
     )
     blocks: list[Block] = []
     for index, parsed_block in enumerate(parsed_blocks):
@@ -174,11 +159,7 @@ def internal_normalized_blocks(
         sources = tuple(dict.fromkeys(parsed.line.source for parsed in parsed_block.lines))
         lines: list[TextLine] = []
         for parsed in parsed_block.lines:
-            flags = internal_line_decoration_flags(
-                parsed.line,
-                drawings,
-                decoration_boxes=decoration_boxes,
-            )
+            flags = internal_line_decoration_flags(parsed.line, decoration_boxes)
             lines.append(
                 replace(
                     parsed.line,
