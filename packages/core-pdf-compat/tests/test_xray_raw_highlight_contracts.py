@@ -33,7 +33,7 @@ def source(data: bytes, content: bytes) -> bytes:
 def test_raw_highlight_recovery_tracks_font_position_and_width_evidence(
     text_pdf_bytes, content, expected
 ):
-    with xray.internal_XrayDocument(source(text_pdf_bytes, content)) as document:
+    with xray.XrayDocument(source(text_pdf_bytes, content)) as document:
         page = SimpleNamespace(
             document=document,
             resources={"Font": {"F2": None}},
@@ -59,7 +59,7 @@ def test_raw_highlight_recovery_requires_annotation_and_font_evidence(text_pdf_b
     data = source(text_pdf_bytes, content)
     if reason == "unrecoverable-font":
         data = data.replace(b"/ToUnicode 91 0 R", b"/ToUnicode 99 0 R")
-    with xray.internal_XrayDocument(data) as document:
+    with xray.XrayDocument(data) as document:
         annotations = (
             []
             if reason == "no-highlight"
@@ -78,7 +78,7 @@ def test_raw_highlight_recovery_requires_annotation_and_font_evidence(text_pdf_b
 
 @pytest.mark.parametrize("unit", [1, 2])
 def test_raw_highlight_output_uses_crop_origin_and_user_units(text_pdf_bytes, unit):
-    with xray.internal_XrayDocument(
+    with xray.XrayDocument(
         source(text_pdf_bytes, b"BT /F2 10 Tf 20 100 Td <41> Tj ET")
     ) as document:
         page = SimpleNamespace(

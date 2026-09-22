@@ -9,11 +9,11 @@ from core_pdf.impl import install_lazy_module_exports
 if TYPE_CHECKING:
     from core_pdf_ocr.api.document import PdfDocument, PdfPage
 
-internal_EXPORTS = {
+EXPORTS = {
     "PdfDocument": ("core_pdf_ocr.api.document", "PdfDocument"),
     "PdfPage": ("core_pdf_ocr.api.document", "PdfPage"),
 }
 
-install_lazy_module_exports(globals(), internal_EXPORTS)
+install_lazy_module_exports(globals(), EXPORTS)
 
 __all__ = ("PdfDocument", "PdfPage")

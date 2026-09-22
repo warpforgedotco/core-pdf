@@ -10,10 +10,10 @@ from PIL import Image
 
 from core_pdf import PdfDocument as NativePdfDocument
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
+from core_pdf.impl.runtime.execution import ExtractionCancelled, ExtractionScope
 from core_pdf_ocr import PdfDocument
 from core_pdf_ocr.impl.extract.ocr import tesseract
-from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask
+from core_pdf_ocr.impl.extract.ocr.types import OcrTask
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CORE_PDF_TESSERACT_TESTS") != "1",
@@ -25,15 +25,15 @@ PINS = json.loads((FIXTURES / "engine.json").read_text())
 
 @pytest.fixture(autouse=True)
 def pinned_engine() -> None:
-    engine = tesseract.internal_import_tesserocr()
+    engine = tesseract.import_tesserocr()
     assert engine.tesseract_version().splitlines()[0] == PINS["version"]
-    model = Path(tesseract.internal_tessdata_path()) / "eng.traineddata"
+    model = Path(tesseract.tessdata_path()) / "eng.traineddata"
     assert hashlib.sha256(model.read_bytes()).hexdigest() == PINS["model_sha256"]
 
 
 @pytest.fixture
 def owned_engines(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-    factory = tesseract.internal_api
+    factory = tesseract.open_tesseract_api
     engines: list[Any] = []
 
     class TrackedEngine:
@@ -54,7 +54,7 @@ def owned_engines(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
             self.ends += 1
             self.api.End()
 
-    monkeypatch.setattr(tesseract, "internal_api", TrackedEngine)
+    monkeypatch.setattr(tesseract, "open_tesseract_api", TrackedEngine)
     return engines
 
 
@@ -78,17 +78,17 @@ def test_public_extraction_recognizes_image_only_pages_and_releases_engine(
 
 
 @pytest.fixture
-def invoice_task() -> internal_OcrTask:
+def invoice_task() -> OcrTask:
     with Image.open(FIXTURES / "invoice.png") as image:
         raster = RasterImage(image.tobytes(), image.width, image.height, 1)
-    return internal_OcrTask(6, raster, (30, 35, 650, 80), (10, 20, 490, 212), 150)
+    return OcrTask(6, raster, (30, 35, 650, 80), (10, 20, 490, 212), 150)
 
 
 def test_real_crop_excludes_other_lines_and_maps_into_page(
-    invoice_task: internal_OcrTask,
+    invoice_task: OcrTask,
     owned_engines: list[Any],
 ) -> None:
-    result = tesseract.internal_recognize(invoice_task)
+    result = tesseract.recognize(invoice_task)
     assert result.recognition_status == "ok"
     assert tuple(result.observations.text) == ("INVOICE 2048",)
     x0, y0, x1, y1 = result.observations.bbox[0]
@@ -99,14 +99,14 @@ def test_real_crop_excludes_other_lines_and_maps_into_page(
 
 
 def test_real_engine_is_released_when_cancelled_between_same_image_tasks(
-    invoice_task: internal_OcrTask,
+    invoice_task: OcrTask,
     owned_engines: list[Any],
 ) -> None:
     context = ExtractionScope(
         cancelled=lambda: bool(owned_engines and owned_engines[0].recognitions)
     )
-    with pytest.raises(internal_ExtractionCancelled):
-        tesseract.internal_recognize_group(
+    with pytest.raises(ExtractionCancelled):
+        tesseract.recognize_group(
             (invoice_task, replace(invoice_task, rectangle=(30, 120, 650, 80))),
             raise_if_cancelled=context.raise_if_cancelled,
         )

@@ -24,7 +24,7 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
 
 
-def internal_inheritable(document: Any, node: object, key: str) -> object:
+def inheritable(document: Any, node: object, key: str) -> object:
     for _ in range(50):
         if not isinstance(node, dict):
             return None
@@ -56,7 +56,7 @@ def select_appearance_stream(
         return None
 
 
-def internal_should_render(document: Any, annot: dict) -> bool:
+def should_render(document: Any, annot: dict) -> bool:
     subtype = document.resolver.resolve_name(annot.get("Subtype")) or ""
     if subtype in SKIPPED_SUBTYPES:
         return False
@@ -64,9 +64,9 @@ def internal_should_render(document: Any, annot: dict) -> bool:
     if flags & (ANNOTATION_FLAG_HIDDEN | ANNOTATION_FLAG_NO_VIEW):
         return False
     if subtype == "Widget":
-        if internal_inheritable(document, annot, "FT") is None:
+        if inheritable(document, annot, "FT") is None:
             return False
-        if internal_inheritable(document, annot, "T") is None:
+        if inheritable(document, annot, "T") is None:
             return False
     return True
 
@@ -107,7 +107,7 @@ def capture_annotation_appearances(
     appearances: list[AppearanceProgram] = []
     for annot in candidates:
         try:
-            if not internal_should_render(document, annot):
+            if not should_render(document, annot):
                 continue
             stream = select_appearance_stream(document.resolver, annot.get("AP"), annot.get("AS"))
             if stream is None:

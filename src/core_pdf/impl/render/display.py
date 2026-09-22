@@ -28,7 +28,7 @@ RASTER_CONTROL_KINDS = frozenset(
 )
 
 
-def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
+def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     dictionary = data.get("dictionary")
     if not isinstance(dictionary, dict):
         return {}
@@ -78,7 +78,7 @@ def internal_image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str
     return metadata
 
 
-def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
+def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
     quad = data.get("quad")
     if isinstance(quad, (list, tuple)) and len(quad) >= 3:
         try:
@@ -106,24 +106,24 @@ class DisplayList:
         "height",
         "items",
         "preserve_object_boundaries",
-        "internal_shape_tracking_groups",
-        "internal_group_scope_floors",
+        "shape_tracking_groups",
+        "group_scope_floors",
     )
 
     width: float
     height: float
     items: list[DisplayItem]
     preserve_object_boundaries: bool
-    internal_shape_tracking_groups: list[bool]
-    internal_group_scope_floors: list[int]
+    shape_tracking_groups: list[bool]
+    group_scope_floors: list[int]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "width",
         "height",
         "items",
         "preserve_object_boundaries",
-        "internal_shape_tracking_groups",
-        "internal_group_scope_floors",
+        "shape_tracking_groups",
+        "group_scope_floors",
     )
     __match_args__ = ("width", "height", "items")
 
@@ -139,8 +139,8 @@ class DisplayList:
         self.height = height
         self.items = [] if items is None else items
         self.preserve_object_boundaries = preserve_object_boundaries
-        self.internal_shape_tracking_groups = []
-        self.internal_group_scope_floors = []
+        self.shape_tracking_groups = []
+        self.group_scope_floors = []
 
     def __repr__(self) -> str:
         return (
@@ -162,8 +162,8 @@ class DisplayList:
             and self.height == other.height
             and self.items == other.items
             and self.preserve_object_boundaries == other.preserve_object_boundaries
-            and self.internal_shape_tracking_groups == other.internal_shape_tracking_groups
-            and self.internal_group_scope_floors == other.internal_group_scope_floors
+            and self.shape_tracking_groups == other.shape_tracking_groups
+            and self.group_scope_floors == other.group_scope_floors
         )
 
     __hash__ = None  # type: ignore[assignment]
@@ -184,20 +184,20 @@ class DisplayList:
             preserve_object_boundaries=preserve_object_boundaries,
         )
 
-    def internal_track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
+    def track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
         if kind == "scope-begin":
-            self.internal_group_scope_floors.append(len(self.internal_shape_tracking_groups))
+            self.group_scope_floors.append(len(self.shape_tracking_groups))
         elif kind == "scope-end":
-            if self.internal_group_scope_floors:
-                del self.internal_shape_tracking_groups[self.internal_group_scope_floors.pop() :]
+            if self.group_scope_floors:
+                del self.shape_tracking_groups[self.group_scope_floors.pop() :]
         elif kind == "group-begin":
-            self.internal_shape_tracking_groups.append(
+            self.shape_tracking_groups.append(
                 data.get("group_knockout") is True or data.get("group_track_shape") is True
             )
         elif kind == "group-end":
-            floor = self.internal_group_scope_floors[-1] if self.internal_group_scope_floors else 0
-            if len(self.internal_shape_tracking_groups) > floor:
-                self.internal_shape_tracking_groups.pop()
+            floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
+            if len(self.shape_tracking_groups) > floor:
+                self.shape_tracking_groups.pop()
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")
@@ -206,7 +206,7 @@ class DisplayList:
         if "graphics_soft_mask" in data:
             data["graphics_soft_mask"] = graphics_mask
         if kind in {"image", "inline-image"}:
-            metadata = internal_image_display_metadata(kind, data)
+            metadata = image_display_metadata(kind, data)
             if metadata:
                 explicit = data.get("source_metadata")
                 if isinstance(explicit, dict):
@@ -230,7 +230,7 @@ class DisplayList:
                     seqno=seqno,
                     bbox=rect_tuple(data.get("bbox")),
                     source=source,
-                    quad=internal_image_quad(data),
+                    quad=image_quad(data),
                     fill=data.get("fill") or data.get("fill_color"),
                     fill_opacity=data.get("fill_opacity"),
                     blend_mode=data.get("blend_mode"),
@@ -273,7 +273,7 @@ class DisplayList:
                 )
             )
             return
-        self.internal_track_group_boundary(kind, data)
+        self.track_group_boundary(kind, data)
         self.items.append(DisplayListItem(kind=kind, seqno=seqno, data=data))
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
@@ -297,7 +297,7 @@ class DisplayList:
             if (
                 paint_kind is PathPaintKind.STROKE
                 and not self.preserve_object_boundaries
-                and not any(self.internal_shape_tracking_groups)
+                and not any(self.shape_tracking_groups)
                 and drawing.stroke_pattern is None
                 and drawing.graphics_soft_mask is None
                 and type(path) is CapturedPath
@@ -338,7 +338,7 @@ class DisplayList:
                     seqno=drawing.seqno,
                     bbox=drawing.rect,
                     path=drawing.path,
-                    **internal_drawing_paint_kwargs(drawing),
+                    **drawing_paint_kwargs(drawing),
                 )
             )
             return
@@ -346,7 +346,7 @@ class DisplayList:
             drawing.kind,
             drawing.seqno,
             bbox=drawing.rect,
-            **internal_drawing_paint_kwargs(drawing),
+            **drawing_paint_kwargs(drawing),
             group_isolated=drawing.group_isolated,
             group_knockout=drawing.group_knockout,
             raw_data=drawing.raw_data,
@@ -359,7 +359,7 @@ class DisplayList:
         )
 
 
-def internal_drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
+def drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
     return {
         "fill": drawing.fill,
         "fill_opacity": drawing.fill_opacity,
@@ -379,7 +379,7 @@ def internal_drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
     }
 
 
-def internal_display_item_box(
+def display_item_box(
     item: DisplayItem, *, scale: float = 1.0
 ) -> tuple[float, float, float, float] | None:
     if type(item) is ImagePaintItem:
@@ -410,5 +410,5 @@ def internal_display_item_box(
 
 __all__ = (
     "DisplayList",
-    "internal_image_quad",
+    "image_quad",
 )

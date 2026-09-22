@@ -7,20 +7,20 @@ from functools import lru_cache
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.graphics.color import color_operands_to_srgb
-from core_pdf.impl.graphics.color_spec import internal_color_space_paints, parse_color_space
+from core_pdf.impl.graphics.color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics.functions import (
-    internal_compile_pdf_function,
-    internal_number_array,
+    compile_pdf_function,
+    number_array,
 )
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class PreparedShading(internal_Record):
+class PreparedShading(Record):
     __slots__ = (
         "shading_type",
         "coords",
@@ -29,7 +29,7 @@ class PreparedShading(internal_Record):
         "extend_end",
         "color_model",
         "bbox",
-        "internal_evaluator",
+        "evaluator",
         "color_rendering",
     )
 
@@ -40,7 +40,7 @@ class PreparedShading(internal_Record):
     extend_end: bool
     color_model: str
     bbox: tuple[float, float, float, float] | None
-    internal_evaluator: Callable[[float], tuple[float, ...]]
+    evaluator: Callable[[float], tuple[float, ...]]
     color_rendering: ColorRendering
 
     __fields__: ClassVar[tuple[str, ...]] = (
@@ -51,7 +51,7 @@ class PreparedShading(internal_Record):
         "extend_end",
         "color_model",
         "bbox",
-        "internal_evaluator",
+        "evaluator",
         "color_rendering",
     )
     __match_args__ = (
@@ -62,7 +62,7 @@ class PreparedShading(internal_Record):
         "extend_end",
         "color_model",
         "bbox",
-        "internal_evaluator",
+        "evaluator",
         "color_rendering",
     )
 
@@ -75,18 +75,18 @@ class PreparedShading(internal_Record):
         extend_end: bool,
         color_model: str,
         bbox: tuple[float, float, float, float] | None,
-        internal_evaluator: Callable[[float], tuple[float, ...]],
+        evaluator: Callable[[float], tuple[float, ...]],
         color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
     ) -> None:
-        internal_frozen_setattr(self, "shading_type", shading_type)
-        internal_frozen_setattr(self, "coords", coords)
-        internal_frozen_setattr(self, "domain", domain)
-        internal_frozen_setattr(self, "extend_start", extend_start)
-        internal_frozen_setattr(self, "extend_end", extend_end)
-        internal_frozen_setattr(self, "color_model", color_model)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "internal_evaluator", internal_evaluator)
-        internal_frozen_setattr(self, "color_rendering", color_rendering)
+        frozen_setattr(self, "shading_type", shading_type)
+        frozen_setattr(self, "coords", coords)
+        frozen_setattr(self, "domain", domain)
+        frozen_setattr(self, "extend_start", extend_start)
+        frozen_setattr(self, "extend_end", extend_end)
+        frozen_setattr(self, "color_model", color_model)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "evaluator", evaluator)
+        frozen_setattr(self, "color_rendering", color_rendering)
 
     def __repr__(self) -> str:
         return (
@@ -140,7 +140,7 @@ class PreparedShading(internal_Record):
         extend_end = changes.pop("extend_end", self.extend_end)
         color_model = changes.pop("color_model", self.color_model)
         bbox = changes.pop("bbox", self.bbox)
-        internal_evaluator = changes.pop("internal_evaluator", self.internal_evaluator)
+        evaluator = changes.pop("evaluator", self.evaluator)
         color_rendering = changes.pop("color_rendering", self.color_rendering)
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
@@ -152,12 +152,12 @@ class PreparedShading(internal_Record):
             extend_end,
             color_model,
             bbox,
-            internal_evaluator,
+            evaluator,
             color_rendering,
         )
 
     def evaluate(self, value: float) -> tuple[float, ...]:
-        return self.internal_evaluator(value)
+        return self.evaluator(value)
 
 
 def prepare_shading(
@@ -165,20 +165,20 @@ def prepare_shading(
 ) -> PreparedShading | None:
     if not isinstance(dictionary, dict):
         return None
-    if not internal_color_space_paints(dictionary.get("ColorSpace")):
+    if not raw_color_space_paints(dictionary.get("ColorSpace")):
         return None
     shading_type = parse_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:
         return None
-    coords = internal_number_array(dictionary.get("Coords"))
+    coords = number_array(dictionary.get("Coords"))
     if (shading_type == 2 and len(coords) < 4) or (shading_type == 3 and len(coords) < 6):
         return None
-    domain_values = internal_number_array(dictionary.get("Domain"))
+    domain_values = number_array(dictionary.get("Domain"))
     domain = (domain_values[0], domain_values[1]) if len(domain_values) >= 2 else (0.0, 1.0)
     extend = dictionary.get("Extend")
     extend_start = isinstance(extend, (list, tuple)) and len(extend) > 0 and extend[0] is True
     extend_end = isinstance(extend, (list, tuple)) and len(extend) > 1 and extend[1] is True
-    bbox_values = internal_number_array(dictionary.get("BBox"))
+    bbox_values = number_array(dictionary.get("BBox"))
     bbox = (
         (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3])
         if len(bbox_values) >= 4
@@ -197,7 +197,7 @@ def prepare_shading(
     else:
         normalized["BBox"] = bbox
     try:
-        spec = parse_shading(normalized, compile_function=internal_compile_pdf_function)
+        spec = parse_shading(normalized, compile_function=compile_pdf_function)
         space = parse_color_space(spec.color_space)
     except ValueError:
         return None

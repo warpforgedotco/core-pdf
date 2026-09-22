@@ -7,7 +7,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import MISSING
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 def parse_role_map(
@@ -33,9 +33,9 @@ class StructureAttribute:
     __match_args__ = ("value", "revision", "explicit_revision")
 
     def __init__(self, value: PdfDict | PdfStream, revision: int, explicit_revision: bool) -> None:
-        internal_frozen_setattr(self, "value", value)
-        internal_frozen_setattr(self, "revision", revision)
-        internal_frozen_setattr(self, "explicit_revision", explicit_revision)
+        frozen_setattr(self, "value", value)
+        frozen_setattr(self, "revision", revision)
+        frozen_setattr(self, "explicit_revision", explicit_revision)
 
     def __repr__(self) -> str:
         return (
@@ -71,7 +71,7 @@ class StructureAttribute:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         value = changes.pop("value", self.value)

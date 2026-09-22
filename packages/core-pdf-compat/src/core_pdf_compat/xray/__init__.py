@@ -34,9 +34,9 @@ _OK_WORDS = re.compile(
 )
 
 
-class internal_XrayDocument(PdfDocument):
+class XrayDocument(PdfDocument):
     @property
-    def internal_font_semantic_context(self) -> None:
+    def font_semantic_context(self) -> None:
         return None
 
 
@@ -386,7 +386,7 @@ def _page_redactions(
         tuple[float, float, float, float], tuple(float(value) for value in source_crop_box)
     )
     program = page.get_page_program()
-    drawings = page.internal_drawing_records(program.drawings)
+    drawings = page.drawing_records(program.drawings)
     rectangles = [
         rectangle
         for drawing in drawings
@@ -696,7 +696,7 @@ def _requires_password(document: PdfDocument) -> bool:
 def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
     output: dict[int, list[dict[str, object]]] = {}
     try:
-        document = internal_XrayDocument.open(source)
+        document = XrayDocument.open(source)
     except PdfUnsupportedError:
         raw_data = _source_bytes(source)
         if (

@@ -5,9 +5,9 @@ import pytest
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope, PageAnalysis
-from core_pdf_ocr.impl.extract.ocr.pipeline import internal_OcrPassState
-from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask
-from core_pdf_ocr.impl.extract.quality import internal_Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.ocr.pipeline import OcrPassState
+from core_pdf_ocr.impl.extract.ocr.types import OcrTask
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 
 
 def candidate(
@@ -17,8 +17,8 @@ def candidate(
     confidence: float = 80,
     height: float = 10,
     x: float = 0,
-) -> internal_Candidate:
-    result = internal_candidate(
+) -> Candidate:
+    result = make_candidate(
         3,
         ObservationBatch.from_columns(
             (text,), ((x, 0, x + 20, 10),), source=1, confidence=(confidence,)
@@ -29,10 +29,8 @@ def candidate(
     )
 
 
-def task(mode: int = 3) -> internal_OcrTask:
-    return internal_OcrTask(
-        mode, RasterImage(bytes(100), 10, 10, 1), (0, 0, 10, 10), (0, 0, 100, 100), 300
-    )
+def task(mode: int = 3) -> OcrTask:
+    return OcrTask(mode, RasterImage(bytes(100), 10, 10, 1), (0, 0, 10, 10), (0, 0, 100, 100), 300)
 
 
 @pytest.mark.parametrize(("utility", "replaced"), [(109, False), (110, False), (111, True)])
@@ -42,7 +40,7 @@ def test_replacement_requires_strict_improvement_and_tracks_only_winning_tasks(
 ) -> None:
     first, second = candidate(), candidate("replacement", utility=utility)
     original_tasks, new_tasks = (task(),), (task(6),)
-    state = internal_OcrPassState(first, original_tasks)
+    state = OcrPassState(first, original_tasks)
     result = state.complete(OcrPass("fallback", OcrPassScope.PAGE, 1, (6,)), second, new_tasks)
     assert result.selected is (second if replaced else first)
     assert result.selected_tasks == (new_tasks if replaced else original_tasks)
@@ -62,7 +60,7 @@ def test_replacement_requires_strict_improvement_and_tracks_only_winning_tasks(
 def test_character_fallback_boundaries(
     scope: OcrPassScope, text: str, confidence: float, height: float, limit: int, skipped: bool
 ) -> None:
-    state = internal_OcrPassState(candidate(text, confidence=confidence, height=height))
+    state = OcrPassState(candidate(text, confidence=confidence, height=height))
     ocr_pass = OcrPass("fallback", scope, 1, (3,), run_if_characters_below=limit)
     assert (state.prepare(ocr_pass, visible_native_characters=0) is None) is skipped
 
@@ -72,7 +70,7 @@ def test_character_fallback_boundaries(
     [(0, 0, True), (1, 0, True), (0, 1, False), (3, 4, False), (4, 4, True)],
 )
 def test_region_addition_threshold(additions: int, limit: int, skipped: bool) -> None:
-    state = internal_OcrPassState(previous_region_additions=additions)
+    state = OcrPassState(previous_region_additions=additions)
     ocr_pass = OcrPass("fallback", OcrPassScope.PAGE, 1, (3,), run_if_additions_below=limit)
     assert (state.prepare(ocr_pass, visible_native_characters=0) is None) is skipped
 
@@ -81,13 +79,13 @@ def test_region_addition_threshold(additions: int, limit: int, skipped: bool) ->
 def test_native_text_can_suppress_empty_region_fallback(characters: int, skipped: bool) -> None:
     ocr_pass = OcrPass("fallback", OcrPassScope.PAGE, 1, (3,), run_if_additions_below=4)
     assert (
-        internal_OcrPassState().prepare(ocr_pass, visible_native_characters=characters) is None
+        OcrPassState().prepare(ocr_pass, visible_native_characters=characters) is None
     ) is skipped
 
 
 def test_native_seed_is_discarded_before_full_page_fallback() -> None:
     seed = OcrPass("seed", OcrPassScope.WEAK_REGIONS, 1, (3,), seed_with_native=True)
-    state = internal_OcrPassState().complete(seed, candidate(), (task(),))
+    state = OcrPassState().complete(seed, candidate(), (task(),))
     assert state.seeded_region_selected
     assert state.previous_region_additions == 1
     fallback = OcrPass("fallback", OcrPassScope.PAGE, 1, (3,), run_if_additions_below=4)
@@ -103,7 +101,7 @@ def test_region_augmentation_preserves_task_provenance_and_rejects_duplicates() 
     ocr_pass = OcrPass("regions", OcrPassScope.WEAK_REGIONS, 1, (3,))
     first = candidate("Original text", confidence=99)
     source = (task(),)
-    state = internal_OcrPassState(first, source)
+    state = OcrPassState(first, source)
     duplicate = state.complete(ocr_pass, first, (task(6),))
     assert duplicate.selected is first
     assert duplicate.selected_tasks == source
@@ -126,7 +124,7 @@ def test_weak_region_fallback_requires_unresolved_text(
     confidence: float,
     skipped: bool,
 ) -> None:
-    state = internal_OcrPassState(candidate("a" * characters, confidence=confidence))
+    state = OcrPassState(candidate("a" * characters, confidence=confidence))
     ocr_pass = OcrPass("weak", OcrPassScope.WEAK_REGIONS, 1, (3,), run_if_additions_below=4)
     assert (state.prepare(ocr_pass, visible_native_characters=0) is None) is skipped
 
@@ -152,11 +150,11 @@ def test_pipeline_schedules_fallbacks_with_winning_task_provenance(
     from core_pdf.impl.runtime.execution import ExtractionScope
     from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
     from core_pdf_ocr.impl.extract.ocr import pipeline
-    from core_pdf_ocr.impl.extract.ocr.session import internal_OcrPassTasks
+    from core_pdf_ocr.impl.extract.ocr.session import OcrPassTasks
 
     primary, fallback = candidate("Initial", utility=100), candidate("Improved", utility=120)
     primary_tasks, fallback_tasks = (task(3),), (task(6),)
-    seen: list[tuple[str, internal_Candidate | None, tuple[internal_OcrTask, ...]]] = []
+    seen: list[tuple[str, Candidate | None, tuple[OcrTask, ...]]] = []
 
     class Session:
         page_box = (0, 0, 100, 100)
@@ -168,21 +166,19 @@ def test_pipeline_schedules_fallbacks_with_winning_task_provenance(
             self,
             ocr_pass: OcrPass,
             *,
-            selected: internal_Candidate | None,
-            selected_tasks: tuple[internal_OcrTask, ...],
-        ) -> internal_OcrPassTasks:
+            selected: Candidate | None,
+            selected_tasks: tuple[OcrTask, ...],
+        ) -> OcrPassTasks:
             seen.append((ocr_pass.name, selected, selected_tasks))
             tasks = primary_tasks if ocr_pass.name == "primary" else fallback_tasks
             if ocr_pass.name == "empty-regions":
                 tasks = ()
-            return internal_OcrPassTasks(ocr_pass, tasks)
+            return OcrPassTasks(ocr_pass, tasks)
 
-        def recognize_tasks(
-            self, tasks: tuple[internal_OcrTask, ...]
-        ) -> tuple[internal_Candidate, ...]:
+        def recognize_tasks(self, tasks: tuple[OcrTask, ...]) -> tuple[Candidate, ...]:
             return (primary if tasks == primary_tasks else fallback,)
 
-    monkeypatch.setattr(pipeline, "internal_OcrSession", Session)
+    monkeypatch.setattr(pipeline, "OcrSession", Session)
     plan = WorkPlan(
         PageRoute.OCR,
         ocr_passes=(
@@ -210,12 +206,12 @@ def test_weak_region_materialization_uses_native_observations_only_when_enabled(
     from core_pdf.impl.runtime.execution import ExtractionScope
     from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
     from core_pdf_ocr.impl.extract.ocr import session
-    from core_pdf_ocr.impl.extract.ocr.types import internal_Raster, internal_RasterRegion
+    from core_pdf_ocr.impl.extract.ocr.types import Raster, RasterRegion
 
     native = ObservationBatch.from_columns(("Native words",), ((0, 0, 20, 10),), source=0)
     capture = replace(ocr_capture, observations=native)
     source_task = task()
-    region = internal_RasterRegion(internal_Raster(source_task.image, 300), source_task.page_box)
+    region = RasterRegion(Raster(source_task.image, 300), source_task.page_box)
     ocr_pass = OcrPass(
         "weak",
         OcrPassScope.WEAK_REGIONS,
@@ -224,24 +220,24 @@ def test_weak_region_materialization_uses_native_observations_only_when_enabled(
         region_first=False,
         seed_with_native=seed_with_native,
     )
-    monkeypatch.setattr(session.internal_OcrSession, "internal_compose", lambda *args: object())
-    monkeypatch.setattr(session, "internal_dominant_image_region", lambda *args, **kwargs: region)
+    monkeypatch.setattr(session.OcrSession, "compose", lambda *args: object())
+    monkeypatch.setattr(session, "dominant_image_region", lambda *args, **kwargs: region)
     seen = []
 
     def weak_tasks(
-        raster: internal_Raster,
+        raster: Raster,
         page_box: object,
         ocr_pass: OcrPass,
         observations: ObservationBatch,
         **kwargs: object,
-    ) -> tuple[internal_OcrTask, ...]:
+    ) -> tuple[OcrTask, ...]:
         seen.append(observations)
         assert raster is region.raster
         assert page_box == region.page_box
         return (source_task,)
 
-    monkeypatch.setattr(session, "internal_weak_region_tasks", weak_tasks)
-    owner = session.internal_OcrSession(
+    monkeypatch.setattr(session, "weak_region_tasks", weak_tasks)
+    owner = session.OcrSession(
         capture, WorkPlan(PageRoute.OCR, ocr_passes=(ocr_pass,)), True, ExtractionScope(), None
     )
     result = owner.materialize(ocr_pass, selected=None, selected_tasks=())

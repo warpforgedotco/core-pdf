@@ -23,7 +23,7 @@ STRING_ESCAPE: dict[int, bytes] = {
 }
 
 STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
-internal_STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
+STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
 HEX_VALUE = bytes(
     [
         i - 48 if 48 <= i <= 57 else i - 55 if 65 <= i <= 70 else i - 87 if 97 <= i <= 102 else 255
@@ -221,7 +221,7 @@ def read_literal_string(
     if isinstance(data, memoryview) and data.format != "B":
         end_idx = pos
     elif isinstance(data, bytes) or data.c_contiguous:
-        match = internal_STRING_SPECIAL_RE.search(data, pos, data_len)
+        match = STRING_SPECIAL_RE.search(data, pos, data_len)
         end_idx = data_len if match is None else match.start()
     else:
         end_idx = pos

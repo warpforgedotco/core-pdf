@@ -25,7 +25,7 @@ from core_pdf.impl.types import DrawingRecord, ImageRecord, PdfReference
 from .._shared import ClosingMixin, PdfInput, encode_png, png_chunk
 from .exceptions import PdfminerException
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 BBox: TypeAlias = tuple[float, float, float, float]
@@ -249,28 +249,28 @@ class EnginePageAdapter:
 
     def text_characters(self) -> Iterator[Any]:
         from ..pdfminer._capture import (
-            internal_pdfminer_page_program,
-            internal_pdfminer_validate_page_resources,
+            pdfminer_page_program,
+            pdfminer_validate_page_resources,
         )
         from ..pdfminer._fonts import (
-            internal_pdfminer_descent,
-            internal_pdfminer_embedded_cmap_is_unusable,
-            internal_pdfminer_font_name,
-            internal_pdfminer_glyph_text,
-            internal_pdfminer_ligature_overrides,
-            internal_pdfminer_normalized_width,
+            pdfminer_descent,
+            pdfminer_embedded_cmap_is_unusable,
+            pdfminer_font_name,
+            pdfminer_glyph_text,
+            pdfminer_ligature_overrides,
+            pdfminer_normalized_width,
         )
 
-        internal_pdfminer_validate_page_resources(self.page)
-        projected_glyphs: tuple[Any, ...] = internal_pdfminer_page_program(self.page).glyphs
-        ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
+        pdfminer_validate_page_resources(self.page)
+        projected_glyphs: tuple[Any, ...] = pdfminer_page_program(self.page).glyphs
+        ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
         for glyph in projected_glyphs:
-            if internal_pdfminer_embedded_cmap_is_unusable(glyph):
+            if pdfminer_embedded_cmap_is_unusable(glyph):
                 continue
             if id(glyph) in skipped_ligature_parts:
                 continue
             ligature = ligatures.get(id(glyph))
-            text = ligature[0] if ligature is not None else internal_pdfminer_glyph_text(glyph)
+            text = ligature[0] if ligature is not None else pdfminer_glyph_text(glyph)
             if not text or ("source", "annotation_appearance") in glyph.provenance:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
@@ -291,11 +291,9 @@ class EnginePageAdapter:
                         horizontal = (left, left + glyph.font_size)
                         vertical = (glyph.font_size + advance, glyph.font_size)
                     else:
-                        descent = internal_pdfminer_descent(glyph) * glyph.font_size
+                        descent = pdfminer_descent(glyph) * glyph.font_size
                         descent += float(provenance.get("text_rise", 0.0))
-                        advance = (
-                            internal_pdfminer_normalized_width(glyph) * glyph.font_size * scaling
-                        )
+                        advance = pdfminer_normalized_width(glyph) * glyph.font_size * scaling
                         horizontal = (0.0, advance)
                         vertical = (descent, descent + glyph.font_size)
                     corners = [
@@ -333,7 +331,7 @@ class EnginePageAdapter:
             yield SimpleNamespace(
                 text=text,
                 bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
-                font_name=internal_pdfminer_font_name(glyph),
+                font_name=pdfminer_font_name(glyph),
                 font_size=font_height,
                 color=glyph.fill,
                 rotation_angle=glyph.rotation_angle,
@@ -348,12 +346,12 @@ class EnginePageAdapter:
     def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
         if program is None:
             program = self.page_program()
-        return self.page.internal_drawing_records(program.drawings)
+        return self.page.drawing_records(program.drawings)
 
     def images(self, program: Any | None = None) -> tuple[ImageRecord, ...]:
         if program is None:
             program = self.page_program()
-        return self.page.internal_extract_program_images(program)
+        return self.page.extract_program_images(program)
 
     def render(self, *, dpi: float, antialias: bool = False) -> Any:
         rendered = self.page.render()
@@ -912,7 +910,7 @@ class Page:
                 width_chars=int(kwargs.get("layout_width_chars", 80)),
                 height_chars=kwargs.get("layout_height_chars"),
             )
-        return internal_plain_text(self.chars, **kwargs)
+        return plain_text(self.chars, **kwargs)
 
     def extract_text_simple(self, **kwargs: Any) -> str:
         return self.extract_text(**kwargs)
@@ -1531,8 +1529,8 @@ class _ImageOriginal:
     __match_args__ = ("width", "height")
 
     def __init__(self, width: int, height: int) -> None:
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(width={self.width!r}, height={self.height!r})"
@@ -1849,11 +1847,11 @@ class PDF(ClosingMixin):
     def pages(self) -> list[Page]:
         if self._pages is None:
             try:
-                from ..pdfminer._pages import internal_pdfminer_resolvable_pages
+                from ..pdfminer._pages import pdfminer_resolvable_pages
 
                 doctop = 0.0
                 self._pages = []
-                resolvable = tuple(internal_pdfminer_resolvable_pages(self._document))
+                resolvable = tuple(pdfminer_resolvable_pages(self._document))
                 selected = set(self._page_selection) if self._page_selection is not None else None
                 for page_number, (index, engine_page) in enumerate(resolvable, 1):
                     if selected is not None and page_number not in selected:
@@ -1992,10 +1990,10 @@ def within_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
 
 
 def outside_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
-    return [obj for obj in objs if internal_bbox_overlap(obj_to_bbox(obj), bbox) is None]
+    return [obj for obj in objs if bbox_overlap(obj_to_bbox(obj), bbox) is None]
 
 
-def internal_bbox_overlap(left: BBox, right: BBox) -> BBox | None:
+def bbox_overlap(left: BBox, right: BBox) -> BBox | None:
     x0, top = max(left[0], right[0]), max(left[1], right[1])
     x1, bottom = min(left[2], right[2]), min(left[3], right[3])
     if x1 < x0 or bottom < top or (x1 == x0 and bottom == top):
@@ -2011,13 +2009,13 @@ def intersects_bbox(obj: ObjectDict | Iterable[ObjectDict], bbox: BBox) -> bool 
     if not isinstance(obj, Mapping):
         return [item for item in obj if intersects_bbox(item, bbox)]
     obj = cast(ObjectDict, obj)
-    return internal_bbox_overlap(bbox, obj_to_bbox(obj)) is not None
+    return bbox_overlap(bbox, obj_to_bbox(obj)) is not None
 
 
 def crop_to_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
     clipped = []
     for obj in objs:
-        overlap = internal_bbox_overlap(obj_to_bbox(obj), bbox)
+        overlap = bbox_overlap(obj_to_bbox(obj), bbox)
         if overlap is None:
             continue
         x0, top, x1, bottom = overlap
@@ -2176,7 +2174,7 @@ def to_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [value]
 
 
-def internal_plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
+def plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
     words = _words(chars, **kwargs)
     lines = cluster_by_preserving_order(words, "top", float(kwargs.get("y_tolerance", 3)))
     return "\n".join(" ".join(word["text"] for word in line) for line in lines)
@@ -2184,7 +2182,7 @@ def internal_plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
 
 class _TextUtils:
     extract_words = staticmethod(extract_words)
-    extract_text = staticmethod(internal_plain_text)
+    extract_text = staticmethod(plain_text)
     extract_text_simple = extract_text
 
 
@@ -2199,7 +2197,7 @@ class _Utils:
                 height_chars=kwargs.get("layout_height_chars"),
             )
             if kwargs.get("layout")
-            else internal_plain_text(chars, **kwargs)
+            else plain_text(chars, **kwargs)
         )
     )
     extract_text_simple = extract_text

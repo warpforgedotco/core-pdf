@@ -67,7 +67,7 @@ class TextState(RecordingMethods):
                 raster_font_provider=getattr(document, "raster_font_provider", None),
                 semantic_context=getattr(
                     document,
-                    "internal_font_semantic_context",
+                    "font_semantic_context",
                     getattr(document.resolver, "semantic_context", None),
                 ),
             )

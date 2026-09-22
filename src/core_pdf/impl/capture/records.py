@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union, normalize_rect, points_bbox
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -17,13 +17,13 @@ from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 if TYPE_CHECKING:
     from core_pdf.impl.capture.program import CapturedProgram
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
 
-class CapturedSoftMask(internal_Record):
+class CapturedSoftMask(Record):
     __slots__ = ("program", "transfer", "offset")
 
     program: CapturedProgram
@@ -39,9 +39,9 @@ class CapturedSoftMask(internal_Record):
         transfer: PdfFunctionEvaluator | None = None,
         offset: tuple[float, float] = (0.0, 0.0),
     ) -> None:
-        internal_frozen_setattr(self, "program", program)
-        internal_frozen_setattr(self, "transfer", transfer)
-        internal_frozen_setattr(self, "offset", offset)
+        frozen_setattr(self, "program", program)
+        frozen_setattr(self, "transfer", transfer)
+        frozen_setattr(self, "offset", offset)
 
     def __repr__(self) -> str:
         return (
@@ -61,7 +61,7 @@ class CapturedSoftMask(internal_Record):
         return self.__class__(program, transfer, offset)
 
 
-class CapturedTextBoundary(internal_Record):
+class CapturedTextBoundary(Record):
     __slots__ = ("seqno", "kind", "knockout")
 
     seqno: int
@@ -77,9 +77,9 @@ class CapturedTextBoundary(internal_Record):
         kind: Literal["begin", "end", "glyph-begin", "glyph-end", "stream-begin", "stream-end"],
         knockout: bool = True,
     ) -> None:
-        internal_frozen_setattr(self, "seqno", seqno)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "knockout", knockout)
+        frozen_setattr(self, "seqno", seqno)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "knockout", knockout)
 
     def __repr__(self) -> str:
         return (
@@ -143,7 +143,7 @@ class CapturedLine:
         return self.__class__(x0, y0, x1, y1, line_width)
 
 
-class CapturedInlineImage(internal_Record):
+class CapturedInlineImage(Record):
     __slots__ = (
         "seqno",
         "dictionary",
@@ -231,21 +231,21 @@ class CapturedInlineImage(internal_Record):
         alpha_is_shape: bool = False,
         graphics_soft_mask: CapturedSoftMask | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "seqno", seqno)
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "data", data)
-        internal_frozen_setattr(self, "image_source", image_source)
-        internal_frozen_setattr(self, "image_clip", image_clip)
-        internal_frozen_setattr(self, "ctm", ctm)
-        internal_frozen_setattr(self, "xobject_depth", xobject_depth)
-        internal_frozen_setattr(self, "blend_mode", blend_mode)
-        internal_frozen_setattr(self, "soft_mask_alpha", soft_mask_alpha)
-        internal_frozen_setattr(self, "stream_order", stream_order)
-        internal_frozen_setattr(self, "fill", fill)
-        internal_frozen_setattr(self, "fill_opacity", fill_opacity)
-        internal_frozen_setattr(self, "paints", paints)
-        internal_frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        internal_frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
+        frozen_setattr(self, "seqno", seqno)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "data", data)
+        frozen_setattr(self, "image_source", image_source)
+        frozen_setattr(self, "image_clip", image_clip)
+        frozen_setattr(self, "ctm", ctm)
+        frozen_setattr(self, "xobject_depth", xobject_depth)
+        frozen_setattr(self, "blend_mode", blend_mode)
+        frozen_setattr(self, "soft_mask_alpha", soft_mask_alpha)
+        frozen_setattr(self, "stream_order", stream_order)
+        frozen_setattr(self, "fill", fill)
+        frozen_setattr(self, "fill_opacity", fill_opacity)
+        frozen_setattr(self, "paints", paints)
+        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
+        frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
 
     def __repr__(self) -> str:
         return (
@@ -485,7 +485,7 @@ class CapturedPath:
 
 
 DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
-internal_EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
+EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
 StrokeStyleKey = tuple[
@@ -659,7 +659,7 @@ class CapturedDrawing:
         image_source: ImageSource | None = None,
         image_clip: Rectangle | None = None,
         kind: str = "fill",
-        items: tuple[DrawingItem, ...] | list[DrawingItem] = internal_EMPTY_DRAWING_ITEMS,
+        items: tuple[DrawingItem, ...] | list[DrawingItem] = EMPTY_DRAWING_ITEMS,
         path: CapturedPath | None = None,
         bbox: Rectangle | None = None,
         stream_order: int = 0,
@@ -859,7 +859,7 @@ class CapturedDrawing:
 
     def _post_init(self) -> None:
         if not self.items:
-            self.items = internal_EMPTY_DRAWING_ITEMS
+            self.items = EMPTY_DRAWING_ITEMS
 
     def stroke_style_key(self) -> StrokeStyleKey | None:
         if self.stroke_pattern is not None:
@@ -918,7 +918,7 @@ def marker_drawing(
     )
 
 
-class ShadingPattern(internal_Record):
+class ShadingPattern(Record):
     __slots__ = ("dictionary", "color_rendering")
 
     dictionary: dict[Any, Any]
@@ -932,8 +932,8 @@ class ShadingPattern(internal_Record):
         dictionary: dict[Any, Any],
         color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
     ) -> None:
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "color_rendering", color_rendering)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "color_rendering", color_rendering)
 
     def __repr__(self) -> str:
         return (
@@ -961,7 +961,7 @@ class ShadingPattern(internal_Record):
         return self.__class__(dictionary, color_rendering)
 
 
-class TilingPattern(internal_Record):
+class TilingPattern(Record):
     __slots__ = ("bbox", "x_step", "y_step", "program")
 
     bbox: Rectangle
@@ -979,10 +979,10 @@ class TilingPattern(internal_Record):
         y_step: float,
         program: CapturedProgram,
     ) -> None:
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "x_step", x_step)
-        internal_frozen_setattr(self, "y_step", y_step)
-        internal_frozen_setattr(self, "program", program)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "x_step", x_step)
+        frozen_setattr(self, "y_step", y_step)
+        frozen_setattr(self, "program", program)
 
     def __repr__(self) -> str:
         return (

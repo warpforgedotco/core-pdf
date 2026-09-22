@@ -55,7 +55,7 @@ def require_pdf_number_array(
     return tuple(require_pdf_number(item, message) for item in value)
 
 
-def internal_scalar_token(value: object) -> bytes | None:
+def scalar_token(value: object) -> bytes | None:
     if type(value) is bytes:
         return value
     if type(value) is memoryview:
@@ -81,7 +81,7 @@ def parse_int(value: object, default: int) -> int: ...
 def parse_int(value: object, default: int | None = None) -> int | None:
     if type(value) is int:
         return value
-    token = internal_scalar_token(value)
+    token = scalar_token(value)
     if token is None:
         return default
     try:
@@ -113,7 +113,7 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
             return float(value)
         except OverflowError:
             return default
-    token = internal_scalar_token(value)
+    token = scalar_token(value)
     if token is None:
         return default
     try:

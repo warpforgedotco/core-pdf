@@ -10,16 +10,16 @@ from pathlib import Path
 import pytest
 
 from core_pdf_validate import ProfileResult, ProfileSupport, VeraPdfBackend, validate
-from core_pdf_validate.verapdf import internal_parse_report
+from core_pdf_validate.verapdf import parse_report
 
-internal_FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def internal_report(name: str) -> bytes:
-    return (internal_FIXTURES / f"verapdf-1.30.2-{name}.xml").read_bytes()
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def internal_executable(
+def read_report(name: str) -> bytes:
+    return (FIXTURES / f"verapdf-1.30.2-{name}.xml").read_bytes()
+
+
+def executable(
     directory: Path,
     *,
     report: bytes,
@@ -42,7 +42,7 @@ def internal_executable(
     return executable
 
 
-def internal_pdf(metadata: bytes | None = None, *, info: bytes | None = None) -> bytes:
+def pdf(metadata: bytes | None = None, *, info: bytes | None = None) -> bytes:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R"
         + (b" /Metadata 4 0 R" if metadata is not None else b"")
@@ -76,7 +76,7 @@ def internal_pdf(metadata: bytes | None = None, *, info: bytes | None = None) ->
     return bytes(output)
 
 
-def internal_xmp(properties: bytes) -> bytes:
+def xmp(properties: bytes) -> bytes:
     return (
         b'<x:xmpmeta xmlns:x="adobe:ns:meta/">'
         b'<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
@@ -112,7 +112,7 @@ def test_explicit_validation_passes_original_bytes_without_core_parsing(
 
     monkeypatch.setattr(core_pdf, "PdfDocument", forbidden_parse)
     original = b"intentionally unparseable as a core PDF\x00\xff"
-    engine = internal_executable(tmp_path, report=internal_report("pass"))
+    engine = executable(tmp_path, report=read_report("pass"))
     report = validate(original, profiles="pdfa-1b", backend=VeraPdfBackend(engine))
     assert report.source_sha256 == hashlib.sha256(original).hexdigest()
     assert (tmp_path / "received.pdf").read_bytes() == original
@@ -124,12 +124,12 @@ def test_explicit_validation_passes_original_bytes_without_core_parsing(
     assert result.conformance == "pass"
     assert result.engine_version == "1.30.2"
     assert result.profile_edition == "ISO 19005-1:2005"
-    assert result.raw_report == internal_report("pass")
+    assert result.raw_report == read_report("pass")
     assert result.stderr == b"engine log\n"
 
 
 def test_nonconforming_exit_is_completed_with_rule_references_and_locations(tmp_path: Path) -> None:
-    engine = internal_executable(tmp_path, report=internal_report("fail"), code=1)
+    engine = executable(tmp_path, report=read_report("fail"), code=1)
     result = validate(b"original", profiles="pdfua-2", backend=VeraPdfBackend(engine)).results[0]
     assert result.execution_status == "completed"
     assert result.conformance == "fail"
@@ -145,7 +145,7 @@ def test_nonconforming_exit_is_completed_with_rule_references_and_locations(tmp_
 
 def test_profiles_are_independent_and_source_path_is_never_given_to_backend(tmp_path: Path) -> None:
     source = tmp_path / "original.pdf"
-    original = internal_pdf()
+    original = pdf()
     source.write_bytes(original)
     backend = RecordingBackend()
     report = validate(
@@ -161,7 +161,7 @@ def test_profiles_are_independent_and_source_path_is_never_given_to_backend(tmp_
 
 
 def test_declared_profiles_request_all_claims_even_with_different_base_versions() -> None:
-    original = internal_pdf(internal_xmp(b'a:part="1" a:conformance="B" u:part="2" u:rev="2024"'))
+    original = pdf(xmp(b'a:part="1" a:conformance="B" u:part="2" u:rev="2024"'))
     backend = RecordingBackend()
     report = validate(original, profiles="declared", backend=backend)
     assert set(report.targets) == {"pdfa-1b", "pdfua-2"}
@@ -170,16 +170,16 @@ def test_declared_profiles_request_all_claims_even_with_different_base_versions(
 
 
 def test_declared_pdfx_reports_unsupported() -> None:
-    source = internal_pdf(info=b"<< /GTS_PDFXVersion (PDF/X-4) >>")
+    source = pdf(info=b"<< /GTS_PDFXVersion (PDF/X-4) >>")
     report = validate(source, profiles="declared", backend=RecordingBackend())
     assert report.targets == ("pdfx-4",)
     assert report.results[0].execution_status == "unsupported_profile"
 
 
-@pytest.mark.parametrize("metadata", [None, b"<invalid", internal_xmp(b'a:part="9"')])
+@pytest.mark.parametrize("metadata", [None, b"<invalid", xmp(b'a:part="9"')])
 def test_missing_malformed_or_unknown_claims_never_select_a_default(metadata: bytes | None) -> None:
     backend = RecordingBackend()
-    report = validate(internal_pdf(metadata), profiles="declared", backend=backend)
+    report = validate(pdf(metadata), profiles="declared", backend=backend)
     assert not report.targets
     assert not report.results
     assert "no_target_identified" in report.diagnostics
@@ -211,7 +211,7 @@ def test_missing_engine_remains_not_checked(tmp_path: Path) -> None:
 
 
 def test_timeout_remains_not_checked(tmp_path: Path) -> None:
-    engine = internal_executable(tmp_path, report=internal_report("pass"), delay=2)
+    engine = executable(tmp_path, report=read_report("pass"), delay=2)
     result = validate(b"PDF", profiles="pdfa-1b", backend=VeraPdfBackend(engine, 0.05)).results[0]
     assert result.execution_status == "timeout"
     assert result.conformance == "not_checked"
@@ -233,8 +233,8 @@ def test_timeout_remains_not_checked(tmp_path: Path) -> None:
     ],
 )
 def test_untrusted_report_cannot_produce_conformance(old: bytes, new: bytes, status: str) -> None:
-    raw = internal_report("pass").replace(old, new)
-    result = internal_parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"")
+    raw = read_report("pass").replace(old, new)
+    result = parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"")
     assert result.execution_status == status
     assert result.conformance == "not_checked"
     assert result.raw_report == raw
@@ -250,7 +250,7 @@ def test_untrusted_report_cannot_produce_conformance(old: bytes, new: bytes, sta
     ],
 )
 def test_malformed_or_entity_report_is_rejected(raw: bytes) -> None:
-    result = internal_parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"")
+    result = parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"")
     assert result.execution_status == "invalid_report"
     assert result.conformance == "not_checked"
 
@@ -259,8 +259,8 @@ def test_malformed_or_entity_report_is_rejected(raw: bytes) -> None:
     ("code", "status"), [(1, "invalid_report"), (3, "engine_error"), (-9, "engine_error")]
 )
 def test_exit_status_cannot_be_ignored(code: int, status: str) -> None:
-    result = internal_parse_report(
-        internal_report("pass"),
+    result = parse_report(
+        read_report("pass"),
         profile="pdfa-1b",
         returncode=code,
         stderr=b"",
@@ -270,10 +270,10 @@ def test_exit_status_cannot_be_ignored(code: int, status: str) -> None:
 
 
 def test_truncated_locations_are_reported_as_coverage_limitation() -> None:
-    raw = internal_report("fail").replace(
+    raw = read_report("fail").replace(
         b'failedChecks="1" tags="metadata"', b'failedChecks="2" tags="metadata"'
     )
-    result = internal_parse_report(raw, profile="pdfua-2", returncode=1, stderr=b"")
+    result = parse_report(raw, profile="pdfua-2", returncode=1, stderr=b"")
     assert result.conformance == "fail"
     assert any("omitted" in value for value in result.limitations)
 
@@ -320,12 +320,12 @@ def test_report_rejects_invalid_counts_and_incomplete_jobs(
 ) -> None:
     from xml.etree import ElementTree
 
-    root = ElementTree.fromstring(internal_report("pass"))
+    root = ElementTree.fromstring(read_report("pass"))
     node = root.find(path)
     assert node is not None
     node.set(attribute, value)
     raw = ElementTree.tostring(root)
-    result = internal_parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"engine log")
+    result = parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"engine log")
     assert result.execution_status == status
     assert result.conformance == "not_checked"
     assert diagnostic in result.diagnostics[0]
@@ -351,13 +351,11 @@ def test_report_rejects_malformed_rule_details(
 ) -> None:
     from xml.etree import ElementTree
 
-    root = ElementTree.fromstring(internal_report("fail"))
+    root = ElementTree.fromstring(read_report("fail"))
     node = root.find(path)
     assert node is not None
     node.set(attribute, value)
-    result = internal_parse_report(
-        ElementTree.tostring(root), profile="pdfua-2", returncode=1, stderr=b""
-    )
+    result = parse_report(ElementTree.tostring(root), profile="pdfua-2", returncode=1, stderr=b"")
     assert result.execution_status == "invalid_report"
     assert diagnostic in result.diagnostics[0]
 
@@ -365,7 +363,7 @@ def test_report_rejects_malformed_rule_details(
 def test_passed_rule_details_are_retained_without_failure_counts() -> None:
     from xml.etree import ElementTree
 
-    root = ElementTree.fromstring(internal_report("pass"))
+    root = ElementTree.fromstring(read_report("pass"))
     details = root.find(".//details")
     assert details is not None
     rule = ElementTree.SubElement(
@@ -378,17 +376,15 @@ def test_passed_rule_details_are_retained_without_failure_counts() -> None:
     )
     check = ElementTree.SubElement(rule, "check", status="passed")
     ElementTree.SubElement(check, "context")
-    result = internal_parse_report(
-        ElementTree.tostring(root), profile="pdfa-1b", returncode=0, stderr=b""
-    )
+    result = parse_report(ElementTree.tostring(root), profile="pdfa-1b", returncode=0, stderr=b"")
     assert result.execution_status == "completed"
     assert result.rules[0].status == "passed"
     assert result.rules[0].locations == ("",)
 
 
 def test_missing_core_release_cannot_claim_engine_version() -> None:
-    raw = internal_report("pass").replace(b'id="core"', b'id="other"')
-    result = internal_parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"")
+    raw = read_report("pass").replace(b'id="core"', b'id="other"')
+    result = parse_report(raw, profile="pdfa-1b", returncode=0, stderr=b"")
     assert result.execution_status == "unsupported_engine"
     assert result.engine_version is None
 
@@ -510,10 +506,10 @@ def test_summary_must_agree_with_document_and_individual_rules(
     code: int,
     diagnostic: str,
 ) -> None:
-    original = internal_report(report)
+    original = read_report(report)
     assert old in original
     raw = original.replace(old, new)
-    result = internal_parse_report(raw, profile=profile, returncode=code, stderr=b"")
+    result = parse_report(raw, profile=profile, returncode=code, stderr=b"")
     assert result.execution_status == "invalid_report"
     assert diagnostic in result.diagnostics[0]
 

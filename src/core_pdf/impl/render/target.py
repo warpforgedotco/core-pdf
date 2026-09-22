@@ -22,19 +22,19 @@ from core_pdf.impl.graphics.soft_masks import image_color_key_mask_is_shape
 from core_pdf.impl.model.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
-    internal_blend_context,
-    internal_blend_normal_alpha_array_numpy,
-    internal_blend_normal_solid_array_numpy,
-    internal_blend_solid_array_numpy,
-    internal_blend_visible_pixels,
-    internal_clamp01,
-    internal_color_rgba,
-    internal_composite_blended_group_numpy,
-    internal_composite_normal_group_numpy,
-    internal_constant_alpha,
-    internal_scale_rgba_alpha,
+    blend_context,
+    blend_normal_alpha_array_numpy,
+    blend_normal_solid_array_numpy,
+    blend_solid_array_numpy,
+    blend_visible_pixels,
+    clamp01,
+    color_rgba,
+    composite_blended_group_numpy,
+    composite_normal_group_numpy,
+    resolve_constant_alpha,
+    scale_rgba_alpha,
 )
-from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.commands import append_captured_program, translated_command
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
@@ -44,28 +44,28 @@ from core_pdf.impl.render.model import (
     LineJoin,
     PathPaintItem,
     PathPaintKind,
-    internal_RasterGroup,
+    RasterGroup,
 )
 from core_pdf.impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
     RASTER_KERNEL_MIN_PIXEL_AREA,
     RASTER_SAMPLE_OFFSETS,
-    internal_circle_path,
-    internal_dash_subpath,
-    internal_fill_path_crossing_spans,
-    internal_fill_path_sample_crossings,
-    internal_fill_path_sample_crossings_numpy,
-    internal_intersect_box,
-    internal_signed_area_coverage,
+    circle_path,
+    dash_subpath,
+    fill_path_crossing_spans,
+    fill_path_sample_crossings,
+    fill_path_sample_crossings_numpy,
+    intersect_box,
     rasterize_unclipped_line_normal,
+    signed_area_coverage,
 )
 from core_pdf.impl.render.patterns import (
     TilingCellCache,
     axial_shading_t,
-    internal_shading_color_rgba,
-    internal_tiling_cell,
-    internal_tiling_pattern_uses_normal_blends,
     radial_shading_t,
+    shading_color_rgba,
+    tiling_cell,
+    tiling_pattern_uses_normal_blends,
 )
 from core_pdf.impl.runtime.array_views import (
     ByteBuffer,
@@ -85,28 +85,28 @@ from core_pdf_spec.s_11_transparency.groups import (
 from core_pdf_spec.standards import SemanticContext
 
 
-def internal_index_extent(index: int | slice, size: int) -> tuple[int, int]:
+def index_extent(index: int | slice, size: int) -> tuple[int, int]:
     if isinstance(index, slice):
         start, stop, _ = index.indices(size)
         return start, max(start, stop)
     return index, index + 1
 
 
-class internal_ElementaryScratch:
+class ElementaryScratch:
     __slots__ = ("buffer", "dirty", "source_alpha", "source_shape", "synced_parent")
 
     def __init__(self, size: int, height: int, width: int) -> None:
         self.buffer = bytearray(size)
         self.source_alpha = numpy.zeros((height, width), dtype=numpy.float32)
         self.source_shape = numpy.zeros((height, width), dtype=numpy.float32)
-        self.synced_parent: internal_RasterGroup | None = None
+        self.synced_parent: RasterGroup | None = None
         self.dirty: list[int] | None = None
 
 
 PREPARED_IMAGE_CACHE_BYTES = 256 << 20
 
 
-def internal_prepared_image_bytes(prepared: PreparedImage | None) -> int:
+def prepared_image_bytes(prepared: PreparedImage | None) -> int:
     if prepared is None:
         return 0
     soft_mask = prepared.soft_mask
@@ -122,7 +122,7 @@ class PreparedImageCache:
         self.size = 0
 
     def store(self, source: ImageSource, prepared: PreparedImage | None) -> None:
-        size = internal_prepared_image_bytes(prepared)
+        size = prepared_image_bytes(prepared)
         if size > self.budget:
             return
         entries = self.entries
@@ -133,7 +133,7 @@ class PreparedImageCache:
         self.size += size
 
 
-def internal_prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
+def prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
     cached = cache.entries.get(id(source))
     if cached is not None and cached[0] is source:
         return cached[1]
@@ -145,7 +145,7 @@ def internal_prepared_image(cache: PreparedImageCache, source: ImageSource) -> P
     return prepared
 
 
-def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float], ...] | None:
+def image_placement(item: ImagePaintItem) -> tuple[tuple[float, float], ...] | None:
     if item.quad is not None:
         return item.quad
     box = rect_tuple(item.bbox)
@@ -155,7 +155,7 @@ def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float],
     return ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
 
 
-def internal_edge_tuples(
+def edge_tuples(
     edge_array: numpy.ndarray[Any, Any] | None,
 ) -> list[tuple[float, float, float, float]]:
     if edge_array is None:
@@ -163,8 +163,8 @@ def internal_edge_tuples(
     return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
 
 
-def internal_paint_stroke_once(
-    target: internal_RasterTarget,
+def paint_stroke_once(
+    target: RasterTarget,
     path: CapturedPath,
     line_width: float,
     rgba: tuple[int, int, int, int],
@@ -201,19 +201,19 @@ def internal_paint_stroke_once(
     visible = alpha > 0
     if not numpy.any(visible):
         return
-    internal_blend_visible_pixels(
+    blend_visible_pixels(
         target.pixel_view(pixels)[rows, columns],
         visible,
         rgba[0] / 255.0,
         rgba[1] / 255.0,
         rgba[2] / 255.0,
         alpha[visible].astype(numpy.float64) / 255.0,
-        target.internal_resolved_blend(blend_mode),
+        target.resolved_blend(blend_mode),
         semantic_context=target.semantic_context,
     )
 
 
-def internal_composite_nonisolated_group(
+def composite_nonisolated_group(
     destination: UInt8Array,
     rendered: UInt8Array,
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
@@ -223,7 +223,7 @@ def internal_composite_nonisolated_group(
     semantic_context: SemanticContext,
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
 ) -> UInt8Array:
-    opacity = internal_clamp01(opacity)
+    opacity = clamp01(opacity)
     scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
     if mask_alpha is not None:
         scaled_alpha *= mask_alpha
@@ -252,7 +252,7 @@ def internal_composite_nonisolated_group(
         validate=False,
     )
     colors = numpy.clip(colors, 0.0, 1.0)
-    internal_blend_visible_pixels(
+    blend_visible_pixels(
         destination,
         visible,
         colors[..., 0],
@@ -265,7 +265,7 @@ def internal_composite_nonisolated_group(
     return effective_alpha
 
 
-def internal_composite_masked_group(
+def composite_masked_group(
     destination: UInt8Array,
     rendered: UInt8Array,
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None,
@@ -276,7 +276,7 @@ def internal_composite_masked_group(
     semantic_context: SemanticContext,
 ) -> UInt8Array:
     if source_alpha is not None:
-        return internal_composite_nonisolated_group(
+        return composite_nonisolated_group(
             destination,
             rendered,
             source_alpha,
@@ -292,7 +292,7 @@ def internal_composite_masked_group(
     if not numpy.any(visible):
         return effective_alpha
     colors = rendered[visible, :3].astype(numpy.float64) / 255.0
-    internal_blend_visible_pixels(
+    blend_visible_pixels(
         destination,
         visible,
         colors[:, 0],
@@ -305,7 +305,7 @@ def internal_composite_masked_group(
     return effective_alpha
 
 
-def internal_composite_knockout_group(
+def composite_knockout_group(
     destination: UInt8Array,
     backdrop: UInt8Array,
     element: UInt8Array,
@@ -344,16 +344,14 @@ SoftMaskKey = tuple[int, int, tuple[float, float]]
 SoftMaskCache = dict[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None]]
 
 
-def internal_graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
+def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
     if isinstance(item, (PathPaintItem, ImagePaintItem)):
         return item.graphics_soft_mask
     mask: CapturedSoftMask | None = item.data.get("graphics_soft_mask")
     return mask
 
 
-def internal_resolve_soft_mask(
-    target: internal_RasterTarget, mask: CapturedSoftMask
-) -> SoftMaskPlane | None:
+def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskPlane | None:
     key = (id(mask.program), id(mask.transfer), mask.offset)
     cached = target.soft_mask_cache.get(key)
     if cached is not None:
@@ -386,7 +384,7 @@ def internal_resolve_soft_mask(
 AFFINE_BLIT_SCRATCH_BYTES = 1 << 20
 
 
-def internal_box_downsample(
+def box_downsample(
     samples: numpy.ndarray[Any, Any],
     source_width: int,
     source_height: int,
@@ -414,7 +412,7 @@ def internal_box_downsample(
     return reduced.reshape(-1), target_width, target_height
 
 
-def internal_sample_image_plane(
+def sample_image_plane(
     plane: UInt8Array, u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
 ) -> UInt8Array:
     height, width = plane.shape
@@ -423,7 +421,7 @@ def internal_sample_image_plane(
     return plane[source_y, source_x]
 
 
-class internal_RasterTarget:
+class RasterTarget:
     __slots__ = (
         "pixels",
         "semantic_context",
@@ -457,7 +455,7 @@ class internal_RasterTarget:
         pixels: bytearray,
         group_alpha: float | None,
         *,
-        clip: internal_ClipState,
+        clip: ClipState,
         width: int,
         height: int,
         scale: float,
@@ -468,8 +466,8 @@ class internal_RasterTarget:
         semantic_context: SemanticContext | None = None,
     ) -> None:
         self.pixels = pixels
-        self.semantic_context = internal_blend_context(semantic_context)
-        self.buffer_stack = [internal_RasterGroup(pixels)]
+        self.semantic_context = blend_context(semantic_context)
+        self.buffer_stack = [RasterGroup(pixels)]
         self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
         self.group_source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
         self.paint_alpha_is_shape = False
@@ -491,7 +489,7 @@ class internal_RasterTarget:
         self.prepared_image_cache = PreparedImageCache()
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
-        self.elementary_scratch: dict[int, internal_ElementaryScratch] = {}
+        self.elementary_scratch: dict[int, ElementaryScratch] = {}
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
@@ -516,13 +514,13 @@ class internal_RasterTarget:
             self.pop_scope()
             raise
 
-    def blank_sibling(self) -> tuple[internal_RasterTarget, UInt8Array]:
+    def blank_sibling(self) -> tuple[RasterTarget, UInt8Array]:
         pixels = bytearray(self.width * self.height * 4)
         view = uint8_image_view(pixels, (self.height, self.width, 4))
-        sibling = internal_RasterTarget(
+        sibling = RasterTarget(
             pixels,
             None,
-            clip=internal_ClipState(
+            clip=ClipState(
                 crop_x0=self.crop_x0,
                 crop_y1=self.crop_y1,
                 scale=self.scale,
@@ -589,8 +587,8 @@ class internal_RasterTarget:
             self.shape_alpha = 1.0
             try:
                 knockout = self.buffer_stack[-1].knockout
-                mask = internal_graphics_soft_mask(item)
-                mask_alpha = internal_resolve_soft_mask(self, mask) if mask is not None else None
+                mask = graphics_soft_mask(item)
+                mask_alpha = resolve_soft_mask(self, mask) if mask is not None else None
                 fillstroke = (
                     isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
                 )
@@ -602,20 +600,20 @@ class internal_RasterTarget:
                         alpha_is_shape=self.paint_alpha_is_shape,
                     )
                 try:
-                    self.internal_paint_item(item)
+                    self.paint_display_item(item)
                 finally:
                     if elementary_group:
                         child = self.pop_group()
                         try:
                             self.composite_group(child)
                         finally:
-                            self.internal_release_elementary_group(child)
+                            self.release_elementary_group(child)
             finally:
                 self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
             return
-        self.internal_paint_item(item)
+        self.paint_display_item(item)
 
-    def internal_paint_item(self, item: DisplayItem) -> None:
+    def paint_display_item(self, item: DisplayItem) -> None:
         if isinstance(item, PathPaintItem):
             self.paint_typed_path(item)
             return
@@ -655,16 +653,16 @@ class internal_RasterTarget:
                 knockout=data.get("group_knockout", False),
                 alpha_is_shape=data.get("alpha_is_shape", False),
                 track_shape=data.get("group_track_shape", False),
-                mask_alpha=internal_resolve_soft_mask(self, graphics_mask)
+                mask_alpha=resolve_soft_mask(self, graphics_mask)
                 if (graphics_mask := data.get("graphics_soft_mask")) is not None
                 else None,
             )
         elif item.kind == "group-end" and len(self.buffer_stack) > self.group_floor:
             self.composite_group(self.pop_group())
         elif item.kind == "glyph" and data.get("visible") is not False:
-            rgba = internal_color_rgba(data.get("fill_color"), data.get("fill_opacity"))
+            rgba = color_rgba(data.get("fill_color"), data.get("fill_opacity"))
             if is_pdf_number(mask := data.get("soft_mask_alpha")):
-                rgba = internal_scale_rgba_alpha(rgba, mask)
+                rgba = scale_rgba_alpha(rgba, mask)
             self.set_shape_alpha(rgba[3] / 255.0)
             self.draw_glyph_bitmap(
                 data.get("bbox"),
@@ -676,7 +674,7 @@ class internal_RasterTarget:
             )
         elif item.kind == "shading":
             self.set_shape_alpha(
-                internal_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
+                resolve_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
             )
             self.paint_shading(data, blend_mode)
 
@@ -703,7 +701,7 @@ class internal_RasterTarget:
         depth = len(self.buffer_stack)
         scratch = self.elementary_scratch.get(depth)
         if scratch is None:
-            scratch = self.elementary_scratch[depth] = internal_ElementaryScratch(
+            scratch = self.elementary_scratch[depth] = ElementaryScratch(
                 len(self.pixels), self.height, self.width
             )
         buffer = scratch.buffer
@@ -723,7 +721,7 @@ class internal_RasterTarget:
         scratch.synced_parent = parent if parent.knockout else None
         scratch.dirty = None
         self.buffer_stack.append(
-            internal_RasterGroup(
+            RasterGroup(
                 buffer,
                 None,
                 None,
@@ -741,7 +739,7 @@ class internal_RasterTarget:
         self.group_source_alpha = source_alpha
         self.group_source_shape = self.buffer_stack[-1].source_shape
 
-    def internal_release_elementary_group(self, child: internal_RasterGroup) -> None:
+    def release_elementary_group(self, child: RasterGroup) -> None:
         scratch = self.elementary_scratch.get(len(self.buffer_stack))
         if scratch is not None and child.pixels is scratch.buffer:
             scratch.dirty = list(child.paint_window) if child.paint_window else None
@@ -771,7 +769,7 @@ class internal_RasterTarget:
             else None
         )
         self.buffer_stack.append(
-            internal_RasterGroup(
+            RasterGroup(
                 buffer,
                 group_alpha,
                 blend_mode,
@@ -787,7 +785,7 @@ class internal_RasterTarget:
         self.group_source_alpha = source_alpha
         self.group_source_shape = source_shape
 
-    def pop_group(self) -> internal_RasterGroup:
+    def pop_group(self) -> RasterGroup:
         child = self.buffer_stack.pop()
         self.pixels = self.buffer_stack[-1].pixels
         self.group_source_alpha = self.buffer_stack[-1].source_alpha
@@ -795,11 +793,11 @@ class internal_RasterTarget:
         return child
 
     def set_shape_alpha(self, alpha: float) -> None:
-        self.shape_alpha = internal_clamp01(alpha) if self.paint_alpha_is_shape else 1.0
+        self.shape_alpha = clamp01(alpha) if self.paint_alpha_is_shape else 1.0
 
-    def internal_extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
-        y0, y1 = internal_index_extent(rows, self.height)
-        x0, x1 = internal_index_extent(columns, self.width)
+    def extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
+        y0, y1 = index_extent(rows, self.height)
+        x0, x1 = index_extent(columns, self.width)
         self.buffer_stack[-1].extend_paint_window(y0, y1, x0, x1)
 
     def record_source_coverage(
@@ -824,7 +822,7 @@ class internal_RasterTarget:
     ) -> None:
         plane = self.group_source_alpha
         if plane is not None:
-            self.internal_record_plane(plane, rows, columns, alpha / 255.0, visible)
+            self.record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
         if buffer is self.page_buffer:
@@ -841,11 +839,9 @@ class internal_RasterTarget:
     ) -> None:
         plane = self.group_source_shape
         if plane is not None:
-            self.internal_record_plane(
-                plane, rows, columns, shape / 255.0 * self.shape_alpha, visible
-            )
+            self.record_plane(plane, rows, columns, shape / 255.0 * self.shape_alpha, visible)
 
-    def internal_record_plane(
+    def record_plane(
         self,
         plane: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
         rows: int | slice,
@@ -853,14 +849,14 @@ class internal_RasterTarget:
         source: float | numpy.ndarray[Any, Any],
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
     ) -> None:
-        self.internal_extend_paint_window(rows, columns)
+        self.extend_paint_window(rows, columns)
         previous = plane[rows, columns]
         updated = previous + (1.0 - previous) * source
         plane[rows, columns] = (
             updated if visible is None else numpy.where(visible, updated, previous)
         )
 
-    def internal_resolved_blend(self, blend_mode: str | None) -> str | None:
+    def resolved_blend(self, blend_mode: str | None) -> str | None:
         return blend_mode.lower() if isinstance(blend_mode, str) else None
 
     def blend_px(
@@ -979,7 +975,7 @@ class internal_RasterTarget:
         width = self.width
         if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
             target = self.pixel_view(pixels)
-            internal_blend_normal_solid_array_numpy(target[row // (width * 4), start:end], rgba)
+            blend_normal_solid_array_numpy(target[row // (width * 4), start:end], rgba)
             return
         start_offset = row + start * 4
         stop_offset = row + end * 4
@@ -1004,7 +1000,7 @@ class internal_RasterTarget:
             pixels[idx + 2] = max(0, min(255, out_b))
             pixels[idx + 3] = max(0, min(255, out_a_i))
 
-    def internal_group_window(self, group: internal_RasterGroup) -> tuple[slice, slice] | None:
+    def group_window(self, group: RasterGroup) -> tuple[slice, slice] | None:
         if group.backdrop is None:
             return slice(0, self.height), slice(0, self.width)
         if not group.paint_window:
@@ -1012,9 +1008,9 @@ class internal_RasterTarget:
         y0, y1, x0, x1 = group.paint_window
         return slice(y0, y1), slice(x0, x1)
 
-    def composite_group(self, group: internal_RasterGroup) -> None:
+    def composite_group(self, group: RasterGroup) -> None:
         parent = self.buffer_stack[-1]
-        window = self.internal_group_window(group)
+        window = self.group_window(group)
         if window is None:
             return
         rows, columns = window
@@ -1032,8 +1028,8 @@ class internal_RasterTarget:
                 else numpy.zeros((*shape.shape, 4), dtype=numpy.uint8)
             )
             element = initial.copy()
-            effective_alpha = self.internal_composite_group_into(group, element, rows, columns)
-            internal_composite_knockout_group(
+            effective_alpha = self.composite_group_into(group, element, rows, columns)
+            composite_knockout_group(
                 self.pixel_view(parent.pixels)[rows, columns],
                 initial,
                 element,
@@ -1042,18 +1038,18 @@ class internal_RasterTarget:
                 shape,
             )
         else:
-            effective_alpha = self.internal_composite_group_into(
+            effective_alpha = self.composite_group_into(
                 group, self.pixel_view(self.pixels)[rows, columns], rows, columns
             )
             self.record_source_alpha(rows, columns, effective_alpha)
         if shape is not None and parent.source_shape is not None:
             parent_shape = parent.source_shape[rows, columns]
             parent_shape += (1.0 - parent_shape) * shape
-        self.internal_extend_paint_window(rows, columns)
+        self.extend_paint_window(rows, columns)
 
-    def internal_composite_group_into(
+    def composite_group_into(
         self,
-        group: internal_RasterGroup,
+        group: RasterGroup,
         destination: UInt8Array,
         rows: slice,
         columns: slice,
@@ -1066,7 +1062,7 @@ class internal_RasterTarget:
         )
         source_scale = group.source_scale
         if group.mask_alpha is not None:
-            return internal_composite_masked_group(
+            return composite_masked_group(
                 destination,
                 child,
                 group.source_alpha[rows, columns]
@@ -1079,7 +1075,7 @@ class internal_RasterTarget:
             )
         if group.backdrop is not None:
             assert group.source_alpha is not None
-            return internal_composite_nonisolated_group(
+            return composite_nonisolated_group(
                 destination,
                 child,
                 group.source_alpha[rows, columns],
@@ -1091,9 +1087,9 @@ class internal_RasterTarget:
             numpy.rint(child[..., 3].astype(numpy.float64) * source_scale), 0.0, 255.0
         ).astype(numpy.uint8)
         if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
-            internal_composite_normal_group_numpy(destination, child, source_scale)
+            composite_normal_group_numpy(destination, child, source_scale)
             return effective_alpha
-        internal_composite_blended_group_numpy(
+        composite_blended_group_numpy(
             destination,
             child,
             float(group_alpha) if is_pdf_number(group_alpha) else None,
@@ -1121,9 +1117,9 @@ class internal_RasterTarget:
                 self.composite_group(self.pop_group())
             return
         if paint_kind is not PathPaintKind.STROKE:
-            rgba = internal_color_rgba(item.fill, item.fill_opacity)
+            rgba = color_rgba(item.fill, item.fill_opacity)
             if is_pdf_number(soft_mask_alpha):
-                rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
+                rgba = scale_rgba_alpha(rgba, soft_mask_alpha)
             self.set_shape_alpha(rgba[3] / 255.0)
             if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
                 edge_array = item.edge_array
@@ -1136,12 +1132,12 @@ class internal_RasterTarget:
                     edge_array=edge_array,
                 )
         if paint_kind is not PathPaintKind.FILL:
-            stroke_rgba = internal_color_rgba(item.stroke_color, item.stroke_opacity)
+            stroke_rgba = color_rgba(item.stroke_color, item.stroke_opacity)
             if is_pdf_number(soft_mask_alpha):
-                stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
+                stroke_rgba = scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
             self.set_shape_alpha(stroke_rgba[3] / 255.0)
             if self.group_source_shape is not None:
-                internal_paint_stroke_once(
+                paint_stroke_once(
                     self,
                     path,
                     item.line_width,
@@ -1253,7 +1249,7 @@ class internal_RasterTarget:
     ) -> bool:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -1273,7 +1269,7 @@ class internal_RasterTarget:
         if quad_box is None:
             return False
         if image_clip is not None:
-            quad_box = internal_intersect_box(quad_box, image_clip)
+            quad_box = intersect_box(quad_box, image_clip)
             if quad_box is None:
                 return True
         rectangular_clip = current_clip() is not None and clip_paths_are_axis_aligned_rects()
@@ -1466,12 +1462,12 @@ class internal_RasterTarget:
                     )
                     continue
                 alpha_grid = (
-                    internal_sample_image_plane(source_alpha, source_u, source_v)
+                    sample_image_plane(source_alpha, source_u, source_v)
                     if source_alpha is not None
                     else numpy.full(visible.shape, 255, dtype=numpy.uint8)
                 )
                 if soft_mask is not None:
-                    mask_alpha = internal_sample_image_plane(soft_mask, source_u, source_v)
+                    mask_alpha = sample_image_plane(soft_mask, source_u, source_v)
                     alpha_grid = numpy.rint(
                         alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
                     ).astype(numpy.uint8)
@@ -1479,7 +1475,7 @@ class internal_RasterTarget:
                     shape_grid: int | UInt8Array = (
                         alpha_grid
                         if self.paint_alpha_is_shape
-                        else internal_sample_image_plane(source_shape, source_u, source_v)
+                        else sample_image_plane(source_shape, source_u, source_v)
                         if source_shape is not None
                         else 255
                     )
@@ -1497,7 +1493,7 @@ class internal_RasterTarget:
                 if not numpy.any(visible):
                     continue
                 source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
-                internal_blend_visible_pixels(
+                blend_visible_pixels(
                     target,
                     visible,
                     source_colors[:, 0] / 255.0,
@@ -1516,7 +1512,7 @@ class internal_RasterTarget:
         return True
 
     def blit_image(self, item: ImagePaintItem) -> None:
-        quad = internal_image_placement(item)
+        quad = image_placement(item)
         if quad is None or item.source is None:
             return
         box = points_bbox(quad)
@@ -1525,7 +1521,7 @@ class internal_RasterTarget:
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
-        prepared = internal_prepared_image(self.prepared_image_cache, item.source)
+        prepared = prepared_image(self.prepared_image_cache, item.source)
         if prepared is None:
             return
         if prepared.is_stencil:
@@ -1546,11 +1542,11 @@ class internal_RasterTarget:
             int(math.ceil((box[3] - box[1]) * self.scale)),
         )
         if width_px > device_extent or height_px > device_extent:
-            reduced, reduced_width, reduced_height = internal_box_downsample(
+            reduced, reduced_width, reduced_height = box_downsample(
                 converted, width_px, height_px, components, device_extent, device_extent
             )
             if source_alpha is not None:
-                source_alpha = internal_box_downsample(
+                source_alpha = box_downsample(
                     source_alpha, width_px, height_px, 1, device_extent, device_extent
                 )[0]
             converted = reduced
@@ -1563,7 +1559,7 @@ class internal_RasterTarget:
         scalar_mask = item.soft_mask_alpha if native_soft_mask is None else None
         opacity = item.fill_opacity
         constant_alpha = (
-            internal_constant_alpha(opacity, scalar_mask)
+            resolve_constant_alpha(opacity, scalar_mask)
             if is_pdf_number(opacity) or is_pdf_number(scalar_mask)
             else None
         )
@@ -1588,11 +1584,11 @@ class internal_RasterTarget:
         prepared: PreparedImage,
         blend_mode: str | None,
     ) -> None:
-        quad = internal_image_placement(item)
+        quad = image_placement(item)
         raster = prepared.raster
         if quad is None or not raster.has_alpha:
             return
-        red, green, blue, alpha = internal_color_rgba(item.fill, item.fill_opacity)
+        red, green, blue, alpha = color_rgba(item.fill, item.fill_opacity)
         if is_pdf_number(item.soft_mask_alpha) and prepared.soft_mask is None:
             alpha = max(0, min(255, round(alpha * item.soft_mask_alpha)))
         self.set_shape_alpha(alpha / 255.0)
@@ -1653,7 +1649,7 @@ class internal_RasterTarget:
             alpha_plane = numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(
                 numpy.uint8
             )
-            internal_blend_normal_alpha_array_numpy(
+            blend_normal_alpha_array_numpy(
                 self.pixel_view(pixels)[iy0:iy1, ix0:ix1],
                 rgba,
                 alpha_plane,
@@ -1675,7 +1671,7 @@ class internal_RasterTarget:
                 self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
                 return
             target_pixels = self.pixel_view(pixels)
-            internal_blend_normal_solid_array_numpy(
+            blend_normal_solid_array_numpy(
                 target_pixels[iy0:iy1, ix0:ix1],
                 rgba,
             )
@@ -1686,7 +1682,7 @@ class internal_RasterTarget:
         normal_target = pixel_view(pixels) if normal_fast else None
         if rectangular_clip and normal_fast and ix1 > ix0 and iy1 > iy0:
             assert normal_target is not None
-            internal_blend_normal_solid_array_numpy(
+            blend_normal_solid_array_numpy(
                 normal_target[iy0:iy1, ix0:ix1],
                 rgba,
             )
@@ -1694,7 +1690,7 @@ class internal_RasterTarget:
             return
         width = self.width
         blend_px = self.blend_px
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         blend_normal_pixel = self.blend_normal_pixel
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         if normal_target is None:
@@ -1702,7 +1698,7 @@ class internal_RasterTarget:
                 return
             blend_target = pixel_view(pixels)
             if rectangular_clip:
-                internal_blend_solid_array_numpy(
+                blend_solid_array_numpy(
                     blend_target[iy0:iy1, ix0:ix1],
                     rgba,
                     blend_mode,
@@ -1722,13 +1718,13 @@ class internal_RasterTarget:
                     continue
                 if normal_target is not None:
                     if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
-                        internal_blend_normal_solid_array_numpy(normal_target[y, start:end], rgba)
+                        blend_normal_solid_array_numpy(normal_target[y, start:end], rgba)
                         self.record_source_coverage(y, slice(start, end), rgba[3])
                     else:
                         for x in range(start, end):
                             blend_normal_pixel(row + x * 4, *rgba)
                 elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
-                    internal_blend_solid_array_numpy(
+                    blend_solid_array_numpy(
                         blend_target[y, start:end],
                         rgba,
                         blend_mode,
@@ -1861,7 +1857,7 @@ class internal_RasterTarget:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -1876,7 +1872,7 @@ class internal_RasterTarget:
         circle_box = (cx - radius, cy - radius, cx + radius, cy + radius)
         clip_box = current_clip() if clip_regions else None
         if clip_box is not None:
-            clipped_circle_box = internal_intersect_box(circle_box, clip_box)
+            clipped_circle_box = intersect_box(circle_box, clip_box)
             if clipped_circle_box is None:
                 return
             circle_box = clipped_circle_box
@@ -1901,7 +1897,7 @@ class internal_RasterTarget:
                     slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=inside
                 )
                 return
-            red, green, blue, internal_alpha = rgba
+            red, green, blue, alpha = rgba
             for py in range(iy0, iy1):
                 page_y = crop_y1 - (py + 0.5) / scale
                 dy = page_y - cy
@@ -1951,7 +1947,7 @@ class internal_RasterTarget:
         blend_normal_pixel = self.blend_normal_pixel
         blend_normal_solid_span = self.blend_normal_solid_span
         blend_px = self.blend_px
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip.clip_row_visible_spans
@@ -2010,7 +2006,7 @@ class internal_RasterTarget:
             if not crossings:
                 continue
             row = py * width * 4
-            scan_spans = internal_fill_path_crossing_spans(crossings, fill_rule)
+            scan_spans = fill_path_crossing_spans(crossings, fill_rule)
             for start_x, end_x in scan_spans:
                 span = span_pixels(start_x, end_x)
                 if span is None:
@@ -2035,7 +2031,7 @@ class internal_RasterTarget:
                         normal_target is not None
                         and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
                     ):
-                        internal_blend_normal_solid_array_numpy(
+                        blend_normal_solid_array_numpy(
                             normal_target[py, visible_start:visible_end],
                             rgba,
                         )
@@ -2045,7 +2041,7 @@ class internal_RasterTarget:
                         blend_target is not None
                         and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
                     ):
-                        internal_blend_solid_array_numpy(
+                        blend_solid_array_numpy(
                             blend_target[py, visible_start:visible_end],
                             rgba,
                             blend_mode,
@@ -2132,7 +2128,7 @@ class internal_RasterTarget:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -2171,7 +2167,7 @@ class internal_RasterTarget:
             else:
                 clip_box = current_clip()
                 if clip_box is not None:
-                    fast_bbox = internal_intersect_box(bbox, clip_box)
+                    fast_bbox = intersect_box(bbox, clip_box)
         if (
             rgba == (0, 0, 0, 255)
             and blend_mode is None
@@ -2180,7 +2176,7 @@ class internal_RasterTarget:
             and fill_rule == "nonzero"
         ):
             if edges is None:
-                edges = internal_edge_tuples(edge_array)
+                edges = edge_tuples(edge_array)
             if fast_fill_path(edges, fast_bbox):
                 return
         clipped_box = clipped_pixel_box(bbox)
@@ -2204,9 +2200,9 @@ class internal_RasterTarget:
             device_edges[:, 1] = (crop_y1 - source[:, 1]) * scale - iy0
             device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
             device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
-            coverage = internal_signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
+            coverage = signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
             alpha_plane = numpy.rint(coverage * rgba[3]).astype(numpy.uint8)
-            internal_blend_normal_alpha_array_numpy(
+            blend_normal_alpha_array_numpy(
                 pixel_view(pixels)[iy0:iy1, ix0:ix1],
                 rgba,
                 alpha_plane,
@@ -2218,7 +2214,7 @@ class internal_RasterTarget:
                 )
             return
         if edges is None:
-            edges = internal_edge_tuples(edge_array)
+            edges = edge_tuples(edge_array)
         edge_segments = [
             (
                 ex0,
@@ -2253,23 +2249,21 @@ class internal_RasterTarget:
                 )
                 / scale
             )
-            all_row_crossings = internal_fill_path_sample_crossings_numpy(
-                edge_segments_array, page_ys
-            )
+            all_row_crossings = fill_path_sample_crossings_numpy(edge_segments_array, page_ys)
         for py in range(iy0, iy1):
             row = py * width * 4
             sample_spans: list[list[tuple[float, float]]] = []
             if all_row_crossings is not None:
                 base = (py - iy0) * samples
                 sample_spans.extend(
-                    internal_fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
+                    fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
                     for sy in range(samples)
                 )
             else:
                 for sy in range(samples):
                     page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale
-                    crossings = internal_fill_path_sample_crossings(edge_segments, page_y)
-                    sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
+                    crossings = fill_path_sample_crossings(edge_segments, page_y)
+                    sample_spans.append(fill_path_crossing_spans(crossings, fill_rule))
             if normal_fast and rectangular_clip:
                 deltas = [0] * (ix1 - ix0 + 1)
                 covered_any = False
@@ -2293,7 +2287,7 @@ class internal_RasterTarget:
                     alpha_plane = numpy.rint(
                         coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
                     ).astype(numpy.uint8)
-                    internal_blend_normal_alpha_array_numpy(
+                    blend_normal_alpha_array_numpy(
                         target,
                         rgba,
                         alpha_plane,
@@ -2356,7 +2350,7 @@ class internal_RasterTarget:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
@@ -2544,9 +2538,7 @@ class internal_RasterTarget:
         line_join: int = 0,
         blend_mode: str | None = None,
     ) -> None:
-        self.internal_fill_terminal(
-            px, py, line_width, rgba, line_join == LineJoin.ROUND, blend_mode
-        )
+        self.fill_terminal(px, py, line_width, rgba, line_join == LineJoin.ROUND, blend_mode)
 
     def fill_cap(
         self,
@@ -2559,9 +2551,9 @@ class internal_RasterTarget:
     ) -> None:
         if line_cap == LineCap.BUTT:
             return
-        self.internal_fill_terminal(px, py, line_width, rgba, line_cap == LineCap.ROUND, blend_mode)
+        self.fill_terminal(px, py, line_width, rgba, line_cap == LineCap.ROUND, blend_mode)
 
-    def internal_fill_terminal(
+    def fill_terminal(
         self,
         px: float,
         py: float,
@@ -2602,12 +2594,12 @@ class internal_RasterTarget:
                     path_box[2] + stroke_pad,
                     path_box[3] + stroke_pad,
                 )
-                if internal_intersect_box(stroke_box, clip_box) is None:
+                if intersect_box(stroke_box, clip_box) is None:
                     return
         for subpath in path.subpaths:
             if dash_pattern and dash_pattern[0]:
                 self.stroke_path(
-                    CapturedPath(internal_dash_subpath(subpath, dash_pattern)),
+                    CapturedPath(dash_subpath(subpath, dash_pattern)),
                     line_width,
                     rgba,
                     None,
@@ -2624,7 +2616,7 @@ class internal_RasterTarget:
                 if (x0, y0) == (x1, y1):
                     if line_cap == LineCap.ROUND:
                         radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
-                        self.fill_path(internal_circle_path(x0, y0, radius), rgba, blend_mode)
+                        self.fill_path(circle_path(x0, y0, radius), rgba, blend_mode)
                     continue
                 self.fill_line(
                     x0,
@@ -2710,7 +2702,7 @@ class internal_RasterTarget:
         clipped_pixel_box = self.clip.clipped_pixel_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
-        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_resolved_mode = self.resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
@@ -2769,14 +2761,14 @@ class internal_RasterTarget:
                     value = domain[0] + unit_t * domain_span
                     rgba = rgba_cache.get(value)
                     if rgba is None:
-                        rgba = internal_shading_color_rgba(
+                        rgba = shading_color_rgba(
                             color_model,
                             evaluate(value),
                             fill_opacity,
                             color_rendering,
                         )
                         if shading_alpha is not None:
-                            rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
+                            rgba = scale_rgba_alpha(rgba, shading_alpha)
                         rgba_cache[value] = rgba
                     if normal_fast:
                         blend_normal_pixel(row + px * 4, *rgba)
@@ -2802,7 +2794,7 @@ class internal_RasterTarget:
         program = pattern.program
         if not program.drawings and not program.glyphs and not program.inline_images:
             return False
-        display, cell_clip = internal_tiling_cell(self, pattern)
+        display, cell_clip = tiling_cell(self, pattern)
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         target_box_type = type(target_box)
         if target_box_type is list or target_box_type is tuple:
@@ -2823,7 +2815,7 @@ class internal_RasterTarget:
             x0, y0, x1, y1 = crop_x0, crop_y0, crop_x0 + width / scale, crop_y1
         clip_box = self.clip.current_clip()
         if clip_box is not None:
-            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            clipped = intersect_box((x0, y0, x1, y1), clip_box)
             if clipped is None:
                 return True
             x0, y0, x1, y1 = clipped
@@ -2832,14 +2824,14 @@ class internal_RasterTarget:
         cells = 0
         y = start_y
         opacity = target_data.fill_opacity
-        alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
+        alpha = clamp01(opacity) if is_pdf_number(opacity) else 1.0
         if is_pdf_number(target_data.soft_mask_alpha):
-            alpha *= internal_clamp01(target_data.soft_mask_alpha)
+            alpha *= clamp01(target_data.soft_mask_alpha)
         self.push_group(
             bytearray(len(self.pixels)),
             alpha,
             blend_mode,
-            isolated=internal_tiling_pattern_uses_normal_blends(pattern),
+            isolated=tiling_pattern_uses_normal_blends(pattern),
             alpha_is_shape=target_data.alpha_is_shape,
         )
         try:

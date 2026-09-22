@@ -18,31 +18,31 @@ from core_pdf.impl.extract.contracts import (
     ParsedBlock,
     ParsedLine,
     ReadingOrderEvidence,
-    internal_bbox_tuple,
+    bbox_tuple,
 )
 from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import (
     collapse_ws,
-    internal_reconcile_text_words,
-    internal_text_word_tokens,
+    reconcile_text_words,
+    text_word_tokens,
 )
 from core_pdf.impl.output.model import TextLine, TextSpan
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.types import TextWord
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
+NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
-internal_CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
-internal_LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
+LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
 
 
-class internal_LineGroupPlan(internal_Record):
+class LineGroupPlan(Record):
     __slots__ = ("indexes", "starts", "stops")
 
     indexes: numpy.ndarray
@@ -53,9 +53,9 @@ class internal_LineGroupPlan(internal_Record):
     __match_args__ = ("indexes", "starts", "stops")
 
     def __init__(self, indexes: numpy.ndarray, starts: numpy.ndarray, stops: numpy.ndarray) -> None:
-        internal_frozen_setattr(self, "indexes", indexes)
-        internal_frozen_setattr(self, "starts", starts)
-        internal_frozen_setattr(self, "stops", stops)
+        frozen_setattr(self, "indexes", indexes)
+        frozen_setattr(self, "starts", starts)
+        frozen_setattr(self, "stops", stops)
 
     def __repr__(self) -> str:
         return (
@@ -89,7 +89,7 @@ class internal_LineGroupPlan(internal_Record):
         return self.__class__(indexes, starts, stops)
 
 
-class internal_BuiltLines(internal_Record):
+class BuiltLines(Record):
     __slots__ = ("lines", "boxes")
 
     lines: tuple[ParsedLine, ...]
@@ -99,8 +99,8 @@ class internal_BuiltLines(internal_Record):
     __match_args__ = ("lines", "boxes")
 
     def __init__(self, lines: tuple[ParsedLine, ...], boxes: numpy.ndarray) -> None:
-        internal_frozen_setattr(self, "lines", lines)
-        internal_frozen_setattr(self, "boxes", boxes)
+        frozen_setattr(self, "lines", lines)
+        frozen_setattr(self, "boxes", boxes)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(lines={self.lines!r}, boxes={self.boxes!r})"
@@ -123,10 +123,10 @@ class internal_BuiltLines(internal_Record):
         return self.__class__(lines, boxes)
 
 
-def internal_line_group_indexes(observations: ObservationBatch) -> internal_LineGroupPlan:
+def line_group_indexes(observations: ObservationBatch) -> LineGroupPlan:
     if not len(observations):
         empty = numpy.empty(0, dtype=numpy.int64)
-        return internal_LineGroupPlan(empty, empty, empty)
+        return LineGroupPlan(empty, empty, empty)
     visible_indexes = numpy.flatnonzero(observations.visible)
     indexes = (
         visible_indexes
@@ -158,15 +158,15 @@ def internal_line_group_indexes(observations: ObservationBatch) -> internal_Line
     stops = numpy.empty_like(starts)
     stops[:-1] = starts[1:]
     stops[-1] = len(indexes)
-    return internal_LineGroupPlan(indexes, starts, stops)
+    return LineGroupPlan(indexes, starts, stops)
 
 
-def internal_style_enabled(reference: object, name: str) -> bool:
+def style_enabled(reference: object, name: str) -> bool:
     value = getattr(reference, name, False)
     return bool(value() if callable(value) else value)
 
 
-def internal_group_text_and_words(
+def group_text_and_words(
     observations: ObservationBatch,
     indexes: numpy.ndarray,
 ) -> tuple[str, tuple[TextWord, ...]]:
@@ -177,7 +177,7 @@ def internal_group_text_and_words(
         reconstructed = line.reconstructed_text()
         text = reconstructed.text.strip()
         layout_words = line.text_and_words(reconstructed)[1]
-        return text, internal_reconcile_text_words(text, layout_words)
+        return text, reconcile_text_words(text, layout_words)
     parts: list[str] = []
     candidate_words: list[TextWord] = []
     for index in indexes:
@@ -191,15 +191,15 @@ def internal_group_text_and_words(
         ):
             parts.append(" ")
         parts.append(text)
-        tokens = internal_text_word_tokens(text)
+        tokens = text_word_tokens(text)
         bbox = observations.bbox[index]
-        word_bbox = internal_bbox_tuple(bbox) if len(tokens) == 1 else None
+        word_bbox = bbox_tuple(bbox) if len(tokens) == 1 else None
         candidate_words.extend(TextWord(token, bbox=word_bbox) for token in tokens)
     combined = "".join(parts)
-    return combined, internal_reconcile_text_words(combined, tuple(candidate_words))
+    return combined, reconcile_text_words(combined, tuple(candidate_words))
 
 
-def internal_color_is_emphasis(color: object) -> bool:
+def color_is_emphasis(color: object) -> bool:
     if not isinstance(color, (tuple, list)) or len(color) < 3:
         return False
     components: list[float] = []
@@ -210,16 +210,16 @@ def internal_color_is_emphasis(color: object) -> bool:
     return max(components) - min(components) >= 0.15
 
 
-def internal_build_lines(
+def build_lines(
     observations: ObservationBatch,
     *,
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
-) -> internal_BuiltLines:
-    labels = source_labels if source_labels is not None else {internal_NATIVE_SOURCE: "native"}
-    line_groups = internal_line_group_indexes(observations)
+) -> BuiltLines:
+    labels = source_labels if source_labels is not None else {NATIVE_SOURCE: "native"}
+    line_groups = line_group_indexes(observations)
     if not len(line_groups.starts):
-        return internal_BuiltLines((), numpy.empty((0, 4), dtype=numpy.float32))
+        return BuiltLines((), numpy.empty((0, 4), dtype=numpy.float32))
     selected = line_groups.indexes
     starts = line_groups.starts
     selected_boxes = observations.bbox[selected]
@@ -241,15 +241,13 @@ def internal_build_lines(
         zip(line_groups.starts, line_groups.stops, strict=True)
     ):
         indexes = selected[int(start) : int(stop)]
-        all_native = (
-            source_minimum[group_index] == source_maximum[group_index] == internal_NATIVE_SOURCE
-        )
+        all_native = source_minimum[group_index] == source_maximum[group_index] == NATIVE_SOURCE
         text_indexes = (
             group_order(observations, indexes)
             if group_order is not None and not all_native
             else indexes
         )
-        text, words = internal_group_text_and_words(observations, text_indexes)
+        text, words = group_text_and_words(observations, text_indexes)
         if not text:
             continue
         confidences = observations.confidence[indexes]
@@ -263,8 +261,8 @@ def internal_build_lines(
         ]
         reference_styles = [
             (
-                internal_style_enabled(reference, "is_bold"),
-                internal_style_enabled(reference, "is_italic"),
+                style_enabled(reference, "is_bold"),
+                style_enabled(reference, "is_italic"),
             )
             for reference in native_references
         ]
@@ -296,7 +294,7 @@ def internal_build_lines(
                     text=prefix + reference_text,
                     bold=reference_bold,
                     italic=reference_italic,
-                    mark=internal_color_is_emphasis(getattr(reference, "fill_color", None)),
+                    mark=color_is_emphasis(getattr(reference, "fill_color", None)),
                 )
             )
             pending_space = reference.text.endswith((" ", "\t", "\n"))
@@ -320,7 +318,7 @@ def internal_build_lines(
             ParsedLine(
                 TextLine(
                     text,
-                    bbox=internal_bbox_tuple(group_box),
+                    bbox=bbox_tuple(group_box),
                     source=source,
                     confidence=(
                         float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
@@ -341,10 +339,10 @@ def internal_build_lines(
         if output_boxes
         else numpy.empty((0, 4), dtype=numpy.float32)
     )
-    return internal_BuiltLines(tuple(output), boxes)
+    return BuiltLines(tuple(output), boxes)
 
 
-def internal_assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     if len(blocks) < 2:
         return blocks
     page_x0 = min(block.bbox[0] for block in blocks)
@@ -353,7 +351,7 @@ def internal_assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     bands: list[list[float]] = []
     assignments: list[int | None] = []
     for block in blocks:
-        x0, internal_y0, x1, internal_y1 = block.bbox
+        x0, y0, x1, y1 = block.bbox
         width = x1 - x0
         if width / page_width >= 0.70:
             assignments.append(None)
@@ -390,7 +388,7 @@ def internal_assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     ]
 
 
-def internal_classify_blocks(
+def classify_blocks(
     blocks: list[ParsedBlock],
     *,
     body_font_size: float | None,
@@ -412,10 +410,10 @@ def internal_classify_blocks(
         kind = "paragraph"
         level: int | None = None
         lowered = normalized.casefold()
-        if internal_CAPTION_RE.match(lowered):
+        if CAPTION_RE.match(lowered):
             kind = "caption"
         elif block.lines and all(
-            internal_LIST_MARKER_RE.match(line.line.text.strip()) for line in block.lines
+            LIST_MARKER_RE.match(line.line.text.strip()) for line in block.lines
         ):
             kind = "list"
         elif (
@@ -431,7 +429,7 @@ def internal_classify_blocks(
     return classified
 
 
-def internal_semantic_body_font_size(lines: tuple[ParsedLine, ...]) -> float | None:
+def semantic_body_font_size(lines: tuple[ParsedLine, ...]) -> float | None:
     sizes = numpy.asarray(
         [line.font_size for line in lines if line.font_size is not None and line.font_size > 0],
         dtype=numpy.float32,
@@ -439,7 +437,7 @@ def internal_semantic_body_font_size(lines: tuple[ParsedLine, ...]) -> float | N
     return finite_median(sizes) if len(sizes) else None
 
 
-def internal_display_boxes(
+def display_boxes(
     boxes: numpy.ndarray, rotation: int, width: float, height: float
 ) -> numpy.ndarray:
     rotation %= 360
@@ -476,13 +474,11 @@ def layout_blocks(
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
 ) -> tuple[ParsedBlock, ...]:
-    built_lines = internal_build_lines(
-        observations, source_labels=source_labels, group_order=group_order
-    )
+    built_lines = build_lines(observations, source_labels=source_labels, group_order=group_order)
     lines = built_lines.lines
     if not lines:
         return ()
-    boxes = internal_display_boxes(
+    boxes = display_boxes(
         built_lines.boxes,
         rotation,
         page_width,
@@ -490,8 +486,8 @@ def layout_blocks(
     )
     if obstacles:
         obstacles = tuple(
-            internal_bbox_tuple(box)
-            for box in internal_display_boxes(
+            bbox_tuple(box)
+            for box in display_boxes(
                 numpy.asarray(obstacles, dtype=numpy.float32),
                 rotation,
                 page_width,
@@ -499,23 +495,23 @@ def layout_blocks(
             )
         )
     if not use_xy_cut:
-        indexes = extract_regions.internal_row_order_indexes(
+        indexes = extract_regions.row_order_indexes(
             numpy.arange(len(lines), dtype=numpy.int64),
             boxes,
         )
         blocks = [
-            ParsedBlock(lines=(lines[int(index)],), bbox=internal_line_bbox(lines[int(index)]))
+            ParsedBlock(lines=(lines[int(index)],), bbox=line_bbox(lines[int(index)]))
             for index in indexes
         ]
         return tuple(
-            internal_classify_blocks(
-                internal_assign_columns(blocks),
-                body_font_size=internal_semantic_body_font_size(lines),
+            classify_blocks(
+                assign_columns(blocks),
+                body_font_size=semantic_body_font_size(lines),
             )
         )
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
-    regions = extract_regions.internal_xy_cut_regions(
+    regions = extract_regions.xy_cut_regions(
         numpy.arange(len(lines), dtype=numpy.int64),
         boxes,
         obstacles,
@@ -533,14 +529,12 @@ def layout_blocks(
         )
         for region in regions
     ]
-    blocks = internal_interleave_columnar_blocks(blocks)
-    blocks = internal_transpose_numeric_table_blocks(blocks)
-    blocks = internal_column_major_prose(blocks)
-    blocks = internal_topological_block_order(blocks)
+    blocks = interleave_columnar_blocks(blocks)
+    blocks = transpose_numeric_table_blocks(blocks)
+    blocks = column_major_prose(blocks)
+    blocks = topological_block_order(blocks)
     return tuple(
-        internal_classify_blocks(
-            internal_assign_columns(blocks), body_font_size=internal_semantic_body_font_size(lines)
-        )
+        classify_blocks(assign_columns(blocks), body_font_size=semantic_body_font_size(lines))
     )
 
 
@@ -565,7 +559,7 @@ def layout_blocks_with_evidence(
         source_labels=source_labels,
         group_order=group_order,
     )
-    return blocks, internal_reading_order_evidence(blocks)
+    return blocks, reading_order_evidence(blocks)
 
 
 def layout_element_order(
@@ -576,15 +570,13 @@ def layout_element_order(
 ) -> tuple[int, ...]:
     if len(boxes) < 2:
         return tuple(range(len(boxes)))
-    values = internal_display_boxes(
+    values = display_boxes(
         numpy.asarray(boxes, dtype=numpy.float32), rotation, page_width, page_height
     )
     heights = numpy.maximum(1.0, values[:, 3] - values[:, 1])
     span = max(1.0, float(values[:, 2].max() - values[:, 0].min()))
-    obstacles = tuple(
-        internal_bbox_tuple(box) for box in values if (box[2] - box[0]) / span >= 0.70
-    )
-    regions = extract_regions.internal_xy_cut_regions(
+    obstacles = tuple(bbox_tuple(box) for box in values if (box[2] - box[0]) / span >= 0.70)
+    regions = extract_regions.xy_cut_regions(
         numpy.arange(len(boxes), dtype=numpy.int64),
         values,
         obstacles,
@@ -593,14 +585,14 @@ def layout_element_order(
     return tuple(int(index) for region in regions for index in region)
 
 
-def internal_line_bbox(line: ParsedLine) -> tuple[float, float, float, float]:
+def line_bbox(line: ParsedLine) -> tuple[float, float, float, float]:
     bbox = line.line.bbox
     assert bbox is not None
     return bbox
 
 
-def internal_block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, float]:
-    boxes = numpy.asarray(tuple(internal_line_bbox(line) for line in lines), dtype=numpy.float32)
+def block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, float]:
+    boxes = numpy.asarray(tuple(line_bbox(line) for line in lines), dtype=numpy.float32)
     return (
         float(numpy.min(boxes[:, 0])),
         float(numpy.min(boxes[:, 1])),
@@ -609,7 +601,7 @@ def internal_block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, fl
     )
 
 
-def internal_inversion_count(values: tuple[int, ...]) -> int:
+def inversion_count(values: tuple[int, ...]) -> int:
     if len(values) < 2:
         return 0
     ranks = {value: rank + 1 for rank, value in enumerate(sorted(values))}
@@ -630,12 +622,12 @@ def internal_inversion_count(values: tuple[int, ...]) -> int:
     return inversions
 
 
-def internal_reading_order_evidence(
+def reading_order_evidence(
     blocks: tuple[ParsedBlock, ...],
 ) -> ReadingOrderEvidence:
     lines = tuple(line for block in blocks for line in block.lines)
     sequences = tuple(line.sequence for line in lines)
-    inversions = internal_inversion_count(sequences)
+    inversions = inversion_count(sequences)
     maximum = len(lines) * (len(lines) - 1) // 2
     rotations = {line.rotation % 360 for line in lines}
     mixed_rotation_block = any(
@@ -658,9 +650,7 @@ def internal_reading_order_evidence(
     )
 
 
-def internal_interval_overlap_pairs(
-    starts: numpy.ndarray, ends: numpy.ndarray
-) -> set[tuple[int, int]]:
+def interval_overlap_pairs(starts: numpy.ndarray, ends: numpy.ndarray) -> set[tuple[int, int]]:
     order = numpy.argsort(starts, kind="stable")
     active: set[int] = set()
     ending: list[tuple[float, int]] = []
@@ -678,12 +668,12 @@ def internal_interval_overlap_pairs(
     return pairs
 
 
-def internal_sparse_block_candidate_pairs(
+def sparse_block_candidate_pairs(
     blocks: list[ParsedBlock], full_width: list[bool]
 ) -> list[tuple[int, int]]:
     boxes = numpy.asarray(tuple(block.bbox for block in blocks), dtype=numpy.float64)
-    pairs = internal_interval_overlap_pairs(boxes[:, 0], boxes[:, 2])
-    pairs.update(internal_interval_overlap_pairs(boxes[:, 1], boxes[:, 3]))
+    pairs = interval_overlap_pairs(boxes[:, 0], boxes[:, 2])
+    pairs.update(interval_overlap_pairs(boxes[:, 1], boxes[:, 3]))
     full_width_indexes = [index for index, value in enumerate(full_width) if value]
     for index in full_width_indexes:
         pairs.update(
@@ -692,14 +682,14 @@ def internal_sparse_block_candidate_pairs(
     return sorted(pairs)
 
 
-def internal_full_width_blocks(blocks: list[ParsedBlock]) -> list[bool]:
+def full_width_blocks(blocks: list[ParsedBlock]) -> list[bool]:
     page_x0 = min(block.bbox[0] for block in blocks)
     page_x1 = max(block.bbox[2] for block in blocks)
     page_width = max(1.0, page_x1 - page_x0)
     return [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
 
 
-def internal_topological_block_order_from_pairs(
+def topological_block_order_from_pairs(
     blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]], full_width: list[bool]
 ) -> list[ParsedBlock]:
     if len(blocks) <= 2:
@@ -757,15 +747,15 @@ def internal_topological_block_order_from_pairs(
     return blocks
 
 
-def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     if len(blocks) <= 2:
         return blocks
-    full_width = internal_full_width_blocks(blocks)
-    pairs = internal_sparse_block_candidate_pairs(blocks, full_width)
-    return internal_topological_block_order_from_pairs(blocks, pairs, full_width)
+    full_width = full_width_blocks(blocks)
+    pairs = sparse_block_candidate_pairs(blocks, full_width)
+    return topological_block_order_from_pairs(blocks, pairs, full_width)
 
 
-def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     candidates = [block for block in blocks if len(block.lines) >= 20]
     if len(candidates) < 3:
         return blocks
@@ -774,19 +764,17 @@ def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[Parse
     if max(x0s) - min(x0s) > 20.0 or max(x1s) - min(x1s) > 30.0:
         return blocks
     merged_lines = tuple(line for block in candidates for line in block.lines)
-    boxes = numpy.asarray(
-        tuple(internal_line_bbox(line) for line in merged_lines), dtype=numpy.float32
-    )
-    ordered = extract_regions.internal_row_order_indexes(numpy.arange(len(merged_lines)), boxes)
+    boxes = numpy.asarray(tuple(line_bbox(line) for line in merged_lines), dtype=numpy.float32)
+    ordered = extract_regions.row_order_indexes(numpy.arange(len(merged_lines)), boxes)
     merged = ParsedBlock(
         lines=tuple(merged_lines[int(index)] for index in ordered),
-        bbox=internal_block_bbox(merged_lines),
+        bbox=block_bbox(merged_lines),
     )
     candidate_ids = {id(block) for block in candidates}
     return [merged, *(block for block in blocks if id(block) not in candidate_ids)]
 
 
-def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     output: list[ParsedBlock] = []
     for block in blocks:
         if len(block.lines) < 80:
@@ -800,7 +788,7 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
                 alphabetic += is_alpha
                 total += is_alpha or character.isdigit()
         line_starts = numpy.fromiter(
-            (internal_line_bbox(line)[0] for line in block.lines), dtype=numpy.float64
+            (line_bbox(line)[0] for line in block.lines), dtype=numpy.float64
         )
         starts = numpy.sort(line_starts)
         clusters: list[float] = []
@@ -824,19 +812,19 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         if transitions / max(1, len(line_clusters) - 1) < 0.25:
             output.append(block)
             continue
-        columns: list[list[ParsedLine]] = [[] for internal_cluster in clusters]
+        columns: list[list[ParsedLine]] = [[] for cluster in clusters]
         for line, assigned in zip(block.lines, line_clusters, strict=True):
             columns[int(assigned)].append(line)
         ordered = tuple(
             line
             for column in columns
-            for line in sorted(column, key=lambda item: -internal_line_bbox(item)[1])
+            for line in sorted(column, key=lambda item: -line_bbox(item)[1])
         )
         output.append(replace(block, lines=ordered))
     return output
 
 
-def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     output: list[ParsedBlock] = []
     for block in blocks:
         if len(block.lines) < 300:
@@ -845,7 +833,7 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
         text = " ".join(line.line.text for line in block.lines)
         numeric = sum(character.isdigit() for character in text)
         alphanumeric = sum(character.isalnum() for character in text)
-        starts = sorted(internal_line_bbox(line)[0] for line in block.lines)
+        starts = sorted(line_bbox(line)[0] for line in block.lines)
         columns: list[float] = []
         for start in starts:
             if not columns or start - columns[-1] > 8.0:
@@ -853,14 +841,14 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
         if numeric / max(1, alphanumeric) < 0.25 or len(columns) < 20:
             output.append(block)
             continue
-        boxes = numpy.asarray(tuple(internal_line_bbox(line) for line in block.lines))
-        indexes = extract_regions.internal_row_order_indexes(numpy.arange(len(block.lines)), boxes)
+        boxes = numpy.asarray(tuple(line_bbox(line) for line in block.lines))
+        indexes = extract_regions.row_order_indexes(numpy.arange(len(block.lines)), boxes)
         ordered = tuple(block.lines[int(index)] for index in indexes)
         output.append(replace(block, lines=ordered))
     return output
 
 
-def internal_has_repeated_block_columns(blocks: tuple[ParsedBlock, ...]) -> bool:
+def has_repeated_block_columns(blocks: tuple[ParsedBlock, ...]) -> bool:
     bounded = tuple(block.bbox for block in blocks if block.bbox is not None)
     if len(bounded) < 6:
         return False

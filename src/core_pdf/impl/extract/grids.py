@@ -9,7 +9,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch, PageAnalysis
-from core_pdf.impl.extract.table_cleanup import internal_cell_text
+from core_pdf.impl.extract.table_cleanup import cell_text
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.output.model import Table, TableCell
 
@@ -21,7 +21,7 @@ GRID_CROSSING_MASK_ELEMENTS = 1 << 20
 TABLE_REGION_GAP = 22.0
 
 
-def internal_line_coordinate_columns(
+def line_coordinate_columns(
     lines: Any,
 ) -> tuple[
     numpy.ndarray[Any, numpy.dtype[numpy.float64]],
@@ -38,7 +38,7 @@ def internal_line_coordinate_columns(
     return coordinates[:, 0], coordinates[:, 1], coordinates[:, 2], coordinates[:, 3]
 
 
-class internal_DisjointSet:
+class DisjointSet:
     def __init__(self, size: int) -> None:
         self.parent = list(range(size))
 
@@ -56,7 +56,7 @@ class internal_DisjointSet:
             self.parent[right_root] = left_root
 
 
-def internal_axis_segments(
+def axis_segments(
     capture: PageAnalysis,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
     page_width = capture.width
@@ -66,7 +66,7 @@ def internal_axis_segments(
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty
 
-    x0, y0, x1, y1 = internal_line_coordinate_columns(lines)
+    x0, y0, x1, y1 = line_coordinate_columns(lines)
     horizontal_mask = (numpy.abs(y1 - y0) <= AXIS_TOLERANCE) & (
         numpy.abs(x1 - x0) >= page_width * 0.02
     )
@@ -84,7 +84,7 @@ def internal_axis_segments(
     return horizontal.reshape((-1, 3)), vertical.reshape((-1, 3))
 
 
-def internal_grid_components(
+def grid_components(
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
@@ -114,14 +114,14 @@ def internal_grid_components(
         )
     if not pairs:
         return ()
-    disjoint = internal_DisjointSet(len(horizontal) + len(vertical))
+    disjoint = DisjointSet(len(horizontal) + len(vertical))
     for h_index, v_index in pairs:
         disjoint.union(h_index, len(horizontal) + v_index)
     grouped_h: dict[int, list[int]] = defaultdict(list)
     grouped_v: dict[int, list[int]] = defaultdict(list)
-    for index in sorted({h_index for h_index, internal_v_index in pairs}):
+    for index in sorted({h_index for h_index, vertical_index in pairs}):
         grouped_h[disjoint.find(index)].append(index)
-    for index in sorted({v_index for internal_h_index, v_index in pairs}):
+    for index in sorted({v_index for horizontal_index, v_index in pairs}):
         grouped_v[disjoint.find(len(horizontal) + index)].append(index)
     return tuple(
         (horizontal[grouped_h[root]], vertical[grouped_v[root]])
@@ -129,7 +129,7 @@ def internal_grid_components(
     )
 
 
-def internal_split_grid_component(
+def split_grid_component(
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
@@ -154,7 +154,7 @@ def internal_split_grid_component(
     return tuple(regions) or ((horizontal, vertical),)
 
 
-def internal_cluster_positions(values: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+def cluster_positions(values: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
     if values.size == 0:
         return numpy.empty(0, dtype=numpy.float32)
     ordered = numpy.sort(values.astype(numpy.float32, copy=False))
@@ -173,7 +173,7 @@ def internal_cluster_positions(values: numpy.ndarray[Any, Any]) -> numpy.ndarray
     return clustered[keep]
 
 
-def internal_merge_collinear_segments(
+def merge_collinear_segments(
     segments: numpy.ndarray[Any, Any],
     *,
     coordinate: int,
@@ -209,7 +209,7 @@ def internal_merge_collinear_segments(
     return numpy.asarray(merged, dtype=numpy.float32).reshape((-1, 3))
 
 
-def internal_merge_grid_cells(
+def merge_grid_cells(
     rows: list[list[TableCell]],
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
@@ -235,7 +235,7 @@ def internal_merge_grid_cells(
         )
         return (spans.astype(numpy.int32) @ near.astype(numpy.int32).T) > 0
 
-    disjoint = internal_DisjointSet(row_count * column_count)
+    disjoint = DisjointSet(row_count * column_count)
     vertical_present = boundary_grid(
         vertical,
         x_edges[1:column_count],
@@ -265,10 +265,10 @@ def internal_merge_grid_cells(
             members[disjoint.find(row * column_count + column)].append((row, column))
     merged: list[list[TableCell]] = [[] for _ in range(row_count)]
     for cells in members.values():
-        min_row = min(row for row, internal_column in cells)
-        max_row = max(row for row, internal_column in cells)
-        min_column = min(column for internal_row, column in cells)
-        max_column = max(column for internal_row, column in cells)
+        min_row = min(row for row, make_column in cells)
+        max_row = max(row for row, make_column in cells)
+        min_column = min(column for row_value, column in cells)
+        max_column = max(column for row_value, column in cells)
         if len(cells) != (max_row - min_row + 1) * (max_column - min_column + 1):
             for row, column in cells:
                 merged[row].append(rows[row][column])
@@ -290,14 +290,14 @@ def internal_merge_grid_cells(
     return [tuple(sorted(row, key=lambda cell: cell.column)) for row in merged]
 
 
-def internal_table_from_component(
+def table_from_component(
     order: int,
     horizontal: numpy.ndarray[Any, Any],
     vertical: numpy.ndarray[Any, Any],
     observations: ObservationBatch,
 ) -> Table | None:
-    x_edges = internal_cluster_positions(vertical[:, 0])
-    y_edges = internal_cluster_positions(horizontal[:, 2])[::-1]
+    x_edges = cluster_positions(vertical[:, 0])
+    y_edges = cluster_positions(horizontal[:, 2])[::-1]
     columns = len(x_edges) - 1
     row_count = len(y_edges) - 1
     if columns < 2 or row_count < 1 or columns * row_count > 1_000:
@@ -342,7 +342,7 @@ def internal_table_from_component(
                 TableCell(
                     row=row,
                     column=column,
-                    text=internal_cell_text(
+                    text=cell_text(
                         observations,
                         cell_observations[(row, column)],
                     ),
@@ -350,7 +350,7 @@ def internal_table_from_component(
                 )
             )
         rows.append(cells)
-    merged_rows = internal_merge_grid_cells(rows, horizontal, vertical, x_edges, y_edges)
+    merged_rows = merge_grid_cells(rows, horizontal, vertical, x_edges, y_edges)
     return Table(
         order=order,
         rows=tuple(tuple(row) for row in merged_rows),

@@ -16,13 +16,13 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-def internal_state() -> ContentInterpreter:
+def make_state() -> ContentInterpreter:
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
 
 
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
 def test_extgstate_updates_only_present_fields_and_clamps_opacity(entry_point: str) -> None:
-    state = internal_state()
+    state = make_state()
     values = {"ca": -0.5, "CA": 1.5, "BM": [PdfName.of("Multiply"), PdfName.of("Screen")]}
     if entry_point == "operator":
         state.resources = {"ExtGState": {"G": values}}
@@ -50,7 +50,7 @@ def test_extgstate_updates_only_present_fields_and_clamps_opacity(entry_point: s
 
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
 def test_extgstate_keeps_earlier_fields_when_a_later_field_is_invalid(entry_point: str) -> None:
-    state = internal_state()
+    state = make_state()
     state.graphics.stroke_opacity = 0.75
     state.graphics.blend_mode = "Screen"
     values = {"ca": 0.5, "CA": "invalid", "BM": PdfName.of("Multiply")}
@@ -70,7 +70,7 @@ def test_extgstate_keeps_earlier_fields_when_a_later_field_is_invalid(entry_poin
 def test_extgstate_application_retains_polymorphic_coercion_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    state = internal_state()
+    state = make_state()
     calls: list[tuple[str, object]] = []
 
     def number(value: object) -> float:
@@ -97,7 +97,7 @@ def test_extgstate_application_retains_polymorphic_coercion_order(
 def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
     monkeypatch: pytest.MonkeyPatch, stream: bool, indirect: bool
 ) -> None:
-    state = internal_state()
+    state = make_state()
     resolver = cast(ObjectResolver, state.resolver)
     dictionary: PdfDict = {
         "PatternType": 1 if stream else 2,
@@ -142,7 +142,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
 
 @pytest.mark.parametrize("resource", [None, 42, [], PdfName.of("Invalid")])
 def test_pattern_selection_rejects_resources_without_a_dictionary(resource: object) -> None:
-    state = internal_state()
+    state = make_state()
     state.resources = {"Pattern": {"P": resource}}
     assert state.resolve_pattern_resource(PdfName.of("P")) is None
     with pytest.raises(PdfParseError, match="invalid pattern resource"):
@@ -152,7 +152,7 @@ def test_pattern_selection_rejects_resources_without_a_dictionary(resource: obje
 
 
 def test_pattern_selection_still_requires_painttype_and_matching_color_space() -> None:
-    state = internal_state()
+    state = make_state()
     dictionary: PdfDict = {"PatternType": 1, "BBox": [0, 0, 1, 1], "XStep": 1, "YStep": 1}
     state.resources = {"Pattern": {"P": PdfStream(dictionary=dictionary)}}
     with pytest.raises(PdfParseError, match="invalid pattern"):

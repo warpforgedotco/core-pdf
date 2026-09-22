@@ -10,7 +10,7 @@ from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_str
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 PDF_1_7_NAMESPACE = "http://iso.org/pdf/ssn"
@@ -97,8 +97,8 @@ class StructureType:
     __match_args__ = ("name", "namespace")
 
     def __init__(self, name: str, namespace: str | None) -> None:
-        internal_frozen_setattr(self, "name", name)
-        internal_frozen_setattr(self, "namespace", namespace)
+        frozen_setattr(self, "name", name)
+        frozen_setattr(self, "namespace", namespace)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(name={self.name!r}, namespace={self.namespace!r})"
@@ -124,7 +124,7 @@ class StructureType:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         name = changes.pop("name", self.name)
@@ -152,10 +152,10 @@ class StructureRole:
         status: Literal["standard", "domain", "unmapped", "cycle"],
         path: tuple[StructureType, ...],
     ) -> None:
-        internal_frozen_setattr(self, "name", name)
-        internal_frozen_setattr(self, "namespace", namespace)
-        internal_frozen_setattr(self, "status", status)
-        internal_frozen_setattr(self, "path", path)
+        frozen_setattr(self, "name", name)
+        frozen_setattr(self, "namespace", namespace)
+        frozen_setattr(self, "status", status)
+        frozen_setattr(self, "path", path)
 
     def __repr__(self) -> str:
         return (
@@ -193,7 +193,7 @@ class StructureRole:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         name = changes.pop("name", self.name)
@@ -219,15 +219,15 @@ def is_standard_structure_type(name: str, namespace: str) -> bool:
     return False
 
 
-def internal_identity(value: object) -> object:
+def identity(value: object) -> object:
     return value
 
 
-def internal_name(value: object) -> str | None:
+def name(value: object) -> str | None:
     return value.value if isinstance(value, PdfName) else None
 
 
-def internal_namespace(
+def resolve_namespace(
     value: object,
     resolve: Callable[[object], object],
     context: SemanticContext | None,
@@ -250,9 +250,7 @@ def internal_namespace(
     return namespace, dictionary.get("RoleMapNS")
 
 
-def internal_mapping_value(
-    mapping: object, name: str, resolve: Callable[[object], object]
-) -> object:
+def mapping_value(mapping: object, name: str, resolve: Callable[[object], object]) -> object:
     dictionary = resolve(mapping)
     if dictionary is None:
         return None
@@ -276,8 +274,8 @@ def resolve_structure_role(
     *,
     namespace: object = None,
     role_map: object = None,
-    resolve: Callable[[object], object] = internal_identity,
-    resolve_name: Callable[[object], str | None] = internal_name,
+    resolve: Callable[[object], object] = identity,
+    resolve_name: Callable[[object], str | None] = name,
     decode_text: Callable[[bytes], str] | None = None,
     context: SemanticContext | None = None,
 ) -> StructureRole:
@@ -290,7 +288,7 @@ def resolve_structure_role(
     mapping = role_map
     namespace = resolve(namespace)
     if namespace is not None:
-        namespace_name, mapping = internal_namespace(namespace, resolve, context, decode_text)
+        namespace_name, mapping = resolve_namespace(namespace, resolve, context, decode_text)
     current = StructureType(type_name, namespace_name)
     path = [current]
     seen = {current}
@@ -307,7 +305,7 @@ def resolve_structure_role(
             and current.namespace is None
             and standard
         )
-        target = None if old_standard else internal_mapping_value(mapping, current.name, resolve)
+        target = None if old_standard else mapping_value(mapping, current.name, resolve)
         if target is None:
             status: Literal["standard", "domain", "unmapped", "cycle"] = (
                 "standard"
@@ -332,7 +330,7 @@ def resolve_structure_role(
             target_name = resolve_name(resolve(target[0]))
             if target_name is None or not isinstance(target[1], PdfReference):
                 raise ValueError("namespace role target requires a name and namespace reference")
-            next_namespace, next_mapping = internal_namespace(
+            next_namespace, next_mapping = resolve_namespace(
                 target[1], resolve, context, decode_text
             )
         if current.namespace is not None and next_namespace == current.namespace:

@@ -10,7 +10,7 @@ from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
 
 
-def internal_float_value(value: object) -> float:
+def float_value(value: object) -> float:
     if isinstance(value, (int, float, str, bytes, bytearray)):
         return float(value)
     raise TypeError(f"expected float-compatible value, got {type(value).__name__}")
@@ -20,10 +20,10 @@ def rect_tuple(value: object) -> Rectangle | None:
     if isinstance(value, (list, tuple)) and len(value) == 4:
         try:
             return (
-                internal_float_value(value[0]),
-                internal_float_value(value[1]),
-                internal_float_value(value[2]),
-                internal_float_value(value[3]),
+                float_value(value[0]),
+                float_value(value[1]),
+                float_value(value[2]),
+                float_value(value[3]),
             )
         except TypeError, ValueError:
             return None
@@ -181,7 +181,7 @@ __all__ = (
     "finite_rect",
     "flip_rect_vertical",
     "horizontal_overlap_ratio",
-    "internal_float_value",
+    "float_value",
     "intersect_bbox",
     "interval_overlap",
     "normalize_rect",

@@ -18,16 +18,16 @@ from core_pdf_spec.s_07_syntax.xref import (
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 
-def internal_context(version: str) -> SemanticContext:
+def context(version: str) -> SemanticContext:
     return SemanticContext(PdfVersion.parse(version))
 
 
-def internal_revisions(data: bytes, start: int, context: SemanticContext) -> list[XRefRevision]:
+def read_revisions(data: bytes, start: int, context: SemanticContext) -> list[XRefRevision]:
     reader = partial(XRefScanner.parse_section_at, data, semantic_context=context)
     return list(iter_xref_revisions(start, reader))
 
 
-def internal_table(trailer: bytes = b"", *, separator: bytes = b" ") -> bytes:
+def make_table(trailer: bytes = b"", *, separator: bytes = b" ") -> bytes:
     return (
         b"xref\n0"
         + separator
@@ -39,19 +39,17 @@ def internal_table(trailer: bytes = b"", *, separator: bytes = b" ") -> bytes:
 
 @pytest.mark.parametrize(("version", "key"), [("1.1", "Legacy#20Key"), ("1.2", "Legacy Key")])
 def test_xref_trailer_names_follow_the_selected_version(version: str, key: str) -> None:
-    data = internal_table(b"/Legacy#20Key true")
-    _, trailer = XRefScanner.parse_table_section(
-        data, 0, semantic_context=internal_context(version)
-    )
+    data = make_table(b"/Legacy#20Key true")
+    _, trailer = XRefScanner.parse_table_section(data, 0, semantic_context=context(version))
     assert trailer[key] is True
     assert len(trailer) == 2
 
 
 def test_explicit_xref_context_updates_a_supplied_trailer_lexer() -> None:
-    data = internal_table(b"/Legacy#20Key true")
+    data = make_table(b"/Legacy#20Key true")
     lexer = PdfLexer(data)
     _, trailer = XRefScanner.parse_table_section(
-        data, 0, lexer=lexer, semantic_context=internal_context("1.1")
+        data, 0, lexer=lexer, semantic_context=context("1.1")
     )
     assert trailer["Legacy#20Key"] is True
 
@@ -59,13 +57,13 @@ def test_explicit_xref_context_updates_a_supplied_trailer_lexer() -> None:
 def test_legacy_context_reaches_previous_classic_sections() -> None:
     data = b"%PDF-1.1\n"
     previous = len(data)
-    data += internal_table(b"/Pr#65v 99999")
+    data += make_table(b"/Pr#65v 99999")
     latest = len(data)
-    data += internal_table(f"/Prev {previous}".encode())
-    revisions = internal_revisions(data, latest, internal_context("1.1"))
+    data += make_table(f"/Prev {previous}".encode())
+    revisions = read_revisions(data, latest, context("1.1"))
     assert [revision.offset for revision in revisions] == [latest, previous]
     with pytest.raises(PdfParseError, match="invalid xref section"):
-        internal_revisions(data, latest, internal_context("1.2"))
+        read_revisions(data, latest, context("1.2"))
 
 
 def test_hybrid_stream_uses_context_for_escaped_type_names() -> None:
@@ -76,24 +74,24 @@ def test_hybrid_stream_uses_context_for_escaped_type_names() -> None:
         b"stream\n\x01\x09\x00\nendstream\nendobj\n"
     )
     table = len(data)
-    data += internal_table(f"/XRefStm {stream}".encode())
-    revisions = internal_revisions(data, table, internal_context("1.5"))
+    data += make_table(f"/XRefStm {stream}".encode())
+    revisions = read_revisions(data, table, context("1.5"))
     assert revisions[0].entries[1 << 16].offset == 9
     with pytest.raises(PdfParseError, match="invalid xref stream type"):
-        internal_revisions(data, table, internal_context("1.1"))
+        read_revisions(data, table, context("1.1"))
 
 
 def test_nul_whitespace_in_xref_subsections_follows_selected_rules() -> None:
-    data = internal_table(separator=b"\x00")
+    data = make_table(separator=b"\x00")
     with pytest.raises(PdfParseError, match="invalid xref table subsection"):
-        XRefScanner.parse_table_section(data, 0, semantic_context=internal_context("1.2"))
-    _, trailer = XRefScanner.parse_table_section(data, 0, semantic_context=internal_context("1.3"))
+        XRefScanner.parse_table_section(data, 0, semantic_context=context("1.2"))
+    _, trailer = XRefScanner.parse_table_section(data, 0, semantic_context=context("1.3"))
     assert trailer["Size"] == 1
 
 
 def test_startxref_eof_and_object_headers_share_whitespace_context() -> None:
-    old = internal_context("1.2")
-    new = internal_context("1.3")
+    old = context("1.2")
+    new = context("1.3")
     assert XRefScanner.find_startxref(b"\x00startxref\n9\n%%EOF\n", semantic_context=old) is None
     assert XRefScanner.find_startxref(b"\x00startxref\n9\n%%EOF\n", semantic_context=new) == 9
     assert find_eof_marker(b"\n%%EOF\x00", semantic_context=old) == -1
@@ -112,4 +110,4 @@ def test_startxref_eof_and_object_headers_share_whitespace_context() -> None:
 @pytest.mark.parametrize("version", [None, PdfVersion(9, 0)])
 def test_unknown_context_does_not_guess_xref_lexical_rules(version: PdfVersion | None) -> None:
     with pytest.raises(PdfUnsupportedError, match="recognized PDF version"):
-        internal_revisions(internal_table(), 0, SemanticContext(version))
+        read_revisions(make_table(), 0, SemanticContext(version))

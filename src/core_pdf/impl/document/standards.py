@@ -42,19 +42,19 @@ from core_pdf_spec.standards import (
 )
 from core_pdf_spec.types import PdfByteBuffer, PdfName, PdfReference
 
-internal_RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-internal_IDENTIFICATION_NAMESPACES = {
+RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+IDENTIFICATION_NAMESPACES = {
     "http://www.aiim.org/pdfa/ns/id/": "PDF/A",
     "http://www.aiim.org/pdfua/ns/id/": "PDF/UA",
     "http://www.npes.org/pdfx/ns/id/": "PDF/X",
     "http://www.npes.org/pdfvt/ns/id/": "PDF/VT",
     "http://www.aiim.org/pdfe/ns/id/": "PDF/E",
 }
-internal_DECLARATIONS_NAMESPACES = (
+DECLARATIONS_NAMESPACES = (
     "http://pdfa.org/declarations/",
     "https://pdfa.org/declarations/",
 )
-internal_WTPDF_PROFILES = {
+WTPDF_PROFILES = {
     "http://pdfa.org/declarations/wtpdf#reuse1.0": "wtpdf-1.0-reuse",
     "http://pdfa.org/declarations/wtpdf#reuse1.0-validated": "wtpdf-1.0-reuse",
     "http://pdfa.org/declarations/wtpdf#accessibility1.0": "wtpdf-1.0-accessibility",
@@ -94,7 +94,7 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
     )
 
 
-def internal_resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
+def resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
     value = resolve_reference_chain(trailer.get("Root"), resolver.resolve)
     return cast(PdfDict, value) if isinstance(value, dict) else None
 
@@ -104,7 +104,7 @@ def discover_document_standards(
 ) -> DocumentStandards:
     diagnostics = list(header.diagnostics)
     try:
-        catalog = internal_resolve_catalog(resolver, trailer)
+        catalog = resolve_catalog(resolver, trailer)
         if catalog is None:
             raise ValueError("missing catalog")
     except PdfError, RecursionError, ValueError:
@@ -143,9 +143,7 @@ def discover_document_standards(
                         "catalog/Version",
                     )
                 )
-    extensions = internal_discover_extensions(
-        catalog.get("Extensions"), resolver.resolve, diagnostics
-    )
+    extensions = discover_extensions(catalog.get("Extensions"), resolver.resolve, diagnostics)
     return replace(
         header,
         catalog_version=version,
@@ -156,7 +154,7 @@ def discover_document_standards(
     )
 
 
-class internal_VersionProbeResolver(ObjectResolver):
+class VersionProbeResolver(ObjectResolver):
     __slots__ = ()
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
@@ -172,7 +170,7 @@ def bootstrap_security_context(
     xref: dict[int, PdfXRefEntry],
     trailer: PdfDict,
 ) -> SemanticContext | None:
-    resolver = internal_VersionProbeResolver(data, xref)
+    resolver = VersionProbeResolver(data, xref)
     try:
         catalog = resolver.resolve(trailer.get("Root"))
         if not isinstance(catalog, dict):
@@ -205,7 +203,7 @@ def bootstrap_security_context(
     return current.context
 
 
-def internal_discover_extensions(
+def discover_extensions(
     value: object,
     resolve: Callable[[object], object],
     diagnostics: list[StandardsDiagnostic],
@@ -265,7 +263,7 @@ def internal_discover_extensions(
     return tuple(extensions)
 
 
-def internal_extension_diagnostics(standards: DocumentStandards) -> DocumentStandards:
+def extension_diagnostics(standards: DocumentStandards) -> DocumentStandards:
     diagnostics = list(standards.diagnostics)
     for extension in standards.extensions:
         source = f"catalog/Extensions/{extension.prefix}"
@@ -318,7 +316,7 @@ def preserve_historical_version(
         )
     previous = trailer.get("Prev")
     if previous is None:
-        return internal_extension_diagnostics(replace(standards, diagnostics=tuple(diagnostics)))
+        return extension_diagnostics(replace(standards, diagnostics=tuple(diagnostics)))
     sections: list[XRefRevision] = []
     try:
         if type(previous) is not int:
@@ -341,7 +339,7 @@ def preserve_historical_version(
     floor = standards.effective_version
     for revision in reversed(sections):
         overlay_xref_entries(merged, revision.entries)
-        resolver_type = internal_VersionProbeResolver if version_probe else ObjectResolver
+        resolver_type = VersionProbeResolver if version_probe else ObjectResolver
         resolver = resolver_type(data, merged, decipher=decipher)
         try:
             catalog = resolver.resolve(revision.trailer.get("Root"))
@@ -369,7 +367,7 @@ def preserve_historical_version(
                 "catalog/Version",
             )
         )
-    return internal_extension_diagnostics(
+    return extension_diagnostics(
         replace(standards, effective_version=floor, diagnostics=tuple(diagnostics))
     )
 
@@ -380,10 +378,10 @@ def discover_profile_claims(
     diagnostics = list(standards.diagnostics)
     claims: list[ProfileClaim] = []
     try:
-        catalog = internal_resolve_catalog(resolver, trailer)
+        catalog = resolve_catalog(resolver, trailer)
         stream = catalog_metadata_stream(resolver, catalog) if catalog is not None else None
         if stream is not None and stream.data:
-            claims.extend(internal_xmp_claims(stream.data, diagnostics))
+            claims.extend(xmp_claims(stream.data, diagnostics))
     except PdfError, RecursionError, ValueError, ET.ParseError, DefusedXmlException:
         diagnostics.append(
             StandardsDiagnostic(
@@ -398,7 +396,7 @@ def discover_profile_claims(
                 for key in ("GTS_PDFXVersion", "GTS_PDFXConformance")
                 if (text := resolver.resolve_str(info.get(key))) is not None
             )
-            claims.append(internal_profile_claim("PDF/X", "trailer/Info", properties, diagnostics))
+            claims.append(profile_claim("PDF/X", "trailer/Info", properties, diagnostics))
     except PdfError, RecursionError, ValueError:
         diagnostics.append(
             StandardsDiagnostic(
@@ -408,38 +406,38 @@ def discover_profile_claims(
     return replace(standards, profile_claims=tuple(claims), diagnostics=tuple(diagnostics))
 
 
-def internal_xmp_claims(raw: bytes, diagnostics: list[StandardsDiagnostic]) -> list[ProfileClaim]:
+def xmp_claims(raw: bytes, diagnostics: list[StandardsDiagnostic]) -> list[ProfileClaim]:
     root = defused_fromstring(raw)
     groups: dict[str, list[tuple[str, str]]] = {}
     claims: list[ProfileClaim] = []
-    if root.tag == f"{{{internal_RDF}}}RDF":
+    if root.tag == f"{{{RDF}}}RDF":
         document_rdf = [root]
     elif root.tag == "{adobe:ns:meta/}xmpmeta":
-        document_rdf = root.findall(f"{{{internal_RDF}}}RDF")
+        document_rdf = root.findall(f"{{{RDF}}}RDF")
     else:
         return []
     for rdf in document_rdf:
         for description in rdf:
-            if description.tag != f"{{{internal_RDF}}}Description":
+            if description.tag != f"{{{RDF}}}Description":
                 continue
             if (
-                description.get(f"{{{internal_RDF}}}about", "") != ""
-                or description.get(f"{{{internal_RDF}}}nodeID") is not None
+                description.get(f"{{{RDF}}}about", "") != ""
+                or description.get(f"{{{RDF}}}nodeID") is not None
             ):
                 continue
             properties = list(description.attrib.items())
             properties.extend((child.tag, (child.text or "").strip()) for child in description)
             for key, value in properties:
-                for namespace, family in internal_IDENTIFICATION_NAMESPACES.items():
+                for namespace, family in IDENTIFICATION_NAMESPACES.items():
                     if key.startswith(f"{{{namespace}}}"):
                         groups.setdefault(family, []).append((key, value))
-            for namespace in internal_DECLARATIONS_NAMESPACES:
+            for namespace in DECLARATIONS_NAMESPACES:
                 for declarations in description.findall(f"{{{namespace}}}declarations"):
                     for entry in declarations.iter(f"{{{namespace}}}conformsTo"):
                         value = (entry.text or "").strip()
                         if not value.startswith("http://pdfa.org/declarations/wtpdf#"):
                             continue
-                        identifier = internal_WTPDF_PROFILES.get(value)
+                        identifier = WTPDF_PROFILES.get(value)
                         if identifier is None:
                             diagnostics.append(
                                 StandardsDiagnostic(
@@ -454,13 +452,11 @@ def internal_xmp_claims(raw: bytes, diagnostics: list[StandardsDiagnostic]) -> l
                             )
                         )
     for family, properties in groups.items():
-        claims.append(
-            internal_profile_claim(family, "catalog/Metadata", tuple(properties), diagnostics)
-        )
+        claims.append(profile_claim(family, "catalog/Metadata", tuple(properties), diagnostics))
     return claims
 
 
-def internal_profile_claim(
+def profile_claim(
     family: str,
     source: str,
     properties: tuple[tuple[str, str], ...],

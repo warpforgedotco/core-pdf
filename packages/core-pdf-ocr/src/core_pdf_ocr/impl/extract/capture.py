@@ -12,20 +12,20 @@ import numpy
 from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
 from core_pdf.impl.extract.capture import (
+    STRUCTURE_UNSET,
+    capture_runs,
+    observations_from_runs,
+    promoted_hidden_runs,
+    run_uses_actual_text,
+)
+from core_pdf.impl.extract.capture import (
+    capture_from_program as native_capture_from_program,
+)
+from core_pdf.impl.extract.capture import (
     capture_page as native_capture_page,
 )
 from core_pdf.impl.extract.capture import (
-    internal_capture_from_program as native_capture_from_program,
-)
-from core_pdf.impl.extract.capture import (
-    internal_capture_runs,
-    internal_observations_from_runs,
-    internal_promoted_hidden_runs,
-    internal_run_uses_actual_text,
-    internal_STRUCTURE_UNSET,
-)
-from core_pdf.impl.extract.capture import (
-    internal_glyph_evidence_fields as native_glyph_evidence_fields,
+    glyph_evidence_fields as native_glyph_evidence_fields,
 )
 from core_pdf.impl.extract.contracts import (
     GlyphEvidence,
@@ -34,7 +34,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl.extract.quality import internal_analyze_text
+from core_pdf.impl.extract.quality import analyze_text
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl.model.geometry import bbox_union, rect_tuple
 from core_pdf.impl.model.glyphs import (
@@ -62,7 +62,7 @@ STROKED_VECTOR_MIN_COMPACT_RATIO = 0.60
 STROKED_VECTOR_MIN_AXIS_COVERAGE = 0.35
 
 
-def internal_hidden_text_needs_verification(evidence: PageEvidence) -> bool:
+def hidden_text_needs_verification(evidence: PageEvidence) -> bool:
     quality = evidence.all_text_quality
     glyphs = evidence.glyphs
     return (
@@ -81,23 +81,23 @@ def internal_hidden_text_needs_verification(evidence: PageEvidence) -> bool:
     )
 
 
-def internal_promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
+def promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     references = capture.observations.references
     runs = (
         cast("tuple[TextRun, ...]", references)
         if references and all(isinstance(reference, TextRun) for reference in references)
         else capture.program.runs
     )
-    return internal_observations_from_runs(internal_promoted_hidden_runs(runs))
+    return observations_from_runs(promoted_hidden_runs(runs))
 
 
-def internal_apply_learned_unicode_to_run(
+def apply_learned_unicode_to_run(
     run: TextRun,
     learned_unicode: LearnedUnicodeMap | None = None,
     *,
     glyph_replacements: dict[int, str] | None = None,
 ) -> TextRun:
-    if not run.glyph_clusters or not learned_unicode or internal_run_uses_actual_text(run):
+    if not run.glyph_clusters or not learned_unicode or run_uses_actual_text(run):
         return run
     source = run.text
     cursor = 0
@@ -165,14 +165,14 @@ def internal_apply_learned_unicode_to_run(
     )
 
 
-def internal_vector_complexity(
+def vector_complexity(
     drawings: tuple[CapturedDrawing, ...], grid_lines: tuple[CapturedLine, ...]
 ) -> int:
     paint_operations = sum(drawing.kind in VECTOR_PAINT_KINDS for drawing in drawings)
     return len(grid_lines) + paint_operations * VECTOR_PAINT_OPERATION_WEIGHT
 
 
-def internal_stroked_vector_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
+def stroked_vector_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
     if (
         drawing.kind not in {"stroke", "fillstroke"}
         or drawing.path is None
@@ -188,7 +188,7 @@ def internal_stroked_vector_style(drawing: CapturedDrawing) -> tuple[object, ...
     return (drawing.kind, *style)
 
 
-def internal_stroked_vector_text_evidence(
+def stroked_vector_text_evidence(
     drawings: tuple[CapturedDrawing, ...],
     *,
     page_width: float,
@@ -201,7 +201,7 @@ def internal_stroked_vector_text_evidence(
     styles: dict[tuple[object, ...], list[float]] = {}
     indexed: list[tuple[int, tuple[object, ...], tuple[float, float, float, float], float]] = []
     for index, drawing in enumerate(drawings):
-        style = internal_stroked_vector_style(drawing)
+        style = stroked_vector_style(drawing)
         if style is None:
             continue
         box = rect_tuple(drawing.rect)
@@ -258,7 +258,7 @@ def internal_stroked_vector_text_evidence(
     )
 
 
-def internal_uncovered_vector_area(
+def uncovered_vector_area(
     drawings: tuple[CapturedDrawing, ...],
     observations: ObservationBatch,
     *,
@@ -312,12 +312,12 @@ def internal_uncovered_vector_area(
     return uncovered
 
 
-def internal_capture_with_newstroke_text(
+def capture_with_newstroke_text(
     capture: PageAnalysis,
     decoded: NewstrokeDecode,
 ) -> PageAnalysis:
     runs = decoded.runs
-    observations = internal_observations_from_runs(runs)
+    observations = observations_from_runs(runs)
     text = "".join(run.text for run in runs)
     boxes = observations.bbox
     widths = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
@@ -326,7 +326,7 @@ def internal_capture_with_newstroke_text(
         1.0,
         float(numpy.sum(widths * heights, dtype=numpy.float64)) / capture.evidence.page_area,
     )
-    analysis = internal_analyze_text(text)
+    analysis = analyze_text(text)
     text_quality = analysis.quality
     characters = analysis.characters
     evidence = replace(
@@ -335,7 +335,7 @@ def internal_capture_with_newstroke_text(
         visible_native_characters=characters,
         suspicious_characters=analysis.suspicious_characters,
         text_coverage=text_coverage,
-        uncovered_vector_area=internal_uncovered_vector_area(
+        uncovered_vector_area=uncovered_vector_area(
             capture.program.drawings,
             observations,
             page_area=capture.evidence.page_area,
@@ -355,7 +355,7 @@ def internal_capture_with_newstroke_text(
     )
 
 
-def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
+def requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
     evidence = capture.evidence
     if not (
         evidence.image_count == 0
@@ -384,7 +384,7 @@ def internal_requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
     )
 
 
-def internal_glyph_evidence_fields(
+def glyph_evidence_fields(
     glyphs: tuple[GlyphObservation, ...],
     runs: tuple[TextRun, ...],
     replacements: Mapping[int, str],
@@ -439,7 +439,7 @@ def internal_glyph_evidence_fields(
     return replace(evidence, **changes)
 
 
-def internal_enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
+def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
     program = native.program
     image_filters = tuple(
         filter_name
@@ -453,9 +453,9 @@ def internal_enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
     )
     evidence = PageEvidence(
         **{name: getattr(native.evidence, name) for name in native.evidence.__fields__},
-        vector_complexity=internal_vector_complexity(program.drawings, program.lines),
+        vector_complexity=vector_complexity(program.drawings, program.lines),
         image_filters=image_filters,
-        uncovered_vector_area=internal_uncovered_vector_area(
+        uncovered_vector_area=uncovered_vector_area(
             program.drawings,
             native.observations,
             page_area=native.evidence.page_area,
@@ -472,16 +472,16 @@ def internal_enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
         observations=native.observations,
         evidence=evidence,
     )
-    if not program.runs and internal_requires_high_resolution_vector_ocr(captured):
+    if not program.runs and requires_high_resolution_vector_ocr(captured):
         decoded = decode_newstroke_drawings(program.drawings)
         if decoded.trusted:
-            captured = internal_capture_with_newstroke_text(captured, decoded)
+            captured = capture_with_newstroke_text(captured, decoded)
     if not captured.evidence.vector_text_trusted:
         captured = replace(
             captured,
             evidence=replace(
                 captured.evidence,
-                stroked_vector_text=internal_stroked_vector_text_evidence(
+                stroked_vector_text=stroked_vector_text_evidence(
                     program.drawings,
                     page_width=native.width,
                     page_height=native.height,
@@ -492,12 +492,12 @@ def internal_enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
     return captured
 
 
-def internal_capture_from_program(
+def capture_from_program(
     page: Any,
     program: PageProgram,
     *,
     learned_unicode: LearnedUnicodeMap | None = None,
-    structure: Any = internal_STRUCTURE_UNSET,
+    structure: Any = STRUCTURE_UNSET,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
 ) -> PageAnalysis:
@@ -506,17 +506,15 @@ def internal_capture_from_program(
     if learned_unicode:
         replacements: dict[int, str] = {}
         runs = tuple(
-            internal_apply_learned_unicode_to_run(
-                run, learned_unicode, glyph_replacements=replacements
-            )
-            for run in internal_capture_runs(page, program, structure)
+            apply_learned_unicode_to_run(run, learned_unicode, glyph_replacements=replacements)
+            for run in capture_runs(page, program, structure)
         )
-        evidence = internal_glyph_evidence_fields(
+        evidence = glyph_evidence_fields(
             program.glyphs,
             runs,
             replacements,
         )
-    return internal_enrich_capture(
+    return enrich_capture(
         native_capture_from_program(
             page,
             program,
@@ -532,12 +530,12 @@ def internal_capture_from_program(
 def capture_page(
     page: Any,
     *,
-    structure: Any = internal_STRUCTURE_UNSET,
+    structure: Any = STRUCTURE_UNSET,
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
 ) -> PageAnalysis:
-    return internal_enrich_capture(
+    return enrich_capture(
         native_capture_page(
             page,
             structure=structure,

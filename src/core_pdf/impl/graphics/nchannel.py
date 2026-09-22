@@ -4,17 +4,17 @@ from collections.abc import Callable, Mapping
 
 import numpy
 
-from core_pdf.impl.graphics.color_spec import ColorSpace, internal_nchannel_attributes
+from core_pdf.impl.graphics.color_spec import ColorSpace, nchannel_attributes
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 
 
-def internal_mix_nchannel(
+def mix_nchannel(
     values: numpy.ndarray,
     space: ColorSpace,
     convert: Callable[[numpy.ndarray, ColorSpace], numpy.ndarray],
 ) -> numpy.ndarray | None:
-    attributes = internal_nchannel_attributes(space)
+    attributes = nchannel_attributes(space)
     if attributes is None:
         return None
     raw_attributes = space.params.get("Attributes")
@@ -36,7 +36,7 @@ def internal_mix_nchannel(
     try:
         zero = numpy.zeros((1, 1), dtype=numpy.float64)
         for _, spot in spots:
-            if not numpy.all(internal_rgb_appearance(convert(zero, spot)) == 1):
+            if not numpy.all(rgb_appearance(convert(zero, spot)) == 1):
                 return None
         mixed = numpy.ones((len(values), 3), dtype=numpy.float64)
         if process is not None:
@@ -44,9 +44,9 @@ def internal_mix_nchannel(
             for destination, source in enumerate(process.component_indices):
                 if source is not None:
                     mapped[:, destination] = values[:, source]
-            mixed = internal_rgb_appearance(convert(mapped, process.color_space))
+            mixed = rgb_appearance(convert(mapped, process.color_space))
         for source, spot in spots:
-            mixed *= internal_rgb_appearance(convert(values[:, source : source + 1], spot))
+            mixed *= rgb_appearance(convert(values[:, source : source + 1], spot))
         return numpy.rint(numpy.clip(mixed, 0, 1) * 255).astype(numpy.uint8)
     except (
         TypeError,
@@ -59,7 +59,7 @@ def internal_mix_nchannel(
         return None
 
 
-def internal_rgb_appearance(converted: numpy.ndarray) -> numpy.ndarray:
+def rgb_appearance(converted: numpy.ndarray) -> numpy.ndarray:
     if converted.ndim != 2 or converted.shape[1] not in {1, 3}:
         raise ValueError("invalid NChannel component appearance")
     rgb = converted.astype(numpy.float64) / 255

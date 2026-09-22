@@ -7,7 +7,7 @@ from core_pdf.impl.fonts.helpers import build_decode_table
 from core_pdf.impl.model.text import is_neutral_character, is_rtl_character
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 
-internal_PREDEFINED_ENCODING_CODECS = {
+PREDEFINED_ENCODING_CODECS = {
     "Identity-H": "utf-16-be",
     "Identity-V": "utf-16-be",
     "GB-EUC-H": "gbk",
@@ -33,7 +33,7 @@ internal_PREDEFINED_ENCODING_CODECS = {
 }
 
 
-def internal_orientation(matrix: Sequence[float]) -> int:
+def orientation(matrix: Sequence[float]) -> int:
     if matrix[3] > 1e-6:
         return 0
     if matrix[3] < -1e-6:
@@ -41,7 +41,7 @@ def internal_orientation(matrix: Sequence[float]) -> int:
     return 90 if matrix[1] > 0 else 270
 
 
-def internal_legacy_base_table(name: str) -> list[str]:
+def legacy_base_table(name: str) -> list[str]:
     table = list(build_decode_table(name, ()))
     if name == "StandardEncoding":
         table = [value or chr(code) for code, value in enumerate(table)]
@@ -62,14 +62,14 @@ def internal_legacy_base_table(name: str) -> list[str]:
     return table
 
 
-def internal_flush_text(output_parts: list[str], text: str, output_last: str) -> tuple[str, str]:
+def flush_text(output_parts: list[str], text: str, output_last: str) -> tuple[str, str]:
     if text:
         output_parts.append(text)
         return "", text[-1]
     return text, output_last
 
 
-def internal_append_directional_text(text: str, rtl: bool, value: str) -> tuple[str, bool]:
+def append_directional_text(text: str, rtl: bool, value: str) -> tuple[str, bool]:
     if len(value) != 1 or is_neutral_character(value):
         return (value + text if rtl else text + value), rtl
     if is_rtl_character(value):
@@ -77,7 +77,7 @@ def internal_append_directional_text(text: str, rtl: bool, value: str) -> tuple[
     return ("" if rtl else text) + value, False
 
 
-def internal_positioned_text(
+def positioned_text(
     output_parts: list[str],
     text: str,
     output_last: str,
@@ -103,7 +103,7 @@ def internal_positioned_text(
     previous_scale_y = math.hypot(previous_text_matrix[2], previous_text_matrix[3])
     current_scale_y = math.hypot(text_matrix[2], text_matrix[3])
     moved_height, moved_width = (
-        (delta_y, delta_x) if internal_orientation(current) in (0, 180) else (delta_x, delta_y)
+        (delta_y, delta_x) if orientation(current) in (0, 180) else (delta_x, delta_y)
     )
     if abs(moved_height) > 0.8 * min(
         line_height * previous_scale_y,
@@ -120,7 +120,7 @@ def internal_positioned_text(
     return text, output_last
 
 
-def internal_ensure_line_break(output_parts: list[str], output_last: str) -> str:
+def ensure_line_break(output_parts: list[str], output_last: str) -> str:
     if output_last and output_last != "\n":
         output_parts.append("\n")
         return "\n"

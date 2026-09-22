@@ -9,12 +9,12 @@ from core_pdf.impl.capture.records import CapturedDrawing
 from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr import raster
-from core_pdf_ocr.impl.extract.ocr.region_tasks import internal_tile_tasks
+from core_pdf_ocr.impl.extract.ocr.region_tasks import tile_tasks
 from core_pdf_ocr.impl.extract.ocr.types import (
-    internal_map_ocr_box,
-    internal_ocr_region_box,
-    internal_Raster,
-    internal_raster_rectangle_page_box,
+    Raster,
+    map_ocr_box,
+    ocr_region_box,
+    raster_rectangle_page_box,
 )
 
 
@@ -35,9 +35,9 @@ def test_image_orientation_preserves_pixels_and_resolution(
     orientation: raster.DirectImageOrientation,
     expected: list[list[int]],
 ) -> None:
-    source = internal_Raster(RasterImage(bytes(range(1, 7)), 3, 2, 1), 300)
+    source = Raster(RasterImage(bytes(range(1, 7)), 3, 2, 1), 300)
     drawing = CapturedDrawing(0, None, None)
-    result = raster.internal_orient_direct_image_raster(drawing, source, orientation=orientation)
+    result = raster.orient_direct_image_raster(drawing, source, orientation=orientation)
     assert result.image.array()[:, :, 0].tolist() == expected
     assert result.resolution == 300
     assert source.image.array()[:, :, 0].tolist() == [[1, 2, 3], [4, 5, 6]]
@@ -57,7 +57,7 @@ def test_direct_image_orientation_requires_axis_aligned_placement(
     orientation: raster.DirectImageOrientation | None,
 ) -> None:
     drawing = CapturedDrawing(0, None, None, items=(("quad", quad),))
-    assert raster.internal_direct_image_orientation(drawing) is orientation
+    assert raster.direct_image_orientation(drawing) is orientation
 
 
 @pytest.mark.parametrize(
@@ -74,7 +74,7 @@ def test_decoded_image_respects_pixel_budget(
     decoded = SimpleNamespace(data=bytes(width * height), width=width, height=height, channels=1)
     monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
     drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
-    result = raster.internal_decoded_image_raster(drawing, 100, max_pixels=budget, upscale=upscale)
+    result = raster.decoded_image_raster(drawing, 100, max_pixels=budget, upscale=upscale)
     assert result is not None
     assert 0 < result.width * result.height <= budget
     assert result.resolution >= 70
@@ -104,19 +104,15 @@ def test_render_budget_accounts_for_user_units_crop_and_rounding(
 
     expected_crop = crop
     capture = replace(ocr_capture, page=SimpleNamespace(width=600, height=800, user_unit=user_unit))
-    result = raster.internal_rendered_page_raster(
-        capture, 8, rendered=Rendered(), crop=crop, max_pixels=20
-    )
+    result = raster.rendered_page_raster(capture, 8, rendered=Rendered(), crop=crop, max_pixels=20)
     assert result is not None
     assert result.width * result.height <= 20
 
 
 def test_tile_rectangles_overlap_without_changing_page_coordinates() -> None:
-    source = internal_Raster(RasterImage(bytes(100 * 1000), 100, 1000, 1), 72)
+    source = Raster(RasterImage(bytes(100 * 1000), 100, 1000, 1), 72)
     page_box = (10.0, 20.0, 210.0, 2020.0)
-    tasks = internal_tile_tasks(
-        source, page_box, OcrPass("tiles", OcrPassScope.TILES, 1, (3,), tiles=4)
-    )
+    tasks = tile_tasks(source, page_box, OcrPass("tiles", OcrPassScope.TILES, 1, (3,), tiles=4))
     assert len(tasks) == 4
     for first, second in zip(tasks, tasks[1:], strict=False):
         assert second.rectangle[1] < first.rectangle[1] + first.rectangle[3]
@@ -126,10 +122,10 @@ def test_tile_rectangles_overlap_without_changing_page_coordinates() -> None:
         x, y, w, h = task.rectangle
         assert 0 <= x < x + w <= 100
         assert 0 <= y < y + h <= 1000
-        assert internal_map_ocr_box(task, (x, y, x + w, y + h)) == (
-            internal_raster_rectangle_page_box(source, page_box, task.rectangle)
+        assert map_ocr_box(task, (x, y, x + w, y + h)) == (
+            raster_rectangle_page_box(source, page_box, task.rectangle)
         )
-    assert internal_map_ocr_box(tasks[2], (10, 100, 30, 200)) == (30, 1620, 70, 1820)
+    assert map_ocr_box(tasks[2], (10, 100, 30, 200)) == (30, 1620, 70, 1820)
 
 
 @pytest.mark.parametrize(
@@ -151,17 +147,17 @@ def test_safe_crop_does_not_hide_text_outside_sparse_images(
         ocr_capture,
         evidence=replace(ocr_capture.evidence, image_area_ratio=ratio, image_boxes=boxes),
     )
-    assert raster.internal_safe_image_crop(capture) == expected
+    assert raster.safe_image_crop(capture) == expected
 
 
 def test_region_padding_clips_to_page_and_rejects_empty_regions() -> None:
-    assert internal_ocr_region_box(
-        (-2, 5, 90, 100), page_width=100, page_height=100, padding=10
-    ) == (0, 0, 100, 100)
-    assert (
-        internal_ocr_region_box((200, 0, 300, 20), page_width=100, page_height=100, padding=10)
-        is None
+    assert ocr_region_box((-2, 5, 90, 100), page_width=100, page_height=100, padding=10) == (
+        0,
+        0,
+        100,
+        100,
     )
+    assert ocr_region_box((200, 0, 300, 20), page_width=100, page_height=100, padding=10) is None
 
 
 @pytest.mark.parametrize("representation", ["array", "bytearray", "bytes"])
@@ -179,7 +175,7 @@ def test_decoded_raster_accepts_supported_sample_buffers(monkeypatch, representa
     decoded = SimpleNamespace(data=data, width=2, height=2, channels=1)
     monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
     drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
-    result = raster.internal_decoded_image_raster(drawing, 4, upscale=False)
+    result = raster.decoded_image_raster(drawing, 4, upscale=False)
     assert result is not None
     assert bytes(result.image.pixels) == source.tobytes()
     assert result.resolution == 72
@@ -188,14 +184,14 @@ def test_decoded_raster_accepts_supported_sample_buffers(monkeypatch, representa
 def test_unavailable_image_decoder_returns_no_raster(monkeypatch) -> None:
     monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: None)
     drawing = CapturedDrawing(0, None, None, raw_data=b"bad", dictionary={})
-    assert raster.internal_decoded_image_raster(drawing, 100) is None
+    assert raster.decoded_image_raster(drawing, 100) is None
 
 
 def test_fractional_upscale_blends_pixels_within_budget(monkeypatch) -> None:
     decoded = SimpleNamespace(data=bytes([0, 100, 0, 100]), width=2, height=2, channels=1)
     monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
     drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
-    result = raster.internal_decoded_image_raster(drawing, 4, max_pixels=30)
+    result = raster.decoded_image_raster(drawing, 4, max_pixels=30)
     assert result is not None
     assert (result.width, result.height) == (5, 5)
     assert result.image.array()[0, :, 0].tolist() == [0, 10, 50, 90, 100]
@@ -215,7 +211,7 @@ def test_fractional_upscale_blends_pixels_within_budget(monkeypatch) -> None:
 )
 def test_direct_orientation_rejects_malformed_nonfinite_or_degenerate_quads(quad) -> None:
     drawing = CapturedDrawing(0, None, None, items=(("quad", quad),))
-    assert raster.internal_direct_image_orientation(drawing) is None
+    assert raster.direct_image_orientation(drawing) is None
 
 
 def test_malformed_compositor_image_does_not_prevent_native_extraction(ocr_capture) -> None:
@@ -227,7 +223,7 @@ def test_malformed_compositor_image_does_not_prevent_native_extraction(ocr_captu
             raise IndexError("source sample outside decoded image")
 
     capture = replace(ocr_capture, page=SimpleNamespace(width=100, height=100))
-    assert raster.internal_rendered_page_raster(capture, 1, rendered=Rendered()) is None
+    assert raster.rendered_page_raster(capture, 1, rendered=Rendered()) is None
 
 
 def test_whole_factor_upscale_replicates_pixels_exactly(monkeypatch) -> None:
@@ -237,7 +233,7 @@ def test_whole_factor_upscale_replicates_pixels_exactly(monkeypatch) -> None:
     decoded = SimpleNamespace(data=source.tobytes(), width=10, height=10, channels=1)
     monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
     drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
-    result = raster.internal_decoded_image_raster(drawing, 51.84, max_pixels=1600)
+    result = raster.decoded_image_raster(drawing, 51.84, max_pixels=1600)
     assert result is not None
     assert (result.width, result.height, result.resolution) == (40, 40, 400)
     numpy.testing.assert_array_equal(
@@ -253,7 +249,7 @@ def test_decoded_array_reduction_preserves_source_buffer(monkeypatch) -> None:
     decoded = SimpleNamespace(data=source, width=10, height=10, channels=1)
     monkeypatch.setattr(raster, "decode_pdf_image", lambda *args: decoded)
     drawing = CapturedDrawing(0, None, None, raw_data=b"source", dictionary={})
-    result = raster.internal_decoded_image_raster(drawing, 100, max_pixels=25, upscale=False)
+    result = raster.decoded_image_raster(drawing, 100, max_pixels=25, upscale=False)
     assert result is not None
     assert result.width * result.height <= 25
     assert result.image.array()[:, :, 0].tolist() == [
@@ -281,11 +277,11 @@ def test_decoded_array_reduction_preserves_source_buffer(monkeypatch) -> None:
 @pytest.mark.parametrize("channels", [1, 3])
 def test_direct_image_pixels_follow_placed_source_corners(quad, expected, channels):
     drawing = CapturedDrawing(0, None, None, items=(("quad", quad),))
-    source = internal_Raster(
+    source = Raster(
         RasterImage(bytes(value for value in range(1, 7) for _ in range(channels)), 3, 2, channels),
         300,
     )
-    result = raster.internal_orient_direct_image_raster(drawing, source)
+    result = raster.orient_direct_image_raster(drawing, source)
     assert result.image.array().tolist() == [
         [[value] * channels for value in row] for row in expected
     ]

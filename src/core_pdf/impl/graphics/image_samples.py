@@ -10,17 +10,17 @@ from core_pdf.impl.graphics.calibrated_colors import calibrated_xyz_to_srgb
 from core_pdf.impl.graphics.color_spec import (
     ColorSpace,
     cs_param_floats,
-    internal_nchannel_process,
+    nchannel_process,
     parse_color_space,
 )
 from core_pdf.impl.graphics.device_profiles import cmyk_components_to_srgb
-from core_pdf.impl.graphics.functions import internal_compile_pdf_function
+from core_pdf.impl.graphics.functions import compile_pdf_function
 from core_pdf.impl.graphics.icc_profiles import (
     IccProfileError,
     IccSampleError,
     parse_icc_transform,
 )
-from core_pdf.impl.graphics.nchannel import internal_mix_nchannel
+from core_pdf.impl.graphics.nchannel import mix_nchannel
 from core_pdf.impl.runtime.scalars import parse_float
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
@@ -32,13 +32,13 @@ from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING,
 from core_pdf_spec.s_11_transparency.images import unblend_matte_components
 
 
-def internal_quantize(values: numpy.ndarray[Any, Any], maximum: int = 255) -> numpy.ndarray:
+def quantize(values: numpy.ndarray[Any, Any], maximum: int = 255) -> numpy.ndarray:
     return numpy.rint(numpy.clip(values, 0, 1) * maximum).astype(
         numpy.uint8 if maximum == 255 else numpy.uint16
     )
 
 
-def internal_convert_components(
+def convert_components(
     values: numpy.ndarray[Any, Any],
     space: ColorSpace,
     depth: int = 0,
@@ -60,40 +60,36 @@ def internal_convert_components(
     low, high = numpy.asarray(space.component_ranges, dtype=numpy.float64).T
     values = numpy.clip(values, low, high)
     kind = space.kind
-    process = internal_nchannel_process(space)
+    process = nchannel_process(space)
     if process is not None:
         mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
         for destination, source in enumerate(process.component_indices):
             if source is not None:
                 mapped[:, destination] = values[:, source]
-        return internal_convert_components(
-            mapped, process.color_space, depth + 1, rendering=rendering
-        )
+        return convert_components(mapped, process.color_space, depth + 1, rendering=rendering)
     if kind == "DeviceN":
-        mixed = internal_mix_nchannel(
+        mixed = mix_nchannel(
             values,
             space,
-            lambda components, target: internal_convert_components(
+            lambda components, target: convert_components(
                 components, target, depth + 1, rendering=rendering
             ),
         )
         if mixed is not None:
             return mixed
     if kind in {"DeviceGray", "DeviceRGB"}:
-        return internal_quantize(values)
+        return quantize(values)
     if kind == "DeviceCMYK":
         return cmyk_components_to_srgb(values, rendering=rendering)
     if kind == "ICCBased":
         try:
             transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
             if transform is not None and transform.input_channels == values.shape[1]:
-                return transform.apply_uint16(internal_quantize(values, 65535), rendering=rendering)
+                return transform.apply_uint16(quantize(values, 65535), rendering=rendering)
         except IccProfileError, IccSampleError:
             pass
         if space.alternate is not None:
-            return internal_convert_components(
-                values, space.alternate, depth + 1, rendering=rendering
-            )
+            return convert_components(values, space.alternate, depth + 1, rendering=rendering)
     if kind == "Indexed" and space.base is not None and space.lookup is not None:
         count = len(space.base.component_ranges)
         entries = numpy.frombuffer(space.lookup, dtype=numpy.uint8)
@@ -102,14 +98,14 @@ def internal_convert_components(
         table = entries[: (space.hival + 1) * count].reshape(-1, count)
         indices = numpy.floor(values[:, 0] + 0.5).astype(numpy.intp)
         base = decode_sample_values(table[indices], space.base.component_ranges, 255)
-        return internal_convert_components(
+        return convert_components(
             base, space.base, depth + 1, matte=matte, alpha=alpha, rendering=rendering
         )
     if kind in {"Separation", "DeviceN"}:
         try:
             if space.alternate is None:
                 raise ValueError("missing tint alternate")
-            function = internal_compile_pdf_function(space.tint_fn)
+            function = compile_pdf_function(space.tint_fn)
             distinct, inverse = numpy.unique(values, axis=0, return_inverse=True)
             tinted = numpy.asarray(
                 [function(*(float(component) for component in row)) for row in distinct],
@@ -119,11 +115,11 @@ def internal_convert_components(
                 raise ValueError("invalid tint transform output count")
             if not numpy.isfinite(tinted).all():
                 raise ValueError("nonfinite tint transform output")
-            return internal_convert_components(
-                tinted, space.alternate, depth + 1, rendering=rendering
-            )[inverse]
+            return convert_components(tinted, space.alternate, depth + 1, rendering=rendering)[
+                inverse
+            ]
         except TypeError, ValueError, ArithmeticError:
-            gray = internal_quantize(1 - numpy.max(values, axis=1, keepdims=True))
+            gray = quantize(1 - numpy.max(values, axis=1, keepdims=True))
             return numpy.repeat(gray, 3, axis=1)
     if kind in {"Lab", "CalGray", "CalRGB"}:
         white = cs_param_floats(space.params, "WhitePoint", 3, [0.9642, 1, 0.8249])
@@ -173,9 +169,7 @@ def convert_integer_samples(
             raise ValueError("invalid image Decode array")
         pairs = tuple((float(low), float(high)) for low, high in numbers.reshape(-1, 2))
     values = decode_sample_values(integers, pairs, maximum)
-    output = internal_convert_components(
-        values, space, matte=matte, alpha=alpha, rendering=rendering
-    )
+    output = convert_components(values, space, matte=matte, alpha=alpha, rendering=rendering)
     mask = dictionary.get("Mask")
     if isinstance(mask, (list, tuple)) and dictionary.get("SMask") is None:
         output = numpy.column_stack((output, color_key_alpha(integers, tuple(mask), maximum)))

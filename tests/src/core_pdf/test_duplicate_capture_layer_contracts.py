@@ -3,10 +3,10 @@ from copy import replace
 import pytest
 
 from core_pdf.impl.extract.capture import (
-    internal_clip_bbox,
-    internal_discard_duplicate_clipped_layers,
-    internal_discard_duplicate_nested_layers,
-    internal_glyphs_covered_by_extended_run,
+    clip_bbox,
+    discard_duplicate_clipped_layers,
+    discard_duplicate_nested_layers,
+    glyphs_covered_by_extended_run,
 )
 from core_pdf.impl.model.glyphs import GlyphCluster
 from core_pdf.impl.model.runs import TextRun
@@ -31,9 +31,9 @@ def test_duplicate_removal_requires_enough_matching_words_and_retains_unmatched_
     if kind == "clip":
         primary.provenance = (("clip_bbox", (0, 0, 2000, 100)),)
         overlay.provenance = unique.provenance = (("clip_bbox", (0, 0, 1500, 50)),)
-        filter_runs = internal_discard_duplicate_clipped_layers
+        filter_runs = discard_duplicate_clipped_layers
     else:
-        filter_runs = internal_discard_duplicate_nested_layers
+        filter_runs = discard_duplicate_nested_layers
     sources = (primary, overlay, unique)
     expected = (primary, unique) if count >= 24 else sources
     assert filter_runs(sources) == expected
@@ -54,7 +54,7 @@ def test_overlapping_text_is_not_removed_when_content_or_location_differs(differ
     else:
         overlay = run(text, depth=1, x=1000)
     sources = (primary, overlay)
-    assert internal_discard_duplicate_nested_layers(sources) == sources
+    assert discard_duplicate_nested_layers(sources) == sources
 
 
 @pytest.mark.parametrize(
@@ -78,18 +78,16 @@ def test_extended_overlay_replaces_shorter_copy_only_with_exact_glyph_multiset(c
             text=primary.text[0] + primary.text,
             glyph_clusters=(primary.glyph_clusters[0], *primary.glyph_clusters),
         )
-    assert internal_glyphs_covered_by_extended_run(primary, extended) is expected
+    assert glyphs_covered_by_extended_run(primary, extended) is expected
     sources = (primary, extended)
-    assert internal_discard_duplicate_nested_layers(sources) == (
-        (extended,) if expected else sources
-    )
+    assert discard_duplicate_nested_layers(sources) == ((extended,) if expected else sources)
     assert extended.text.endswith(" appendix")
 
 
 def test_inconsistent_extended_glyph_text_cannot_prove_coverage():
     primary = run("abc")
     extended = run("abcdef").replace(glyph_clusters=run("abc").glyph_clusters)
-    assert not internal_glyphs_covered_by_extended_run(primary, extended)
+    assert not glyphs_covered_by_extended_run(primary, extended)
 
 
 @pytest.mark.parametrize(
@@ -114,4 +112,4 @@ def test_clip_geometry_is_validated_before_layer_grouping(value):
         if value == ["0", "1", "10", "11"]
         else None
     )
-    assert internal_clip_bbox(source) == expected
+    assert clip_bbox(source) == expected

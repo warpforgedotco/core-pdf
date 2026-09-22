@@ -10,23 +10,23 @@ from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.render.model import RasterImage
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import ObservationSource
-from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask, internal_pixel_box_to_page_box
+from core_pdf_ocr.impl.extract.ocr.types import OcrTask, pixel_box_to_page_box
 
-internal_GRID_DARK_THRESHOLD = 160
-internal_GRID_LINE_MIN_FRACTION = 0.30
-internal_GRID_LINE_CLUSTER_PX = 5
-internal_GRID_MIN_LINES = 4
-internal_GRID_MIN_SPAN_FRACTION = 0.25
-internal_GRID_CELL_MIN_PX = 6
-internal_GRID_CELL_INSET_PX = 2
-internal_GRID_CELL_MIN_INK = 0.003
-internal_GRID_MAX_CELLS = 1200
-internal_GRID_MIN_CELLS = 12
-internal_GRID_CELL_MIN_CONFIDENCE = 50.0
-internal_PSM_SINGLE_LINE = 7
+GRID_DARK_THRESHOLD = 160
+GRID_LINE_MIN_FRACTION = 0.30
+GRID_LINE_CLUSTER_PX = 5
+GRID_MIN_LINES = 4
+GRID_MIN_SPAN_FRACTION = 0.25
+GRID_CELL_MIN_PX = 6
+GRID_CELL_INSET_PX = 2
+GRID_CELL_MIN_INK = 0.003
+GRID_MAX_CELLS = 1200
+GRID_MIN_CELLS = 12
+GRID_CELL_MIN_CONFIDENCE = 50.0
+PSM_SINGLE_LINE = 7
 
 
-def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
+def close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
     if gap <= 0:
         return mask
     width = mask.shape[1]
@@ -37,7 +37,7 @@ def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
     return mask | bounded_gap
 
 
-def internal_longest_true_runs(mask: numpy.ndarray) -> numpy.ndarray:
+def longest_true_runs(mask: numpy.ndarray) -> numpy.ndarray:
     height, width = mask.shape
     separated = numpy.zeros((height, width + 2), dtype=numpy.int8)
     separated[:, 1:-1] = mask
@@ -51,9 +51,9 @@ def internal_longest_true_runs(mask: numpy.ndarray) -> numpy.ndarray:
     return longest
 
 
-def internal_cluster_line_positions(
+def cluster_line_positions(
     positions: numpy.ndarray,
-    tolerance: int = internal_GRID_LINE_CLUSTER_PX,
+    tolerance: int = GRID_LINE_CLUSTER_PX,
 ) -> list[int]:
     clusters: list[list[int]] = []
     for position in positions.tolist():
@@ -64,37 +64,37 @@ def internal_cluster_line_positions(
     return [int(round(fmean(cluster))) for cluster in clusters]
 
 
-internal_GRID_STRIP_MIN_FRACTION = 0.5
-internal_GRID_STRIP_GAP_PX = 12
-internal_GRID_MAX_SKEW = 0.02
-internal_GRID_DETECT_POOL = 3
+GRID_STRIP_MIN_FRACTION = 0.5
+GRID_STRIP_GAP_PX = 12
+GRID_MAX_SKEW = 0.02
+GRID_DETECT_POOL = 3
 
 
-def internal_estimate_ruling_skew(dark: numpy.ndarray) -> float:
+def estimate_ruling_skew(dark: numpy.ndarray) -> float:
     height, width = dark.shape
     strip = width // 3
     if strip < 50:
         return 0.0
-    gap = internal_GRID_STRIP_GAP_PX
-    left_runs = internal_longest_true_runs(internal_close_row_gaps(dark[:, :strip], gap))
-    right_runs = internal_longest_true_runs(internal_close_row_gaps(dark[:, -strip:], gap))
-    minimum = strip * internal_GRID_STRIP_MIN_FRACTION
-    left_lines = internal_cluster_line_positions(numpy.flatnonzero(left_runs >= minimum))
-    right_lines = internal_cluster_line_positions(numpy.flatnonzero(right_runs >= minimum))
+    gap = GRID_STRIP_GAP_PX
+    left_runs = longest_true_runs(close_row_gaps(dark[:, :strip], gap))
+    right_runs = longest_true_runs(close_row_gaps(dark[:, -strip:], gap))
+    minimum = strip * GRID_STRIP_MIN_FRACTION
+    left_lines = cluster_line_positions(numpy.flatnonzero(left_runs >= minimum))
+    right_lines = cluster_line_positions(numpy.flatnonzero(right_runs >= minimum))
     if len(left_lines) < 3 or len(right_lines) < 3:
         return 0.0
     baseline = width - strip
     offsets = []
     for line in left_lines:
         nearest = min(right_lines, key=lambda candidate: abs(candidate - line))
-        if abs(nearest - line) <= baseline * internal_GRID_MAX_SKEW:
+        if abs(nearest - line) <= baseline * GRID_MAX_SKEW:
             offsets.append(nearest - line)
     if len(offsets) < 3:
         return 0.0
     return finite_median(numpy.asarray(offsets, dtype=numpy.float64)) / baseline
 
 
-def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
+def vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
     height, width = dark.shape
     shifts = numpy.round(slope * numpy.arange(width)).astype(numpy.int64)
     rows = numpy.arange(height)[:, None] + shifts[None, :]
@@ -102,7 +102,7 @@ def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
     return numpy.take_along_axis(dark, rows, axis=0)
 
 
-def internal_detect_ruling_grid(
+def detect_ruling_grid(
     image: RasterImage,
 ) -> tuple[list[int], list[int], numpy.ndarray, float] | None:
     array = numpy.asarray(image.array())
@@ -115,40 +115,40 @@ def internal_detect_ruling_grid(
     height, width = color.shape[:2]
     if height < 100 or width < 100:
         return None
-    pool = internal_GRID_DETECT_POOL
+    pool = GRID_DETECT_POOL
     pooled_height = height // pool
     pooled_width = width // pool
     cropped = color[: pooled_height * pool, : pooled_width * pool]
     if cropped.ndim == 3:
         pooled = (
             cropped.reshape(pooled_height, pool, pooled_width, pool, 3).min(axis=(1, 3, 4))
-            < internal_GRID_DARK_THRESHOLD
+            < GRID_DARK_THRESHOLD
         )
     else:
         pooled = (
             cropped.reshape(pooled_height, pool, pooled_width, pool).min(axis=(1, 3))
-            < internal_GRID_DARK_THRESHOLD
+            < GRID_DARK_THRESHOLD
         )
     pooled_height, pooled_width = pooled.shape
-    slope = internal_estimate_ruling_skew(pooled)
-    straight = internal_vertical_shear(pooled, slope) if slope else pooled
-    straight_columns = internal_vertical_shear(pooled.T, -slope) if slope else pooled.T
-    gap = max(1, internal_GRID_STRIP_GAP_PX // pool)
-    row_runs = internal_longest_true_runs(internal_close_row_gaps(straight, gap))
-    column_runs = internal_longest_true_runs(internal_close_row_gaps(straight_columns, gap))
-    y_lines = internal_cluster_line_positions(
-        numpy.flatnonzero(row_runs >= pooled_width * internal_GRID_LINE_MIN_FRACTION),
-        tolerance=max(1, internal_GRID_LINE_CLUSTER_PX // pool),
+    slope = estimate_ruling_skew(pooled)
+    straight = vertical_shear(pooled, slope) if slope else pooled
+    straight_columns = vertical_shear(pooled.T, -slope) if slope else pooled.T
+    gap = max(1, GRID_STRIP_GAP_PX // pool)
+    row_runs = longest_true_runs(close_row_gaps(straight, gap))
+    column_runs = longest_true_runs(close_row_gaps(straight_columns, gap))
+    y_lines = cluster_line_positions(
+        numpy.flatnonzero(row_runs >= pooled_width * GRID_LINE_MIN_FRACTION),
+        tolerance=max(1, GRID_LINE_CLUSTER_PX // pool),
     )
-    x_lines = internal_cluster_line_positions(
-        numpy.flatnonzero(column_runs >= pooled_height * internal_GRID_LINE_MIN_FRACTION),
-        tolerance=max(1, internal_GRID_LINE_CLUSTER_PX // pool),
+    x_lines = cluster_line_positions(
+        numpy.flatnonzero(column_runs >= pooled_height * GRID_LINE_MIN_FRACTION),
+        tolerance=max(1, GRID_LINE_CLUSTER_PX // pool),
     )
-    if len(y_lines) < internal_GRID_MIN_LINES or len(x_lines) < internal_GRID_MIN_LINES:
+    if len(y_lines) < GRID_MIN_LINES or len(x_lines) < GRID_MIN_LINES:
         return None
     if (
-        y_lines[-1] - y_lines[0] < pooled_height * internal_GRID_MIN_SPAN_FRACTION
-        or x_lines[-1] - x_lines[0] < pooled_width * internal_GRID_MIN_SPAN_FRACTION
+        y_lines[-1] - y_lines[0] < pooled_height * GRID_MIN_SPAN_FRACTION
+        or x_lines[-1] - x_lines[0] < pooled_width * GRID_MIN_SPAN_FRACTION
     ):
         return None
     scaled_x = [line * pool + pool // 2 for line in x_lines]
@@ -156,23 +156,23 @@ def internal_detect_ruling_grid(
     return scaled_x, scaled_y, color, slope
 
 
-def internal_grid_cell_tasks(
-    task: internal_OcrTask,
+def grid_cell_tasks(
+    task: OcrTask,
     x_lines: list[int],
     y_lines: list[int],
     source_samples: numpy.ndarray,
     slope: float,
-) -> tuple[internal_OcrTask, ...]:
-    if (len(x_lines) - 1) * (len(y_lines) - 1) > internal_GRID_MAX_CELLS:
+) -> tuple[OcrTask, ...]:
+    if (len(x_lines) - 1) * (len(y_lines) - 1) > GRID_MAX_CELLS:
         return ()
-    inset = max(internal_GRID_CELL_INSET_PX, int(round(task.resolution / 40)))
+    inset = max(GRID_CELL_INSET_PX, int(round(task.resolution / 40)))
     height, width = source_samples.shape[:2]
-    tasks: list[internal_OcrTask] = []
+    tasks: list[OcrTask] = []
     for row_start, row_end in zip(y_lines, y_lines[1:]):
-        if row_end - row_start < internal_GRID_CELL_MIN_PX + 2 * inset:
+        if row_end - row_start < GRID_CELL_MIN_PX + 2 * inset:
             continue
         for column_start, column_end in zip(x_lines, x_lines[1:]):
-            if column_end - column_start < internal_GRID_CELL_MIN_PX + 2 * inset:
+            if column_end - column_start < GRID_CELL_MIN_PX + 2 * inset:
                 continue
             center_x = (column_start + column_end) * 0.5
             center_y = (row_start + row_end) * 0.5
@@ -182,40 +182,38 @@ def internal_grid_cell_tasks(
             bottom = min(height, row_end - inset + row_shift)
             left = max(0, column_start + inset + column_shift)
             right = min(width, column_end - inset + column_shift)
-            if bottom - top < internal_GRID_CELL_MIN_PX or right - left < (
-                internal_GRID_CELL_MIN_PX
-            ):
+            if bottom - top < GRID_CELL_MIN_PX or right - left < (GRID_CELL_MIN_PX):
                 continue
             cell = source_samples[top:bottom, left:right]
             if cell.ndim == 3:
-                ink_ratio = float(
-                    numpy.count_nonzero(cell.min(axis=2) < internal_GRID_DARK_THRESHOLD)
-                ) / (cell.shape[0] * cell.shape[1])
-            else:
-                ink_ratio = float(numpy.count_nonzero(cell < internal_GRID_DARK_THRESHOLD)) / (
+                ink_ratio = float(numpy.count_nonzero(cell.min(axis=2) < GRID_DARK_THRESHOLD)) / (
                     cell.shape[0] * cell.shape[1]
                 )
-            if ink_ratio < internal_GRID_CELL_MIN_INK:
+            else:
+                ink_ratio = float(numpy.count_nonzero(cell < GRID_DARK_THRESHOLD)) / (
+                    cell.shape[0] * cell.shape[1]
+                )
+            if ink_ratio < GRID_CELL_MIN_INK:
                 continue
             tasks.append(
-                internal_OcrTask(
-                    mode=internal_PSM_SINGLE_LINE,
+                OcrTask(
+                    mode=PSM_SINGLE_LINE,
                     image=task.image,
                     rectangle=(left, top, right - left, bottom - top),
                     page_box=task.page_box,
                     resolution=task.resolution,
-                    minimum_confidence=internal_GRID_CELL_MIN_CONFIDENCE,
+                    minimum_confidence=GRID_CELL_MIN_CONFIDENCE,
                 )
             )
     return tuple(tasks)
 
 
-def internal_grid_region_page_box(
-    task: internal_OcrTask,
+def grid_region_page_box(
+    task: OcrTask,
     x_lines: list[int],
     y_lines: list[int],
 ) -> tuple[float, float, float, float]:
-    return internal_pixel_box_to_page_box(
+    return pixel_box_to_page_box(
         (x_lines[0], y_lines[0], x_lines[-1], y_lines[-1]),
         task.image.width,
         task.image.height,
@@ -223,26 +221,26 @@ def internal_grid_region_page_box(
     )
 
 
-internal_GRID_MIN_ROWS = 8
-internal_GRID_MIN_COLUMNS = 5
-internal_GRID_MAX_ROW_HEIGHT_DEVIATION = 0.4
-internal_GRID_MAX_STRADDLE_RATIO = 0.25
+GRID_MIN_ROWS = 8
+GRID_MIN_COLUMNS = 5
+GRID_MAX_ROW_HEIGHT_DEVIATION = 0.4
+GRID_MAX_STRADDLE_RATIO = 0.25
 
 
-def internal_grid_is_regular_table(
+def grid_is_regular_table(
     grid: tuple[list[int], list[int], numpy.ndarray, float],
     prior: ObservationBatch,
-    task: internal_OcrTask,
+    task: OcrTask,
 ) -> bool:
     x_lines, y_lines, _source_samples, slope = grid
-    if len(y_lines) - 1 < internal_GRID_MIN_ROWS or len(x_lines) - 1 < internal_GRID_MIN_COLUMNS:
+    if len(y_lines) - 1 < GRID_MIN_ROWS or len(x_lines) - 1 < GRID_MIN_COLUMNS:
         return False
     heights = numpy.diff(numpy.asarray(y_lines, dtype=numpy.float64))
     median_height = finite_median(heights)
     if median_height <= 0.0:
         return False
     deviation = finite_median(numpy.abs(heights - median_height)) / median_height
-    if deviation > internal_GRID_MAX_ROW_HEIGHT_DEVIATION:
+    if deviation > GRID_MAX_ROW_HEIGHT_DEVIATION:
         return False
     if not len(prior):
         return True
@@ -250,7 +248,7 @@ def internal_grid_is_regular_table(
     page_width = page_x1 - page_x0
     scale = task.image.width / max(1e-6, page_width)
     interior = x_lines[1:-1]
-    grid_box = internal_grid_region_page_box(task, x_lines, y_lines)
+    grid_box = grid_region_page_box(task, x_lines, y_lines)
     inside = 0
     straddling = 0
     slack = max(2.0, task.image.width * 0.002)
@@ -267,10 +265,10 @@ def internal_grid_is_regular_table(
             straddling += 1
     if inside < 8:
         return True
-    return straddling <= inside * internal_GRID_MAX_STRADDLE_RATIO
+    return straddling <= inside * GRID_MAX_STRADDLE_RATIO
 
 
-def internal_grid_row_observations(
+def grid_row_observations(
     observations: ObservationBatch,
 ) -> ObservationBatch:
     if not len(observations):

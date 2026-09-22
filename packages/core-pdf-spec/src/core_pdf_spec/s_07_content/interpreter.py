@@ -89,14 +89,14 @@ class ContentInterpreter:
         self.current_path = PdfPath()
         self.current_point: tuple[float, float] | None = None
         self.subpath_start: tuple[float, float] | None = None
-        self.internal_pending_clip_rule: str | None = None
+        self.pending_clip_rule_value: str | None = None
         self.xobject_depth = 0
         self.compatibility_depth = 0
         self.marked_content_stack: list[MarkedContentEntry] = []
         self.type3_uncolored = False
         self.resources: PdfDict = {}
         self.operator_overrides: dict[str, OperationHandler] = {}
-        self.internal_default_handlers: dict[str, OperationHandler] = {
+        self.default_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
         }
         self.stream_executor = ContentStreamExecutor(self)
@@ -133,7 +133,7 @@ class ContentInterpreter:
             marked_content_stack_len=len(self.marked_content_stack),
             xobject_depth=self.xobject_depth,
             compatibility_depth=self.compatibility_depth,
-            pending_clip_rule=self.internal_pending_clip_rule,
+            pending_clip_rule=self.pending_clip_rule_value,
             initial_alpha_is_shape=self.initial_alpha_is_shape,
             initial_text_knockout=self.initial_text_knockout,
             in_text_object=self.in_text_object,
@@ -146,7 +146,7 @@ class ContentInterpreter:
         self.graphics_stack_floor = state.graphics_stack_floor
         self.xobject_depth = state.xobject_depth
         self.compatibility_depth = state.compatibility_depth
-        self.internal_pending_clip_rule = state.pending_clip_rule
+        self.pending_clip_rule_value = state.pending_clip_rule
         self.initial_alpha_is_shape = state.initial_alpha_is_shape
         self.initial_text_knockout = state.initial_text_knockout
         self.in_text_object = state.in_text_object
@@ -163,7 +163,7 @@ class ContentInterpreter:
                 return None
             raise PdfParseError(f"unknown content operator: {name}")
         override = self.operator_overrides.get(name)
-        handler = override or self.internal_default_handlers.get(name)
+        handler = override or self.default_handlers.get(name)
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {name}")
         validate_content_operands(name, operands)
@@ -178,10 +178,10 @@ class ContentInterpreter:
         if name == "EMC" and not self.marked_content_stack:
             raise PdfParseError("unmatched EMC operator")
         if override is not None:
-            self.internal_validate_color_operation(name, operands)
+            self.validate_color_operation(name, operands)
         return handler(operands, depth)
 
-    def internal_validate_color_operation(self, name: str, operands: ContentOperands) -> None:
+    def validate_color_operation(self, name: str, operands: ContentOperands) -> None:
         if name not in {"SC", "SCN", "sc", "scn"} or self.type3_uncolored:
             return
         space = self.graphics.stroke_space if name in {"SC", "SCN"} else self.graphics.fill_space
@@ -338,7 +338,7 @@ class ContentInterpreter:
         if decoder.is_type3 and data:
             text_matrix = self.text_matrix
             line_matrix = self.line_matrix
-            self.internal_render_type3_glyphs(data, decoder)
+            self.render_type3_glyphs(data, decoder)
             self.text_matrix = text_matrix
             self.line_matrix = line_matrix
         if not text and not data:
@@ -366,7 +366,7 @@ class ContentInterpreter:
         )
         self.sink.text_boundary(self, "shown")
 
-    def internal_render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
+    def render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
         if self.graphics.render_mode in {3, 7}:
             return
         font = decoder.font
@@ -485,7 +485,7 @@ class ContentInterpreter:
                 return entry.mcid
         return None
 
-    def internal_begin_text(self) -> None:
+    def begin_text(self) -> None:
         self.text_matrix = self.line_matrix = IDENTITY_MATRIX
 
     def op_ET(self, operands: ContentOperands, depth: int) -> None:
@@ -503,7 +503,7 @@ class ContentInterpreter:
     def op_BT(self, operands: ContentOperands, depth: int) -> None:
         self.in_text_object = True
         self.sink.text_boundary(self, "begin")
-        self.internal_begin_text()
+        self.begin_text()
 
     def op_T_star(self, operands: ContentOperands, depth: int) -> None:
         self.move_text(0.0, -self.graphics.leading)
@@ -645,13 +645,13 @@ class ContentInterpreter:
         self.sink.text_boundary(self, "marked")
 
     def op_G(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_device_color(operands, "DeviceGray", 1, stroke=True)
+        self.set_device_color(operands, "DeviceGray", 1, stroke=True)
 
     def op_RG(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_device_color(operands, "DeviceRGB", 3, stroke=True)
+        self.set_device_color(operands, "DeviceRGB", 3, stroke=True)
 
     def op_K(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_device_color(operands, "DeviceCMYK", 4, stroke=True)
+        self.set_device_color(operands, "DeviceCMYK", 4, stroke=True)
 
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
@@ -738,58 +738,58 @@ class ContentInterpreter:
         x1, y1, x3, y3 = values
         self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
-    def internal_close_current_subpath(self) -> None:
+    def close_current_subpath(self) -> None:
         if self.current_point is not None and self.subpath_start is not None:
             self.current_path.close()
 
-    def internal_complete_path(
+    def complete_path(
         self, kind: str | None, fill_rule: str = "nonzero", *, close: bool = False
     ) -> None:
         if close:
-            self.internal_close_current_subpath()
+            self.close_current_subpath()
         if kind is not None:
             self.sink.paint_path(self, self.current_path, kind, fill_rule)
-        if self.internal_pending_clip_rule is not None:
-            self.sink.clip_path(self, self.current_path, self.internal_pending_clip_rule)
+        if self.pending_clip_rule_value is not None:
+            self.sink.clip_path(self, self.current_path, self.pending_clip_rule_value)
         self.current_path = PdfPath()
         self.current_point = None
         self.subpath_start = None
-        self.internal_pending_clip_rule = None
+        self.pending_clip_rule_value = None
 
     def op_paint_stroke(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("stroke")
+        self.complete_path("stroke")
 
     def op_paint_close_stroke(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("stroke", close=True)
+        self.complete_path("stroke", close=True)
 
     def op_paint_fill(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("fill", "nonzero")
+        self.complete_path("fill", "nonzero")
 
     def op_paint_fill_evenodd(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("fill", "evenodd")
+        self.complete_path("fill", "evenodd")
 
     def op_paint_fillstroke(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("fillstroke", "nonzero")
+        self.complete_path("fillstroke", "nonzero")
 
     def op_paint_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("fillstroke", "evenodd")
+        self.complete_path("fillstroke", "evenodd")
 
     def op_paint_close_fillstroke(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("fillstroke", "nonzero", close=True)
+        self.complete_path("fillstroke", "nonzero", close=True)
 
     def op_paint_close_fillstroke_evenodd(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path("fillstroke", "evenodd", close=True)
+        self.complete_path("fillstroke", "evenodd", close=True)
 
     def op_paint_clear(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_complete_path(None)
+        self.complete_path(None)
 
     def op_W(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_pending_clip_rule = "nonzero"
+        self.pending_clip_rule_value = "nonzero"
 
     def op_W_star(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_pending_clip_rule = "evenodd"
+        self.pending_clip_rule_value = "evenodd"
 
-    def internal_set_device_color(
+    def set_device_color(
         self, operands: ContentOperands, color_space: str, count: int, *, stroke: bool
     ) -> None:
         if self.type3_uncolored or len(operands) < count:
@@ -841,7 +841,7 @@ class ContentInterpreter:
         except ValueError as error:
             raise PdfParseError(str(error)) from error
 
-    def internal_set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
+    def set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
         if self.type3_uncolored:
             return
         if operands:
@@ -857,17 +857,15 @@ class ContentInterpreter:
                 self.graphics.fill_pattern = None
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_color_space(operands, stroke=True)
+        self.set_color_space(operands, stroke=True)
 
     def op_cs(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_color_space(operands, stroke=False)
+        self.set_color_space(operands, stroke=False)
 
     def op_SC(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_color(operands, stroke=True, allow_pattern=False)
+        self.set_color(operands, stroke=True, allow_pattern=False)
 
-    def internal_set_color(
-        self, operands: ContentOperands, *, stroke: bool, allow_pattern: bool
-    ) -> None:
+    def set_color(self, operands: ContentOperands, *, stroke: bool, allow_pattern: bool) -> None:
         if self.type3_uncolored:
             return
         space = self.graphics.stroke_space if stroke else self.graphics.fill_space
@@ -893,13 +891,13 @@ class ContentInterpreter:
             self.graphics.fill_pattern = None
 
     def op_SCN(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_color(operands, stroke=True, allow_pattern=True)
+        self.set_color(operands, stroke=True, allow_pattern=True)
 
     def op_sc(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_color(operands, stroke=False, allow_pattern=False)
+        self.set_color(operands, stroke=False, allow_pattern=False)
 
     def op_scN(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_color(operands, stroke=False, allow_pattern=True)
+        self.set_color(operands, stroke=False, allow_pattern=True)
 
     def op_i(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
@@ -1036,13 +1034,13 @@ class ContentInterpreter:
         self.graphics.ctm = Matrix(*values).multiply(self.graphics.ctm)
 
     def op_g(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_device_color(operands, "DeviceGray", 1, stroke=False)
+        self.set_device_color(operands, "DeviceGray", 1, stroke=False)
 
     def op_rg(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_device_color(operands, "DeviceRGB", 3, stroke=False)
+        self.set_device_color(operands, "DeviceRGB", 3, stroke=False)
 
     def op_k(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_set_device_color(operands, "DeviceCMYK", 4, stroke=False)
+        self.set_device_color(operands, "DeviceCMYK", 4, stroke=False)
 
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:

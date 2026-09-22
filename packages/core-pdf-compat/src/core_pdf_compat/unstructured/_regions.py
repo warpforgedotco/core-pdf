@@ -9,18 +9,18 @@ from core_pdf.impl.model.geometry import flip_rect_vertical
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
-    internal_BULLET,
-    internal_element_classes,
+    BULLET,
+    classify_elements,
 )
 from ._elements import (
     Element,
     ListItem,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_TextRegion:
+class TextRegion:
     __slots__ = ("text", "bbox", "element_class")
 
     text: str
@@ -36,9 +36,9 @@ class internal_TextRegion:
         bbox: tuple[float, float, float, float],
         element_class: type[Element] | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "element_class", element_class)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "element_class", element_class)
 
     def __repr__(self) -> str:
         return (
@@ -74,7 +74,7 @@ class internal_TextRegion:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
@@ -85,7 +85,7 @@ class internal_TextRegion:
         return self.__class__(text, bbox, element_class)
 
 
-def internal_clean_text(text: str) -> str:
+def clean_text(text: str) -> str:
     cleaned = text.translate(
         {
             ord("\n"): ord(" "),
@@ -95,15 +95,15 @@ def internal_clean_text(text: str) -> str:
     return re.sub(r" {2,}", " ", cleaned).strip()
 
 
-def internal_layout_regions(items: list[LTTextBox]) -> list[internal_TextRegion]:
+def layout_regions(items: list[LTTextBox]) -> list[TextRegion]:
     return [
-        internal_TextRegion(text, item.bbox)
+        TextRegion(text, item.bbox)
         for item in items
-        if (text := internal_clean_text(internal_deduplicated_box_text(item)))
+        if (text := clean_text(deduplicated_box_text(item)))
     ]
 
 
-def internal_duplicate_character(first: LTChar, second: LTChar, threshold: float = 2.0) -> bool:
+def duplicate_character(first: LTChar, second: LTChar, threshold: float = 2.0) -> bool:
     if first.get_text() != second.get_text():
         return False
     if abs(first.x0 - second.x0) >= threshold or abs(first.y0 - second.y0) >= threshold:
@@ -117,34 +117,32 @@ def internal_duplicate_character(first: LTChar, second: LTChar, threshold: float
     return overlap / average_width > 0.5
 
 
-def internal_deduplicated_box_text(box: LTTextBox) -> str:
+def deduplicated_box_text(box: LTTextBox) -> str:
     parts: list[str] = []
     for line in box:
         previous: LTChar | None = None
         for item in line:
             if isinstance(item, LTChar):
-                if previous is not None and internal_duplicate_character(previous, item):
+                if previous is not None and duplicate_character(previous, item):
                     continue
                 previous = item
             parts.append(item.get_text())
     return "".join(parts)
 
 
-def internal_figure_text_snippets(figure: LTFigure) -> list[str]:
+def figure_text_snippets(figure: LTFigure) -> list[str]:
     snippets = list(figure.text_snippets)
     for child in figure:
         if not isinstance(child, LTFigure):
             continue
-        child_snippets = internal_figure_text_snippets(child)
+        child_snippets = figure_text_snippets(child)
         if snippets and child_snippets:
             snippets[-1] += child_snippets.pop(0)
         snippets.extend(child_snippets)
     return snippets
 
 
-def internal_projection_segments(
-    boxes: numpy.ndarray[Any, Any], axis: int
-) -> list[tuple[int, int]]:
+def projection_segments(boxes: numpy.ndarray[Any, Any], axis: int) -> list[tuple[int, int]]:
     if not len(boxes):
         return []
     length = max(0, int(numpy.max(boxes[:, axis::2])))
@@ -162,7 +160,7 @@ def internal_projection_segments(
     return segments
 
 
-def internal_recursive_xy_cut(
+def recursive_xy_cut(
     boxes: numpy.ndarray[Any, Any],
     indices: numpy.ndarray[Any, Any],
     result: list[int],
@@ -170,23 +168,23 @@ def internal_recursive_xy_cut(
     x_order = boxes[:, 0].argsort()
     x_boxes = boxes[x_order]
     x_indices = indices[x_order]
-    x_segments = internal_projection_segments(x_boxes, 0)
+    x_segments = projection_segments(x_boxes, 0)
     for start, end in numpy.searchsorted(x_boxes[:, 0], x_segments):
         chunk = x_boxes[start:end]
         chunk_indices = x_indices[start:end]
         y_order = chunk[:, 1].argsort()
         y_boxes = chunk[y_order]
         y_indices = chunk_indices[y_order]
-        y_segments = internal_projection_segments(y_boxes, 1)
+        y_segments = projection_segments(y_boxes, 1)
         if len(y_segments) == 1:
             result.extend(int(index) for index in y_indices)
             continue
         for start, end in numpy.searchsorted(y_boxes[:, 1], y_segments):
-            internal_recursive_xy_cut(y_boxes[start:end], y_indices[start:end], result)
+            recursive_xy_cut(y_boxes[start:end], y_indices[start:end], result)
 
 
-def internal_region_order(
-    regions: list[internal_TextRegion],
+def region_order(
+    regions: list[TextRegion],
     page_height: float,
 ) -> list[int]:
     basic_order = sorted(
@@ -217,7 +215,7 @@ def internal_region_order(
     if not boxes:
         return []
     result: list[int] = []
-    internal_recursive_xy_cut(
+    recursive_xy_cut(
         numpy.asarray(boxes, dtype=numpy.int64),
         numpy.asarray(basic_order, dtype=numpy.int64),
         result,
@@ -225,25 +223,25 @@ def internal_region_order(
     return result
 
 
-def internal_combine_list_regions(
-    regions: list[internal_TextRegion],
+def combine_list_regions(
+    regions: list[TextRegion],
     page_height: float,
-) -> list[internal_TextRegion]:
-    combined: list[internal_TextRegion] = []
+) -> list[TextRegion]:
+    combined: list[TextRegion] = []
     anchor_text: str | None = None
     anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
     anchor_position: int | None = None
-    element_classes = internal_element_classes(
+    element_classes = classify_elements(
         ((region.text, region.bbox) for region in regions), page_height
     )
     for region, element_class in zip(regions, element_classes, strict=True):
         text, bbox = region.text, region.bbox
         if element_class is ListItem:
-            anchor_text = internal_BULLET.sub("", text, count=1).strip()
+            anchor_text = BULLET.sub("", text, count=1).strip()
             anchor_bbox = bbox
             active_bbox = bbox
-            combined.append(internal_TextRegion(anchor_text, bbox, ListItem))
+            combined.append(TextRegion(anchor_text, bbox, ListItem))
             anchor_position = len(combined) - 1
             continue
         if anchor_text is not None and anchor_bbox is not None and active_bbox is not None:
@@ -265,7 +263,7 @@ def internal_combine_list_regions(
                     max(active_right, current_right),
                     max(active_top, current_top),
                 )
-                merged_region = internal_TextRegion(f"{anchor_text} {text}", merged_bbox, ListItem)
+                merged_region = TextRegion(f"{anchor_text} {text}", merged_bbox, ListItem)
                 if anchor_position is not None:
                     combined[anchor_position] = merged_region
                 if combined:
@@ -275,5 +273,5 @@ def internal_combine_list_regions(
                 combined.append(merged_region)
                 active_bbox = merged_bbox
                 continue
-        combined.append(internal_TextRegion(text, bbox, element_class))
+        combined.append(TextRegion(text, bbox, element_class))
     return combined

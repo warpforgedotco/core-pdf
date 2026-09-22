@@ -20,7 +20,7 @@ from ._partition import (
     partition_pdf,
 )
 
-for internal_export in (
+for export in (
     Element,
     ElementMetadata,
     EmailAddress,
@@ -36,7 +36,7 @@ for internal_export in (
     partition_pdf,
     Address,
 ):
-    internal_export.__module__ = __name__
+    export.__module__ = __name__
 
 
 __all__ = (

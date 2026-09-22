@@ -8,7 +8,7 @@ from statistics import fmean
 import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.extract.table_facts import internal_numeric_cell, internal_TableFacts
+from core_pdf.impl.extract.table_facts import TableFacts, numeric_cell
 from core_pdf.impl.model.geometry import (
     bbox_union,
     horizontal_overlap_ratio,
@@ -28,7 +28,7 @@ from core_pdf.impl.runtime.array_views import finite_median
 TABLE_MERGE_GAP = 36.0
 
 
-def internal_cell_text(
+def cell_text(
     observations: ObservationBatch,
     indexes: list[int],
 ) -> str:
@@ -48,14 +48,14 @@ def internal_cell_text(
     return " ".join(parts)
 
 
-def internal_table_quality(table: Table) -> tuple[int, int, float, int, int]:
-    facts = internal_TableFacts.from_rows(table.rows)
+def table_quality(table: Table) -> tuple[int, int, float, int, int]:
+    facts = TableFacts.from_rows(table.rows)
     populated = len(facts.filled_texts)
     density = populated / max(1, facts.row_count * facts.columns)
     return (int(2 <= facts.columns <= 16), populated, density, facts.row_count, -facts.columns)
 
 
-def internal_table_column_bounds(table: Table) -> tuple[tuple[float, float], ...]:
+def table_column_bounds(table: Table) -> tuple[tuple[float, float], ...]:
     bounds: list[list[float | None]] = []
     for row in table.rows:
         for cell in row:
@@ -73,9 +73,9 @@ def internal_table_column_bounds(table: Table) -> tuple[tuple[float, float], ...
     )
 
 
-def internal_table_column_alignment(left: Table, right: Table) -> float:
-    left_bounds = internal_table_column_bounds(left)
-    right_bounds = internal_table_column_bounds(right)
+def table_column_alignment(left: Table, right: Table) -> float:
+    left_bounds = table_column_bounds(left)
+    right_bounds = table_column_bounds(right)
     if len(left_bounds) != len(right_bounds) or not left_bounds:
         return 0.0
     overlaps = []
@@ -88,20 +88,18 @@ def internal_table_column_alignment(left: Table, right: Table) -> float:
     return fmean(overlaps)
 
 
-def internal_same_semantic_header(
-    left: tuple[TableCell, ...], right: tuple[TableCell, ...]
-) -> bool:
+def same_semantic_header(left: tuple[TableCell, ...], right: tuple[TableCell, ...]) -> bool:
     left_text = tuple(cell.text.strip().casefold() for cell in left if cell.text.strip())
     right_text = tuple(cell.text.strip().casefold() for cell in right if cell.text.strip())
     return (
         len(left_text) >= 2
         and left_text == right_text
-        and internal_semantic_header_row(left)
-        and internal_semantic_header_row(right)
+        and semantic_header_row(left)
+        and semantic_header_row(right)
     )
 
 
-def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
+def merge_adjacent_tables(tables: list[Table]) -> list[Table]:
     ordered = sorted(tables, key=lambda table: -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3])
     merged: list[Table] = []
     for table in ordered:
@@ -121,17 +119,13 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
             columns != previous_columns
             or not 2 <= columns <= 16
             or horizontal_overlap_ratio(previous_bbox, table_bbox) < 0.6
-            or internal_table_column_alignment(previous, table) < 0.55
+            or table_column_alignment(previous, table) < 0.55
             or not -5.0 <= vertical_gap <= TABLE_MERGE_GAP
         ):
             merged.append(table)
             continue
         continuation_rows = table.rows
-        if (
-            previous.rows
-            and table.rows
-            and internal_same_semantic_header(previous.rows[0], table.rows[0])
-        ):
+        if previous.rows and table.rows and same_semantic_header(previous.rows[0], table.rows[0]):
             continuation_rows = table.rows[1:]
         combined_rows: list[tuple[TableCell, ...]] = []
         for row in (*previous.rows, *continuation_rows):
@@ -163,27 +157,27 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
     return merged
 
 
-def internal_semantic_header_row(row: tuple[TableCell, ...]) -> bool:
+def semantic_header_row(row: tuple[TableCell, ...]) -> bool:
     populated = [cell for cell in row if cell.text.strip()]
     if not populated:
         return False
     if len(populated) == 1:
         return populated[0].column_span > 1
-    numeric = sum(internal_numeric_cell(cell.text) for cell in populated)
+    numeric = sum(numeric_cell(cell.text) for cell in populated)
     return numeric == 0 and len(populated) >= 2
 
 
-def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
-    if len(table.rows) < 6 or internal_TableFacts.from_rows(table.rows).numeric_density < 0.3:
+def split_semantic_table(table: Table) -> tuple[Table, ...]:
+    if len(table.rows) < 6 or TableFacts.from_rows(table.rows).numeric_density < 0.3:
         return (table,)
     boundaries = [
         index
         for index, row in enumerate(table.rows[1:], start=1)
         if (
-            internal_semantic_header_row(row)
+            semantic_header_row(row)
             and index >= 2
             and index + 1 < len(table.rows)
-            and any(internal_numeric_cell(cell.text) for cell in table.rows[index + 1])
+            and any(numeric_cell(cell.text) for cell in table.rows[index + 1])
         )
     ]
     if not boundaries:
@@ -222,12 +216,10 @@ def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
     return tuple(segments) or (table,)
 
 
-def internal_table_character_spaced_prose(
-    table: Table, *, facts: internal_TableFacts | None = None
-) -> bool:
+def table_character_spaced_prose(table: Table, *, facts: TableFacts | None = None) -> bool:
     if table.metadata.get("source") != "stream":
         return False
-    facts = facts or internal_TableFacts.from_rows(table.rows)
+    facts = facts or TableFacts.from_rows(table.rows)
     if facts.columns < 8:
         return False
     filled_texts = facts.filled_texts
@@ -240,10 +232,8 @@ def internal_table_character_spaced_prose(
     )
 
 
-def internal_table_is_single_column_prose(
-    table: Table, *, facts: internal_TableFacts | None = None
-) -> bool:
-    facts = facts or internal_TableFacts.from_rows(table.rows)
+def table_is_single_column_prose(table: Table, *, facts: TableFacts | None = None) -> bool:
+    facts = facts or TableFacts.from_rows(table.rows)
     if facts.nonempty_rows < 3:
         return False
     if facts.spanned_columns < 2:
@@ -251,66 +241,64 @@ def internal_table_is_single_column_prose(
     return facts.single_cell_rows * 2 > facts.nonempty_rows
 
 
-internal_STREAM_PROSE_LONG_CELL_CHARACTERS = 25
-internal_STREAM_PROSE_LONG_CELL_RATIO = 0.6
-internal_STREAM_PROSE_NUMERIC_CELL_RATIO = 0.15
-internal_STREAM_WORD_GRID_MIN_COLUMNS = 8
-internal_STREAM_WORD_GRID_MIN_ROWS = 12
-internal_STREAM_WORD_GRID_NUMERIC_RATIO = 0.2
-internal_STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS = 14
-internal_STREAM_SPARSE_PROSE_MAX_DENSITY = 0.68
-internal_STREAM_SPARSE_PROSE_LONG_RATIO = 0.25
-internal_STREAM_SPARSE_PROSE_MAX_COLUMNS = 6
+STREAM_PROSE_LONG_CELL_CHARACTERS = 25
+STREAM_PROSE_LONG_CELL_RATIO = 0.6
+STREAM_PROSE_NUMERIC_CELL_RATIO = 0.15
+STREAM_WORD_GRID_MIN_COLUMNS = 8
+STREAM_WORD_GRID_MIN_ROWS = 12
+STREAM_WORD_GRID_NUMERIC_RATIO = 0.2
+STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS = 14
+STREAM_SPARSE_PROSE_MAX_DENSITY = 0.68
+STREAM_SPARSE_PROSE_LONG_RATIO = 0.25
+STREAM_SPARSE_PROSE_MAX_COLUMNS = 6
 
 
-def internal_stream_table_reads_like_prose(table: Table) -> bool:
-    facts = internal_TableFacts.from_rows(table.rows)
+def stream_table_reads_like_prose(table: Table) -> bool:
+    facts = TableFacts.from_rows(table.rows)
     filled = facts.filled_texts
     if not filled:
         return True
-    long_cells = sum(
-        length > internal_STREAM_PROSE_LONG_CELL_CHARACTERS for length in facts.text_lengths
-    )
+    long_cells = sum(length > STREAM_PROSE_LONG_CELL_CHARACTERS for length in facts.text_lengths)
     numeric_cells = sum(
         1
         for text in filled
-        if len(text) <= internal_STREAM_PROSE_LONG_CELL_CHARACTERS
+        if len(text) <= STREAM_PROSE_LONG_CELL_CHARACTERS
         and any(character.isdigit() for character in text)
     )
     if (
-        long_cells >= len(filled) * internal_STREAM_PROSE_LONG_CELL_RATIO
-        and numeric_cells < len(filled) * internal_STREAM_PROSE_NUMERIC_CELL_RATIO
+        long_cells >= len(filled) * STREAM_PROSE_LONG_CELL_RATIO
+        and numeric_cells < len(filled) * STREAM_PROSE_NUMERIC_CELL_RATIO
     ):
         return True
     total_cells = facts.cell_count
-    narrow = facts.columns <= internal_STREAM_SPARSE_PROSE_MAX_COLUMNS
+    narrow = facts.columns <= STREAM_SPARSE_PROSE_MAX_COLUMNS
     if (
         total_cells
         and narrow
-        and len(filled) < total_cells * internal_STREAM_SPARSE_PROSE_MAX_DENSITY
-        and long_cells >= len(filled) * internal_STREAM_SPARSE_PROSE_LONG_RATIO
+        and len(filled) < total_cells * STREAM_SPARSE_PROSE_MAX_DENSITY
+        and long_cells >= len(filled) * STREAM_SPARSE_PROSE_LONG_RATIO
     ):
         return True
     if (
-        facts.columns >= internal_STREAM_WORD_GRID_MIN_COLUMNS
-        and facts.populated_rows >= internal_STREAM_WORD_GRID_MIN_ROWS
-        and numeric_cells < len(filled) * internal_STREAM_WORD_GRID_NUMERIC_RATIO
+        facts.columns >= STREAM_WORD_GRID_MIN_COLUMNS
+        and facts.populated_rows >= STREAM_WORD_GRID_MIN_ROWS
+        and numeric_cells < len(filled) * STREAM_WORD_GRID_NUMERIC_RATIO
     ):
         lengths = sorted(facts.text_lengths)
         median_length = lengths[len(lengths) // 2]
-        if median_length <= internal_STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS:
+        if median_length <= STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS:
             return True
     return False
 
 
-def internal_merge_stream_text_columns(table: Table) -> Table:
+def merge_stream_text_columns(table: Table) -> Table:
     columns = max((len(row) for row in table.rows), default=0)
     if (
         table.metadata.get("source") != "stream"
         or columns < 6
         or columns % 2
         or len(table.rows) < 4
-        or internal_TableFacts.from_rows(table.rows).numeric_density >= 0.25
+        or TableFacts.from_rows(table.rows).numeric_density >= 0.25
     ):
         return table
     group_size = columns // 2
@@ -338,28 +326,28 @@ def internal_merge_stream_text_columns(table: Table) -> Table:
     return replace(table, rows=tuple(merged_rows), metadata={**table.metadata, "merged": True})
 
 
-internal_LOGICAL_ROW_GAP_RATIO = 0.10
-internal_LOGICAL_ROW_MIN_GAP = 0.5
-internal_LOGICAL_ROW_MIN_ROWS = 4
-internal_LOGICAL_ROW_MAX_NUMERIC_RATIO = 0.40
-internal_LOGICAL_ROW_MIN_TALL_RATIO = 3.0
-internal_LOGICAL_ROW_MIN_COLUMNS = 5
+LOGICAL_ROW_GAP_RATIO = 0.10
+LOGICAL_ROW_MIN_GAP = 0.5
+LOGICAL_ROW_MIN_ROWS = 4
+LOGICAL_ROW_MAX_NUMERIC_RATIO = 0.40
+LOGICAL_ROW_MIN_TALL_RATIO = 3.0
+LOGICAL_ROW_MIN_COLUMNS = 5
 
 
-def internal_merge_wrapped_cell_rows(table: Table) -> Table:
-    if table.metadata.get("source") != "stream" or len(table.rows) < internal_LOGICAL_ROW_MIN_ROWS:
+def merge_wrapped_cell_rows(table: Table) -> Table:
+    if table.metadata.get("source") != "stream" or len(table.rows) < LOGICAL_ROW_MIN_ROWS:
         return table
     filled = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
     if filled:
         numeric = sum(
             1
             for text in filled
-            if len(text) <= internal_STREAM_PROSE_LONG_CELL_CHARACTERS
+            if len(text) <= STREAM_PROSE_LONG_CELL_CHARACTERS
             and any(character.isdigit() for character in text)
         )
-        if numeric >= len(filled) * internal_LOGICAL_ROW_MAX_NUMERIC_RATIO:
+        if numeric >= len(filled) * LOGICAL_ROW_MAX_NUMERIC_RATIO:
             return table
-    if max((len(row) for row in table.rows), default=0) < internal_LOGICAL_ROW_MIN_COLUMNS:
+    if max((len(row) for row in table.rows), default=0) < LOGICAL_ROW_MIN_COLUMNS:
         return table
     extents: list[tuple[float, float]] = []
     heights: list[float] = []
@@ -370,11 +358,11 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
         extents.append((max(box[3] for box in boxes), min(box[1] for box in boxes)))
         heights.extend(box[3] - box[1] for box in boxes)
     median_height = finite_median(numpy.asarray(heights, dtype=numpy.float32))
-    if max(heights) < median_height * internal_LOGICAL_ROW_MIN_TALL_RATIO:
+    if max(heights) < median_height * LOGICAL_ROW_MIN_TALL_RATIO:
         return table
     tolerance = max(
-        internal_LOGICAL_ROW_MIN_GAP,
-        median_height * internal_LOGICAL_ROW_GAP_RATIO,
+        LOGICAL_ROW_MIN_GAP,
+        median_height * LOGICAL_ROW_GAP_RATIO,
     )
     groups: list[list[int]] = []
     running_bottom = 0.0
@@ -422,7 +410,7 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
     )
 
 
-def internal_merge_wrapped_stream_rows(table: Table) -> Table:
+def merge_wrapped_stream_rows(table: Table) -> Table:
     if (
         table.metadata.get("source") != "stream"
         or len(table.rows) < 8
@@ -457,7 +445,7 @@ def internal_merge_wrapped_stream_rows(table: Table) -> Table:
     )
 
 
-def internal_annotate_table_associations(
+def annotate_table_associations(
     table: Table,
     observations: ObservationBatch,
     text_rows: list[list[int]],
@@ -492,7 +480,7 @@ def internal_annotate_table_associations(
             candidates.append((gap, tuple(row)))
     if candidates:
         _gap, title_row = min(candidates, key=lambda item: item[0])
-        text = internal_cell_text(observations, list(title_row))
+        text = cell_text(observations, list(title_row))
         if text:
             title_boxes = observations.bbox[list(title_row)]
             title = TableAssociatedText(
@@ -510,7 +498,7 @@ def internal_annotate_table_associations(
     return replace(table, title=title, caption=caption)
 
 
-def internal_table_with_bands(table: Table) -> Table:
+def table_with_bands(table: Table) -> Table:
     associated = {
         text.kind: text.text.casefold() for text in (table.title, table.caption) if text is not None
     }

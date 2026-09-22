@@ -21,7 +21,7 @@ def opened_document(monkeypatch):
             self.closed = True
 
     document = Document()
-    monkeypatch.setattr(xray.internal_XrayDocument, "open", lambda *args, **kwargs: document)
+    monkeypatch.setattr(xray.XrayDocument, "open", lambda *args, **kwargs: document)
     monkeypatch.setattr(xray, "_validate_mupdf_structure", lambda document: None)
     return document
 
@@ -114,7 +114,7 @@ def test_unsupported_object_stream_recovery_requires_absence_of_page_objects(
     def fail(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(xray.internal_XrayDocument, "open", fail)
+    monkeypatch.setattr(xray.XrayDocument, "open", fail)
     if empty:
         assert xray.inspect(raw) == {}
     else:

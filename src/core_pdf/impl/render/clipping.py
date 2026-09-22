@@ -8,21 +8,21 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.render.paths import (
-    internal_fill_path_crossing_spans,
-    internal_intersect_box,
+    fill_path_crossing_spans,
+    intersect_box,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_PixelSpan = tuple[int, int]
-internal_RowSpans = tuple[internal_PixelSpan, ...]
-internal_EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
+PixelSpan = tuple[int, int]
+RowSpans = tuple[PixelSpan, ...]
+EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 
-def internal_make_page_geometry(
+def make_page_geometry(
     crop_x0: float, crop_y1: float, scale: float, width: int, height: int
 ) -> tuple[
     Callable[[float, float, float, float], tuple[int, int, int, int] | None],
@@ -54,13 +54,13 @@ def internal_make_page_geometry(
     return page_box_to_pixels, page_x_to_pixel_span
 
 
-class internal_ClipRegion(internal_Record):
+class ClipRegion(Record):
     __slots__ = ("box", "pixel_box", "rectangular", "rows", "rows_origin")
 
     box: tuple[float, float, float, float] | None
     pixel_box: tuple[int, int, int, int] | None
     rectangular: bool
-    rows: tuple[internal_RowSpans, ...] | None
+    rows: tuple[RowSpans, ...] | None
     rows_origin: int
 
     __fields__: ClassVar[tuple[str, ...]] = (
@@ -77,14 +77,14 @@ class internal_ClipRegion(internal_Record):
         box: tuple[float, float, float, float] | None,
         pixel_box: tuple[int, int, int, int] | None,
         rectangular: bool,
-        rows: tuple[internal_RowSpans, ...] | None,
+        rows: tuple[RowSpans, ...] | None,
         rows_origin: int = 0,
     ) -> None:
-        internal_frozen_setattr(self, "box", box)
-        internal_frozen_setattr(self, "pixel_box", pixel_box)
-        internal_frozen_setattr(self, "rectangular", rectangular)
-        internal_frozen_setattr(self, "rows", rows)
-        internal_frozen_setattr(self, "rows_origin", rows_origin)
+        frozen_setattr(self, "box", box)
+        frozen_setattr(self, "pixel_box", pixel_box)
+        frozen_setattr(self, "rectangular", rectangular)
+        frozen_setattr(self, "rows", rows)
+        frozen_setattr(self, "rows_origin", rows_origin)
 
     def __repr__(self) -> str:
         return (
@@ -128,13 +128,13 @@ class internal_ClipRegion(internal_Record):
         return self.pixel_box is None
 
 
-def internal_intersect_spans(
-    left: internal_RowSpans,
-    right: internal_RowSpans,
-) -> internal_RowSpans:
+def intersect_spans(
+    left: RowSpans,
+    right: RowSpans,
+) -> RowSpans:
     left_index = 0
     right_index = 0
-    intersections: list[internal_PixelSpan] = []
+    intersections: list[PixelSpan] = []
     while left_index < len(left) and right_index < len(right):
         left_start, left_end = left[left_index]
         right_start, right_end = right[right_index]
@@ -149,7 +149,7 @@ def internal_intersect_spans(
     return tuple(intersections)
 
 
-class internal_ClipState:
+class ClipState:
     __slots__ = (
         "regions",
         "crop_x0",
@@ -170,13 +170,13 @@ class internal_ClipState:
         width: int,
         height: int,
     ) -> None:
-        self.regions: list[internal_ClipRegion] = []
+        self.regions: list[ClipRegion] = []
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
         self.scale = scale
         self.width = width
         self.height = height
-        self.page_box_to_pixels, self.page_x_to_pixel_span = internal_make_page_geometry(
+        self.page_box_to_pixels, self.page_x_to_pixel_span = make_page_geometry(
             crop_x0, crop_y1, scale, width, height
         )
 
@@ -191,37 +191,37 @@ class internal_ClipState:
         if self.regions:
             self.regions.pop()
 
-    def current_region(self) -> internal_ClipRegion | None:
+    def current_region(self) -> ClipRegion | None:
         return self.regions[-1] if self.regions else None
 
-    def internal_rect_row_spans(
+    def rect_row_spans(
         self,
         pixel_box: tuple[int, int, int, int] | None,
         py: int,
-    ) -> internal_RowSpans:
+    ) -> RowSpans:
         if pixel_box is None:
             return ()
         ix0, iy0, ix1, iy1 = pixel_box
         return ((ix0, ix1),) if iy0 <= py < iy1 else ()
 
-    def internal_region_row_spans(
+    def region_row_spans(
         self,
-        region: internal_ClipRegion | None,
+        region: ClipRegion | None,
         py: int,
-    ) -> internal_RowSpans:
+    ) -> RowSpans:
         if region is None:
             return ((0, self.width),)
         if region.rows is None:
-            return self.internal_rect_row_spans(region.pixel_box, py)
+            return self.rect_row_spans(region.pixel_box, py)
         row = py - region.rows_origin
         return region.rows[row] if 0 <= row < len(region.rows) else ()
 
-    def internal_path_row_spans(
+    def path_row_spans(
         self,
         edges: tuple[tuple[float, float, float, float], ...],
         py: int,
         fill_rule: str,
-    ) -> internal_RowSpans:
+    ) -> RowSpans:
         page_y = self.crop_y1 - (py + 0.5) / self.scale
         crossings: list[tuple[float, int]] = []
         for x0, y0, x1, y1 in edges:
@@ -232,8 +232,8 @@ class internal_ClipState:
             if low <= page_y < high:
                 offset = (page_y - y0) / (y1 - y0)
                 crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
-        spans: list[internal_PixelSpan] = []
-        for start_x, end_x in internal_fill_path_crossing_spans(crossings, fill_rule):
+        spans: list[PixelSpan] = []
+        for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
             span = self.page_x_to_pixel_span(start_x, end_x)
             if span is not None:
                 spans.append(span)
@@ -251,31 +251,29 @@ class internal_ClipState:
         elif path_box is None:
             box = parent_box
         else:
-            box = internal_intersect_box(parent_box, path_box)
+            box = intersect_box(parent_box, path_box)
         if box is None:
-            box = internal_EMPTY_CLIP_BOX
+            box = EMPTY_CLIP_BOX
             pixel_box = None
         else:
             pixel_box = self.page_box_to_pixels(*box)
 
         if rect is not None and (parent is None or parent.rectangular):
-            self.regions.append(internal_ClipRegion(box, pixel_box, True, None))
+            self.regions.append(ClipRegion(box, pixel_box, True, None))
             return
 
         rect_pixel_box = self.page_box_to_pixels(*rect) if rect is not None else None
         edges = tuple(path.fill_edges()) if rect is None else ()
         row_start, row_stop = (0, 0) if pixel_box is None else (pixel_box[1], pixel_box[3])
-        rows: list[internal_RowSpans] = []
+        rows: list[RowSpans] = []
         for py in range(row_start, row_stop):
             path_spans = (
-                self.internal_rect_row_spans(rect_pixel_box, py)
+                self.rect_row_spans(rect_pixel_box, py)
                 if rect is not None
-                else self.internal_path_row_spans(edges, py, fill_rule)
+                else self.path_row_spans(edges, py, fill_rule)
             )
-            rows.append(
-                internal_intersect_spans(self.internal_region_row_spans(parent, py), path_spans)
-            )
-        self.regions.append(internal_ClipRegion(box, pixel_box, False, tuple(rows), row_start))
+            rows.append(intersect_spans(self.region_row_spans(parent, py), path_spans))
+        self.regions.append(ClipRegion(box, pixel_box, False, tuple(rows), row_start))
 
     def current_clip(self) -> tuple[float, float, float, float] | None:
         region = self.current_region()
@@ -293,7 +291,7 @@ class internal_ClipState:
             if region.empty:
                 return None
             if region.box is not None:
-                clipped = internal_intersect_box(box, region.box)
+                clipped = intersect_box(box, region.box)
                 if clipped is None:
                     return None
                 box = clipped
@@ -309,7 +307,7 @@ class internal_ClipState:
         index = bisect_left(spans, (px + 1, -1))
         return index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]
 
-    def clip_row_visible_spans(self, py: int) -> internal_RowSpans:
+    def clip_row_visible_spans(self, py: int) -> RowSpans:
         if py < 0 or py >= self.height:
             return ()
-        return self.internal_region_row_spans(self.current_region(), py)
+        return self.region_row_spans(self.current_region(), py)

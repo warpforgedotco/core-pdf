@@ -6,7 +6,7 @@ import core_predictors.png as strict
 import core_predictors.tiff as strict_tiff
 from core_pdf.impl.graphics.decode_compat import FilterParams
 from core_pdf.impl.runtime.codec_backends import (
-    internal_png_predict_codec,
+    png_predict_codec,
     tiff_predict_8,
     tiff_predict_16,
     tiff_predict_bits,
@@ -27,7 +27,7 @@ def png_predict(
     if bits_per_component not in SUPPORTED_PREDICTOR_BITS:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")
     try:
-        decoded = internal_png_predict_codec(
+        decoded = png_predict_codec(
             data, columns=columns, colors=colors, bits_per_component=bits_per_component
         )
     except Exception:
@@ -46,7 +46,7 @@ def png_predict(
     )
 
 
-def internal_predictor_row_length(params: FilterParams) -> int:
+def predictor_row_length(params: FilterParams) -> int:
     return (params.columns * params.colors * params.bits_per_component + 7) // 8
 
 
@@ -54,7 +54,7 @@ def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> byte
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
         if not data:
             return b""
-        row_length = internal_predictor_row_length(params)
+        row_length = predictor_row_length(params)
         if row_length and len(data) % row_length:
             raise FilterParseError("truncated TIFF predictor row")
     try:
@@ -72,7 +72,7 @@ def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
         if not data:
             return b""
-        stride = internal_predictor_row_length(params) + 1
+        stride = predictor_row_length(params) + 1
         if len(data) % stride and not params.damaged_rows_before_error:
             raise FilterParseError("truncated PNG predictor row")
     try:

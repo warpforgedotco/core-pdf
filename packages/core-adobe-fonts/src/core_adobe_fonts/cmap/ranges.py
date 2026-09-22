@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 from typing import Any, ClassVar, NoReturn, Self
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 CodeSpaceRanges = list[tuple[bytes, bytes]] | tuple[tuple[bytes, bytes], ...]
@@ -22,9 +22,9 @@ class CIDRange:
     __match_args__ = ("start", "end", "first_cid")
 
     def __init__(self, start: bytes, end: bytes, first_cid: int) -> None:
-        internal_frozen_setattr(self, "start", start)
-        internal_frozen_setattr(self, "end", end)
-        internal_frozen_setattr(self, "first_cid", first_cid)
+        frozen_setattr(self, "start", start)
+        frozen_setattr(self, "end", end)
+        frozen_setattr(self, "first_cid", first_cid)
 
     def __repr__(self) -> str:
         return (
@@ -60,7 +60,7 @@ class CIDRange:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         start = changes.pop("start", self.start)
@@ -85,9 +85,9 @@ class NotdefRange:
     __match_args__ = ("start", "end", "cid")
 
     def __init__(self, start: bytes, end: bytes, cid: int) -> None:
-        internal_frozen_setattr(self, "start", start)
-        internal_frozen_setattr(self, "end", end)
-        internal_frozen_setattr(self, "cid", cid)
+        frozen_setattr(self, "start", start)
+        frozen_setattr(self, "end", end)
+        frozen_setattr(self, "cid", cid)
 
     def __repr__(self) -> str:
         return (
@@ -119,7 +119,7 @@ class NotdefRange:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         start = changes.pop("start", self.start)

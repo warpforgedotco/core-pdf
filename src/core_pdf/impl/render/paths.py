@@ -14,23 +14,23 @@ RASTER_KERNEL_MIN_PIXEL_AREA = 64
 RASTER_CIRCLE_MIN_PIXEL_AREA = 16
 RASTER_SAMPLE_OFFSETS = (0.125, 0.375, 0.625, 0.875)
 INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
-internal_CIRCLE_VERTICES = tuple(
+CIRCLE_VERTICES = tuple(
     (math.cos(index * math.tau / 32), math.sin(index * math.tau / 32)) for index in range(32)
 )
 
 
-def internal_circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
+def circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
     return CapturedPath(
         [
             CapturedSubpath(
-                [(cx + radius * x, cy + radius * y) for x, y in internal_CIRCLE_VERTICES],
+                [(cx + radius * x, cy + radius * y) for x, y in CIRCLE_VERTICES],
                 closed=True,
             )
         ]
     )
 
 
-def internal_dash_subpath(
+def dash_subpath(
     subpath: CapturedSubpath, dash_pattern: tuple[list[float], float]
 ) -> list[CapturedSubpath]:
     lengths = [max(0.0, float(value)) for value in dash_pattern[0]]
@@ -247,7 +247,7 @@ def rasterize_unclipped_line_normal(
     return alpha.astype(numpy.uint8) if return_source_alpha else None
 
 
-def internal_group_offsets(
+def group_offsets(
     counts: numpy.ndarray[Any, Any],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
     total = int(counts.sum())
@@ -260,7 +260,7 @@ def internal_group_offsets(
     return group, numpy.arange(total, dtype=numpy.int64) - starts[group]
 
 
-def internal_signed_area_coverage(
+def signed_area_coverage(
     edges: numpy.ndarray[Any, Any],
     width: int,
     height: int,
@@ -287,7 +287,7 @@ def internal_signed_area_coverage(
 
     first_row = numpy.maximum(0.0, numpy.floor(top_y)).astype(numpy.int64)
     last_row = numpy.minimum(float(height), numpy.ceil(bottom_y)).astype(numpy.int64)
-    edge_index, row_offset = internal_group_offsets(numpy.maximum(last_row - first_row, 0))
+    edge_index, row_offset = group_offsets(numpy.maximum(last_row - first_row, 0))
     if edge_index.size == 0:
         return numpy.zeros((height, width), numpy.float64)
 
@@ -316,7 +316,7 @@ def internal_signed_area_coverage(
     walk_left = numpy.clip(left_x, -1.0, width + 1.0)
     walk_right = numpy.clip(right_x, -1.0, width + 1.0)
     column_count = (numpy.floor(walk_right) - numpy.floor(walk_left) + 1.0).astype(numpy.int64)
-    piece_index, column_offset = internal_group_offsets(column_count)
+    piece_index, column_offset = group_offsets(column_count)
     column_start = numpy.floor(walk_left)[piece_index] + column_offset
     fragment_left = numpy.where(column_offset == 0, left_x[piece_index], column_start)
     fragment_right = numpy.where(
@@ -358,7 +358,7 @@ def internal_signed_area_coverage(
     return numpy.minimum(numpy.abs(numpy.cumsum(accumulator, axis=1)[:, :width]), 1.0)
 
 
-def internal_intersect_box(
+def intersect_box(
     a: tuple[float, float, float, float],
     b: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float] | None:
@@ -371,7 +371,7 @@ def internal_intersect_box(
     return x0, y0, x1, y1
 
 
-def internal_translate_rect(rect: Any, tx: float, ty: float) -> Any:
+def translate_rect(rect: Any, tx: float, ty: float) -> Any:
     rect_type = type(rect)
     if (rect_type is list or rect_type is tuple) and len(rect) == 4:
         return (
@@ -383,7 +383,7 @@ def internal_translate_rect(rect: Any, tx: float, ty: float) -> Any:
     return rect
 
 
-def internal_fill_path_sample_crossings(
+def fill_path_sample_crossings(
     edge_segments: list[tuple[float, float, float, float, float, float]],
     page_y: float,
 ) -> list[tuple[float, int]]:
@@ -397,7 +397,7 @@ def internal_fill_path_sample_crossings(
     return crossings
 
 
-def internal_fill_path_sample_crossings_numpy(
+def fill_path_sample_crossings_numpy(
     edge_segments: numpy.ndarray[Any, Any],
     page_ys: numpy.ndarray[Any, Any],
 ) -> list[list[tuple[float, int]]]:
@@ -408,10 +408,7 @@ def internal_fill_path_sample_crossings_numpy(
     if edge_count == 0:
         return [[] for _ in range(row_count)]
     if row_count * edge_count > INTERNAL_CROSSING_MASK_CELL_LIMIT:
-        return [
-            internal_fill_path_sample_crossings_row(edge_segments, float(page_y))
-            for page_y in page_ys
-        ]
+        return [fill_path_sample_crossings_row(edge_segments, float(page_y)) for page_y in page_ys]
 
     ys = page_ys.reshape(-1, 1)
     active = (edge_segments[:, 4].reshape(1, -1) <= ys) & (ys < edge_segments[:, 5].reshape(1, -1))
@@ -442,7 +439,7 @@ def internal_fill_path_sample_crossings_numpy(
     return crossings_rows
 
 
-def internal_fill_path_sample_crossings_row(
+def fill_path_sample_crossings_row(
     edge_segments: numpy.ndarray[Any, Any],
     page_y: float,
 ) -> list[tuple[float, int]]:
@@ -457,7 +454,7 @@ def internal_fill_path_sample_crossings_row(
     return list(zip(intersections.tolist(), directions.tolist(), strict=True))
 
 
-def internal_fill_path_crossing_spans(
+def fill_path_crossing_spans(
     crossings: list[tuple[float, int]],
     fill_rule: str,
 ) -> list[tuple[float, float]]:

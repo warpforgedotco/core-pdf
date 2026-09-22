@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf_spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS as PDF_FILTER_DESCRIPTORS,
 )
@@ -17,7 +17,7 @@ from core_pdf_spec.s_07_filters.registry import (
     FilterDescriptor,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 FILTER_DESCRIPTORS = (
@@ -38,7 +38,7 @@ PREDICTOR_FILTERS = frozenset(
 )
 
 
-class NativeImageSpec(internal_Record):
+class NativeImageSpec(Record):
     __slots__ = ("channels", "color_names", "bits")
 
     channels: Mapping[str | None, int]
@@ -54,9 +54,9 @@ class NativeImageSpec(internal_Record):
         color_names: frozenset[str | None],
         bits: frozenset[int | None] | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "channels", channels)
-        internal_frozen_setattr(self, "color_names", color_names)
-        internal_frozen_setattr(self, "bits", bits)
+        frozen_setattr(self, "channels", channels)
+        frozen_setattr(self, "color_names", color_names)
+        frozen_setattr(self, "bits", bits)
 
     def __repr__(self) -> str:
         return (
@@ -90,7 +90,7 @@ class NativeImageSpec(internal_Record):
         return self.__class__(channels, color_names, bits)
 
 
-internal_RAW_SAMPLE_IMAGE = NativeImageSpec(
+RAW_SAMPLE_IMAGE = NativeImageSpec(
     channels={None: 1, "DeviceGray": 1, "DeviceRGB": 3},
     color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
     bits=frozenset({None, 8}),
@@ -111,8 +111,8 @@ NATIVE_IMAGE_SPECS: Mapping[str, NativeImageSpec] = {
         color_names=frozenset({None, "DeviceGray"}),
         bits=frozenset({None, 1}),
     ),
-    "flate": internal_RAW_SAMPLE_IMAGE,
-    "lzw": internal_RAW_SAMPLE_IMAGE,
+    "flate": RAW_SAMPLE_IMAGE,
+    "lzw": RAW_SAMPLE_IMAGE,
 }
 
 

@@ -18,7 +18,7 @@ from core_pdf.impl.model.geometry import (
 )
 from core_pdf.impl.types import Rectangle
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
@@ -49,10 +49,10 @@ class StrokedTextSeed:
     __match_args__ = ("text", "bbox", "confidence", "sequence")
 
     def __init__(self, text: str, bbox: Rectangle, confidence: float, sequence: int) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "sequence", sequence)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "sequence", sequence)
 
     def __repr__(self) -> str:
         return (
@@ -90,7 +90,7 @@ class StrokedTextSeed:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
@@ -128,11 +128,11 @@ class StrokedTextObservation:
         last_drawing: int,
         confidence: float = 96.0,
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "first_drawing", first_drawing)
-        internal_frozen_setattr(self, "last_drawing", last_drawing)
-        internal_frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "first_drawing", first_drawing)
+        frozen_setattr(self, "last_drawing", last_drawing)
+        frozen_setattr(self, "confidence", confidence)
 
     def __repr__(self) -> str:
         return (
@@ -172,7 +172,7 @@ class StrokedTextObservation:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
@@ -258,18 +258,18 @@ class StrokedTextDecode:
         candidate_glyphs: int = 0,
         decoded_candidate_glyphs: int = 0,
     ) -> None:
-        internal_frozen_setattr(self, "observations", observations)
-        internal_frozen_setattr(self, "eligible_seeds", eligible_seeds)
-        internal_frozen_setattr(self, "aligned_seeds", aligned_seeds)
-        internal_frozen_setattr(self, "accepted_seeds", accepted_seeds)
-        internal_frozen_setattr(self, "initial_signatures", initial_signatures)
-        internal_frozen_setattr(self, "learned_signatures", learned_signatures)
-        internal_frozen_setattr(self, "approximate_signatures", approximate_signatures)
-        internal_frozen_setattr(self, "alphabet", alphabet)
-        internal_frozen_setattr(self, "candidate_runs", candidate_runs)
-        internal_frozen_setattr(self, "decoded_candidate_runs", decoded_candidate_runs)
-        internal_frozen_setattr(self, "candidate_glyphs", candidate_glyphs)
-        internal_frozen_setattr(self, "decoded_candidate_glyphs", decoded_candidate_glyphs)
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "eligible_seeds", eligible_seeds)
+        frozen_setattr(self, "aligned_seeds", aligned_seeds)
+        frozen_setattr(self, "accepted_seeds", accepted_seeds)
+        frozen_setattr(self, "initial_signatures", initial_signatures)
+        frozen_setattr(self, "learned_signatures", learned_signatures)
+        frozen_setattr(self, "approximate_signatures", approximate_signatures)
+        frozen_setattr(self, "alphabet", alphabet)
+        frozen_setattr(self, "candidate_runs", candidate_runs)
+        frozen_setattr(self, "decoded_candidate_runs", decoded_candidate_runs)
+        frozen_setattr(self, "candidate_glyphs", candidate_glyphs)
+        frozen_setattr(self, "decoded_candidate_glyphs", decoded_candidate_glyphs)
 
     def __repr__(self) -> str:
         return (
@@ -338,7 +338,7 @@ class StrokedTextDecode:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         observations = changes.pop("observations", self.observations)
@@ -392,9 +392,9 @@ class StrokedTextRun:
     __match_args__ = ("bbox", "drawing_indexes", "glyph_count")
 
     def __init__(self, bbox: Rectangle, drawing_indexes: tuple[int, ...], glyph_count: int) -> None:
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "drawing_indexes", drawing_indexes)
-        internal_frozen_setattr(self, "glyph_count", glyph_count)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "drawing_indexes", drawing_indexes)
+        frozen_setattr(self, "glyph_count", glyph_count)
 
     def __repr__(self) -> str:
         return (
@@ -430,7 +430,7 @@ class StrokedTextRun:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         bbox = changes.pop("bbox", self.bbox)
@@ -441,7 +441,7 @@ class StrokedTextRun:
         return self.__class__(bbox, drawing_indexes, glyph_count)
 
 
-class internal_PathRecord:
+class PathRecord:
     __slots__ = ("index", "path", "bbox")
 
     index: int
@@ -452,9 +452,9 @@ class internal_PathRecord:
     __match_args__ = ("index", "path", "bbox")
 
     def __init__(self, index: int, path: CapturedPath, bbox: Rectangle) -> None:
-        internal_frozen_setattr(self, "index", index)
-        internal_frozen_setattr(self, "path", path)
-        internal_frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "index", index)
+        frozen_setattr(self, "path", path)
+        frozen_setattr(self, "bbox", bbox)
 
     def __repr__(self) -> str:
         return (
@@ -486,7 +486,7 @@ class internal_PathRecord:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         index = changes.pop("index", self.index)
@@ -497,14 +497,14 @@ class internal_PathRecord:
         return self.__class__(index, path, bbox)
 
 
-internal_Glyph: TypeAlias = tuple[internal_PathRecord, ...]
+Glyph: TypeAlias = tuple[PathRecord, ...]
 
 
 class StrokedTextProfile:
     __slots__ = ("records", "run_profiles", "seed_runs")
 
-    records: tuple[internal_PathRecord, ...]
-    run_profiles: tuple[internal_StrokedTextRunProfile, ...]
+    records: tuple[PathRecord, ...]
+    run_profiles: tuple[StrokedTextRunProfile, ...]
     seed_runs: tuple[StrokedTextRun, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = ("records", "run_profiles", "seed_runs")
@@ -512,13 +512,13 @@ class StrokedTextProfile:
 
     def __init__(
         self,
-        records: tuple[internal_PathRecord, ...] = (),
-        run_profiles: tuple[internal_StrokedTextRunProfile, ...] = (),
+        records: tuple[PathRecord, ...] = (),
+        run_profiles: tuple[StrokedTextRunProfile, ...] = (),
         seed_runs: tuple[StrokedTextRun, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "records", records)
-        internal_frozen_setattr(self, "run_profiles", run_profiles)
-        internal_frozen_setattr(self, "seed_runs", seed_runs)
+        frozen_setattr(self, "records", records)
+        frozen_setattr(self, "run_profiles", run_profiles)
+        frozen_setattr(self, "seed_runs", seed_runs)
 
     def __repr__(self) -> str:
         return (
@@ -554,7 +554,7 @@ class StrokedTextProfile:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         records = changes.pop("records", self.records)
@@ -565,7 +565,7 @@ class StrokedTextProfile:
         return self.__class__(records, run_profiles, seed_runs)
 
 
-class internal_SeedSample:
+class SeedSample:
     __slots__ = ("seed", "text", "signatures")
 
     seed: StrokedTextSeed
@@ -581,9 +581,9 @@ class internal_SeedSample:
         text: str,
         signatures: tuple[GlyphSignature, ...],
     ) -> None:
-        internal_frozen_setattr(self, "seed", seed)
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "signatures", signatures)
+        frozen_setattr(self, "seed", seed)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "signatures", signatures)
 
     def __repr__(self) -> str:
         return (
@@ -619,7 +619,7 @@ class internal_SeedSample:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         seed = changes.pop("seed", self.seed)
@@ -630,10 +630,10 @@ class internal_SeedSample:
         return self.__class__(seed, text, signatures)
 
 
-class internal_StrokedTextRunProfile:
+class StrokedTextRunProfile:
     __slots__ = ("glyphs", "signatures", "bbox", "first_drawing", "last_drawing", "seed_run")
 
-    glyphs: tuple[internal_Glyph, ...]
+    glyphs: tuple[Glyph, ...]
     signatures: tuple[GlyphSignature | None, ...]
     bbox: Rectangle
     first_drawing: int
@@ -652,19 +652,19 @@ class internal_StrokedTextRunProfile:
 
     def __init__(
         self,
-        glyphs: tuple[internal_Glyph, ...],
+        glyphs: tuple[Glyph, ...],
         signatures: tuple[GlyphSignature | None, ...],
         bbox: Rectangle,
         first_drawing: int,
         last_drawing: int,
         seed_run: StrokedTextRun | None,
     ) -> None:
-        internal_frozen_setattr(self, "glyphs", glyphs)
-        internal_frozen_setattr(self, "signatures", signatures)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "first_drawing", first_drawing)
-        internal_frozen_setattr(self, "last_drawing", last_drawing)
-        internal_frozen_setattr(self, "seed_run", seed_run)
+        frozen_setattr(self, "glyphs", glyphs)
+        frozen_setattr(self, "signatures", signatures)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "first_drawing", first_drawing)
+        frozen_setattr(self, "last_drawing", last_drawing)
+        frozen_setattr(self, "seed_run", seed_run)
 
     def __repr__(self) -> str:
         return (
@@ -715,7 +715,7 @@ class internal_StrokedTextRunProfile:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         glyphs = changes.pop("glyphs", self.glyphs)
@@ -729,10 +729,10 @@ class internal_StrokedTextRunProfile:
         return self.__class__(glyphs, signatures, bbox, first_drawing, last_drawing, seed_run)
 
 
-def internal_path_records(
+def path_records(
     drawings: tuple[CapturedDrawing, ...], drawing_indexes: Iterable[int]
-) -> tuple[internal_PathRecord, ...]:
-    records: list[internal_PathRecord] = []
+) -> tuple[PathRecord, ...]:
+    records: list[PathRecord] = []
     for index in drawing_indexes:
         if not 0 <= index < len(drawings):
             continue
@@ -742,14 +742,14 @@ def internal_path_records(
         bbox = rect_tuple(drawing.rect)
         if bbox is None:
             continue
-        records.append(internal_PathRecord(index, drawing.path, bbox))
+        records.append(PathRecord(index, drawing.path, bbox))
     return tuple(records)
 
 
-def internal_group_overlapping_x(
-    records: Iterable[internal_PathRecord],
-) -> tuple[internal_Glyph, ...]:
-    groups: list[list[internal_PathRecord]] = []
+def group_overlapping_x(
+    records: Iterable[PathRecord],
+) -> tuple[Glyph, ...]:
+    groups: list[list[PathRecord]] = []
     bounds: list[list[float]] = []
     for record in records:
         x0, _, x1, _ = record.bbox
@@ -767,8 +767,8 @@ def internal_group_overlapping_x(
     return tuple(tuple(group) for group in groups)
 
 
-def internal_glyph_signature(
-    glyph: internal_Glyph,
+def glyph_signature(
+    glyph: Glyph,
 ) -> GlyphSignature | None:
     points = tuple(
         point for record in glyph for subpath in record.path.subpaths for point in subpath.points
@@ -797,7 +797,7 @@ def internal_glyph_signature(
     )
 
 
-def internal_seed_text(seed: StrokedTextSeed) -> str | None:
+def seed_text(seed: StrokedTextSeed) -> str | None:
     text = seed.text.strip()
     if (
         seed.confidence < STROKED_TEXT_SEED_MIN_CONFIDENCE
@@ -809,7 +809,7 @@ def internal_seed_text(seed: StrokedTextSeed) -> str | None:
     return text
 
 
-def internal_seed_run_overlap(
+def seed_run_overlap(
     seed_box: Rectangle,
     run_box: Rectangle,
 ) -> float:
@@ -819,11 +819,11 @@ def internal_seed_run_overlap(
     return intersection / min(seed_area, run_area)
 
 
-def internal_seed_samples(
+def seed_samples(
     profile: StrokedTextProfile,
     seeds: tuple[StrokedTextSeed, ...],
-) -> tuple[tuple[internal_SeedSample, ...], int]:
-    samples: list[internal_SeedSample] = []
+) -> tuple[tuple[SeedSample, ...], int]:
+    samples: list[SeedSample] = []
     eligible = 0
     records = profile.records
     direct_runs = {
@@ -834,7 +834,7 @@ def internal_seed_samples(
     )
     y_centers = tuple((record.bbox[1] + record.bbox[3]) * 0.5 for record in records_by_y)
     for seed in seeds:
-        text = internal_seed_text(seed)
+        text = seed_text(seed)
         if text is None:
             continue
         eligible += 1
@@ -843,10 +843,10 @@ def internal_seed_samples(
             direct is not None
             and len(direct.signatures) == len(text)
             and all(signature is not None for signature in direct.signatures)
-            and internal_seed_run_overlap(seed.bbox, direct.bbox) >= 0.50
+            and seed_run_overlap(seed.bbox, direct.bbox) >= 0.50
         ):
             samples.append(
-                internal_SeedSample(
+                SeedSample(
                     seed,
                     text,
                     tuple(signature for signature in direct.signatures if signature is not None),
@@ -867,14 +867,14 @@ def internal_seed_samples(
                 key=lambda record: record.index,
             )
         )
-        glyphs = internal_group_overlapping_x(hits)
+        glyphs = group_overlapping_x(hits)
         if len(glyphs) != len(text):
             continue
-        signatures = tuple(internal_glyph_signature(glyph) for glyph in glyphs)
+        signatures = tuple(glyph_signature(glyph) for glyph in glyphs)
         if any(signature is None for signature in signatures):
             continue
         samples.append(
-            internal_SeedSample(
+            SeedSample(
                 seed,
                 text,
                 tuple(signature for signature in signatures if signature is not None),
@@ -883,8 +883,8 @@ def internal_seed_samples(
     return tuple(samples), eligible
 
 
-def internal_consensus_mapping(
-    samples: tuple[internal_SeedSample, ...],
+def consensus_mapping(
+    samples: tuple[SeedSample, ...],
 ) -> tuple[dict[GlyphSignature, str], int, int]:
     votes: dict[GlyphSignature, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
     for sample in samples:
@@ -936,18 +936,18 @@ def internal_consensus_mapping(
     return mapping, initial, len(accepted_sequences)
 
 
-def internal_required_bbox(boxes: Iterable[Rectangle]) -> Rectangle:
+def required_bbox(boxes: Iterable[Rectangle]) -> Rectangle:
     bbox = bbox_union(boxes)
     if bbox is None:
         raise ValueError("cannot take the bounding box of an empty group")
     return bbox
 
 
-def internal_glyph_bbox(glyph: internal_Glyph) -> Rectangle:
-    return internal_required_bbox(record.bbox for record in glyph)
+def glyph_bbox(glyph: Glyph) -> Rectangle:
+    return required_bbox(record.bbox for record in glyph)
 
 
-def internal_signature_distance(
+def signature_distance(
     left: GlyphSignature,
     right: GlyphSignature,
 ) -> tuple[int, float] | None:
@@ -975,20 +975,20 @@ def internal_signature_distance(
     return maximum, total / max(1, coordinates)
 
 
-def internal_signature_topology(signature: GlyphSignature) -> GlyphTopology:
+def signature_topology(signature: GlyphSignature) -> GlyphTopology:
     return tuple(
         tuple((closed, len(points)) for closed, points in drawing) for drawing in signature
     )
 
 
-def internal_expand_mapping(
-    runs: tuple[internal_StrokedTextRunProfile, ...],
+def expand_mapping(
+    runs: tuple[StrokedTextRunProfile, ...],
     mapping: dict[GlyphSignature, str],
 ) -> int:
     additions = 0
     learned_by_topology: dict[GlyphTopology, list[tuple[GlyphSignature, str]]] = defaultdict(list)
     for learned_signature, character in mapping.items():
-        learned_by_topology[internal_signature_topology(learned_signature)].append(
+        learned_by_topology[signature_topology(learned_signature)].append(
             (learned_signature, character)
         )
     unknown = {
@@ -1000,10 +1000,8 @@ def internal_expand_mapping(
     for signature in unknown:
         candidates = {
             character
-            for learned_signature, character in learned_by_topology[
-                internal_signature_topology(signature)
-            ]
-            if (distance := internal_signature_distance(signature, learned_signature)) is not None
+            for learned_signature, character in learned_by_topology[signature_topology(signature)]
+            if (distance := signature_distance(signature, learned_signature)) is not None
             and distance[0] <= STROKED_TEXT_SIGNATURE_MAX_COORDINATE_DISTANCE
             and distance[1] <= STROKED_TEXT_SIGNATURE_MAX_MEAN_DISTANCE
         }
@@ -1013,12 +1011,12 @@ def internal_expand_mapping(
     return additions
 
 
-def internal_path_runs(
-    records: tuple[internal_PathRecord, ...],
-) -> tuple[tuple[internal_Glyph, ...], ...]:
-    runs: list[tuple[internal_Glyph, ...]] = []
-    run: list[internal_Glyph] = []
-    glyph: list[internal_PathRecord] = []
+def path_runs(
+    records: tuple[PathRecord, ...],
+) -> tuple[tuple[Glyph, ...], ...]:
+    runs: list[tuple[Glyph, ...]] = []
+    run: list[Glyph] = []
+    glyph: list[PathRecord] = []
     glyph_x0 = 0.0
     glyph_x1 = 0.0
     line_y0 = 0.0
@@ -1097,7 +1095,7 @@ def stroked_text_isolated_runs(profile: StrokedTextProfile) -> tuple[StrokedText
         glyphs = run.glyphs
         if len(glyphs) != 1:
             continue
-        box = internal_glyph_bbox(glyphs[0])
+        box = glyph_bbox(glyphs[0])
         width = box[2] - box[0]
         height = box[3] - box[1]
         if not (
@@ -1117,12 +1115,12 @@ def stroked_text_isolated_runs(profile: StrokedTextProfile) -> tuple[StrokedText
     return tuple(isolated)
 
 
-def internal_stroked_text_seed_run(
-    glyphs: tuple[internal_Glyph, ...],
+def stroked_text_seed_run(
+    glyphs: tuple[Glyph, ...],
 ) -> StrokedTextRun | None:
     if not 2 <= len(glyphs) <= STROKED_TEXT_MAX_TOKEN_CHARACTERS:
         return None
-    bbox = internal_required_bbox(internal_glyph_bbox(glyph) for glyph in glyphs)
+    bbox = required_bbox(glyph_bbox(glyph) for glyph in glyphs)
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
     if not (
@@ -1141,22 +1139,22 @@ def profile_stroked_text(
     drawings: tuple[CapturedDrawing, ...],
     drawing_indexes: Iterable[int],
 ) -> StrokedTextProfile:
-    records = internal_path_records(drawings, drawing_indexes)
+    records = path_records(drawings, drawing_indexes)
     if not records:
         return StrokedTextProfile()
-    runs = internal_path_runs(records)
-    run_profiles: list[internal_StrokedTextRunProfile] = []
+    runs = path_runs(records)
+    run_profiles: list[StrokedTextRunProfile] = []
     for run in runs:
-        signatures = tuple(internal_glyph_signature(glyph) for glyph in run)
-        bbox = internal_required_bbox(internal_glyph_bbox(glyph) for glyph in run)
+        signatures = tuple(glyph_signature(glyph) for glyph in run)
+        bbox = required_bbox(glyph_bbox(glyph) for glyph in run)
         run_profiles.append(
-            internal_StrokedTextRunProfile(
+            StrokedTextRunProfile(
                 glyphs=run,
                 signatures=signatures,
                 bbox=bbox,
                 first_drawing=run[0][0].index,
                 last_drawing=run[-1][-1].index,
-                seed_run=internal_stroked_text_seed_run(run),
+                seed_run=stroked_text_seed_run(run),
             )
         )
     return StrokedTextProfile(
@@ -1166,8 +1164,8 @@ def profile_stroked_text(
     )
 
 
-def internal_decode_runs(
-    runs: tuple[internal_StrokedTextRunProfile, ...],
+def decode_runs(
+    runs: tuple[StrokedTextRunProfile, ...],
     mapping: dict[GlyphSignature, str],
 ) -> tuple[StrokedTextObservation, ...]:
     observations: list[StrokedTextObservation] = []
@@ -1196,12 +1194,12 @@ def internal_decode_runs(
     return tuple(observations)
 
 
-def internal_decode_with_mapping(
+def decode_with_mapping(
     profile: StrokedTextProfile,
     mapping: dict[GlyphSignature, str],
 ) -> tuple[tuple[StrokedTextObservation, ...], int, int, int, int, int]:
-    approximate = internal_expand_mapping(profile.run_profiles, mapping)
-    observations = internal_decode_runs(profile.run_profiles, mapping)
+    approximate = expand_mapping(profile.run_profiles, mapping)
+    observations = decode_runs(profile.run_profiles, mapping)
     decoded_spans = {
         (observation.first_drawing, observation.last_drawing) for observation in observations
     }
@@ -1221,7 +1219,7 @@ def internal_decode_with_mapping(
     )
 
 
-def internal_decoded_profile(
+def decoded_profile(
     profile: StrokedTextProfile,
     mapping: dict[GlyphSignature, str],
     *,
@@ -1231,7 +1229,7 @@ def internal_decoded_profile(
     initial_signatures: int = 0,
 ) -> StrokedTextDecode:
     observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
-        internal_decode_with_mapping(profile, mapping)
+        decode_with_mapping(profile, mapping)
     )
     return StrokedTextDecode(
         observations=observations,
@@ -1255,16 +1253,16 @@ def decode_stroked_text_profile(
 ) -> StrokedTextDecode:
     if not profile.records or not seeds:
         return StrokedTextDecode()
-    samples, eligible = internal_seed_samples(profile, seeds)
+    samples, eligible = seed_samples(profile, seeds)
     if not samples:
         return StrokedTextDecode(eligible_seeds=eligible)
-    mapping, initial, accepted = internal_consensus_mapping(samples)
+    mapping, initial, accepted = consensus_mapping(samples)
     if not mapping:
         return StrokedTextDecode(
             eligible_seeds=eligible,
             aligned_seeds=len(samples),
         )
-    return internal_decoded_profile(
+    return decoded_profile(
         profile,
         mapping,
         eligible_seeds=eligible,
@@ -1284,8 +1282,8 @@ def decode_stroked_text_profile_with_supplemental_seeds(
     if not profile.records:
         return StrokedTextDecode()
 
-    primary_samples, primary_eligible = internal_seed_samples(profile, primary_seeds)
-    supplemental_samples, supplemental_eligible = internal_seed_samples(profile, supplemental_seeds)
+    primary_samples, primary_eligible = seed_samples(profile, primary_seeds)
+    supplemental_samples, supplemental_eligible = seed_samples(profile, supplemental_seeds)
     samples = (*primary_samples, *supplemental_samples)
     eligible = primary_eligible + supplemental_eligible
     if not samples:
@@ -1293,8 +1291,8 @@ def decode_stroked_text_profile_with_supplemental_seeds(
 
     primary_mapping: dict[GlyphSignature, str] = {}
     if primary_samples:
-        primary_mapping, _, _ = internal_consensus_mapping(primary_samples)
-    mapping, initial, accepted = internal_consensus_mapping(samples)
+        primary_mapping, _, _ = consensus_mapping(primary_samples)
+    mapping, initial, accepted = consensus_mapping(samples)
     mapping.update(primary_mapping)
     if not mapping:
         return StrokedTextDecode(
@@ -1302,7 +1300,7 @@ def decode_stroked_text_profile_with_supplemental_seeds(
             aligned_seeds=len(samples),
         )
 
-    return internal_decoded_profile(
+    return decoded_profile(
         profile,
         mapping,
         eligible_seeds=eligible,
@@ -1319,4 +1317,4 @@ def decode_stroked_text_profile_with_alphabet(
     mapping = dict(alphabet)
     if not profile.records or not mapping:
         return StrokedTextDecode()
-    return internal_decoded_profile(profile, mapping, initial_signatures=len(mapping))
+    return decoded_profile(profile, mapping, initial_signatures=len(mapping))

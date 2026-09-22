@@ -19,7 +19,7 @@ from typing import Any, ClassVar, NoReturn, Self, cast
 
 from core_pdf import PdfDocument
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,10 +40,10 @@ class ScoreBenchCase:
     __match_args__ = ("stem", "pdf", "content_gt", "table_gt")
 
     def __init__(self, stem: str, pdf: Path, content_gt: Path, table_gt: Path) -> None:
-        internal_frozen_setattr(self, "stem", stem)
-        internal_frozen_setattr(self, "pdf", pdf)
-        internal_frozen_setattr(self, "content_gt", content_gt)
-        internal_frozen_setattr(self, "table_gt", table_gt)
+        frozen_setattr(self, "stem", stem)
+        frozen_setattr(self, "pdf", pdf)
+        frozen_setattr(self, "content_gt", content_gt)
+        frozen_setattr(self, "table_gt", table_gt)
 
     def __repr__(self) -> str:
         return (
@@ -204,33 +204,33 @@ class CaseScore:
         missing_top: list[tuple[str, int]] | None = None,
         extra_top: list[tuple[str, int]] | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "stem", stem)
-        internal_frozen_setattr(self, "status", status)
-        internal_frozen_setattr(self, "cct", cct)
-        internal_frozen_setattr(self, "percent_tokens_found", percent_tokens_found)
-        internal_frozen_setattr(self, "percent_tokens_added", percent_tokens_added)
-        internal_frozen_setattr(self, "precision", precision)
-        internal_frozen_setattr(self, "gt_tokens", gt_tokens)
-        internal_frozen_setattr(self, "predicted_tokens", predicted_tokens)
-        internal_frozen_setattr(self, "matched_tokens", matched_tokens)
-        internal_frozen_setattr(self, "elapsed_seconds", elapsed_seconds)
-        internal_frozen_setattr(self, "scoring_schema_version", scoring_schema_version)
-        internal_frozen_setattr(self, "content_f1", content_f1)
-        internal_frozen_setattr(self, "order_gap", order_gap)
-        internal_frozen_setattr(self, "cer", cer)
-        internal_frozen_setattr(self, "wer", wer)
-        internal_frozen_setattr(self, "table_structure_f1", table_structure_f1)
-        internal_frozen_setattr(self, "table_content_f1", table_content_f1)
-        internal_frozen_setattr(self, "table_expected", table_expected)
-        internal_frozen_setattr(self, "table_predicted", table_predicted)
-        internal_frozen_setattr(self, "table_matched", table_matched)
-        internal_frozen_setattr(self, "open_elapsed_seconds", open_elapsed_seconds)
-        internal_frozen_setattr(self, "text_elapsed_seconds", text_elapsed_seconds)
-        internal_frozen_setattr(self, "table_elapsed_seconds", table_elapsed_seconds)
-        internal_frozen_setattr(self, "evaluation_elapsed_seconds", evaluation_elapsed_seconds)
-        internal_frozen_setattr(self, "error", error)
-        internal_frozen_setattr(self, "missing_top", missing_top)
-        internal_frozen_setattr(self, "extra_top", extra_top)
+        frozen_setattr(self, "stem", stem)
+        frozen_setattr(self, "status", status)
+        frozen_setattr(self, "cct", cct)
+        frozen_setattr(self, "percent_tokens_found", percent_tokens_found)
+        frozen_setattr(self, "percent_tokens_added", percent_tokens_added)
+        frozen_setattr(self, "precision", precision)
+        frozen_setattr(self, "gt_tokens", gt_tokens)
+        frozen_setattr(self, "predicted_tokens", predicted_tokens)
+        frozen_setattr(self, "matched_tokens", matched_tokens)
+        frozen_setattr(self, "elapsed_seconds", elapsed_seconds)
+        frozen_setattr(self, "scoring_schema_version", scoring_schema_version)
+        frozen_setattr(self, "content_f1", content_f1)
+        frozen_setattr(self, "order_gap", order_gap)
+        frozen_setattr(self, "cer", cer)
+        frozen_setattr(self, "wer", wer)
+        frozen_setattr(self, "table_structure_f1", table_structure_f1)
+        frozen_setattr(self, "table_content_f1", table_content_f1)
+        frozen_setattr(self, "table_expected", table_expected)
+        frozen_setattr(self, "table_predicted", table_predicted)
+        frozen_setattr(self, "table_matched", table_matched)
+        frozen_setattr(self, "open_elapsed_seconds", open_elapsed_seconds)
+        frozen_setattr(self, "text_elapsed_seconds", text_elapsed_seconds)
+        frozen_setattr(self, "table_elapsed_seconds", table_elapsed_seconds)
+        frozen_setattr(self, "evaluation_elapsed_seconds", evaluation_elapsed_seconds)
+        frozen_setattr(self, "error", error)
+        frozen_setattr(self, "missing_top", missing_top)
+        frozen_setattr(self, "extra_top", extra_top)
 
     def __repr__(self) -> str:
         return (
@@ -410,8 +410,8 @@ class NumberedCaseScore:
     __match_args__ = ("case_number", "score")
 
     def __init__(self, case_number: int, score: CaseScore) -> None:
-        internal_frozen_setattr(self, "case_number", case_number)
-        internal_frozen_setattr(self, "score", score)
+        frozen_setattr(self, "case_number", case_number)
+        frozen_setattr(self, "score", score)
 
     def __repr__(self) -> str:
         return (
@@ -1128,7 +1128,7 @@ def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, in
     return cells
 
 
-def internal_table_spans(record: object, y: int, x: int) -> tuple[int, int]:
+def table_spans(record: object, y: int, x: int) -> tuple[int, int]:
     spans = record.get("spans") if isinstance(record, dict) else getattr(record, "spans", None)
     if not isinstance(spans, (list, tuple)) or y >= len(spans):
         return 1, 1
@@ -1174,7 +1174,7 @@ def predicted_table_cells(value: object) -> list[tuple[int, int, int, int, int, 
                         )
                     )
                     continue
-                col_span, row_span = internal_table_spans(record, y, x)
+                col_span, row_span = table_spans(record, y, x)
                 cells.append((table_index, x, y, col_span, row_span, str(content or "")))
     return cells
 
@@ -1415,7 +1415,7 @@ class ScoreBench:
         )
 
     def run(self) -> int:
-        cases = self.internal_selected_cases()
+        cases = self.selected_cases()
         if not cases:
             print(f"No SCORE-Bench cases found under {self.root}.", file=sys.stderr)
             return 2
@@ -1423,7 +1423,7 @@ class ScoreBench:
         self.total_cases = len(cases)
         self.started_at = perf_counter()
         try:
-            scores = self.internal_score_cases(cases)
+            scores = self.score_cases(cases)
         except ValueError as exc:
             print(f"Invalid arguments: {exc}", file=sys.stderr)
             return 2
@@ -1438,14 +1438,14 @@ class ScoreBench:
             ),
             key=lambda item: (item.score.cct, item.case_number),
         )
-        self.internal_write_json(results)
-        self.internal_write_html(results)
-        self.internal_print_report(results)
+        self.write_json(results)
+        self.write_html(results)
+        self.print_report(results)
         if self.fail_on_errors and any(score.status != "ok" for score in scores):
             return 1
         return 0
 
-    def internal_selected_cases(self) -> list[ScoreBenchCase]:
+    def selected_cases(self) -> list[ScoreBenchCase]:
         cases = iter_score_bench_cases(self.root)
         if self.partition != "all":
             cases = [case for case in cases if score_bench_partition(case.stem) == self.partition]
@@ -1457,7 +1457,7 @@ class ScoreBench:
             ]
         return cases if self.limit is None else cases[: self.limit]
 
-    def internal_score_cases(self, cases: list[ScoreBenchCase]) -> list[CaseScore]:
+    def score_cases(self, cases: list[ScoreBenchCase]) -> list[CaseScore]:
         worker = (
             score_case
             if self.document_class is PdfDocument
@@ -1474,23 +1474,21 @@ class ScoreBench:
             try:
                 chunksize = max(1, len(cases) // (workers * 4))
                 with ProcessPoolExecutor(max_workers=workers) as executor:
-                    return self.internal_collect_scores(
-                        executor.map(worker, cases, chunksize=chunksize)
-                    )
+                    return self.collect_scores(executor.map(worker, cases, chunksize=chunksize))
             except Exception:
                 pass
-        return self.internal_collect_scores(map(worker, cases))
+        return self.collect_scores(map(worker, cases))
 
-    def internal_collect_scores(self, scored: Iterable[CaseScore]) -> list[CaseScore]:
+    def collect_scores(self, scored: Iterable[CaseScore]) -> list[CaseScore]:
         scores = list(scored)
         for case_number, score in enumerate(scores, start=1):
-            self.internal_print_progress(case_number, score)
+            self.print_progress(case_number, score)
         return scores
 
-    def internal_print_progress(self, case_number: int, score: CaseScore) -> None:
+    def print_progress(self, case_number: int, score: CaseScore) -> None:
         pass
 
-    def internal_print_report(self, results: list[NumberedCaseScore]) -> None:
+    def print_report(self, results: list[NumberedCaseScore]) -> None:
         statuses = Counter(result.score.status for result in results)
         elapsed = perf_counter() - self.started_at
         successful = [result.score for result in results if result.score.status == "ok"]
@@ -1576,13 +1574,13 @@ class ScoreBench:
             lines.append(f"\n> HTML report: `{self.html_output}`")
         print("\n".join(lines))
 
-    def internal_print_bucket_summary(self, scores: list[CaseScore]) -> None:
+    def print_bucket_summary(self, scores: list[CaseScore]) -> None:
         pass
 
-    def internal_limit_results(self, results: list[NumberedCaseScore]) -> list[NumberedCaseScore]:
+    def limit_results(self, results: list[NumberedCaseScore]) -> list[NumberedCaseScore]:
         return results if self.full_results else results[: self.report_limit]
 
-    def internal_write_json(self, results: list[NumberedCaseScore]) -> None:
+    def write_json(self, results: list[NumberedCaseScore]) -> None:
         if self.json_output is None:
             return
         self.json_output.parent.mkdir(parents=True, exist_ok=True)
@@ -1598,16 +1596,16 @@ class ScoreBench:
             encoding="utf-8",
         )
 
-    def internal_write_html(self, results: list[NumberedCaseScore]) -> None:
+    def write_html(self, results: list[NumberedCaseScore]) -> None:
         if self.html_output is None:
             return
         self.html_output.parent.mkdir(parents=True, exist_ok=True)
         self.html_output.write_text(
-            self.internal_render_html(results, perf_counter() - self.started_at),
+            self.render_html(results, perf_counter() - self.started_at),
             encoding="utf-8",
         )
 
-    def internal_render_html(self, results: list[NumberedCaseScore], elapsed_seconds: float) -> str:
+    def render_html(self, results: list[NumberedCaseScore], elapsed_seconds: float) -> str:
         statuses = Counter(result.score.status for result in results)
         successful = [result.score for result in results if result.score.status == "ok"]
         metric_cards = "\n".join(
@@ -1644,7 +1642,7 @@ class ScoreBench:
   </section>
 """
         sections = "\n".join(
-            render_html_section(title, self.internal_limit_results(section_results))
+            render_html_section(title, self.limit_results(section_results))
             for title, section_results in score_result_sections(results)
             if section_results
         )

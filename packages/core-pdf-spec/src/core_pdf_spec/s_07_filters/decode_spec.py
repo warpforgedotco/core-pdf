@@ -11,7 +11,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 DecodeParam: TypeAlias = object
@@ -90,18 +90,18 @@ class FilterParams:
         has_columns: bool = False,
         jbig2_globals: object | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "early_change", early_change)
-        internal_frozen_setattr(self, "predictor", predictor)
-        internal_frozen_setattr(self, "columns", columns)
-        internal_frozen_setattr(self, "colors", colors)
-        internal_frozen_setattr(self, "bits_per_component", bits_per_component)
-        internal_frozen_setattr(self, "k", k)
-        internal_frozen_setattr(self, "damaged_rows_before_error", damaged_rows_before_error)
-        internal_frozen_setattr(self, "black_is_1", black_is_1)
-        internal_frozen_setattr(self, "rows", rows)
-        internal_frozen_setattr(self, "encoded_byte_align", encoded_byte_align)
-        internal_frozen_setattr(self, "has_columns", has_columns)
-        internal_frozen_setattr(self, "jbig2_globals", jbig2_globals)
+        frozen_setattr(self, "early_change", early_change)
+        frozen_setattr(self, "predictor", predictor)
+        frozen_setattr(self, "columns", columns)
+        frozen_setattr(self, "colors", colors)
+        frozen_setattr(self, "bits_per_component", bits_per_component)
+        frozen_setattr(self, "k", k)
+        frozen_setattr(self, "damaged_rows_before_error", damaged_rows_before_error)
+        frozen_setattr(self, "black_is_1", black_is_1)
+        frozen_setattr(self, "rows", rows)
+        frozen_setattr(self, "encoded_byte_align", encoded_byte_align)
+        frozen_setattr(self, "has_columns", has_columns)
+        frozen_setattr(self, "jbig2_globals", jbig2_globals)
 
     def __repr__(self) -> str:
         return (
@@ -170,7 +170,7 @@ class FilterParams:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         early_change = changes.pop("early_change", self.early_change)
@@ -283,8 +283,8 @@ class FilterStep:
     __match_args__ = ("name", "params")
 
     def __init__(self, name: str, params: DecodeParam = None) -> None:
-        internal_frozen_setattr(self, "name", name)
-        internal_frozen_setattr(self, "params", params)
+        frozen_setattr(self, "name", name)
+        frozen_setattr(self, "params", params)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(name={self.name!r}, params={self.params!r})"
@@ -310,7 +310,7 @@ class FilterStep:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         name = changes.pop("name", self.name)
@@ -329,7 +329,7 @@ class StreamDecodeSpec:
     __match_args__ = ("steps",)
 
     def __init__(self, steps: tuple[FilterStep, ...]) -> None:
-        internal_frozen_setattr(self, "steps", steps)
+        frozen_setattr(self, "steps", steps)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(steps={self.steps!r})"
@@ -355,7 +355,7 @@ class StreamDecodeSpec:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         steps = changes.pop("steps", self.steps)

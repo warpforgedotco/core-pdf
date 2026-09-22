@@ -12,7 +12,7 @@ from core_pdf_spec.s_09_fonts.widths import (
 )
 
 
-def internal_clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None:
+def clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None:
     if last < first or last < MIN_CID or first > MAX_CID:
         return None
     return (max(first, MIN_CID), min(last, MAX_CID))
@@ -47,7 +47,7 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
         contiguous_widths = value[1]
         if isinstance(contiguous_widths, (list, tuple)):
             first = value[0]
-            bounds = internal_clipped_cid_bounds(
+            bounds = clipped_cid_bounds(
                 first,
                 first + len(contiguous_widths) - 1,
             )
@@ -93,7 +93,7 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
             except ValueError:
                 index += 2
                 continue
-            bounds = internal_clipped_cid_bounds(first, last)
+            bounds = clipped_cid_bounds(first, last)
             if bounds is None:
                 index += 2
                 continue

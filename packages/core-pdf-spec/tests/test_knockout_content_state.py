@@ -33,7 +33,7 @@ class PaintSink:
             self.patterns.append(state.graphics.fill_pattern)
 
 
-def internal_state() -> tuple[ContentInterpreter, PaintSink]:
+def make_state() -> tuple[ContentInterpreter, PaintSink]:
     sink = PaintSink()
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
 
@@ -44,7 +44,7 @@ def internal_state() -> tuple[ContentInterpreter, PaintSink]:
 def test_knockout_is_independent_boolean_group_attribute(
     isolated: bool, knockout: object, indirect: bool
 ) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     group: PdfDict = {"S": PdfName.of("Transparency"), "I": isolated}
     if knockout is not None:
         cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = cast(PdfObject, knockout)
@@ -58,7 +58,7 @@ def test_knockout_is_independent_boolean_group_attribute(
 
 
 def test_ordinary_and_legacy_frames_do_not_gain_knockout() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     stream = PdfStream(dictionary={"BBox": [0, 0, 1, 1], "Group": {"K": True}})
     frame = state.append_form_xobject(stream, 0)
     assert frame is not None
@@ -75,7 +75,7 @@ def test_ordinary_and_legacy_frames_do_not_gain_knockout() -> None:
 def test_alpha_source_resolves_booleans_and_preserves_q_Q_state(
     value: bool, indirect: bool
 ) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     assert state.graphics.alpha_is_shape is False
     state.graphics.alpha_is_shape = not value
     state.op_q((), 0)
@@ -91,7 +91,7 @@ def test_alpha_source_resolves_booleans_and_preserves_q_Q_state(
 
 @pytest.mark.parametrize("value", [0, 1, 0.5, "true", PdfName.of("true"), [], {}])
 def test_alpha_source_rejects_nonboolean_values_without_changing_flag(value: object) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     state.graphics.alpha_is_shape = True
     with pytest.raises(ValueError, match="invalid alpha source flag"):
         state.apply_extgstate({"AIS": value})
@@ -103,7 +103,7 @@ def test_alpha_source_rejects_nonboolean_values_without_changing_flag(value: obj
 def test_transparency_group_inherits_AIS_while_resetting_alpha_and_blend(
     initial: bool, knockout: bool
 ) -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.graphics.alpha_is_shape = initial
     state.graphics.fill_opacity = 0.3
     state.graphics.blend_mode = "Multiply"
@@ -132,7 +132,7 @@ def test_transparency_group_inherits_AIS_while_resetting_alpha_and_blend(
 def test_pattern_retains_defining_stream_initial_AIS_across_nested_and_later_state_changes() -> (
     None
 ):
-    state, sink = internal_state()
+    state, sink = make_state()
     pattern = PdfStream(
         dictionary={
             "PatternType": 1,

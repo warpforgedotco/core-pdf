@@ -13,31 +13,31 @@ from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf.impl.fonts.font_program_truetype import internal_recording_to_contours
+from core_pdf.impl.fonts.font_program_truetype import recording_to_contours
 from core_pdf.impl.fonts.raster_kernel import Point, rasterize_contours, transform_contours
 
-internal_LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
+LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 
 
-internal_FONT_MATRIX_RE = re.compile(
+FONT_MATRIX_RE = re.compile(
     rb"/FontMatrix\s*\[\s*([-+.\dEe]+)\s+([-+.\dEe]+)\s+"
     rb"([-+.\dEe]+)\s+([-+.\dEe]+)\s+([-+.\dEe]+)\s+([-+.\dEe]+)\s*\]"
 )
 
 
-internal_SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
+SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 
 
-internal_CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
+CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 
 
-internal_HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
+HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 
 
-internal_MAX_SUBROUTINES = 4096
+MAX_SUBROUTINES = 4096
 
 
-class internal_Type1FontProgram:
+class Type1FontProgramBase:
     __slots__ = (
         "charstrings",
         "font_matrix",
@@ -48,16 +48,16 @@ class internal_Type1FontProgram:
 
     def __init__(self, data: bytes, *, length1: int | None = None) -> None:
         private = self.decode_private(data, length1)
-        len_iv_match = internal_LEN_IV_RE.search(private)
+        len_iv_match = LEN_IV_RE.search(private)
         len_iv = int(len_iv_match.group(1)) if len_iv_match is not None else 4
         if len_iv < -1 or len_iv > 32:
             raise ValueError("invalid Type 1 lenIV")
 
         subr_data = {
-            int(index): payload for index, payload in self.binary_entries(private, internal_SUBR_RE)
+            int(index): payload for index, payload in self.binary_entries(private, SUBR_RE)
         }
         subr_count = max(subr_data, default=-1) + 1
-        if subr_count > internal_MAX_SUBROUTINES:
+        if subr_count > MAX_SUBROUTINES:
             raise ValueError("Type 1 subroutine index exceeds decoder limit")
         empty = T1CharString(b"\x0b", subrs=[])
         subrs = [empty for _ in range(subr_count)]
@@ -69,7 +69,7 @@ class internal_Type1FontProgram:
 
         charstrings = {
             name.decode("latin-1"): payload
-            for name, payload in self.binary_entries(private, internal_CHARSTRING_RE)
+            for name, payload in self.binary_entries(private, CHARSTRING_RE)
         }
         self.charstrings = {
             name: self.prepare_charstring(encrypted, len_iv, subrs)
@@ -80,7 +80,7 @@ class internal_Type1FontProgram:
         self.glyph_names = tuple(self.charstrings)
         self.glyph_name_to_id = {name: gid for gid, name in enumerate(self.glyph_names)}
 
-        matrix_match = internal_FONT_MATRIX_RE.search(data)
+        matrix_match = FONT_MATRIX_RE.search(data)
         self.font_matrix = (
             tuple(float(value) for value in matrix_match.groups())
             if matrix_match is not None
@@ -131,7 +131,7 @@ class internal_Type1FontProgram:
         return decode_eexec_payload(data, length1)
 
 
-def internal_eexec_payload(data: bytes, length1: int | None) -> bytes:
+def eexec_payload(data: bytes, length1: int | None) -> bytes:
     if length1 is not None and 0 < length1 < len(data):
         encrypted = data[length1:]
     else:
@@ -140,7 +140,7 @@ def internal_eexec_payload(data: bytes, length1: int | None) -> bytes:
             raise ValueError("Type 1 eexec section is missing")
         encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
     sample = encrypted[: min(len(encrypted), 512)]
-    if sample and all(byte in internal_HEX_BYTES for byte in sample):
+    if sample and all(byte in HEX_BYTES for byte in sample):
         compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
         if len(compact) % 2:
             compact = compact[:-1]
@@ -154,7 +154,7 @@ def internal_eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-class Type1FontProgram(internal_Type1FontProgram):
+class Type1FontProgram(Type1FontProgramBase):
     __slots__ = ()
 
     @staticmethod
@@ -174,7 +174,7 @@ class Type1FontProgram(internal_Type1FontProgram):
 
     @staticmethod
     def decode_private(data: bytes, length1: int | None) -> bytes:
-        return internal_eexec_payload(data, length1)
+        return eexec_payload(data, length1)
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
@@ -201,7 +201,7 @@ class Type1FontProgram(internal_Type1FontProgram):
         try:
             pen = RecordingPen()
             charstring.draw(pen)
-            contours = internal_recording_to_contours(pen.value)
+            contours = recording_to_contours(pen.value)
             return transform_contours(contours, self.font_matrix)
         except Exception:
             return ()

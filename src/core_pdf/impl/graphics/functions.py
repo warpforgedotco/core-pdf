@@ -16,7 +16,7 @@ from core_pdf_spec.s_08_graphics.pdf_function import (
 )
 
 
-def internal_number_array(value: Any) -> tuple[float, ...]:
+def number_array(value: Any) -> tuple[float, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
     output: list[float] = []
@@ -28,7 +28,7 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
     return tuple(output)
 
 
-def internal_sampled_number_array(values: list[Any] | tuple[Any, ...]) -> tuple[float, ...]:
+def sampled_number_array(values: list[Any] | tuple[Any, ...]) -> tuple[float, ...]:
     output: list[float] = []
     for value in values:
         parsed = parse_pdf_float(value, None)
@@ -38,13 +38,13 @@ def internal_sampled_number_array(values: list[Any] | tuple[Any, ...]) -> tuple[
     return tuple(output)
 
 
-def internal_compile_unordered_stitching(
+def compile_unordered_stitching(
     functions: list[Any],
     domain: tuple[float, float],
     bounds: tuple[float, ...],
     encode: tuple[float, ...],
 ) -> PdfFunctionEvaluator:
-    parts = tuple(internal_compile_pdf_function(entry) for entry in functions)
+    parts = tuple(compile_pdf_function(entry) for entry in functions)
     domain_min, domain_max = domain
 
     def evaluate(*inputs: float) -> tuple[float, ...]:
@@ -64,7 +64,7 @@ def internal_compile_unordered_stitching(
     return evaluate
 
 
-def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
+def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
     if callable(function):
 
         def evaluate_callable(*inputs: float) -> tuple[float, ...]:
@@ -80,7 +80,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         if function and all(
             isinstance(part, (dict, PdfStream)) or callable(part) for part in function
         ):
-            parts = tuple(internal_compile_pdf_function(part) for part in function)
+            parts = tuple(compile_pdf_function(part) for part in function)
 
             def evaluate_array(*inputs: float) -> tuple[float, ...]:
                 return tuple(value for part in parts for value in part(*inputs)) or tuple(inputs)
@@ -102,7 +102,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
     if kind in {2, 3}:
         dictionary.pop("Range", None)
     for name in ("Domain", "Range", "Decode"):
-        values = internal_number_array(dictionary.get(name))
+        values = number_array(dictionary.get(name))
         if values:
             dictionary[name] = values
     if kind == 0:
@@ -114,7 +114,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             dictionary["Size"] = sizes
             domain = dictionary.get("Domain")
             if isinstance(domain, (list, tuple)):
-                dictionary["Domain"] = internal_sampled_number_array(domain[: 2 * len(sizes)])
+                dictionary["Domain"] = sampled_number_array(domain[: 2 * len(sizes)])
             raw_encode = dictionary.get("Encode")
             encodes: list[float] = []
             for index, size in enumerate(sizes):
@@ -128,7 +128,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             dictionary["Encode"] = encodes
         raw_range = dictionary.get("Range")
         if isinstance(raw_range, (list, tuple)):
-            ranges = internal_sampled_number_array(raw_range[: len(raw_range) // 2 * 2])
+            ranges = sampled_number_array(raw_range[: len(raw_range) // 2 * 2])
             dictionary["Range"] = tuple(
                 value
                 for lower, upper in zip(ranges[::2], ranges[1::2], strict=True)
@@ -137,20 +137,20 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             if dictionary.get("Decode") is None:
                 dictionary["Decode"] = ranges
             else:
-                decodes = internal_number_array(dictionary["Decode"])
+                decodes = number_array(dictionary["Decode"])
                 if decodes and all(math.isfinite(value) for value in decodes):
                     dictionary["Decode"] = decodes[: len(ranges)]
     if kind in {2, 3} and dictionary.get("Domain") is None:
         dictionary["Domain"] = [0.0, 1.0]
     elif kind in {2, 3}:
-        dictionary["Domain"] = internal_number_array(dictionary.get("Domain"))[:2]
+        dictionary["Domain"] = number_array(dictionary.get("Domain"))[:2]
     if kind == 2:
         if dictionary.get("N") is None:
             dictionary["N"] = 1.0
         else:
             dictionary["N"] = parse_float(dictionary["N"], None)
-        c0 = list(internal_number_array(dictionary.get("C0")) or (0.0,))
-        c1 = list(internal_number_array(dictionary.get("C1")) or (1.0,))
+        c0 = list(number_array(dictionary.get("C0")) or (0.0,))
+        c1 = list(number_array(dictionary.get("C1")) or (1.0,))
         count = max(len(c0), len(c1))
         c0.extend([c0[-1]] * (count - len(c0)))
         c1.extend([c1[-1]] * (count - len(c1)))
@@ -158,11 +158,11 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
     if kind == 3:
         functions = dictionary.get("Functions")
         if isinstance(functions, (list, tuple)) and functions:
-            bounds = internal_number_array(dictionary.get("Bounds"))
+            bounds = number_array(dictionary.get("Bounds"))
             count = len(bounds) + 1
             functions = list(functions[:count])
             functions.extend([functions[-1]] * (count - len(functions)))
-            encode = internal_number_array(dictionary.get("Encode"))
+            encode = number_array(dictionary.get("Encode"))
             encode = tuple(
                 encode[index] if index < len(encode) else float(index % 2)
                 for index in range(2 * count)
@@ -172,7 +172,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
                 Bounds=bounds,
                 Encode=encode,
             )
-            domain = internal_number_array(dictionary["Domain"])
+            domain = number_array(dictionary["Domain"])
             if (
                 len(domain) == 2
                 and domain[0] <= domain[1]
@@ -182,7 +182,7 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
                     for lower, upper in zip((domain[0], *bounds), bounds)
                 )
             ):
-                return internal_compile_unordered_stitching(
+                return compile_unordered_stitching(
                     functions, (domain[0], domain[1]), bounds, encode
                 )
     prepared = (
@@ -204,4 +204,4 @@ def internal_compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             label = "sampled" if kind == 0 else "calculator"
             raise ValueError(f"invalid {label} PDF function") from error
         prepared = prepared.replace(raw_data=decoded, spec=None, decoder=None)
-    return strict.compile_pdf_function(prepared, compile_nested=internal_compile_pdf_function)
+    return strict.compile_pdf_function(prepared, compile_nested=compile_pdf_function)

@@ -7,20 +7,20 @@ import pytest
 
 from core_postscript.calculator import compile_calculator
 
-internal_UNBOUNDED = ((-1e100, 1e100),)
+UNBOUNDED = ((-1e100, 1e100),)
 
 
-def internal_compile(
+def build_calculator(
     program: bytes,
-    domains: Sequence[tuple[float, float]] = internal_UNBOUNDED,
-    ranges: Sequence[tuple[float, float]] = internal_UNBOUNDED,
+    domains: Sequence[tuple[float, float]] = UNBOUNDED,
+    ranges: Sequence[tuple[float, float]] = UNBOUNDED,
 ) -> Callable[..., tuple[float, ...]]:
     return compile_calculator(program, domains, ranges)
 
 
-def internal_constant(expression: str, outputs: int = 1) -> Callable[..., tuple[float, ...]]:
-    return internal_compile(
-        ("{ pop " + expression + " }").encode("ascii"), ranges=internal_UNBOUNDED * outputs
+def constant(expression: str, outputs: int = 1) -> Callable[..., tuple[float, ...]]:
+    return build_calculator(
+        ("{ pop " + expression + " }").encode("ascii"), ranges=UNBOUNDED * outputs
     )
 
 
@@ -72,7 +72,7 @@ def internal_constant(expression: str, outputs: int = 1) -> Callable[..., tuple[
 def test_calculator_implements_every_table_42_operator(
     expression: str, expected: tuple[float, ...]
 ) -> None:
-    result = internal_constant(expression, len(expected))(0)
+    result = constant(expression, len(expected))(0)
     assert result == pytest.approx(expected)
     assert all(type(value) is float for value in result)
 
@@ -112,7 +112,7 @@ def test_calculator_implements_every_table_42_operator(
 def test_calculator_arithmetic_uses_postscript_signs_angles_and_rounding(
     expression: str, expected: float
 ) -> None:
-    assert internal_constant(expression)(0) == pytest.approx((expected,))
+    assert constant(expression)(0) == pytest.approx((expected,))
 
 
 @pytest.mark.parametrize(
@@ -135,7 +135,7 @@ def test_calculator_arithmetic_uses_postscript_signs_angles_and_rounding(
     ],
 )
 def test_calculator_integer_operations_preserve_integer_type(expression: str) -> None:
-    assert len(internal_constant(expression + " 1 idiv")(0)) == 1
+    assert len(constant(expression + " 1 idiv")(0)) == 1
 
 
 @pytest.mark.parametrize(
@@ -164,7 +164,7 @@ def test_calculator_integer_operations_preserve_integer_type(expression: str) ->
 )
 def test_calculator_real_results_are_not_implicitly_integer_operands(expression: str) -> None:
     with pytest.raises(ValueError):
-        internal_constant(expression + " 1 idiv")(0)
+        constant(expression + " 1 idiv")(0)
 
 
 @pytest.mark.parametrize(
@@ -182,9 +182,9 @@ def test_calculator_real_results_are_not_implicitly_integer_operands(expression:
 def test_calculator_signed_32_bit_integer_overflow_promotes_to_real(
     expression: str, expected: int
 ) -> None:
-    assert internal_constant(expression)(0) == (expected,)
+    assert constant(expression)(0) == (expected,)
     with pytest.raises(ValueError):
-        internal_constant(expression + " 1 idiv")(0)
+        constant(expression + " 1 idiv")(0)
 
 
 @pytest.mark.parametrize(
@@ -197,13 +197,13 @@ def test_calculator_signed_32_bit_integer_overflow_promotes_to_real(
     ],
 )
 def test_calculator_cvi_checks_range_after_truncation(literal: str, expected: int) -> None:
-    assert internal_constant(literal + " cvi 1 idiv")(0) == (expected,)
+    assert constant(literal + " cvi 1 idiv")(0) == (expected,)
 
 
 @pytest.mark.parametrize("literal", ["2147483648.0", "-2147483649.0", "99999999999999999999"])
 def test_calculator_cvi_rejects_out_of_range_integer_results(literal: str) -> None:
     with pytest.raises(ValueError):
-        internal_constant(literal + " cvi")(0)
+        constant(literal + " cvi")(0)
 
 
 @pytest.mark.parametrize(
@@ -227,7 +227,7 @@ def test_calculator_cvi_rejects_out_of_range_integer_results(literal: str) -> No
 def test_calculator_bitwise_operations_use_32_bits_and_zero_fill(
     expression: str, expected: int
 ) -> None:
-    assert internal_constant(expression)(0) == (expected,)
+    assert constant(expression)(0) == (expected,)
 
 
 @pytest.mark.parametrize("left", [False, True])
@@ -242,7 +242,7 @@ def test_calculator_boolean_truth_tables(left: bool, right: bool, operator: str)
         "ne": left != right,
     }[operator]
     expression = f"{str(left).lower()} {str(right).lower()} {operator} {{ 1 }} {{ 0 }} ifelse"
-    assert internal_constant(expression)(0) == (int(expected),)
+    assert constant(expression)(0) == (int(expected),)
 
 
 @pytest.mark.parametrize(
@@ -267,7 +267,7 @@ def test_calculator_boolean_truth_tables(left: bool, right: bool, operator: str)
 def test_calculator_comparison_and_boolean_operands_are_not_python_numbers(
     comparison: str, expected: int
 ) -> None:
-    assert internal_constant(comparison + " { 1 } { 0 } ifelse")(0) == (expected,)
+    assert constant(comparison + " { 1 } { 0 } ifelse")(0) == (expected,)
 
 
 @pytest.mark.parametrize(
@@ -303,7 +303,7 @@ def test_calculator_comparison_and_boolean_operands_are_not_python_numbers(
 )
 def test_calculator_rejects_wrong_operand_types(expression: str) -> None:
     with pytest.raises(ValueError):
-        internal_constant(expression)(0)
+        constant(expression)(0)
 
 
 @pytest.mark.parametrize(
@@ -323,7 +323,7 @@ def test_calculator_rejects_wrong_operand_types(expression: str) -> None:
 def test_calculator_stack_order_and_zero_count_controls(
     expression: str, expected: tuple[float, ...]
 ) -> None:
-    assert internal_constant(expression, len(expected))(0) == expected
+    assert constant(expression, len(expected))(0) == expected
 
 
 @pytest.mark.parametrize(
@@ -354,7 +354,7 @@ def test_calculator_stack_order_and_zero_count_controls(
 )
 def test_calculator_stack_underflow_and_invalid_stack_arguments(expression: str) -> None:
     with pytest.raises(ValueError):
-        internal_constant(expression)(0)
+        constant(expression)(0)
 
 
 @pytest.mark.parametrize(
@@ -372,7 +372,7 @@ def test_calculator_stack_underflow_and_invalid_stack_arguments(expression: str)
 def test_calculator_conditionals_execute_only_selected_branch(
     program: bytes, expected: int
 ) -> None:
-    assert internal_compile(program)(3) == (expected,)
+    assert build_calculator(program)(3) == (expected,)
 
 
 @pytest.mark.parametrize(
@@ -401,7 +401,7 @@ def test_calculator_conditionals_execute_only_selected_branch(
 )
 def test_calculator_rejects_malformed_program_and_first_class_procedures(program: bytes) -> None:
     with pytest.raises(ValueError):
-        internal_compile(program)
+        build_calculator(program)
 
 
 @pytest.mark.parametrize(
@@ -431,7 +431,7 @@ def test_calculator_rejects_malformed_program_and_first_class_procedures(program
 )
 def test_calculator_uses_pdf_number_syntax_and_forbids_other_object_types(operand: bytes) -> None:
     with pytest.raises(ValueError):
-        internal_compile(b"{ pop " + operand + b" }")
+        build_calculator(b"{ pop " + operand + b" }")
 
 
 @pytest.mark.parametrize(
@@ -441,13 +441,13 @@ def test_calculator_uses_pdf_number_syntax_and_forbids_other_object_types(operan
 def test_calculator_accepts_pdf_signed_and_decimal_number_forms(
     literal: bytes, expected: float
 ) -> None:
-    assert internal_compile(b"{ pop " + literal + b" }")(0) == (expected,)
+    assert build_calculator(b"{ pop " + literal + b" }")(0) == (expected,)
 
 
 @pytest.mark.parametrize("whitespace", [b"\x00", b"\t", b"\n", b"\f", b"\r", b" "])
 def test_calculator_accepts_each_pdf_whitespace_byte(whitespace: bytes) -> None:
     program = whitespace.join([b"{", b"pop", b"2", b"3", b"add", b"}"])
-    assert internal_compile(program)(0) == (5,)
+    assert build_calculator(program)(0) == (5,)
 
 
 @pytest.mark.parametrize("line_end", [b"\r", b"\n", b"\r\n"])
@@ -461,12 +461,12 @@ def test_calculator_comments_ignore_braces_and_unsupported_tokens(line_end: byte
         + line_end
         + b"{9}ifelse}% trailing comment"
     )
-    assert internal_compile(program)(0) == (3,)
+    assert build_calculator(program)(0) == (3,)
 
 
 def test_calculator_unterminated_comment_does_not_supply_a_closing_brace() -> None:
     with pytest.raises(ValueError):
-        internal_compile(b"{ pop 7 % }")
+        build_calculator(b"{ pop 7 % }")
 
 
 @pytest.mark.parametrize(
@@ -492,11 +492,11 @@ def test_calculator_unterminated_comment_does_not_supply_a_closing_brace() -> No
 )
 def test_calculator_rejects_undefined_or_nonfinite_arithmetic(expression: str) -> None:
     with pytest.raises(ValueError):
-        internal_constant(expression)(0)
+        constant(expression)(0)
 
 
 def test_calculator_clips_inputs_before_execution_and_outputs_after_execution() -> None:
-    function = internal_compile(b"{ sqrt }", domains=((0, 9),), ranges=((0, 2),))
+    function = build_calculator(b"{ sqrt }", domains=((0, 9),), ranges=((0, 2),))
     assert function(-4) == (0,)
     assert function(1) == (1,)
     assert function(4) == (2,)
@@ -504,7 +504,7 @@ def test_calculator_clips_inputs_before_execution_and_outputs_after_execution() 
 
 
 def test_calculator_multiple_inputs_and_outputs_follow_stack_order() -> None:
-    function = internal_compile(
+    function = build_calculator(
         b"{ exch }",
         domains=(
             (0, 2),
@@ -522,22 +522,22 @@ def test_calculator_multiple_inputs_and_outputs_follow_stack_order() -> None:
 @pytest.mark.parametrize("value", [5, 5.0])
 def test_calculator_inputs_are_real_even_when_python_caller_passes_an_integer(value: float) -> None:
     with pytest.raises(ValueError):
-        internal_compile(b"{ 2 idiv }")(value)
-    assert internal_compile(b"{ cvi 2 idiv }")(value) == (2,)
+        build_calculator(b"{ 2 idiv }")(value)
+    assert build_calculator(b"{ cvi 2 idiv }")(value) == (2,)
 
 
 @pytest.mark.parametrize(
     "value", [True, False, "1", None, [], math.nan, math.inf, -math.inf, 10**400]
 )
 def test_calculator_rejects_nonfinite_or_nonnumeric_call_inputs(value: object) -> None:
-    function = internal_compile(b"{}")
+    function = build_calculator(b"{}")
     with pytest.raises(ValueError):
         function(value)
 
 
 @pytest.mark.parametrize("inputs", [(), (1, 2)])
 def test_calculator_rejects_input_arity_mismatch(inputs: tuple[float, ...]) -> None:
-    function = internal_compile(b"{}")
+    function = build_calculator(b"{}")
     with pytest.raises(ValueError):
         function(*inputs)
 
@@ -545,11 +545,11 @@ def test_calculator_rejects_input_arity_mismatch(inputs: tuple[float, ...]) -> N
 @pytest.mark.parametrize("program", [b"{ pop }", b"{ dup }", b"{ pop true }", b"{ pop false }"])
 def test_calculator_requires_exact_numeric_output_stack(program: bytes) -> None:
     with pytest.raises(ValueError):
-        internal_compile(program)(0)
+        build_calculator(program)(0)
 
 
 def test_calculator_reuses_compiled_program_without_leaking_operand_stack() -> None:
-    function = internal_compile(b"{ dup 0 eq { pop -1 sqrt } if 2 mul }")
+    function = build_calculator(b"{ dup 0 eq { pop -1 sqrt } if 2 mul }")
     assert function(3) == (6,)
     with pytest.raises(ValueError):
         function(0)
@@ -559,8 +559,8 @@ def test_calculator_reuses_compiled_program_without_leaking_operand_stack() -> N
 
 def test_calculator_supports_the_required_100_operand_stack_entries() -> None:
     program = b"{ " + b"0 " * 99 + b"pop " * 99 + b"}"
-    assert internal_compile(program)(7) == (7,)
-    identity = internal_compile(b"{}", domains=((0, 1),) * 100, ranges=((0, 1),) * 100)
+    assert build_calculator(program)(7) == (7,)
+    identity = build_calculator(b"{}", domains=((0, 1),) * 100, ranges=((0, 1),) * 100)
     assert identity(*([0.5] * 100)) == (0.5,) * 100
 
 
@@ -570,21 +570,21 @@ def test_calculator_supports_the_required_100_operand_stack_entries() -> None:
 )
 def test_calculator_rejects_operand_stack_growth_over_implementation_limit(program: bytes) -> None:
     with pytest.raises(ValueError):
-        internal_compile(program)(7)
+        build_calculator(program)(7)
 
 
 def test_calculator_rejects_initial_inputs_over_operand_stack_limit() -> None:
     with pytest.raises(ValueError):
-        function = internal_compile(b"{}", domains=((0, 1),) * 101, ranges=((0, 1),) * 101)
+        function = build_calculator(b"{}", domains=((0, 1),) * 101, ranges=((0, 1),) * 101)
         function(*([0.5] * 101))
 
 
 def test_calculator_allows_255_total_brace_levels() -> None:
     expression = "true { " * 254 + "7" + " } if" * 254
-    assert internal_constant(expression)(0) == (7,)
+    assert constant(expression)(0) == (7,)
 
 
 def test_calculator_rejects_256_total_brace_levels() -> None:
     expression = "true { " * 255 + "7" + " } if" * 255
     with pytest.raises(ValueError):
-        internal_constant(expression)
+        constant(expression)

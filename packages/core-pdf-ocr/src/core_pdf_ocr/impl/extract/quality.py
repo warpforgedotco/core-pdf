@@ -12,13 +12,13 @@ from core_pdf.impl.extract.quality import (
     TextAnalysis as TextAnalysis,
 )
 from core_pdf.impl.extract.quality import (
-    internal_analyze_text as internal_analyze_text,
+    analyze_text as analyze_text,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_CandidateMetrics:
+class CandidateMetrics:
     __slots__ = (
         "characters",
         "alphanumeric_characters",
@@ -71,14 +71,14 @@ class internal_CandidateMetrics:
         utility: float,
         median_text_height: float = 0.0,
     ) -> None:
-        internal_frozen_setattr(self, "characters", characters)
-        internal_frozen_setattr(self, "alphanumeric_characters", alphanumeric_characters)
-        internal_frozen_setattr(self, "tokens", tokens)
-        internal_frozen_setattr(self, "line_count", line_count)
-        internal_frozen_setattr(self, "mean_confidence", mean_confidence)
-        internal_frozen_setattr(self, "symbol_ratio", symbol_ratio)
-        internal_frozen_setattr(self, "utility", utility)
-        internal_frozen_setattr(self, "median_text_height", median_text_height)
+        frozen_setattr(self, "characters", characters)
+        frozen_setattr(self, "alphanumeric_characters", alphanumeric_characters)
+        frozen_setattr(self, "tokens", tokens)
+        frozen_setattr(self, "line_count", line_count)
+        frozen_setattr(self, "mean_confidence", mean_confidence)
+        frozen_setattr(self, "symbol_ratio", symbol_ratio)
+        frozen_setattr(self, "utility", utility)
+        frozen_setattr(self, "median_text_height", median_text_height)
 
     def __repr__(self) -> str:
         return (
@@ -135,7 +135,7 @@ class internal_CandidateMetrics:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         characters = changes.pop("characters", self.characters)
@@ -162,12 +162,12 @@ class internal_CandidateMetrics:
         )
 
 
-class internal_Candidate:
+class Candidate:
     __slots__ = ("mode", "observations", "metrics", "symbols", "recognition_status")
 
     mode: int
     observations: ObservationBatch
-    metrics: internal_CandidateMetrics
+    metrics: CandidateMetrics
     symbols: ObservationBatch
     recognition_status: str
 
@@ -184,17 +184,15 @@ class internal_Candidate:
         self,
         mode: int,
         observations: ObservationBatch,
-        metrics: internal_CandidateMetrics,
+        metrics: CandidateMetrics,
         symbols: ObservationBatch | None = None,
         recognition_status: str = "not-run",
     ) -> None:
-        internal_frozen_setattr(self, "mode", mode)
-        internal_frozen_setattr(self, "observations", observations)
-        internal_frozen_setattr(self, "metrics", metrics)
-        internal_frozen_setattr(
-            self, "symbols", ObservationBatch.empty() if symbols is None else symbols
-        )
-        internal_frozen_setattr(self, "recognition_status", recognition_status)
+        frozen_setattr(self, "mode", mode)
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "metrics", metrics)
+        frozen_setattr(self, "symbols", ObservationBatch.empty() if symbols is None else symbols)
+        frozen_setattr(self, "recognition_status", recognition_status)
 
     def __repr__(self) -> str:
         return (
@@ -242,7 +240,7 @@ class internal_Candidate:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         mode = changes.pop("mode", self.mode)
@@ -255,17 +253,17 @@ class internal_Candidate:
         return self.__class__(mode, observations, metrics, symbols, recognition_status)
 
 
-class internal_TextUtility(NamedTuple):
+class TextUtility(NamedTuple):
     nonspace: int
     alphanumeric: int
     utility: float
 
 
-def internal_text_utility_stats(text: str, confidence: float) -> internal_TextUtility:
+def text_utility_stats(text: str, confidence: float) -> TextUtility:
     stripped = "".join(text.split())
     nonspace = len(stripped)
     if not nonspace:
-        return internal_TextUtility(0, 0, 0.0)
+        return TextUtility(0, 0, 0.0)
     alphanumeric = sum(map(str.isalnum, stripped))
     counts = Counter(map(str.casefold, stripped))
     symbols = nonspace - alphanumeric
@@ -277,17 +275,17 @@ def internal_text_utility_stats(text: str, confidence: float) -> internal_TextUt
         if dominant_ratio > 0.60:
             repetition_penalty = max(0.20, 1.0 - (dominant_ratio - 0.60) * 2.0)
     utility = (alphanumeric + symbol_credit) * confidence_factor * repetition_penalty
-    return internal_TextUtility(nonspace, alphanumeric, utility)
+    return TextUtility(nonspace, alphanumeric, utility)
 
 
-def internal_candidate(
+def make_candidate(
     mode: int,
     observations: ObservationBatch,
     *,
     symbols: ObservationBatch | None = None,
     recognition_status: str = "not-run",
     median_text_height: float = 0.0,
-) -> internal_Candidate:
+) -> Candidate:
     confidences = observations.confidence
     finite_confidences = confidences[numpy.isfinite(confidences)]
     mean_confidence = float(numpy.mean(finite_confidences)) if len(finite_confidences) else 0.0
@@ -303,7 +301,7 @@ def internal_candidate(
     ):
         characters += len(text)
         tokens += len(text.split())
-        nonspace, text_alphanumeric, text_utility = internal_text_utility_stats(
+        nonspace, text_alphanumeric, text_utility = text_utility_stats(
             text,
             float(confidence),
         )
@@ -311,10 +309,10 @@ def internal_candidate(
         alphanumeric += text_alphanumeric
         utility += text_utility
     symbol_characters = nonspace_characters - alphanumeric
-    return internal_Candidate(
+    return Candidate(
         mode,
         observations,
-        internal_CandidateMetrics(
+        CandidateMetrics(
             characters=characters,
             alphanumeric_characters=alphanumeric,
             tokens=tokens,

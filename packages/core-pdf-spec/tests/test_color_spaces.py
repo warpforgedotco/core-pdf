@@ -19,11 +19,11 @@ from core_pdf_spec.s_08_graphics.image_spec import image_bits_per_component
 from core_pdf_spec.types import PdfName
 
 
-def internal_lab() -> list[object]:
+def lab() -> list[object]:
     return ["Lab", {"WhitePoint": [1, 1, 1], "Range": [-20, 20, -40, 40]}]
 
 
-def internal_tint(outputs: int = 3) -> dict[str, object]:
+def tint(outputs: int = 3) -> dict[str, object]:
     return {"FunctionType": 2, "Domain": [0, 1], "N": 1, "C0": [0] * outputs, "C1": [1] * outputs}
 
 
@@ -73,7 +73,7 @@ def test_mixed_none_component_still_reaches_the_alternate_tint_function() -> Non
 
 
 def test_indexed_lab_lookup_scales_each_base_component_range() -> None:
-    space = parse_color_space(["Indexed", internal_lab(), 0, b"\xff\x00\xff"])
+    space = parse_color_space(["Indexed", lab(), 0, b"\xff\x00\xff"])
     assert space.base is not None
     assert space.base.kind == "Lab"
     assert indexed_color_components(space, 0) == (100, -20, 40)
@@ -81,7 +81,7 @@ def test_indexed_lab_lookup_scales_each_base_component_range() -> None:
 
 def test_indexed_icc_retains_profile_alternate_and_ranges() -> None:
     profile = PdfStream(
-        dictionary={"N": 3, "Range": [-1, 1, -2, 2, -3, 3], "Alternate": internal_lab()},
+        dictionary={"N": 3, "Range": [-1, 1, -2, 2, -3, 3], "Alternate": lab()},
         raw_data=b"inert ICC bytes",
     )
     space = parse_color_space(["Indexed", ["ICCBased", profile], 0, b"\xff\x00\xff"])
@@ -97,18 +97,18 @@ def test_indexed_icc_retains_profile_alternate_and_ranges() -> None:
 @pytest.mark.parametrize("kind", ["Separation", "DeviceN"])
 def test_tint_alternate_keeps_calibrated_space_and_checks_result_count(kind: str) -> None:
     names: object = PdfName.of("Ink") if kind == "Separation" else [PdfName.of("Ink")]
-    space = parse_color_space([kind, names, internal_lab(), internal_tint()])
+    space = parse_color_space([kind, names, lab(), tint()])
     assert space.colorants == ("Ink",)
     assert space.alternate is not None
     assert space.alternate.kind == "Lab"
     assert tint_color_components(space, (0.5,)) == (0.5, 0.5, 0.5)
-    bad = parse_color_space([kind, names, internal_lab(), internal_tint(2)])
+    bad = parse_color_space([kind, names, lab(), tint(2)])
     with pytest.raises(ValueError, match="output count"):
         tint_color_components(bad, (0.5,))
 
 
 def test_indexed_allows_separation_base() -> None:
-    base = ["Separation", PdfName.of("Ink"), "DeviceGray", internal_tint(1)]
+    base = ["Separation", PdfName.of("Ink"), "DeviceGray", tint(1)]
     space = parse_color_space(["Indexed", base, 0, b"\xff"])
     assert space.base is not None
     assert space.base.kind == "Separation"
@@ -128,7 +128,7 @@ def test_indexed_requires_exact_palette_length(lookup: bytes) -> None:
 
 
 def test_color_parameters_are_immutable_without_range_mirrors() -> None:
-    raw = internal_lab()
+    raw = lab()
     space = parse_color_space(raw)
     params = cast(dict[str, Any], raw[1])
     params["WhitePoint"][0] = 99
@@ -154,7 +154,7 @@ def test_color_parameters_are_immutable_without_range_mirrors() -> None:
         ["CalRGB", {"WhitePoint": [1, 1, 1], "Matrix": []}],
         ["ICCBased", {"N": 3}],
         ["Pattern", "Pattern"],
-        ["Separation", PdfName.of("Ink"), "Pattern", internal_tint()],
+        ["Separation", PdfName.of("Ink"), "Pattern", tint()],
     ],
 )
 def test_color_parser_rejects_invalid_shapes_and_parameters(value: object) -> None:
@@ -203,13 +203,13 @@ def test_mask_and_jpx_bit_depth_rules() -> None:
     )
 
 
-def internal_state() -> ContentInterpreter:
+def make_state() -> ContentInterpreter:
     sink = SimpleNamespace()
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None))
 
 
 def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
-    state = internal_state()
+    state = make_state()
     state.graphics.fill_space = DEVICE_RGB
     operands = (2, -1, 0.5)
     observed = []
@@ -228,8 +228,8 @@ def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
 def test_default_color_normalizes_components_once(
     monkeypatch: pytest.MonkeyPatch, pattern: bool
 ) -> None:
-    state = internal_state()
-    space = parse_color_space(["Pattern", internal_lab()] if pattern else internal_lab())
+    state = make_state()
+    space = parse_color_space(["Pattern", lab()] if pattern else lab())
     state.graphics.fill_space = space
     calls = []
 

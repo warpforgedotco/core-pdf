@@ -9,9 +9,9 @@ DELIMITERS = b"()<>[]/%"
 SEPARATOR_TABLE = bytes([1 if i in WHITESPACE or i in DELIMITERS else 0 for i in range(256)])
 WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
-internal_STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
-internal_STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
-internal_STRING_ESCAPE = {
+STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
+STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
+STRING_ESCAPE = {
     110: b"\n",
     114: b"\r",
     116: b"\t",
@@ -30,11 +30,11 @@ def read_literal_string(
     if isinstance(data, memoryview) and data.format != "B":
         end_idx = pos
     elif isinstance(data, bytes) or data.c_contiguous:
-        match = internal_STRING_SPECIAL_RE.search(data, pos, data_len)
+        match = STRING_SPECIAL_RE.search(data, pos, data_len)
         end_idx = data_len if match is None else match.start()
     else:
         end_idx = pos
-        while end_idx < data_len and not internal_STRING_SPECIAL_TABLE[data[end_idx]]:
+        while end_idx < data_len and not STRING_SPECIAL_TABLE[data[end_idx]]:
             end_idx += 1
 
     if end_idx < data_len and data[end_idx] == 41:
@@ -74,7 +74,7 @@ def read_literal_string(
             elif esc in (10, 13):
                 if pos < data_len and esc == 13 and data[pos] == 10:
                     pos += 1
-            elif (mapped := internal_STRING_ESCAPE.get(esc)) is not None:
+            elif (mapped := STRING_ESCAPE.get(esc)) is not None:
                 out.extend(mapped)
             else:
                 out.append(esc)

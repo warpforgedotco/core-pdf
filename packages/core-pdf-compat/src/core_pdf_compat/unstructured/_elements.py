@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, NoReturn, Self
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class ElementMetadata(dict[str, Any]):
@@ -26,10 +26,8 @@ class Element:
     __match_args__ = ("text", "metadata")
 
     def __init__(self, text: str, metadata: ElementMetadata | None = None) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(
-            self, "metadata", ElementMetadata() if metadata is None else metadata
-        )
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "metadata", ElementMetadata() if metadata is None else metadata)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -56,7 +54,7 @@ class Element:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)

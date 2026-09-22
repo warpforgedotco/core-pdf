@@ -12,12 +12,12 @@ from core_pdf.impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_compat._text_state import (
-    internal_append_directional_text,
-    internal_ensure_line_break,
-    internal_flush_text,
-    internal_legacy_base_table,
-    internal_positioned_text,
-    internal_PREDEFINED_ENCODING_CODECS,
+    PREDEFINED_ENCODING_CODECS,
+    append_directional_text,
+    ensure_line_break,
+    flush_text,
+    legacy_base_table,
+    positioned_text,
 )
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -26,12 +26,12 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
-internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
-internal_LEGACY_GLYPH_ALIASES = {
+WIN_ANSI_ENCODING = tuple(legacy_base_table("WinAnsiEncoding"))
+MAC_ROMAN_ENCODING = tuple(legacy_base_table("MacRomanEncoding"))
+LEGACY_GLYPH_ALIASES = {
     "f_f": "ﬀ",
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
@@ -39,8 +39,8 @@ internal_LEGACY_GLYPH_ALIASES = {
 }
 
 
-def internal_glyph_name_to_unicode(name: str) -> str:
-    alias = internal_LEGACY_GLYPH_ALIASES.get(name)
+def legacy_glyph_name_to_unicode(name: str) -> str:
+    alias = LEGACY_GLYPH_ALIASES.get(name)
     if alias is not None:
         return alias
     if "_" in name:
@@ -48,7 +48,7 @@ def internal_glyph_name_to_unicode(name: str) -> str:
     return glyph_name_to_unicode(name)
 
 
-def internal_difference_text(glyph_name: str, code: int) -> str:
+def difference_text(glyph_name: str, code: int) -> str:
     if glyph_name == ".notdef":
         return "□"
     if glyph_name.startswith("a") and glyph_name[1:].isdigit():
@@ -62,13 +62,13 @@ def internal_difference_text(glyph_name: str, code: int) -> str:
         and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
     ):
         return f"/{glyph_name}"
-    mapped = internal_glyph_name_to_unicode(glyph_name)
+    mapped = legacy_glyph_name_to_unicode(glyph_name)
     if len(glyph_name) == 1:
         return glyph_name
     return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
 
 
-class internal_Font:
+class Font:
     __slots__ = (
         "decoder",
         "space_character",
@@ -116,13 +116,13 @@ class internal_Font:
         character_widths: Mapping[int, float],
         default_width: float,
     ) -> None:
-        internal_frozen_setattr(self, "decoder", decoder)
-        internal_frozen_setattr(self, "space_character", space_character)
-        internal_frozen_setattr(self, "space_width", space_width)
-        internal_frozen_setattr(self, "encoding", encoding)
-        internal_frozen_setattr(self, "character_map", character_map)
-        internal_frozen_setattr(self, "character_widths", character_widths)
-        internal_frozen_setattr(self, "default_width", default_width)
+        frozen_setattr(self, "decoder", decoder)
+        frozen_setattr(self, "space_character", space_character)
+        frozen_setattr(self, "space_width", space_width)
+        frozen_setattr(self, "encoding", encoding)
+        frozen_setattr(self, "character_map", character_map)
+        frozen_setattr(self, "character_widths", character_widths)
+        frozen_setattr(self, "default_width", default_width)
 
     def __repr__(self) -> str:
         return (
@@ -176,7 +176,7 @@ class internal_Font:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         decoder = changes.pop("decoder", self.decoder)
@@ -221,10 +221,10 @@ class internal_Font:
         return chunks, width
 
 
-class internal_TextState:
-    def __init__(self, fonts: Mapping[str, internal_Font]) -> None:
+class TextState:
+    def __init__(self, fonts: Mapping[str, Font]) -> None:
         self.fonts = fonts
-        self.font: internal_Font | None = None
+        self.font: Font | None = None
         self.font_size = 12.0
         self.half_space_width = 125.0
         self.leading = 0.0
@@ -232,7 +232,7 @@ class internal_TextState:
         self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.previous_cm = self.cm.copy()
         self.previous_tm = self.tm.copy()
-        self.stack: list[tuple[list[float], internal_Font | None, float, float]] = []
+        self.stack: list[tuple[list[float], Font | None, float, float]] = []
         self.text = ""
         self.output_parts: list[str] = []
         self.output_last = ""
@@ -241,12 +241,10 @@ class internal_TextState:
         self.rtl = False
 
     def flush(self) -> None:
-        self.text, self.output_last = internal_flush_text(
-            self.output_parts, self.text, self.output_last
-        )
+        self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
 
     def positioned(self, string_width: float) -> None:
-        self.text, self.output_last = internal_positioned_text(
+        self.text, self.output_last = positioned_text(
             self.output_parts,
             self.text,
             self.output_last,
@@ -269,7 +267,7 @@ class internal_TextState:
         else:
             chunks, width = self.font.decode_parts(data)
         for chunk in chunks:
-            self.text, self.rtl = internal_append_directional_text(self.text, self.rtl, chunk)
+            self.text, self.rtl = append_directional_text(self.text, self.rtl, chunk)
         self.width += width * self.font_size
         self.height = self.font_size
         self.positioned(0.0)
@@ -301,8 +299,8 @@ class OperatorTextProjection:
         self.resolver = page.document.resolver
         self.active_forms: set[int] = set()
 
-    def internal_fonts(self, resources: Mapping[object, object]) -> dict[str, internal_Font]:
-        result: dict[str, internal_Font] = {}
+    def collect_fonts(self, resources: Mapping[object, object]) -> dict[str, Font]:
+        result: dict[str, Font] = {}
         fonts = self.resolver.resolve(resources.get("Font"))
         if not isinstance(fonts, dict):
             return result
@@ -310,7 +308,7 @@ class OperatorTextProjection:
             font = self.resolver.resolve(raw_font)
             if not isinstance(font, dict):
                 continue
-            self.internal_validate_font_files(font)
+            self.validate_font_files(font)
             subtype = recover_pdf_name(font.get("Subtype"))
             if subtype not in {"Type1", "MMType1", "TrueType", "Type3"} and not isinstance(
                 self.resolver.resolve(font.get("DescendantFonts")),
@@ -319,14 +317,14 @@ class OperatorTextProjection:
                 raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
-            to_unicode = self.internal_to_unicode(resolved, decoder)
-            widths, default_width = self.internal_widths(font, decoder)
-            if subtype == "Type3" and not self.internal_type3_interpretable(font):
+            to_unicode = self.resolve_to_unicode(resolved, decoder)
+            widths, default_width = self.resolve_widths(font, decoder)
+            if subtype == "Type3" and not self.type3_interpretable(font):
                 widths, default_width = {}, 0.0
-            encoding = self.internal_encoding(font, decoder, to_unicode)
-            character_map = self.internal_character_map(decoder, to_unicode)
+            encoding = self.resolve_encoding(font, decoder, to_unicode)
+            character_map = self.build_character_map(decoder, to_unicode)
             builtin_mapping = (
-                self.internal_type1_alternative(resolved)
+                self.type1_alternative(resolved)
                 if subtype == "Type1" and to_unicode is None
                 else {}
             )
@@ -351,7 +349,7 @@ class OperatorTextProjection:
                     (
                         code
                         for code, glyph_name in decoder.differences.items()
-                        if internal_difference_text(glyph_name, code) == " "
+                        if difference_text(glyph_name, code) == " "
                     ),
                     None,
                 )
@@ -360,7 +358,7 @@ class OperatorTextProjection:
                     (
                         code
                         for code, glyph_name in builtin_mapping.items()
-                        if internal_glyph_name_to_unicode(glyph_name) == " "
+                        if legacy_glyph_name_to_unicode(glyph_name) == " "
                     ),
                     None,
                 )
@@ -383,7 +381,7 @@ class OperatorTextProjection:
                     mapped = (
                         chr(int(glyph_name[1:]))
                         if glyph_name.startswith("a") and glyph_name[1:].isdigit()
-                        else internal_glyph_name_to_unicode(glyph_name)
+                        else legacy_glyph_name_to_unicode(glyph_name)
                     )
                     if mapped and (mapped != glyph_name or len(glyph_name) == 1):
                         if not isinstance(encoding, str) and 0 <= code < len(encoding_table):
@@ -392,7 +390,7 @@ class OperatorTextProjection:
                 if not isinstance(encoding, str):
                     encoding = tuple(encoding_table)
             declared_space_width = widths.get(space_code, 0.0)
-            flags = self.internal_font_flags(font)
+            flags = self.font_flags(font)
             if default_width == 0:
                 if declared_space_width:
                     default_width = declared_space_width * (1.0 if flags & 1 else 2.0)
@@ -403,7 +401,7 @@ class OperatorTextProjection:
                         if positive
                         else 500.0
                     )
-            result[str(name)] = internal_Font(
+            result[str(name)] = Font(
                 decoder=decoder,
                 space_character=chr(space_code),
                 space_width=declared_space_width or 200.0,
@@ -414,7 +412,7 @@ class OperatorTextProjection:
             )
         return result
 
-    def internal_type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
+    def type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
         descriptor = self.resolver.resolve(font.get("FontDescriptor"))
         if not isinstance(descriptor, dict):
             return {}
@@ -444,7 +442,7 @@ class OperatorTextProjection:
                 result[code] = glyph_name
         return result
 
-    def internal_type3_interpretable(self, font: Mapping[object, object]) -> bool:
+    def type3_interpretable(self, font: Mapping[object, object]) -> bool:
         if font.get("ToUnicode") is not None:
             return True
         char_procs = self.resolver.resolve(font.get("CharProcs"))
@@ -452,13 +450,13 @@ class OperatorTextProjection:
             return True
         return all(
             (glyph_name := recover_pdf_name(name)) is not None
-            and bool(mapped := internal_glyph_name_to_unicode(glyph_name))
+            and bool(mapped := legacy_glyph_name_to_unicode(glyph_name))
             and mapped != glyph_name
             for name in char_procs
         )
 
     @staticmethod
-    def internal_to_unicode(
+    def resolve_to_unicode(
         font: Mapping[object, object], decoder: FontDecoder
     ) -> ToUnicodeCMap | None:
         if decoder.to_unicode is not None:
@@ -475,7 +473,7 @@ class OperatorTextProjection:
         except ValueError:
             return None
 
-    def internal_validate_font_files(self, font: Mapping[object, object]) -> None:
+    def validate_font_files(self, font: Mapping[object, object]) -> None:
         owners: list[Mapping[object, object]] = [font]
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
@@ -494,7 +492,7 @@ class OperatorTextProjection:
             if embedded_files > 1:
                 raise ValueError("font descriptor declares more than one embedded font program")
 
-    def internal_font_flags(self, font: Mapping[object, object]) -> int:
+    def font_flags(self, font: Mapping[object, object]) -> int:
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         owner: Mapping[object, object] = font
         if isinstance(descendants, (list, tuple)) and descendants:
@@ -507,7 +505,7 @@ class OperatorTextProjection:
         )
         return int(flags) if isinstance(flags, (int, float)) else 0
 
-    def internal_widths(
+    def resolve_widths(
         self,
         font: Mapping[object, object],
         decoder: FontDecoder,
@@ -574,7 +572,7 @@ class OperatorTextProjection:
                 )
         return widths, default_width
 
-    def internal_encoding(
+    def resolve_encoding(
         self,
         font: Mapping[object, object],
         decoder: FontDecoder,
@@ -586,22 +584,22 @@ class OperatorTextProjection:
             return "charmap"
         if encoding_name is not None:
             name = encoding_name
-            codecs = internal_PREDEFINED_ENCODING_CODECS
+            codecs = PREDEFINED_ENCODING_CODECS
             if name in codecs or "-UCS2-" in name:
                 return codecs.get(name, "utf-16-be")
             table = list(
-                internal_WIN_ANSI_ENCODING
+                WIN_ANSI_ENCODING
                 if name == "WinAnsiEncoding"
-                else internal_MAC_ROMAN_ENCODING
+                else MAC_ROMAN_ENCODING
                 if name == "MacRomanEncoding"
                 else STANDARD_ENCODING
             )
         elif isinstance(raw_encoding, dict):
             base = recover_pdf_name(raw_encoding.get("BaseEncoding"))
             table = list(
-                internal_WIN_ANSI_ENCODING
+                WIN_ANSI_ENCODING
                 if base == "WinAnsiEncoding"
-                else internal_MAC_ROMAN_ENCODING
+                else MAC_ROMAN_ENCODING
                 if base == "MacRomanEncoding"
                 else STANDARD_ENCODING
             )
@@ -610,7 +608,7 @@ class OperatorTextProjection:
         for code, glyph_name in decoder.differences.items():
             if not 0 <= code < 256:
                 continue
-            table[code] = internal_difference_text(glyph_name, code)
+            table[code] = difference_text(glyph_name, code)
         if to_unicode is not None:
             for source in to_unicode.mappings:
                 code = int.from_bytes(source, "big")
@@ -619,7 +617,7 @@ class OperatorTextProjection:
         return tuple(table)
 
     @staticmethod
-    def internal_character_map(
+    def build_character_map(
         decoder: FontDecoder, to_unicode: ToUnicodeCMap | None
     ) -> dict[str, str]:
         if to_unicode is None:
@@ -627,7 +625,7 @@ class OperatorTextProjection:
             if decoder.differences:
                 return result
             for code, glyph_name in decoder.encoding_differences.items():
-                mapped = internal_glyph_name_to_unicode(glyph_name)
+                mapped = legacy_glyph_name_to_unicode(glyph_name)
                 if mapped != glyph_name:
                     result[chr(code)] = mapped
             return result
@@ -639,12 +637,12 @@ class OperatorTextProjection:
             if source
         }
 
-    def internal_extract(
+    def extract(
         self,
         streams: tuple[PdfStream, ...],
         resources: Mapping[object, object],
     ) -> str:
-        state = internal_TextState(self.internal_fonts(resources))
+        state = TextState(self.collect_fonts(resources))
         xobjects = self.resolver.resolve(resources.get("XObject"))
         decoded_streams: list[bytes] = []
         for stream in streams:
@@ -749,9 +747,7 @@ class OperatorTextProjection:
                         state.insert_space()
             elif operator == "Do" and operands and isinstance(xobjects, dict):
                 state.flush()
-                state.output_last = internal_ensure_line_break(
-                    state.output_parts, state.output_last
-                )
+                state.output_last = ensure_line_break(state.output_parts, state.output_last)
                 form = self.resolver.resolve(xobjects.get(operands[0]))
                 if not isinstance(form, PdfStream):
                     form = self.resolver.resolve(xobjects.get(str(operands[0])))
@@ -763,7 +759,7 @@ class OperatorTextProjection:
                             continue
                         self.active_forms.add(form_id)
                         try:
-                            form_text = self.internal_extract(
+                            form_text = self.extract(
                                 (self.resolver.resolve_stream(form),), form_resources
                             )
                         finally:
@@ -776,4 +772,4 @@ class OperatorTextProjection:
 
     def extract_text(self) -> str:
         resources = self.page.resources
-        return self.internal_extract(tuple(self.page.content_streams), resources)
+        return self.extract(tuple(self.page.content_streams), resources)

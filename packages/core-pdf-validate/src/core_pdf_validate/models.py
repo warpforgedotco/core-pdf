@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 __all__ = [
@@ -41,8 +41,8 @@ class ProfileSupport:
     __match_args__ = ("identifier", "edition")
 
     def __init__(self, identifier: str, edition: str) -> None:
-        internal_frozen_setattr(self, "identifier", identifier)
-        internal_frozen_setattr(self, "edition", edition)
+        frozen_setattr(self, "identifier", identifier)
+        frozen_setattr(self, "edition", edition)
 
     def __repr__(self) -> str:
         return (
@@ -73,7 +73,7 @@ class ProfileSupport:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         identifier = changes.pop("identifier", self.identifier)
@@ -119,12 +119,12 @@ class RuleResult:
         description: str,
         locations: tuple[str, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "specification", specification)
-        internal_frozen_setattr(self, "clause", clause)
-        internal_frozen_setattr(self, "test_number", test_number)
-        internal_frozen_setattr(self, "status", status)
-        internal_frozen_setattr(self, "description", description)
-        internal_frozen_setattr(self, "locations", locations)
+        frozen_setattr(self, "specification", specification)
+        frozen_setattr(self, "clause", clause)
+        frozen_setattr(self, "test_number", test_number)
+        frozen_setattr(self, "status", status)
+        frozen_setattr(self, "description", description)
+        frozen_setattr(self, "locations", locations)
 
     def __repr__(self) -> str:
         return (
@@ -175,7 +175,7 @@ class RuleResult:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         specification = changes.pop("specification", self.specification)
@@ -257,17 +257,17 @@ class ProfileResult:
         limitations: tuple[str, ...] = (),
         profile_edition: str | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "profile", profile)
-        internal_frozen_setattr(self, "execution_status", execution_status)
-        internal_frozen_setattr(self, "conformance", conformance)
-        internal_frozen_setattr(self, "engine", engine)
-        internal_frozen_setattr(self, "engine_version", engine_version)
-        internal_frozen_setattr(self, "rules", rules)
-        internal_frozen_setattr(self, "diagnostics", diagnostics)
-        internal_frozen_setattr(self, "raw_report", raw_report)
-        internal_frozen_setattr(self, "stderr", stderr)
-        internal_frozen_setattr(self, "limitations", limitations)
-        internal_frozen_setattr(self, "profile_edition", profile_edition)
+        frozen_setattr(self, "profile", profile)
+        frozen_setattr(self, "execution_status", execution_status)
+        frozen_setattr(self, "conformance", conformance)
+        frozen_setattr(self, "engine", engine)
+        frozen_setattr(self, "engine_version", engine_version)
+        frozen_setattr(self, "rules", rules)
+        frozen_setattr(self, "diagnostics", diagnostics)
+        frozen_setattr(self, "raw_report", raw_report)
+        frozen_setattr(self, "stderr", stderr)
+        frozen_setattr(self, "limitations", limitations)
+        frozen_setattr(self, "profile_edition", profile_edition)
 
     def __repr__(self) -> str:
         return (
@@ -333,7 +333,7 @@ class ProfileResult:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         profile = changes.pop("profile", self.profile)
@@ -382,10 +382,10 @@ class ValidationReport:
         results: tuple[ProfileResult, ...],
         diagnostics: tuple[str, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "source_sha256", source_sha256)
-        internal_frozen_setattr(self, "targets", targets)
-        internal_frozen_setattr(self, "results", results)
-        internal_frozen_setattr(self, "diagnostics", diagnostics)
+        frozen_setattr(self, "source_sha256", source_sha256)
+        frozen_setattr(self, "targets", targets)
+        frozen_setattr(self, "results", results)
+        frozen_setattr(self, "diagnostics", diagnostics)
 
     def __repr__(self) -> str:
         return (
@@ -423,7 +423,7 @@ class ValidationReport:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         source_sha256 = changes.pop("source_sha256", self.source_sha256)

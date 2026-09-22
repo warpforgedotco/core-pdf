@@ -15,41 +15,41 @@ from core_pdf.impl.extract.contracts import (
     PageAnalysis,
 )
 from core_pdf.impl.extract.grids import (
-    internal_axis_segments,
-    internal_DisjointSet,
-    internal_grid_components,
-    internal_merge_collinear_segments,
-    internal_split_grid_component,
-    internal_table_from_component,
+    DisjointSet,
+    axis_segments,
+    grid_components,
+    merge_collinear_segments,
+    split_grid_component,
+    table_from_component,
 )
 from core_pdf.impl.extract.table_cleanup import (
-    internal_annotate_table_associations,
-    internal_cell_text,
-    internal_merge_adjacent_tables,
-    internal_merge_stream_text_columns,
-    internal_merge_wrapped_cell_rows,
-    internal_merge_wrapped_stream_rows,
-    internal_split_semantic_table,
-    internal_stream_table_reads_like_prose,
-    internal_table_character_spaced_prose,
-    internal_table_is_single_column_prose,
-    internal_table_quality,
-    internal_table_with_bands,
+    annotate_table_associations,
+    cell_text,
+    merge_adjacent_tables,
+    merge_stream_text_columns,
+    merge_wrapped_cell_rows,
+    merge_wrapped_stream_rows,
+    split_semantic_table,
+    stream_table_reads_like_prose,
+    table_character_spaced_prose,
+    table_is_single_column_prose,
+    table_quality,
+    table_with_bands,
 )
-from core_pdf.impl.extract.table_facts import internal_numeric_cell, internal_TableFacts
+from core_pdf.impl.extract.table_facts import TableFacts, numeric_cell
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output.model import Table, TableCell
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.array_views import finite_median
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-def internal_table_vertical_sort_key(table: Table) -> float:
+def table_vertical_sort_key(table: Table) -> float:
     return -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]
 
 
-class internal_ObservationCoordinates(internal_Record):
+class ObservationCoordinates(Record):
     __slots__ = ("x0", "y0", "x1", "y1", "y_centers", "widths", "heights", "sequences")
 
     x0: list[float]
@@ -84,14 +84,14 @@ class internal_ObservationCoordinates(internal_Record):
         heights: list[float],
         sequences: list[int],
     ) -> None:
-        internal_frozen_setattr(self, "x0", x0)
-        internal_frozen_setattr(self, "y0", y0)
-        internal_frozen_setattr(self, "x1", x1)
-        internal_frozen_setattr(self, "y1", y1)
-        internal_frozen_setattr(self, "y_centers", y_centers)
-        internal_frozen_setattr(self, "widths", widths)
-        internal_frozen_setattr(self, "heights", heights)
-        internal_frozen_setattr(self, "sequences", sequences)
+        frozen_setattr(self, "x0", x0)
+        frozen_setattr(self, "y0", y0)
+        frozen_setattr(self, "x1", x1)
+        frozen_setattr(self, "y1", y1)
+        frozen_setattr(self, "y_centers", y_centers)
+        frozen_setattr(self, "widths", widths)
+        frozen_setattr(self, "heights", heights)
+        frozen_setattr(self, "sequences", sequences)
 
     def __repr__(self) -> str:
         return (
@@ -151,7 +151,7 @@ class internal_ObservationCoordinates(internal_Record):
         return self.__class__(x0, y0, x1, y1, y_centers, widths, heights, sequences)
 
     @classmethod
-    def from_observations(cls, observations: ObservationBatch) -> internal_ObservationCoordinates:
+    def from_observations(cls, observations: ObservationBatch) -> ObservationCoordinates:
         bbox = observations.bbox
         return cls(
             bbox[:, 0].tolist(),
@@ -165,11 +165,11 @@ class internal_ObservationCoordinates(internal_Record):
         )
 
 
-class internal_TableAnalysis(internal_Record):
+class TableAnalysis(Record):
     __slots__ = ("observations", "coordinates", "text_rows", "row_centers", "candidate_columns")
 
     observations: ObservationBatch
-    coordinates: internal_ObservationCoordinates
+    coordinates: ObservationCoordinates
     text_rows: list[list[int]]
     row_centers: list[float]
     candidate_columns: list[list[tuple[int, int]]]
@@ -192,16 +192,16 @@ class internal_TableAnalysis(internal_Record):
     def __init__(
         self,
         observations: ObservationBatch,
-        coordinates: internal_ObservationCoordinates,
+        coordinates: ObservationCoordinates,
         text_rows: list[list[int]],
         row_centers: list[float],
         candidate_columns: list[list[tuple[int, int]]],
     ) -> None:
-        internal_frozen_setattr(self, "observations", observations)
-        internal_frozen_setattr(self, "coordinates", coordinates)
-        internal_frozen_setattr(self, "text_rows", text_rows)
-        internal_frozen_setattr(self, "row_centers", row_centers)
-        internal_frozen_setattr(self, "candidate_columns", candidate_columns)
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "coordinates", coordinates)
+        frozen_setattr(self, "text_rows", text_rows)
+        frozen_setattr(self, "row_centers", row_centers)
+        frozen_setattr(self, "candidate_columns", candidate_columns)
 
     def __repr__(self) -> str:
         return (
@@ -249,15 +249,15 @@ class internal_TableAnalysis(internal_Record):
         return self.__class__(observations, coordinates, text_rows, row_centers, candidate_columns)
 
     @classmethod
-    def build(cls, observations: ObservationBatch, page_width: float) -> internal_TableAnalysis:
-        coordinates = internal_ObservationCoordinates.from_observations(observations)
-        text_rows = internal_text_rows(observations, coordinates=coordinates)
+    def build(cls, observations: ObservationBatch, page_width: float) -> TableAnalysis:
+        coordinates = ObservationCoordinates.from_observations(observations)
+        text_rows = group_text_rows(observations, coordinates=coordinates)
         return cls(
             observations,
             coordinates,
             text_rows,
-            internal_row_centers(observations, text_rows, coordinates=coordinates),
-            internal_aligned_column_clusters(
+            compute_row_centers(observations, text_rows, coordinates=coordinates),
+            aligned_column_clusters(
                 observations,
                 text_rows,
                 page_width,
@@ -268,19 +268,19 @@ class internal_TableAnalysis(internal_Record):
 
 
 def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
-    analysis = internal_TableAnalysis.build(observations, capture.width)
-    return internal_finalize_tables(internal_detect_tables(capture, analysis), analysis)
+    analysis = TableAnalysis.build(observations, capture.width)
+    return finalize_tables(detect_tables(capture, analysis), analysis)
 
 
-def internal_finalize_tables(
+def finalize_tables(
     tables: tuple[Table, ...],
-    analysis: internal_TableAnalysis,
+    analysis: TableAnalysis,
 ) -> tuple[Table, ...]:
     observations = analysis.observations
-    tables = tuple(sorted(tables, key=internal_table_vertical_sort_key))
+    tables = tuple(sorted(tables, key=table_vertical_sort_key))
     return tuple(
-        internal_table_with_bands(
-            internal_annotate_table_associations(
+        table_with_bands(
+            annotate_table_associations(
                 replace(table, order=order) if table.order != order else table,
                 observations,
                 analysis.text_rows,
@@ -290,20 +290,20 @@ def internal_finalize_tables(
     )
 
 
-def internal_detect_tables(
+def detect_tables(
     capture: PageAnalysis,
-    analysis: internal_TableAnalysis,
+    analysis: TableAnalysis,
 ) -> tuple[Table, ...]:
     observations = analysis.observations
-    horizontal, vertical = internal_axis_segments(capture)
-    horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
-    vertical = internal_merge_collinear_segments(vertical, coordinate=0, start=1, end=2)
-    components = internal_grid_components(horizontal, vertical)
+    horizontal, vertical = axis_segments(capture)
+    horizontal = merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
+    vertical = merge_collinear_segments(vertical, coordinate=0, start=1, end=2)
+    components = grid_components(horizontal, vertical)
     ruled_tables: list[Table] = []
     if components:
         for component in components:
-            for component_part in internal_split_grid_component(*component):
-                table = internal_table_from_component(
+            for component_part in split_grid_component(*component):
+                table = table_from_component(
                     len(ruled_tables),
                     *component_part,
                     observations,
@@ -312,7 +312,7 @@ def internal_detect_tables(
                     ruled_tables.append(table)
     ruled = tuple(ruled_tables)
     tables = list(ruled)
-    for stream in internal_stream_tables(
+    for stream in stream_tables(
         capture,
         len(tables),
         analysis,
@@ -324,25 +324,21 @@ def internal_detect_tables(
             and table.bbox is not None
             and overlap_ratio_min(stream.bbox, table.bbox) >= 0.5
         ]
-        if conflicts and internal_table_quality(stream) < max(
-            map(internal_table_quality, conflicts)
-        ):
+        if conflicts and table_quality(stream) < max(map(table_quality, conflicts)):
             continue
         for conflict in conflicts:
             tables.remove(conflict)
-        merged_stream = internal_merge_wrapped_stream_rows(
-            internal_merge_stream_text_columns(stream)
-        )
-        if internal_stream_table_reads_like_prose(merged_stream):
+        merged_stream = merge_wrapped_stream_rows(merge_stream_text_columns(stream))
+        if stream_table_reads_like_prose(merged_stream):
             continue
-        tables.append(internal_merge_wrapped_cell_rows(merged_stream))
+        tables.append(merge_wrapped_cell_rows(merged_stream))
     tables = [
         segment
-        for table in internal_merge_adjacent_tables(tables)
-        for segment in internal_split_semantic_table(table)
-        for facts in (internal_TableFacts.from_rows(segment.rows),)
-        if not internal_table_character_spaced_prose(segment, facts=facts)
-        and not internal_table_is_single_column_prose(segment, facts=facts)
+        for table in merge_adjacent_tables(tables)
+        for segment in split_semantic_table(table)
+        for facts in (TableFacts.from_rows(segment.rows),)
+        if not table_character_spaced_prose(segment, facts=facts)
+        and not table_is_single_column_prose(segment, facts=facts)
     ]
     return tuple(tables)
 
@@ -350,10 +346,10 @@ def internal_detect_tables(
 COLUMN_TOLERANCE = 14.0
 
 
-def internal_text_rows(
+def group_text_rows(
     observations: ObservationBatch,
     *,
-    coordinates: internal_ObservationCoordinates | None = None,
+    coordinates: ObservationCoordinates | None = None,
 ) -> list[list[int]]:
     visible_flags = observations.visible.tolist()
     rotations = observations.rotation.tolist()
@@ -364,7 +360,7 @@ def internal_text_rows(
     ]
     if not visible:
         return []
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     all_centers = coordinates.y_centers
     all_lefts = coordinates.x0
     all_heights = coordinates.heights
@@ -391,27 +387,27 @@ def internal_text_rows(
     return [sorted(row, key=lambda index: (all_lefts[index], sequences[index])) for row in rows]
 
 
-def internal_row_centers(
+def compute_row_centers(
     observations: ObservationBatch,
     rows: list[list[int]],
     *,
-    coordinates: internal_ObservationCoordinates | None = None,
+    coordinates: ObservationCoordinates | None = None,
 ) -> list[float]:
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     centers = coordinates.y_centers
     return [sum(centers[index] for index in row) / len(row) for row in rows]
 
 
-def internal_aligned_column_clusters(
+def aligned_column_clusters(
     observations: ObservationBatch,
     rows: list[list[int]],
     page_width: float,
     *,
     minimum_rows: int = 2,
-    coordinates: internal_ObservationCoordinates | None = None,
+    coordinates: ObservationCoordinates | None = None,
 ) -> list[list[tuple[int, int]]]:
     tolerance = max(COLUMN_TOLERANCE, min(24.0, page_width * 0.04))
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     all_lefts = coordinates.x0
     all_widths = coordinates.widths
     sequences = coordinates.sequences
@@ -431,11 +427,11 @@ def internal_aligned_column_clusters(
             means.append(x)
     candidates = []
     for cluster in clusters:
-        row_support = {row_index for row_index, internal_index in cluster}
-        widths = [all_widths[index] for internal_row_index, index in cluster]
+        row_support = {row_index for row_index, index_value in cluster}
+        widths = [all_widths[index] for row_index_value, index in cluster]
         alphanumeric = sum(
             any(character.isalnum() for character in observations.text[index])
-            for internal_row_index, index in cluster
+            for row_index_value, index in cluster
         )
         if (
             len(row_support) >= minimum_rows
@@ -446,20 +442,20 @@ def internal_aligned_column_clusters(
     return candidates
 
 
-def internal_split_support_rows(
+def split_support_rows(
     observations: ObservationBatch,
     rows: list[list[int]],
     indexes: list[int],
     *,
     minimum_rows: int = 3,
     row_centers: list[float] | None = None,
-    coordinates: internal_ObservationCoordinates | None = None,
+    coordinates: ObservationCoordinates | None = None,
 ) -> list[list[int]]:
     if not indexes:
         return []
     if row_centers is None:
-        row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+        row_centers = compute_row_centers(observations, rows, coordinates=coordinates)
+    coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     groups = [[indexes[0]]]
     for index in indexes[1:]:
         previous = groups[-1][-1]
@@ -472,7 +468,7 @@ def internal_split_support_rows(
     return [group for group in groups if len(group) >= minimum_rows]
 
 
-def internal_stream_table(
+def stream_table(
     order: int,
     observations: ObservationBatch,
     rows: list[list[int]],
@@ -481,18 +477,18 @@ def internal_stream_table(
     *,
     minimum_rows: int = 3,
     row_centers: list[float] | None = None,
-    coordinates: internal_ObservationCoordinates | None = None,
+    coordinates: ObservationCoordinates | None = None,
 ) -> Table | None:
     support_set = set(support)
     columns = [
         column
         for column in columns
-        if len({row_index for row_index, internal_index in column}.intersection(support_set))
+        if len({row_index for row_index, index_value in column}.intersection(support_set))
         >= minimum_rows
     ]
     if len(columns) < 2:
         return None
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     all_x0 = coordinates.x0
     all_y0 = coordinates.y0
     all_x1 = coordinates.x1
@@ -501,7 +497,7 @@ def internal_stream_table(
         [
             finite_median(
                 numpy.asarray(
-                    [all_x0[index] for internal_row_index, index in column],
+                    [all_x0[index] for row_index_value, index in column],
                     dtype=numpy.float32,
                 )
             )
@@ -513,7 +509,7 @@ def internal_stream_table(
     column_centers = column_centers[column_order]
     columns = [columns[int(index)] for index in column_order]
     if row_centers is None:
-        row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
+        row_centers = compute_row_centers(observations, rows, coordinates=coordinates)
     top = row_centers[support[0]]
     bottom = row_centers[support[-1]]
     selected = [
@@ -543,7 +539,7 @@ def internal_stream_table(
     numeric_by_column = [0] * column_count
     text_lengths = 0
     for row_index, row in enumerate(selected):
-        cells: list[list[int]] = [[] for internal_column in columns]
+        cells: list[list[int]] = [[] for make_column in columns]
         for index in row:
             x0 = all_x0[index]
             x1 = all_x1[index]
@@ -563,11 +559,11 @@ def internal_stream_table(
                     column = 0
             if 0 <= column < column_count and x0 <= right_edge_limit:
                 cells[column].append(index)
-        texts = [internal_cell_text(observations, cell) for cell in cells]
+        texts = [cell_text(observations, cell) for cell in cells]
         if not any(texts):
             continue
         populated += sum(bool(text) for text in texts)
-        numeric_cells = [internal_numeric_cell(text) for text in texts]
+        numeric_cells = [numeric_cell(text) for text in texts]
         for column, is_numeric in enumerate(numeric_cells):
             numeric_by_column[column] += int(is_numeric)
         text_lengths += sum(len(text) for text in texts)
@@ -592,7 +588,7 @@ def internal_stream_table(
     if density < minimum_density:
         return None
     numeric_total = sum(numeric_by_column)
-    facts = internal_TableFacts.from_rows(table_rows)
+    facts = TableFacts.from_rows(table_rows)
     filled_texts = facts.filled_texts
     long_text_cells = sum(len(text) > 18 for text in filled_texts)
     sentence_like_cells = sum(
@@ -643,15 +639,15 @@ def internal_stream_table(
     )
 
 
-def internal_compact_stream_table(
+def compact_stream_table(
     order: int,
     observations: ObservationBatch,
     rows: list[list[int]],
     page_width: float,
     *,
-    coordinates: internal_ObservationCoordinates | None = None,
+    coordinates: ObservationCoordinates | None = None,
 ) -> Table | None:
-    coordinates = coordinates or internal_ObservationCoordinates.from_observations(observations)
+    coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     all_x0 = coordinates.x0
     all_y0 = coordinates.y0
     all_x1 = coordinates.x1
@@ -691,12 +687,11 @@ def internal_compact_stream_table(
             x0_value = all_x0[index]
             column = min(range(anchor_count), key=lambda c: abs(anchor_values[c] - x0_value))
             cell_indexes[column].append(index)
-        texts = [internal_cell_text(observations, indexes) for indexes in cell_indexes]
+        texts = [cell_text(observations, indexes) for indexes in cell_indexes]
         if not any(texts):
             continue
         numeric_cells += sum(
-            internal_numeric_cell(text) or any(character.isdigit() for character in text)
-            for text in texts
+            numeric_cell(text) or any(character.isdigit() for character in text) for text in texts
         )
         y0 = min(all_y0[index] for index in row)
         y1 = max(all_y1[index] for index in row)
@@ -730,10 +725,10 @@ def internal_compact_stream_table(
     )
 
 
-def internal_stream_tables(
+def stream_tables(
     capture: PageAnalysis,
     start_order: int,
-    analysis: internal_TableAnalysis,
+    analysis: TableAnalysis,
 ) -> tuple[Table, ...]:
     observations = analysis.observations
     coordinates = analysis.coordinates
@@ -746,7 +741,7 @@ def internal_stream_tables(
             [
                 column
                 for column in candidate_columns
-                if len({row_index for row_index, internal_index in column}) >= minimum_rows
+                if len({row_index for row_index, index_value in column}) >= minimum_rows
             ]
             if minimum_rows > 2
             else candidate_columns
@@ -755,12 +750,12 @@ def internal_stream_tables(
             continue
         row_columns: dict[int, set[int]] = defaultdict(set)
         for column_index, column in enumerate(columns):
-            for row_index, internal_index in column:
+            for row_index, index_value in column:
                 row_columns[row_index].add(column_index)
         pair_counts: Counter[tuple[int, int]] = Counter()
         for present in row_columns.values():
             pair_counts.update(combinations(sorted(present), 2))
-        disjoint = internal_DisjointSet(len(columns))
+        disjoint = DisjointSet(len(columns))
         for pair, count in pair_counts.items():
             if count >= minimum_rows:
                 disjoint.union(*pair)
@@ -777,7 +772,7 @@ def internal_stream_tables(
                 for row_index, present in row_columns.items()
                 if len(present.intersection(component)) >= required
             )
-            for group in internal_split_support_rows(
+            for group in split_support_rows(
                 observations,
                 rows,
                 support,
@@ -785,7 +780,7 @@ def internal_stream_tables(
                 row_centers=row_centers,
                 coordinates=coordinates,
             ):
-                table = internal_stream_table(
+                table = stream_table(
                     start_order + len(tables),
                     observations,
                     rows,
@@ -798,7 +793,7 @@ def internal_stream_tables(
                 if table is not None:
                     tables.append(table)
     if not tables:
-        compact = internal_compact_stream_table(
+        compact = compact_stream_table(
             start_order,
             observations,
             rows,

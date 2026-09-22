@@ -56,8 +56,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         state = self.state
         assert frame.lexer is not None
         operator_names = frozenset(
-            name.encode("latin-1")
-            for name in (*state.internal_default_handlers, *state.operator_overrides)
+            name.encode("latin-1") for name in (*state.default_handlers, *state.operator_overrides)
         )
         for name, operands in iter_content_operations(
             frame.lexer,

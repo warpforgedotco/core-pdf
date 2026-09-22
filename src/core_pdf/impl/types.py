@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from os import PathLike
 from typing import Any, ClassVar, Protocol, Self, TypeAlias, TypeVar
 
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf_spec.types import (
     MISSING,
     MissingObject,
@@ -17,7 +17,7 @@ from core_pdf_spec.types import (
     Rectangle,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class BinaryReader(Protocol):
@@ -41,7 +41,7 @@ PdfSource: TypeAlias = (
 RecordT = TypeVar("RecordT")
 
 
-class PageScoped[RecordT](internal_Record):
+class PageScoped[RecordT](Record):
     __slots__ = ("page_index", "page_number", "page_label", "record")
 
     page_index: int
@@ -59,10 +59,10 @@ class PageScoped[RecordT](internal_Record):
         page_label: str | None,
         record: RecordT,
     ) -> None:
-        internal_frozen_setattr(self, "page_index", page_index)
-        internal_frozen_setattr(self, "page_number", page_number)
-        internal_frozen_setattr(self, "page_label", page_label)
-        internal_frozen_setattr(self, "record", record)
+        frozen_setattr(self, "page_index", page_index)
+        frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "page_label", page_label)
+        frozen_setattr(self, "record", record)
 
     def __repr__(self) -> str:
         return (
@@ -99,7 +99,7 @@ class PageScoped[RecordT](internal_Record):
         return self.__class__(page_index, page_number, page_label, record)
 
 
-class TextWord(internal_Record):
+class TextWord(Record):
     __slots__ = ("text", "bbox", "line_index", "word_index", "block_index", "page_number", "source")
 
     text: str
@@ -139,13 +139,13 @@ class TextWord(internal_Record):
         page_number: int | None = None,
         source: str = "unknown",
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "line_index", line_index)
-        internal_frozen_setattr(self, "word_index", word_index)
-        internal_frozen_setattr(self, "block_index", block_index)
-        internal_frozen_setattr(self, "page_number", page_number)
-        internal_frozen_setattr(self, "source", source)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "line_index", line_index)
+        frozen_setattr(self, "word_index", word_index)
+        frozen_setattr(self, "block_index", block_index)
+        frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "source", source)
 
     def __repr__(self) -> str:
         return (
@@ -201,7 +201,7 @@ class TextWord(internal_Record):
         return self.__class__(text, bbox, line_index, word_index, block_index, page_number, source)
 
 
-class DrawingRecord(internal_Record):
+class DrawingRecord(Record):
     __slots__ = (
         "kind",
         "seqno",
@@ -324,28 +324,28 @@ class DrawingRecord(internal_Record):
         items: tuple[object, ...],
         rect: Rectangle | None,
     ) -> None:
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "seqno", seqno)
-        internal_frozen_setattr(self, "fill", fill)
-        internal_frozen_setattr(self, "fill_pattern", fill_pattern)
-        internal_frozen_setattr(self, "fill_opacity", fill_opacity)
-        internal_frozen_setattr(self, "stroke_color", stroke_color)
-        internal_frozen_setattr(self, "stroke_pattern", stroke_pattern)
-        internal_frozen_setattr(self, "stroke_opacity", stroke_opacity)
-        internal_frozen_setattr(self, "line_width", line_width)
-        internal_frozen_setattr(self, "line_cap", line_cap)
-        internal_frozen_setattr(self, "line_join", line_join)
-        internal_frozen_setattr(self, "dash_pattern", dash_pattern)
-        internal_frozen_setattr(self, "fill_rule", fill_rule)
-        internal_frozen_setattr(self, "blend_mode", blend_mode)
-        internal_frozen_setattr(self, "soft_mask_alpha", soft_mask_alpha)
-        internal_frozen_setattr(self, "raw_data", raw_data)
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "image_source", image_source)
-        internal_frozen_setattr(self, "image_clip", image_clip)
-        internal_frozen_setattr(self, "path", path)
-        internal_frozen_setattr(self, "items", items)
-        internal_frozen_setattr(self, "rect", rect)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "seqno", seqno)
+        frozen_setattr(self, "fill", fill)
+        frozen_setattr(self, "fill_pattern", fill_pattern)
+        frozen_setattr(self, "fill_opacity", fill_opacity)
+        frozen_setattr(self, "stroke_color", stroke_color)
+        frozen_setattr(self, "stroke_pattern", stroke_pattern)
+        frozen_setattr(self, "stroke_opacity", stroke_opacity)
+        frozen_setattr(self, "line_width", line_width)
+        frozen_setattr(self, "line_cap", line_cap)
+        frozen_setattr(self, "line_join", line_join)
+        frozen_setattr(self, "dash_pattern", dash_pattern)
+        frozen_setattr(self, "fill_rule", fill_rule)
+        frozen_setattr(self, "blend_mode", blend_mode)
+        frozen_setattr(self, "soft_mask_alpha", soft_mask_alpha)
+        frozen_setattr(self, "raw_data", raw_data)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "image_source", image_source)
+        frozen_setattr(self, "image_clip", image_clip)
+        frozen_setattr(self, "path", path)
+        frozen_setattr(self, "items", items)
+        frozen_setattr(self, "rect", rect)
 
     def __repr__(self) -> str:
         return (
@@ -485,15 +485,15 @@ class DrawingRecord(internal_Record):
 
     @classmethod
     def from_captured(cls, source: object, **overrides: object) -> Self:
-        values = {name: getattr(source, name) for name in internal_DRAWING_FIELD_NAMES}
+        values = {name: getattr(source, name) for name in DRAWING_FIELD_NAMES}
         values.update(overrides)
         return cls(**values)
 
 
-internal_DRAWING_FIELD_NAMES: tuple[str, ...] = DrawingRecord.__fields__
+DRAWING_FIELD_NAMES: tuple[str, ...] = DrawingRecord.__fields__
 
 
-class ImageMetadata(internal_Record):
+class ImageMetadata(Record):
     __slots__ = (
         "width",
         "height",
@@ -551,15 +551,15 @@ class ImageMetadata(internal_Record):
         transform: object | None,
         clipping: Rectangle | None,
     ) -> None:
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
-        internal_frozen_setattr(self, "channels", channels)
-        internal_frozen_setattr(self, "color_model", color_model)
-        internal_frozen_setattr(self, "alpha", alpha)
-        internal_frozen_setattr(self, "stride", stride)
-        internal_frozen_setattr(self, "source_rect", source_rect)
-        internal_frozen_setattr(self, "transform", transform)
-        internal_frozen_setattr(self, "clipping", clipping)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "channels", channels)
+        frozen_setattr(self, "color_model", color_model)
+        frozen_setattr(self, "alpha", alpha)
+        frozen_setattr(self, "stride", stride)
+        frozen_setattr(self, "source_rect", source_rect)
+        frozen_setattr(self, "transform", transform)
+        frozen_setattr(self, "clipping", clipping)
 
     def __repr__(self) -> str:
         return (
@@ -719,30 +719,30 @@ class ImageRecord(DrawingRecord):
         data: object | None = None,
         image_metadata: ImageMetadata | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "seqno", seqno)
-        internal_frozen_setattr(self, "fill", fill)
-        internal_frozen_setattr(self, "fill_pattern", fill_pattern)
-        internal_frozen_setattr(self, "fill_opacity", fill_opacity)
-        internal_frozen_setattr(self, "stroke_color", stroke_color)
-        internal_frozen_setattr(self, "stroke_pattern", stroke_pattern)
-        internal_frozen_setattr(self, "stroke_opacity", stroke_opacity)
-        internal_frozen_setattr(self, "line_width", line_width)
-        internal_frozen_setattr(self, "line_cap", line_cap)
-        internal_frozen_setattr(self, "line_join", line_join)
-        internal_frozen_setattr(self, "dash_pattern", dash_pattern)
-        internal_frozen_setattr(self, "fill_rule", fill_rule)
-        internal_frozen_setattr(self, "blend_mode", blend_mode)
-        internal_frozen_setattr(self, "soft_mask_alpha", soft_mask_alpha)
-        internal_frozen_setattr(self, "raw_data", raw_data)
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "image_source", image_source)
-        internal_frozen_setattr(self, "image_clip", image_clip)
-        internal_frozen_setattr(self, "path", path)
-        internal_frozen_setattr(self, "items", items)
-        internal_frozen_setattr(self, "rect", rect)
-        internal_frozen_setattr(self, "data", data)
-        internal_frozen_setattr(self, "image_metadata", image_metadata)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "seqno", seqno)
+        frozen_setattr(self, "fill", fill)
+        frozen_setattr(self, "fill_pattern", fill_pattern)
+        frozen_setattr(self, "fill_opacity", fill_opacity)
+        frozen_setattr(self, "stroke_color", stroke_color)
+        frozen_setattr(self, "stroke_pattern", stroke_pattern)
+        frozen_setattr(self, "stroke_opacity", stroke_opacity)
+        frozen_setattr(self, "line_width", line_width)
+        frozen_setattr(self, "line_cap", line_cap)
+        frozen_setattr(self, "line_join", line_join)
+        frozen_setattr(self, "dash_pattern", dash_pattern)
+        frozen_setattr(self, "fill_rule", fill_rule)
+        frozen_setattr(self, "blend_mode", blend_mode)
+        frozen_setattr(self, "soft_mask_alpha", soft_mask_alpha)
+        frozen_setattr(self, "raw_data", raw_data)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "image_source", image_source)
+        frozen_setattr(self, "image_clip", image_clip)
+        frozen_setattr(self, "path", path)
+        frozen_setattr(self, "items", items)
+        frozen_setattr(self, "rect", rect)
+        frozen_setattr(self, "data", data)
+        frozen_setattr(self, "image_metadata", image_metadata)
 
     def __repr__(self) -> str:
         return (

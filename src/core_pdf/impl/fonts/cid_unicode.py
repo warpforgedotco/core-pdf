@@ -19,12 +19,12 @@ from core_pdf.impl.fonts.cmap_resources import (
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
 )
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class CompactCMap(internal_Record):
+class CompactCMap(Record):
     __slots__ = ("effective_codes_by_cid",)
 
     effective_codes_by_cid: dict[int, tuple[bytes, ...]]
@@ -33,7 +33,7 @@ class CompactCMap(internal_Record):
     __match_args__ = ("effective_codes_by_cid",)
 
     def __init__(self, effective_codes_by_cid: dict[int, tuple[bytes, ...]]) -> None:
-        internal_frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
+        frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
 
     def __repr__(self) -> str:
         return (
@@ -60,7 +60,7 @@ class CompactCMap(internal_Record):
         return self.effective_codes_by_cid.get(cid, ())
 
 
-def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
+def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
     code_space_ranges = decoder.code_space_ranges
 
     def code_is_decodable(code: bytes) -> bool:
@@ -89,7 +89,7 @@ def compact_cmap(name: str) -> CompactCMap | None:
     if resolve_cmap_resource(name) is None:
         return None
     decoder = resolve_cmap_decoder(name)
-    return internal_compact_cmap(decoder) if decoder is not None else None
+    return compact_cmap_from_decoder(decoder) if decoder is not None else None
 
 
 def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | None:
@@ -107,27 +107,27 @@ def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | Non
 
 
 class CIDUnicodeMap:
-    __slots__ = ("internal_cache", "ordering", "registry", "vertical")
+    __slots__ = ("_cache", "ordering", "registry", "vertical")
 
     def __init__(self, registry: str, ordering: str, vertical: bool) -> None:
         self.registry = registry
         self.ordering = ordering
         self.vertical = vertical
-        self.internal_cache: dict[int, str | None] = {}
+        self._cache: dict[int, str | None] = {}
 
     def get(self, cid: int, default: str | None = None) -> str | None:
-        result = self.internal_resolve(cid)
+        result = self.resolve(cid)
         return default if result is None else result
 
-    def internal_resolve(self, cid: int) -> str | None:
-        cache = self.internal_cache
+    def resolve(self, cid: int) -> str | None:
+        cache = self._cache
         try:
             return cache[cid]
         except KeyError:
-            text = cache[cid] = self.internal_vote(cid)
+            text = cache[cid] = self.vote(cid)
             return text
 
-    def internal_vote(self, cid: int) -> str | None:
+    def vote(self, cid: int) -> str | None:
         override = CID_COLLECTION_UNICODE_OVERRIDES.get((self.registry, self.ordering), {}).get(cid)
         if override is not None:
             return override

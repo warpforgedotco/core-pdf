@@ -1,7 +1,7 @@
 import pytest
 
 from core_pdf.impl.fonts.cmap_ranges import expand_range
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap, internal_decode_utf16be
+from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap, decode_utf16be_text
 
 
 def block(kind, records):
@@ -21,7 +21,7 @@ def block(kind, records):
     ],
 )
 def test_destination_decoding_recovers_bom_odd_bytes_and_invalid_surrogates(encoded, expected):
-    assert internal_decode_utf16be(encoded) == expected
+    assert decode_utf16be_text(encoded) == expected
 
 
 @pytest.mark.parametrize("buffer_type", [bytes, bytearray, memoryview])

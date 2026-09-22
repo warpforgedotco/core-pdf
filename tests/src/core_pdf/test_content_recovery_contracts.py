@@ -178,12 +178,12 @@ def test_inline_image_consumption_respects_a_full_operand_buffer():
     assert operations == [("BI", tuple(range(16))), ("Q", ())]
 
 
-def internal_operations(data: bytes) -> list[tuple[str, tuple[object, ...]]]:
+def parse_operations(data: bytes) -> list[tuple[str, tuple[object, ...]]]:
     return list(iter_content_operations(PdfLexer(data)))
 
 
 def test_inline_fast_path_matches_token_parser_for_simple_operands() -> None:
-    operations = internal_operations(
+    operations = parse_operations(
         b"1 -2.5 /Name true null (str) <41> [1 2] 12345678901234567 Tj Do"
     )
     assert len(operations) == 2
@@ -201,17 +201,17 @@ def test_inline_fast_path_matches_token_parser_for_simple_operands() -> None:
 
 
 def test_inline_fast_path_reuses_interned_names_and_caps_operands() -> None:
-    ((_, operands),) = internal_operations(b"/F1 /F1 " + b"1 " * 40 + b"Tf")
+    ((_, operands),) = parse_operations(b"/F1 /F1 " + b"1 " * 40 + b"Tf")
     assert operands[0] is operands[1]
     assert len(operands) == 16
 
 
 def test_inline_fast_path_filters_object_keywords_like_the_token_parser() -> None:
-    assert internal_operations(b"1 0 obj 5 0 R endobj q Q stream endstream") == [
+    assert parse_operations(b"1 0 obj 5 0 R endobj q Q stream endstream") == [
         ("q", ()),
         ("Q", ()),
     ]
 
 
 def test_inline_fast_path_reports_unknown_delimiters_through_recovery() -> None:
-    assert internal_operations(b"q >> Q") == [("q", ()), ("Q", ())]
+    assert parse_operations(b"q >> Q") == [("q", ()), ("Q", ())]

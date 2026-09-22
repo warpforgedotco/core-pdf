@@ -7,13 +7,13 @@ from typing import Any, ClassVar, Self
 
 import numpy
 
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import Rectangle
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class SpatialFrame(internal_Record):
+class SpatialFrame(Record):
     __slots__ = ("boxes", "areas")
 
     boxes: numpy.ndarray[Any, Any]
@@ -23,8 +23,8 @@ class SpatialFrame(internal_Record):
     __match_args__ = ("boxes", "areas")
 
     def __init__(self, boxes: numpy.ndarray[Any, Any], areas: numpy.ndarray[Any, Any]) -> None:
-        internal_frozen_setattr(self, "boxes", boxes)
-        internal_frozen_setattr(self, "areas", areas)
+        frozen_setattr(self, "boxes", boxes)
+        frozen_setattr(self, "areas", areas)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(boxes={self.boxes!r}, areas={self.areas!r})"

@@ -35,7 +35,7 @@ from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf_spec.s_07_syntax_primitives.scanning import full_source_bytes
 
-internal_FILTER_DECODERS: dict[str, FilterFn] = {
+FILTER_DECODERS: dict[str, FilterFn] = {
     "flate": apply_flate,
     "ascii_hex": apply_ascii_hex,
     "ascii85": apply_ascii85,
@@ -48,13 +48,13 @@ internal_FILTER_DECODERS: dict[str, FilterFn] = {
     "jbig2": decode_jbig2,
 }
 FILTER_MAP: dict[str, FilterFn] = {
-    descriptor.name: internal_FILTER_DECODERS[descriptor.decoder]
+    descriptor.name: FILTER_DECODERS[descriptor.decoder]
     for descriptor in FILTER_DESCRIPTORS
     if descriptor.decoder is not None
 }
 
 
-def internal_coerce_decoder_bytes(result: object) -> bytes:
+def coerce_decoder_bytes(result: object) -> bytes:
     if type(result) is bytearray:
         return bytes(result)
     if type(result) is not bytes:
@@ -83,7 +83,7 @@ def decode_one_filter(
             if descriptor is not None and descriptor.wants_image_dictionary
             else parms
         )
-        result = internal_coerce_decoder_bytes(fn(data, decoder_context))
+        result = coerce_decoder_bytes(fn(data, decoder_context))
         if filter_name in PREDICTOR_FILTERS:
             if (
                 allow_content_stream_passthrough
@@ -92,7 +92,7 @@ def decode_one_filter(
                 and looks_like_pdf_content_stream(result)
             ):
                 return result
-            result = internal_coerce_decoder_bytes(apply_predictor(result, parms))
+            result = coerce_decoder_bytes(apply_predictor(result, parms))
         return result
     except ValueError as exc:
         raise FilterParseError("invalid stream data") from exc

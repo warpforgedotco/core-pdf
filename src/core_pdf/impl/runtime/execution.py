@@ -5,23 +5,23 @@ from __future__ import annotations
 from collections.abc import Callable
 
 
-class internal_ExtractionCancelled(RuntimeError):
+class ExtractionCancelled(RuntimeError):
     def __init__(self) -> None:
         super().__init__("PDF extraction was cancelled")
 
 
 class ExtractionScope:
-    __slots__ = ("internal_cancelled",)
+    __slots__ = ("_cancelled",)
 
     def __init__(
         self,
         cancelled: Callable[[], bool] | None = None,
     ) -> None:
-        self.internal_cancelled = cancelled
+        self._cancelled = cancelled
 
     def raise_if_cancelled(self) -> None:
-        if self.internal_cancelled is not None and self.internal_cancelled():
-            raise internal_ExtractionCancelled()
+        if self._cancelled is not None and self._cancelled():
+            raise ExtractionCancelled()
 
 
 __all__ = ("ExtractionScope",)

@@ -24,12 +24,12 @@ from core_adobe_fonts.cmap.tokenizer import (
 )
 
 CodeRangeT = TypeVar("CodeRangeT", CIDRange, NotdefRange)
-internal_MIN_CID = 0
-internal_MAX_CID = 0xFFFF
+MIN_CID = 0
+MAX_CID = 0xFFFF
 
 
-def internal_valid_cid(cid: int) -> bool:
-    return internal_MIN_CID <= cid <= internal_MAX_CID
+def valid_cid(cid: int) -> bool:
+    return MIN_CID <= cid <= MAX_CID
 
 
 class CMapDecoder:
@@ -259,7 +259,7 @@ class CMapDecoder:
                 cid = int(cid_token)
             except (ValueError, UnicodeDecodeError) as exc:
                 raise ValueError("invalid CMap mapping") from exc
-            if not code or not internal_valid_cid(cid):
+            if not code or not valid_cid(cid):
                 raise ValueError("invalid CMap mapping")
             mappings[code] = cid
 
@@ -289,7 +289,7 @@ class CMapDecoder:
                 validate_codespace_range(start_bytes, end_bytes)
             except (ValueError, UnicodeDecodeError) as exc:
                 raise ValueError("invalid CMap mapping") from exc
-            if not internal_valid_cid(cid):
+            if not valid_cid(cid):
                 raise ValueError("invalid CMap mapping")
             if make_range is CIDRange:
                 last_cid = cid + range_offset(
@@ -299,7 +299,7 @@ class CMapDecoder:
                     validate_range=False,
                     validate_code=False,
                 )
-                if not internal_valid_cid(last_cid):
+                if not valid_cid(last_cid):
                     raise ValueError("invalid CMap mapping")
             remove_codes_in_range(mappings, start_bytes, end_bytes)
             ranges.append(make_range(start_bytes, end_bytes, cid))
@@ -412,13 +412,13 @@ class CMapDecoder:
                 matched = True
                 break
             if not matched:
-                length = self.internal_invalid_code_length(data, pos, n)
+                length = self.invalid_code_length(data, pos, n)
                 entry = (bytes(data[pos : pos + length]), 0)
                 out.append(entry)
                 pos += length
         return out
 
-    def internal_invalid_code_length(
+    def invalid_code_length(
         self, data: bytes | bytearray | memoryview, pos: int, limit: int
     ) -> int:
         ranges = self.code_space_ranges_by_length

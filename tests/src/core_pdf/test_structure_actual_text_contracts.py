@@ -3,10 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from core_pdf.impl.extract.capture import (
-    internal_apply_structure_actual_text,
-    internal_run_mcid,
-    internal_run_uses_actual_text,
-    internal_structure_actual_text_owner,
+    apply_structure_actual_text,
+    run_mcid,
+    run_uses_actual_text,
+    structure_actual_text_owner,
 )
 from core_pdf.impl.model.glyphs import GlyphCluster
 from core_pdf.impl.model.runs import TextRun
@@ -43,7 +43,7 @@ def test_shared_parent_replacement_merges_geometry_once_without_mutating_sources
     first = run("one", 0).replace(confidence=0.9, visible=False, inside_active_clip=False)
     second = run("two", 1, 20).replace(confidence=0.6)
     unrelated = run("outside", None, 10)
-    result = internal_apply_structure_actual_text(None, (first, unrelated, second), structure)
+    result = apply_structure_actual_text(None, (first, unrelated, second), structure)
     assert len(result) == 2
     merged = result[0]
     assert result[1] is unrelated
@@ -55,7 +55,7 @@ def test_shared_parent_replacement_merges_geometry_once_without_mutating_sources
     assert merged.visible
     assert merged.inside_active_clip
     assert merged.glyph_clusters == first.glyph_clusters + second.glyph_clusters
-    assert internal_run_uses_actual_text(merged)
+    assert run_uses_actual_text(merged)
     assert first.text == "one"
     assert second.text == "two"
     assert first.advance_bbox == (0, 1, 5, 11)
@@ -66,7 +66,7 @@ def test_shared_parent_replacement_merges_geometry_once_without_mutating_sources
 
 def test_equal_but_distinct_owner_dictionaries_do_not_merge():
     structure = [SimpleNamespace(props={}, actual_text="same", parent=None) for _ in range(2)]
-    result = internal_apply_structure_actual_text(None, (run("a", 0), run("b", 1, 10)), structure)
+    result = apply_structure_actual_text(None, (run("a", 0), run("b", 1, 10)), structure)
     assert [item.text for item in result] == ["same", "same"]
     assert result[0].advance_bbox == (0, 1, 5, 11)
     assert result[1].advance_bbox == (10, 1, 15, 11)
@@ -80,15 +80,13 @@ def test_parent_cycle_stops_at_repeated_identity_and_keeps_outer_replacement(wit
     if with_props:
         child.props, parent.props = {}, {}
     marker = id(parent.props) if with_props else id(parent)
-    assert internal_structure_actual_text_owner(child) == (marker, "parent")
+    assert structure_actual_text_owner(child) == (marker, "parent")
 
 
 @pytest.mark.parametrize("value", [None, 0, False, b"replacement"])
 def test_non_string_actual_text_does_not_replace(value):
     source = run("original")
-    result = internal_apply_structure_actual_text(
-        None, (source,), [SimpleNamespace(actual_text=value)]
-    )
+    result = apply_structure_actual_text(None, (source,), [SimpleNamespace(actual_text=value)])
     assert result == (source,)
     assert result[0] is source
 
@@ -115,20 +113,18 @@ def test_malformed_structure_boundaries_preserve_available_text(error_type, boun
 
     source = run("original")
     if boundary == "page":
-        result = internal_apply_structure_actual_text(Broken(), (source,))
+        result = apply_structure_actual_text(Broken(), (source,))
     elif boundary == "lookup":
-        result = internal_apply_structure_actual_text(None, (source,), Broken())
+        result = apply_structure_actual_text(None, (source,), Broken())
     else:
-        result = internal_apply_structure_actual_text(None, (source,), [Broken()])
+        result = apply_structure_actual_text(None, (source,), [Broken()])
     assert result[0].text == ("retained replacement" if boundary == "parent" else "original")
 
 
 @pytest.mark.parametrize("mcid", [-1, 3, True, "0", None])
 def test_invalid_or_out_of_range_mcid_does_not_select_a_structure_element(mcid):
     source = run("original", mcid)
-    result = internal_apply_structure_actual_text(
-        None, (source,), [SimpleNamespace(actual_text="bad")]
-    )
+    result = apply_structure_actual_text(None, (source,), [SimpleNamespace(actual_text="bad")])
     assert result == (source,)
 
 
@@ -139,14 +135,14 @@ def test_missing_mcid_avoids_lazy_structure_loading():
             raise AssertionError("unneeded structure access")
 
     sources = (run("original", None),)
-    assert internal_apply_structure_actual_text(Page(), sources) is sources
+    assert apply_structure_actual_text(Page(), sources) is sources
 
 
 def test_absent_structure_preserves_original_run_tuple():
     sources = (run("original"),)
-    assert internal_apply_structure_actual_text(SimpleNamespace(structure=None), sources) is sources
+    assert apply_structure_actual_text(SimpleNamespace(structure=None), sources) is sources
 
 
 def test_last_integer_mcid_wins_without_treating_boolean_as_an_integer():
     source = run("original").replace(provenance=(("mcid", 2), ("mcid", 7), ("mcid", True)))
-    assert internal_run_mcid(source) == 7
+    assert run_mcid(source) == 7

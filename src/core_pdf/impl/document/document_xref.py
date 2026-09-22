@@ -40,14 +40,12 @@ class DocumentXRefMixin:
     recovery_scan_all_revisions: bool
 
     @property
-    def internal_xref_context(self) -> SemanticContext | None:
+    def xref_context(self) -> SemanticContext | None:
         resolver: ObjectResolver | None = getattr(self, "resolver", None)
         return None if resolver is None else resolver.semantic_context
 
     def strict_xref_validation_error(self) -> str | None:
-        start = XRefScanner.find_startxref(
-            self.raw_data, semantic_context=self.internal_xref_context
-        )
+        start = XRefScanner.find_startxref(self.raw_data, semantic_context=self.xref_context)
         if start is None:
             return None
         try:
@@ -55,7 +53,7 @@ class DocumentXRefMixin:
                 XRefScanner.recover_section_at,
                 self.raw_data,
                 recover_malformed_objects=False,
-                semantic_context=self.internal_xref_context,
+                semantic_context=self.xref_context,
             )
             for _revision in iter_xref_revisions(start, read_section):
                 pass
@@ -67,13 +65,13 @@ class DocumentXRefMixin:
         return XRefScanner.brute_force_scan(
             self.raw_data,
             stop_at_first_trailer=not self.recovery_scan_all_revisions,
-            semantic_context=self.internal_xref_context,
+            semantic_context=self.xref_context,
         )
 
     def scan_xref(self) -> None:
         data = self.raw_data
         try:
-            start = XRefScanner.find_startxref(data, semantic_context=self.internal_xref_context)
+            start = XRefScanner.find_startxref(data, semantic_context=self.xref_context)
         except ValueError as exc:
             raise PdfParseError("invalid xref section") from exc
         if start is None and b"startxref" in data:
@@ -87,7 +85,7 @@ class DocumentXRefMixin:
                 read_section = partial(
                     XRefScanner.recover_section_at,
                     data,
-                    semantic_context=self.internal_xref_context,
+                    semantic_context=self.xref_context,
                 )
                 revisions = list(iter_xref_revisions(start, read_section))
                 self.xref = merge_xref_sections(revision.entries for revision in revisions)
@@ -182,7 +180,7 @@ class DocumentXRefMixin:
             search_start,
             search_end,
             allow_prefix_before_start=True,
-            semantic_context=self.internal_xref_context,
+            semantic_context=self.xref_context,
         ):
             if (
                 object_number == expected_object_number
@@ -236,7 +234,7 @@ class DocumentXRefMixin:
             offset,
             search_end,
             allow_prefix_before_start=True,
-            semantic_context=self.internal_xref_context,
+            semantic_context=self.xref_context,
         ):
             return (
                 parsed_offset == offset
@@ -249,7 +247,7 @@ class DocumentXRefMixin:
         resolver = ObjectResolver(
             self.raw_data,
             self.xref,
-            semantic_context=self.internal_xref_context,
+            semantic_context=self.xref_context,
         )
         try:
             root = resolver.resolve(root_ref)
@@ -278,9 +276,9 @@ class DocumentXRefMixin:
         resolver = ObjectResolver(
             self.raw_data,
             self.xref,
-            semantic_context=self.internal_xref_context,
+            semantic_context=self.xref_context,
         )
-        lexer = PdfLexer(data, semantic_context=self.internal_xref_context)
+        lexer = PdfLexer(data, semantic_context=self.xref_context)
         entries_by_ref = {
             (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
         }
@@ -471,7 +469,7 @@ class DocumentXRefMixin:
 
     def iter_literal_trailer_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data
-        lexer = PdfLexer(data, semantic_context=self.internal_xref_context)
+        lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
             search_from = 0
             while True:
@@ -492,7 +490,7 @@ class DocumentXRefMixin:
             lexer.close()
 
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
-        lexer = PdfLexer(self.raw_data, semantic_context=self.internal_xref_context)
+        lexer = PdfLexer(self.raw_data, semantic_context=self.xref_context)
         try:
             for key, entry in sorted(self.xref.items()):
                 if not entry.in_use or entry.object_stream is not None or entry.offset < 0:

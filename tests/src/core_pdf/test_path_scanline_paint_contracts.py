@@ -3,15 +3,15 @@ import pytest
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render import target as render_target
-from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_target(clip_kind):
+def make_target(clip_kind):
     width, height = 48, 20
     pixels = bytearray(width * height * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(height, width, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
+    clip = ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
             [(2, 2), (40, 2), (40, 16), (2, 16)]
@@ -19,7 +19,7 @@ def internal_target(clip_kind):
             else [(2, 2), (43, 2), (2, 18)]
         )
         clip.push(CapturedPath([CapturedSubpath(points, closed=True)]), "nonzero")
-    return internal_RasterTarget(
+    return RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -33,7 +33,7 @@ def internal_target(clip_kind):
     ), view
 
 
-def internal_in_clip(x, y, kind):
+def in_clip(x, y, kind):
     if kind == "none":
         return True
     if kind == "rect":
@@ -51,7 +51,7 @@ def test_scanline_holes_and_clipping_match_geometry(
     monkeypatch, threshold, clip_kind, mode, alpha, fill_rule, opposite_inner
 ):
     monkeypatch.setattr(render_target, "RASTER_NUMPY_SPAN_MIN_PIXELS", threshold)
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     edges = [(46, 1, 46, 18), (1, 18, 1, 1), (30, 5, 30, 14), (10, 14, 10, 5)]
     if opposite_inner:
         edges[2:] = [(x1, y1, x0, y0) for x0, y0, x1, y1 in edges[2:]]
@@ -66,7 +66,7 @@ def test_scanline_holes_and_clipping_match_geometry(
                 outer = 1 <= x < 46 and 1 <= y < 18
                 inner = 10 <= x < 30 and 5 <= y < 14
                 hole = inner and (opposite_inner or fill_rule == "evenodd")
-                if outer and not hole and internal_in_clip(x, y, clip_kind):
+                if outer and not hole and in_clip(x, y, clip_kind):
                     expected[row, column] = color
     np.testing.assert_array_equal(actual, expected)
 
@@ -74,7 +74,7 @@ def test_scanline_holes_and_clipping_match_geometry(
 @pytest.mark.parametrize("fill_rule", ["nonzero", "evenodd"])
 @pytest.mark.parametrize("extent", [(70, 80), (-20, -10), (5.1, 5.2), (4.5, 5.5)])
 def test_scanline_spans_use_pixel_centers_and_crop_bounds(fill_rule, extent):
-    target, actual = internal_target("none")
+    target, actual = make_target("none")
     left, right = extent
     segments = [(left, 0, left, 20, 0, 20), (right, 20, right, 0, 0, 20)]
     target.fill_path_scanlines(segments, (0, 0, 48, 20), (20, 30, 40, 255), None, fill_rule)
@@ -94,7 +94,7 @@ def test_scanline_spans_use_pixel_centers_and_crop_bounds(fill_rule, extent):
 def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
     cached_edges, clip_kind, mode, alpha, fill_rule, opposite_inner
 ):
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     boxes = [(1.25, 1.25, 46.75, 18.75)] + [
         (left + 0.25, 5.25, left + 7.75, 14.75) for left in (5, 18, 31)
     ]
@@ -115,7 +115,7 @@ def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
     expected = np.zeros_like(actual)
     for row in range(20):
         for column in range(48):
-            if not internal_in_clip(column + 0.5, 19.5 - row, clip_kind):
+            if not in_clip(column + 0.5, 19.5 - row, clip_kind):
                 continue
             covered = 0
             for sy in range(4):
@@ -140,7 +140,7 @@ def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
 def test_black_polygon_shortcut_preserves_integer_holes(
     cached_edges, clip_kind, fill_rule, opposite_inner
 ):
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     outer: list[tuple[float, float]] = [(1, 1), (46, 1), (46, 19), (1, 19)]
     inner: list[tuple[float, float]] = [(10, 5), (30, 5), (30, 14), (10, 14)]
     if opposite_inner:
@@ -158,7 +158,7 @@ def test_black_polygon_shortcut_preserves_integer_holes(
             x, y = column + 0.5, 19.5 - row
             outer_inside = 1 <= x < 46 and 1 <= y < 19
             hole = 10 <= x < 30 and 5 <= y < 14 and (opposite_inner or fill_rule == "evenodd")
-            if outer_inside and not hole and internal_in_clip(x, y, clip_kind):
+            if outer_inside and not hole and in_clip(x, y, clip_kind):
                 expected[row, column] = (0, 0, 0, 255)
     np.testing.assert_array_equal(actual, expected)
 
@@ -167,7 +167,7 @@ def test_black_polygon_shortcut_preserves_integer_holes(
 @pytest.mark.parametrize("mode", [None, "Multiply"])
 @pytest.mark.parametrize("isolated", [False, True])
 def test_scanline_fill_tracks_group_coverage_without_changing_page_buffer(alpha, mode, isolated):
-    target, page = internal_target("none")
+    target, page = make_target("none")
     target.push_group(bytearray(page.nbytes), 1, None, isolated=isolated, knockout=False)
     segments = [(1, 1, 1, 19, 1, 19), (46, 19, 46, 1, 1, 19)]
     target.fill_path_scanlines(segments, (0, 0, 48, 20), (200, 30, 50, alpha), mode, "nonzero")

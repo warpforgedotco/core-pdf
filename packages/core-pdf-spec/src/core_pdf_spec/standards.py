@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar, NoReturn, Self
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class PdfVersion:
@@ -18,8 +18,8 @@ class PdfVersion:
     __match_args__ = ("major", "minor")
 
     def __init__(self, major: int, minor: int) -> None:
-        internal_frozen_setattr(self, "major", major)
-        internal_frozen_setattr(self, "minor", minor)
+        frozen_setattr(self, "major", major)
+        frozen_setattr(self, "minor", minor)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -66,7 +66,7 @@ class PdfVersion:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         major = changes.pop("major", self.major)
@@ -118,10 +118,10 @@ class SpecificationBaseline:
         errata_revision: str | None = None,
         errata_url: str | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "edition", edition)
-        internal_frozen_setattr(self, "reference_url", reference_url)
-        internal_frozen_setattr(self, "errata_revision", errata_revision)
-        internal_frozen_setattr(self, "errata_url", errata_url)
+        frozen_setattr(self, "edition", edition)
+        frozen_setattr(self, "reference_url", reference_url)
+        frozen_setattr(self, "errata_revision", errata_revision)
+        frozen_setattr(self, "errata_url", errata_url)
 
     def __repr__(self) -> str:
         return (
@@ -159,7 +159,7 @@ class SpecificationBaseline:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         edition = changes.pop("edition", self.edition)
@@ -208,11 +208,11 @@ class PdfExtension:
         url: str | None = None,
         extension_revision: str | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "prefix", prefix)
-        internal_frozen_setattr(self, "base_version", base_version)
-        internal_frozen_setattr(self, "extension_level", extension_level)
-        internal_frozen_setattr(self, "url", url)
-        internal_frozen_setattr(self, "extension_revision", extension_revision)
+        frozen_setattr(self, "prefix", prefix)
+        frozen_setattr(self, "base_version", base_version)
+        frozen_setattr(self, "extension_level", extension_level)
+        frozen_setattr(self, "url", url)
+        frozen_setattr(self, "extension_revision", extension_revision)
 
     def __repr__(self) -> str:
         return (
@@ -260,7 +260,7 @@ class PdfExtension:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         prefix = changes.pop("prefix", self.prefix)
@@ -291,10 +291,10 @@ class ProfileClaim:
         source: str,
         properties: tuple[tuple[str, str], ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "identifier", identifier)
-        internal_frozen_setattr(self, "family", family)
-        internal_frozen_setattr(self, "source", source)
-        internal_frozen_setattr(self, "properties", properties)
+        frozen_setattr(self, "identifier", identifier)
+        frozen_setattr(self, "family", family)
+        frozen_setattr(self, "source", source)
+        frozen_setattr(self, "properties", properties)
 
     def __repr__(self) -> str:
         return (
@@ -332,7 +332,7 @@ class ProfileClaim:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         identifier = changes.pop("identifier", self.identifier)
@@ -355,9 +355,9 @@ class StandardsDiagnostic:
     __match_args__ = ("code", "message", "source")
 
     def __init__(self, code: str, message: str, source: str) -> None:
-        internal_frozen_setattr(self, "code", code)
-        internal_frozen_setattr(self, "message", message)
-        internal_frozen_setattr(self, "source", source)
+        frozen_setattr(self, "code", code)
+        frozen_setattr(self, "message", message)
+        frozen_setattr(self, "source", source)
 
     def __repr__(self) -> str:
         return (
@@ -393,7 +393,7 @@ class StandardsDiagnostic:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         code = changes.pop("code", self.code)
@@ -420,9 +420,9 @@ class SemanticContext:
         extensions: tuple[PdfExtension, ...] = (),
         baseline: SpecificationBaseline = PDF_2_0_BASELINE,
     ) -> None:
-        internal_frozen_setattr(self, "version", version)
-        internal_frozen_setattr(self, "extensions", extensions)
-        internal_frozen_setattr(self, "baseline", baseline)
+        frozen_setattr(self, "version", version)
+        frozen_setattr(self, "extensions", extensions)
+        frozen_setattr(self, "baseline", baseline)
 
     def __repr__(self) -> str:
         return (
@@ -458,7 +458,7 @@ class SemanticContext:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         version = changes.pop("version", self.version)
@@ -522,14 +522,14 @@ class DocumentStandards:
         profile_claims: tuple[ProfileClaim, ...] = (),
         diagnostics: tuple[StandardsDiagnostic, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "header_version", header_version)
-        internal_frozen_setattr(self, "catalog_version", catalog_version)
-        internal_frozen_setattr(self, "effective_version", effective_version)
-        internal_frozen_setattr(self, "header_declaration", header_declaration)
-        internal_frozen_setattr(self, "catalog_declaration", catalog_declaration)
-        internal_frozen_setattr(self, "extensions", extensions)
-        internal_frozen_setattr(self, "profile_claims", profile_claims)
-        internal_frozen_setattr(self, "diagnostics", diagnostics)
+        frozen_setattr(self, "header_version", header_version)
+        frozen_setattr(self, "catalog_version", catalog_version)
+        frozen_setattr(self, "effective_version", effective_version)
+        frozen_setattr(self, "header_declaration", header_declaration)
+        frozen_setattr(self, "catalog_declaration", catalog_declaration)
+        frozen_setattr(self, "extensions", extensions)
+        frozen_setattr(self, "profile_claims", profile_claims)
+        frozen_setattr(self, "diagnostics", diagnostics)
 
     def __repr__(self) -> str:
         return (
@@ -586,7 +586,7 @@ class DocumentStandards:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         header_version = changes.pop("header_version", self.header_version)
@@ -641,11 +641,11 @@ class StandardProfile:
         base_version: PdfVersion,
         reference_url: str,
     ) -> None:
-        internal_frozen_setattr(self, "identifier", identifier)
-        internal_frozen_setattr(self, "family", family)
-        internal_frozen_setattr(self, "edition", edition)
-        internal_frozen_setattr(self, "base_version", base_version)
-        internal_frozen_setattr(self, "reference_url", reference_url)
+        frozen_setattr(self, "identifier", identifier)
+        frozen_setattr(self, "family", family)
+        frozen_setattr(self, "edition", edition)
+        frozen_setattr(self, "base_version", base_version)
+        frozen_setattr(self, "reference_url", reference_url)
 
     def __repr__(self) -> str:
         return (
@@ -693,7 +693,7 @@ class StandardProfile:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         identifier = changes.pop("identifier", self.identifier)
@@ -863,12 +863,12 @@ class ExtensionCoverage:
         features: tuple[str, ...],
         reference_url: str,
     ) -> None:
-        internal_frozen_setattr(self, "prefix", prefix)
-        internal_frozen_setattr(self, "base_version", base_version)
-        internal_frozen_setattr(self, "extension_level", extension_level)
-        internal_frozen_setattr(self, "extension_revision", extension_revision)
-        internal_frozen_setattr(self, "features", features)
-        internal_frozen_setattr(self, "reference_url", reference_url)
+        frozen_setattr(self, "prefix", prefix)
+        frozen_setattr(self, "base_version", base_version)
+        frozen_setattr(self, "extension_level", extension_level)
+        frozen_setattr(self, "extension_revision", extension_revision)
+        frozen_setattr(self, "features", features)
+        frozen_setattr(self, "reference_url", reference_url)
 
     def __repr__(self) -> str:
         return (
@@ -919,7 +919,7 @@ class ExtensionCoverage:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         prefix = changes.pop("prefix", self.prefix)

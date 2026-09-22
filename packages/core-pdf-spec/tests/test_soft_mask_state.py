@@ -47,12 +47,12 @@ class Sink:
         self.frames.append(("exit", frame, state.graphics.soft_mask))
 
 
-def internal_state() -> tuple[ContentInterpreter, Sink]:
+def make_state() -> tuple[ContentInterpreter, Sink]:
     sink = Sink()
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
 
 
-def internal_group(**entries: object) -> PdfStream:
+def make_group(**entries: object) -> PdfStream:
     return PdfStream(
         dictionary={
             "Subtype": PdfName.of("Form"),
@@ -64,19 +64,19 @@ def internal_group(**entries: object) -> PdfStream:
     )
 
 
-def internal_mask(group: PdfStream | None = None, **entries: object) -> PdfDict:
-    return cast(PdfDict, {"S": PdfName.of("Alpha"), "G": group or internal_group(), **entries})
+def make_mask(group: PdfStream | None = None, **entries: object) -> PdfDict:
+    return cast(PdfDict, {"S": PdfName.of("Alpha"), "G": group or make_group(), **entries})
 
 
 def test_alpha_descriptor_preserves_group_identity_without_decoding_or_resource_traversal() -> None:
-    state, _ = internal_state()
-    group = internal_group()
+    state, _ = make_state()
+    group = make_group()
 
     def reject_decode(*args: Any, **kwargs: Any) -> bytes:
         raise AssertionError("mask group decoded during dictionary parsing")
 
     group.decoder = reject_decode
-    mask = internal_mask(group, BC=PdfReference(99, 0))
+    mask = make_mask(group, BC=PdfReference(99, 0))
     extgstate: PdfDict = {"SMask": mask, "ca": 0.4}
     resources: PdfDict = {"ExtGState": {"M": extgstate}}
     group.dictionary["Resources"] = resources
@@ -96,12 +96,12 @@ def test_alpha_descriptor_preserves_group_identity_without_decoding_or_resource_
 
 @pytest.mark.parametrize("indirect", [False, True])
 def test_soft_mask_freezes_gs_CTM_and_omission_differs_from_None(indirect: bool) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     state.graphics.ctm = Matrix(2, 0, 0, 3, 5, 7)
-    group = internal_group(Matrix=[1, 0, 0, 1, 11, 13])
+    group = make_group(Matrix=[1, 0, 0, 1, 11, 13])
     resolver = cast(ObjectResolver, state.resolver)
     resolver.objects[key_for(1, 0)] = group
-    mask = internal_mask(G=PdfReference(1, 0) if indirect else group)
+    mask = make_mask(G=PdfReference(1, 0) if indirect else group)
     resolver.objects[key_for(2, 0)] = cast(CachedPdfObject, mask)
     state.apply_extgstate({"SMask": PdfReference(2, 0) if indirect else mask})
     descriptor = state.graphics.soft_mask
@@ -127,12 +127,12 @@ def test_soft_mask_freezes_gs_CTM_and_omission_differs_from_None(indirect: bool)
 def test_prepared_transparency_frame_resets_mask_but_retains_other_inherited_state(
     isolated: bool, knockout: bool
 ) -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.apply_extgstate(
-        {"SMask": internal_mask(), "ca": 0.3, "CA": 0.6, "BM": "Multiply", "AIS": True, "TK": False}
+        {"SMask": make_mask(), "ca": 0.3, "CA": 0.6, "BM": "Multiply", "AIS": True, "TK": False}
     )
     saved = state.capture_stream_state()
-    group = internal_group(
+    group = make_group(
         Matrix=[1, 0, 0, 1, 4, 5],
         Group={"S": PdfName.of("Transparency"), "I": isolated, "K": knockout},
     )
@@ -155,8 +155,8 @@ def test_prepared_transparency_frame_resets_mask_but_retains_other_inherited_sta
 def test_ordinary_Form_inherits_mask_and_prepared_frame_restores_after_failure(
     failure: bool,
 ) -> None:
-    state, sink = internal_state()
-    state.apply_extgstate({"SMask": internal_mask()})
+    state, sink = make_state()
+    state.apply_extgstate({"SMask": make_mask()})
     state.op_BT((), 0)
     saved = state.capture_stream_state()
     form = PdfStream(
@@ -177,7 +177,7 @@ def test_ordinary_Form_inherits_mask_and_prepared_frame_restores_after_failure(
 
 
 def test_consume_frame_rejects_an_already_entered_frame_without_unwinding_it() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     frame = ContentStreamFrame(PdfStream(), {}, IDENTITY_MATRIX, 0, None)
     state.stream_executor.enter(frame)
     try:
@@ -189,11 +189,11 @@ def test_consume_frame_rejects_an_already_entered_frame_without_unwinding_it() -
 
 
 def test_prepared_frame_decode_failure_leaves_parent_mask_and_scope_intact() -> None:
-    state, sink = internal_state()
-    state.apply_extgstate({"SMask": internal_mask()})
+    state, sink = make_state()
+    state.apply_extgstate({"SMask": make_mask()})
     state.op_BT((), 0)
     saved = state.capture_stream_state()
-    group = internal_group()
+    group = make_group()
 
     def reject_decode(*args: Any, **kwargs: Any) -> bytes:
         raise PdfParseError("failed group decode")
@@ -211,19 +211,19 @@ def test_prepared_frame_decode_failure_leaves_parent_mask_and_scope_intact() -> 
 
 @pytest.mark.parametrize("transfer", [None, PdfName.of("Identity")])
 def test_identity_transfer_defaults(transfer: object) -> None:
-    state, _ = internal_state()
-    mask = parse_soft_mask(internal_mask(TR=transfer), state.resolver, ctm=IDENTITY_MATRIX)
+    state, _ = make_state()
+    mask = parse_soft_mask(make_mask(TR=transfer), state.resolver, ctm=IDENTITY_MATRIX)
     assert mask is not None
     assert mask.transfer is None
 
 
 def test_resolved_transfer_clips_its_single_output_and_defines_nonzero_outside_alpha() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     resolver = cast(ObjectResolver, state.resolver)
     resolver.objects[key_for(1, 0)] = [PdfReference(2, 0), 1]
     resolver.objects[key_for(2, 0)] = 0
     transfer = {"FunctionType": 2, "Domain": PdfReference(1, 0), "C0": [1.5], "C1": [-0.5], "N": 1}
-    mask = parse_soft_mask(internal_mask(TR=transfer), resolver, ctm=IDENTITY_MATRIX)
+    mask = parse_soft_mask(make_mask(TR=transfer), resolver, ctm=IDENTITY_MATRIX)
     assert mask is not None
     assert mask.transfer is not None
     assert mask.transfer(0) == (1,)
@@ -233,7 +233,7 @@ def test_resolved_transfer_clips_its_single_output_and_defines_nonzero_outside_a
 
 @pytest.mark.parametrize("sampled", [False, True])
 def test_sampled_and_stitching_scalar_transfer_functions(sampled: bool) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     function = (
         PdfStream(
             dictionary={
@@ -254,7 +254,7 @@ def test_sampled_and_stitching_scalar_transfer_functions(sampled: bool) -> None:
             "Encode": [0, 1],
         }
     )
-    mask = parse_soft_mask(internal_mask(TR=function), state.resolver, ctm=IDENTITY_MATRIX)
+    mask = parse_soft_mask(make_mask(TR=function), state.resolver, ctm=IDENTITY_MATRIX)
     assert mask is not None
     assert mask.transfer is not None
     assert mask.transfer(0.25) == (0.25,)
@@ -272,13 +272,13 @@ def test_sampled_and_stitching_scalar_transfer_functions(sampled: bool) -> None:
     ],
 )
 def test_transfer_requires_a_single_input_and_output(function: object) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     with pytest.raises(ValueError):
-        parse_soft_mask(internal_mask(TR=function), state.resolver, ctm=IDENTITY_MATRIX)
+        parse_soft_mask(make_mask(TR=function), state.resolver, ctm=IDENTITY_MATRIX)
 
 
 def test_transfer_rejects_mismatched_unselected_stitching_child_and_cycles() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     scalar = {"FunctionType": 2, "Domain": [0, 1], "N": 1}
     vector = {**scalar, "C0": [0, 0], "C1": [1, 1]}
     stitching = {
@@ -289,14 +289,14 @@ def test_transfer_rejects_mismatched_unselected_stitching_child_and_cycles() -> 
         "Functions": [scalar, vector],
     }
     with pytest.raises(ValueError, match="one output"):
-        parse_soft_mask(internal_mask(TR=stitching), state.resolver, ctm=IDENTITY_MATRIX)
+        parse_soft_mask(make_mask(TR=stitching), state.resolver, ctm=IDENTITY_MATRIX)
     stitching["Functions"] = [stitching]
     with pytest.raises(ValueError, match="cyclic"):
-        parse_soft_mask(internal_mask(TR=stitching), state.resolver, ctm=IDENTITY_MATRIX)
+        parse_soft_mask(make_mask(TR=stitching), state.resolver, ctm=IDENTITY_MATRIX)
 
 
 def test_transfer_compiler_can_be_injected_without_changing_group_identity() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     function = PdfStream(
         dictionary={"FunctionType": 4, "Domain": [0, 1], "Range": [0, 1]},
         raw_data=b"{ 1 exch sub }",
@@ -307,9 +307,9 @@ def test_transfer_compiler_can_be_injected_without_changing_group_identity() -> 
         inputs.append(value)
         return lambda value: (1 - value,)
 
-    group = internal_group()
+    group = make_group()
     mask = parse_soft_mask(
-        internal_mask(group, TR=function),
+        make_mask(group, TR=function),
         state.resolver,
         ctm=IDENTITY_MATRIX,
         compile_function=compile_function,
@@ -330,10 +330,10 @@ def test_transfer_compiler_can_be_injected_without_changing_group_identity() -> 
 def test_luminosity_requires_a_group_space_and_defaults_to_its_initial_color(
     space: str, expected: tuple[float, ...]
 ) -> None:
-    state, _ = internal_state()
-    group = internal_group(Group={"S": PdfName.of("Transparency"), "CS": PdfName.of(space)})
+    state, _ = make_state()
+    group = make_group(Group={"S": PdfName.of("Transparency"), "CS": PdfName.of(space)})
     mask = parse_soft_mask(
-        internal_mask(group, S=PdfName.of("Luminosity")), state.resolver, ctm=IDENTITY_MATRIX
+        make_mask(group, S=PdfName.of("Luminosity")), state.resolver, ctm=IDENTITY_MATRIX
     )
     assert mask is not None
     assert mask.subtype == "Luminosity"
@@ -343,7 +343,7 @@ def test_luminosity_requires_a_group_space_and_defaults_to_its_initial_color(
 
 
 def test_luminosity_resolves_only_selected_indirect_space_and_backdrop_values() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     resolver = cast(ObjectResolver, state.resolver)
     resolver.objects.update(
         {
@@ -357,8 +357,8 @@ def test_luminosity_resolves_only_selected_indirect_space_and_backdrop_values() 
         }
     )
     mask = parse_soft_mask(
-        internal_mask(
-            internal_group(Group=PdfReference(1, 0)),
+        make_mask(
+            make_group(Group=PdfReference(1, 0)),
             S=PdfName.of("Luminosity"),
             BC=PdfReference(6, 0),
         ),
@@ -374,11 +374,11 @@ def test_luminosity_resolves_only_selected_indirect_space_and_backdrop_values() 
 
 @pytest.mark.parametrize("backdrop", [[0.1, 0.2], [0.1, 0.2, True], [0.1, 0.2, float("nan")]])
 def test_luminosity_rejects_invalid_backdrop_components(backdrop: object) -> None:
-    state, _ = internal_state()
-    group = internal_group(Group={"S": PdfName.of("Transparency"), "CS": PdfName.of("DeviceRGB")})
+    state, _ = make_state()
+    group = make_group(Group={"S": PdfName.of("Transparency"), "CS": PdfName.of("DeviceRGB")})
     with pytest.raises(ValueError):
         parse_soft_mask(
-            internal_mask(group, S=PdfName.of("Luminosity"), BC=backdrop),
+            make_mask(group, S=PdfName.of("Luminosity"), BC=backdrop),
             state.resolver,
             ctm=IDENTITY_MATRIX,
         )
@@ -388,11 +388,11 @@ def test_luminosity_rejects_invalid_backdrop_components(backdrop: object) -> Non
     "space", [None, PdfName.of("Pattern"), [PdfName.of("Lab"), {"WhitePoint": [1, 1, 1]}]]
 )
 def test_luminosity_rejects_absent_or_invalid_blending_spaces(space: object) -> None:
-    state, _ = internal_state()
-    group = internal_group(Group={"S": PdfName.of("Transparency"), "CS": space})
+    state, _ = make_state()
+    group = make_group(Group={"S": PdfName.of("Transparency"), "CS": space})
     with pytest.raises(ValueError, match="blending color space"):
         parse_soft_mask(
-            internal_mask(group, S=PdfName.of("Luminosity")), state.resolver, ctm=IDENTITY_MATRIX
+            make_mask(group, S=PdfName.of("Luminosity")), state.resolver, ctm=IDENTITY_MATRIX
         )
 
 
@@ -403,19 +403,19 @@ def test_luminosity_rejects_absent_or_invalid_blending_spaces(space: object) -> 
         1,
         PdfName.of("Unknown"),
         {},
-        internal_mask(Type=PdfName.of("XObject")),
-        internal_mask(S=PdfName.of("Unknown")),
-        internal_mask(G=PdfStream()),
-        internal_mask(internal_group(Type=PdfName.of("Page"))),
-        internal_mask(internal_group(Group={})),
-        internal_mask(internal_group(BBox=[0, 0, 1])),
-        internal_mask(internal_group(Matrix=[1, 0, 0, 1, True, 0])),
-        internal_mask(internal_group(Group={"S": PdfName.of("Transparency"), "I": 1})),
+        make_mask(Type=PdfName.of("XObject")),
+        make_mask(S=PdfName.of("Unknown")),
+        make_mask(G=PdfStream()),
+        make_mask(make_group(Type=PdfName.of("Page"))),
+        make_mask(make_group(Group={})),
+        make_mask(make_group(BBox=[0, 0, 1])),
+        make_mask(make_group(Matrix=[1, 0, 0, 1, True, 0])),
+        make_mask(make_group(Group={"S": PdfName.of("Transparency"), "I": 1})),
     ],
 )
 def test_invalid_soft_masks_reject_without_replacing_existing_state(value: object) -> None:
-    state, _ = internal_state()
-    state.apply_extgstate({"SMask": internal_mask()})
+    state, _ = make_state()
+    state.apply_extgstate({"SMask": make_mask()})
     previous = state.graphics.soft_mask
     with pytest.raises(ValueError):
         state.apply_extgstate({"ca": 0.2, "SMask": value})
@@ -424,10 +424,10 @@ def test_invalid_soft_masks_reject_without_replacing_existing_state(value: objec
 
 
 def test_cyclic_group_reference_rejects_without_recursing() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     resolver = cast(ObjectResolver, state.resolver)
     resolver.objects[key_for(1, 0)] = PdfReference(2, 0)
     resolver.objects[key_for(2, 0)] = PdfReference(1, 0)
-    resolver.objects[key_for(3, 0)] = cast(CachedPdfObject, internal_mask(G=PdfReference(1, 0)))
+    resolver.objects[key_for(3, 0)] = cast(CachedPdfObject, make_mask(G=PdfReference(1, 0)))
     with pytest.raises(ValueError, match="cyclic"):
         state.apply_extgstate({"SMask": PdfReference(3, 0)})

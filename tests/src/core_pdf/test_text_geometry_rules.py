@@ -4,7 +4,7 @@ from core_pdf.impl.layout import text_rules as rules
 from core_pdf.impl.model.runs import TextRun
 
 
-def internal_run(
+def make_run(
     text: str = "a",
     x: float = 0,
     *,
@@ -21,14 +21,14 @@ def internal_run(
     ("runs", "expected"),
     [
         ([], True),
-        ([internal_run()], True),
-        ([internal_run(x=0), internal_run(x=10)], True),
-        ([internal_run(x=10), internal_run(x=0)], False),
-        ([internal_run(width=1, order=1), internal_run(width=1, order=0)], False),
-        ([internal_run(width=1, order=0), internal_run(width=1, order=1)], True),
-        ([internal_run(width=10), internal_run(x=7.5)], True),
-        ([internal_run(width=10), internal_run(x=7.4)], False),
-        ([internal_run(width=20, height=20), internal_run(x=3, height=10)], False),
+        ([make_run()], True),
+        ([make_run(x=0), make_run(x=10)], True),
+        ([make_run(x=10), make_run(x=0)], False),
+        ([make_run(width=1, order=1), make_run(width=1, order=0)], False),
+        ([make_run(width=1, order=0), make_run(width=1, order=1)], True),
+        ([make_run(width=10), make_run(x=7.5)], True),
+        ([make_run(width=10), make_run(x=7.4)], False),
+        ([make_run(width=20, height=20), make_run(x=3, height=10)], False),
     ],
 )
 def test_left_to_right_requires_ordered_positions_and_limited_overlap(runs, expected):
@@ -48,14 +48,14 @@ def test_left_to_right_requires_ordered_positions_and_limited_overlap(runs, expe
     ],
 )
 def test_right_to_left_uses_majority_of_stream_position_changes(positions, expected):
-    runs = [internal_run(x=x, order=i) for i, x in enumerate(positions)]
+    runs = [make_run(x=x, order=i) for i, x in enumerate(positions)]
     assert rules.runs_are_right_to_left(list(reversed(runs))) is expected
 
 
 def test_right_to_left_ignores_empty_runs_and_breaks_order_ties_by_stream_order():
-    blank = internal_run(" ", x=100)
-    assert not rules.runs_are_right_to_left([blank, internal_run()])
-    runs = [internal_run(x=0, stream_order=1), blank, internal_run(x=10, stream_order=0)]
+    blank = make_run(" ", x=100)
+    assert not rules.runs_are_right_to_left([blank, make_run()])
+    runs = [make_run(x=0, stream_order=1), blank, make_run(x=10, stream_order=0)]
     assert rules.runs_are_right_to_left(runs)
 
 
@@ -64,9 +64,9 @@ def test_right_to_left_ignores_empty_runs_and_breaks_order_ties_by_stream_order(
 )
 def test_interleaved_overlap_respects_glyph_width_and_space_tolerance(x, space, expected):
     runs = [
-        internal_run(width=10, space=space),
-        internal_run(" "),
-        internal_run(x=x, width=10, space=space),
+        make_run(width=10, space=space),
+        make_run(" "),
+        make_run(x=x, width=10, space=space),
     ]
     assert rules.has_interleaved_horizontal_overlap(runs) is expected
     assert not rules.has_interleaved_horizontal_overlap([])
@@ -74,12 +74,12 @@ def test_interleaved_overlap_respects_glyph_width_and_space_tolerance(x, space, 
 
 def test_positive_gaps_ignore_spaces_touching_and_overlapping_runs():
     runs = [
-        internal_run(x=0),
-        internal_run(" ", x=200),
-        internal_run(x=7),
-        internal_run(x=12),
-        internal_run(x=14),
-        internal_run(x=22),
+        make_run(x=0),
+        make_run(" ", x=200),
+        make_run(x=7),
+        make_run(x=12),
+        make_run(x=14),
+        make_run(x=22),
     ]
     assert rules.positive_run_gaps(runs) == [2, 3]
     assert rules.positive_run_gaps([]) == []
@@ -100,7 +100,7 @@ def test_positive_gaps_ignore_spaces_touching_and_overlapping_runs():
 def test_tracked_glyph_detection_requires_short_text_and_consistent_small_gaps(
     words, step, expected
 ):
-    runs = [internal_run(word, i * step) for i, word in enumerate(words)]
+    runs = [make_run(word, i * step) for i, word in enumerate(words)]
     assert rules.is_tracked_glyph_run_line(runs) is expected
 
 
@@ -117,7 +117,7 @@ def test_tracked_glyph_detection_requires_short_text_and_consistent_small_gaps(
 def test_explicit_spaces_control_only_lines_mostly_made_of_single_glyphs(words, spaces, expected):
     assert (
         rules.explicit_spaces_should_control_glyph_gaps(
-            [internal_run(word) for word in words], explicit_space_count=spaces
+            [make_run(word) for word in words], explicit_space_count=spaces
         )
         is expected
     )
@@ -134,9 +134,9 @@ def test_explicit_spaces_control_only_lines_mostly_made_of_single_glyphs(words, 
     ],
 )
 def test_tracked_word_threshold_requires_a_distinct_larger_gap(gaps, height, expected):
-    runs = [internal_run(height=height)]
+    runs = [make_run(height=height)]
     for gap in gaps:
-        runs.append(internal_run(x=runs[-1].x1 + gap, height=height))
+        runs.append(make_run(x=runs[-1].x1 + gap, height=height))
     result = rules.tracked_glyph_word_gap_threshold(runs)
     assert result is None if expected is None else result == pytest.approx(expected)
 
@@ -145,10 +145,10 @@ def test_tracked_word_threshold_requires_a_distinct_larger_gap(gaps, height, exp
     ("runs", "expected"),
     [
         ([], 12),
-        ([internal_run(height=0, space=0)], 12),
-        ([internal_run(height=20, space=1)], 31),
-        ([internal_run(height=1, space=10)], 50),
-        ([internal_run(), internal_run(x=25)], 80),
+        ([make_run(height=0, space=0)], 12),
+        ([make_run(height=20, space=1)], 31),
+        ([make_run(height=1, space=10)], 50),
+        ([make_run(), make_run(x=25)], 80),
     ],
 )
 def test_column_gap_threshold_combines_observed_gaps_height_and_spaces(runs, expected):
@@ -158,29 +158,29 @@ def test_column_gap_threshold_combines_observed_gaps_height_and_spaces(runs, exp
 @pytest.mark.parametrize(("space", "expected"), [(0, 0.5), (1, 0.48), (5, 2.4)])
 def test_suspect_zero_width_runs_use_position_deltas_even_without_space_metrics(space, expected):
     step = 0.5 if space <= 1 else 3
-    runs = [internal_run(x=i * step, width=0, space=space) for i in range(5)]
+    runs = [make_run(x=i * step, width=0, space=space) for i in range(5)]
     assert rules.estimated_char_width_for_suspect_line(runs) == pytest.approx(expected)
 
 
 def test_character_width_estimation_ignores_hidden_blank_and_non_alphabetic_runs():
-    runs = [internal_run(x=i * 3, width=5, space=5) for i in range(5)]
-    hidden = internal_run(x=500)
+    runs = [make_run(x=i * 3, width=5, space=5) for i in range(5)]
+    hidden = make_run(x=500)
     hidden.visible = False
-    runs[2:2] = [hidden, internal_run(" ", x=600), internal_run("123", x=700)]
+    runs[2:2] = [hidden, make_run(" ", x=600), make_run("123", x=700)]
     assert rules.estimated_char_width_for_suspect_line(runs) == pytest.approx(2.4)
 
 
 def test_character_width_estimation_requires_enough_suspect_runs_and_consistent_deltas():
-    assert rules.estimated_char_width_for_suspect_line([internal_run()] * 4) is None
+    assert rules.estimated_char_width_for_suspect_line([make_run()] * 4) is None
     assert (
         rules.estimated_char_width_for_suspect_line(
-            [internal_run(x=i * 6, width=2, space=5) for i in range(5)]
+            [make_run(x=i * 6, width=2, space=5) for i in range(5)]
         )
         is None
     )
     assert (
         rules.estimated_char_width_for_suspect_line(
-            [internal_run(x=i * 50, width=0, space=5) for i in range(5)]
+            [make_run(x=i * 50, width=0, space=5) for i in range(5)]
         )
         is None
     )

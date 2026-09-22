@@ -38,7 +38,7 @@ def test_raw_font_recovery_finds_unindexed_objects_and_decodes_widths(text_pdf_b
         + cmap
         + b"\nendstream\nendobj\n"
     )
-    with xray.internal_XrayDocument(text_pdf_bytes + suffix) as document:
+    with xray.XrayDocument(text_pdf_bytes + suffix) as document:
         font = xray._recover_font(SimpleNamespace(document=document), name)
         assert font is not None
         assert font.first_char == 65
@@ -58,7 +58,7 @@ def test_raw_font_recovery_finds_unindexed_objects_and_decodes_widths(text_pdf_b
     ],
 )
 def test_unusable_raw_font_candidates_return_no_recovery(text_pdf_bytes, body):
-    with xray.internal_XrayDocument(text_pdf_bytes + b"\n/F1 90 0 R\n" + body) as document:
+    with xray.XrayDocument(text_pdf_bytes + b"\n/F1 90 0 R\n" + body) as document:
         assert xray._recover_font(SimpleNamespace(document=document), "F1") is None
 
 

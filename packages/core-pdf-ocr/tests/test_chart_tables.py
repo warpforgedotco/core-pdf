@@ -7,7 +7,7 @@ from core_pdf_ocr.impl.extract import table_detection
 from core_pdf_ocr.impl.extract.contracts import ObservationSource
 
 
-def internal_observations(texts, boxes=None, source=ObservationSource.OCR):
+def make_observations(texts, boxes=None, source=ObservationSource.OCR):
     return ObservationBatch.from_columns(
         texts,
         boxes
@@ -18,7 +18,7 @@ def internal_observations(texts, boxes=None, source=ObservationSource.OCR):
     )
 
 
-def internal_chart_capture(capture, area=20000):
+def chart_capture(capture, area=20000):
     return replace(capture, evidence=replace(capture.evidence, uncovered_vector_area=area))
 
 
@@ -34,7 +34,7 @@ def internal_chart_capture(capture, area=20000):
     ],
 )
 def test_dense_numeric_lines_split_but_prose_and_short_lines_stay_intact(text, expected) -> None:
-    assert table_detection.internal_chart_cell_texts(text) == expected
+    assert table_detection.chart_cell_texts(text) == expected
 
 
 @pytest.mark.parametrize(
@@ -49,17 +49,17 @@ def test_dense_numeric_lines_split_but_prose_and_short_lines_stay_intact(text, e
 def test_chart_requires_sufficient_uncovered_artwork_and_ocr_observations(
     ocr_capture, area, count, source
 ) -> None:
-    capture = internal_chart_capture(ocr_capture, area)
-    observations = internal_observations(("label",) * count, source=source)
+    capture = chart_capture(ocr_capture, area)
+    observations = make_observations(("label",) * count, source=source)
     assert table_detection.extract_chart_table(capture, observations) is None
 
 
 def test_chart_splits_numeric_line_into_equal_boxes_and_orders_rows_by_center(ocr_capture) -> None:
-    observations = internal_observations(
+    observations = make_observations(
         ("Year 2020 2021 2022", "lower", "upper"),
         ((0, 40, 160, 50), (200, 0, 240, 10), (200, 40, 240, 50)),
     )
-    result = table_detection.extract_chart_table(internal_chart_capture(ocr_capture), observations)
+    result = table_detection.extract_chart_table(chart_capture(ocr_capture), observations)
     assert result is not None
     assert [[cell.text for cell in row] for row in result.rows] == [
         ["Year", "2020", "2021", "2022", "upper"],
@@ -86,39 +86,36 @@ def test_chart_splits_numeric_line_into_equal_boxes_and_orders_rows_by_center(oc
 def test_chart_deduplicates_only_same_text_overlapping_at_least_half(
     ocr_capture, overlap_x, expected
 ) -> None:
-    observations = internal_observations(
+    observations = make_observations(
         ("Value", "value", "other", "VALUE"),
         ((0, 0, 40, 10), (overlap_x, 0, overlap_x + 40, 10), (100, 0, 140, 10), (200, 0, 240, 10)),
     )
-    result = table_detection.extract_chart_table(internal_chart_capture(ocr_capture), observations)
+    result = table_detection.extract_chart_table(chart_capture(ocr_capture), observations)
     assert result is not None
     assert tuple(cell.text for cell in result.rows[0]) == expected
 
 
 @pytest.mark.parametrize("texts", [("", " ", "valid"), ("same", "SAME", "Same")])
 def test_chart_declines_when_filtering_leaves_fewer_than_three_cells(ocr_capture, texts) -> None:
-    observations = internal_observations(texts, ((0, 0, 40, 10),) * 3)
-    assert (
-        table_detection.extract_chart_table(internal_chart_capture(ocr_capture), observations)
-        is None
-    )
+    observations = make_observations(texts, ((0, 0, 40, 10),) * 3)
+    assert table_detection.extract_chart_table(chart_capture(ocr_capture), observations) is None
 
 
 def test_chart_skips_nonfinite_boxes_before_deduplication(ocr_capture) -> None:
-    observations = internal_observations(
+    observations = make_observations(
         ("bad", "a", "b", "c"),
         ((float("nan"), 0, 10, 10), (0, 0, 10, 10), (20, 0, 30, 10), (40, 0, 50, 10)),
     )
-    result = table_detection.extract_chart_table(internal_chart_capture(ocr_capture), observations)
+    result = table_detection.extract_chart_table(chart_capture(ocr_capture), observations)
     assert result is not None
     assert tuple(cell.text for cell in result.rows[0]) == ("a", "b", "c")
 
 
 def test_chart_row_grouping_uses_center_instead_of_top_edge(ocr_capture) -> None:
-    observations = internal_observations(
+    observations = make_observations(
         ("tall", "short", "lower"), ((0, 0, 20, 100), (30, 48, 50, 52), (60, 20, 80, 30))
     )
-    result = table_detection.extract_chart_table(internal_chart_capture(ocr_capture), observations)
+    result = table_detection.extract_chart_table(chart_capture(ocr_capture), observations)
     assert result is not None
     assert [[cell.text for cell in row] for row in result.rows] == [["tall", "short"], ["lower"]]
 
@@ -132,15 +129,15 @@ def test_trusted_vector_text_bypasses_table_detection(ocr_capture, stroked) -> N
     )
     assert (
         table_detection.extract_tables(
-            replace(ocr_capture, evidence=evidence), internal_observations(("a", "b", "c"))
+            replace(ocr_capture, evidence=evidence), make_observations(("a", "b", "c"))
         )
         == ()
     )
 
 
 def test_chart_table_passes_through_shared_finalization(ocr_capture) -> None:
-    observations = internal_observations(("a", "b", "c"))
-    result = table_detection.extract_tables(internal_chart_capture(ocr_capture), observations)
+    observations = make_observations(("a", "b", "c"))
+    result = table_detection.extract_tables(chart_capture(ocr_capture), observations)
     charts = [table for table in result if table.metadata.get("source") == "chart-ocr"]
     assert len(charts) == 1
     assert charts[0].order == 0

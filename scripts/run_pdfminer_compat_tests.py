@@ -15,7 +15,7 @@ UPSTREAM_TEST = PDFMINER_ROOT / "tests" / "test_highlevel_extracttext.py"
 UPSTREAM_ENV_MARKER = "CORE_PDF_PDFMINER_UPSTREAM_ENV"
 
 
-def internal_install_core_pdf_facade() -> None:
+def install_core_pdf_facade() -> None:
     from core_pdf_compat import pdfminer as facade
 
     package = ModuleType("pdfminer")
@@ -54,7 +54,7 @@ def internal_install_core_pdf_facade() -> None:
     )
 
 
-def internal_run_one(implementation: str, pytest_args: list[str]) -> int:
+def run_one(implementation: str, pytest_args: list[str]) -> int:
     if not UPSTREAM_TEST.is_file():
         print(
             "pdfminer.six fixture is missing; run "
@@ -82,13 +82,13 @@ def internal_run_one(implementation: str, pytest_args: list[str]) -> int:
     os.chdir(PDFMINER_ROOT)
     sys.path.insert(0, str(PDFMINER_ROOT))
     if implementation == "core-pdf":
-        internal_install_core_pdf_facade()
+        install_core_pdf_facade()
     import pytest
 
     return pytest.main([str(UPSTREAM_TEST), *pytest_args])
 
 
-def internal_run_both(pytest_args: list[str]) -> int:
+def run_both(pytest_args: list[str]) -> int:
     results: list[int] = []
     for implementation in ("upstream", "core-pdf"):
         print(f"\n=== pdfminer.six high-level tests: {implementation} ===", flush=True)
@@ -115,8 +115,8 @@ def main() -> int:
     if pytest_args[:1] == ["--"]:
         pytest_args = pytest_args[1:]
     if arguments.implementation == "both":
-        return internal_run_both(pytest_args)
-    return internal_run_one(arguments.implementation, pytest_args)
+        return run_both(pytest_args)
+    return run_one(arguments.implementation, pytest_args)
 
 
 if __name__ == "__main__":

@@ -8,13 +8,13 @@ from typing import Any, ClassVar, Self
 import numpy
 
 from core_pdf.impl.capture.records import CapturedSoftMask, PatternPaint
-from core_pdf.impl.records import internal_Record
-from core_pdf.impl.render.blend import internal_clamp01
+from core_pdf.impl.records import Record
+from core_pdf.impl.render.blend import clamp01
 from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class RenderOptions:
@@ -639,7 +639,7 @@ class ImagePaintItem:
 DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
 
 
-class internal_RasterGroup(internal_Record):
+class RasterGroup(Record):
     __slots__ = (
         "pixels",
         "composite_alpha",
@@ -692,16 +692,16 @@ class internal_RasterGroup(internal_Record):
         mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
         paint_window: list[int] | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "pixels", pixels)
-        internal_frozen_setattr(self, "composite_alpha", composite_alpha)
-        internal_frozen_setattr(self, "blend_mode", blend_mode)
-        internal_frozen_setattr(self, "backdrop", backdrop)
-        internal_frozen_setattr(self, "source_alpha", source_alpha)
-        internal_frozen_setattr(self, "source_shape", source_shape)
-        internal_frozen_setattr(self, "knockout", knockout)
-        internal_frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        internal_frozen_setattr(self, "mask_alpha", mask_alpha)
-        internal_frozen_setattr(self, "paint_window", [] if paint_window is None else paint_window)
+        frozen_setattr(self, "pixels", pixels)
+        frozen_setattr(self, "composite_alpha", composite_alpha)
+        frozen_setattr(self, "blend_mode", blend_mode)
+        frozen_setattr(self, "backdrop", backdrop)
+        frozen_setattr(self, "source_alpha", source_alpha)
+        frozen_setattr(self, "source_shape", source_shape)
+        frozen_setattr(self, "knockout", knockout)
+        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
+        frozen_setattr(self, "mask_alpha", mask_alpha)
+        frozen_setattr(self, "paint_window", [] if paint_window is None else paint_window)
 
     def __repr__(self) -> str:
         return (
@@ -781,11 +781,7 @@ class internal_RasterGroup(internal_Record):
 
     @property
     def source_scale(self) -> float:
-        return (
-            internal_clamp01(float(self.composite_alpha))
-            if is_pdf_number(self.composite_alpha)
-            else 1.0
-        )
+        return clamp01(float(self.composite_alpha)) if is_pdf_number(self.composite_alpha) else 1.0
 
     def extend_paint_window(self, y0: int, y1: int, x0: int, x1: int) -> None:
         window = self.paint_window
@@ -800,7 +796,7 @@ class internal_RasterGroup(internal_Record):
             window[:] = y0, y1, x0, x1
 
 
-class RasterImage(internal_Record):
+class RasterImage(Record):
     __slots__ = ("pixels", "width", "height", "channels")
 
     pixels: bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
@@ -818,10 +814,10 @@ class RasterImage(internal_Record):
         height: int,
         channels: int,
     ) -> None:
-        internal_frozen_setattr(self, "pixels", pixels)
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
-        internal_frozen_setattr(self, "channels", channels)
+        frozen_setattr(self, "pixels", pixels)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "channels", channels)
         self._post_init()
 
     def __repr__(self) -> str:

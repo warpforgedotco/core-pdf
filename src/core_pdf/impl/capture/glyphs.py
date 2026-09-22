@@ -15,10 +15,10 @@ from core_pdf.impl.model.glyphs import (
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import Rectangle
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 TextBasis = tuple[float, float, float, float, float, float]
@@ -67,9 +67,7 @@ def glyph_bitmap_dimensions(
     return (bitmap_w, bitmap_h)
 
 
-def internal_text_basis_rect(
-    x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
-) -> Rectangle:
+def text_basis_rect(x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis) -> Rectangle:
     base_x, base_y, a, b, c, d = text_basis
     return transform_bbox((x0, y0, x1, y1), (a, b, c, d, base_x, base_y))
 
@@ -92,7 +90,7 @@ def glyph_ink_rect(
     text_x1 = advance_start + gx1 * text_advance_scale
     text_y0 = rise + gy0 * font_scale
     text_y1 = rise + gy1 * font_scale
-    rect = internal_text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
+    rect = text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
     fallback_height = fallback_bbox[3] - fallback_bbox[1]
     fallback_width = fallback_bbox[2] - fallback_bbox[0]
     rect_x0, rect_y0, rect_x1, rect_y1 = rect
@@ -198,7 +196,7 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-class TextGeometry(internal_Record):
+class TextGeometry(Record):
     __slots__ = (
         "basis",
         "font_size",
@@ -276,19 +274,19 @@ class TextGeometry(internal_Record):
         effective_font_size: float,
         effective_font_height: float,
     ) -> None:
-        internal_frozen_setattr(self, "basis", basis)
-        internal_frozen_setattr(self, "font_size", font_size)
-        internal_frozen_setattr(self, "font_scale", font_scale)
-        internal_frozen_setattr(self, "font_ascent", font_ascent)
-        internal_frozen_setattr(self, "font_descent", font_descent)
-        internal_frozen_setattr(self, "advance_scale", advance_scale)
-        internal_frozen_setattr(self, "char_space", char_space)
-        internal_frozen_setattr(self, "word_space", word_space)
-        internal_frozen_setattr(self, "horizontal_scale", horizontal_scale)
-        internal_frozen_setattr(self, "rise", rise)
-        internal_frozen_setattr(self, "rotation_angle", rotation_angle)
-        internal_frozen_setattr(self, "effective_font_size", effective_font_size)
-        internal_frozen_setattr(self, "effective_font_height", effective_font_height)
+        frozen_setattr(self, "basis", basis)
+        frozen_setattr(self, "font_size", font_size)
+        frozen_setattr(self, "font_scale", font_scale)
+        frozen_setattr(self, "font_ascent", font_ascent)
+        frozen_setattr(self, "font_descent", font_descent)
+        frozen_setattr(self, "advance_scale", advance_scale)
+        frozen_setattr(self, "char_space", char_space)
+        frozen_setattr(self, "word_space", word_space)
+        frozen_setattr(self, "horizontal_scale", horizontal_scale)
+        frozen_setattr(self, "rise", rise)
+        frozen_setattr(self, "rotation_angle", rotation_angle)
+        frozen_setattr(self, "effective_font_size", effective_font_size)
+        frozen_setattr(self, "effective_font_height", effective_font_height)
 
     def __repr__(self) -> str:
         return (
@@ -382,7 +380,7 @@ class TextGeometry(internal_Record):
         )
 
 
-class GlyphPaint(internal_Record):
+class GlyphPaint(Record):
     __slots__ = (
         "clip_bbox",
         "page_clip",
@@ -475,22 +473,22 @@ class GlyphPaint(internal_Record):
         alpha_is_shape: bool = False,
         graphics_soft_mask: object | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "clip_bbox", clip_bbox)
-        internal_frozen_setattr(self, "page_clip", page_clip)
-        internal_frozen_setattr(self, "fill", fill)
-        internal_frozen_setattr(self, "render_mode", render_mode)
-        internal_frozen_setattr(self, "fill_opacity", fill_opacity)
-        internal_frozen_setattr(self, "stroke_color", stroke_color)
-        internal_frozen_setattr(self, "stroke_opacity", stroke_opacity)
-        internal_frozen_setattr(self, "line_width", line_width)
-        internal_frozen_setattr(self, "line_cap", line_cap)
-        internal_frozen_setattr(self, "line_join", line_join)
-        internal_frozen_setattr(self, "dash_pattern", dash_pattern)
-        internal_frozen_setattr(self, "blend_mode", blend_mode)
-        internal_frozen_setattr(self, "group_alpha", group_alpha)
-        internal_frozen_setattr(self, "clip_glyph", clip_glyph)
-        internal_frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        internal_frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
+        frozen_setattr(self, "clip_bbox", clip_bbox)
+        frozen_setattr(self, "page_clip", page_clip)
+        frozen_setattr(self, "fill", fill)
+        frozen_setattr(self, "render_mode", render_mode)
+        frozen_setattr(self, "fill_opacity", fill_opacity)
+        frozen_setattr(self, "stroke_color", stroke_color)
+        frozen_setattr(self, "stroke_opacity", stroke_opacity)
+        frozen_setattr(self, "line_width", line_width)
+        frozen_setattr(self, "line_cap", line_cap)
+        frozen_setattr(self, "line_join", line_join)
+        frozen_setattr(self, "dash_pattern", dash_pattern)
+        frozen_setattr(self, "blend_mode", blend_mode)
+        frozen_setattr(self, "group_alpha", group_alpha)
+        frozen_setattr(self, "clip_glyph", clip_glyph)
+        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
+        frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
 
     def __repr__(self) -> str:
         return (
@@ -750,7 +748,7 @@ def capture_glyphs(
                 font_descent=font_descent,
                 position=glyph_vertical_position,
             )
-            advance_bbox = internal_text_basis_rect(*text_box, text_basis)
+            advance_bbox = text_basis_rect(*text_box, text_basis)
             baseline = transformed_text_line(*baseline_text, text_basis)
             origin_x, position_y = glyph_vertical_position
             origin_y = rise + position_y - offset
@@ -795,7 +793,7 @@ def capture_glyphs(
                     font_ascent=font_ascent,
                     font_descent=font_descent,
                 )
-                advance_bbox = internal_text_basis_rect(*text_box, text_basis)
+                advance_bbox = text_basis_rect(*text_box, text_basis)
                 baseline = transformed_text_line(*baseline_text, text_basis)
         observation_visible = visible
         if observation_visible:
@@ -873,7 +871,7 @@ def capture_glyphs(
                     font_ascent=font_ascent,
                     font_descent=font_descent,
                 )
-                char_advance_rect = internal_text_basis_rect(*char_box, text_basis)
+                char_advance_rect = text_basis_rect(*char_box, text_basis)
                 char_baseline = transformed_text_line(*char_baseline_text, text_basis)
                 fragments.append(
                     (ch, char_advance_rect, char_advance_rect, char_baseline, char_confidence)

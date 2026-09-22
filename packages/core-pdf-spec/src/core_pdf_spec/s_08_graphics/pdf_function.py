@@ -13,7 +13,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number,
     require_pdf_number_array,
 )
-from core_pdf_spec.s_08_graphics.calculator import internal_compile_calculator_function
+from core_pdf_spec.s_08_graphics.calculator import compile_calculator_function
 
 PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
 
@@ -47,7 +47,7 @@ def with_pdf_function_range(
     return evaluate_clipped
 
 
-def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
+def scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     domain_obj = dictionary.get("Domain")
     if domain_obj is None:
         raise ValueError("missing PDF function domain")
@@ -57,9 +57,9 @@ def internal_scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     return (domain[0], domain[1])
 
 
-def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
+def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     dictionary = function.dictionary
-    if internal_function_type(dictionary) != 0:
+    if require_function_type(dictionary) != 0:
         raise ValueError("invalid sampled function")
     if type(dictionary.get("BitsPerSample")) is not int or dictionary["BitsPerSample"] != 8:
         raise ValueError("unsupported sampled function bit depth")
@@ -183,7 +183,7 @@ def internal_compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluat
     return evaluate
 
 
-def internal_function_type(dictionary: dict[Any, Any]) -> int:
+def require_function_type(dictionary: dict[Any, Any]) -> int:
     return require_pdf_integer(dictionary.get("FunctionType"), "invalid PDF function type")
 
 
@@ -205,24 +205,24 @@ def compile_pdf_function(
         raise ValueError("invalid PDF function array")
 
     if isinstance(function, PdfStream):
-        function_type = internal_function_type(function.dictionary)
+        function_type = require_function_type(function.dictionary)
         if function_type == 4:
-            return internal_compile_calculator_function(function)
+            return compile_calculator_function(function)
         if function_type == 0:
             try:
-                return internal_compile_sampled_function(function)
+                return compile_sampled_function(function)
             except Exception as exc:
                 raise ValueError("invalid sampled PDF function") from exc
         dictionary = function.dictionary
     elif isinstance(function, dict):
-        function_type = internal_function_type(function)
+        function_type = require_function_type(function)
         dictionary = function
     else:
         raise ValueError("invalid PDF function")
 
     if function_type == 2:
         exponent = require_pdf_number(dictionary.get("N"), "invalid exponential PDF function")
-        domain_min, domain_max = internal_scalar_domain(dictionary)
+        domain_min, domain_max = scalar_domain(dictionary)
         c0 = list(
             require_pdf_number_array(
                 dictionary.get("C0", (0.0,)), "invalid exponential function components"
@@ -259,7 +259,7 @@ def compile_pdf_function(
         functions = dictionary.get("Functions")
         if not isinstance(functions, (list, tuple)) or not functions:
             raise ValueError("invalid stitching PDF function")
-        domain_min, domain_max = internal_scalar_domain(dictionary)
+        domain_min, domain_max = scalar_domain(dictionary)
         bounds_obj = dictionary.get("Bounds")
         if not isinstance(bounds_obj, (list, tuple)):
             raise ValueError("invalid stitching function bounds")

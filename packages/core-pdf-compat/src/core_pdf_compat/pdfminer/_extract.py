@@ -16,10 +16,10 @@ from ._layout import (
     LTText,
 )
 from ._pages import (
-    internal_pdfminer_resolvable_pages,
+    pdfminer_resolvable_pages,
 )
 from ._projection import (
-    internal_project_page,
+    project_page,
 )
 
 
@@ -41,14 +41,14 @@ def extract_pages(
         recovery_scan_all_revisions=False,
     )
     try:
-        yield from internal_extract_document_pages(
+        yield from extract_document_pages(
             document, params, selected, maxpages, unstructured_mode=_unstructured_mode
         )
     finally:
         document.close()
 
 
-def internal_extract_document_pages(
+def extract_document_pages(
     document: PdfDocument,
     params: LAParams,
     selected: set[int] | None = None,
@@ -60,17 +60,17 @@ def internal_extract_document_pages(
     page_source: Iterable[tuple[int, PdfPage]]
     if unstructured_mode:
         try:
-            page_source = tuple(internal_pdfminer_resolvable_pages(document))
+            page_source = tuple(pdfminer_resolvable_pages(document))
         except PdfError:
             page_source = tuple(enumerate(document.pages))
     else:
-        page_source = internal_pdfminer_resolvable_pages(document)
+        page_source = pdfminer_resolvable_pages(document)
     for page_index, page in page_source:
         if selected is not None and page_index not in selected:
             continue
         if maxpages and yielded >= maxpages:
             break
-        yield internal_project_page(page, params, unstructured_mode=unstructured_mode)
+        yield project_page(page, params, unstructured_mode=unstructured_mode)
         yielded += 1
 
 

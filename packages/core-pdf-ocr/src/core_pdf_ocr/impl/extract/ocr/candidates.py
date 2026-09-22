@@ -9,7 +9,7 @@ from collections import defaultdict
 
 import numpy
 
-from core_pdf.impl.extract.contracts import ObservationBatch, internal_bbox_tuple
+from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
 from core_pdf.impl.model.geometry import overlap_ratio_min
 from core_pdf.impl.model.text import search_key, text_tokens
 from core_pdf.impl.runtime.array_views import finite_median
@@ -20,13 +20,13 @@ from core_pdf_ocr.impl.extract.contracts import (
 )
 from core_pdf_ocr.impl.extract.observations import maximum_candidate_coverage
 from core_pdf_ocr.impl.extract.quality import (
-    internal_Candidate,
-    internal_candidate,
-    internal_text_utility_stats,
+    Candidate,
+    make_candidate,
+    text_utility_stats,
 )
 
-internal_OCR_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
-internal_OCR_TOKEN_TRANSLATION = str.maketrans(
+OCR_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+OCR_TOKEN_TRANSLATION = str.maketrans(
     {
         "‐": "-",
         "‑": "-",
@@ -42,22 +42,22 @@ internal_OCR_TOKEN_TRANSLATION = str.maketrans(
 )
 
 
-def internal_normalized_ocr_token_key(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).translate(internal_OCR_TOKEN_TRANSLATION).casefold()
+def normalized_ocr_token_key(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).translate(OCR_TOKEN_TRANSLATION).casefold()
 
 
-def internal_hidden_text_verification(
+def hidden_text_verification(
     hidden: ObservationBatch,
     preview: ObservationBatch,
 ) -> bool:
     hidden_by_token: dict[str, list[tuple[float, float, float, float]]] = defaultdict(list)
     for text, raw_box in zip(hidden.text, hidden.bbox, strict=True):
-        box = internal_bbox_tuple(raw_box)
+        box = bbox_tuple(raw_box)
         for token in text_tokens(text):
             hidden_by_token[token].append(box)
 
     preview_entries = tuple(
-        (token, internal_bbox_tuple(raw_box))
+        (token, bbox_tuple(raw_box))
         for text, raw_box in zip(preview.text, preview.bbox, strict=True)
         for token in text_tokens(text)
     )
@@ -111,7 +111,7 @@ def internal_hidden_text_verification(
     return spatial_overlap >= HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP
 
 
-def internal_candidate_text_containment(
+def candidate_text_containment(
     left: tuple[str, ...],
     right: tuple[str, ...],
 ) -> bool:
@@ -122,15 +122,15 @@ def internal_candidate_text_containment(
     return any(longer[index : index + width] == shorter for index in range(len(longer) - width + 1))
 
 
-def internal_merge_candidate_batches(
-    candidates: tuple[internal_Candidate, ...],
-) -> internal_Candidate:
+def merge_candidate_batches(
+    candidates: tuple[Candidate, ...],
+) -> Candidate:
     if not candidates:
-        return internal_candidate(-1, ObservationBatch.empty())
+        return make_candidate(-1, ObservationBatch.empty())
     if len(candidates) == 1:
         return candidates[0]
     modes = {candidate.mode for candidate in candidates}
-    merged_by_mode: list[internal_Candidate] = []
+    merged_by_mode: list[Candidate] = []
     for mode in sorted(modes):
         mode_candidates = tuple(candidate for candidate in candidates if candidate.mode == mode)
         combined = ObservationBatch.concatenate(
@@ -146,14 +146,14 @@ def internal_merge_candidate_batches(
         normalized_tokens = tuple(
             tuple(
                 key
-                for match in internal_OCR_TOKEN.finditer(text)
-                if (key := internal_normalized_ocr_token_key(match.group(0)))
+                for match in OCR_TOKEN.finditer(text)
+                if (key := normalized_ocr_token_key(match.group(0)))
             )
             for text in combined.text
         )
         observation_utility = numpy.fromiter(
             (
-                internal_text_utility_stats(text, float(confidence)).utility
+                text_utility_stats(text, float(confidence)).utility
                 for text, confidence in zip(
                     combined.text,
                     combined.confidence,
@@ -189,7 +189,7 @@ def internal_merge_candidate_batches(
                         )
                         >= (
                             0.35
-                            if internal_candidate_text_containment(
+                            if candidate_text_containment(
                                 normalized_tokens[deduplicated[accepted_position]],
                                 normalized_tokens[index],
                             )
@@ -209,7 +209,7 @@ def internal_merge_candidate_batches(
                 deduplicated.append(index)
                 continue
             accepted_index = deduplicated[duplicate_index]
-            containment = internal_candidate_text_containment(
+            containment = candidate_text_containment(
                 normalized_tokens[accepted_index],
                 normalized_tokens[index],
             )
@@ -227,7 +227,7 @@ def internal_merge_candidate_batches(
             if candidate.metrics.median_text_height > 0.0
         )
         merged_by_mode.append(
-            internal_candidate(
+            make_candidate(
                 mode,
                 combined.take(deduplicated),
                 symbols=combined_symbols,
@@ -239,12 +239,12 @@ def internal_merge_candidate_batches(
     return max(merged_by_mode, key=lambda candidate: candidate.metrics.utility)
 
 
-def internal_augment_candidate(
-    primary: internal_Candidate,
-    supplement: internal_Candidate,
+def augment_candidate(
+    primary: Candidate,
+    supplement: Candidate,
     *,
     minimum_confidence: float,
-) -> tuple[internal_Candidate, int]:
+) -> tuple[Candidate, int]:
     if not len(supplement.observations):
         return primary, 0
     observations = supplement.observations
@@ -257,7 +257,7 @@ def internal_augment_candidate(
     useful = numpy.fromiter(
         (
             (
-                internal_text_utility_stats(text, float(value)).utility >= 2.0
+                text_utility_stats(text, float(value)).utility >= 2.0
                 or (len(text.strip()) == 1 and text.strip().isalnum() and float(value) >= 85.0)
             )
             for text, value in zip(observations.text, confidence, strict=True)
@@ -280,4 +280,4 @@ def internal_augment_candidate(
         observations,
         additions,
     )
-    return internal_candidate(primary.mode, combined, symbols=primary.symbols), added
+    return make_candidate(primary.mode, combined, symbols=primary.symbols), added

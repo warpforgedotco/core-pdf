@@ -1,7 +1,7 @@
 import pytest
 
 from core_pdf.impl.document import structure
-from core_pdf.impl.document.document import PdfDocument, internal_PageLookup
+from core_pdf.impl.document.document import PageLookup, PdfDocument
 from core_pdf.impl.document.structure import (
     PageStructure,
     StructureContentItem,
@@ -375,13 +375,13 @@ def test_invalid_class_names_keep_failing_on_repeated_access(document, value):
 def test_root_parent_uses_document_tree_and_retains_lookup(document, with_lookup):
     root: PdfDict = {"Type": PdfName(b"StructTreeRoot")}
     document.catalog()["StructTreeRoot"] = root
-    lookup = internal_PageLookup(document) if with_lookup else None
-    element = StructureElement(document, {"P": root}, internal_lookup=lookup)
+    lookup = PageLookup(document) if with_lookup else None
+    element = StructureElement(document, {"P": root}, page_lookup=lookup)
     parent = element.parent
     assert isinstance(parent, StructureTree)
     assert parent.props is root
     if lookup is not None:
-        assert parent.internal_lookup is lookup
+        assert parent.page_lookup is lookup
     assert element.parent is parent
 
 
@@ -397,14 +397,14 @@ def test_page_search_can_find_ancestor_instead_of_immediate_parent(document):
 
 def test_child_page_lookup_rejects_foreign_reference_and_allows_absent_page(document):
     assert structure.get_kid_page_index(document, None, {}) is None
-    lookup = internal_PageLookup(document)
+    lookup = PageLookup(document)
     assert structure.get_kid_page_index(document, None, {"Pg": PdfReference(3, 0)}, lookup) == 0
     with pytest.raises(ValueError, match="page reference"):
         structure.get_kid_page_index(document, None, {"Pg": 7})
 
 
 def test_element_page_reuses_explicit_lookup_page_wrapper(document):
-    lookup = internal_PageLookup(document)
-    element = StructureElement(document, {"Pg": PdfReference(3, 0)}, internal_lookup=lookup)
+    lookup = PageLookup(document)
+    element = StructureElement(document, {"Pg": PdfReference(3, 0)}, page_lookup=lookup)
     assert element.page is lookup.pages[0]
     assert element.page_index == 0

@@ -82,14 +82,14 @@ def test_stroked_profile_is_lazily_built_and_reused(ocr_capture) -> None:
             ),
         ),
     )
-    extraction = pipeline.internal_PageExtraction(
+    extraction = pipeline.PageExtraction(
         cast(Any, object()), capture=capture, plan=WorkPlan(PageRoute.OCR)
     )
-    assert extraction.internal_stroked_profile is None
+    assert extraction.stroked_profile_of is None
     profile = extraction.stroked_profile
     assert profile is not None
     assert extraction.stroked_profile is profile
-    assert extraction.internal_stroked_profile is profile
+    assert extraction.stroked_profile_of is profile
 
 
 def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, monkeypatch) -> None:
@@ -99,9 +99,7 @@ def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, mo
     recognition = RecognitionResult(ObservationBatch.empty())
     operation = OcrPass("page", OcrPassScope.PAGE, 1, (6,))
     plan = WorkPlan(PageRoute.OCR, ocr_passes=(operation,))
-    extraction = pipeline.internal_PageExtraction(
-        cast(Any, object()), capture=ocr_capture, plan=plan
-    )
+    extraction = pipeline.PageExtraction(cast(Any, object()), capture=ocr_capture, plan=plan)
 
     def recognize(capture, requested_plan, requested_context, *, stroked_profile):
         assert capture is extraction.capture

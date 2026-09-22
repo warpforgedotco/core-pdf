@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.graphics.color import color_operands_to_srgb, internal_convert_image_data
+from core_pdf.impl.graphics.color import color_operands_to_srgb, convert_image_data
 from core_pdf.impl.graphics.color_spec import parse_color_space
 from core_pdf.impl.graphics.image_samples import convert_integer_samples
 
@@ -28,7 +28,7 @@ def test_equivalent_eight_and_sixteen_bit_components(space, reverse_decode):
     dictionary = {"ColorSpace": space, "Width": 4, "Height": 1, "BitsPerComponent": 8}
     if reverse_decode:
         dictionary["Decode"] = [n for low, high in spec.component_ranges for n in (high, low)]
-    actual = internal_convert_image_data(samples.reshape(-1), dictionary)
+    actual = convert_image_data(samples.reshape(-1), dictionary)
     high = convert_integer_samples(samples.astype(np.uint16) * 257, dictionary)
     assert actual is not None
     np.testing.assert_array_equal(np.asarray(actual).reshape(4, -1), high)
@@ -43,7 +43,7 @@ def test_unusable_tint_has_same_subtractive_recovery_everywhere(function, tint):
     assert vector == (expected / 255,) * 3
     for bits in (8, 16):
         raw = bytes(bits // 8)
-        image = internal_convert_image_data(
+        image = convert_image_data(
             raw,
             {
                 "ColorSpace": space,
@@ -60,7 +60,7 @@ def test_unusable_tint_has_same_subtractive_recovery_everywhere(function, tint):
 def test_indexed_decode_selects_palette_before_alternate_conversion(bits):
     space = ["Indexed", "DeviceRGB", 1, b"\xff\x00\x00\x00\xff\x00"]
     raw = bytes(2 if bits == 16 else 1)
-    actual = internal_convert_image_data(
+    actual = convert_image_data(
         raw,
         {
             "ColorSpace": space,
@@ -79,7 +79,7 @@ def test_indexed_decode_selects_palette_before_alternate_conversion(bits):
 )
 def test_device_passthrough_preserves_buffer_identity(space, raw):
     assert (
-        internal_convert_image_data(
+        convert_image_data(
             raw,
             {
                 "ColorSpace": space,
@@ -122,7 +122,7 @@ def test_soft_mask_precedes_colour_key_mask():
 def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fallback, inks):
     from core_pdf.impl.graphics import device_profiles
 
-    device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()
+    device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
     try:
         if fallback:
             monkeypatch.setattr(device_profiles, "default_cmyk_transform", lambda: None)
@@ -135,4 +135,4 @@ def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fa
             expected = np.rint(255 * (1 - np.array(inks[:3]) / 255) * (1 - inks[3] / 255))
             np.testing.assert_array_equal(vector, expected)
     finally:
-        device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()
+        device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()

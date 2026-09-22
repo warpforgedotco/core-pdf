@@ -19,12 +19,12 @@ from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict
 
 from ._fonts import (
-    internal_pdfminer_embedded_cmap_is_unusable,
-    internal_pdfminer_normalized_width,
+    pdfminer_embedded_cmap_is_unusable,
+    pdfminer_normalized_width,
 )
 
 
-class internal_PdfminerContentLexer(PdfLexer):
+class PdfminerContentLexer(PdfLexer):
     def read_string(
         self,
         *,
@@ -48,7 +48,7 @@ class internal_PdfminerContentLexer(PdfLexer):
         raise PdfParseError("invalid content dictionary")
 
 
-class internal_PdfminerRecovery(CaptureRecovery):
+class PdfminerRecovery(CaptureRecovery):
     def resume(
         self,
         lexer: SyntaxLexer,
@@ -62,22 +62,22 @@ class internal_PdfminerRecovery(CaptureRecovery):
         return super().resume(lexer, error, kind, start, is_operator)
 
 
-class internal_PdfminerTextState(TextState):
+class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
             document, page_clip=page_clip, capture_ink_bounds=False, capture_text_runs=False
         )
-        self.internal_cursor = 0.0
-        self.internal_frame_cursors: dict[int, float] = {}
+        self.cursor = 0.0
+        self.frame_cursors: dict[int, float] = {}
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
-        self.internal_frame_cursors[id(frame)] = self.internal_cursor
+        self.frame_cursors[id(frame)] = self.cursor
         if frame.is_form:
-            self.internal_cursor = 0.0
+            self.cursor = 0.0
         super().enter_stream(state, frame)
 
     def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
-        self.internal_cursor = self.internal_frame_cursors.pop(id(frame))
+        self.cursor = self.frame_cursors.pop(id(frame))
         super().exit_stream(state, frame)
 
     def current_capture_actual_text_span(self) -> None:
@@ -85,7 +85,7 @@ class internal_PdfminerTextState(TextState):
 
     def text_boundary(self, state: object, kind: str) -> None:
         if kind in {"begin", "move", "matrix"}:
-            self.internal_cursor = 0.0
+            self.cursor = 0.0
         super().text_boundary(state, kind)
 
     def op_Tj(self, operands: ContentOperands, depth: int) -> None:
@@ -107,17 +107,17 @@ class internal_PdfminerTextState(TextState):
         paint: GlyphPaint | None = None
         for value in array:
             if isinstance(value, (int, float)):
-                self.internal_cursor -= value * adjustment_scale
+                self.cursor -= value * adjustment_scale
                 needs_spacing = True
                 continue
             if not isinstance(value, PdfString):
                 continue
             for decoded in decoder.decode_glyphs(value.data):
                 if needs_spacing:
-                    self.internal_cursor += char_space
+                    self.cursor += char_space
                 self.text_matrix = self.text_matrix._replace(
-                    e=self.internal_cursor * self.line_matrix.a + self.line_matrix.e,
-                    f=self.internal_cursor * self.line_matrix.b + self.line_matrix.f,
+                    e=self.cursor * self.line_matrix.a + self.line_matrix.e,
+                    f=self.cursor * self.line_matrix.b + self.line_matrix.f,
                 )
                 start = len(self.glyphs)
                 advance_x, advance_y = decoder.glyph_advance_vector(
@@ -129,7 +129,7 @@ class internal_PdfminerTextState(TextState):
                     encoded_space=decoded.code_bytes == b" ",
                 )
                 if paint is None:
-                    paint = self.internal_glyph_paint(self.capture_color(stroke=False))
+                    paint = self.glyph_paint(self.capture_color(stroke=False))
                 self.show_text(
                     self,
                     decoded.unicode,
@@ -142,24 +142,24 @@ class internal_PdfminerTextState(TextState):
                 )
                 if len(self.glyphs) > start:
                     glyph = self.glyphs[start]
-                    width = internal_pdfminer_normalized_width(glyph)
-                    if internal_pdfminer_embedded_cmap_is_unusable(glyph):
+                    width = pdfminer_normalized_width(glyph)
+                    if pdfminer_embedded_cmap_is_unusable(glyph):
                         width = 0.0
-                    self.internal_cursor += width * self.graphics.font_size * scale
+                    self.cursor += width * self.graphics.font_size * scale
                 if decoded.width_code == 32:
-                    self.internal_cursor += word_space
+                    self.cursor += word_space
                 needs_spacing = True
         self.text_matrix = self.text_matrix._replace(
-            e=self.internal_cursor * self.line_matrix.a + self.line_matrix.e,
-            f=self.internal_cursor * self.line_matrix.b + self.line_matrix.f,
+            e=self.cursor * self.line_matrix.a + self.line_matrix.e,
+            f=self.cursor * self.line_matrix.b + self.line_matrix.f,
         )
         self.text_boundary(self, "shown")
 
 
-def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
-    state = internal_PdfminerTextState(page.document, page_clip=page.effective_page_clip())
-    state.lexer_factory = internal_PdfminerContentLexer
-    state.recovery = internal_PdfminerRecovery()
+def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
+    state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
+    state.lexer_factory = PdfminerContentLexer
+    state.recovery = PdfminerRecovery()
     page.consume_contents(state)
     state.run_accumulator.flush()
     return CapturedProgram(
@@ -172,7 +172,7 @@ def internal_pdfminer_page_program(page: PdfPage) -> CapturedProgram:
     )
 
 
-def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
+def pdfminer_validate_page_resources(page: PdfPage) -> None:
     resources = page.resources
     fonts = page.document.resolver.resolve(resources.get("Font"))
     if isinstance(fonts, dict):

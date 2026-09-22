@@ -16,10 +16,10 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
+IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Width",
     "Height",
     "BitsPerComponent",
@@ -43,8 +43,8 @@ class SoftMask:
     __match_args__ = ("raw", "dictionary")
 
     def __init__(self, raw: bytes | memoryview, dictionary: dict[Any, Any]) -> None:
-        internal_frozen_setattr(self, "raw", raw)
-        internal_frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "raw", raw)
+        frozen_setattr(self, "dictionary", dictionary)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(raw={self.raw!r}, dictionary={self.dictionary!r})"
@@ -70,7 +70,7 @@ class SoftMask:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         raw = changes.pop("raw", self.raw)
@@ -141,12 +141,12 @@ class ImageSource:
         )
 
 
-def internal_resolve_image_dictionary(
+def resolve_image_dictionary(
     dictionary: dict[object, object], resolver: PdfValueResolver
 ) -> dict[object, object]:
     return {
         key: resolver.deep_resolve(value)
-        if value is not None and decoded_name(key) in internal_IMAGE_INPUT_KEYS
+        if value is not None and decoded_name(key) in IMAGE_INPUT_KEYS
         else value
         for key, value in dictionary.items()
     }
@@ -163,11 +163,11 @@ def image_source_from_stream(
     mask = stream.dictionary.get("SMask")
     mask_stream = resolver.resolve(mask) if mask is not None else None
     if isinstance(mask_stream, PdfStream):
-        dictionary = internal_resolve_image_dictionary(mask_stream.dictionary, resolver)
+        dictionary = resolve_image_dictionary(mask_stream.dictionary, resolver)
         data = mask_stream.raw_data
         soft_mask = SoftMask(data, dictionary)
 
-    source_dictionary = internal_resolve_image_dictionary(stream.dictionary, resolver)
+    source_dictionary = resolve_image_dictionary(stream.dictionary, resolver)
     return ImageSource(
         stream.raw_data,
         source_dictionary,

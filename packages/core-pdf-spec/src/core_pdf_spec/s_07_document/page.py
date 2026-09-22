@@ -11,7 +11,7 @@ from core_pdf_spec.s_07_syntax.types import CachedPdfObject, InheritedValueMap, 
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import Rectangle
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 PAGE_INHERITED_KEYS = ("MediaBox", "CropBox", "Rotate", "Resources")
@@ -27,8 +27,8 @@ class PageNode:
     __match_args__ = ("dictionary", "inherited_values")
 
     def __init__(self, dictionary: PdfDict, inherited_values: InheritedValueMap) -> None:
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "inherited_values", inherited_values)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "inherited_values", inherited_values)
 
     def __repr__(self) -> str:
         return (
@@ -61,7 +61,7 @@ class PageNode:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         dictionary = changes.pop("dictionary", self.dictionary)

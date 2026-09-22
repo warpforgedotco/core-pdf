@@ -26,7 +26,7 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 INLINE_IMAGE_KEY_MAP = {
@@ -49,15 +49,15 @@ INLINE_IMAGE_COLOR_SPACE_MAP = {
 }
 
 
-def internal_normalize_inline_color_space(value: PdfObject) -> PdfObject:
+def normalize_inline_color_space(value: PdfObject) -> PdfObject:
     name = decoded_name(value)
     if name in INLINE_IMAGE_COLOR_SPACE_MAP:
         return PdfName.of(INLINE_IMAGE_COLOR_SPACE_MAP[name])
     if isinstance(value, list) and value:
         values = list(value)
-        values[0] = internal_normalize_inline_color_space(values[0])
+        values[0] = normalize_inline_color_space(values[0])
         if decoded_name(values[0]) == "Indexed" and len(values) > 1:
-            values[1] = internal_normalize_inline_color_space(values[1])
+            values[1] = normalize_inline_color_space(values[1])
         return values
     return value
 
@@ -72,8 +72,8 @@ class InlineImage:
     __match_args__ = ("dictionary", "data")
 
     def __init__(self, dictionary: PdfDict, data: bytes) -> None:
-        internal_frozen_setattr(self, "dictionary", dictionary)
-        internal_frozen_setattr(self, "data", data)
+        frozen_setattr(self, "dictionary", dictionary)
+        frozen_setattr(self, "data", data)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(dictionary={self.dictionary!r}, data={self.data!r})"
@@ -99,7 +99,7 @@ class InlineImage:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         dictionary = changes.pop("dictionary", self.dictionary)
@@ -125,7 +125,7 @@ def normalize_inline_image_dictionary(dictionary: PdfDict) -> PdfDict:
             raise PdfParseError("inline image keys must be names")
         mapped_key = INLINE_IMAGE_KEY_MAP.get(key_name, key_name)
         if mapped_key == "ColorSpace":
-            value = internal_normalize_inline_color_space(value)
+            value = normalize_inline_color_space(value)
         normalized[PdfName.of(mapped_key)] = value
     return normalized
 
@@ -286,17 +286,17 @@ def scan_inline_image_data(lexer: PdfLexer, dictionary: PdfDict, start: int) -> 
         pos = marker + 1
 
 
-internal_INLINE_IMAGE_MARKER_RE = re.compile(rb"[%(/<>\[\]]|BI")
+INLINE_IMAGE_MARKER_RE = re.compile(rb"[%(/<>\[\]]|BI")
 
 
-def internal_next_inline_image(
+def next_inline_image(
     raw_bytes: bytes,
     pos: int,
     data_len: int,
     rules: LexicalRules,
 ) -> int | None:
     container_depth = 0
-    while match := internal_INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
+    while match := INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -352,7 +352,7 @@ def validate_inline_images(
     lexer = PdfLexer(raw_bytes, semantic_context=context)
     try:
         while (
-            after := internal_next_inline_image(raw_bytes, pos, data_len, lexer.lexical_rules)
+            after := next_inline_image(raw_bytes, pos, data_len, lexer.lexical_rules)
         ) is not None:
             lexer.pos = after
             parse_inline_image(lexer)

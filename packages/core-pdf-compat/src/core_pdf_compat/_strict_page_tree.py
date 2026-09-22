@@ -6,7 +6,7 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfReference
 
 
-def internal_has_malformed_shadowed_definition(
+def has_malformed_shadowed_definition(
     pdf: PdfDocument,
     reference: PdfReference,
 ) -> bool:
@@ -36,4 +36,4 @@ def internal_has_malformed_shadowed_definition(
     return False
 
 
-__all__ = ("internal_has_malformed_shadowed_definition",)
+__all__ = ("has_malformed_shadowed_definition",)

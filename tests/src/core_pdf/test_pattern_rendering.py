@@ -4,15 +4,15 @@ import pytest
 from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import CapturedDrawing, TilingPattern
 from core_pdf.impl.render import patterns
-from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_target(width=4, height=1):
+def make_target(width=4, height=1):
     pixels = bytearray(width * height * 4)
     view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
-    return internal_RasterTarget(
+    clip = ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
+    return RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -74,12 +74,12 @@ def test_radial_projection_selects_valid_circle_solution(coords, point, expected
 def test_shading_color_clamps_channels_and_fills_missing_components(
     model, components, opacity, expected
 ):
-    assert patterns.internal_shading_color_rgba(model, components, opacity) == expected
+    assert patterns.shading_color_rgba(model, components, opacity) == expected
 
 
 @pytest.mark.parametrize("extend", [False, True])
 def test_axial_gradient_pixels_respect_extension_flags(extend):
-    target = internal_target()
+    target = make_target()
     target.paint_shading(
         {
             "dictionary": {
@@ -104,7 +104,7 @@ def test_axial_gradient_pixels_respect_extension_flags(extend):
 
 @pytest.mark.parametrize("dictionary", [None, {}, {"ShadingType": 1}])
 def test_unsupported_shading_leaves_raster_untouched(dictionary):
-    target = internal_target()
+    target = make_target()
     target.paint_shading({"dictionary": dictionary}, None)
     assert target.pixels == bytearray(16)
 
@@ -116,7 +116,7 @@ def test_tiling_blend_optimization_requires_only_normal_paints(mode, expected):
     drawing = CapturedDrawing(0, None, None, blend_mode=mode)
     pattern = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram(drawings=(drawing,)))
     active = set()
-    assert patterns.internal_tiling_pattern_uses_normal_blends(pattern, active) is expected
+    assert patterns.tiling_pattern_uses_normal_blends(pattern, active) is expected
     assert active == set()
 
 
@@ -125,23 +125,23 @@ def test_nested_tiling_blends_and_cycles_disable_isolated_optimization():
     nested = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram(drawings=(nested_drawing,)))
     outer_drawing = CapturedDrawing(0, None, None, fill_pattern=nested)
     outer = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram(drawings=(outer_drawing,)))
-    assert not patterns.internal_tiling_pattern_uses_normal_blends(outer)
+    assert not patterns.tiling_pattern_uses_normal_blends(outer)
     nested_drawing.blend_mode = None
-    assert patterns.internal_tiling_pattern_uses_normal_blends(outer)
+    assert patterns.tiling_pattern_uses_normal_blends(outer)
     nested_drawing.stroke_pattern = outer
     active = set()
-    assert not patterns.internal_tiling_pattern_uses_normal_blends(outer, active)
+    assert not patterns.tiling_pattern_uses_normal_blends(outer, active)
     assert active == set()
 
 
 def test_tiling_cell_cache_reuses_display_and_clip_for_same_pattern():
-    target = internal_target()
+    target = make_target()
     pattern = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram())
-    first = patterns.internal_tiling_cell(target, pattern)
-    second = patterns.internal_tiling_cell(target, pattern)
+    first = patterns.tiling_cell(target, pattern)
+    second = patterns.tiling_cell(target, pattern)
     assert first[0] is second[0]
     assert first[1] is second[1]
     target.group_source_shape = numpy.zeros((1, 4), dtype=numpy.float32)
-    grouped = patterns.internal_tiling_cell(target, pattern)
+    grouped = patterns.tiling_cell(target, pattern)
     assert grouped[0] is not first[0]
     assert len(target.tiling_cell_cache) == 2

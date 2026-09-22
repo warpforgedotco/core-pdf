@@ -9,7 +9,7 @@ import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.runtime.execution import ExtractionScope
-from core_pdf_ocr.impl.extract.capture import internal_promoted_hidden_observations
+from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
     HIDDEN_TEXT_VERIFY_PIXELS,
@@ -22,44 +22,44 @@ from core_pdf_ocr.impl.extract.contracts import (
     WorkPlan,
 )
 from core_pdf_ocr.impl.extract.grids import (
-    internal_detect_ruling_grid,
-    internal_grid_cell_tasks,
-    internal_grid_is_regular_table,
-    internal_GRID_MIN_CELLS,
-    internal_grid_region_page_box,
-    internal_grid_row_observations,
+    GRID_MIN_CELLS,
+    detect_ruling_grid,
+    grid_cell_tasks,
+    grid_is_regular_table,
+    grid_region_page_box,
+    grid_row_observations,
 )
 from core_pdf_ocr.impl.extract.ocr.candidates import (
-    internal_augment_candidate,
-    internal_hidden_text_verification,
-    internal_merge_candidate_batches,
+    augment_candidate,
+    hidden_text_verification,
+    merge_candidate_batches,
 )
-from core_pdf_ocr.impl.extract.ocr.regions import internal_dominant_image_region
+from core_pdf_ocr.impl.extract.ocr.regions import dominant_image_region
 from core_pdf_ocr.impl.extract.ocr.rescue import (
-    internal_adaptive_rescue_decision,
-    internal_primary_text_is_sufficient,
+    adaptive_rescue_decision,
+    primary_text_is_sufficient,
 )
 from core_pdf_ocr.impl.extract.ocr.session import (
-    internal_OcrSession,
-    internal_raster_tasks,
-    internal_region_tasks,
+    OcrSession,
+    raster_tasks,
+    region_tasks,
 )
 from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
-from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask
+from core_pdf_ocr.impl.extract.ocr.types import OcrTask
 from core_pdf_ocr.impl.extract.ocr.vector import (
-    internal_decode_stroked_vector_text,
-    internal_full_stroked_vector_text_raster,
-    internal_packed_stroked_vector_decode_gate,
-    internal_recover_stroked_vector_text,
-    internal_remap_stroked_vector_candidate,
-    internal_stroked_vector_text_raster,
+    decode_stroked_vector_text,
+    full_stroked_vector_text_raster,
+    packed_stroked_vector_decode_gate,
+    recover_stroked_vector_text,
+    remap_stroked_vector_candidate,
+    stroked_vector_text_raster,
 )
-from core_pdf_ocr.impl.extract.quality import internal_Candidate
+from core_pdf_ocr.impl.extract.quality import Candidate
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class internal_OcrPassState:
+class OcrPassState:
     __slots__ = (
         "selected",
         "selected_tasks",
@@ -67,8 +67,8 @@ class internal_OcrPassState:
         "seeded_region_selected",
     )
 
-    selected: internal_Candidate | None
-    selected_tasks: tuple[internal_OcrTask, ...]
+    selected: Candidate | None
+    selected_tasks: tuple[OcrTask, ...]
     previous_region_additions: int
     seeded_region_selected: bool
 
@@ -87,15 +87,15 @@ class internal_OcrPassState:
 
     def __init__(
         self,
-        selected: internal_Candidate | None = None,
-        selected_tasks: tuple[internal_OcrTask, ...] = (),
+        selected: Candidate | None = None,
+        selected_tasks: tuple[OcrTask, ...] = (),
         previous_region_additions: int = 0,
         seeded_region_selected: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "selected", selected)
-        internal_frozen_setattr(self, "selected_tasks", selected_tasks)
-        internal_frozen_setattr(self, "previous_region_additions", previous_region_additions)
-        internal_frozen_setattr(self, "seeded_region_selected", seeded_region_selected)
+        frozen_setattr(self, "selected", selected)
+        frozen_setattr(self, "selected_tasks", selected_tasks)
+        frozen_setattr(self, "previous_region_additions", previous_region_additions)
+        frozen_setattr(self, "seeded_region_selected", seeded_region_selected)
 
     def __repr__(self) -> str:
         return (
@@ -140,7 +140,7 @@ class internal_OcrPassState:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         selected = changes.pop("selected", self.selected)
@@ -158,15 +158,13 @@ class internal_OcrPassState:
             seeded_region_selected,
         )
 
-    def prepare(
-        self, ocr_pass: OcrPass, *, visible_native_characters: int
-    ) -> internal_OcrPassState | None:
+    def prepare(self, ocr_pass: OcrPass, *, visible_native_characters: int) -> OcrPassState | None:
         selected = self.selected
         if (
             selected is not None
             and ocr_pass.scope is OcrPassScope.PAGE
             and ocr_pass.run_if_characters_below is not None
-            and internal_primary_text_is_sufficient(selected)
+            and primary_text_is_sufficient(selected)
         ):
             return None
         if (
@@ -221,14 +219,14 @@ class internal_OcrPassState:
     def complete(
         self,
         ocr_pass: OcrPass,
-        candidate: internal_Candidate,
-        candidate_source_tasks: tuple[internal_OcrTask, ...],
-    ) -> internal_OcrPassState:
+        candidate: Candidate,
+        candidate_source_tasks: tuple[OcrTask, ...],
+    ) -> OcrPassState:
         selected = self.selected
         if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
             used_native_seed = selected is None
             if selected is not None:
-                candidate, additions = internal_augment_candidate(
+                candidate, additions = augment_candidate(
                     selected,
                     candidate,
                     minimum_confidence=ocr_pass.minimum_confidence,
@@ -265,14 +263,14 @@ def recognize_page(
     if not plan.ocr_passes:
         return RecognitionResult(ObservationBatch.empty())
     context.raise_if_cancelled()
-    observations = internal_recognize_page_with_reserved_raster(
+    observations = recognize_page_with_reserved_raster(
         capture, plan, context, stroked_profile=stroked_profile
     )
-    observations, alphabet = internal_recover_stroked_vector_text(stroked_profile, observations)
+    observations, alphabet = recover_stroked_vector_text(stroked_profile, observations)
     return RecognitionResult(observations, stroked_vector_alphabet=alphabet)
 
 
-def internal_recognize_page_with_reserved_raster(
+def recognize_page_with_reserved_raster(
     capture: PageAnalysis,
     plan: WorkPlan,
     context: ExtractionScope,
@@ -284,7 +282,7 @@ def internal_recognize_page_with_reserved_raster(
         image_filters = capture.evidence.image_filters
         if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
             compact_image = "grayscale"
-    session = internal_OcrSession(
+    session = OcrSession(
         capture,
         plan,
         compact_image,
@@ -292,7 +290,7 @@ def internal_recognize_page_with_reserved_raster(
         stroked_profile,
     )
     page_box = session.page_box
-    pass_state = internal_OcrPassState()
+    pass_state = OcrPassState()
     adaptive_rescue_used = False
 
     if plan.verify_hidden_text:
@@ -307,20 +305,20 @@ def internal_recognize_page_with_reserved_raster(
             recognize_words=True,
             region_first=False,
         )
-        verification_region = internal_dominant_image_region(
+        verification_region = dominant_image_region(
             capture,
             max_pixels=HIDDEN_TEXT_VERIFY_PIXELS,
         )
-        verification_tasks = internal_region_tasks(
+        verification_tasks = region_tasks(
             verification_region, verification_pass, compact_image=compact_image
         )
         verification_candidates = session.recognize_tasks(verification_tasks)
-        verification_candidate = internal_merge_candidate_batches(verification_candidates)
-        if internal_hidden_text_verification(
+        verification_candidate = merge_candidate_batches(verification_candidates)
+        if hidden_text_verification(
             capture.observations,
             verification_candidate.observations,
         ):
-            return internal_promoted_hidden_observations(capture)
+            return promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
         prepared_state = pass_state.prepare(
@@ -350,22 +348,22 @@ def internal_recognize_page_with_reserved_raster(
         task_candidates = session.recognize_tasks(tasks)
         if packed_stroked is not None:
             remapped_with_counts = tuple(
-                internal_remap_stroked_vector_candidate(candidate, packed_stroked)
+                remap_stroked_vector_candidate(candidate, packed_stroked)
                 for candidate in task_candidates
             )
             task_candidates = tuple(item[0] for item in remapped_with_counts)
-            packed_candidate = internal_merge_candidate_batches(task_candidates)
-            packed_decode = internal_decode_stroked_vector_text(
+            packed_candidate = merge_candidate_batches(task_candidates)
+            packed_decode = decode_stroked_vector_text(
                 stroked_profile,
                 packed_candidate.observations,
                 packed_candidate.symbols,
             )
-            packed_accepted = internal_packed_stroked_vector_decode_gate(
+            packed_accepted = packed_stroked_vector_decode_gate(
                 packed_decode,
                 len(packed_stroked.cells),
             )
             if packed_accepted:
-                isolated_packed = internal_stroked_vector_text_raster(
+                isolated_packed = stroked_vector_text_raster(
                     capture,
                     ocr_pass.scale,
                     profile=stroked_profile,
@@ -373,7 +371,7 @@ def internal_recognize_page_with_reserved_raster(
                     variant="isolated",
                 )
                 isolated_tasks = (
-                    internal_raster_tasks(
+                    raster_tasks(
                         isolated_packed.raster,
                         isolated_packed.packed_box,
                         replace(
@@ -389,7 +387,7 @@ def internal_recognize_page_with_reserved_raster(
                 )
                 if isolated_tasks and isolated_packed is not None:
                     isolated_remapped = tuple(
-                        internal_remap_stroked_vector_candidate(
+                        remap_stroked_vector_candidate(
                             candidate,
                             isolated_packed,
                             digit_bearing_only=True,
@@ -400,14 +398,14 @@ def internal_recognize_page_with_reserved_raster(
                     task_candidates = (*task_candidates, *isolated_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
                     tasks = (*tasks, *isolated_tasks)
-                    packed_candidate = internal_merge_candidate_batches(task_candidates)
+                    packed_candidate = merge_candidate_batches(task_candidates)
             else:
-                fallback_region = internal_full_stroked_vector_text_raster(
+                fallback_region = full_stroked_vector_text_raster(
                     capture,
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
                 )
-                fallback_tasks = internal_region_tasks(
+                fallback_tasks = region_tasks(
                     fallback_region,
                     replace(ocr_pass, recognize_words=False),
                     compact_image=compact_image,
@@ -417,17 +415,17 @@ def internal_recognize_page_with_reserved_raster(
                     task_candidates = (*task_candidates, *fallback_candidates)
                     candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
                     tasks = (*tasks, *fallback_tasks)
-                    packed_candidate = internal_merge_candidate_batches(fallback_candidates)
+                    packed_candidate = merge_candidate_batches(fallback_candidates)
             candidate = packed_candidate
         else:
-            candidate = internal_merge_candidate_batches(task_candidates)
+            candidate = merge_candidate_batches(task_candidates)
         if (
             selected is not None
             and plan.augment_page_candidates
             and ocr_pass.scope is OcrPassScope.PAGE
             and not capture.evidence.vector_complexity >= 180
         ):
-            candidate, _ = internal_augment_candidate(
+            candidate, _ = augment_candidate(
                 selected,
                 candidate,
                 minimum_confidence=70.0,
@@ -444,7 +442,7 @@ def internal_recognize_page_with_reserved_raster(
         run_rescue = False
         if rescue_eligible:
             adaptive_rescue_used = True
-            run_rescue = internal_adaptive_rescue_decision(
+            run_rescue = adaptive_rescue_decision(
                 candidate,
                 candidate_source_tasks,
                 ocr_pass,
@@ -470,7 +468,7 @@ def internal_recognize_page_with_reserved_raster(
                     max_pixels=MAX_OCR_PIXELS,
                     include_native_text=ocr_pass.include_native_text,
                 )
-                retry_tasks = internal_raster_tasks(
+                retry_tasks = raster_tasks(
                     retry_raster, page_box, retry_pass, compact_image=compact_image
                 )
             else:
@@ -481,7 +479,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_columns=max(3, retry_pass.region_columns),
                     max_regions=max(8, retry_pass.max_regions),
                 )
-                retry_regions = session.internal_high_resolution_weak_region_tasks(
+                retry_regions = session.high_resolution_weak_region_tasks(
                     tasks,
                     retry_pass,
                     candidate.observations,
@@ -490,8 +488,8 @@ def internal_recognize_page_with_reserved_raster(
             if retry_tasks:
                 candidate_source_tasks = (*candidate_source_tasks, *retry_tasks)
                 retry_candidates = session.recognize_tasks(retry_tasks)
-                retry_candidate = internal_merge_candidate_batches(retry_candidates)
-                augmented_candidate, _rescue_additions = internal_augment_candidate(
+                retry_candidate = merge_candidate_batches(retry_candidates)
+                augmented_candidate, _rescue_additions = augment_candidate(
                     candidate,
                     retry_candidate,
                     minimum_confidence=ocr_pass.minimum_confidence,
@@ -510,17 +508,15 @@ def internal_recognize_page_with_reserved_raster(
         selected_tasks,
         key=lambda task: task.rectangle[2] * task.rectangle[3],
     )
-    grid = internal_detect_ruling_grid(source_task.image)
-    if grid is not None and internal_grid_is_regular_table(
-        grid, selected.observations, source_task
-    ):
+    grid = detect_ruling_grid(source_task.image)
+    if grid is not None and grid_is_regular_table(grid, selected.observations, source_task):
         x_lines, y_lines, source_samples, slope = grid
-        cell_tasks = internal_grid_cell_tasks(source_task, x_lines, y_lines, source_samples, slope)
-        if len(cell_tasks) >= internal_GRID_MIN_CELLS:
-            cell_candidate = internal_merge_candidate_batches(session.recognize_tasks(cell_tasks))
-            cell_observations = internal_grid_row_observations(cell_candidate.observations)
+        cell_tasks = grid_cell_tasks(source_task, x_lines, y_lines, source_samples, slope)
+        if len(cell_tasks) >= GRID_MIN_CELLS:
+            cell_candidate = merge_candidate_batches(session.recognize_tasks(cell_tasks))
+            cell_observations = grid_row_observations(cell_candidate.observations)
             if len(cell_observations):
-                grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)
+                grid_box = grid_region_page_box(source_task, x_lines, y_lines)
                 prior = selected.observations
                 centers_x = (prior.bbox[:, 0] + prior.bbox[:, 2]) * 0.5
                 centers_y = (prior.bbox[:, 1] + prior.bbox[:, 3]) * 0.5

@@ -9,17 +9,17 @@ from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast
 
-from core_pdf.impl.extract.contracts import ObservationBatch, internal_bbox_tuple
+from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
 from core_pdf.impl.extract.selection import (
-    internal_assemble_document,
-    internal_prepare_document_pages,
+    assemble_document,
+    prepare_document_pages,
 )
 from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output.model import Document
 from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
-    internal_capture_from_program,
+    capture_from_program,
 )
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult
 from core_pdf_ocr.impl.extract.ocr.strokes import (
@@ -27,13 +27,13 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
     StrokedTextDecode,
     decode_stroked_text_profile_with_alphabet,
 )
-from core_pdf_ocr.impl.extract.pipeline import internal_PageExtraction
+from core_pdf_ocr.impl.extract.pipeline import PageExtraction
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PdfDocument
     from core_pdf.impl.document.page import PdfPage
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 DOCUMENT_FONT_SEED_LIMIT = 4
@@ -43,7 +43,7 @@ DOCUMENT_STROKED_MIN_RUN_COVERAGE = 0.70
 DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 
 
-class internal_FontEnrichment:
+class FontEnrichment:
     __slots__ = ("learned_unicode", "recognition_by_index")
 
     learned_unicode: LearnedUnicodeMap
@@ -57,12 +57,12 @@ class internal_FontEnrichment:
         learned_unicode: LearnedUnicodeMap | None = None,
         recognition_by_index: Mapping[int, RecognitionResult] | None = None,
     ) -> None:
-        internal_frozen_setattr(
+        frozen_setattr(
             self,
             "learned_unicode",
             (lambda: MappingProxyType({}))() if learned_unicode is None else learned_unicode,
         )
-        internal_frozen_setattr(
+        frozen_setattr(
             self,
             "recognition_by_index",
             (lambda: MappingProxyType({}))()
@@ -102,7 +102,7 @@ class internal_FontEnrichment:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         learned_unicode = changes.pop("learned_unicode", self.learned_unicode)
@@ -112,7 +112,7 @@ class internal_FontEnrichment:
         return self.__class__(learned_unicode, recognition_by_index)
 
 
-def internal_unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
+def unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
     counts: Counter[object] = Counter()
     quality = capture.evidence.text_quality
     corrupt = (
@@ -145,10 +145,10 @@ def internal_unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
     return counts
 
 
-def internal_document_font_seed_indexes(captures: Sequence[PageAnalysis]) -> tuple[int, ...]:
+def document_font_seed_indexes(captures: Sequence[PageAnalysis]) -> tuple[int, ...]:
     pages_by_decoder: dict[object, list[tuple[int, int]]] = defaultdict(list)
     for page_index, capture in enumerate(captures):
-        for decoder, count in internal_unknown_decoder_counts(capture).items():
+        for decoder, count in unknown_decoder_counts(capture).items():
             if count >= 8:
                 pages_by_decoder[decoder].append((page_index, count))
     page_scores: Counter[int] = Counter()
@@ -165,7 +165,7 @@ def internal_document_font_seed_indexes(captures: Sequence[PageAnalysis]) -> tup
     )
 
 
-def internal_font_mapping_votes(
+def font_mapping_votes(
     capture: PageAnalysis,
     ocr: ObservationBatch,
 ) -> dict[object, dict[bytes, Counter[str]]]:
@@ -189,7 +189,7 @@ def internal_font_mapping_votes(
         characters = tuple(character for character in text if not character.isspace())
         if len(characters) < 3:
             continue
-        x0, y0, x1, y1 = internal_bbox_tuple(bbox)
+        x0, y0, x1, y1 = bbox_tuple(bbox)
         tolerance = max(1.0, (y1 - y0) * 0.10)
         y_start = bisect_left(y_centers, y0 - tolerance)
         y_stop = bisect_right(y_centers, y1 + tolerance)
@@ -234,7 +234,7 @@ def internal_font_mapping_votes(
     return votes
 
 
-def internal_merge_font_mapping_votes(
+def merge_font_mapping_votes(
     destination: dict[object, dict[bytes, Counter[str]]],
     source: dict[object, dict[bytes, Counter[str]]],
 ) -> None:
@@ -244,7 +244,7 @@ def internal_merge_font_mapping_votes(
             destination_codes.setdefault(code_bytes, Counter()).update(counts)
 
 
-def internal_resolve_document_font_mappings(
+def resolve_document_font_mappings(
     votes: dict[object, dict[bytes, Counter[str]]],
 ) -> LearnedUnicodeMap:
     resolved: dict[object, Mapping[bytes, str]] = {}
@@ -262,31 +262,31 @@ def internal_resolve_document_font_mappings(
     return MappingProxyType(resolved)
 
 
-def internal_prepare_document_font_mappings(
-    extractions: tuple[internal_PageExtraction, ...],
+def prepare_document_font_mappings(
+    extractions: tuple[PageExtraction, ...],
     captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
-) -> internal_FontEnrichment:
-    seed_indexes = internal_document_font_seed_indexes(captures)
+) -> FontEnrichment:
+    seed_indexes = document_font_seed_indexes(captures)
     if not seed_indexes:
-        return internal_FontEnrichment()
+        return FontEnrichment()
     recognition_by_index: dict[int, RecognitionResult] = {}
     for page_index in seed_indexes:
         context.raise_if_cancelled()
         recognition_by_index[page_index] = extractions[page_index].recognize(context)
     votes: dict[object, dict[bytes, Counter[str]]] = {}
     for page_index, recognition in recognition_by_index.items():
-        internal_merge_font_mapping_votes(
+        merge_font_mapping_votes(
             votes,
-            internal_font_mapping_votes(captures[page_index], recognition.observations),
+            font_mapping_votes(captures[page_index], recognition.observations),
         )
-    return internal_FontEnrichment(
-        learned_unicode=internal_resolve_document_font_mappings(votes),
+    return FontEnrichment(
+        learned_unicode=resolve_document_font_mappings(votes),
         recognition_by_index=MappingProxyType(recognition_by_index),
     )
 
 
-def internal_capture_uses_learned_unicode(
+def capture_uses_learned_unicode(
     capture: PageAnalysis,
     learned_unicode: LearnedUnicodeMap,
 ) -> bool:
@@ -295,52 +295,52 @@ def internal_capture_uses_learned_unicode(
     )
 
 
-def internal_apply_font_enrichment(
-    extractions: tuple[internal_PageExtraction, ...],
+def apply_font_enrichment(
+    extractions: tuple[PageExtraction, ...],
     captures: tuple[PageAnalysis, ...],
-    font: internal_FontEnrichment,
-) -> tuple[internal_PageExtraction, ...]:
-    enriched: list[internal_PageExtraction] = []
+    font: FontEnrichment,
+) -> tuple[PageExtraction, ...]:
+    enriched: list[PageExtraction] = []
     for index, (base, capture) in enumerate(zip(extractions, captures, strict=True)):
         recognition = font.recognition_by_index.get(index)
         if recognition is not None:
             enriched.append(
-                internal_PageExtraction(
+                PageExtraction(
                     base.page,
                     capture=base.capture,
                     plan=base.plan,
                     recognition=recognition,
                     fields=base.capture.fields,
-                    structure=base.internal_structure,
-                    hidden_layers=base.internal_hidden_layers,
-                    stroked_profile=base.internal_stroked_profile,
+                    structure=base.structure_value,
+                    hidden_layers=base.hidden_layer_names,
+                    stroked_profile=base.stroked_profile_of,
                 )
             )
             continue
-        if not internal_capture_uses_learned_unicode(capture, font.learned_unicode):
+        if not capture_uses_learned_unicode(capture, font.learned_unicode):
             enriched.append(base)
             continue
-        enriched_capture = internal_capture_from_program(
+        enriched_capture = capture_from_program(
             base.page,
             capture.program,
             learned_unicode=font.learned_unicode,
-            structure=base.internal_structure,
+            structure=base.structure_value,
             fields=capture.fields,
             annotations=capture.annotations,
         )
         enriched.append(
-            internal_PageExtraction(
+            PageExtraction(
                 base.page,
                 capture=enriched_capture,
                 fields=enriched_capture.fields,
-                structure=base.internal_structure,
-                hidden_layers=base.internal_hidden_layers,
+                structure=base.structure_value,
+                hidden_layers=base.hidden_layer_names,
             )
         )
     return tuple(enriched)
 
 
-def internal_merge_document_stroked_alphabet(
+def merge_document_stroked_alphabet(
     destination: dict[GlyphSignature, str],
     ambiguous: set[GlyphSignature],
     source: Iterable[tuple[GlyphSignature, str]],
@@ -355,7 +355,7 @@ def internal_merge_document_stroked_alphabet(
             ambiguous.add(signature)
 
 
-def internal_document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -> bool:
+def document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -> bool:
     return bool(
         len(decoded.observations) >= DOCUMENT_STROKED_MIN_DECODED_RUNS
         and decoded.decoded_candidate_runs >= DOCUMENT_STROKED_MIN_DECODED_RUNS
@@ -364,17 +364,17 @@ def internal_document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -
     )
 
 
-def internal_document_stroked_recognition(
+def document_stroked_recognition(
     decoded: StrokedTextDecode,
 ) -> RecognitionResult:
-    from core_pdf_ocr.impl.extract.ocr.vector import internal_stroked_vector_decoded_batch
+    from core_pdf_ocr.impl.extract.ocr.vector import stroked_vector_decoded_batch
 
-    observations = internal_stroked_vector_decoded_batch(decoded.observations)
+    observations = stroked_vector_decoded_batch(decoded.observations)
     return RecognitionResult(observations, stroked_vector_alphabet=decoded.alphabet)
 
 
-def internal_prepare_document_stroked_mappings(
-    extractions: tuple[internal_PageExtraction, ...],
+def prepare_document_stroked_mappings(
+    extractions: tuple[PageExtraction, ...],
     captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
 ) -> Mapping[int, RecognitionResult]:
@@ -406,15 +406,15 @@ def internal_prepare_document_stroked_mappings(
                 profile,
                 alphabet,
             )
-            if internal_document_stroked_decode_is_sufficient(decoded):
-                recognition_by_index[page_index] = internal_document_stroked_recognition(decoded)
+            if document_stroked_decode_is_sufficient(decoded):
+                recognition_by_index[page_index] = document_stroked_recognition(decoded)
                 continue
 
         if recognition is None:
             recognition = extraction.recognize(context)
         learned = recognition.stroked_vector_alphabet
         if learned:
-            internal_merge_document_stroked_alphabet(
+            merge_document_stroked_alphabet(
                 alphabet,
                 ambiguous,
                 cast(tuple[tuple[GlyphSignature, str], ...], learned),
@@ -423,30 +423,30 @@ def internal_prepare_document_stroked_mappings(
     return MappingProxyType(recognition_by_index)
 
 
-def internal_apply_stroked_enrichment(
-    extractions: tuple[internal_PageExtraction, ...],
+def apply_stroked_enrichment(
+    extractions: tuple[PageExtraction, ...],
     recognition_by_index: Mapping[int, RecognitionResult],
-) -> tuple[internal_PageExtraction, ...]:
+) -> tuple[PageExtraction, ...]:
     if not recognition_by_index:
         return extractions
     enriched = list(extractions)
     for index, recognition in recognition_by_index.items():
         base = extractions[index]
-        enriched[index] = internal_PageExtraction(
+        enriched[index] = PageExtraction(
             base.page,
             capture=base.capture,
             plan=base.plan,
             recognition=recognition,
             fields=base.capture.fields,
-            structure=base.internal_structure,
-            hidden_layers=base.internal_hidden_layers,
-            stroked_profile=base.internal_stroked_profile,
+            structure=base.structure_value,
+            hidden_layers=base.hidden_layer_names,
+            stroked_profile=base.stroked_profile_of,
         )
     return tuple(enriched)
 
 
-def internal_capture_document_pages(
-    extractions: tuple[internal_PageExtraction, ...],
+def capture_document_pages(
+    extractions: tuple[PageExtraction, ...],
     context: ExtractionScope,
 ) -> tuple[PageAnalysis, ...]:
     captures: list[PageAnalysis] = []
@@ -456,19 +456,19 @@ def internal_capture_document_pages(
     return tuple(captures)
 
 
-def internal_prepare_selection_state(
-    extractions: tuple[internal_PageExtraction, ...],
+def prepare_selection_state(
+    extractions: tuple[PageExtraction, ...],
     captures: tuple[PageAnalysis, ...],
     context: ExtractionScope,
-) -> tuple[internal_PageExtraction, ...]:
-    font = internal_prepare_document_font_mappings(extractions, captures, context)
-    extractions = internal_apply_font_enrichment(extractions, captures, font)
-    stroked = internal_prepare_document_stroked_mappings(
+) -> tuple[PageExtraction, ...]:
+    font = prepare_document_font_mappings(extractions, captures, context)
+    extractions = apply_font_enrichment(extractions, captures, font)
+    stroked = prepare_document_stroked_mappings(
         extractions,
         tuple(extraction.capture for extraction in extractions),
         context,
     )
-    return internal_apply_stroked_enrichment(extractions, stroked)
+    return apply_stroked_enrichment(extractions, stroked)
 
 
 def extract_document(
@@ -477,8 +477,8 @@ def extract_document(
     pages: Sequence[PdfPage],
 ) -> Document:
     pages = tuple(pages)
-    extractions = internal_prepare_document_pages(document, pages, internal_PageExtraction)
+    extractions = prepare_document_pages(document, pages, PageExtraction)
     if len(extractions) > 1:
-        captures = internal_capture_document_pages(extractions, context)
-        extractions = internal_prepare_selection_state(extractions, captures, context)
-    return internal_assemble_document(document, extractions, context)
+        captures = capture_document_pages(extractions, context)
+        extractions = prepare_selection_state(extractions, captures, context)
+    return assemble_document(document, extractions, context)

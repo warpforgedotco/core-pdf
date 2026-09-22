@@ -1,9 +1,9 @@
 import pytest
 
 from core_pdf.impl.document.standards import (
-    internal_discover_extensions,
-    internal_profile_claim,
-    internal_xmp_claims,
+    discover_extensions,
+    profile_claim,
+    xmp_claims,
 )
 from core_pdf_spec.types import PdfName
 
@@ -27,7 +27,7 @@ def test_profile_identification_keeps_raw_properties_and_rejects_unknown_revisio
     family, properties, identifier
 ):
     diagnostics = []
-    claim = internal_profile_claim(family, "test/source", properties, diagnostics)
+    claim = profile_claim(family, "test/source", properties, diagnostics)
     assert claim.identifier == identifier
     assert claim.properties == properties
     assert (claim.family, claim.source) == (family, "test/source")
@@ -40,7 +40,7 @@ def test_repeated_profile_properties_remain_visible_and_conflicts_disable_identi
 ):
     properties = (("part", "1"), ("part", "2" if conflicting else "1"), ("conformance", "B"))
     diagnostics = []
-    claim = internal_profile_claim("PDF/A", "metadata", properties, diagnostics)
+    claim = profile_claim("PDF/A", "metadata", properties, diagnostics)
     assert claim.properties == properties
     assert claim.identifier == (None if conflicting else "pdfa-1b")
     assert [item.code for item in diagnostics] == (
@@ -67,7 +67,7 @@ def test_xmp_identification_uses_expanded_namespace_names(wrapper, prefix, attri
     )
     xml = rdf if wrapper == "rdf" else f'<x:xmpmeta xmlns:x="adobe:ns:meta/">{rdf}</x:xmpmeta>'
     diagnostics = []
-    claims = internal_xmp_claims(xml.encode(), diagnostics)
+    claims = xmp_claims(xml.encode(), diagnostics)
     assert [claim.identifier for claim in claims] == ["pdfa-1b"]
     assert all(
         key.startswith("{http://www.aiim.org/pdfa/ns/id/}") for key, _ in claims[0].properties
@@ -92,7 +92,7 @@ def test_nested_or_other_resource_descriptions_do_not_claim_document_conformance
         f' xmlns:r="http://www.w3.org/1999/02/22-rdf-syntax-ns#"'
         f' xmlns:a="http://www.aiim.org/pdfa/ns/id/">{description}</r:RDF>'
     )
-    assert internal_xmp_claims(xml.encode(), []) == []
+    assert xmp_claims(xml.encode(), []) == []
 
 
 @pytest.mark.parametrize(
@@ -121,7 +121,7 @@ def test_wtpdf_targets_remain_unverified_claims_and_unknown_targets_are_diagnose
         f"</r:RDF>"
     )
     diagnostics = []
-    claims = internal_xmp_claims(xml.encode(), diagnostics)
+    claims = xmp_claims(xml.encode(), diagnostics)
     assert [claim.identifier for claim in claims] == ([identifier] if identifier or unknown else [])
     if claims:
         assert claims[0].properties == ((f"{{{namespace}}}conformsTo", target),)
@@ -131,7 +131,7 @@ def test_wtpdf_targets_remain_unverified_claims_and_unknown_targets_are_diagnose
 @pytest.mark.parametrize("raw", [42, [], "bad"])
 def test_malformed_extension_container_produces_a_diagnostic(raw):
     diagnostics = []
-    assert internal_discover_extensions(raw, lambda value: value, diagnostics) == ()
+    assert discover_extensions(raw, lambda value: value, diagnostics) == ()
     assert [item.code for item in diagnostics] == ["invalid-extensions"]
 
 
@@ -146,7 +146,7 @@ def test_valid_extensions_survive_malformed_neighbors(extension_type):
         "BAD": [None, {}],
         "EMPTY": [],
     }
-    extensions = internal_discover_extensions(value, lambda item: item, diagnostics)
+    extensions = discover_extensions(value, lambda item: item, diagnostics)
     assert len(extensions) == 1
     assert extensions[0].prefix == "GOOD"
     expected = ["invalid-extension"] * 3

@@ -7,18 +7,18 @@ from functools import cached_property
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.output.model import TableCell
-from core_pdf.impl.records import internal_FrozenFields
+from core_pdf.impl.records import FrozenFields
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-def internal_numeric_cell(text: str) -> bool:
+def numeric_cell(text: str) -> bool:
     alphanumeric = sum(character.isalnum() for character in text)
     digits = sum(character.isdigit() for character in text)
     return bool(digits and digits * 2 >= max(1, alphanumeric))
 
 
-def internal_character_spaced_cell(text: str) -> bool:
+def character_spaced_cell(text: str) -> bool:
     tokens = [token for token in text.split() if any(character.isalpha() for character in token)]
     if len(tokens) < 4:
         return False
@@ -26,7 +26,7 @@ def internal_character_spaced_cell(text: str) -> bool:
     return single_character / len(tokens) >= 0.50
 
 
-class internal_TableFacts(internal_FrozenFields):
+class TableFacts(FrozenFields):
     row_count: int
     nonempty_rows: int
     populated_rows: int
@@ -68,14 +68,14 @@ class internal_TableFacts(internal_FrozenFields):
         single_cell_rows: int,
         filled_texts: tuple[str, ...],
     ) -> None:
-        internal_frozen_setattr(self, "row_count", row_count)
-        internal_frozen_setattr(self, "nonempty_rows", nonempty_rows)
-        internal_frozen_setattr(self, "populated_rows", populated_rows)
-        internal_frozen_setattr(self, "columns", columns)
-        internal_frozen_setattr(self, "spanned_columns", spanned_columns)
-        internal_frozen_setattr(self, "cell_count", cell_count)
-        internal_frozen_setattr(self, "single_cell_rows", single_cell_rows)
-        internal_frozen_setattr(self, "filled_texts", filled_texts)
+        frozen_setattr(self, "row_count", row_count)
+        frozen_setattr(self, "nonempty_rows", nonempty_rows)
+        frozen_setattr(self, "populated_rows", populated_rows)
+        frozen_setattr(self, "columns", columns)
+        frozen_setattr(self, "spanned_columns", spanned_columns)
+        frozen_setattr(self, "cell_count", cell_count)
+        frozen_setattr(self, "single_cell_rows", single_cell_rows)
+        frozen_setattr(self, "filled_texts", filled_texts)
 
     def __repr__(self) -> str:
         return (
@@ -144,7 +144,7 @@ class internal_TableFacts(internal_FrozenFields):
         )
 
     @classmethod
-    def from_rows(cls, rows: Sequence[Sequence[TableCell]]) -> internal_TableFacts:
+    def from_rows(cls, rows: Sequence[Sequence[TableCell]]) -> TableFacts:
         nonempty_rows = populated_rows = columns = spanned_columns = cell_count = 0
         single_cell_rows = 0
         filled_texts: list[str] = []
@@ -174,7 +174,7 @@ class internal_TableFacts(internal_FrozenFields):
 
     @cached_property
     def numeric_cells(self) -> int:
-        return sum(internal_numeric_cell(text) for text in self.filled_texts)
+        return sum(numeric_cell(text) for text in self.filled_texts)
 
     @property
     def numeric_density(self) -> float:
@@ -182,7 +182,7 @@ class internal_TableFacts(internal_FrozenFields):
 
     @cached_property
     def character_spaced_cells(self) -> int:
-        return sum(internal_character_spaced_cell(text) for text in self.filled_texts)
+        return sum(character_spaced_cell(text) for text in self.filled_texts)
 
     @cached_property
     def text_lengths(self) -> tuple[int, ...]:

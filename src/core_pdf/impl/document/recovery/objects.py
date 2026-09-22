@@ -97,7 +97,7 @@ class PdfObjectStream(SyntaxObjectStream):
 
 
 def recover_object_stream_first(data: bytes | memoryview, n: int) -> int | None:
-    pairs, last_end = internal_scan_object_stream_pairs(data, n)
+    pairs, last_end = scan_object_stream_pairs(data, n)
     return last_end if pairs else None
 
 
@@ -106,12 +106,10 @@ def parse_object_stream_header(
     first: int,
     n: int,
 ) -> list[tuple[int, int]]:
-    return internal_scan_object_stream_pairs(data[:first], n)[0]
+    return scan_object_stream_pairs(data[:first], n)[0]
 
 
-def internal_scan_object_stream_pairs(
-    data: bytes | memoryview, n: int
-) -> tuple[list[tuple[int, int]], int]:
+def scan_object_stream_pairs(data: bytes | memoryview, n: int) -> tuple[list[tuple[int, int]], int]:
     lexer = PdfLexer(data)
     pairs: list[tuple[int, int]] = []
     last_end = 0

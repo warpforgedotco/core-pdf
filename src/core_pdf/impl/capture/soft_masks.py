@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 GRAPHICS_STATE_FIELDS = GraphicsState.__fields__
 
 
-def internal_state_key(value: object) -> object:
+def state_key(value: object) -> object:
     if isinstance(value, tuple):
-        return tuple(internal_state_key(part) for part in value)
+        return tuple(state_key(part) for part in value)
     if value is None or isinstance(value, (bool, int, float, str)):
         return (type(value), value)
     return ("identity", id(value))
@@ -36,7 +36,7 @@ def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | No
     graphics.blend_mode = None
     key = (
         id(mask),
-        tuple(internal_state_key(getattr(graphics, name)) for name in GRAPHICS_STATE_FIELDS),
+        tuple(state_key(getattr(graphics, name)) for name in GRAPHICS_STATE_FIELDS),
     )
     cached = state.capture_soft_masks.get(key)
     if cached is not None:

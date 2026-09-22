@@ -13,7 +13,7 @@ from core_adobe_fonts.cmap.lexical import (
     read_literal_string,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
@@ -43,10 +43,10 @@ class CMapToken:
     __match_args__ = ("value", "start", "end", "kind")
 
     def __init__(self, value: bytes, start: int, end: int, kind: CMapTokenKind) -> None:
-        internal_frozen_setattr(self, "value", value)
-        internal_frozen_setattr(self, "start", start)
-        internal_frozen_setattr(self, "end", end)
-        internal_frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "value", value)
+        frozen_setattr(self, "start", start)
+        frozen_setattr(self, "end", end)
+        frozen_setattr(self, "kind", kind)
 
     def __repr__(self) -> str:
         return (
@@ -84,7 +84,7 @@ class CMapToken:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         value = changes.pop("value", self.value)
@@ -106,8 +106,8 @@ class CMapBlock:
     __match_args__ = ("data", "tokens")
 
     def __init__(self, data: bytes, tokens: tuple[CMapToken, ...]) -> None:
-        internal_frozen_setattr(self, "data", data)
-        internal_frozen_setattr(self, "tokens", tokens)
+        frozen_setattr(self, "data", data)
+        frozen_setattr(self, "tokens", tokens)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(data={self.data!r}, tokens={self.tokens!r})"
@@ -133,7 +133,7 @@ class CMapBlock:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         data = changes.pop("data", self.data)
@@ -145,7 +145,7 @@ class CMapBlock:
     def token_values(
         self, *, include_arrays: bool = False, include_words: bool = False
     ) -> list[bytes]:
-        return internal_cmap_token_values(
+        return cmap_token_values(
             self.tokens, include_arrays=include_arrays, include_words=include_words
         )
 
@@ -160,8 +160,8 @@ class CMapProgram:
     __match_args__ = ("data", "tokens")
 
     def __init__(self, data: bytes, tokens: tuple[CMapToken, ...]) -> None:
-        internal_frozen_setattr(self, "data", data)
-        internal_frozen_setattr(self, "tokens", tokens)
+        frozen_setattr(self, "data", data)
+        frozen_setattr(self, "tokens", tokens)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(data={self.data!r}, tokens={self.tokens!r})"
@@ -187,7 +187,7 @@ class CMapProgram:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         data = changes.pop("data", self.data)
@@ -283,7 +283,7 @@ def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.It
         yield block.data
 
 
-def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
+def scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
     end = pos + 1
     depth = 1
     n = len(data)
@@ -305,7 +305,7 @@ def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, b
     return min(end, n), depth == 0
 
 
-def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
+def scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
     opening = data[pos]
     match opening:
         case 91:
@@ -323,7 +323,7 @@ def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
                 while end < n and data[end] not in (10, 13):
                     end += 1
             case 40:
-                end, ignored_terminated = internal_scan_cmap_literal_string_end(data, end)
+                end, ignored_terminated = scan_cmap_literal_string_end(data, end)
             case 60:
                 if end + 1 < n and data[end + 1] == 60:
                     end += 2
@@ -333,7 +333,7 @@ def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
                     return n, False
                 end = close + 1
             case 91 | 123:
-                end, terminated = internal_scan_cmap_composite_end(data, end)
+                end, terminated = scan_cmap_composite_end(data, end)
                 if not terminated:
                     return n, False
             case _ if current == closing:
@@ -377,7 +377,7 @@ def iter_cmap_tokens(data: bytes, *, group_arrays: bool) -> typing.Iterator[CMap
                 while pos < n and data[pos] not in (10, 13):
                     pos += 1
             case 40:
-                end, terminated = internal_scan_cmap_literal_string_end(data, pos)
+                end, terminated = scan_cmap_literal_string_end(data, pos)
                 if not terminated:
                     raise ValueError("unterminated CMap literal string")
                 yield CMapToken(data[pos:end], pos, end, "literal")
@@ -398,13 +398,13 @@ def iter_cmap_tokens(data: bytes, *, group_arrays: bool) -> typing.Iterator[CMap
                 yield CMapToken(data[pos:end], pos, end, "delimiter")
                 pos = end
             case 91 if group_arrays:
-                end, terminated = internal_scan_cmap_composite_end(data, pos)
+                end, terminated = scan_cmap_composite_end(data, pos)
                 if not terminated:
                     raise ValueError("unterminated CMap array")
                 yield CMapToken(data[pos:end], pos, end, "array")
                 pos = end
             case 123:
-                end, terminated = internal_scan_cmap_composite_end(data, pos)
+                end, terminated = scan_cmap_composite_end(data, pos)
                 if not terminated:
                     raise ValueError("unterminated CMap procedure")
                 yield CMapToken(data[pos:end], pos, end, "procedure")
@@ -430,12 +430,10 @@ def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:
     tokens = iter_cmap_tokens(data, group_arrays=include_arrays)
-    return internal_cmap_token_values(
-        tokens, include_arrays=include_arrays, include_words=include_words
-    )
+    return cmap_token_values(tokens, include_arrays=include_arrays, include_words=include_words)
 
 
-def internal_cmap_token_values(
+def cmap_token_values(
     tokens: typing.Iterable[CMapToken], *, include_arrays: bool, include_words: bool
 ) -> list[bytes]:
     kinds: set[CMapTokenKind] = {"hex", "literal"}

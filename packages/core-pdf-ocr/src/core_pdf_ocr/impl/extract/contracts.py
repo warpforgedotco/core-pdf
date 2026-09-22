@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.document.records import RawAnnotation, RawFormField
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 PSM_AUTO = 3
@@ -37,8 +37,8 @@ MAX_OCR_RASTER_BYTES = MAX_OCR_PIXELS * 4
 OCR_RESCUE_MIN_WEAK_INK_RATIO = 0.03
 OCR_RESCUE_SATURATED_MEAN_INK = 0.85
 OCR_RESCUE_MIN_CONFIDENCE = 95.0
-internal_OCR_RESCUE_DENSE_MIN_CHARACTERS: int = 2_000
-internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE: float = 92.0
+OCR_RESCUE_DENSE_MIN_CHARACTERS: int = 2_000
+OCR_RESCUE_DENSE_MIN_CONFIDENCE: float = 92.0
 OCR_RESCUE_LARGE_TEXT_HEIGHT = 32.0
 OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY = 100_000
 HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE = 80.0
@@ -123,10 +123,10 @@ class StrokedVectorTextEvidence:
         bbox: tuple[float, float, float, float] | None = None,
         candidate_paths: int = 0,
     ) -> None:
-        internal_frozen_setattr(self, "trusted", trusted)
-        internal_frozen_setattr(self, "drawing_indexes", drawing_indexes)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "candidate_paths", candidate_paths)
+        frozen_setattr(self, "trusted", trusted)
+        frozen_setattr(self, "drawing_indexes", drawing_indexes)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "candidate_paths", candidate_paths)
 
     def __repr__(self) -> str:
         return (
@@ -164,7 +164,7 @@ class StrokedVectorTextEvidence:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         trusted = changes.pop("trusted", self.trusted)
@@ -266,35 +266,33 @@ class PageEvidence(NativePageEvidence):
         vector_text_trusted: bool = False,
         stroked_vector_text: StrokedVectorTextEvidence | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "page_area", page_area)
-        internal_frozen_setattr(self, "native_characters", native_characters)
-        internal_frozen_setattr(self, "visible_native_characters", visible_native_characters)
-        internal_frozen_setattr(self, "suspicious_characters", suspicious_characters)
-        internal_frozen_setattr(self, "image_count", image_count)
-        internal_frozen_setattr(self, "image_area_ratio", image_area_ratio)
-        internal_frozen_setattr(self, "image_boxes", image_boxes)
-        internal_frozen_setattr(self, "text_coverage", text_coverage)
-        internal_frozen_setattr(self, "full_page_image", full_page_image)
-        internal_frozen_setattr(
+        frozen_setattr(self, "page_area", page_area)
+        frozen_setattr(self, "native_characters", native_characters)
+        frozen_setattr(self, "visible_native_characters", visible_native_characters)
+        frozen_setattr(self, "suspicious_characters", suspicious_characters)
+        frozen_setattr(self, "image_count", image_count)
+        frozen_setattr(self, "image_area_ratio", image_area_ratio)
+        frozen_setattr(self, "image_boxes", image_boxes)
+        frozen_setattr(self, "text_coverage", text_coverage)
+        frozen_setattr(self, "full_page_image", full_page_image)
+        frozen_setattr(
             self, "text_quality", TextQualityStats() if text_quality is None else text_quality
         )
-        internal_frozen_setattr(
+        frozen_setattr(
             self,
             "all_text_quality",
             TextQualityStats() if all_text_quality is None else all_text_quality,
         )
-        internal_frozen_setattr(self, "glyphs", GlyphEvidence() if glyphs is None else glyphs)
-        internal_frozen_setattr(self, "painted_native_characters", painted_native_characters)
-        internal_frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
-        internal_frozen_setattr(self, "vector_complexity", vector_complexity)
-        internal_frozen_setattr(self, "image_filters", image_filters)
-        internal_frozen_setattr(self, "uncovered_vector_area", uncovered_vector_area)
-        internal_frozen_setattr(
-            self, "vector_text_candidate_segments", vector_text_candidate_segments
-        )
-        internal_frozen_setattr(self, "vector_text_matched_segments", vector_text_matched_segments)
-        internal_frozen_setattr(self, "vector_text_trusted", vector_text_trusted)
-        internal_frozen_setattr(
+        frozen_setattr(self, "glyphs", GlyphEvidence() if glyphs is None else glyphs)
+        frozen_setattr(self, "painted_native_characters", painted_native_characters)
+        frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
+        frozen_setattr(self, "vector_complexity", vector_complexity)
+        frozen_setattr(self, "image_filters", image_filters)
+        frozen_setattr(self, "uncovered_vector_area", uncovered_vector_area)
+        frozen_setattr(self, "vector_text_candidate_segments", vector_text_candidate_segments)
+        frozen_setattr(self, "vector_text_matched_segments", vector_text_matched_segments)
+        frozen_setattr(self, "vector_text_trusted", vector_text_trusted)
+        frozen_setattr(
             self,
             "stroked_vector_text",
             StrokedVectorTextEvidence() if stroked_vector_text is None else stroked_vector_text,
@@ -484,15 +482,15 @@ class PageAnalysis(NativePageAnalysis):
         observations: ObservationBatch,
         evidence: PageEvidence,
     ) -> None:
-        internal_frozen_setattr(self, "page", page)
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
-        internal_frozen_setattr(self, "rotation", rotation)
-        internal_frozen_setattr(self, "fields", fields)
-        internal_frozen_setattr(self, "annotations", annotations)
-        internal_frozen_setattr(self, "program", program)
-        internal_frozen_setattr(self, "observations", observations)
-        internal_frozen_setattr(self, "evidence", evidence)
+        frozen_setattr(self, "page", page)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "fields", fields)
+        frozen_setattr(self, "annotations", annotations)
+        frozen_setattr(self, "program", program)
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "evidence", evidence)
 
     def __repr__(self) -> str:
         return (
@@ -689,32 +687,28 @@ class OcrPass:
         recognize_words: bool = False,
         collect_symbols: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "name", name)
-        internal_frozen_setattr(self, "scope", scope)
-        internal_frozen_setattr(self, "scale", scale)
-        internal_frozen_setattr(self, "modes", modes)
-        internal_frozen_setattr(self, "tiles", tiles)
-        internal_frozen_setattr(self, "parallel_tiles", parallel_tiles)
-        internal_frozen_setattr(self, "region_columns", region_columns)
-        internal_frozen_setattr(self, "max_regions", max_regions)
-        internal_frozen_setattr(self, "minimum_confidence", minimum_confidence)
-        internal_frozen_setattr(self, "run_if_characters_below", run_if_characters_below)
-        internal_frozen_setattr(self, "minimum_utility_gain", minimum_utility_gain)
-        internal_frozen_setattr(self, "adaptive_scale", adaptive_scale)
-        internal_frozen_setattr(
-            self, "minimum_characters_for_rescue", minimum_characters_for_rescue
-        )
-        internal_frozen_setattr(
-            self, "character_confidence_threshold", character_confidence_threshold
-        )
-        internal_frozen_setattr(self, "run_if_additions_below", run_if_additions_below)
-        internal_frozen_setattr(self, "seed_with_native", seed_with_native)
-        internal_frozen_setattr(self, "region_first", region_first)
-        internal_frozen_setattr(self, "preprocess", preprocess)
-        internal_frozen_setattr(self, "pixel_budget", pixel_budget)
-        internal_frozen_setattr(self, "include_native_text", include_native_text)
-        internal_frozen_setattr(self, "recognize_words", recognize_words)
-        internal_frozen_setattr(self, "collect_symbols", collect_symbols)
+        frozen_setattr(self, "name", name)
+        frozen_setattr(self, "scope", scope)
+        frozen_setattr(self, "scale", scale)
+        frozen_setattr(self, "modes", modes)
+        frozen_setattr(self, "tiles", tiles)
+        frozen_setattr(self, "parallel_tiles", parallel_tiles)
+        frozen_setattr(self, "region_columns", region_columns)
+        frozen_setattr(self, "max_regions", max_regions)
+        frozen_setattr(self, "minimum_confidence", minimum_confidence)
+        frozen_setattr(self, "run_if_characters_below", run_if_characters_below)
+        frozen_setattr(self, "minimum_utility_gain", minimum_utility_gain)
+        frozen_setattr(self, "adaptive_scale", adaptive_scale)
+        frozen_setattr(self, "minimum_characters_for_rescue", minimum_characters_for_rescue)
+        frozen_setattr(self, "character_confidence_threshold", character_confidence_threshold)
+        frozen_setattr(self, "run_if_additions_below", run_if_additions_below)
+        frozen_setattr(self, "seed_with_native", seed_with_native)
+        frozen_setattr(self, "region_first", region_first)
+        frozen_setattr(self, "preprocess", preprocess)
+        frozen_setattr(self, "pixel_budget", pixel_budget)
+        frozen_setattr(self, "include_native_text", include_native_text)
+        frozen_setattr(self, "recognize_words", recognize_words)
+        frozen_setattr(self, "collect_symbols", collect_symbols)
 
     def __repr__(self) -> str:
         return (
@@ -813,7 +807,7 @@ class OcrPass:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         name = changes.pop("name", self.name)
@@ -920,13 +914,13 @@ class WorkPlan:
         allow_direct_image_ocr: bool = True,
         augment_page_candidates: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "route", route)
-        internal_frozen_setattr(self, "reason", reason)
-        internal_frozen_setattr(self, "ocr_passes", ocr_passes)
-        internal_frozen_setattr(self, "verify_hidden_text", verify_hidden_text)
-        internal_frozen_setattr(self, "fusion_policy", fusion_policy)
-        internal_frozen_setattr(self, "allow_direct_image_ocr", allow_direct_image_ocr)
-        internal_frozen_setattr(self, "augment_page_candidates", augment_page_candidates)
+        frozen_setattr(self, "route", route)
+        frozen_setattr(self, "reason", reason)
+        frozen_setattr(self, "ocr_passes", ocr_passes)
+        frozen_setattr(self, "verify_hidden_text", verify_hidden_text)
+        frozen_setattr(self, "fusion_policy", fusion_policy)
+        frozen_setattr(self, "allow_direct_image_ocr", allow_direct_image_ocr)
+        frozen_setattr(self, "augment_page_candidates", augment_page_candidates)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -981,7 +975,7 @@ class WorkPlan:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         route = changes.pop("route", self.route)
@@ -1030,8 +1024,8 @@ class RecognitionResult:
         observations: ObservationBatch,
         stroked_vector_alphabet: tuple[tuple[Any, str], ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "observations", observations)
-        internal_frozen_setattr(self, "stroked_vector_alphabet", stroked_vector_alphabet)
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "stroked_vector_alphabet", stroked_vector_alphabet)
 
     def __repr__(self) -> str:
         return (
@@ -1065,7 +1059,7 @@ class RecognitionResult:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         observations = changes.pop("observations", self.observations)

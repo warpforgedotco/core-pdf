@@ -12,14 +12,14 @@ from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.output.model import (
     TextLine,
 )
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.array_views import readonly
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.document.records import RawAnnotation, RawFormField
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
@@ -28,7 +28,7 @@ ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
 
 
-def internal_column(
+def make_column(
     values: Iterable[Any] | None,
     dtype: Any,
     default: Callable[[], numpy.ndarray[Any, Any]] | None = None,
@@ -43,14 +43,14 @@ def internal_column(
     )
 
 
-def internal_validate_selection_mask(mask: BoolArray, size: int) -> None:
+def validate_selection_mask(mask: BoolArray, size: int) -> None:
     if mask.dtype != numpy.bool_:
         raise TypeError("observation selection mask must have boolean dtype")
     if mask.shape != (size,):
         raise ValueError("observation selection mask must have shape (n,)")
 
 
-def internal_bbox_tuple(row: Any) -> tuple[float, float, float, float]:
+def bbox_tuple(row: Any) -> tuple[float, float, float, float]:
     return (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
 
 
@@ -62,7 +62,7 @@ class ObservationSource(IntEnum):
     STRUCTURE = 2
 
 
-class ObservationBatch(internal_Record):
+class ObservationBatch(Record):
     __slots__ = (
         "text",
         "bbox",
@@ -125,16 +125,16 @@ class ObservationBatch(internal_Record):
         line_break_before: BoolArray,
         references: tuple[Any | None, ...],
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "source", source)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "sequence", sequence)
-        internal_frozen_setattr(self, "visible", visible)
-        internal_frozen_setattr(self, "rotation", rotation)
-        internal_frozen_setattr(self, "font_size", font_size)
-        internal_frozen_setattr(self, "line_break_before", line_break_before)
-        internal_frozen_setattr(self, "references", references)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "source", source)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "sequence", sequence)
+        frozen_setattr(self, "visible", visible)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "font_size", font_size)
+        frozen_setattr(self, "line_break_before", line_break_before)
+        frozen_setattr(self, "references", references)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -270,23 +270,19 @@ class ObservationBatch(internal_Record):
     ) -> ObservationBatch:
         texts = tuple(text)
         size = len(texts)
-        boxes = internal_column(bbox, numpy.float32)
+        boxes = make_column(bbox, numpy.float32)
         if size == 0 and boxes.shape == (0,):
             boxes = boxes.reshape((0, 4))
-        conf_arr = internal_column(
+        conf_arr = make_column(
             confidence, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
-        seq_arr = internal_column(
-            sequence, numpy.int64, lambda: numpy.arange(size, dtype=numpy.int64)
-        )
-        vis_arr = internal_column(visible, numpy.bool_, lambda: numpy.ones(size, dtype=numpy.bool_))
-        rot_arr = internal_column(
-            rotation, numpy.int64, lambda: numpy.zeros(size, dtype=numpy.int64)
-        )
-        font_arr = internal_column(
+        seq_arr = make_column(sequence, numpy.int64, lambda: numpy.arange(size, dtype=numpy.int64))
+        vis_arr = make_column(visible, numpy.bool_, lambda: numpy.ones(size, dtype=numpy.bool_))
+        rot_arr = make_column(rotation, numpy.int64, lambda: numpy.zeros(size, dtype=numpy.int64))
+        font_arr = make_column(
             font_size, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
-        line_arr = internal_column(
+        line_arr = make_column(
             line_break_before, numpy.bool_, lambda: numpy.zeros(size, dtype=numpy.bool_)
         )
         ref_tuple = (
@@ -335,7 +331,7 @@ class ObservationBatch(internal_Record):
         )
 
     def select(self, mask: BoolArray) -> ObservationBatch:
-        internal_validate_selection_mask(mask, len(self))
+        validate_selection_mask(mask, len(self))
         selected = int(numpy.count_nonzero(mask))
         if selected == len(self):
             return self
@@ -370,7 +366,7 @@ class ObservationBatch(internal_Record):
         secondary: ObservationBatch,
         secondary_mask: BoolArray,
     ) -> ObservationBatch:
-        internal_validate_selection_mask(secondary_mask, len(secondary))
+        validate_selection_mask(secondary_mask, len(secondary))
         if not len(primary) and bool(numpy.all(secondary_mask)):
             return secondary
         indexes = numpy.flatnonzero(secondary_mask)
@@ -405,7 +401,7 @@ class ObservationBatch(internal_Record):
         )
 
 
-class TextQualityStats(internal_Record):
+class TextQualityStats(Record):
     __slots__ = (
         "token_count",
         "wordlike_ratio",
@@ -448,12 +444,12 @@ class TextQualityStats(internal_Record):
         non_ascii_ratio: float = 0.0,
         digit_token_ratio: float = 0.0,
     ) -> None:
-        internal_frozen_setattr(self, "token_count", token_count)
-        internal_frozen_setattr(self, "wordlike_ratio", wordlike_ratio)
-        internal_frozen_setattr(self, "short_token_ratio", short_token_ratio)
-        internal_frozen_setattr(self, "symbol_ratio", symbol_ratio)
-        internal_frozen_setattr(self, "non_ascii_ratio", non_ascii_ratio)
-        internal_frozen_setattr(self, "digit_token_ratio", digit_token_ratio)
+        frozen_setattr(self, "token_count", token_count)
+        frozen_setattr(self, "wordlike_ratio", wordlike_ratio)
+        frozen_setattr(self, "short_token_ratio", short_token_ratio)
+        frozen_setattr(self, "symbol_ratio", symbol_ratio)
+        frozen_setattr(self, "non_ascii_ratio", non_ascii_ratio)
+        frozen_setattr(self, "digit_token_ratio", digit_token_ratio)
 
     def __repr__(self) -> str:
         return (
@@ -526,7 +522,7 @@ class TextQualityStats(internal_Record):
         )
 
 
-class GlyphEvidence(internal_Record):
+class GlyphEvidence(Record):
     __slots__ = (
         "glyph_count",
         "semantic_characters",
@@ -579,14 +575,14 @@ class GlyphEvidence(internal_Record):
         low_confidence_glyphs: int = 0,
         actual_text_characters: int = 0,
     ) -> None:
-        internal_frozen_setattr(self, "glyph_count", glyph_count)
-        internal_frozen_setattr(self, "semantic_characters", semantic_characters)
-        internal_frozen_setattr(self, "authoritative_glyphs", authoritative_glyphs)
-        internal_frozen_setattr(self, "heuristic_glyphs", heuristic_glyphs)
-        internal_frozen_setattr(self, "unknown_glyphs", unknown_glyphs)
-        internal_frozen_setattr(self, "unsupported_glyphs", unsupported_glyphs)
-        internal_frozen_setattr(self, "low_confidence_glyphs", low_confidence_glyphs)
-        internal_frozen_setattr(self, "actual_text_characters", actual_text_characters)
+        frozen_setattr(self, "glyph_count", glyph_count)
+        frozen_setattr(self, "semantic_characters", semantic_characters)
+        frozen_setattr(self, "authoritative_glyphs", authoritative_glyphs)
+        frozen_setattr(self, "heuristic_glyphs", heuristic_glyphs)
+        frozen_setattr(self, "unknown_glyphs", unknown_glyphs)
+        frozen_setattr(self, "unsupported_glyphs", unsupported_glyphs)
+        frozen_setattr(self, "low_confidence_glyphs", low_confidence_glyphs)
+        frozen_setattr(self, "actual_text_characters", actual_text_characters)
 
     def __repr__(self) -> str:
         return (
@@ -682,7 +678,7 @@ class GlyphEvidence(internal_Record):
         return self.glyph_count / max(1, characters)
 
 
-class PageEvidence(internal_Record):
+class PageEvidence(Record):
     __slots__ = (
         "page_area",
         "native_characters",
@@ -765,26 +761,26 @@ class PageEvidence(internal_Record):
         painted_native_characters: int | None = None,
         trusted_hidden_text: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "page_area", page_area)
-        internal_frozen_setattr(self, "native_characters", native_characters)
-        internal_frozen_setattr(self, "visible_native_characters", visible_native_characters)
-        internal_frozen_setattr(self, "suspicious_characters", suspicious_characters)
-        internal_frozen_setattr(self, "image_count", image_count)
-        internal_frozen_setattr(self, "image_area_ratio", image_area_ratio)
-        internal_frozen_setattr(self, "image_boxes", image_boxes)
-        internal_frozen_setattr(self, "text_coverage", text_coverage)
-        internal_frozen_setattr(self, "full_page_image", full_page_image)
-        internal_frozen_setattr(
+        frozen_setattr(self, "page_area", page_area)
+        frozen_setattr(self, "native_characters", native_characters)
+        frozen_setattr(self, "visible_native_characters", visible_native_characters)
+        frozen_setattr(self, "suspicious_characters", suspicious_characters)
+        frozen_setattr(self, "image_count", image_count)
+        frozen_setattr(self, "image_area_ratio", image_area_ratio)
+        frozen_setattr(self, "image_boxes", image_boxes)
+        frozen_setattr(self, "text_coverage", text_coverage)
+        frozen_setattr(self, "full_page_image", full_page_image)
+        frozen_setattr(
             self, "text_quality", TextQualityStats() if text_quality is None else text_quality
         )
-        internal_frozen_setattr(
+        frozen_setattr(
             self,
             "all_text_quality",
             TextQualityStats() if all_text_quality is None else all_text_quality,
         )
-        internal_frozen_setattr(self, "glyphs", GlyphEvidence() if glyphs is None else glyphs)
-        internal_frozen_setattr(self, "painted_native_characters", painted_native_characters)
-        internal_frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
+        frozen_setattr(self, "glyphs", GlyphEvidence() if glyphs is None else glyphs)
+        frozen_setattr(self, "painted_native_characters", painted_native_characters)
+        frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
 
     def __repr__(self) -> str:
         return (
@@ -904,7 +900,7 @@ class PageEvidence(internal_Record):
         return self.native_characters >= 100 and painted < self.native_characters * 0.20
 
 
-class PageAnalysis(internal_Record):
+class PageAnalysis(Record):
     __slots__ = (
         "page",
         "width",
@@ -962,15 +958,15 @@ class PageAnalysis(internal_Record):
         observations: ObservationBatch,
         evidence: PageEvidence,
     ) -> None:
-        internal_frozen_setattr(self, "page", page)
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
-        internal_frozen_setattr(self, "rotation", rotation)
-        internal_frozen_setattr(self, "fields", fields)
-        internal_frozen_setattr(self, "annotations", annotations)
-        internal_frozen_setattr(self, "program", program)
-        internal_frozen_setattr(self, "observations", observations)
-        internal_frozen_setattr(self, "evidence", evidence)
+        frozen_setattr(self, "page", page)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "fields", fields)
+        frozen_setattr(self, "annotations", annotations)
+        frozen_setattr(self, "program", program)
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "evidence", evidence)
 
     def __repr__(self) -> str:
         return (
@@ -1044,7 +1040,7 @@ class PageAnalysis(internal_Record):
         )
 
 
-class ParsedLine(internal_Record):
+class ParsedLine(Record):
     __slots__ = ("line", "sequence", "rotation", "font_size")
 
     line: TextLine
@@ -1062,10 +1058,10 @@ class ParsedLine(internal_Record):
         rotation: int = 0,
         font_size: float | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "line", line)
-        internal_frozen_setattr(self, "sequence", sequence)
-        internal_frozen_setattr(self, "rotation", rotation)
-        internal_frozen_setattr(self, "font_size", font_size)
+        frozen_setattr(self, "line", line)
+        frozen_setattr(self, "sequence", sequence)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "font_size", font_size)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -1107,7 +1103,7 @@ class ParsedLine(internal_Record):
             raise ValueError("ParsedLine requires a positioned line")
 
 
-class ParsedBlock(internal_Record):
+class ParsedBlock(Record):
     __slots__ = ("lines", "bbox", "column_index", "kind", "level")
 
     lines: tuple[ParsedLine, ...]
@@ -1127,11 +1123,11 @@ class ParsedBlock(internal_Record):
         kind: str = "paragraph",
         level: int | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "lines", lines)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "column_index", column_index)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "level", level)
+        frozen_setattr(self, "lines", lines)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "column_index", column_index)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "level", level)
 
     def __repr__(self) -> str:
         return (
@@ -1171,7 +1167,7 @@ class ParsedBlock(internal_Record):
         return self.__class__(lines, bbox, column_index, kind, level)
 
 
-class ReadingOrderEvidence(internal_Record):
+class ReadingOrderEvidence(Record):
     __slots__ = (
         "line_count",
         "source_inversions",
@@ -1229,15 +1225,15 @@ class ReadingOrderEvidence(internal_Record):
         confidence: float,
         strategy: str,
     ) -> None:
-        internal_frozen_setattr(self, "line_count", line_count)
-        internal_frozen_setattr(self, "source_inversions", source_inversions)
-        internal_frozen_setattr(self, "source_inversion_ratio", source_inversion_ratio)
-        internal_frozen_setattr(self, "column_count", column_count)
-        internal_frozen_setattr(self, "rotation_count", rotation_count)
-        internal_frozen_setattr(self, "repaired", repaired)
-        internal_frozen_setattr(self, "ambiguous", ambiguous)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "strategy", strategy)
+        frozen_setattr(self, "line_count", line_count)
+        frozen_setattr(self, "source_inversions", source_inversions)
+        frozen_setattr(self, "source_inversion_ratio", source_inversion_ratio)
+        frozen_setattr(self, "column_count", column_count)
+        frozen_setattr(self, "rotation_count", rotation_count)
+        frozen_setattr(self, "repaired", repaired)
+        frozen_setattr(self, "ambiguous", ambiguous)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "strategy", strategy)
 
     def __repr__(self) -> str:
         return (

@@ -8,9 +8,7 @@ from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
-def internal_sfnt(
-    tag: bytes, payload: bytes, *, offset: int = 28, length: int | None = None
-) -> bytes:
+def sfnt(tag: bytes, payload: bytes, *, offset: int = 28, length: int | None = None) -> bytes:
     return (
         struct.pack(">4sHHHH", b"OTTO", 1, 16, 0, 0)
         + struct.pack(">4sIII", tag, 0, offset, len(payload) if length is None else length)
@@ -20,7 +18,7 @@ def internal_sfnt(
 
 @pytest.mark.parametrize("payload", [b"", b"cff payload", bytes(range(256))])
 def test_cff_table_extraction_preserves_exact_table_bytes(payload):
-    assert decoder.internal_extract_cff_table(internal_sfnt(b"CFF ", payload)) == payload
+    assert decoder.extract_cff_table(sfnt(b"CFF ", payload)) == payload
 
 
 @pytest.mark.parametrize(
@@ -29,13 +27,13 @@ def test_cff_table_extraction_preserves_exact_table_bytes(payload):
         b"",
         b"OTTO",
         b"not an sfnt file",
-        internal_sfnt(b"glyf", b"other"),
-        internal_sfnt(b"CFF ", b"short", length=100),
-        internal_sfnt(b"CFF ", b"x", offset=1000),
+        sfnt(b"glyf", b"other"),
+        sfnt(b"CFF ", b"short", length=100),
+        sfnt(b"CFF ", b"x", offset=1000),
     ],
 )
 def test_missing_or_truncated_cff_table_is_unavailable(data):
-    assert decoder.internal_extract_cff_table(data) is None
+    assert decoder.extract_cff_table(data) is None
 
 
 @pytest.mark.parametrize(
@@ -50,7 +48,7 @@ def test_malformed_embedded_programs_leave_font_recovery_available(
     font: dict[str, Any] = {"Subtype": PdfName(subtype.encode()), "FontDescriptor": descriptor}
     if subtype.startswith("CID"):
         font = {"Subtype": PdfName(b"Type0"), "DescendantFonts": [font]}
-    assert decoder.internal_font_program_for_pdf_font(font) is None
+    assert decoder.font_program_for_pdf_font(font) is None
 
 
 @pytest.mark.parametrize("descriptor", [None, 1, b"invalid", {"FontFile2": 1}, {"FontFile3": []}])
@@ -59,7 +57,7 @@ def test_invalid_font_descriptors_are_contained_at_reader_boundary(descriptor, d
     font: dict[str, Any] = {"Subtype": PdfName(b"TrueType"), "FontDescriptor": descriptor}
     if descendant:
         font = {"Subtype": PdfName(b"Type0"), "DescendantFonts": [font], "FontDescriptor": 1}
-    assert decoder.internal_font_program_for_pdf_font(font) is None
+    assert decoder.font_program_for_pdf_font(font) is None
 
 
 @pytest.mark.parametrize("base", [None, "Base"])
@@ -122,7 +120,7 @@ def test_cid_system_info_normalizes_names_and_strings(value, descendant):
     font: dict[str, Any] = {"CIDSystemInfo": {"Registry": value, "Ordering": b"Identity"}}
     if descendant:
         font = {"DescendantFonts": [font]}
-    assert decoder.FontDecoder.internal_cid_system_info(font) == (
+    assert decoder.FontDecoder.cid_system_info(font) == (
         "Adobe" if value not in (1, None) else None,
         "Identity",
     )

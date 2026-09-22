@@ -50,7 +50,7 @@ def cubic_point(
     )
 
 
-def internal_execute_type2_flex(
+def execute_type2_flex(
     operator: int,
     operands: list[float],
     curve: Callable[[float, float, float, float, float, float], None],
@@ -97,7 +97,7 @@ def internal_execute_type2_flex(
             raise ValueError("invalid Type 2 flex operator")
 
 
-def internal_type2_subr_bias(count: int) -> int:
+def type2_subr_bias(count: int) -> int:
     if count < 1240:
         return 107
     if count < 33900:
@@ -122,8 +122,8 @@ def execute_type2_charstring(  # noqa: C901
     transient = [0.0] * TYPE2_TRANSIENT_SIZE
     stem_count = 0
     width_resolved = False
-    subr_bias = internal_type2_subr_bias(len(local_subrs))
-    gsubr_bias = internal_type2_subr_bias(len(global_subrs))
+    subr_bias = type2_subr_bias(len(local_subrs))
+    gsubr_bias = type2_subr_bias(len(global_subrs))
 
     def push(value: float) -> None:
         if len(stack) >= TYPE2_MAX_STACK or not isfinite(value):
@@ -217,7 +217,7 @@ def execute_type2_charstring(  # noqa: C901
             case 34 | 35 | 36 | 37:
                 if not has_current_point():
                     raise ValueError("Type 2 flex operator has no current point")
-                internal_execute_type2_flex(operator, stack, curve)
+                execute_type2_flex(operator, stack, curve)
                 stack.clear()
             case _:
                 raise ValueError("unsupported Type 2 escaped operator")

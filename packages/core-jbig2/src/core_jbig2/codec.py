@@ -9,7 +9,7 @@ from core_jbig2.bitmap import (
     uint8_matrix_view,
 )
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 JBIG2_PAGE_INFO = 48
@@ -32,7 +32,7 @@ class Jbig2UnsupportedError(Jbig2Error):
 
 GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
 
-internal_MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
+MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
     (0x5601, 1, 1, 1),
     (0x3401, 2, 6, 0),
     (0x1801, 3, 9, 0),
@@ -82,10 +82,10 @@ internal_MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
     (0x5601, 46, 46, 0),
 )
 
-MQ_QE = tuple(state[0] for state in internal_MQ_STATES)
-MQ_NMPS = tuple(state[1] for state in internal_MQ_STATES)
-MQ_NLPS = tuple(state[2] for state in internal_MQ_STATES)
-MQ_SWITCH = tuple(state[3] for state in internal_MQ_STATES)
+MQ_QE = tuple(state[0] for state in MQ_STATES)
+MQ_NMPS = tuple(state[1] for state in MQ_STATES)
+MQ_NLPS = tuple(state[2] for state in MQ_STATES)
+MQ_SWITCH = tuple(state[3] for state in MQ_STATES)
 
 
 class JBIG2Segment:
@@ -244,12 +244,12 @@ class JBIG2Region:
     __match_args__ = ("width", "height", "x", "y", "flags", "raw")
 
     def __init__(self, width: int, height: int, x: int, y: int, flags: int, raw: bytes) -> None:
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
-        internal_frozen_setattr(self, "x", x)
-        internal_frozen_setattr(self, "y", y)
-        internal_frozen_setattr(self, "flags", flags)
-        internal_frozen_setattr(self, "raw", raw)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "x", x)
+        frozen_setattr(self, "y", y)
+        frozen_setattr(self, "flags", flags)
+        frozen_setattr(self, "raw", raw)
 
     def __repr__(self) -> str:
         return (
@@ -291,7 +291,7 @@ class JBIG2Region:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         width = changes.pop("width", self.width)
@@ -334,12 +334,12 @@ class JBIG2GenericRegionHeader:
         adaptive_pixels: tuple[tuple[int, int], ...],
         bitmap_start: int,
     ) -> None:
-        internal_frozen_setattr(self, "region", region)
-        internal_frozen_setattr(self, "mmr", mmr)
-        internal_frozen_setattr(self, "template", template)
-        internal_frozen_setattr(self, "prediction", prediction)
-        internal_frozen_setattr(self, "adaptive_pixels", adaptive_pixels)
-        internal_frozen_setattr(self, "bitmap_start", bitmap_start)
+        frozen_setattr(self, "region", region)
+        frozen_setattr(self, "mmr", mmr)
+        frozen_setattr(self, "template", template)
+        frozen_setattr(self, "prediction", prediction)
+        frozen_setattr(self, "adaptive_pixels", adaptive_pixels)
+        frozen_setattr(self, "bitmap_start", bitmap_start)
 
     def __repr__(self) -> str:
         return (
@@ -390,7 +390,7 @@ class JBIG2GenericRegionHeader:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         region = changes.pop("region", self.region)
@@ -723,12 +723,10 @@ def parse_page_association(data: bytes, pos: int, long_form: bool) -> tuple[int,
 def parse_referred_to_segments(
     data: bytes, pos: int, count: int, long_form: bool
 ) -> tuple[list[int], int]:
-    return internal_read_segment_references(data, pos, count, 4 if long_form else 1)
+    return read_segment_references(data, pos, count, 4 if long_form else 1)
 
 
-def internal_read_segment_references(
-    data: bytes, pos: int, count: int, width: int
-) -> tuple[list[int], int]:
+def read_segment_references(data: bytes, pos: int, count: int, width: int) -> tuple[list[int], int]:
     end = pos + count * width
     if end > len(data):
         raise Jbig2ParseError("truncated JBIG2 segment references")
@@ -755,7 +753,7 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
     elif referred_to_count in (5, 6):
         raise Jbig2ParseError("invalid JBIG2 referred-to segment count")
     reference_width = 1 if number <= 256 else 2 if number <= 65536 else 4
-    referred_to_segments, pos = internal_read_segment_references(
+    referred_to_segments, pos = read_segment_references(
         data, pos, referred_to_count, reference_width
     )
     if pos + (4 if (flags & 0x40) else 1) + 4 > len(data):

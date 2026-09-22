@@ -718,7 +718,7 @@ class _LayoutPlane:
                 yield item
 
 
-class internal_SparseLayoutPlane(_LayoutPlane):
+class SparseLayoutPlane(_LayoutPlane):
     __slots__ = ()
 
     def add(self, item: LTComponent | _TextGroup) -> None:
@@ -728,9 +728,7 @@ class internal_SparseLayoutPlane(_LayoutPlane):
     def remove(self, item: LTComponent | _TextGroup) -> None:
         self.objects.pop(id(item), None)
 
-    def internal_grid_bounds(
-        self, bbox: tuple[float, float, float, float]
-    ) -> tuple[int, int, int, int]:
+    def grid_bounds(self, bbox: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
         x0, y0, x1, y1 = bbox
         left, bottom, right, top = self.bbox
         if x1 <= left or right <= x0 or y1 <= bottom or top <= y0:
@@ -744,7 +742,7 @@ class internal_SparseLayoutPlane(_LayoutPlane):
 
     def find(self, bbox: tuple[float, float, float, float]) -> Iterator[LTComponent | _TextGroup]:
         x0, y0, x1, y1 = bbox
-        left, bottom, right, top = self.internal_grid_bounds(bbox)
+        left, bottom, right, top = self.grid_bounds(bbox)
         if left >= right or bottom >= top:
             return
         candidates: list[tuple[int, int, LTComponent | _TextGroup]] = []
@@ -752,7 +750,7 @@ class internal_SparseLayoutPlane(_LayoutPlane):
             ix0, iy0, ix1, iy1 = item.bbox
             if ix1 <= x0 or x1 <= ix0 or iy1 <= y0 or y1 <= iy0:
                 continue
-            il, ib, ir, it = self.internal_grid_bounds(item.bbox)
+            il, ib, ir, it = self.grid_bounds(item.bbox)
             first_x, first_y = max(left, il), max(bottom, ib)
             if first_x < min(right, ir) and first_y < min(top, it):
                 candidates.append((first_y, first_x, item))
@@ -770,7 +768,7 @@ def _group_lines(
     plane_bbox = page_bbox or bbox_union(line.bbox for line in lines) or lines[0].bbox
     grid_entries = sum((line.width / 50 + 1) * (line.height / 50 + 1) for line in lines)
     sparse_queries = grid_entries > max(65536, len(lines) ** 2)
-    plane = internal_SparseLayoutPlane(plane_bbox) if sparse_queries else _LayoutPlane(plane_bbox)
+    plane = SparseLayoutPlane(plane_bbox) if sparse_queries else _LayoutPlane(plane_bbox)
     for line in lines:
         plane.add(line)
     groups_by_line: dict[int, list[LTTextLine]] = {}
@@ -961,10 +959,10 @@ def _reading_order(
                 heapq.heapify(queue)
             compact_at = len(active) // 2
 
-    return internal_flatten_text_group(next(iter(active.values())), boxes_flow)
+    return flatten_text_group(next(iter(active.values())), boxes_flow)
 
 
-def internal_flatten_text_group(root: LTTextBox | _TextGroup, boxes_flow: float) -> list[LTTextBox]:
+def flatten_text_group(root: LTTextBox | _TextGroup, boxes_flow: float) -> list[LTTextBox]:
     result: list[LTTextBox] = []
     pending: list[LTTextBox | _TextGroup] = [root]
     while pending:

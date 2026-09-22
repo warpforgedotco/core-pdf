@@ -9,12 +9,12 @@ from typing import Any, ClassVar, Protocol, Self, cast
 
 from core_pdf.impl.fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl.fonts.helpers import strip_subset_tag
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.records import Record
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class PdfRasterFontRequest(internal_Record):
+class PdfRasterFontRequest(Record):
     __slots__ = ("font_name", "text", "is_cid_font", "is_vertical", "cid_registry", "cid_ordering")
 
     font_name: str | None
@@ -50,12 +50,12 @@ class PdfRasterFontRequest(internal_Record):
         cid_registry: str | None = None,
         cid_ordering: str | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "font_name", font_name)
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "is_cid_font", is_cid_font)
-        internal_frozen_setattr(self, "is_vertical", is_vertical)
-        internal_frozen_setattr(self, "cid_registry", cid_registry)
-        internal_frozen_setattr(self, "cid_ordering", cid_ordering)
+        frozen_setattr(self, "font_name", font_name)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "is_cid_font", is_cid_font)
+        frozen_setattr(self, "is_vertical", is_vertical)
+        frozen_setattr(self, "cid_registry", cid_registry)
+        frozen_setattr(self, "cid_ordering", cid_ordering)
 
     def __repr__(self) -> str:
         return (
@@ -107,7 +107,7 @@ class PdfRasterFontRequest(internal_Record):
         return self.__class__(font_name, text, is_cid_font, is_vertical, cid_registry, cid_ordering)
 
 
-class PdfRasterFontFace(internal_Record):
+class PdfRasterFontFace(Record):
     __slots__ = ("identifier", "data")
 
     identifier: str
@@ -117,8 +117,8 @@ class PdfRasterFontFace(internal_Record):
     __match_args__ = ("identifier", "data")
 
     def __init__(self, identifier: str, data: bytes) -> None:
-        internal_frozen_setattr(self, "identifier", identifier)
-        internal_frozen_setattr(self, "data", data)
+        frozen_setattr(self, "identifier", identifier)
+        frozen_setattr(self, "data", data)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(identifier={self.identifier!r}, data={self.data!r})"
@@ -150,43 +150,41 @@ RasterFontProviderLike = (
 )
 
 
-class internal_RasterFontRepository:
-    __slots__ = ("provider", "internal_builtin_programs", "internal_provider_programs")
+class RasterFontRepository:
+    __slots__ = ("provider", "builtin_programs", "provider_programs")
 
     def __init__(self, provider: RasterFontProviderLike | None = None) -> None:
         self.provider = provider
-        self.internal_builtin_programs: dict[str, TrueTypeFontProgram | None] = {}
-        self.internal_provider_programs: dict[str, TrueTypeFontProgram | None] = {}
+        self.builtin_programs: dict[str, TrueTypeFontProgram | None] = {}
+        self.provider_programs: dict[str, TrueTypeFontProgram | None] = {}
 
-    def internal_provider_program(
-        self, request: PdfRasterFontRequest
-    ) -> TrueTypeFontProgram | None:
-        face = internal_provider_face(self.provider, request)
+    def load_provider_program(self, request: PdfRasterFontRequest) -> TrueTypeFontProgram | None:
+        face = provider_face(self.provider, request)
         if face is None:
             return None
-        if face.identifier not in self.internal_provider_programs:
+        if face.identifier not in self.provider_programs:
             try:
                 program = TrueTypeFontProgram(face.data, use_cmap=True)
             except OSError, ValueError:
                 program = None
-            self.internal_provider_programs[face.identifier] = program
-        return self.internal_provider_programs[face.identifier]
+            self.provider_programs[face.identifier] = program
+        return self.provider_programs[face.identifier]
 
-    def internal_builtin_program(self, face_name: str) -> TrueTypeFontProgram | None:
-        if face_name not in self.internal_builtin_programs:
+    def builtin_program(self, face_name: str) -> TrueTypeFontProgram | None:
+        if face_name not in self.builtin_programs:
             try:
-                program = internal_builtin_font(face_name)
+                program = builtin_font(face_name)
             except OSError, ValueError:
                 program = None
-            self.internal_builtin_programs[face_name] = program
-        return self.internal_builtin_programs[face_name]
+            self.builtin_programs[face_name] = program
+        return self.builtin_programs[face_name]
 
     def close(self) -> None:
-        self.internal_builtin_programs.clear()
-        self.internal_provider_programs.clear()
+        self.builtin_programs.clear()
+        self.provider_programs.clear()
 
 
-def internal_provider_face(
+def provider_face(
     provider: RasterFontProviderLike | None, request: PdfRasterFontRequest
 ) -> PdfRasterFontFace | None:
     if provider is None:
@@ -198,7 +196,7 @@ def internal_provider_face(
     return callback(request)
 
 
-def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
+def builtin_face_names(font_name: str | None) -> tuple[str, ...]:
     name = strip_subset_tag(font_name or "").lower()
     if "zapfdingbats" in name:
         return ("NotoSansSymbols2-Regular.ttf",)
@@ -228,7 +226,7 @@ def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
 
 
 @cache
-def internal_builtin_font(face_name: str) -> TrueTypeFontProgram:
+def builtin_font(face_name: str) -> TrueTypeFontProgram:
     resource = files(__package__).joinpath("data", "raster_fonts", face_name)
     return TrueTypeFontProgram(resource.read_bytes(), use_cmap=True)
 
@@ -241,7 +239,7 @@ def fallback_glyph_outline(
     is_vertical: bool,
     cid_registry: str | None = None,
     cid_ordering: str | None = None,
-    provider: RasterFontProviderLike | internal_RasterFontRepository | None = None,
+    provider: RasterFontProviderLike | RasterFontRepository | None = None,
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
     if len(text) != 1:
         return ()
@@ -254,16 +252,14 @@ def fallback_glyph_outline(
         cid_ordering,
     )
     repository = (
-        provider
-        if isinstance(provider, internal_RasterFontRepository)
-        else internal_RasterFontRepository(provider)
+        provider if isinstance(provider, RasterFontRepository) else RasterFontRepository(provider)
     )
     programs: list[TrueTypeFontProgram] = []
-    provider_program = repository.internal_provider_program(request)
+    provider_program = repository.load_provider_program(request)
     if provider_program is not None:
         programs.append(provider_program)
-    for face_name in internal_builtin_face_names(font_name):
-        program = repository.internal_builtin_program(face_name)
+    for face_name in builtin_face_names(font_name):
+        program = repository.builtin_program(face_name)
         if program is not None:
             programs.append(program)
     for program in programs:

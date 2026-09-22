@@ -7,22 +7,22 @@ from copy import replace
 
 from core_pdf.impl.types import TextWord
 
-internal_NORMALIZE_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
+NORMALIZE_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
 
 
 def normalize_extracted_text(text: str) -> str:
-    return text if text.isascii() else text.translate(internal_NORMALIZE_TEXT_TABLE)
+    return text if text.isascii() else text.translate(NORMALIZE_TEXT_TABLE)
 
 
 WORD_GAP_SPACE_FACTOR = 0.15
 WORD_GAP_SIZE_FACTOR = 0.08
 WORD_GAP_MIN = 0.75
 
-internal_CONTENT_TOKEN_RE = re.compile(r"\w+|[^\w\s]")
+CONTENT_TOKEN_RE = re.compile(r"\w+|[^\w\s]")
 
 
 def content_tokens(text: str) -> tuple[str, ...]:
-    return tuple(internal_CONTENT_TOKEN_RE.findall(text))
+    return tuple(CONTENT_TOKEN_RE.findall(text))
 
 
 def complete_text_covered(candidate: tuple[str, ...], reference: tuple[str, ...]) -> bool:
@@ -48,15 +48,15 @@ def collapse_ws(text: str) -> str:
     return " ".join(text.split())
 
 
-def internal_text_word_tokens(text: str) -> tuple[str, ...]:
+def text_word_tokens(text: str) -> tuple[str, ...]:
     return tuple(text.split())
 
 
-def internal_reconcile_text_words(
+def reconcile_text_words(
     text: str,
     words: tuple[TextWord, ...],
 ) -> tuple[TextWord, ...]:
-    tokens = internal_text_word_tokens(text)
+    tokens = text_word_tokens(text)
     if not tokens:
         return ()
     if not words:

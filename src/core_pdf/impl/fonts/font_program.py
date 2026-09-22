@@ -15,7 +15,7 @@ from core_adobe_fonts.cff.font import (
     STANDARD_GLYPH_SIDS,
     CffFontMatrix,
 )
-from core_adobe_fonts.cff.font import DEFAULT_CFF_FONT_MATRIX as internal_DEFAULT_CFF_MATRIX
+from core_adobe_fonts.cff.font import DEFAULT_CFF_FONT_MATRIX as DEFAULT_CFF_MATRIX
 from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
 from core_adobe_fonts.cff.font import (
     cff_font_matrix as pdf_cff_font_matrix,
@@ -26,21 +26,21 @@ from core_pdf._vendor.fontTools.cffLib import (
     cffISOAdobeStrings,
 )
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
+from core_pdf.impl.fonts.feature_distance_kernel import feature_arrays
 from core_pdf.impl.fonts.feature_distance_kernel import (
     feature_distance as compiled_feature_distance,
 )
 from core_pdf.impl.fonts.feature_distance_kernel import (
     feature_distance_matrix as compiled_feature_distance_matrix,
 )
-from core_pdf.impl.fonts.feature_distance_kernel import internal_feature_arrays
 from core_pdf.impl.fonts.raster_kernel import rasterize_contours, transform_contours
-from core_pdf.impl.records import internal_FrozenFields
+from core_pdf.impl.records import FrozenFields
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
-class CFFGlyphFeature(internal_FrozenFields):
+class CFFGlyphFeature(FrozenFields):
     cells: tuple[tuple[int, int], ...]
     aspect: float
     contours: int
@@ -56,10 +56,10 @@ class CFFGlyphFeature(internal_FrozenFields):
         contours: int,
         bitmap: tuple[int, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "cells", cells)
-        internal_frozen_setattr(self, "aspect", aspect)
-        internal_frozen_setattr(self, "contours", contours)
-        internal_frozen_setattr(self, "bitmap", bitmap)
+        frozen_setattr(self, "cells", cells)
+        frozen_setattr(self, "aspect", aspect)
+        frozen_setattr(self, "contours", contours)
+        frozen_setattr(self, "bitmap", bitmap)
 
     def __repr__(self) -> str:
         return (
@@ -99,15 +99,15 @@ class CFFGlyphFeature(internal_FrozenFields):
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
 
-internal_TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
-internal_CUBIC_FLATNESS = 0.25
-internal_CUBIC_MAX_DEPTH = 12
+TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
+CUBIC_FLATNESS = 0.25
+CUBIC_MAX_DEPTH = 12
 
 
-DEFAULT_CFF_FONT_MATRIX = Matrix(*internal_DEFAULT_CFF_MATRIX)
+DEFAULT_CFF_FONT_MATRIX = Matrix(*DEFAULT_CFF_MATRIX)
 
 
-def internal_cff_font_matrix(
+def cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
 ) -> Matrix | None:
     try:
@@ -156,9 +156,9 @@ class CFFFont(PdfCFFFont):
         try:
             return super().read_charset(pos, glyph_count)
         except IndexError, TypeError, ValueError:
-            return self.internal_recover_read_charset(pos, glyph_count)
+            return self.recover_read_charset(pos, glyph_count)
 
-    def internal_recover_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
+    def recover_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
         if glyph_count <= 0:
             return {}
         if self.is_cid_keyed and pos in {0, 1, 2}:
@@ -223,9 +223,9 @@ class CFFFont(PdfCFFFont):
         try:
             return super().read_encoding_codes(pos)
         except IndexError, TypeError, ValueError:
-            return self.internal_recover_read_encoding_codes(pos)
+            return self.recover_read_encoding_codes(pos)
 
-    def internal_recover_read_encoding_codes(self, pos: int) -> dict[int, int]:
+    def recover_read_encoding_codes(self, pos: int) -> dict[int, int]:
         data = self.data
         if pos <= 0 or pos >= len(data):
             return {}
@@ -326,13 +326,13 @@ class CFFFont(PdfCFFFont):
 
     def read_fd_select(self) -> tuple[int, ...]:
         if not self.is_cid_keyed and (12, 37) in self.top_dict:
-            return self.internal_recover_read_fd_select()
+            return self.recover_read_fd_select()
         try:
             return super().read_fd_select()
         except IndexError, TypeError, ValueError:
-            return self.internal_recover_read_fd_select()
+            return self.recover_read_fd_select()
 
-    def internal_recover_read_fd_select(self) -> tuple[int, ...]:
+    def recover_read_fd_select(self) -> tuple[int, ...]:
         glyph_count = len(self.charstrings)
         fdselect_off = self.top_dict.get((12, 37), [None])[0]
         if not isinstance(fdselect_off, (int, float)):
@@ -375,9 +375,9 @@ class CFFFont(PdfCFFFont):
         try:
             return super().read_font_dicts()
         except IndexError, OverflowError, TypeError, ValueError:
-            return self.internal_recover_read_font_dicts()
+            return self.recover_read_font_dicts()
 
-    def internal_recover_read_font_dicts(
+    def recover_read_font_dicts(
         self,
     ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
         if not self.is_cid_keyed:
@@ -409,9 +409,9 @@ class CFFFont(PdfCFFFont):
         try:
             return super().read_private_subrs(font_dict)
         except IndexError, TypeError, ValueError:
-            return self.internal_recover_read_private_subrs(font_dict)
+            return self.recover_read_private_subrs(font_dict)
 
-    def internal_recover_read_private_subrs(
+    def recover_read_private_subrs(
         self, font_dict: dict[int | tuple[int, int], list[float]]
     ) -> list[bytes]:
         private = font_dict.get(18)
@@ -438,9 +438,9 @@ class CFFFont(PdfCFFFont):
         try:
             return super().local_subrs_for_glyph(glyph_id)
         except IndexError, TypeError, ValueError:
-            return self.internal_recover_local_subrs_for_glyph(glyph_id)
+            return self.recover_local_subrs_for_glyph(glyph_id)
 
-    def internal_recover_local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
+    def recover_local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
         if 0 <= fd_index < len(self.local_subrs):
             return self.local_subrs[fd_index]
@@ -450,20 +450,20 @@ class CFFFont(PdfCFFFont):
         try:
             return super().font_matrix(glyph_id)
         except IndexError, TypeError, ValueError:
-            return CffFontMatrix(*self.internal_recover_font_matrix(glyph_id))
+            return CffFontMatrix(*self.recover_font_matrix(glyph_id))
 
-    def internal_recover_font_matrix(self, glyph_id: int) -> Matrix:
+    def recover_font_matrix(self, glyph_id: int) -> Matrix:
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
-        top_matrix = internal_cff_font_matrix(self.top_dict)
+        top_matrix = cff_font_matrix(self.top_dict)
         font_dict = self.font_dicts[fd_index] if 0 <= fd_index < len(self.font_dicts) else None
-        font_dict_matrix = internal_cff_font_matrix(font_dict) if font_dict is not None else None
+        font_dict_matrix = cff_font_matrix(font_dict) if font_dict is not None else None
         if top_matrix is None:
             return font_dict_matrix or DEFAULT_CFF_FONT_MATRIX
         if font_dict_matrix is None:
             return top_matrix
         return font_dict_matrix.multiply(top_matrix)
 
-    def internal_seac_contours(
+    def seac_contours(
         self,
         base_code: int,
         accent_code: int,
@@ -483,7 +483,7 @@ class CFFFont(PdfCFFFont):
             glyph_id = self.cid_to_gid.get(sid) if sid is not None else None
             if glyph_id is None or not 0 <= glyph_id < len(self.charstrings):
                 continue
-            component_contours, ignored_bbox = internal_type2_glyph_geometry_impl(
+            component_contours, ignored_bbox = type2_glyph_geometry_impl(
                 self.charstrings[glyph_id],
                 local_subrs=self.local_subrs_for_glyph(glyph_id),
                 global_subrs=self.global_subrs,
@@ -494,7 +494,7 @@ class CFFFont(PdfCFFFont):
             )
         return tuple(contours)
 
-    def internal_glyph_geometry_for_gid(
+    def glyph_geometry_for_gid(
         self, glyph_id: int, *, bounds_only: bool = False
     ) -> tuple[
         tuple[tuple[tuple[float, float], ...], ...],
@@ -505,46 +505,46 @@ class CFFFont(PdfCFFFont):
         except IndexError:
             return ((), None)
         matrix = Matrix(*self.font_matrix(glyph_id))
-        contours, raw_bbox = internal_type2_glyph_geometry_impl(
+        contours, raw_bbox = type2_glyph_geometry_impl(
             charstring,
             local_subrs=self.local_subrs_for_glyph(glyph_id),
             global_subrs=self.global_subrs,
-            seac_resolver=self.internal_seac_contours,
+            seac_resolver=self.seac_contours,
             flatten=not bounds_only or matrix[1] != 0.0 or matrix[2] != 0.0,
             retain_contours=not bounds_only or matrix != DEFAULT_CFF_FONT_MATRIX,
         )
         if matrix == DEFAULT_CFF_FONT_MATRIX:
             return (tuple(tuple(contour) for contour in contours), raw_bbox)
         normalized = transform_contours(contours, matrix)
-        return (normalized, internal_contours_bbox(normalized))
+        return (normalized, contours_bbox(normalized))
 
     def glyph_feature(self, glyph_id: int) -> CFFGlyphFeature:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
+        geometry = self.glyph_geometry_for_gid(glyph_id)
         contours = geometry[0]
         if not contours:
             return EMPTY_FEATURE
-        return internal_feature_from_contours(contours)
+        return feature_from_contours(contours)
 
     def glyph_bitmap_for_gid(
         self, glyph_id: int, width: int = 24, height: int = 32
     ) -> tuple[int, ...]:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id)
+        geometry = self.glyph_geometry_for_gid(glyph_id)
         contours = geometry[0]
         if not contours:
             return ()
         return rasterize_contours(contours, width=width, height=height)
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        geometry = self.internal_glyph_geometry_for_gid(glyph_id, bounds_only=True)
+        geometry = self.glyph_geometry_for_gid(glyph_id, bounds_only=True)
         return geometry[1]
 
     def normalized_glyph_contours(
         self, glyph_id: int
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        return self.internal_glyph_geometry_for_gid(glyph_id)[0]
+        return self.glyph_geometry_for_gid(glyph_id)[0]
 
 
-def internal_contours_bbox(
+def contours_bbox(
     contours: tuple[tuple[tuple[float, float], ...], ...],
 ) -> tuple[float, float, float, float] | None:
     points = tuple(point for contour in contours for point in contour)
@@ -554,7 +554,7 @@ def internal_contours_bbox(
     return (min(xs), min(ys), max(xs), max(ys))
 
 
-def internal_feature_from_contours(
+def feature_from_contours(
     contours: tuple[tuple[tuple[float, float], ...], ...] | list[list[tuple[float, float]]],
 ) -> CFFGlyphFeature:
     if not contours:
@@ -578,7 +578,7 @@ def internal_feature_from_contours(
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
 
-def internal_cubic_is_flat(
+def cubic_is_flat(
     p0: tuple[float, float],
     p1: tuple[float, float],
     p2: tuple[float, float],
@@ -587,7 +587,7 @@ def internal_cubic_is_flat(
     dx = p3[0] - p0[0]
     dy = p3[1] - p0[1]
     chord_squared = dx * dx + dy * dy
-    tolerance_squared = internal_CUBIC_FLATNESS * internal_CUBIC_FLATNESS
+    tolerance_squared = CUBIC_FLATNESS * CUBIC_FLATNESS
     if chord_squared <= 1e-18:
         return (
             max(
@@ -601,7 +601,7 @@ def internal_cubic_is_flat(
     return max(cross1 * cross1, cross2 * cross2) <= tolerance_squared * chord_squared
 
 
-def internal_cubic_sample_times(
+def cubic_sample_times(
     p0: tuple[float, float],
     p1: tuple[float, float],
     p2: tuple[float, float],
@@ -622,9 +622,7 @@ def internal_cubic_sample_times(
         end_t: float,
         depth: int,
     ) -> None:
-        if depth >= internal_CUBIC_MAX_DEPTH or internal_cubic_is_flat(
-            start, control1, control2, end
-        ):
+        if depth >= CUBIC_MAX_DEPTH or cubic_is_flat(start, control1, control2, end):
             times.add(end_t)
             return
         point01 = ((start[0] + control1[0]) / 2.0, (start[1] + control1[1]) / 2.0)
@@ -647,7 +645,7 @@ def internal_cubic_sample_times(
     return tuple(sorted(times))
 
 
-def internal_type2_glyph_geometry_impl(  # noqa: C901
+def type2_glyph_geometry_impl(  # noqa: C901
     charstring: bytes,
     *,
     local_subrs: tuple[bytes, ...],
@@ -676,7 +674,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901
     bbox_has_points = False
     x = 0.0
     y = 0.0
-    random_state = internal_TYPE2_RANDOM_INITIAL_STATE
+    random_state = TYPE2_RANDOM_INITIAL_STATE
 
     def flush_contour() -> None:
         nonlocal current
@@ -741,7 +739,7 @@ def internal_type2_glyph_geometry_impl(  # noqa: C901
         point2 = (point1[0] + dx2, point1[1] + dy2)
         point3 = (point2[0] + dx3, point2[1] + dy3)
         if flatten:
-            for t in internal_cubic_sample_times(point0, point1, point2, point3):
+            for t in cubic_sample_times(point0, point1, point2, point3):
                 record_point(*cubic_point(point0, point1, point2, point3, t))
         else:
             for t in cubic_extrema_times(point0[0], point1[0], point2[0], point3[0]):
@@ -815,7 +813,7 @@ def is_repairable_to_unicode_label(label: str) -> bool:
     return any(not (ch.isalnum() or ch.isspace()) for ch in label)
 
 
-def internal_repair_candidate(
+def repair_candidate(
     glyph_id: int,
     label: str,
     features: dict[int, CFFGlyphFeature],
@@ -860,11 +858,11 @@ def internal_repair_candidate(
 
 class CFFUnicodeRepairIndex:
     __slots__ = (
-        "internal_candidate_gids",
-        "internal_code_to_gid",
-        "internal_font",
-        "internal_labels",
-        "internal_repairable_gids",
+        "resolve_candidate_gids",
+        "code_to_gid_map",
+        "make_font",
+        "label_names",
+        "repairable_gids",
     )
 
     def __init__(
@@ -883,13 +881,13 @@ class CFFUnicodeRepairIndex:
                 labels[gid] = value
                 code_to_gid[code_bytes] = gid
 
-        self.internal_font = font
-        self.internal_labels = labels
-        self.internal_code_to_gid = code_to_gid
-        self.internal_repairable_gids = frozenset(
+        self.make_font = font
+        self.label_names = labels
+        self.code_to_gid_map = code_to_gid
+        self.repairable_gids = frozenset(
             gid for gid, label in labels.items() if is_repairable_to_unicode_label(label)
         )
-        self.internal_candidate_gids = tuple(
+        self.resolve_candidate_gids = tuple(
             gid
             for gid, label in labels.items()
             if len(label) == 1 and (label.isalnum() or label in ".-+")
@@ -897,40 +895,40 @@ class CFFUnicodeRepairIndex:
 
     def repairs_for_codes(self, codes: Iterable[bytes]) -> dict[bytes, str]:
         requested_codes = tuple(dict.fromkeys(codes))
-        if not requested_codes or not self.internal_repairable_gids:
+        if not requested_codes or not self.repairable_gids:
             return {}
         target_gids = tuple(
             dict.fromkeys(
                 gid
                 for code in requested_codes
-                if (gid := self.internal_code_to_gid.get(code)) in self.internal_repairable_gids
+                if (gid := self.code_to_gid_map.get(code)) in self.repairable_gids
             )
         )
         if not target_gids:
             return {}
-        repairs = self.internal_repairs_for_gids(target_gids)
+        repairs = self.repairs_for_gids(target_gids)
         return {
             code: replacement
             for code in requested_codes
-            if (gid := self.internal_code_to_gid.get(code)) is not None
+            if (gid := self.code_to_gid_map.get(code)) is not None
             and (replacement := repairs.get(gid)) is not None
         }
 
-    def internal_repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
-        feature_gids = dict.fromkeys((*self.internal_candidate_gids, *requested_gids))
-        features = {gid: self.internal_font.glyph_feature(gid) for gid in feature_gids}
+    def repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
+        feature_gids = dict.fromkeys((*self.resolve_candidate_gids, *requested_gids))
+        features = {gid: self.make_font.glyph_feature(gid) for gid in feature_gids}
 
-        candidate_gids = tuple(gid for gid in self.internal_candidate_gids if features[gid].cells)
+        candidate_gids = tuple(gid for gid in self.resolve_candidate_gids if features[gid].cells)
         target_gids = tuple(gid for gid in requested_gids if features[gid].cells)
         distance_lookups: dict[int, dict[int, float]] = {}
         if (
             target_gids
             and candidate_gids
-            and (len(self.internal_repairable_gids) * len(candidate_gids) >= 512)
+            and (len(self.repairable_gids) * len(candidate_gids) >= 512)
         ):
             target_features = [features[gid] for gid in target_gids]
             candidate_features = [features[gid] for gid in candidate_gids]
-            candidate_arrays = internal_feature_arrays(
+            candidate_arrays = feature_arrays(
                 [feature.cells for feature in candidate_features],
                 [feature.bitmap for feature in candidate_features],
                 [feature.aspect for feature in candidate_features],
@@ -945,7 +943,7 @@ class CFFUnicodeRepairIndex:
                 [feature.bitmap for feature in candidate_features],
                 [feature.aspect for feature in candidate_features],
                 [feature.contours for feature in candidate_features],
-                internal_right_arrays=candidate_arrays,
+                right_arrays=candidate_arrays,
             )
             distance_lookups = {
                 target_gid: {
@@ -957,12 +955,12 @@ class CFFUnicodeRepairIndex:
 
         repairs: dict[int, str] = {}
         for glyph_id in target_gids:
-            label = self.internal_labels[glyph_id]
-            replacement = internal_repair_candidate(
+            label = self.label_names[glyph_id]
+            replacement = repair_candidate(
                 glyph_id,
                 label,
                 features,
-                self.internal_labels,
+                self.label_names,
                 distance_lookups.get(glyph_id),
             )
             if replacement is not None and replacement != label:

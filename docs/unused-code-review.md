@@ -2420,7 +2420,7 @@ checks. The ordinary OCR suite passes **115 tests** and skips the four real-engi
 
 The deterministic tests exercise character/addition fallback thresholds, strict utility
 gains, native seeding, duplicate rejection, selected-task provenance, and pass orchestration.
-Both `internal_OcrPassState.prepare` and `.complete` now have **100% statement and branch
+Both `OcrPassState.prepare` and `.complete` now have **100% statement and branch
 coverage**. Raster checks cover pixel budgets, UserUnit/crop rounding, all eight direct-image
 orientations, tile overlap, page-coordinate remapping, and safe crop selection.
 
@@ -2660,7 +2660,7 @@ This is an intentional API removal, not an inference that uncovered public APIs 
   In particular, `Page.to_image` and `Page.dedupe_chars` never execute. Broaden method-level
   differential coverage, not just the number of PDFs passed to existing methods.
 - **Rendering:** `impl/_impl/render/patterns.py` has 216 missing statements and 10.74%
-  statement coverage. Rendering helpers such as `fill_circle` and `internal_dash_subpath`
+  statement coverage. Rendering helpers such as `fill_circle` and `dash_subpath`
   have explicit callers despite uncovered bodies. Add pattern, shading, and stroke cases.
 
 ## Review limits and next steps

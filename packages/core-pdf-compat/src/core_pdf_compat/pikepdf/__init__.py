@@ -21,7 +21,7 @@ from core_pdf_compat.pypdf import (
 )
 from core_pdf_spec.s_07_syntax.types import PdfDict
 
-from .._strict_page_tree import internal_has_malformed_shadowed_definition
+from .._strict_page_tree import has_malformed_shadowed_definition
 
 
 class Rectangle(tuple[Decimal, Decimal, Decimal, Decimal]):
@@ -126,7 +126,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
         ):
             raise PdfUnsupportedError("unable to find trailer dictionary")
     pages = pdf.catalog().get("Pages")
-    if isinstance(pages, PdfReference) and internal_has_malformed_shadowed_definition(pdf, pages):
+    if isinstance(pages, PdfReference) and has_malformed_shadowed_definition(pdf, pages):
         raise PdfUnsupportedError("shadowed page tree root")
     if isinstance(pages, PdfReference) and pdf.xref_was_recovered:
         entry = pdf.xref.get((pages.object_number << 16) | pages.generation_number)

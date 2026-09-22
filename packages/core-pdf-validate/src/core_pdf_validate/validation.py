@@ -14,7 +14,7 @@ from core_pdf_validate.verapdf import VeraPdfBackend
 __all__ = ["validate"]
 
 
-def internal_declared_targets(source: bytes) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def declared_targets(source: bytes) -> tuple[tuple[str, ...], tuple[str, ...]]:
     from core_pdf import PdfDocument, PdfError
 
     try:
@@ -55,7 +55,7 @@ def validate(
     digest = hashlib.sha256(original).hexdigest()
     diagnostics: tuple[str, ...] = ()
     if profiles == "declared":
-        targets, diagnostics = internal_declared_targets(original)
+        targets, diagnostics = declared_targets(original)
     if not targets:
         return ValidationReport(digest, (), (), diagnostics)
 

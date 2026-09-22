@@ -15,7 +15,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.types import PdfName
 
 
-def internal_normalize_values(
+def normalize_values(
     values: PdfDict, integer_fields: tuple[str, ...], name_fields: tuple[str, ...]
 ) -> PdfDict:
     normalized = values
@@ -39,7 +39,7 @@ def internal_normalize_values(
 def create_recovered_security_handler(
     document_id: Sequence[object], params: PdfDict, password: str = ""
 ) -> StandardSecurityHandler:
-    normalized = internal_normalize_values(
+    normalized = normalize_values(
         params, ("V", "R", "P", "Length"), ("Filter", "StmF", "StrF", "EFF")
     )
     filters = params.get("CF")
@@ -49,7 +49,7 @@ def create_recovered_security_handler(
             name = recover_pdf_name(key)
             normalized_value = value
             if name == "StdCF" and isinstance(value, dict):
-                normalized_value = internal_normalize_values(
+                normalized_value = normalize_values(
                     value, ("Length",), ("Type", "CFM", "AuthEvent")
                 )
             normalized_key = (

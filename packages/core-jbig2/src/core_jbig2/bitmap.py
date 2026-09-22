@@ -20,7 +20,7 @@ def uint8_matrix_view(
 PACKED_COMPOSE_NUMPY_THRESHOLD = 64
 
 
-def internal_compose_packed_bitmap_scalar(
+def compose_packed_bitmap_scalar(
     rows: list[bytes],
     region_width: int,
     region_x: int,
@@ -49,7 +49,7 @@ def internal_compose_packed_bitmap_scalar(
                 image_data[index] ^= mask
 
 
-def internal_compose_packed_bitmap_numpy(
+def compose_packed_bitmap_numpy(
     packed_bitmap: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
     row_count: int,
     row_byte_length: int,
@@ -143,7 +143,7 @@ def compose_packed_bitmap_data(
                 bytes(packed_bitmap[row * row_byte_length : (row + 1) * row_byte_length])
                 for row in range(available_rows)
             ]
-        internal_compose_packed_bitmap_scalar(
+        compose_packed_bitmap_scalar(
             rows,
             region_width,
             region_x,
@@ -155,7 +155,7 @@ def compose_packed_bitmap_data(
             operator,
         )
         return
-    internal_compose_packed_bitmap_numpy(
+    compose_packed_bitmap_numpy(
         packed_bitmap,
         available_rows,
         row_byte_length,

@@ -4,7 +4,7 @@ from core_pdf.impl.layout import text_rules as rules
 from core_pdf.impl.model.runs import TextRun
 
 
-def internal_run(text, x=0, y=0, width=10, height=10, font=10, rotation=0):
+def make_run(text, x=0, y=0, width=10, height=10, font=10, rotation=0):
     return TextRun(
         text, x, y, x + width, y + height, x, y, font, 2, 0, 0, 0, rotation_angle=rotation
     )
@@ -56,14 +56,14 @@ def test_baseline_midpoint_uses_rotated_axis(rotation, expected):
 
 @pytest.mark.parametrize(("text", "expected"), [("", False), ("abc", False), ("a√b", True)])
 def test_formula_detection_uses_recognized_markers(text, expected):
-    assert rules.formula_like_runs([internal_run(" "), internal_run(text)]) is expected
+    assert rules.formula_like_runs([make_run(" "), make_run(text)]) is expected
 
 
 @pytest.mark.parametrize("intervening", [False, True])
 def test_stacked_fraction_reordering_preserves_every_run_once(intervening):
-    denominator = internal_run("√x")
-    numerator = internal_run("2", y=3)
-    middle = internal_run("+", x=20)
+    denominator = make_run("√x")
+    numerator = make_run("2", y=3)
+    middle = make_run("+", x=20)
     runs = [denominator, middle, numerator] if intervening else [denominator, numerator]
     original = list(runs)
     reordered = rules.reorder_stacked_formula_numerators(runs)
@@ -76,29 +76,29 @@ def test_stacked_fraction_reordering_preserves_every_run_once(intervening):
 
 @pytest.mark.parametrize("text", ["word", "123", "t", "2"])
 def test_unmatched_numerators_and_ordinary_text_retain_order(text):
-    runs = [internal_run("ordinary"), internal_run(text, y=3)]
+    runs = [make_run("ordinary"), make_run(text, y=3)]
     assert rules.reorder_stacked_formula_numerators(runs) == runs
 
 
 @pytest.mark.parametrize(
     ("denominator", "numerator", "expected"),
     [
-        (internal_run(""), internal_run("2", y=3), False),
-        (internal_run("√"), internal_run(""), False),
-        (internal_run("3"), internal_run("2", y=3), False),
-        (internal_run("x"), internal_run("2", y=3), False),
-        (internal_run("√"), internal_run("a", y=3), False),
-        (internal_run("√", rotation=90), internal_run("2", y=3), False),
-        (internal_run("√"), internal_run("2", y=3, rotation=90), False),
-        (internal_run("√", height=0), internal_run("2", y=3), False),
-        (internal_run("√"), internal_run("2", y=3, height=0), False),
-        (internal_run("√"), internal_run("2", y=3, height=6.9), False),
-        (internal_run("√"), internal_run("2", y=3, height=13.1), False),
-        (internal_run("√"), internal_run("2", y=3, height=7), True),
-        (internal_run("√"), internal_run("2", y=3, height=13), True),
-        (internal_run("√"), internal_run("2", x=10, y=3), False),
-        (internal_run("√"), internal_run("2", y=1.9), False),
-        (internal_run("√"), internal_run("2", y=2), True),
+        (make_run(""), make_run("2", y=3), False),
+        (make_run("√"), make_run(""), False),
+        (make_run("3"), make_run("2", y=3), False),
+        (make_run("x"), make_run("2", y=3), False),
+        (make_run("√"), make_run("a", y=3), False),
+        (make_run("√", rotation=90), make_run("2", y=3), False),
+        (make_run("√"), make_run("2", y=3, rotation=90), False),
+        (make_run("√", height=0), make_run("2", y=3), False),
+        (make_run("√"), make_run("2", y=3, height=0), False),
+        (make_run("√"), make_run("2", y=3, height=6.9), False),
+        (make_run("√"), make_run("2", y=3, height=13.1), False),
+        (make_run("√"), make_run("2", y=3, height=7), True),
+        (make_run("√"), make_run("2", y=3, height=13), True),
+        (make_run("√"), make_run("2", x=10, y=3), False),
+        (make_run("√"), make_run("2", y=1.9), False),
+        (make_run("√"), make_run("2", y=2), True),
     ],
 )
 def test_stacked_denominator_requires_formula_text_and_compatible_geometry(
@@ -114,9 +114,9 @@ def test_stacked_denominator_requires_formula_text_and_compatible_geometry(
 def test_time_symbol_numerator_requires_following_punctuation(following, expected):
     assert (
         rules.stacked_formula_denominator(
-            internal_run("T"),
-            internal_run("t", y=3),
-            following=internal_run(following) if following is not None else None,
+            make_run("T"),
+            make_run("t", y=3),
+            following=make_run(following) if following is not None else None,
         )
         is expected
     )
@@ -216,10 +216,10 @@ def test_footer_geometry_distinguishes_tiny_labels_from_body_text(
     expected,
 ):
     runs = [
-        internal_run("body", font=body_font),
-        internal_run(page_text, x=10 + gap, width=page_width, font=page_font),
-        internal_run(digit_text, x=digit_x, width=digit_width, font=digit_font),
-        internal_run(" "),
+        make_run("body", font=body_font),
+        make_run(page_text, x=10 + gap, width=page_width, font=page_font),
+        make_run(digit_text, x=digit_x, width=digit_width, font=digit_font),
+        make_run(" "),
     ]
     assert rules.trailing_tiny_page_label_run_indexes(runs) == expected
     assert rules.trailing_tiny_page_label_run_indexes(runs[:2]) == set()

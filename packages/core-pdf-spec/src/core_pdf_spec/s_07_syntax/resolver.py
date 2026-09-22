@@ -11,7 +11,7 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf_spec.s_07_syntax.resolution import (
-    internal_resolve_object_graph,
+    resolve_object_graph,
     resolve_reference_chain,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -56,7 +56,7 @@ class ObjectResolver:
         "object_streams",
         "lock",
         "thread_state",
-        "internal_semantic_context",
+        "_semantic_context",
     )
 
     def __init__(
@@ -70,7 +70,7 @@ class ObjectResolver:
         self.data = memoryview(data)
         self.xref = xref
         self.decipher = decipher
-        self.internal_semantic_context = semantic_context
+        self._semantic_context = semantic_context
         self.objects: ObjectCache = {}
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.lock = threading.RLock()
@@ -78,15 +78,15 @@ class ObjectResolver:
 
     @property
     def semantic_context(self) -> SemanticContext | None:
-        return self.internal_semantic_context
+        return self._semantic_context
 
     @semantic_context.setter
     def semantic_context(self, context: SemanticContext | None) -> None:
         with self.lock:
-            if context == self.internal_semantic_context:
+            if context == self._semantic_context:
                 return
-            streams = self.internal_detach_parsed_caches()
-            self.internal_semantic_context = context
+            streams = self.detach_parsed_caches()
+            self._semantic_context = context
         for stream in streams:
             stream.close()
 
@@ -101,7 +101,7 @@ class ObjectResolver:
     def release_lexer(self, lexer: PdfLexer) -> None:
         lexer.close()
 
-    def internal_detach_parsed_caches(self) -> tuple[PdfObjectStream, ...]:
+    def detach_parsed_caches(self) -> tuple[PdfObjectStream, ...]:
         streams = tuple(self.object_streams.values())
         self.objects.clear()
         self.object_streams.clear()
@@ -109,7 +109,7 @@ class ObjectResolver:
 
     def close(self) -> None:
         with self.lock:
-            streams = self.internal_detach_parsed_caches()
+            streams = self.detach_parsed_caches()
             self.decipher = None
         for stream in streams:
             stream.close()
@@ -136,7 +136,7 @@ class ObjectResolver:
 
         resolving.add(cache_key)
         try:
-            resolved = self.internal_resolve_reference(ref)
+            resolved = self.resolve_reference(ref)
         finally:
             resolving.remove(cache_key)
 
@@ -148,7 +148,7 @@ class ObjectResolver:
         return resolved
 
     def deep_resolve(self, value: object) -> object:
-        return internal_resolve_object_graph(value, self.resolve)
+        return resolve_object_graph(value, self.resolve)
 
     def resolve_dict(self, value: object) -> PdfDict | None:
         resolved = self.deep_resolve(value)
@@ -200,7 +200,7 @@ class ObjectResolver:
             return self.decode_text(resolved)
         return resolved if isinstance(resolved, str) else None
 
-    def internal_resolve_reference(self, ref: PdfReference) -> object:
+    def resolve_reference(self, ref: PdfReference) -> object:
         entry = self.xref_entry(ref)
         if entry is None or not entry.in_use:
             resolved = self.missing_object(ref)

@@ -16,10 +16,10 @@ pytestmark = pytest.mark.compat_differential
 @pytest.fixture(scope="module", autouse=True)
 def require_nlp_pipelines() -> None:
     text = "The library preserves sentence boundaries."
-    tokens, sentences = _classification.internal_nlp_features(text)
+    tokens, sentences = _classification.nlp_features(text)
     assert tokens
     assert sentences
-    assert any(tag in _classification.internal_POS_VERB_TAGS for _token, tag in tokens)
+    assert any(tag in _classification.POS_VERB_TAGS for _token, tag in tokens)
     assert tokens == tuple(real_tokenize.pos_tag(text))
     assert sentences == tuple(real_tokenize.sent_tokenize(text))
 

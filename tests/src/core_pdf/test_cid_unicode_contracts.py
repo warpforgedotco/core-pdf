@@ -15,7 +15,7 @@ def test_compact_inversion_respects_later_ranges_explicit_overrides_and_codespac
     2 begincidchar <43> 30 <45> 40 endcidchar
     """
     )
-    result = cid.internal_compact_cmap(decoder)
+    result = cid.compact_cmap_from_decoder(decoder)
     expected = {11: (b"A",), 20: (b"B",), 30: (b"C",)}
     if not codespace:
         expected.update({10: (b"@",), 14: (b"D",), 40: (b"E",)})

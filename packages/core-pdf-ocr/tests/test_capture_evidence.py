@@ -15,7 +15,7 @@ from core_pdf_ocr.impl.extract import capture
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, StrokedVectorTextEvidence
 
 
-def internal_stroke(index: int, *, size: float = 2, spread: bool = True) -> CapturedDrawing:
+def stroke(index: int, *, size: float = 2, spread: bool = True) -> CapturedDrawing:
     x = index % 20 * (20 if spread else 0)
     y = index // 20 * (20 if spread else 0)
     return CapturedDrawing(
@@ -30,10 +30,10 @@ def internal_stroke(index: int, *, size: float = 2, spread: bool = True) -> Capt
 
 
 def test_patterned_strokes_do_not_supply_solid_vector_text_evidence() -> None:
-    solid = internal_stroke(0)
+    solid = stroke(0)
     patterned = replace(solid, stroke_pattern=ShadingPattern({}))
-    assert capture.internal_stroked_vector_style(solid) is not None
-    assert capture.internal_stroked_vector_style(patterned) is None
+    assert capture.stroked_vector_style(solid) is not None
+    assert capture.stroked_vector_style(patterned) is None
 
 
 def test_vector_complexity_counts_paints_and_segments_but_not_control_records() -> None:
@@ -44,8 +44,8 @@ def test_vector_complexity_counts_paints_and_segments_but_not_control_records() 
         )
     )
     lines = (CapturedLine(0, 0, 1, 1),) * 10
-    assert capture.internal_vector_complexity(drawings, lines) == 19
-    assert capture.internal_vector_complexity((), ()) == 0
+    assert capture.vector_complexity(drawings, lines) == 19
+    assert capture.vector_complexity((), ()) == 0
 
 
 @pytest.mark.parametrize(
@@ -61,25 +61,23 @@ def test_vector_complexity_counts_paints_and_segments_but_not_control_records() 
     ],
 )
 def test_stroke_style_rejects_ineligible_paints(field: str, value: object) -> None:
-    assert (
-        capture.internal_stroked_vector_style(replace(internal_stroke(0), **{field: value})) is None
-    )
+    assert capture.stroked_vector_style(replace(stroke(0), **{field: value})) is None
 
 
 def test_stroke_style_normalizes_default_opacity_and_empty_dash() -> None:
-    drawing = internal_stroke(0)
-    key = capture.internal_stroked_vector_style(drawing)
+    drawing = stroke(0)
+    key = capture.stroked_vector_style(drawing)
     assert key is not None
     assert key[:4] == ("stroke", (0.0,), 1.0, 0.5)
-    assert capture.internal_stroked_vector_style(replace(drawing, dash_pattern=([], 0))) is not None
+    assert capture.stroked_vector_style(replace(drawing, dash_pattern=([], 0))) is not None
 
 
 def test_distributed_stroke_evidence_selects_supported_styles_and_render_sized_paths() -> None:
-    drawings = tuple(internal_stroke(i) for i in range(300))
-    secondary = tuple(replace(internal_stroke(i), stroke_color=(1.0,)) for i in range(8))
-    rare = tuple(replace(internal_stroke(i), stroke_color=(0.5,)) for i in range(7))
-    result = capture.internal_stroked_vector_text_evidence(
-        (*drawings, *secondary, *rare, internal_stroke(0, size=5)),
+    drawings = tuple(stroke(i) for i in range(300))
+    secondary = tuple(replace(stroke(i), stroke_color=(1.0,)) for i in range(8))
+    rare = tuple(replace(stroke(i), stroke_color=(0.5,)) for i in range(7))
+    result = capture.stroked_vector_text_evidence(
+        (*drawings, *secondary, *rare, stroke(0, size=5)),
         page_width=600,
         page_height=800,
     )
@@ -107,9 +105,9 @@ def test_stroke_trust_requires_density_distribution_and_unrotated_page(
     rotation: int,
     width: float,
 ) -> None:
-    drawings = tuple(internal_stroke(i, size=size, spread=spread) for i in range(count))
+    drawings = tuple(stroke(i, size=size, spread=spread) for i in range(count))
     assert (
-        capture.internal_stroked_vector_text_evidence(
+        capture.stroked_vector_text_evidence(
             drawings,
             page_width=width,
             page_height=800,
@@ -120,10 +118,8 @@ def test_stroke_trust_requires_density_distribution_and_unrotated_page(
 
 
 def test_wires_can_dilute_compact_stroke_evidence_below_trust() -> None:
-    drawings = tuple(internal_stroke(i) for i in range(300)) + tuple(
-        internal_stroke(i, size=100) for i in range(201)
-    )
-    assert not capture.internal_stroked_vector_text_evidence(
+    drawings = tuple(stroke(i) for i in range(300)) + tuple(stroke(i, size=100) for i in range(201))
+    assert not capture.stroked_vector_text_evidence(
         drawings, page_width=600, page_height=800
     ).trusted
 
@@ -131,11 +127,11 @@ def test_wires_can_dilute_compact_stroke_evidence_below_trust() -> None:
 def test_missing_and_degenerate_path_bounds_do_not_contribute_evidence() -> None:
     drawings = (
         CapturedDrawing(0, None, None),
-        replace(internal_stroke(0), path=CapturedPath()),
-        internal_stroke(0, size=0),
+        replace(stroke(0), path=CapturedPath()),
+        stroke(0, size=0),
     ) * 100
     assert (
-        capture.internal_stroked_vector_text_evidence(drawings, page_width=600, page_height=800)
+        capture.stroked_vector_text_evidence(drawings, page_width=600, page_height=800)
         == StrokedVectorTextEvidence()
     )
 
@@ -145,30 +141,25 @@ def test_uncovered_area_subtracts_native_overlap_in_bounded_batches() -> None:
         CapturedDrawing(i, None, None, kind="fill", bbox=(0, 0, 10, 10)) for i in range(180)
     )
     native = ObservationBatch.from_columns(("native",), ((0, 0, 5, 10),), source=0)
-    assert capture.internal_uncovered_vector_area(drawings, native) == 9000
+    assert capture.uncovered_vector_area(drawings, native) == 9000
     duplicated = ObservationBatch.concatenate(native, native, native)
-    assert capture.internal_uncovered_vector_area(drawings, duplicated) == 0
-    assert capture.internal_uncovered_vector_area(drawings, native, page_area=100) == 0
+    assert capture.uncovered_vector_area(drawings, duplicated) == 0
+    assert capture.uncovered_vector_area(drawings, native, page_area=100) == 0
 
 
 def test_uncovered_area_skips_controls_missing_bounds_and_zero_area() -> None:
     native = ObservationBatch.from_columns(("native",), ((0, 0, 5, 10),), source=0)
-    assert capture.internal_uncovered_vector_area((), native) is None
-    assert capture.internal_uncovered_vector_area((internal_stroke(0),), native) is None
-    assert (
-        capture.internal_uncovered_vector_area(
-            (internal_stroke(0),) * 180, ObservationBatch.empty()
-        )
-        is None
-    )
+    assert capture.uncovered_vector_area((), native) is None
+    assert capture.uncovered_vector_area((stroke(0),), native) is None
+    assert capture.uncovered_vector_area((stroke(0),) * 180, ObservationBatch.empty()) is None
     controls = (CapturedDrawing(0, None, None, kind="scope-begin"),) * 180
-    assert capture.internal_uncovered_vector_area(controls, native) is None
+    assert capture.uncovered_vector_area(controls, native) is None
     drawings = (
-        internal_stroke(0),
+        stroke(0),
         CapturedDrawing(0, None, None),
         CapturedDrawing(0, None, None, bbox=(0, 0, 0, 10)),
     ) * 60
-    assert capture.internal_uncovered_vector_area(drawings, native) == 0
+    assert capture.uncovered_vector_area(drawings, native) == 0
 
 
 @pytest.mark.parametrize(
@@ -188,7 +179,7 @@ def test_high_resolution_routing_requires_many_compact_strokes(
     expected: bool,
 ) -> None:
     drawings = (
-        (internal_stroke(0, size=2 if compact else 10),) * strokes
+        (stroke(0, size=2 if compact else 10),) * strokes
         + (CapturedDrawing(0, None, None, kind="fill"),) * fills
         + (CapturedDrawing(0, None, None, kind="scope-begin"),)
     )
@@ -197,8 +188,8 @@ def test_high_resolution_routing_requires_many_compact_strokes(
         program=PageProgram(CapturedProgram(drawings=drawings)),
         evidence=replace(ocr_capture.evidence, vector_complexity=100000),
     )
-    assert capture.internal_requires_high_resolution_vector_ocr(page) is expected
-    assert not capture.internal_requires_high_resolution_vector_ocr(
+    assert capture.requires_high_resolution_vector_ocr(page) is expected
+    assert not capture.requires_high_resolution_vector_ocr(
         replace(page, evidence=replace(page.evidence, image_count=1))
     )
 
@@ -235,7 +226,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
         glyphs=GlyphEvidence(glyph_count=1000, authoritative_glyphs=1000),
         all_text_quality=TextQualityStats(token_count=100, digit_token_ratio=0.18),
     )
-    assert capture.internal_hidden_text_needs_verification(evidence)
+    assert capture.hidden_text_needs_verification(evidence)
     if section == "page":
         changed = replace(evidence, **{field: value})
     elif section == "glyphs":
@@ -244,7 +235,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
         changed = replace(
             evidence, all_text_quality=replace(evidence.all_text_quality, **{field: value})
         )
-    assert not capture.internal_hidden_text_needs_verification(changed)
+    assert not capture.hidden_text_needs_verification(changed)
 
 
 def test_template_text_promotion_preserves_program_drawings_and_updates_evidence(
@@ -254,10 +245,8 @@ def test_template_text_promotion_preserves_program_drawings_and_updates_evidence
     from core_pdf_ocr.impl.extract.ocr.newstroke import NewstrokeDecode
 
     run = TextRun("R123", 10, 20, 30, 25, 10, 25, 5, 2, 0, 0, 0)
-    original = replace(
-        ocr_capture, program=PageProgram(CapturedProgram(drawings=(internal_stroke(0),)))
-    )
-    result = capture.internal_capture_with_newstroke_text(
+    original = replace(ocr_capture, program=PageProgram(CapturedProgram(drawings=(stroke(0),))))
+    result = capture.capture_with_newstroke_text(
         original, NewstrokeDecode(runs=(run,), candidate_segments=10000, matched_segments=9900)
     )
     assert result.observations.text == ("R123",)
@@ -279,11 +268,9 @@ def test_promoted_hidden_text_prefers_normalized_observation_references(
     raw = TextRun("old", 10, 20, 30, 25, 10, 25, 5, 2, 0, 0, 0, visible=False)
     normalized = replace(raw, text="new")
     original = replace(ocr_capture, program=PageProgram(CapturedProgram(runs=(raw,))))
-    assert capture.internal_promoted_hidden_observations(original).text == ("old",)
-    normalized_batch = capture.internal_observations_from_runs((normalized,))
-    result = capture.internal_promoted_hidden_observations(
-        replace(original, observations=normalized_batch)
-    )
+    assert capture.promoted_hidden_observations(original).text == ("old",)
+    normalized_batch = capture.observations_from_runs((normalized,))
+    result = capture.promoted_hidden_observations(replace(original, observations=normalized_batch))
     assert result.text == ("new",)
     assert result.bbox.tolist() == [[10, 20, 30, 25]]
     assert result.visible.tolist() == [True]

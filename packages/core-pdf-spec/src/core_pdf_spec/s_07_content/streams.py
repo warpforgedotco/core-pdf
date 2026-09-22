@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 StreamKey = tuple[str, int, int]
@@ -96,19 +96,19 @@ class StreamState:
         initial_text_knockout: bool = True,
         in_text_object: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "graphics_state", graphics_state)
-        internal_frozen_setattr(self, "resources", resources)
-        internal_frozen_setattr(self, "text_matrix", text_matrix)
-        internal_frozen_setattr(self, "line_matrix", line_matrix)
-        internal_frozen_setattr(self, "graphics_stack_floor", graphics_stack_floor)
-        internal_frozen_setattr(self, "graphics_stack_len", graphics_stack_len)
-        internal_frozen_setattr(self, "marked_content_stack_len", marked_content_stack_len)
-        internal_frozen_setattr(self, "xobject_depth", xobject_depth)
-        internal_frozen_setattr(self, "compatibility_depth", compatibility_depth)
-        internal_frozen_setattr(self, "pending_clip_rule", pending_clip_rule)
-        internal_frozen_setattr(self, "initial_alpha_is_shape", initial_alpha_is_shape)
-        internal_frozen_setattr(self, "initial_text_knockout", initial_text_knockout)
-        internal_frozen_setattr(self, "in_text_object", in_text_object)
+        frozen_setattr(self, "graphics_state", graphics_state)
+        frozen_setattr(self, "resources", resources)
+        frozen_setattr(self, "text_matrix", text_matrix)
+        frozen_setattr(self, "line_matrix", line_matrix)
+        frozen_setattr(self, "graphics_stack_floor", graphics_stack_floor)
+        frozen_setattr(self, "graphics_stack_len", graphics_stack_len)
+        frozen_setattr(self, "marked_content_stack_len", marked_content_stack_len)
+        frozen_setattr(self, "xobject_depth", xobject_depth)
+        frozen_setattr(self, "compatibility_depth", compatibility_depth)
+        frozen_setattr(self, "pending_clip_rule", pending_clip_rule)
+        frozen_setattr(self, "initial_alpha_is_shape", initial_alpha_is_shape)
+        frozen_setattr(self, "initial_text_knockout", initial_text_knockout)
+        frozen_setattr(self, "in_text_object", in_text_object)
 
     def __repr__(self) -> str:
         return (
@@ -180,7 +180,7 @@ class StreamState:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         graphics_state = changes.pop("graphics_state", self.graphics_state)
@@ -434,7 +434,7 @@ class ContentStreamExecutor:
         state.op_q((), frame.depth)
         state.graphics_stack_floor = len(state.stack)
         state.compatibility_depth = 0
-        state.internal_pending_clip_rule = None
+        state.pending_clip_rule_value = None
         state.in_text_object = False
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key

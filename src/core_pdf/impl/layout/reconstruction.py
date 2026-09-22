@@ -260,7 +260,7 @@ def rotated_table_run_gap(previous: TextRun, current: TextRun) -> float:
     return current.y0 - previous.y1
 
 
-def internal_is_short_digit_run(
+def is_short_digit_run(
     run: TextRun,
     *,
     max_length: int,
@@ -293,7 +293,7 @@ class GlyphLineBuilder:
         "next_non_space_x0s",
         "estimated_char_width",
         "column_gap_threshold",
-        "internal_text_runs_by_x0",
+        "text_runs_sorted_by_x0",
     )
 
     def __init__(
@@ -308,7 +308,7 @@ class GlyphLineBuilder:
         suppress_tiny_page_footer: bool = False,
     ) -> None:
         self.runs = runs
-        self.internal_text_runs_by_x0: list[TextRun] | None = None
+        self.text_runs_sorted_by_x0: list[TextRun] | None = None
         self.page_label_indexes = rules.trailing_tiny_page_label_run_indexes(runs)
         self.is_table_like_line = is_table_like_line
         self.is_all_caps_line = is_all_caps_line
@@ -337,7 +337,7 @@ class GlyphLineBuilder:
         )
         self.column_gap_threshold = rules.column_gap_threshold_for_runs(runs)
         if self.has_explicit_spaces:
-            self.internal_prepare_explicit_space_context()
+            self.prepare_explicit_space_context()
 
     def build(self) -> LayoutLineText:
         parts: list[str] = []
@@ -440,7 +440,7 @@ class GlyphLineBuilder:
             ),
         )
 
-    def internal_prepare_explicit_space_context(self) -> None:
+    def prepare_explicit_space_context(self) -> None:
         runs = self.runs
         self.next_non_space_texts = [""] * len(runs)
         self.next_non_space_x0s = [0.0] * len(runs)
@@ -482,7 +482,7 @@ class GlyphLineBuilder:
         stripped = run.stripped_text
         if stripped != "TM" or run.rotation_angle != 0 or run.baseline is None:
             return False
-        return self.internal_is_shifted_script_run(
+        return self.is_shifted_script_run(
             run,
             self.previous_non_space_run(index),
             self.next_non_space_run(index),
@@ -491,9 +491,9 @@ class GlyphLineBuilder:
         )
 
     def is_superscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
-        if not internal_is_short_digit_run(run, max_length=4):
+        if not is_short_digit_run(run, max_length=4):
             return False
-        return self.internal_is_shifted_script_run(
+        return self.is_shifted_script_run(
             run,
             self.previous_non_space_run(index),
             self.next_non_space_run(index),
@@ -502,12 +502,12 @@ class GlyphLineBuilder:
         )
 
     def is_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
-        if not internal_is_short_digit_run(run, max_length=3):
+        if not is_short_digit_run(run, max_length=3):
             return False
         previous = self.previous_non_space_run(index)
         if previous is None or not rules.chemical_subscript_prefix_text(previous.stripped_text):
             return False
-        return self.internal_is_shifted_script_run(
+        return self.is_shifted_script_run(
             run,
             previous,
             self.next_non_space_run(index),
@@ -520,7 +520,7 @@ class GlyphLineBuilder:
             attach_previous_only=True,
         )
 
-    def internal_is_shifted_script_run(
+    def is_shifted_script_run(
         self,
         run: TextRun,
         previous: TextRun | None,
@@ -579,7 +579,7 @@ class GlyphLineBuilder:
 
     def is_formula_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
         run_baseline = run.baseline
-        if not internal_is_short_digit_run(run, max_length=3) or run_baseline is None:
+        if not is_short_digit_run(run, max_length=3) or run_baseline is None:
             return False
         previous = self.previous_non_space_run(index)
         if previous is None or not previous.stripped_text[-1:].isalpha():
@@ -597,17 +597,17 @@ class GlyphLineBuilder:
         return run.x0 - previous.x1 <= attach_gap
 
     def text_runs_by_x0(self) -> list[TextRun]:
-        ordered = self.internal_text_runs_by_x0
+        ordered = self.text_runs_sorted_by_x0
         if ordered is None:
             ordered = sorted(
                 (candidate for candidate in self.runs if candidate.has_text),
                 key=lambda candidate: candidate.x0,
             )
-            self.internal_text_runs_by_x0 = ordered
+            self.text_runs_sorted_by_x0 = ordered
         return ordered
 
     def is_unit_exponent_run(self, run: TextRun) -> bool:
-        if not internal_is_short_digit_run(run, max_length=2, require_baseline=False):
+        if not is_short_digit_run(run, max_length=2, require_baseline=False):
             return False
         ordered = self.text_runs_by_x0()
         following = next(
@@ -760,8 +760,8 @@ class GlyphLineBuilder:
         ):
             return ""
 
-        prev_x0, internal_prev_y0, prev_x1, internal_prev_y1 = previous.advance_bbox
-        x0, y0, internal_x1, y1 = atom.advance_bbox
+        prev_x0, prev_y0, prev_x1, prev_y1 = previous.advance_bbox
+        x0, y0, x1, y1 = atom.advance_bbox
         height = y1 - y0
         x_gap = x0 - prev_x1
         spacing_gap = x_gap

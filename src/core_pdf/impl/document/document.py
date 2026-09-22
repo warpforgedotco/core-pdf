@@ -45,7 +45,7 @@ from core_pdf.impl.exceptions import (
     PdfUnsupportedError,
 )
 from core_pdf.impl.extract.selection import extract_document
-from core_pdf.impl.fonts.fallback import internal_RasterFontRepository
+from core_pdf.impl.fonts.fallback import RasterFontRepository
 from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.output.model import Document as StructuredDocument
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -60,7 +60,7 @@ from core_pdf.impl.types import (
     PdfSource,
     SeekableBinaryReader,
 )
-from core_pdf_spec.s_07_document.page import PageNode as internal_PageNode
+from core_pdf_spec.s_07_document.page import PageNode as PageNode
 from core_pdf_spec.s_07_document.page import iter_page_nodes
 from core_pdf_spec.s_07_security.document import initialize_document_security
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
@@ -79,12 +79,12 @@ from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticConte
 if TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import (
         RasterFontProviderLike,
-        internal_RasterFontRepository,
+        RasterFontRepository,
     )
 
 
-internal_PageT = TypeVar("internal_PageT", bound=PdfPage, default=PdfPage)
-internal_LookupPageT = TypeVar("internal_LookupPageT", bound=PdfPage)
+PageT = TypeVar("PageT", bound=PdfPage, default=PdfPage)
+LookupPageT = TypeVar("LookupPageT", bound=PdfPage)
 
 
 class DocumentAdapter(Protocol):
@@ -100,47 +100,47 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
 
     @property
     def cancelled(self) -> bool:
-        return self.document.internal_operation_cancelled.is_set()
+        return self.document.operation_cancelled.is_set()
 
     def release(self) -> None:
         if self.released:
             return
         self.released = True
-        self.document.internal_release_operation()
+        self.document.release_operation()
 
-    def __exit__(self, *internal_args: object) -> None:
+    def __exit__(self, *args: object) -> None:
         self.release()
 
 
-class internal_PageLookup[internal_LookupPageT: PdfPage]:
+class PageLookup[LookupPageT: PdfPage]:
     __slots__ = (
         "document",
-        "internal_nodes",
-        "internal_indexes",
-        "internal_pages",
-        "internal_names",
+        "iter_nodes",
+        "indexes",
+        "_pages",
+        "names",
     )
 
-    def __init__(self, document: PdfDocument[internal_LookupPageT]) -> None:
+    def __init__(self, document: PdfDocument[LookupPageT]) -> None:
         self.document = document
-        self.internal_nodes: tuple[internal_PageNode, ...] | None = None
-        self.internal_indexes: dict[int, int] = {}
-        self.internal_pages: tuple[internal_LookupPageT, ...] | None = None
-        self.internal_names: dict[str, RawNamedDestination] | None = None
+        self.iter_nodes: tuple[PageNode, ...] | None = None
+        self.indexes: dict[int, int] = {}
+        self._pages: tuple[LookupPageT, ...] | None = None
+        self.names: dict[str, RawNamedDestination] | None = None
 
     @property
-    def nodes(self) -> tuple[internal_PageNode, ...]:
-        if self.internal_nodes is None:
-            self.internal_nodes = tuple(self.document.internal_iter_page_nodes())
-            for index, node in enumerate(self.internal_nodes):
-                self.internal_indexes.setdefault(id(node.dictionary), index)
-        return self.internal_nodes
+    def nodes(self) -> tuple[PageNode, ...]:
+        if self.iter_nodes is None:
+            self.iter_nodes = tuple(self.document.iter_recovered_page_nodes())
+            for index, node in enumerate(self.iter_nodes):
+                self.indexes.setdefault(id(node.dictionary), index)
+        return self.iter_nodes
 
     @property
-    def pages(self) -> tuple[internal_LookupPageT, ...]:
-        if self.internal_pages is None:
-            self.internal_pages = self.document.internal_build_pages(self.nodes)
-        return self.internal_pages
+    def pages(self) -> tuple[LookupPageT, ...]:
+        if self._pages is None:
+            self._pages = self.document.build_pages(self.nodes)
+        return self._pages
 
     def page_index_for(self, page_obj: object) -> int | None:
         from core_pdf.impl.document.page import PdfPage
@@ -150,7 +150,7 @@ class internal_PageLookup[internal_LookupPageT: PdfPage]:
         if not isinstance(page_obj, dict):
             return None
         nodes = self.nodes
-        index = self.internal_indexes.get(id(page_obj))
+        index = self.indexes.get(id(page_obj))
         if index is not None:
             return index
         page_struct_parents = page_obj.get("StructParents")
@@ -168,20 +168,20 @@ class internal_PageLookup[internal_LookupPageT: PdfPage]:
         return None
 
     def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
-        if self.internal_names is None:
-            self.internal_names = self.document.named_destinations(internal_lookup=self)
-        return self.internal_names.get(name)
+        if self.names is None:
+            self.names = self.document.named_destinations(page_lookup=self)
+        return self.names.get(name)
 
 
-def internal_unresolved_destination(name: str) -> RawNamedDestination:
+def unresolved_destination(name: str) -> RawNamedDestination:
     return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
 
 
-def internal_legacy_name_context(context: SemanticContext | None) -> bool:
+def legacy_name_context(context: SemanticContext | None) -> bool:
     return context is not None and context.version in {PdfVersion(1, 0), PdfVersion(1, 1)}
 
 
-def internal_check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
+def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
     pending: list[tuple[dict, bool]] = [(trailer, True)]
     seen: set[int] = set()
     while pending:
@@ -216,7 +216,7 @@ def internal_check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) 
 
 class PdfDocument(
     DocumentXRefMixin,
-    Generic[internal_PageT],
+    Generic[PageT],
 ):
     page_class: type | None = None
 
@@ -233,14 +233,14 @@ class PdfDocument(
         "recovery_scan_all_revisions",
         "raster_font_provider",
         "page_tree_was_recovered",
-        "internal_closed",
-        "internal_closing",
-        "internal_operation_lock",
-        "internal_operation_cancelled",
-        "internal_active_operations",
-        "internal_standards",
-        "internal_standards_complete",
-        "internal_font_decoders",
+        "_closed",
+        "closing",
+        "operation_lock",
+        "operation_cancelled",
+        "active_operations",
+        "_standards",
+        "standards_complete",
+        "font_decoders",
     )
 
     source: PdfSource
@@ -253,16 +253,16 @@ class PdfDocument(
     xref_was_recovered: bool
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
-    raster_font_provider: RasterFontProviderLike | internal_RasterFontRepository | None
+    raster_font_provider: RasterFontProviderLike | RasterFontRepository | None
     page_tree_was_recovered: bool
-    internal_closed: bool
-    internal_closing: bool
-    internal_operation_lock: threading.RLock
-    internal_operation_cancelled: threading.Event
-    internal_active_operations: int
-    internal_standards: DocumentStandards
-    internal_standards_complete: bool
-    internal_font_decoders: dict[object, object]
+    _closed: bool
+    closing: bool
+    operation_lock: threading.RLock
+    operation_cancelled: threading.Event
+    active_operations: int
+    _standards: DocumentStandards
+    standards_complete: bool
+    font_decoders: dict[object, object]
 
     def __init__(
         self,
@@ -272,11 +272,11 @@ class PdfDocument(
         recovery_scan_all_revisions: bool = True,
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
-        self.internal_closed = False
-        self.internal_closing = False
-        self.internal_operation_lock = threading.RLock()
-        self.internal_operation_cancelled = threading.Event()
-        self.internal_active_operations = 0
+        self._closed = False
+        self.closing = False
+        self.operation_lock = threading.RLock()
+        self.operation_cancelled = threading.Event()
+        self.active_operations = 0
         self.source = source
         self.file_handle = None
         self.raw_data = b""
@@ -286,25 +286,25 @@ class PdfDocument(
         self.xref_was_recovered = False
         self.xref_recovery_reason = None
         self.recovery_scan_all_revisions = recovery_scan_all_revisions
-        self.raster_font_provider = internal_RasterFontRepository(raster_font_provider)
+        self.raster_font_provider = RasterFontRepository(raster_font_provider)
         self.page_tree_was_recovered = False
-        self.internal_standards = DocumentStandards()
-        self.internal_standards_complete = False
-        self.internal_font_decoders = {}
+        self._standards = DocumentStandards()
+        self.standards_complete = False
+        self.font_decoders = {}
         try:
             self.raw_data = self.load_data(source)
-            self.internal_standards = discover_header_standards(self.raw_data)
-            header = self.internal_standards
-            context = header.context if internal_legacy_name_context(header.context) else None
+            self._standards = discover_header_standards(self.raw_data)
+            header = self._standards
+            context = header.context if legacy_name_context(header.context) else None
             self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=context)
             self.scan_xref()
             self.resolver.xref = self.xref
-            if internal_legacy_name_context(context):
+            if legacy_name_context(context):
                 selected = bootstrap_security_context(
                     header, self.raw_data, self.xref, self.trailer_dict
                 )
-                if not internal_legacy_name_context(selected):
-                    internal_check_security_aliases(self.trailer_dict, self.resolver)
+                if not legacy_name_context(selected):
+                    check_security_aliases(self.trailer_dict, self.resolver)
                     self.resolver.semantic_context = selected
                     self.scan_xref()
                     self.resolver.xref = self.xref
@@ -312,19 +312,19 @@ class PdfDocument(
             for attempt in range(2):
                 self.init_security(password)
                 self.resolver.decipher = self.decipher
-                self.internal_standards = discover_document_standards(
+                self._standards = discover_document_standards(
                     header, self.resolver, self.trailer_dict
                 )
-                self.internal_standards = preserve_historical_version(
-                    self.internal_standards,
+                self._standards = preserve_historical_version(
+                    self._standards,
                     self.raw_data,
                     self.trailer_dict,
                     self.decipher,
                     recovered=self.xref_was_recovered,
                     trailer_context=self.resolver.semantic_context,
                 )
-                selected = self.internal_standards.context
-                if internal_legacy_name_context(selected) == internal_legacy_name_context(
+                selected = self._standards.context
+                if legacy_name_context(selected) == legacy_name_context(
                     self.resolver.semantic_context
                 ):
                     encrypt_ref = self.trailer_dict.get("Encrypt")
@@ -341,8 +341,8 @@ class PdfDocument(
                     break
                 if attempt:
                     raise PdfUnsupportedError("Unstable security dictionary name semantics")
-                if not internal_legacy_name_context(selected):
-                    internal_check_security_aliases(self.trailer_dict, self.resolver)
+                if not legacy_name_context(selected):
+                    check_security_aliases(self.trailer_dict, self.resolver)
                 self.resolver.close()
                 self.decipher = None
                 self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
@@ -353,7 +353,7 @@ class PdfDocument(
             raise
 
     @property
-    def internal_font_semantic_context(self) -> SemanticContext | None:
+    def font_semantic_context(self) -> SemanticContext | None:
         return self.resolver.semantic_context
 
     @classmethod
@@ -387,45 +387,45 @@ class PdfDocument(
 
     @property
     def closed(self) -> bool:
-        return self.internal_closing or self.internal_closed
+        return self.closing or self._closed
 
     def acquire_operation(self) -> DocumentOperation:
-        with self.internal_operation_lock:
+        with self.operation_lock:
             if self.closed:
                 raise PdfDocumentClosedError("PDF document is closed")
-            self.internal_active_operations += 1
+            self.active_operations += 1
         return DocumentOperation(self)
 
-    def internal_release_operation(self) -> None:
+    def release_operation(self) -> None:
         should_close = False
-        with self.internal_operation_lock:
-            self.internal_active_operations = max(0, self.internal_active_operations - 1)
-            should_close = self.internal_closing and self.internal_active_operations == 0
+        with self.operation_lock:
+            self.active_operations = max(0, self.active_operations - 1)
+            should_close = self.closing and self.active_operations == 0
         if should_close:
-            self.internal_close_resources()
+            self.close_resources()
 
     def close(self) -> None:
-        with self.internal_operation_lock:
-            if self.internal_closing or self.internal_closed:
+        with self.operation_lock:
+            if self.closing or self._closed:
                 return
-            self.internal_closing = True
-            self.internal_operation_cancelled.set()
-            if self.internal_active_operations:
+            self.closing = True
+            self.operation_cancelled.set()
+            if self.active_operations:
                 return
-        self.internal_close_resources()
+        self.close_resources()
 
-    def internal_close_resources(self) -> None:
-        if self.internal_closed:
+    def close_resources(self) -> None:
+        if self._closed:
             return
-        self.internal_closed = True
-        self.internal_font_decoders.clear()
+        self._closed = True
+        self.font_decoders.clear()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
             resolver.close()
 
         raster_fonts = self.raster_font_provider
-        if isinstance(raster_fonts, internal_RasterFontRepository):
+        if isinstance(raster_fonts, RasterFontRepository):
             raster_fonts.close()
 
         raw_data = self.raw_data
@@ -460,14 +460,14 @@ class PdfDocument(
 
     def get_standards(self) -> DocumentStandards:
         with self.resolver.lock:
-            if not self.internal_standards_complete:
-                self.internal_standards = discover_profile_claims(
-                    self.internal_standards, self.resolver, self.trailer_dict
+            if not self.standards_complete:
+                self._standards = discover_profile_claims(
+                    self._standards, self.resolver, self.trailer_dict
                 )
-                self.internal_standards_complete = True
-            return self.internal_standards
+                self.standards_complete = True
+            return self._standards
 
-    def internal_catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
+    def catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
         value = self.resolver.resolve(self.catalog().get(key))
         if value is None:
             return None
@@ -479,12 +479,8 @@ class PdfDocument(
 
     @property
     def structure(self) -> StructureTree | None:
-        root = self.internal_catalog_dict("StructTreeRoot")
-        return (
-            None
-            if root is None
-            else StructureTree(self, root, internal_lookup=internal_PageLookup(self))
-        )
+        root = self.catalog_dict("StructTreeRoot")
+        return None if root is None else StructureTree(self, root, page_lookup=PageLookup(self))
 
     @property
     def recovery_enabled(self) -> bool:
@@ -570,7 +566,7 @@ class PdfDocument(
             handler_factory=create_recovered_security_handler,
         )
 
-    def internal_discover_page_nodes(self) -> Iterator[internal_PageNode]:
+    def discover_page_nodes(self) -> Iterator[PageNode]:
         candidates: list[tuple[int, int, int, PdfDict]] = []
         pages_nodes: list[tuple[int, int, int, PdfDict]] = []
         seen_objects: set[int] = set()
@@ -610,9 +606,9 @@ class PdfDocument(
             if signature in seen_signatures:
                 continue
             seen_signatures.add(signature)
-            yield internal_PageNode(
+            yield PageNode(
                 page_dict,
-                self.internal_recovered_page_values(page_dict, inherited_sources),
+                self.recovered_page_values(page_dict, inherited_sources),
             )
 
     def page_candidate_score(self, obj: PdfDict) -> int:
@@ -661,7 +657,7 @@ class PdfDocument(
             score += 5
         return score
 
-    def internal_recovered_page_values(
+    def recovered_page_values(
         self, page_dict: PdfDict, pages_nodes: list[PdfDict]
     ) -> InheritedValueMap:
         values = {
@@ -731,16 +727,16 @@ class PdfDocument(
         return value
 
     def iter_page_dicts(self) -> Iterator[PdfDict]:
-        for page_node in self.internal_iter_page_nodes():
+        for page_node in self.iter_recovered_page_nodes():
             yield page_node.dictionary
 
-    def internal_recovered_page_nodes(self) -> list[internal_PageNode]:
-        discovered = list(self.internal_discover_page_nodes())
+    def recovered_page_nodes(self) -> list[PageNode]:
+        discovered = list(self.discover_page_nodes())
         if discovered:
             self.page_tree_was_recovered = True
         return discovered
 
-    def internal_page_tree_root(self) -> PdfDict:
+    def page_tree_root(self) -> PdfDict:
         pages_ref = self.catalog().get("Pages")
         if pages_ref is None:
             raise ValueError("missing page tree root")
@@ -749,9 +745,9 @@ class PdfDocument(
             raise ValueError("invalid page tree root")
         return pages_node
 
-    def internal_iter_page_nodes(self) -> Iterator[internal_PageNode]:
+    def iter_recovered_page_nodes(self) -> Iterator[PageNode]:
         try:
-            pages_node = self.internal_page_tree_root()
+            pages_node = self.page_tree_root()
             page_dicts = list(
                 iter_page_nodes(
                     pages_node,
@@ -765,12 +761,12 @@ class PdfDocument(
             if page_dicts:
                 yield from page_dicts
                 return
-            discovered = self.internal_recovered_page_nodes()
+            discovered = self.recovered_page_nodes()
             if discovered:
                 yield from discovered
                 return
         except PdfParseError, ValueError:
-            discovered = self.internal_recovered_page_nodes()
+            discovered = self.recovered_page_nodes()
             if discovered:
                 yield from discovered
                 return
@@ -779,7 +775,7 @@ class PdfDocument(
     def page_count(self) -> int:
         if not self.page_tree_was_recovered:
             try:
-                count = self.resolver.resolve(self.internal_page_tree_root().get("Count"))
+                count = self.resolver.resolve(self.page_tree_root().get("Count"))
                 if type(count) is int and count >= 0:
                     return count
             except PdfParseError, ValueError:
@@ -803,7 +799,7 @@ class PdfDocument(
     def outlines(self) -> tuple[Any, ...]:
         return tuple(self.iter_outlines())
 
-    def internal_scoped_pending[RecordT](
+    def scoped_pending[RecordT](
         self,
         pending: Iterable[tuple[int, RecordT]],
     ) -> tuple[PageScoped[RecordT], ...]:
@@ -826,7 +822,7 @@ class PdfDocument(
     ) -> tuple[PageScoped[Any], ...]:
         selected = tuple(self.iter_selected_pages(pages))
         grouped = self.fields_by_page(tuple(page for _index, page in selected))
-        return self.internal_scoped_pending(
+        return self.scoped_pending(
             (page_index, record)
             for page_index, _page in selected
             for record in grouped.get(page_index, ())
@@ -841,12 +837,12 @@ class PdfDocument(
         with self.acquire_operation() as operation:
             selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
             context = ExtractionScope(cancelled=lambda: operation.cancelled)
-            result = self.internal_extract_document(context, selected_pages)
+            result = self.run_extract_document(context, selected_pages)
         for adapter in adapters:
             result = adapter.apply(result)
         return result
 
-    def internal_extract_document(
+    def run_extract_document(
         self, context: ExtractionScope, pages: Sequence[PdfPage]
     ) -> StructuredDocument:
         return extract_document(self, context, pages)
@@ -864,7 +860,7 @@ class PdfDocument(
         include_inline: bool = True,
         include_xobjects: bool = True,
     ) -> tuple[PageScoped[ImageRecord], ...]:
-        return self.internal_scoped_pending(
+        return self.scoped_pending(
             (page_index, record)
             for page_index, page in self.iter_selected_pages(pages)
             for record in page.extract_images(
@@ -874,18 +870,16 @@ class PdfDocument(
         )
 
     @property
-    def pages(self) -> tuple[internal_PageT, ...]:
-        return self.internal_build_pages(self.internal_iter_page_nodes())
+    def pages(self) -> tuple[PageT, ...]:
+        return self.build_pages(self.iter_recovered_page_nodes())
 
-    def internal_build_pages(
-        self, nodes: Iterable[internal_PageNode]
-    ) -> tuple[internal_PageT, ...]:
+    def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
         page_class = self.page_class
         if page_class is None:
             from core_pdf.impl.document.page import PdfPage
 
             page_class = PdfPage
-        factory = cast(Callable[..., internal_PageT], page_class)
+        factory = cast(Callable[..., PageT], page_class)
         return tuple(
             factory(
                 self,
@@ -948,11 +942,11 @@ class PdfDocument(
         return labels
 
     def page_index_for(self, page_obj: object) -> int | None:
-        return internal_PageLookup(self).page_index_for(page_obj)
+        return PageLookup(self).page_index_for(page_obj)
 
     def iter_selected_pages(
         self, pages: PageSelection | None = None
-    ) -> Iterator[tuple[int, internal_PageT]]:
+    ) -> Iterator[tuple[int, PageT]]:
         page_objects = self.pages
         for page_index in resolve_page_selection(pages, len(page_objects)):
             yield page_index, page_objects[page_index]
@@ -973,10 +967,10 @@ class PdfDocument(
         item: object,
         level: int,
         *,
-        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+        page_lookup: PageLookup[PageT] | None = None,
     ) -> list[RawOutlineItem]:
-        if internal_lookup is None:
-            internal_lookup = internal_PageLookup(self)
+        if page_lookup is None:
+            page_lookup = PageLookup(self)
         recover_outlines = self.recovery_enabled
         if level > 200:
             raise ValueError("invalid outline depth")
@@ -1014,7 +1008,7 @@ class PdfDocument(
                         title=title or "",
                         level=level,
                         dest=cast(PdfObject | str | None, dest),
-                        page_index=self.resolve_destination(dest, internal_lookup=internal_lookup),
+                        page_index=self.resolve_destination(dest, page_lookup=page_lookup),
                         count=self.extract_outline_count(cast(PdfDict, current)),
                     )
                 )
@@ -1029,7 +1023,7 @@ class PdfDocument(
                         current = current.get("Next")
                         continue
                     raise ValueError("invalid outline child")
-                result.extend(self.walk_outlines(first, level + 1, internal_lookup=internal_lookup))
+                result.extend(self.walk_outlines(first, level + 1, page_lookup=page_lookup))
             current = current.get("Next")
         return result
 
@@ -1051,11 +1045,11 @@ class PdfDocument(
         return self.validate_outline_count(current_count)
 
     def resolve_destination(
-        self, dest: object, *, internal_lookup: internal_PageLookup[internal_PageT] | None = None
+        self, dest: object, *, page_lookup: PageLookup[PageT] | None = None
     ) -> int | None:
         if dest is None:
             return None
-        normalized = self.normalize_destination_value(dest, internal_lookup=internal_lookup)
+        normalized = self.normalize_destination_value(dest, page_lookup=page_lookup)
         if (
             normalized.raw is None
             and normalized.page_index is None
@@ -1072,14 +1066,14 @@ class PdfDocument(
         self,
         resolved_list: PdfArray,
         *,
-        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+        page_lookup: PageLookup[PageT] | None = None,
     ) -> RawNamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
         page_obj = self.resolver.resolve(resolved_list[0])
         if page_obj is None:
             raise ValueError("invalid destination page reference")
-        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        lookup = PageLookup(self) if page_lookup is None else page_lookup
         page_index = lookup.page_index_for(page_obj)
         if page_index is None:
             raise ValueError("invalid destination page reference")
@@ -1099,18 +1093,16 @@ class PdfDocument(
         self,
         val: object,
         *,
-        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+        page_lookup: PageLookup[PageT] | None = None,
     ) -> RawNamedDestination:
-        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
-        return self.internal_normalize_destination_value(
-            val, lookup.resolve_named_destination, lookup
-        )
+        lookup = PageLookup(self) if page_lookup is None else page_lookup
+        return self.normalize_destination_entry(val, lookup.resolve_named_destination, lookup)
 
-    def internal_normalize_destination_value(
+    def normalize_destination_entry(
         self,
         val: object,
         resolve_name: Callable[[str], RawNamedDestination | None],
-        internal_lookup: internal_PageLookup[internal_PageT],
+        page_lookup: PageLookup[PageT],
     ) -> RawNamedDestination:
         seen: set[int] = set()
         resolved = self.resolver.resolve(val)
@@ -1129,7 +1121,7 @@ class PdfDocument(
             resolved_list = list(resolved_list)
         if isinstance(resolved_list, list) and resolved_list:
             return self.destination_from_list(
-                cast(PdfArray, resolved_list), internal_lookup=internal_lookup
+                cast(PdfArray, resolved_list), page_lookup=page_lookup
             )
         if isinstance(resolved_list, list):
             raise ValueError("invalid destination array")
@@ -1142,9 +1134,9 @@ class PdfDocument(
         raise ValueError("invalid destination")
 
     def named_destinations(
-        self, *, internal_lookup: internal_PageLookup[internal_PageT] | None = None
+        self, *, page_lookup: PageLookup[PageT] | None = None
     ) -> dict[str, RawNamedDestination]:
-        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        lookup = PageLookup(self) if page_lookup is None else page_lookup
         targets: dict[str, object] = {}
         dests = self.resolver.resolve(self.catalog().get("Dests"))
         if isinstance(dests, dict):
@@ -1174,14 +1166,14 @@ class PdfDocument(
             if cached is not None:
                 return cached
             if name in resolving:
-                return internal_unresolved_destination(name)
+                return unresolved_destination(name)
             resolving.add(name)
             try:
                 target = targets.get(name)
                 result = (
-                    internal_unresolved_destination(name)
+                    unresolved_destination(name)
                     if target is None
-                    else self.internal_normalize_destination_value(target, normalize_name, lookup)
+                    else self.normalize_destination_entry(target, normalize_name, lookup)
                 )
                 normalized[name] = result
                 return result
@@ -1192,12 +1184,12 @@ class PdfDocument(
             try:
                 normalize_name(name)
             except PdfParseError, ValueError:
-                normalized[name] = internal_unresolved_destination(name)
+                normalized[name] = unresolved_destination(name)
         return normalized
 
     @property
     def acroform(self) -> PdfDict | None:
-        return self.internal_catalog_dict("AcroForm", recoverable=True)
+        return self.catalog_dict("AcroForm", recoverable=True)
 
     def fields(self) -> list[RawFormField]:
         af = self.acroform
@@ -1222,7 +1214,7 @@ class PdfDocument(
 
     def fields_by_page(
         self,
-        pages: Sequence[internal_PageT] | None = None,
+        pages: Sequence[PageT] | None = None,
     ) -> dict[int, list[RawFormField]]:
         from core_pdf.impl.document.page import PdfPage
 
@@ -1277,7 +1269,7 @@ class PdfDocument(
     def discover_widget_field_records(self, existing: list[RawFormField]) -> list[RawFormField]:
         seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
         records: list[RawFormField] = []
-        for page_node in self.internal_iter_page_nodes():
+        for page_node in self.iter_recovered_page_nodes():
             raw_annots = self.resolver.resolve(page_node.inherited_values.get("Annots"))
             if raw_annots is None:
                 continue
@@ -1291,7 +1283,7 @@ class PdfDocument(
                 subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
                 if subtype != "Widget":
                     continue
-                root = self.internal_widget_field_root(cast(PdfDict, annot))
+                root = self.widget_field_root(cast(PdfDict, annot))
                 if id(root) in seen_widgets:
                     continue
                 seen_widgets.add(id(root))
@@ -1301,7 +1293,7 @@ class PdfDocument(
                 )
         return records
 
-    def internal_widget_field_root(self, annot: PdfDict) -> PdfDict:
+    def widget_field_root(self, annot: PdfDict) -> PdfDict:
         node = annot
         seen = {id(node)}
         for _ in range(50):

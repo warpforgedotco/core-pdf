@@ -22,7 +22,7 @@ def test_jpx_opacity_selector_distinguishes_ignored_straight_and_premultiplied(
         "ColorSpace": space,
         "SMaskInData": selector,
     }
-    result = images.internal_canonical_image_array(samples, dictionary)
+    result = images.canonical_image_array(samples, dictionary)
     assert result is not None
     array, count = result
     ordinary = round(value * 255 / maximum)
@@ -43,7 +43,7 @@ def test_jpx_opacity_selector_distinguishes_ignored_straight_and_premultiplied(
     ],
 )
 def test_inconsistent_jpx_component_layout_is_rejected(shape, space, selector):
-    result = images.internal_canonical_image_array(
+    result = images.canonical_image_array(
         DecodedImage(np.zeros(shape, dtype=np.uint8), "jpx"),
         {"Filter": "JPXDecode", "ColorSpace": space, "SMaskInData": selector},
     )
@@ -53,7 +53,7 @@ def test_inconsistent_jpx_component_layout_is_rejected(shape, space, selector):
 @pytest.mark.parametrize("selector", [-1, 3, None, "invalid"])
 def test_invalid_jpx_opacity_selector_uses_reader_default(selector):
     sample = DecodedImage(np.array([[[20, 40]]], dtype=np.uint8), "jpx")
-    result = images.internal_canonical_image_array(
+    result = images.canonical_image_array(
         sample, {"Filter": "JPXDecode", "ColorSpace": "DeviceGray", "SMaskInData": selector}
     )
     assert result is not None
@@ -70,7 +70,7 @@ def test_invalid_jpx_opacity_selector_uses_reader_default(selector):
 def test_native_image_precision_normalizes_endpoints(shape, space, dtype):
     maximum = np.iinfo(dtype).max
     sample = np.resize(np.array([0, maximum], dtype=dtype), shape)
-    result = images.internal_canonical_image_array(
+    result = images.canonical_image_array(
         DecodedImage(sample, "jpeg"), {"Width": 2, "Height": 1, "ColorSpace": space}
     )
     assert result is not None
@@ -91,7 +91,7 @@ def test_jpx_decode_obeys_document_version_and_explicit_color_space(version, exp
     if explicit_space:
         dictionary["ColorSpace"] = "DeviceGray"
     context = SemanticContext(PdfVersion.parse(version)) if version else None
-    result = images.internal_canonical_image_array(sample, dictionary, semantic_context=context)
+    result = images.canonical_image_array(sample, dictionary, semantic_context=context)
     assert result is not None
     array, channels = result
     assert channels == 1

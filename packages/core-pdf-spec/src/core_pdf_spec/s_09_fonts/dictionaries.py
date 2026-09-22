@@ -5,7 +5,7 @@ from typing import Any, ClassVar, NoReturn, Self, cast
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -64,12 +64,12 @@ class FontProgramInputs:
         font_file2: PdfStream | None,
         font_file3: PdfStream | None,
     ) -> None:
-        internal_frozen_setattr(self, "subtype", subtype)
-        internal_frozen_setattr(self, "original_subtype", original_subtype)
-        internal_frozen_setattr(self, "descendant", descendant)
-        internal_frozen_setattr(self, "font_file", font_file)
-        internal_frozen_setattr(self, "font_file2", font_file2)
-        internal_frozen_setattr(self, "font_file3", font_file3)
+        frozen_setattr(self, "subtype", subtype)
+        frozen_setattr(self, "original_subtype", original_subtype)
+        frozen_setattr(self, "descendant", descendant)
+        frozen_setattr(self, "font_file", font_file)
+        frozen_setattr(self, "font_file2", font_file2)
+        frozen_setattr(self, "font_file3", font_file3)
 
     def __repr__(self) -> str:
         return (
@@ -120,7 +120,7 @@ class FontProgramInputs:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         subtype = changes.pop("subtype", self.subtype)
@@ -141,7 +141,7 @@ class FontProgramInputs:
         )
 
 
-def internal_font_descriptor(value: object) -> dict[str, Any] | None:
+def font_descriptor(value: object) -> dict[str, Any] | None:
     if value is None:
         return None
     if not isinstance(value, dict):
@@ -149,7 +149,7 @@ def internal_font_descriptor(value: object) -> dict[str, Any] | None:
     return cast(dict[str, Any], value)
 
 
-def internal_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:
+def descriptor_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:
     if descriptor is None:
         return None
     value = descriptor.get(key)
@@ -161,10 +161,10 @@ def internal_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream
 def prepare_font_program_inputs(font: dict[str, Any]) -> FontProgramInputs:
     descendant = get_descendant(font)
     font_dict = descendant if descendant is not None else font
-    original_descriptor = internal_font_descriptor(font.get("FontDescriptor"))
-    font_file = internal_font_file(original_descriptor, "FontFile")
+    original_descriptor = font_descriptor(font.get("FontDescriptor"))
+    font_file = descriptor_font_file(original_descriptor, "FontFile")
     descriptor = (
-        internal_font_descriptor(font_dict.get("FontDescriptor"))
+        font_descriptor(font_dict.get("FontDescriptor"))
         if font_dict is not font
         else original_descriptor
     )
@@ -173,8 +173,8 @@ def prepare_font_program_inputs(font: dict[str, Any]) -> FontProgramInputs:
         original_subtype=decoded_name(font.get("Subtype")),
         descendant=descendant,
         font_file=font_file,
-        font_file2=internal_font_file(descriptor, "FontFile2"),
-        font_file3=internal_font_file(descriptor, "FontFile3"),
+        font_file2=descriptor_font_file(descriptor, "FontFile2"),
+        font_file3=descriptor_font_file(descriptor, "FontFile3"),
     )
 
 

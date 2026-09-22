@@ -47,16 +47,16 @@ def unicode_for_glyph_name(glyph_name: str) -> str | None:
     return normalize_ligature_text(mapped)
 
 
-def internal_resolve_base_encoding(table: tuple[str, ...]) -> tuple[str, ...]:
+def resolve_base_encoding(table: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(
         normalize_ligature_text(text) if text else (chr(code) if code < 32 else "")
         for code, text in enumerate(table)
     )
 
 
-STANDARD_ENCODING_TABLE = internal_resolve_base_encoding(STANDARD_ENCODING)
-WIN_ANSI_ENCODING_TABLE = internal_resolve_base_encoding(WIN_ANSI_ENCODING)
-MAC_ROMAN_ENCODING_TABLE = internal_resolve_base_encoding(MAC_ROMAN_ENCODING)
+STANDARD_ENCODING_TABLE = resolve_base_encoding(STANDARD_ENCODING)
+WIN_ANSI_ENCODING_TABLE = resolve_base_encoding(WIN_ANSI_ENCODING)
+MAC_ROMAN_ENCODING_TABLE = resolve_base_encoding(MAC_ROMAN_ENCODING)
 
 
 def build_decode_table(
@@ -65,9 +65,9 @@ def build_decode_table(
     *,
     context: SemanticContext | None = None,
 ) -> tuple[str, ...]:
-    base = ENCODING_FALLBACKS.get(key, internal_PDFDOC_FALLBACK_TABLE)
+    base = ENCODING_FALLBACKS.get(key, PDFDOC_FALLBACK_TABLE)
     if context is not None and key in BASE_ENCODING_GLYPH_NAMES:
-        names = get_base_encoding_glyph_names(key, context=internal_encoding_context(context))
+        names = get_base_encoding_glyph_names(key, context=encoding_context(context))
         modern_names = BASE_ENCODING_GLYPH_NAMES[key]
         if names is not modern_names:
             base = tuple(
@@ -117,7 +117,7 @@ def parse_differences(
     return differences
 
 
-internal_PDFDOC_FALLBACK_TABLE: tuple[str, ...] = tuple(
+PDFDOC_FALLBACK_TABLE: tuple[str, ...] = tuple(
     normalize_ligature_text(text) for text in PDFDOC_ENCODING_TABLE
 )
 
@@ -146,11 +146,11 @@ def build_simple_encoding_glyph_names(
         },
         {int(code): name or ".notdef" for code, name in differences.items() if 0 <= code < 256},
         authoritative_builtin=authoritative_builtin,
-        context=internal_encoding_context(context),
+        context=encoding_context(context),
     )
 
 
-def internal_encoding_context(context: SemanticContext | None) -> SemanticContext | None:
+def encoding_context(context: SemanticContext | None) -> SemanticContext | None:
     if context is not None and (context.version is None or not context.version.recognized):
         return None
     return context

@@ -24,7 +24,7 @@ from ._layout import (
     LTTextLineVertical,
 )
 
-for internal_export in (
+for export in (
     LAParams,
     LTAnno,
     LTChar,
@@ -45,7 +45,7 @@ for internal_export in (
     extract_text_to_fp,
     LTComponent,
 ):
-    internal_export.__module__ = __name__
+    export.__module__ = __name__
 
 
 __all__ = (

@@ -18,7 +18,7 @@ from core_adobe_fonts.cmap.tokenizer import (
 )
 from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
 
-internal_LEGACY_EOL_PAIR = re.compile(rb"\r\n|\n\r")
+LEGACY_EOL_PAIR = re.compile(rb"\r\n|\n\r")
 
 
 def decode_cmap_hex_token(token: bytes) -> bytes:
@@ -32,7 +32,7 @@ def decode_cmap_token(token: bytes) -> bytes:
         return decode_cmap_hex_token(token)
     if not token.startswith(b"("):
         return decode_spec_cmap_token(token)
-    raw = memoryview(internal_LEGACY_EOL_PAIR.sub(b"\r\n", token))
+    raw = memoryview(LEGACY_EOL_PAIR.sub(b"\r\n", token))
     if len(raw) < 2:
         raise ValueError("invalid PDF literal string")
     value, _ = read_literal_string(raw, 0, len(raw))

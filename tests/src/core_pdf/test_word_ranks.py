@@ -8,7 +8,7 @@ import pytest
 from core_pdf.impl.layout import text_rules as rules
 
 
-def internal_index_bytes(entries: dict[str, int]) -> bytes:
+def index_bytes(entries: dict[str, int]) -> bytes:
     records = bytearray()
     offsets = []
     for word, rank in sorted(entries.items()):
@@ -23,7 +23,7 @@ def internal_index_bytes(entries: dict[str, int]) -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def internal_clear_rank_caches():
+def clear_rank_caches():
     rules.english_word_ranks.cache_clear()
     rules.word_rank.cache_clear()
     yield
@@ -34,7 +34,7 @@ def internal_clear_rank_caches():
 @pytest.mark.parametrize("on_disk", [False, True])
 def test_index_mapping_lookup_iteration_and_missing_keys(tmp_path, on_disk: bool) -> None:
     entries = {"apple": 7, "pear": 2, "éclair": 11}
-    data = internal_index_bytes(entries)
+    data = index_bytes(entries)
     path = tmp_path / "ranks.bin"
     path.write_bytes(data)
     index = rules.WordRankIndex(str(path) if on_disk else data)
@@ -50,7 +50,7 @@ def test_index_mapping_lookup_iteration_and_missing_keys(tmp_path, on_disk: bool
 
 @pytest.mark.parametrize("on_disk", [False, True])
 def test_empty_index_is_a_valid_empty_mapping(tmp_path, on_disk: bool) -> None:
-    data = internal_index_bytes({})
+    data = index_bytes({})
     path = tmp_path / "empty.bin"
     path.write_bytes(data)
     index = rules.WordRankIndex(str(path) if on_disk else data)
@@ -78,7 +78,7 @@ def test_malformed_indexes_fail_at_open(tmp_path, on_disk: bool, data: bytes, me
 
 
 def test_file_without_mappable_descriptor_uses_bytes(monkeypatch) -> None:
-    data = internal_index_bytes({"hello": 3})
+    data = index_bytes({"hello": 3})
     monkeypatch.setattr(rules, "open", lambda *args: io.BytesIO(data), raising=False)
     assert dict(rules.WordRankIndex("unmappable")) == {"hello": 3}
 
@@ -86,7 +86,7 @@ def test_file_without_mappable_descriptor_uses_bytes(monkeypatch) -> None:
 @pytest.mark.parametrize("binary", [False, True])
 def test_word_rank_normalizes_case_and_rejects_nonwords(monkeypatch, binary: bool) -> None:
     entries = {"hello": 3, "strasse": 5}
-    ranks = rules.WordRankIndex(internal_index_bytes(entries)) if binary else entries
+    ranks = rules.WordRankIndex(index_bytes(entries)) if binary else entries
     monkeypatch.setattr(rules, "english_word_ranks", lambda: ranks)
     assert rules.word_rank("HELLO") == 3
     assert rules.word_rank("Straße") == 5
@@ -122,7 +122,7 @@ def test_gzip_resource_can_be_materialized_when_direct_read_fails(tmp_path, monk
         rules, "files", lambda package: SimpleNamespace(joinpath=lambda _: resource)
     )
     monkeypatch.setattr(importlib.resources, "as_file", lambda _: nullcontext(path))
-    assert [line.strip() for line in rules.internal_gzipped_wordlist_lines("words.gz")] == [
+    assert [line.strip() for line in rules.gzipped_wordlist_lines("words.gz")] == [
         "hello",
         "世界",
     ]
@@ -132,7 +132,7 @@ def test_gzip_resource_can_be_materialized_when_direct_read_fails(tmp_path, monk
 def test_rank_resource_without_filesystem_path(tmp_path, monkeypatch, materialize: bool):
     import importlib.resources
 
-    data = internal_index_bytes({"hello": 3})
+    data = index_bytes({"hello": 3})
     path = tmp_path / "ranks.bin"
     path.write_bytes(data)
 
@@ -167,9 +167,9 @@ def test_compiled_distribution_tries_usable_index_candidates(tmp_path, monkeypat
     local.mkdir(parents=True)
     bundled.mkdir(parents=True)
     (local / rules.WORD_RANK_INDEX).write_bytes(
-        internal_index_bytes({"local": 1}) if first_valid else b"broken"
+        index_bytes({"local": 1}) if first_valid else b"broken"
     )
-    (bundled / rules.WORD_RANK_INDEX).write_bytes(internal_index_bytes({"bundled": 2}))
+    (bundled / rules.WORD_RANK_INDEX).write_bytes(index_bytes({"bundled": 2}))
     monkeypatch.setattr(rules, "__compiled__", True, raising=False)
     monkeypatch.setattr(rules, "__file__", str(layout / "text_rules.py"))
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
@@ -181,7 +181,7 @@ def test_compiled_distribution_without_loose_indexes_uses_package_resource(tmp_p
 
     packaged = tmp_path / "packaged"
     packaged.mkdir()
-    (packaged / rules.WORD_RANK_INDEX).write_bytes(internal_index_bytes({"resource": 4}))
+    (packaged / rules.WORD_RANK_INDEX).write_bytes(index_bytes({"resource": 4}))
     monkeypatch.setattr(rules, "__compiled__", True, raising=False)
     monkeypatch.setattr(rules, "__file__", str(tmp_path / "layout" / "text_rules.py"))
     monkeypatch.setattr(sys, "prefix", str(tmp_path))

@@ -30,12 +30,12 @@ class PaintSink:
         )
 
 
-def internal_state() -> tuple[ContentInterpreter, PaintSink]:
+def make_state() -> tuple[ContentInterpreter, PaintSink]:
     sink = PaintSink()
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
 
 
-def internal_form(group: PdfDict | None = None) -> PdfStream:
+def form_xobject(group: PdfDict | None = None) -> PdfStream:
     dictionary: PdfDict = {"Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1]}
     if group is not None:
         dictionary["Group"] = group
@@ -47,12 +47,12 @@ def internal_form(group: PdfDict | None = None) -> PdfStream:
 def test_transparency_group_resolves_isolation_with_nonisolated_default(
     isolated: bool | None, indirect: bool
 ) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     group: PdfDict = {"S": PdfName.of("Transparency")}
     if isolated is not None:
         group["I"] = PdfReference(1, 0) if indirect else isolated
         cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = isolated
-    form = internal_form(group)
+    form = form_xobject(group)
     if indirect:
         cast(ObjectResolver, state.resolver).objects[key_for(2, 0)] = group
         form.dictionary["Group"] = PdfReference(2, 0)
@@ -66,11 +66,11 @@ def test_transparency_group_resolves_isolation_with_nonisolated_default(
 def test_transparency_group_resets_child_alpha_and_blend_then_restores_caller(
     isolated: bool,
 ) -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.graphics.fill_opacity = 0.3
     state.graphics.stroke_opacity = 0.6
     state.graphics.blend_mode = "Multiply"
-    form = internal_form({"S": PdfName.of("Transparency"), "I": isolated})
+    form = form_xobject({"S": PdfName.of("Transparency"), "I": isolated})
     state.resources = {"XObject": {"F": form}}
     state.stream_executor.consume(
         PdfStream(raw_data=b"/F Do 0 0 1 1 re B"), state.resources, IDENTITY_MATRIX, 0
@@ -83,11 +83,11 @@ def test_transparency_group_resets_child_alpha_and_blend_then_restores_caller(
 
 @pytest.mark.parametrize("group", [None, {}, {"S": PdfName.of("Other")}])
 def test_ordinary_form_inherits_transparency_state(group: PdfDict | None) -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.graphics.fill_opacity = 0.3
     state.graphics.stroke_opacity = 0.6
     state.graphics.blend_mode = "Multiply"
-    state.resources = {"XObject": {"F": internal_form(group)}}
+    state.resources = {"XObject": {"F": form_xobject(group)}}
     frame = state.append_xobject(PdfName.of("F"), 0)
     assert frame is not None
     assert frame.group_alpha is None
@@ -96,7 +96,7 @@ def test_ordinary_form_inherits_transparency_state(group: PdfDict | None) -> Non
 
 
 def test_existing_frame_and_queue_callers_keep_isolated_group_default() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     stream = PdfStream(raw_data=b"")
     frame = ContentStreamFrame(stream, {}, IDENTITY_MATRIX, 1, None, 0.5)
     assert frame.group_isolated is True
@@ -132,11 +132,9 @@ def test_form_isolation_preserves_existing_executor_queue_override_signature() -
                 stream_key=stream_key,
             )
 
-    state, _ = internal_state()
+    state, _ = make_state()
     state.stream_executor = ExistingExecutor(state)
-    frame = state.append_form_xobject(
-        internal_form({"S": PdfName.of("Transparency"), "K": True}), 0
-    )
+    frame = state.append_form_xobject(form_xobject({"S": PdfName.of("Transparency"), "K": True}), 0)
     assert frame is not None
     assert frame.group_alpha == 1.0
     assert frame.group_isolated is False

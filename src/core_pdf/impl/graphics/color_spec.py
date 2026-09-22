@@ -94,11 +94,7 @@ def recover_image_bits_per_component(image_dict: object) -> int:
     return value
 
 
-def parse_color_space(value: object) -> ColorSpace:
-    return internal_parse_color_space(value, set())
-
-
-def internal_color_space_paints(value: object) -> bool:
+def raw_color_space_paints(value: object) -> bool:
     seen: set[int] = set()
     while isinstance(value, (list, tuple)) and value:
         marker = id(value)
@@ -124,15 +120,15 @@ def internal_color_space_paints(value: object) -> bool:
     return True
 
 
-def internal_nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
+def nchannel_attributes(space: ColorSpace) -> DeviceNAttributes | None:
     attributes = space.devicen_attributes
     if space.kind != "DeviceN" or attributes is None or attributes.subtype != "NChannel":
         return None
     return attributes
 
 
-def internal_nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
-    attributes = internal_nchannel_attributes(space)
+def nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
+    attributes = nchannel_attributes(space)
     if attributes is None:
         return None
     process = attributes.process
@@ -142,7 +138,9 @@ def internal_nchannel_process(space: ColorSpace) -> DeviceNProcess | None:
     return process if mapped == set(range(len(space.colorants))) else None
 
 
-def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
+def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpace:
+    if active is None:
+        active = set()
     marker = id(value) if isinstance(value, (list, tuple)) else None
     if marker is not None:
         if marker in active:
@@ -168,7 +166,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                     )
                 except TypeError:
                     lookup = None
-                base = internal_parse_color_space(value[1], active)
+                base = parse_color_space(value[1], active)
                 return ColorSpace(
                     "Indexed", ((0.0, float(hival)),), base=base, hival=hival, lookup=lookup
                 )
@@ -184,21 +182,21 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                     raise ValueError("invalid ICCBased color space")
                 profile = stream.data if isinstance(stream, PdfStream) else None
                 alternate = (
-                    internal_parse_color_space(source["Alternate"], active)
+                    parse_color_space(source["Alternate"], active)
                     if source.get("Alternate") is not None
                     else None
                 )
                 if profile is not None and alternate is None:
                     with suppress(IccProfileError):
-                        alternate = internal_parse_color_space(
+                        alternate = parse_color_space(
                             parse_icc_transform(profile).alternate_color_space, active
                         )
                 if alternate is None:
-                    alternate = internal_parse_color_space(
+                    alternate = parse_color_space(
                         {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(count), active
                     )
                 ranges = (
-                    internal_recovery_ranges(source.get("Range"), count, (0.0, 1.0) * count)
+                    recovery_ranges(source.get("Range"), count, (0.0, 1.0) * count)
                     if count in {1, 3, 4}
                     else ()
                 )
@@ -229,14 +227,14 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                 ranges = (
                     (
                         (0.0, 100.0),
-                        *internal_recovery_ranges(source.get("Range"), 2, (-100.0, 100.0) * 2),
+                        *recovery_ranges(source.get("Range"), 2, (-100.0, 100.0) * 2),
                     )
                     if kind == "Lab"
                     else ((0.0, 1.0),) * (1 if kind == "CalGray" else 3)
                 )
                 return ColorSpace(kind, ranges, MappingProxyType(calibrated_params))
             if kind == "Pattern" and len(value) == 2:
-                pattern_base = internal_parse_color_space(value[1], active)
+                pattern_base = parse_color_space(value[1], active)
                 return ColorSpace(
                     kind,
                     pattern_base.component_ranges,
@@ -264,7 +262,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
                     kind,
                     ((0.0, 1.0),) * len(names),
                     MappingProxyType(devicen_params),
-                    alternate=internal_parse_color_space(value[2], active),
+                    alternate=parse_color_space(value[2], active),
                     colorants=names,
                     tint_fn=value[3],
                     devicen_attributes=attributes,
@@ -283,7 +281,7 @@ def internal_parse_color_space(value: object, active: set[int]) -> ColorSpace:
             active.remove(marker)
 
 
-def internal_recovery_ranges(
+def recovery_ranges(
     raw: object, count: int, default: tuple[float, ...]
 ) -> tuple[tuple[float, float], ...]:
     values = cs_param_floats(

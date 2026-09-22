@@ -46,11 +46,11 @@ class PdfName:
             raise TypeError("PDF names must be str, bytes, memoryview, or PdfName")
         if cls is not PdfName:
             return cls(key_bytes)
-        name = internal_INTERNED_NAMES.get(key_bytes)
+        name = INTERNED_NAMES.get(key_bytes)
         if name is None:
-            if len(internal_INTERNED_NAMES) >= internal_INTERNED_NAME_LIMIT:
-                internal_INTERNED_NAMES.clear()
-            name = internal_INTERNED_NAMES[key_bytes] = PdfName(key_bytes)
+            if len(INTERNED_NAMES) >= INTERNED_NAME_LIMIT:
+                INTERNED_NAMES.clear()
+            name = INTERNED_NAMES[key_bytes] = PdfName(key_bytes)
         return name
 
     def __str__(self) -> str:
@@ -75,8 +75,8 @@ class PdfName:
         raise AttributeError(f"cannot assign to field {name!r}")
 
 
-internal_INTERNED_NAME_LIMIT = 1 << 16
-internal_INTERNED_NAMES: dict[bytes, PdfName] = {}
+INTERNED_NAME_LIMIT = 1 << 16
+INTERNED_NAMES: dict[bytes, PdfName] = {}
 
 
 class PdfReference:

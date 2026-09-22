@@ -19,7 +19,7 @@ FeatureArrays: TypeAlias = tuple[
 ]
 
 
-def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
+def cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
     if not cells:
         return ()
     limit = FEATURE_GRID_WIDTH + FEATURE_GRID_HEIGHT
@@ -54,7 +54,7 @@ def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int,
     return tuple(distances.reshape(-1).tolist())
 
 
-def internal_average_nearest_distance(
+def average_nearest_distance(
     cells: tuple[tuple[int, int], ...], distance_map: tuple[int, ...]
 ) -> float:
     total = 0.0
@@ -66,7 +66,7 @@ def internal_average_nearest_distance(
     return total / count if count else inf
 
 
-def internal_bitmap_distance(left: tuple[int, ...], right: tuple[int, ...]) -> float:
+def bitmap_distance(left: tuple[int, ...], right: tuple[int, ...]) -> float:
     if not left or not right or len(left) != len(right):
         return 0.0
     intersection = 0
@@ -91,18 +91,18 @@ def feature_distance(
 ) -> float:
     if not left_cells or not right_cells:
         return inf
-    left_map = internal_cell_distance_map(left_cells)
-    right_map = internal_cell_distance_map(right_cells)
+    left_map = cell_distance_map(left_cells)
+    right_map = cell_distance_map(right_cells)
     return (
-        internal_average_nearest_distance(left_cells, right_map)
-        + internal_average_nearest_distance(right_cells, left_map)
-        + internal_bitmap_distance(left_bitmap, right_bitmap) * 0.75
+        average_nearest_distance(left_cells, right_map)
+        + average_nearest_distance(right_cells, left_map)
+        + bitmap_distance(left_bitmap, right_bitmap) * 0.75
         + abs(left_aspect - right_aspect) * 2.0
         + abs(left_contours - right_contours) * 0.2
     )
 
 
-def internal_feature_arrays(
+def feature_arrays(
     cells: Sequence[tuple[tuple[int, int], ...]],
     bitmaps: Sequence[tuple[int, ...]],
     aspects: Sequence[float],
@@ -124,7 +124,7 @@ def internal_feature_arrays(
         for x, y in valid_cells:
             masks[index, y, x] += 1.0
         distance_maps[index] = numpy.asarray(
-            internal_cell_distance_map(feature_cells), dtype=numpy.float64
+            cell_distance_map(feature_cells), dtype=numpy.float64
         ).reshape(FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH)
 
     bitmap_width = max((len(bitmap) for bitmap in bitmaps), default=0)
@@ -152,7 +152,7 @@ def feature_distance_matrix(
     right_aspects: Sequence[float],
     right_contours: Sequence[int],
     *,
-    internal_right_arrays: FeatureArrays | None = None,
+    right_arrays: FeatureArrays | None = None,
 ) -> numpy.ndarray[Any, Any]:
     (
         left_masks,
@@ -161,11 +161,9 @@ def feature_distance_matrix(
         left_aspects_array,
         left_contours_array,
         left_bitmap_rows,
-    ) = internal_feature_arrays(left_cells, left_bitmaps, left_aspects, left_contours)
-    if internal_right_arrays is None:
-        internal_right_arrays = internal_feature_arrays(
-            right_cells, right_bitmaps, right_aspects, right_contours
-        )
+    ) = feature_arrays(left_cells, left_bitmaps, left_aspects, left_contours)
+    if right_arrays is None:
+        right_arrays = feature_arrays(right_cells, right_bitmaps, right_aspects, right_contours)
     (
         right_masks,
         right_maps,
@@ -173,7 +171,7 @@ def feature_distance_matrix(
         right_aspects_array,
         right_contours_array,
         right_bitmap_rows,
-    ) = internal_right_arrays
+    ) = right_arrays
 
     distance = numpy.full((len(left_cells), len(right_cells)), numpy.inf, dtype=numpy.float64)
     valid = (left_counts[:, None] > 0) & (right_counts[None, :] > 0)

@@ -44,7 +44,7 @@ if TYPE_CHECKING:
         PageScoped,
         TextWord,
     )
-internal_EXPORTS = {
+EXPORTS = {
     "DocumentAdapter": ("core_pdf.impl.document.document", "DocumentAdapter"),
     "Document": ("core_pdf.impl.output.model", "Document"),
     "PageSelection": ("core_pdf.impl.model.page_selection", "PageSelection"),
@@ -88,7 +88,7 @@ internal_EXPORTS = {
 }
 
 
-install_lazy_module_exports(globals(), internal_EXPORTS)
+install_lazy_module_exports(globals(), EXPORTS)
 
 
 __all__ = (

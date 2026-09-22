@@ -56,7 +56,7 @@ def test_ascii85_accepts_optional_adobe_start_and_missing_end(payload, markers, 
     assert recovery.apply_ascii85(memoryview(encoded) if view else encoded, None) == payload
 
 
-def internal_pack_codes(codes):
+def pack_codes(codes):
     bits = "".join(f"{code:09b}" for code in codes)
     bits += "0" * (-len(bits) % 8)
     return int(bits, 2).to_bytes(len(bits) // 8, "big") if bits else b""
@@ -69,7 +69,7 @@ def test_lzw_backend_routes_decode_literal_and_dictionary_codes(
     monkeypatch, native, early_change, normalized
 ):
     monkeypatch.setattr(recovery.imagecodecs, "LZW", SimpleNamespace(available=native))
-    encoded = internal_pack_codes([256, 65, 258, 259, 256, 66, 257])
+    encoded = pack_codes([256, 65, 258, 259, 256, 66, 257])
     params = (
         FilterParams(early_change=early_change) if normalized else {"EarlyChange": early_change}
     )
@@ -84,7 +84,7 @@ def test_python_lzw_recovery_returns_only_the_decoded_prefix(
     monkeypatch, early_change, codes, expected
 ):
     monkeypatch.setattr(recovery.imagecodecs, "LZW", SimpleNamespace(available=False))
-    assert recovery.apply_lzw(internal_pack_codes(codes), {"EarlyChange": early_change}) == expected
+    assert recovery.apply_lzw(pack_codes(codes), {"EarlyChange": early_change}) == expected
 
 
 def test_lzw_backend_failure_preserves_cause(monkeypatch):

@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.extract.contracts import ObservationBatch, internal_bbox_tuple
+from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
 from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
@@ -20,7 +20,7 @@ from core_pdf.impl.render.page import RenderedPage
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, ObservationSource, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
-from core_pdf_ocr.impl.extract.ocr.raster import internal_fit_raster_scale
+from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
 from core_pdf_ocr.impl.extract.ocr.strokes import (
     StrokedTextDecode,
     StrokedTextObservation,
@@ -32,12 +32,12 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
     stroked_text_isolated_runs,
 )
 from core_pdf_ocr.impl.extract.ocr.types import (
-    internal_PackedStrokedTextRaster,
-    internal_Raster,
-    internal_RasterRegion,
-    internal_StrokedTextCell,
+    PackedStrokedTextRaster,
+    Raster,
+    RasterRegion,
+    StrokedTextCell,
 )
-from core_pdf_ocr.impl.extract.quality import internal_Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 
 STROKED_VECTOR_PACK_WIDTH = 240.0
 
@@ -66,13 +66,13 @@ STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES = 16
 STROKED_VECTOR_PACK_MIN_DECODED_RUNS = 16
 
 
-def internal_pack_stroked_text_runs(
+def pack_stroked_text_runs(
     runs: tuple[StrokedTextRun, ...],
     *,
     width: float = STROKED_VECTOR_PACK_WIDTH,
     horizontal_padding: float = STROKED_VECTOR_PACK_HORIZONTAL_PADDING,
     vertical_padding: float = STROKED_VECTOR_PACK_VERTICAL_PADDING,
-) -> tuple[tuple[internal_StrokedTextCell, ...], float]:
+) -> tuple[tuple[StrokedTextCell, ...], float]:
     if not runs:
         return (), 0.0
     ordered = sorted(
@@ -86,7 +86,7 @@ def internal_pack_stroked_text_runs(
     x = horizontal_padding
     y = vertical_padding
     row_height = 0.0
-    cells: list[internal_StrokedTextCell] = []
+    cells: list[StrokedTextCell] = []
     for run in ordered:
         source = run.bbox
         run_width = source[2] - source[0]
@@ -104,7 +104,7 @@ def internal_pack_stroked_text_runs(
             y + vertical_padding + run_height,
         )
         cells.append(
-            internal_StrokedTextCell(
+            StrokedTextCell(
                 source_box=source,
                 packed_box=packed,
                 drawing_indexes=run.drawing_indexes,
@@ -115,14 +115,14 @@ def internal_pack_stroked_text_runs(
     return tuple(cells), y + row_height + vertical_padding
 
 
-def internal_stroked_vector_text_raster(
+def stroked_vector_text_raster(
     capture: PageAnalysis,
     requested_scale: float,
     *,
     profile: StrokedTextProfile | None,
     max_pixels: int = MAX_OCR_PIXELS,
     variant: str = "seed",
-) -> internal_PackedStrokedTextRaster | None:
+) -> PackedStrokedTextRaster | None:
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or profile is None:
         return None
@@ -137,7 +137,7 @@ def internal_stroked_vector_text_raster(
             if len(runs) >= STROKED_VECTOR_PACK_DENSE_MIN_CELLS
             else STROKED_VECTOR_PACK_VERTICAL_PADDING
         )
-    cells, packed_height = internal_pack_stroked_text_runs(
+    cells, packed_height = pack_stroked_text_runs(
         runs,
         horizontal_padding=horizontal_padding,
         vertical_padding=vertical_padding,
@@ -204,7 +204,7 @@ def internal_stroked_vector_text_raster(
         rotate=0,
         display_list=display_list,
     )
-    scale = internal_fit_raster_scale(rendered, scale, max_pixels)
+    scale = fit_raster_scale(rendered, scale, max_pixels)
     fast_path = (
         variant != "isolated"
         and bool(display_list.items)
@@ -233,23 +233,23 @@ def internal_stroked_vector_text_raster(
             scale=scale,
             max_pixels=max_pixels,
         )
-    raster = internal_Raster(
+    raster = Raster(
         data,
         max(70, int(round(72.0 * scale))),
     )
-    return internal_PackedStrokedTextRaster(
+    return PackedStrokedTextRaster(
         raster=raster,
         packed_box=(0.0, 0.0, packed_width, packed_height),
         cells=cells,
     )
 
 
-def internal_full_stroked_vector_text_raster(
+def full_stroked_vector_text_raster(
     capture: PageAnalysis,
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
-) -> internal_RasterRegion | None:
+) -> RasterRegion | None:
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or evidence.bbox is None or not evidence.drawing_indexes:
         return None
@@ -294,23 +294,23 @@ def internal_full_stroked_vector_text_raster(
         rotate=0,
         display_list=display_list,
     )
-    scale = internal_fit_raster_scale(rendered, scale, max_pixels, crop=crop)
+    scale = fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     data = rendered.rasterize(
         background=(255, 255, 255, 255),
         scale=scale,
         max_pixels=max_pixels,
         crop=crop,
     )
-    raster = internal_Raster(
+    raster = Raster(
         data,
         max(70, int(round(72.0 * scale))),
     )
-    return internal_RasterRegion(raster, crop)
+    return RasterRegion(raster, crop)
 
 
-def internal_remap_stroked_vector_observations(
+def remap_stroked_vector_observations(
     observations: ObservationBatch,
-    packed: internal_PackedStrokedTextRaster,
+    packed: PackedStrokedTextRaster,
 ) -> tuple[ObservationBatch, int]:
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
@@ -322,7 +322,7 @@ def internal_remap_stroked_vector_observations(
         tuple(cell.packed_box for cell in packed.cells), dtype=numpy.float32
     ).reshape((-1, 4))
     for index, packed_box in enumerate(observations.bbox):
-        box = internal_bbox_tuple(packed_box)
+        box = bbox_tuple(packed_box)
         center_x = (box[0] + box[2]) * 0.5
         center_y = (box[1] + box[3]) * 0.5
         matching = numpy.flatnonzero(
@@ -358,35 +358,31 @@ def internal_remap_stroked_vector_observations(
     )
 
 
-def internal_isolated_pin_label(text: str) -> bool:
+def isolated_pin_label(text: str) -> bool:
     stripped = text.strip()
     return 1 <= len(stripped) <= 4 and any(character.isdigit() for character in stripped)
 
 
-def internal_remap_stroked_vector_candidate(
-    candidate: internal_Candidate,
-    packed: internal_PackedStrokedTextRaster,
+def remap_stroked_vector_candidate(
+    candidate: Candidate,
+    packed: PackedStrokedTextRaster,
     *,
     digit_bearing_only: bool = False,
-) -> tuple[internal_Candidate, int]:
-    remapped, unmapped = internal_remap_stroked_vector_observations(
+) -> tuple[Candidate, int]:
+    remapped, unmapped = remap_stroked_vector_observations(
         candidate.observations,
         packed,
     )
     if digit_bearing_only:
         remapped = remapped.take(
-            tuple(
-                index
-                for index, text in enumerate(remapped.text)
-                if internal_isolated_pin_label(text)
-            )
+            tuple(index for index, text in enumerate(remapped.text) if isolated_pin_label(text))
         )
-    remapped_symbols, _unmapped_symbols = internal_remap_stroked_vector_observations(
+    remapped_symbols, _unmapped_symbols = remap_stroked_vector_observations(
         candidate.symbols,
         packed,
     )
     return (
-        internal_candidate(
+        make_candidate(
             candidate.mode,
             remapped,
             symbols=remapped_symbols,
@@ -406,7 +402,7 @@ STROKED_VECTOR_MULTI_EDIT_MIN_OVERLAP = 0.90
 STROKED_VECTOR_MULTI_EDIT_MAX_CONFIDENCE = 85.0
 
 
-def internal_stroked_vector_decoded_batch(
+def stroked_vector_decoded_batch(
     observations: tuple[StrokedTextObservation, ...],
 ) -> ObservationBatch:
     boxes = tuple(observation.bbox for observation in observations)
@@ -422,11 +418,11 @@ def internal_stroked_vector_decoded_batch(
     )
 
 
-def internal_single_character_substitution(left: str, right: str) -> bool:
+def single_character_substitution(left: str, right: str) -> bool:
     return len(left) == len(right) and sum(a != b for a, b in zip(left, right, strict=True)) == 1
 
 
-def internal_bounded_edit_distance(left: str, right: str, maximum: int) -> int:
+def bounded_edit_distance(left: str, right: str, maximum: int) -> int:
     if abs(len(left) - len(right)) > maximum:
         return maximum + 1
     previous = list(range(len(right) + 1))
@@ -446,14 +442,14 @@ def internal_bounded_edit_distance(left: str, right: str, maximum: int) -> int:
     return previous[-1]
 
 
-def internal_stroked_vector_substitution(
+def stroked_vector_substitution(
     recognized: str,
     decoded: str,
     *,
     confidence: float,
     overlap: float,
 ) -> bool:
-    if internal_single_character_substitution(recognized, decoded):
+    if single_character_substitution(recognized, decoded):
         return True
     left = recognized.casefold()
     right = decoded.casefold()
@@ -466,11 +462,11 @@ def internal_stroked_vector_substitution(
         and left[0] == right[0]
         and any(character.isalnum() for character in left)
         and any(character.isalnum() for character in right)
-        and internal_bounded_edit_distance(left, right, 2) <= 2
+        and bounded_edit_distance(left, right, 2) <= 2
     )
 
 
-def internal_stroked_vector_symbol_seeds(
+def stroked_vector_symbol_seeds(
     profile: StrokedTextProfile,
     symbols: ObservationBatch,
 ) -> tuple[StrokedTextSeed, ...]:
@@ -492,7 +488,7 @@ def internal_stroked_vector_symbol_seeds(
         sequence = int(raw_sequence)
         if len(character) != 1 or sequence not in runs_by_sequence:
             continue
-        grouped[sequence].append((internal_bbox_tuple(raw_box)[0], character, float(confidence)))
+        grouped[sequence].append((bbox_tuple(raw_box)[0], character, float(confidence)))
 
     seeds: list[StrokedTextSeed] = []
     for sequence, items in grouped.items():
@@ -511,7 +507,7 @@ def internal_stroked_vector_symbol_seeds(
     return tuple(seeds)
 
 
-def internal_decode_stroked_vector_text(
+def decode_stroked_vector_text(
     profile: StrokedTextProfile | None,
     ocr: ObservationBatch,
     symbols: ObservationBatch | None = None,
@@ -521,7 +517,7 @@ def internal_decode_stroked_vector_text(
     word_seeds = tuple(
         StrokedTextSeed(
             text=text,
-            bbox=internal_bbox_tuple(box),
+            bbox=bbox_tuple(box),
             confidence=float(confidence),
             sequence=int(sequence),
         )
@@ -533,7 +529,7 @@ def internal_decode_stroked_vector_text(
             strict=True,
         )
     )
-    symbol_seeds = internal_stroked_vector_symbol_seeds(
+    symbol_seeds = stroked_vector_symbol_seeds(
         profile,
         symbols if symbols is not None else ObservationBatch.empty(),
     )
@@ -546,7 +542,7 @@ def internal_decode_stroked_vector_text(
     )
 
 
-def internal_packed_stroked_vector_decode_gate(
+def packed_stroked_vector_decode_gate(
     decoded: StrokedTextDecode,
     cell_count: int,
 ) -> bool:
@@ -569,13 +565,13 @@ def internal_packed_stroked_vector_decode_gate(
     )
 
 
-def internal_recover_stroked_vector_text(
+def recover_stroked_vector_text(
     profile: StrokedTextProfile | None,
     ocr: ObservationBatch,
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     if profile is None or not len(ocr):
         return ocr, ()
-    decoded = internal_decode_stroked_vector_text(profile, ocr)
+    decoded = decode_stroked_vector_text(profile, ocr)
     ocr_boxes = ocr.bbox
     ocr_areas = numpy.maximum(
         0.01,
@@ -609,7 +605,7 @@ def internal_recover_stroked_vector_text(
         recognized_text = ocr.text[best_index].strip()
         if recognized_text == observation.text:
             continue
-        if best_index not in replacements and internal_stroked_vector_substitution(
+        if best_index not in replacements and stroked_vector_substitution(
             recognized_text,
             observation.text,
             confidence=float(ocr.confidence[best_index]),
@@ -624,7 +620,7 @@ def internal_recover_stroked_vector_text(
     return (
         ObservationBatch.concatenate(
             retained,
-            internal_stroked_vector_decoded_batch(tuple(accepted)),
+            stroked_vector_decoded_batch(tuple(accepted)),
         ),
         alphabet,
     )

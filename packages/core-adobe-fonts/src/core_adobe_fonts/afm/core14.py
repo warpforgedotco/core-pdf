@@ -10,7 +10,7 @@ class Core14FontMetrics(TypedDict):
     props: dict[str, object]
 
 
-internal_COURIER_WIDTHS: dict[str, int] = {
+COURIER_WIDTHS: dict[str, int] = {
     " ": 600,
     "!": 600,
     '"': 600,
@@ -327,7 +327,7 @@ internal_COURIER_WIDTHS: dict[str, int] = {
     "ﬂ": 600,
 }
 
-internal_HELVETICA_WIDTHS: dict[str, int] = {
+HELVETICA_WIDTHS: dict[str, int] = {
     " ": 278,
     "!": 278,
     '"': 355,
@@ -644,7 +644,7 @@ internal_HELVETICA_WIDTHS: dict[str, int] = {
     "ﬂ": 500,
 }
 
-internal_HELVETICA_BOLD_WIDTHS: dict[str, int] = {
+HELVETICA_BOLD_WIDTHS: dict[str, int] = {
     " ": 278,
     "!": 333,
     '"': 474,
@@ -961,7 +961,7 @@ internal_HELVETICA_BOLD_WIDTHS: dict[str, int] = {
     "ﬂ": 611,
 }
 
-internal_SYMBOL_WIDTHS: dict[str, int] = {
+SYMBOL_WIDTHS: dict[str, int] = {
     " ": 250,
     "!": 333,
     "#": 500,
@@ -1154,7 +1154,7 @@ internal_SYMBOL_WIDTHS: dict[str, int] = {
     "\uf8ff": 790,
 }
 
-internal_TIMES_BOLD_WIDTHS: dict[str, int] = {
+TIMES_BOLD_WIDTHS: dict[str, int] = {
     " ": 250,
     "!": 333,
     '"': 555,
@@ -1471,7 +1471,7 @@ internal_TIMES_BOLD_WIDTHS: dict[str, int] = {
     "ﬂ": 556,
 }
 
-internal_TIMES_BOLD_ITALIC_WIDTHS: dict[str, int] = {
+TIMES_BOLD_ITALIC_WIDTHS: dict[str, int] = {
     " ": 250,
     "!": 389,
     '"': 555,
@@ -1788,7 +1788,7 @@ internal_TIMES_BOLD_ITALIC_WIDTHS: dict[str, int] = {
     "ﬂ": 556,
 }
 
-internal_TIMES_ITALIC_WIDTHS: dict[str, int] = {
+TIMES_ITALIC_WIDTHS: dict[str, int] = {
     " ": 250,
     "!": 333,
     '"': 420,
@@ -2105,7 +2105,7 @@ internal_TIMES_ITALIC_WIDTHS: dict[str, int] = {
     "ﬂ": 500,
 }
 
-internal_TIMES_ROMAN_WIDTHS: dict[str, int] = {
+TIMES_ROMAN_WIDTHS: dict[str, int] = {
     " ": 250,
     "!": 333,
     '"': 408,
@@ -2422,7 +2422,7 @@ internal_TIMES_ROMAN_WIDTHS: dict[str, int] = {
     "ﬂ": 556,
 }
 
-internal_ZAPF_DINGBATS_WIDTHS: dict[str, int] = {
+ZAPF_DINGBATS_WIDTHS: dict[str, int] = {
     "→": 838,
     "↔": 1016,
     "↕": 458,
@@ -2628,7 +2628,7 @@ internal_ZAPF_DINGBATS_WIDTHS: dict[str, int] = {
 
 FONT_DATA: dict[str, Core14FontMetrics] = {
     "Courier": {
-        "widths": internal_COURIER_WIDTHS,
+        "widths": COURIER_WIDTHS,
         "props": {
             "FontName": "Courier",
             "Descent": -194.0,
@@ -2643,7 +2643,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Courier-Bold": {
-        "widths": internal_COURIER_WIDTHS,
+        "widths": COURIER_WIDTHS,
         "props": {
             "FontName": "Courier-Bold",
             "Descent": -194.0,
@@ -2658,7 +2658,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Courier-BoldOblique": {
-        "widths": internal_COURIER_WIDTHS,
+        "widths": COURIER_WIDTHS,
         "props": {
             "FontName": "Courier-BoldOblique",
             "Descent": -194.0,
@@ -2673,7 +2673,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Courier-Oblique": {
-        "widths": internal_COURIER_WIDTHS,
+        "widths": COURIER_WIDTHS,
         "props": {
             "FontName": "Courier-Oblique",
             "Descent": -194.0,
@@ -2688,7 +2688,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Helvetica": {
-        "widths": internal_HELVETICA_WIDTHS,
+        "widths": HELVETICA_WIDTHS,
         "props": {
             "FontName": "Helvetica",
             "Descent": -207.0,
@@ -2703,7 +2703,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Helvetica-Bold": {
-        "widths": internal_HELVETICA_BOLD_WIDTHS,
+        "widths": HELVETICA_BOLD_WIDTHS,
         "props": {
             "FontName": "Helvetica-Bold",
             "Descent": -207.0,
@@ -2718,7 +2718,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Helvetica-BoldOblique": {
-        "widths": internal_HELVETICA_BOLD_WIDTHS,
+        "widths": HELVETICA_BOLD_WIDTHS,
         "props": {
             "FontName": "Helvetica-BoldOblique",
             "Descent": -207.0,
@@ -2733,7 +2733,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Helvetica-Oblique": {
-        "widths": internal_HELVETICA_WIDTHS,
+        "widths": HELVETICA_WIDTHS,
         "props": {
             "FontName": "Helvetica-Oblique",
             "Descent": -207.0,
@@ -2748,7 +2748,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Symbol": {
-        "widths": internal_SYMBOL_WIDTHS,
+        "widths": SYMBOL_WIDTHS,
         "props": {
             "FontName": "Symbol",
             "FontBBox": [-180.0, -293.0, 1090.0, 1010.0],
@@ -2759,7 +2759,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Times-Bold": {
-        "widths": internal_TIMES_BOLD_WIDTHS,
+        "widths": TIMES_BOLD_WIDTHS,
         "props": {
             "FontName": "Times-Bold",
             "Descent": -217.0,
@@ -2774,7 +2774,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Times-BoldItalic": {
-        "widths": internal_TIMES_BOLD_ITALIC_WIDTHS,
+        "widths": TIMES_BOLD_ITALIC_WIDTHS,
         "props": {
             "FontName": "Times-BoldItalic",
             "Descent": -217.0,
@@ -2789,7 +2789,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Times-Italic": {
-        "widths": internal_TIMES_ITALIC_WIDTHS,
+        "widths": TIMES_ITALIC_WIDTHS,
         "props": {
             "FontName": "Times-Italic",
             "Descent": -217.0,
@@ -2804,7 +2804,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "Times-Roman": {
-        "widths": internal_TIMES_ROMAN_WIDTHS,
+        "widths": TIMES_ROMAN_WIDTHS,
         "props": {
             "FontName": "Times-Roman",
             "Descent": -217.0,
@@ -2819,7 +2819,7 @@ FONT_DATA: dict[str, Core14FontMetrics] = {
         },
     },
     "ZapfDingbats": {
-        "widths": internal_ZAPF_DINGBATS_WIDTHS,
+        "widths": ZAPF_DINGBATS_WIDTHS,
         "props": {
             "FontName": "ZapfDingbats",
             "FontBBox": [-1.0, -143.0, 981.0, 820.0],

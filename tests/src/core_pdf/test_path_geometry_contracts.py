@@ -21,7 +21,7 @@ def test_dashes_follow_length_and_phase_on_each_axis(pattern, phase, expected, a
         return (value, 0) if axis == 0 else (0, value)
 
     path = CapturedSubpath([point(0), point(10)])
-    result = paths.internal_dash_subpath(path, (pattern, phase))
+    result = paths.dash_subpath(path, (pattern, phase))
     assert [(piece.points[0][axis], piece.points[-1][axis]) for piece in result] == expected
     assert all(not piece.closed for piece in result)
     assert path.points == [point(0), point(10)]
@@ -30,19 +30,19 @@ def test_dashes_follow_length_and_phase_on_each_axis(pattern, phase, expected, a
 @pytest.mark.parametrize("pattern", [[], [0], [0, 0], [-1, 0]])
 def test_empty_or_zero_dash_pattern_preserves_original_subpath(pattern):
     path = CapturedSubpath([(0, 0), (10, 0)])
-    assert paths.internal_dash_subpath(path, (pattern, 5))[0] is path
+    assert paths.dash_subpath(path, (pattern, 5))[0] is path
 
 
 @pytest.mark.parametrize("points", [[], [(0, 0)], [(0, 0), (0, 0)]])
 def test_degenerate_dashed_subpaths_have_no_stroked_segments(points):
-    assert paths.internal_dash_subpath(CapturedSubpath(points), ([2, 1], 0)) == []
+    assert paths.dash_subpath(CapturedSubpath(points), ([2, 1], 0)) == []
 
 
 @pytest.mark.parametrize("closed_duplicate", [False, True])
 def test_solid_dash_covering_closed_path_retains_closure(closed_duplicate):
     points = [(0, 0), (4, 0), (4, 4), (0, 4)]
     path = CapturedSubpath(points + ([points[0]] if closed_duplicate else []), closed=True)
-    (piece,) = paths.internal_dash_subpath(path, ([20, 1], 0))
+    (piece,) = paths.dash_subpath(path, ([20, 1], 0))
     assert piece.closed
     assert piece.points == points + [points[0]]
 
@@ -53,9 +53,7 @@ def test_collinear_vertices_do_not_restart_dash_phase(phase):
     divided = CapturedSubpath([(0, 0), (1, 0), (1, 0), (4, 0), (7, 0), (10, 0)])
 
     def intervals(path):
-        return [
-            (p.points[0], p.points[-1]) for p in paths.internal_dash_subpath(path, ([2, 1], phase))
-        ]
+        return [(p.points[0], p.points[-1]) for p in paths.dash_subpath(path, ([2, 1], phase))]
 
     assert intervals(simple) == intervals(divided)
 
@@ -79,7 +77,7 @@ def test_rectangle_coverage_equals_pixel_intersection_area(box, reverse):
     if reverse:
         points.reverse()
     edges = np.array([(*a, *b) for a, b in zip(points, points[1:] + points[:1])])
-    actual = paths.internal_signed_area_coverage(edges, 3, 3)
+    actual = paths.signed_area_coverage(edges, 3, 3)
     expected = [
         [
             max(0, min(x + 1, x1) - max(x, x0)) * max(0, min(y + 1, y1) - max(y, y0))
@@ -92,14 +90,14 @@ def test_rectangle_coverage_equals_pixel_intersection_area(box, reverse):
 
 @pytest.mark.parametrize(("width", "height"), [(0, 3), (3, 0), (-1, 3), (3, -1), (3, 3)])
 def test_empty_edge_coverage_respects_target_shape(width, height):
-    actual = paths.internal_signed_area_coverage(np.empty((0, 4)), width, height)
+    actual = paths.signed_area_coverage(np.empty((0, 4)), width, height)
     assert actual.shape == (max(height, 0), max(width, 0))
     assert not actual.any()
 
 
 def test_closed_dash_crossing_seam_remains_one_continuous_piece():
     path = CapturedSubpath([(0, 0), (4, 0), (4, 4), (0, 4)], closed=True)
-    pieces = paths.internal_dash_subpath(path, ([6, 2], 2))
+    pieces = paths.dash_subpath(path, ([6, 2], 2))
     assert [piece.points for piece in pieces] == [
         [(0, 2), (0, 0), (4, 0)],
         [(4, 2), (4, 4), (0, 4)],
@@ -108,7 +106,7 @@ def test_closed_dash_crossing_seam_remains_one_continuous_piece():
 
 @pytest.mark.parametrize("radius", [0, 1, 4])
 def test_circle_path_preserves_center_and_radius(radius):
-    path = paths.internal_circle_path(3, 5, radius)
+    path = paths.circle_path(3, 5, radius)
     (subpath,) = path.subpaths
     assert subpath.closed
     assert len(subpath.points) == 32

@@ -3,14 +3,14 @@ import pytest
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render import target as render_target
-from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.target import internal_RasterTarget
+from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_target(clip_kind):
+def make_target(clip_kind):
     pixels = bytearray(12 * 12 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
-    clip = internal_ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12)
+    clip = ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12)
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
             [(2, 2), (8, 2), (8, 10), (2, 10)]
@@ -18,7 +18,7 @@ def internal_target(clip_kind):
             else [(2, 2), (10, 2), (2, 10)]
         )
         clip.push(CapturedPath([CapturedSubpath(points, closed=True)]), "nonzero")
-    return internal_RasterTarget(
+    return RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -32,7 +32,7 @@ def internal_target(clip_kind):
     ), view
 
 
-def internal_in_clip(x, y, kind):
+def in_clip(x, y, kind):
     if kind == "none":
         return True
     if kind == "rect":
@@ -50,14 +50,14 @@ def test_circle_routes_follow_pixel_center_geometry(
     monkeypatch, threshold, clip_kind, alpha, cx, cy, radius
 ):
     monkeypatch.setattr(render_target, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_circle(cx, cy, radius, color)
     expected = np.zeros_like(actual)
     for row in range(12):
         for column in range(12):
             x, y = column + 0.5, 11.5 - row
-            if (x - cx) ** 2 + (y - cy) ** 2 <= radius**2 and internal_in_clip(x, y, clip_kind):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= radius**2 and in_clip(x, y, clip_kind):
                 expected[row, column] = color
     np.testing.assert_array_equal(actual, expected)
 
@@ -68,7 +68,7 @@ def test_circle_routes_follow_pixel_center_geometry(
 def test_integer_rectangles_respect_clips_and_blend_into_transparent_backdrop(
     clip_kind, mode, alpha
 ):
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_rect((1, 1, 9, 9), color, mode)
     expected = np.zeros_like(actual)
@@ -76,6 +76,6 @@ def test_integer_rectangles_respect_clips_and_blend_into_transparent_backdrop(
         for row in range(12):
             for column in range(12):
                 x, y = column + 0.5, 11.5 - row
-                if 1 <= x < 9 and 1 <= y < 9 and internal_in_clip(x, y, clip_kind):
+                if 1 <= x < 9 and 1 <= y < 9 and in_clip(x, y, clip_kind):
                     expected[row, column] = color
     np.testing.assert_array_equal(actual, expected)

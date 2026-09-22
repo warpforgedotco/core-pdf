@@ -5,17 +5,17 @@ import tomllib
 
 import pytest
 
-internal_REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 
 
-def internal_source_roots() -> tuple[pathlib.Path, ...]:
-    with (internal_REPOSITORY_ROOT / "pyproject.toml").open("rb") as handle:
+def source_roots() -> tuple[pathlib.Path, ...]:
+    with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as handle:
         sources = tomllib.load(handle)["tool"]["coverage"]["run"]["source"]
-    return tuple(internal_REPOSITORY_ROOT / source for source in sources)
+    return tuple(REPOSITORY_ROOT / source for source in sources)
 
 
-internal_SOURCE_ROOTS = internal_source_roots()
-internal_EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
+SOURCE_ROOTS = source_roots()
+EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
 
 
 @pytest.fixture
@@ -44,11 +44,11 @@ def text_pdf_bytes() -> bytes:
     return bytes(data)
 
 
-def internal_shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
+def shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
     shadowed: list[tuple[pathlib.Path, pathlib.Path]] = []
-    for root in internal_SOURCE_ROOTS:
+    for root in SOURCE_ROOTS:
         for path in root.rglob("*"):
-            if not path.is_file() or path.suffix not in internal_EXTENSION_SUFFIXES:
+            if not path.is_file() or path.suffix not in EXTENSION_SUFFIXES:
                 continue
             source = path.parent / f"{path.name.split('.')[0]}.py"
             if source.is_file():
@@ -57,7 +57,7 @@ def internal_shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
 
 
 def pytest_configure() -> None:
-    shadowed = internal_shadowed_modules()
+    shadowed = shadowed_modules()
     if not shadowed:
         return
     lines = [
@@ -66,8 +66,7 @@ def pytest_configure() -> None:
         "",
     ]
     lines += [
-        f"  {extension.relative_to(internal_REPOSITORY_ROOT)} shadows "
-        f"{source.relative_to(internal_REPOSITORY_ROOT)}"
+        f"  {extension.relative_to(REPOSITORY_ROOT)} shadows {source.relative_to(REPOSITORY_ROOT)}"
         for extension, source in shadowed
     ]
     lines += ["", "Delete the extension modules and re-run."]

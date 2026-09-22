@@ -14,10 +14,10 @@ TreeKeyT = TypeVar("TreeKeyT")
 
 
 def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> dict:
-    return internal_tree_node(resolve(value), tree_name)
+    return require_tree_node(resolve(value), tree_name)
 
 
-def internal_tree_node(current: object, tree_name: str) -> dict:
+def require_tree_node(current: object, tree_name: str) -> dict:
     if not isinstance(current, dict):
         raise ValueError(f"invalid {tree_name} tree node")
     return current
@@ -40,7 +40,7 @@ def tree_entry[TreeKeyT](
     return key, entries[index + 1]
 
 
-def internal_iter_tree_items[TreeKeyT](
+def iter_tree_items[TreeKeyT](
     node: object,
     resolve: ResolveFn,
     decode_key: Callable[[object], TreeKeyT | None],
@@ -65,7 +65,7 @@ def internal_iter_tree_items[TreeKeyT](
         if is_root and resolved is None:
             return
         is_root = False
-        current = internal_tree_node(resolved, tree_name)
+        current = require_tree_node(resolved, tree_name)
         marker = id(current)
         if marker in seen:
             raise ValueError(f"{tree_name} tree cycle detected")
@@ -97,7 +97,7 @@ def iter_number_tree_items(
             value = resolve(value)
             return value if type(value) is int else None
 
-    yield from internal_iter_tree_items(
+    yield from iter_tree_items(
         node,
         resolve,
         decode,
@@ -115,7 +115,7 @@ def iter_name_tree_items(
     *,
     resolve_values: bool = True,
 ) -> Iterator[tuple[str, object]]:
-    yield from internal_iter_tree_items(
+    yield from iter_tree_items(
         node,
         resolve,
         decode_name,

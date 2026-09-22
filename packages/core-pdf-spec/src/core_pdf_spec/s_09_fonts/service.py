@@ -5,7 +5,7 @@ from typing import Any, ClassVar, NoReturn, Protocol, Self
 
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 class DecodedFontGlyph:
@@ -37,12 +37,12 @@ class DecodedFontGlyph:
         unicode: str,
         width_code: int,
     ) -> None:
-        internal_frozen_setattr(self, "code_bytes", code_bytes)
-        internal_frozen_setattr(self, "char_code", char_code)
-        internal_frozen_setattr(self, "cid", cid)
-        internal_frozen_setattr(self, "gid", gid)
-        internal_frozen_setattr(self, "unicode", unicode)
-        internal_frozen_setattr(self, "width_code", width_code)
+        frozen_setattr(self, "code_bytes", code_bytes)
+        frozen_setattr(self, "char_code", char_code)
+        frozen_setattr(self, "cid", cid)
+        frozen_setattr(self, "gid", gid)
+        frozen_setattr(self, "unicode", unicode)
+        frozen_setattr(self, "width_code", width_code)
 
     def __repr__(self) -> str:
         return (
@@ -93,7 +93,7 @@ class DecodedFontGlyph:
 
     def __setstate__(self, state: list[Any]) -> None:
         for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
+            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         code_bytes = changes.pop("code_bytes", self.code_bytes)

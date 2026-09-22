@@ -12,16 +12,16 @@ from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
-internal_FALLBACK_BLEND_CONTEXT = SemanticContext(PdfVersion(2, 0))
+FALLBACK_BLEND_CONTEXT = SemanticContext(PdfVersion(2, 0))
 
 
-def internal_blend_context(context: SemanticContext | None) -> SemanticContext:
+def blend_context(context: SemanticContext | None) -> SemanticContext:
     if context is None or context.version is None or not context.version.recognized:
-        return internal_FALLBACK_BLEND_CONTEXT
+        return FALLBACK_BLEND_CONTEXT
     return context
 
 
-def internal_blend_normal_solid_array_numpy(
+def blend_normal_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
 ) -> None:
@@ -70,7 +70,7 @@ def internal_blend_normal_solid_array_numpy(
     target[...] = destination_float.astype(numpy.uint8)
 
 
-def internal_blend_channels_f64(
+def blend_channels_f64(
     src_r: numpy.ndarray | float,
     src_g: numpy.ndarray | float,
     src_b: numpy.ndarray | float,
@@ -95,7 +95,7 @@ def internal_blend_channels_f64(
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - db / 255.0))
     elif mode in {"colordodge", "colorburn"}:
         component_mode: BlendMode = "ColorDodge" if mode == "colordodge" else "ColorBurn"
-        context = internal_blend_context(semantic_context)
+        context = blend_context(semantic_context)
         src_r = src_r * (1.0 - dst_a) + dst_a * blend_components(
             dr / 255.0, src_r, component_mode, context=context
         )
@@ -119,7 +119,7 @@ def internal_blend_channels_f64(
     return out_r, out_g, out_b, out_a_i
 
 
-def internal_blend_solid_array_numpy(
+def blend_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
     blend_mode: str | None,
@@ -140,7 +140,7 @@ def internal_blend_solid_array_numpy(
     dg = target[..., 1].astype(numpy.float64)
     db = target[..., 2].astype(numpy.float64)
     da = target[..., 3].astype(numpy.float64)
-    out_r, out_g, out_b, out_a_i = internal_blend_channels_f64(
+    out_r, out_g, out_b, out_a_i = blend_channels_f64(
         sr / 255.0,
         sg / 255.0,
         sb / 255.0,
@@ -158,7 +158,7 @@ def internal_blend_solid_array_numpy(
     target[..., 3] = numpy.clip(out_a_i, 0.0, 255.0).astype(numpy.uint8)
 
 
-def internal_composite_blended_group_numpy(
+def composite_blended_group_numpy(
     destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     source: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     source_alpha_scale: float | None,
@@ -182,7 +182,7 @@ def internal_composite_blended_group_numpy(
     db = destination[..., 2][visible].astype(numpy.float64)
     da = destination[..., 3][visible].astype(numpy.float64)
     mode = blend_mode.lower() if isinstance(blend_mode, str) else None
-    out_r, out_g, out_b, out_a_i = internal_blend_channels_f64(
+    out_r, out_g, out_b, out_a_i = blend_channels_f64(
         source[..., 0][visible].astype(numpy.float64) / 255.0,
         source[..., 1][visible].astype(numpy.float64) / 255.0,
         source[..., 2][visible].astype(numpy.float64) / 255.0,
@@ -198,7 +198,7 @@ def internal_composite_blended_group_numpy(
         destination[..., channel][visible] = numpy.clip(values, 0.0, 255.0).astype(numpy.uint8)
 
 
-def internal_blend_normal_alpha_array_numpy(
+def blend_normal_alpha_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
     alpha: numpy.ndarray[Any, Any],
@@ -227,7 +227,7 @@ def internal_blend_normal_alpha_array_numpy(
     numpy.copyto(target, destination_float.astype(numpy.uint8), where=(alpha > 0)[..., None])
 
 
-def internal_composite_normal_group_numpy(
+def composite_normal_group_numpy(
     destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     source: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     source_alpha_scale: float,
@@ -292,7 +292,7 @@ def internal_composite_normal_group_numpy(
     destination[...] = destination_float.astype(numpy.uint8)
 
 
-def internal_color_component(value: Any, default: int = 0) -> int:
+def color_component(value: Any, default: int = 0) -> int:
     if type(value) is bool:
         return default
     try:
@@ -301,17 +301,17 @@ def internal_color_component(value: Any, default: int = 0) -> int:
         return default
 
 
-def internal_clamp01(value: float) -> float:
+def clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
-def internal_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
+def resolve_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
     return (float(opacity) if is_pdf_number(opacity) else 1.0) * (
         float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else 1.0
     )
 
 
-def internal_blend_visible_pixels(
+def blend_visible_pixels(
     destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]],
     red: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
@@ -323,7 +323,7 @@ def internal_blend_visible_pixels(
     semantic_context: SemanticContext | None = None,
 ) -> None:
     backdrop = destination[visible].astype(numpy.float64)
-    channels = internal_blend_channels_f64(
+    channels = blend_channels_f64(
         red,
         green,
         blue,
@@ -338,29 +338,29 @@ def internal_blend_visible_pixels(
     destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
 
 
-def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
+def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
     alpha = 255
     if type(opacity) in {int, float}:
-        alpha = internal_color_component(opacity, 255)
+        alpha = color_component(opacity, 255)
     if isinstance(color, (list, tuple)) and color:
         if len(color) == 1:
-            gray = internal_color_component(color[0])
+            gray = color_component(color[0])
             return gray, gray, gray, alpha
         if len(color) == 4:
             try:
-                cyan, magenta, yellow, black = (internal_clamp01(float(c)) for c in color)
+                cyan, magenta, yellow, black = (clamp01(float(c)) for c in color)
             except TypeError, ValueError:
                 return 0, 0, 0, alpha
             red, green, blue = cmyk_floats_to_srgb(cyan, magenta, yellow, black)
             return red, green, blue, alpha
-        rgb = [internal_color_component(c) for c in color[:3]]
+        rgb = [color_component(c) for c in color[:3]]
         while len(rgb) < 3:
             rgb.append(rgb[-1] if rgb else 0)
         return rgb[0], rgb[1], rgb[2], alpha
     return 0, 0, 0, alpha
 
 
-def internal_scale_rgba_alpha(
+def scale_rgba_alpha(
     rgba: tuple[int, int, int, int],
     alpha_scale: Any,
 ) -> tuple[int, int, int, int]:

@@ -28,7 +28,7 @@ from core_pdf_spec.s_09_fonts.cmap_tounicode import (
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
 
 
-def internal_decode_utf16be(data: bytes) -> str:
+def decode_utf16be_text(data: bytes) -> str:
     if not data:
         return ""
     if data.startswith(b"\xfe\xff"):
@@ -42,7 +42,7 @@ def internal_decode_utf16be(data: bytes) -> str:
         return buffer.decode("utf-16-be", "replace")
 
 
-def internal_parse_codespace_ranges(program: CMapProgram) -> tuple[tuple[bytes, bytes], ...]:
+def parse_codespace_ranges(program: CMapProgram) -> tuple[tuple[bytes, bytes], ...]:
     code_space_ranges: list[tuple[bytes, bytes]] = []
     saw_codespace_block = False
     valid_range_count = 0
@@ -67,24 +67,24 @@ def internal_parse_codespace_ranges(program: CMapProgram) -> tuple[tuple[bytes, 
     return tuple(code_space_ranges)
 
 
-def internal_parse_mapping_blocks(program: CMapProgram, mappings: dict[bytes, str]) -> None:
+def parse_mapping_blocks(program: CMapProgram, mappings: dict[bytes, str]) -> None:
     invalid_range_count = 0
     valid_range_count = 0
     for block in cmap_mapping_blocks(program, include_cid_ranges=True):
         match block.operator:
             case b"beginbfchar":
-                internal_parse_bfchar_block(block, mappings)
+                parse_bfchar_block(block, mappings)
             case b"beginbfrange":
-                block_invalid, block_valid = internal_parse_bfrange_block(block, mappings)
+                block_invalid, block_valid = parse_bfrange_block(block, mappings)
                 invalid_range_count += block_invalid
                 valid_range_count += block_valid
             case b"begincidrange":
-                internal_parse_cidrange_block(block, mappings)
+                parse_cidrange_block(block, mappings)
     if invalid_range_count and not valid_range_count:
         raise ValueError("invalid ToUnicode CMap bfrange")
 
 
-def internal_parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
+def parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
     for record in block.records():
         src_tok = record.source
         dst_tok = record.destination
@@ -92,7 +92,7 @@ def internal_parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, s
             src = decode_cmap_token(src_tok)
             if not src:
                 continue
-            dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
+            dst = decode_utf16be_text(decode_cmap_token(dst_tok))
         except ValueError, UnicodeDecodeError:
             if dst_tok.startswith(b"<") and b"<" in dst_tok[1:]:
                 prefix = dst_tok[1 : dst_tok.find(b"<", 1)]
@@ -102,7 +102,7 @@ def internal_parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, s
                         continue
                     if len(prefix) % 2:
                         prefix += b"0"
-                    dst = internal_decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
+                    dst = decode_utf16be_text(bytes.fromhex(prefix.decode("ascii")))
                 except ValueError, UnicodeDecodeError:
                     break
                 mappings[src] = dst
@@ -112,9 +112,7 @@ def internal_parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, s
         mappings[src] = dst
 
 
-def internal_parse_bfrange_block(
-    block: CMapMappingBlock, mappings: dict[bytes, str]
-) -> tuple[int, int]:
+def parse_bfrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> tuple[int, int]:
     invalid_range_count = int(bool(block.trailing_operand_count))
     valid_range_count = 0
     for record in block.records():
@@ -139,7 +137,7 @@ def internal_parse_bfrange_block(
                 if offset >= source_range.count:
                     break
                 try:
-                    dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
+                    dst = decode_utf16be_text(decode_cmap_token(dst_tok))
                 except ValueError, UnicodeDecodeError:
                     continue
                 mappings[source_range.source_at(offset)] = dst
@@ -150,7 +148,7 @@ def internal_parse_bfrange_block(
                 invalid_range_count += 1
         elif t3.startswith((b"<", b"(")):
             try:
-                base_dst = internal_decode_utf16be(decode_cmap_token(t3))
+                base_dst = decode_utf16be_text(decode_cmap_token(t3))
                 expanded = expand_range(
                     source_range.first, source_range.last, source_range.width, base_dst
                 )
@@ -164,7 +162,7 @@ def internal_parse_bfrange_block(
     return invalid_range_count, valid_range_count
 
 
-def internal_parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
+def parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
     for record in block.records():
         assert record.source_end is not None
         try:
@@ -281,9 +279,9 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
     mappings: dict[bytes, str] = {}
     program = CMapProgram.parse(data)
 
-    internal_parse_mapping_blocks(program, mappings)
+    parse_mapping_blocks(program, mappings)
     try:
-        code_space_ranges = internal_parse_codespace_ranges(program)
+        code_space_ranges = parse_codespace_ranges(program)
     except ValueError:
         if not mappings:
             raise

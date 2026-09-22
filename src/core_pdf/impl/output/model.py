@@ -11,11 +11,11 @@ from typing import Any, ClassVar, Self, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.model.page_selection import PageSelection
-from core_pdf.impl.model.text import internal_reconcile_text_words
-from core_pdf.impl.records import internal_Record
+from core_pdf.impl.model.text import reconcile_text_words
+from core_pdf.impl.records import Record
 from core_pdf.impl.types import Rectangle, TextWord
 
-internal_frozen_setattr = object.__setattr__
+frozen_setattr = object.__setattr__
 
 
 SCHEMA_VERSION = "5.0"
@@ -23,13 +23,13 @@ SCHEMA_VERSION = "5.0"
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 
-def internal_freeze(value: Any) -> Any:
+def freeze(value: Any) -> Any:
     if isinstance(value, MappingABC):
-        return MappingProxyType({key: internal_freeze(item) for key, item in value.items()})
+        return MappingProxyType({key: freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
-        return tuple(internal_freeze(item) for item in value)
+        return tuple(freeze(item) for item in value)
     if isinstance(value, set):
-        return frozenset(internal_freeze(item) for item in value)
+        return frozenset(freeze(item) for item in value)
     return value
 
 
@@ -49,7 +49,7 @@ class BlockKind(StrEnum):
     UNKNOWN = "unknown"
 
 
-class TableCell(internal_Record):
+class TableCell(Record):
     __slots__ = ("row", "column", "text", "row_span", "column_span", "bbox")
 
     row: int
@@ -78,12 +78,12 @@ class TableCell(internal_Record):
         column_span: int = 1,
         bbox: Rectangle | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "row", row)
-        internal_frozen_setattr(self, "column", column)
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "row_span", row_span)
-        internal_frozen_setattr(self, "column_span", column_span)
-        internal_frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "row", row)
+        frozen_setattr(self, "column", column)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "row_span", row_span)
+        frozen_setattr(self, "column_span", column_span)
+        frozen_setattr(self, "bbox", bbox)
 
     def __repr__(self) -> str:
         return (
@@ -126,7 +126,7 @@ class TableCell(internal_Record):
         return self.__class__(row, column, text, row_span, column_span, bbox)
 
 
-class TableRowBand(internal_Record):
+class TableRowBand(Record):
     __slots__ = ("index", "bbox", "kind", "confidence")
 
     index: int
@@ -144,10 +144,10 @@ class TableRowBand(internal_Record):
         kind: str = "body",
         confidence: float | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "index", index)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "index", index)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "confidence", confidence)
 
     def __repr__(self) -> str:
         return (
@@ -184,7 +184,7 @@ class TableRowBand(internal_Record):
         return self.__class__(index, bbox, kind, confidence)
 
 
-class TableColumnBand(internal_Record):
+class TableColumnBand(Record):
     __slots__ = ("index", "bbox", "confidence")
 
     index: int
@@ -200,9 +200,9 @@ class TableColumnBand(internal_Record):
         bbox: Rectangle | None = None,
         confidence: float | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "index", index)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "index", index)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "confidence", confidence)
 
     def __repr__(self) -> str:
         return (
@@ -236,7 +236,7 @@ class TableColumnBand(internal_Record):
         return self.__class__(index, bbox, confidence)
 
 
-class TableAssociatedText(internal_Record):
+class TableAssociatedText(Record):
     __slots__ = ("text", "bbox", "kind", "confidence")
 
     text: str
@@ -254,10 +254,10 @@ class TableAssociatedText(internal_Record):
         kind: str = "caption",
         confidence: float | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "confidence", confidence)
 
     def __repr__(self) -> str:
         return (
@@ -294,7 +294,7 @@ class TableAssociatedText(internal_Record):
         return self.__class__(text, bbox, kind, confidence)
 
 
-class Table(internal_Record):
+class Table(Record):
     __slots__ = (
         "order",
         "rows",
@@ -352,15 +352,15 @@ class Table(internal_Record):
         column_bands: tuple[TableColumnBand, ...] = (),
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "order", order)
-        internal_frozen_setattr(self, "rows", rows)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "title", title)
-        internal_frozen_setattr(self, "caption", caption)
-        internal_frozen_setattr(self, "row_bands", row_bands)
-        internal_frozen_setattr(self, "column_bands", column_bands)
-        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        frozen_setattr(self, "order", order)
+        frozen_setattr(self, "rows", rows)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "title", title)
+        frozen_setattr(self, "caption", caption)
+        frozen_setattr(self, "row_bands", row_bands)
+        frozen_setattr(self, "column_bands", column_bands)
+        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -435,7 +435,7 @@ class Table(internal_Record):
         )
 
     def _post_init(self) -> None:
-        object.__setattr__(self, "metadata", internal_freeze(self.metadata))
+        object.__setattr__(self, "metadata", freeze(self.metadata))
 
     @property
     def layout_bbox(self) -> Rectangle | None:
@@ -456,7 +456,7 @@ class Table(internal_Record):
         return bbox_union(boxes) if boxes else self.bbox
 
 
-class Figure(internal_Record):
+class Figure(Record):
     __slots__ = ("order", "bbox", "kind", "metadata")
 
     order: int
@@ -474,10 +474,10 @@ class Figure(internal_Record):
         kind: str = "figure",
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "order", order)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        frozen_setattr(self, "order", order)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -515,10 +515,10 @@ class Figure(internal_Record):
         return self.__class__(order, bbox, kind, metadata)
 
     def _post_init(self) -> None:
-        object.__setattr__(self, "metadata", internal_freeze(self.metadata))
+        object.__setattr__(self, "metadata", freeze(self.metadata))
 
 
-class Link(internal_Record):
+class Link(Record):
     __slots__ = ("bbox", "url", "link_type", "text")
 
     bbox: Rectangle | None
@@ -536,10 +536,10 @@ class Link(internal_Record):
         link_type: str | None = None,
         text: str = "",
     ) -> None:
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "url", url)
-        internal_frozen_setattr(self, "link_type", link_type)
-        internal_frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "url", url)
+        frozen_setattr(self, "link_type", link_type)
+        frozen_setattr(self, "text", text)
 
     def __repr__(self) -> str:
         return (
@@ -576,7 +576,7 @@ class Link(internal_Record):
         return self.__class__(bbox, url, link_type, text)
 
 
-class Annotation(internal_Record):
+class Annotation(Record):
     __slots__ = ("subtype", "bbox", "contents", "destination")
 
     subtype: str | None
@@ -594,10 +594,10 @@ class Annotation(internal_Record):
         contents: str = "",
         destination: Any = None,
     ) -> None:
-        internal_frozen_setattr(self, "subtype", subtype)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "contents", contents)
-        internal_frozen_setattr(self, "destination", destination)
+        frozen_setattr(self, "subtype", subtype)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "contents", contents)
+        frozen_setattr(self, "destination", destination)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -635,10 +635,10 @@ class Annotation(internal_Record):
         return self.__class__(subtype, bbox, contents, destination)
 
     def _post_init(self) -> None:
-        object.__setattr__(self, "destination", internal_freeze(self.destination))
+        object.__setattr__(self, "destination", freeze(self.destination))
 
 
-class FormField(internal_Record):
+class FormField(Record):
     __slots__ = (
         "name",
         "field_type",
@@ -696,15 +696,15 @@ class FormField(internal_Record):
         no_export: bool = False,
         options: tuple[str, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "name", name)
-        internal_frozen_setattr(self, "field_type", field_type)
-        internal_frozen_setattr(self, "value_text", value_text)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "field_index", field_index)
-        internal_frozen_setattr(self, "required", required)
-        internal_frozen_setattr(self, "read_only", read_only)
-        internal_frozen_setattr(self, "no_export", no_export)
-        internal_frozen_setattr(self, "options", options)
+        frozen_setattr(self, "name", name)
+        frozen_setattr(self, "field_type", field_type)
+        frozen_setattr(self, "value_text", value_text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "field_index", field_index)
+        frozen_setattr(self, "required", required)
+        frozen_setattr(self, "read_only", read_only)
+        frozen_setattr(self, "no_export", no_export)
+        frozen_setattr(self, "options", options)
 
     def __repr__(self) -> str:
         return (
@@ -778,7 +778,7 @@ class FormField(internal_Record):
         )
 
 
-class TextSpan(internal_Record):
+class TextSpan(Record):
     __slots__ = (
         "text",
         "bold",
@@ -831,14 +831,14 @@ class TextSpan(internal_Record):
         superscript: bool = False,
         subscript: bool = False,
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "bold", bold)
-        internal_frozen_setattr(self, "italic", italic)
-        internal_frozen_setattr(self, "underline", underline)
-        internal_frozen_setattr(self, "strikeout", strikeout)
-        internal_frozen_setattr(self, "mark", mark)
-        internal_frozen_setattr(self, "superscript", superscript)
-        internal_frozen_setattr(self, "subscript", subscript)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bold", bold)
+        frozen_setattr(self, "italic", italic)
+        frozen_setattr(self, "underline", underline)
+        frozen_setattr(self, "strikeout", strikeout)
+        frozen_setattr(self, "mark", mark)
+        frozen_setattr(self, "superscript", superscript)
+        frozen_setattr(self, "subscript", subscript)
 
     def __repr__(self) -> str:
         return (
@@ -907,7 +907,7 @@ class TextSpan(internal_Record):
         )
 
 
-class TextLine(internal_Record):
+class TextLine(Record):
     __slots__ = (
         "text",
         "break_before",
@@ -1015,25 +1015,25 @@ class TextLine(internal_Record):
         spans: tuple[TextSpan, ...] = (),
         words: tuple[TextWord, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "text", text)
-        internal_frozen_setattr(self, "break_before", break_before)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "advance_bbox", advance_bbox)
-        internal_frozen_setattr(self, "ink_bbox", ink_bbox)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "source", source)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "baseline", baseline)
-        internal_frozen_setattr(self, "contributing_sources", contributing_sources)
-        internal_frozen_setattr(self, "bold", bold)
-        internal_frozen_setattr(self, "italic", italic)
-        internal_frozen_setattr(self, "underline", underline)
-        internal_frozen_setattr(self, "strikeout", strikeout)
-        internal_frozen_setattr(self, "mark", mark)
-        internal_frozen_setattr(self, "superscript", superscript)
-        internal_frozen_setattr(self, "subscript", subscript)
-        internal_frozen_setattr(self, "spans", spans)
-        internal_frozen_setattr(self, "words", words)
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "break_before", break_before)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "advance_bbox", advance_bbox)
+        frozen_setattr(self, "ink_bbox", ink_bbox)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "source", source)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "baseline", baseline)
+        frozen_setattr(self, "contributing_sources", contributing_sources)
+        frozen_setattr(self, "bold", bold)
+        frozen_setattr(self, "italic", italic)
+        frozen_setattr(self, "underline", underline)
+        frozen_setattr(self, "strikeout", strikeout)
+        frozen_setattr(self, "mark", mark)
+        frozen_setattr(self, "superscript", superscript)
+        frozen_setattr(self, "subscript", subscript)
+        frozen_setattr(self, "spans", spans)
+        frozen_setattr(self, "words", words)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -1158,7 +1158,7 @@ class TextLine(internal_Record):
         )
 
     def _post_init(self) -> None:
-        object.__setattr__(self, "words", internal_reconcile_text_words(self.text, self.words))
+        object.__setattr__(self, "words", reconcile_text_words(self.text, self.words))
         if self.spans and "".join(span.text for span in self.spans) != self.text:
             object.__setattr__(self, "spans", ())
 
@@ -1188,7 +1188,7 @@ class TextLine(internal_Record):
         )
 
 
-class Block(internal_Record):
+class Block(Record):
     __slots__ = (
         "order",
         "kind",
@@ -1246,15 +1246,15 @@ class Block(internal_Record):
         level: int | None = None,
         provenance: tuple[str, ...] = (),
     ) -> None:
-        internal_frozen_setattr(self, "order", order)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "lines", lines)
-        internal_frozen_setattr(self, "bbox", bbox)
-        internal_frozen_setattr(self, "column_index", column_index)
-        internal_frozen_setattr(self, "rotation", rotation)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "level", level)
-        internal_frozen_setattr(self, "provenance", provenance)
+        frozen_setattr(self, "order", order)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "lines", lines)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "column_index", column_index)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "level", level)
+        frozen_setattr(self, "provenance", provenance)
 
     def __repr__(self) -> str:
         return (
@@ -1340,7 +1340,7 @@ class Block(internal_Record):
 PageElement: TypeAlias = Block | Table | Figure
 
 
-class ContentNode(internal_Record):
+class ContentNode(Record):
     __slots__ = ("node_id", "kind", "payload", "page_number")
 
     node_id: int
@@ -1358,10 +1358,10 @@ class ContentNode(internal_Record):
         payload: PageElement,
         page_number: int | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "node_id", node_id)
-        internal_frozen_setattr(self, "kind", kind)
-        internal_frozen_setattr(self, "payload", payload)
-        internal_frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "node_id", node_id)
+        frozen_setattr(self, "kind", kind)
+        frozen_setattr(self, "payload", payload)
+        frozen_setattr(self, "page_number", page_number)
 
     def __repr__(self) -> str:
         return (
@@ -1411,7 +1411,7 @@ class ContentNode(internal_Record):
         return (str(source),) if source else ()
 
 
-class TextView(internal_Record):
+class TextView(Record):
     __slots__ = ("elements", "page_number")
 
     elements: tuple[PageElement, ...]
@@ -1421,8 +1421,8 @@ class TextView(internal_Record):
     __match_args__ = ("elements", "page_number")
 
     def __init__(self, elements: tuple[PageElement, ...], page_number: int | None = None) -> None:
-        internal_frozen_setattr(self, "elements", elements)
-        internal_frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "elements", elements)
+        frozen_setattr(self, "page_number", page_number)
 
     def __repr__(self) -> str:
         return (
@@ -1492,7 +1492,7 @@ class TextView(internal_Record):
         return "\n\n".join(parts)
 
 
-class TextLineReference(internal_Record):
+class TextLineReference(Record):
     __slots__ = ("page_number", "line_index", "line")
 
     page_number: int
@@ -1503,9 +1503,9 @@ class TextLineReference(internal_Record):
     __match_args__ = ("page_number", "line_index", "line")
 
     def __init__(self, page_number: int, line_index: int, line: TextLine) -> None:
-        internal_frozen_setattr(self, "page_number", page_number)
-        internal_frozen_setattr(self, "line_index", line_index)
-        internal_frozen_setattr(self, "line", line)
+        frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "line_index", line_index)
+        frozen_setattr(self, "line", line)
 
     def __repr__(self) -> str:
         return (
@@ -1539,7 +1539,7 @@ class TextLineReference(internal_Record):
         return self.__class__(page_number, line_index, line)
 
 
-class TableView(internal_Record):
+class TableView(Record):
     __slots__ = ("tables", "page_number")
 
     tables: tuple[Table, ...]
@@ -1549,8 +1549,8 @@ class TableView(internal_Record):
     __match_args__ = ("tables", "page_number")
 
     def __init__(self, tables: tuple[Table, ...], page_number: int | None = None) -> None:
-        internal_frozen_setattr(self, "tables", tables)
-        internal_frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "tables", tables)
+        frozen_setattr(self, "page_number", page_number)
 
     def __repr__(self) -> str:
         return (
@@ -1578,7 +1578,7 @@ class TableView(internal_Record):
         return self.__class__(tables, page_number)
 
 
-class TableReference(internal_Record):
+class TableReference(Record):
     __slots__ = ("page_number", "table_index", "table")
 
     page_number: int
@@ -1589,9 +1589,9 @@ class TableReference(internal_Record):
     __match_args__ = ("page_number", "table_index", "table")
 
     def __init__(self, page_number: int, table_index: int, table: Table) -> None:
-        internal_frozen_setattr(self, "page_number", page_number)
-        internal_frozen_setattr(self, "table_index", table_index)
-        internal_frozen_setattr(self, "table", table)
+        frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "table_index", table_index)
+        frozen_setattr(self, "table", table)
 
     def __repr__(self) -> str:
         return (
@@ -1625,7 +1625,7 @@ class TableReference(internal_Record):
         return self.__class__(page_number, table_index, table)
 
 
-class DocumentTextView(internal_Record):
+class DocumentTextView(Record):
     __slots__ = ("pages",)
 
     pages: tuple[TextView, ...]
@@ -1634,7 +1634,7 @@ class DocumentTextView(internal_Record):
     __match_args__ = ("pages",)
 
     def __init__(self, pages: tuple[TextView, ...]) -> None:
-        internal_frozen_setattr(self, "pages", pages)
+        frozen_setattr(self, "pages", pages)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(pages={self.pages!r})"
@@ -1687,7 +1687,7 @@ class DocumentTextView(internal_Record):
         return "\f".join(page.text for page in self.pages) + "\f"
 
 
-class DocumentTableView(internal_Record):
+class DocumentTableView(Record):
     __slots__ = ("pages",)
 
     pages: tuple[TableView, ...]
@@ -1696,7 +1696,7 @@ class DocumentTableView(internal_Record):
     __match_args__ = ("pages",)
 
     def __init__(self, pages: tuple[TableView, ...]) -> None:
-        internal_frozen_setattr(self, "pages", pages)
+        frozen_setattr(self, "pages", pages)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}(pages={self.pages!r})"
@@ -1734,7 +1734,7 @@ class DocumentTableView(internal_Record):
         )
 
 
-class Page(internal_Record):
+class Page(Record):
     __slots__ = (
         "page_number",
         "page_label",
@@ -1755,7 +1755,7 @@ class Page(internal_Record):
         "diagnostics",
         "cropbox",
         "user_unit",
-        "internal_elements",
+        "_elements",
     )
 
     page_number: int
@@ -1777,7 +1777,7 @@ class Page(internal_Record):
     diagnostics: tuple[Diagnostic, ...]
     cropbox: Rectangle | None
     user_unit: float
-    internal_elements: tuple[PageElement, ...]
+    _elements: tuple[PageElement, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "page_number",
@@ -1799,7 +1799,7 @@ class Page(internal_Record):
         "diagnostics",
         "cropbox",
         "user_unit",
-        "internal_elements",
+        "_elements",
     )
     __match_args__ = (
         "page_number",
@@ -1845,26 +1845,26 @@ class Page(internal_Record):
         *,
         user_unit: float = 1.0,
     ) -> None:
-        internal_frozen_setattr(self, "page_number", page_number)
-        internal_frozen_setattr(self, "page_label", page_label)
-        internal_frozen_setattr(self, "width", width)
-        internal_frozen_setattr(self, "height", height)
-        internal_frozen_setattr(self, "rotation", rotation)
-        internal_frozen_setattr(self, "blocks", blocks)
-        internal_frozen_setattr(self, "page_class", page_class)
-        internal_frozen_setattr(self, "base_route", base_route)
-        internal_frozen_setattr(self, "confidence", confidence)
-        internal_frozen_setattr(self, "tables", tables)
-        internal_frozen_setattr(self, "figures", figures)
-        internal_frozen_setattr(self, "links", links)
-        internal_frozen_setattr(self, "annotations", annotations)
-        internal_frozen_setattr(self, "form_fields", form_fields)
-        internal_frozen_setattr(self, "header", header)
-        internal_frozen_setattr(self, "footer", footer)
-        internal_frozen_setattr(self, "diagnostics", diagnostics)
-        internal_frozen_setattr(self, "cropbox", cropbox)
-        internal_frozen_setattr(self, "user_unit", user_unit)
-        internal_frozen_setattr(self, "internal_elements", ())
+        frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "page_label", page_label)
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "blocks", blocks)
+        frozen_setattr(self, "page_class", page_class)
+        frozen_setattr(self, "base_route", base_route)
+        frozen_setattr(self, "confidence", confidence)
+        frozen_setattr(self, "tables", tables)
+        frozen_setattr(self, "figures", figures)
+        frozen_setattr(self, "links", links)
+        frozen_setattr(self, "annotations", annotations)
+        frozen_setattr(self, "form_fields", form_fields)
+        frozen_setattr(self, "header", header)
+        frozen_setattr(self, "footer", footer)
+        frozen_setattr(self, "diagnostics", diagnostics)
+        frozen_setattr(self, "cropbox", cropbox)
+        frozen_setattr(self, "user_unit", user_unit)
+        frozen_setattr(self, "_elements", ())
         self._post_init()
 
     def __repr__(self) -> str:
@@ -1991,7 +1991,7 @@ class Page(internal_Record):
     def _post_init(self) -> None:
         object.__setattr__(
             self,
-            "internal_elements",
+            "_elements",
             tuple(sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)),
         )
 
@@ -2005,13 +2005,13 @@ class Page(internal_Record):
 
     @property
     def elements(self) -> tuple[PageElement, ...]:
-        return self.internal_elements
+        return self._elements
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:
-        return tuple(self.internal_nodes())
+        return tuple(self.iter_nodes())
 
-    def internal_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
+    def iter_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
         for index, element in enumerate(self.elements, start=start_id):
             yield ContentNode(
                 node_id=index,
@@ -2047,7 +2047,7 @@ class Page(internal_Record):
         return page_to_html(self)
 
 
-class Diagnostic(internal_Record):
+class Diagnostic(Record):
     __slots__ = ("code", "message", "severity", "page_number")
 
     code: str
@@ -2065,10 +2065,10 @@ class Diagnostic(internal_Record):
         severity: str = "warning",
         page_number: int | None = None,
     ) -> None:
-        internal_frozen_setattr(self, "code", code)
-        internal_frozen_setattr(self, "message", message)
-        internal_frozen_setattr(self, "severity", severity)
-        internal_frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "code", code)
+        frozen_setattr(self, "message", message)
+        frozen_setattr(self, "severity", severity)
+        frozen_setattr(self, "page_number", page_number)
 
     def __repr__(self) -> str:
         return (
@@ -2105,7 +2105,7 @@ class Diagnostic(internal_Record):
         return self.__class__(code, message, severity, page_number)
 
 
-class Document(internal_Record):
+class Document(Record):
     __slots__ = ("pages", "metadata", "diagnostics", "schema_version")
 
     pages: tuple[Page, ...]
@@ -2123,10 +2123,10 @@ class Document(internal_Record):
         diagnostics: tuple[Diagnostic, ...] = (),
         schema_version: str = SCHEMA_VERSION,
     ) -> None:
-        internal_frozen_setattr(self, "pages", pages)
-        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        internal_frozen_setattr(self, "diagnostics", diagnostics)
-        internal_frozen_setattr(self, "schema_version", schema_version)
+        frozen_setattr(self, "pages", pages)
+        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        frozen_setattr(self, "diagnostics", diagnostics)
+        frozen_setattr(self, "schema_version", schema_version)
         self._post_init()
 
     def __repr__(self) -> str:
@@ -2166,7 +2166,7 @@ class Document(internal_Record):
     def _post_init(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
             raise ValueError(f"unsupported structured schema version: {self.schema_version}")
-        object.__setattr__(self, "metadata", internal_freeze(self.metadata))
+        object.__setattr__(self, "metadata", freeze(self.metadata))
 
     @property
     def text_view(self) -> DocumentTextView:
@@ -2180,7 +2180,7 @@ class Document(internal_Record):
     def nodes(self) -> tuple[ContentNode, ...]:
         nodes: list[ContentNode] = []
         for page in self.pages:
-            nodes.extend(page.internal_nodes(start_id=len(nodes)))
+            nodes.extend(page.iter_nodes(start_id=len(nodes)))
         return tuple(nodes)
 
     @property
