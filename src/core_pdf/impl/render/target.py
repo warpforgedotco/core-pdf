@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+import heapq
+import math
 from collections.abc import Iterable
 from copy import replace
-from typing import Any
+from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.capture.records import (
+    CapturedPath,
+    CapturedSoftMask,
+    ShadingPattern,
+    TilingPattern,
+)
+from core_pdf.impl.graphics.images import PreparedImage, prepare_image
+from core_pdf.impl.graphics.shading import PreparedShading, prepare_shading
+from core_pdf.impl.graphics.soft_masks import image_color_key_mask_is_shape
+from core_pdf.impl.model.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     internal_blend_context,
+    internal_blend_normal_alpha_array_numpy,
     internal_blend_normal_solid_array_numpy,
+    internal_blend_solid_array_numpy,
+    internal_blend_visible_pixels,
     internal_clamp01,
     internal_color_rgba,
     internal_composite_blended_group_numpy,
@@ -21,39 +35,53 @@ from core_pdf.impl.render.blend import (
     internal_scale_rgba_alpha,
 )
 from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.commands import translated_command
-from core_pdf.impl.render.groups import (
-    internal_composite_knockout_group,
-    internal_composite_masked_group,
-    internal_composite_nonisolated_group,
-)
-from core_pdf.impl.render.image_affine_target import internal_ImageAffineTargetMixin
-from core_pdf.impl.render.image_axis_target import (
-    PreparedImageCache,
-    internal_ImageAxisTargetMixin,
-)
+from core_pdf.impl.render.commands import append_captured_program, translated_command
+from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     DisplayItem,
     ImagePaintItem,
+    LineCap,
+    LineJoin,
     PathPaintItem,
     PathPaintKind,
     internal_RasterGroup,
 )
-from core_pdf.impl.render.path_fill_target import internal_PathFillTargetMixin
-from core_pdf.impl.render.path_shape_target import internal_PathShapeTargetMixin
-from core_pdf.impl.render.path_stroke_target import internal_PathStrokeTargetMixin
-from core_pdf.impl.render.patterns import TilingCellCache, internal_PatternTargetMixin
-from core_pdf.impl.render.soft_masks import (
-    SoftMaskCache,
-    SoftMaskKey,
-    SoftMaskPlane,
-    internal_graphics_soft_mask,
-    internal_resolve_soft_mask,
+from core_pdf.impl.render.paths import (
+    RASTER_CIRCLE_MIN_PIXEL_AREA,
+    RASTER_KERNEL_MIN_PIXEL_AREA,
+    RASTER_SAMPLE_OFFSETS,
+    internal_circle_path,
+    internal_dash_subpath,
+    internal_fill_path_crossing_spans,
+    internal_fill_path_sample_crossings,
+    internal_fill_path_sample_crossings_numpy,
+    internal_intersect_box,
+    internal_signed_area_coverage,
+    rasterize_unclipped_line_normal,
 )
-from core_pdf.impl.render.stroke_paint import internal_paint_stroke_once
-from core_pdf.impl.runtime.array_views import UInt8Array, uint8_image_view
+from core_pdf.impl.render.patterns import (
+    TilingCellCache,
+    axial_shading_t,
+    internal_shading_color_rgba,
+    internal_tiling_cell,
+    internal_tiling_pattern_uses_normal_blends,
+    radial_shading_t,
+)
+from core_pdf.impl.runtime.array_views import (
+    ByteBuffer,
+    UInt8Array,
+    uint8_image_view,
+    uint8_view,
+)
+from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
+from core_pdf_spec.s_11_transparency.groups import (
+    composite_knockout_element,
+    remove_group_backdrop,
+)
 from core_pdf_spec.standards import SemanticContext
 
 
@@ -75,14 +103,327 @@ class internal_ElementaryScratch:
         self.dirty: list[int] | None = None
 
 
-class internal_RasterTarget(
-    internal_ImageAffineTargetMixin,
-    internal_ImageAxisTargetMixin,
-    internal_PathShapeTargetMixin,
-    internal_PathFillTargetMixin,
-    internal_PathStrokeTargetMixin,
-    internal_PatternTargetMixin,
-):
+PREPARED_IMAGE_CACHE_BYTES = 256 << 20
+
+
+def internal_prepared_image_bytes(prepared: PreparedImage | None) -> int:
+    if prepared is None:
+        return 0
+    soft_mask = prepared.soft_mask
+    return prepared.raster.array.nbytes + (0 if soft_mask is None else soft_mask.array.nbytes)
+
+
+class PreparedImageCache:
+    __slots__ = ("budget", "entries", "size")
+
+    def __init__(self, budget: int = PREPARED_IMAGE_CACHE_BYTES) -> None:
+        self.budget = budget
+        self.entries: dict[int, tuple[ImageSource, PreparedImage | None, int]] = {}
+        self.size = 0
+
+    def store(self, source: ImageSource, prepared: PreparedImage | None) -> None:
+        size = internal_prepared_image_bytes(prepared)
+        if size > self.budget:
+            return
+        entries = self.entries
+        while entries and self.size + size > self.budget:
+            oldest = next(iter(entries))
+            self.size -= entries.pop(oldest)[2]
+        entries[id(source)] = (source, prepared, size)
+        self.size += size
+
+
+def internal_prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
+    cached = cache.entries.get(id(source))
+    if cached is not None and cached[0] is source:
+        return cached[1]
+    try:
+        prepared = prepare_image(source)
+    except Exception:
+        prepared = None
+    cache.store(source, prepared)
+    return prepared
+
+
+def internal_image_placement(item: ImagePaintItem) -> tuple[tuple[float, float], ...] | None:
+    if item.quad is not None:
+        return item.quad
+    box = rect_tuple(item.bbox)
+    if box is None:
+        return None
+    x0, y0, x1, y1 = box
+    return ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
+
+
+def internal_edge_tuples(
+    edge_array: numpy.ndarray[Any, Any] | None,
+) -> list[tuple[float, float, float, float]]:
+    if edge_array is None:
+        return []
+    return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
+
+
+def internal_paint_stroke_once(
+    target: internal_RasterTarget,
+    path: CapturedPath,
+    line_width: float,
+    rgba: tuple[int, int, int, int],
+    dash_pattern: tuple[list[float], float] | None,
+    blend_mode: str | None,
+    line_cap: int,
+    line_join: int,
+) -> None:
+    pixels = target.pixels
+    source_alpha = target.group_source_alpha
+    source_shape = target.group_source_shape
+    coverage_buffer = bytearray(len(pixels))
+    target.pixels = coverage_buffer
+    target.group_source_alpha = None
+    target.group_source_shape = None
+    try:
+        target.stroke_path(
+            path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
+        )
+    finally:
+        target.pixels = pixels
+        target.group_source_alpha = source_alpha
+        target.group_source_shape = source_shape
+    coverage = target.pixel_view(coverage_buffer)[..., 3]
+    covered_rows = numpy.flatnonzero(coverage.any(axis=1))
+    if covered_rows.size == 0:
+        return
+    covered_columns = numpy.flatnonzero(coverage.any(axis=0))
+    rows = slice(int(covered_rows[0]), int(covered_rows[-1]) + 1)
+    columns = slice(int(covered_columns[0]), int(covered_columns[-1]) + 1)
+    coverage = coverage[rows, columns]
+    alpha = numpy.rint(coverage.astype(numpy.float64) * (rgba[3] / 255.0)).astype(numpy.uint8)
+    target.record_source_coverage(rows, columns, alpha, shape=coverage)
+    visible = alpha > 0
+    if not numpy.any(visible):
+        return
+    internal_blend_visible_pixels(
+        target.pixel_view(pixels)[rows, columns],
+        visible,
+        rgba[0] / 255.0,
+        rgba[1] / 255.0,
+        rgba[2] / 255.0,
+        alpha[visible].astype(numpy.float64) / 255.0,
+        target.internal_resolved_blend(blend_mode),
+        semantic_context=target.semantic_context,
+    )
+
+
+def internal_composite_nonisolated_group(
+    destination: UInt8Array,
+    rendered: UInt8Array,
+    source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+    opacity: float,
+    blend_mode: str | None,
+    *,
+    semantic_context: SemanticContext,
+    mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
+) -> UInt8Array:
+    opacity = internal_clamp01(opacity)
+    scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
+    if mask_alpha is not None:
+        scaled_alpha *= mask_alpha
+    effective_alpha = numpy.rint(scaled_alpha).astype(numpy.uint8)
+    visible = effective_alpha > 0
+    if not numpy.any(visible):
+        return effective_alpha
+    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
+    if opacity == 1.0 and mode in {None, "normal"}:
+        if mask_alpha is None:
+            destination[visible] = rendered[visible]
+            return effective_alpha
+        unchanged_alpha = visible & (mask_alpha == 1.0)
+        destination[unchanged_alpha] = rendered[unchanged_alpha]
+        visible &= ~unchanged_alpha
+        if not numpy.any(visible):
+            return effective_alpha
+    backdrop = destination[visible].astype(numpy.float64)
+    result = rendered[visible].astype(numpy.float64) / 255.0
+    colors, _ = remove_group_backdrop(
+        result[..., :3],
+        result[..., 3],
+        backdrop[..., :3] / 255.0,
+        backdrop[..., 3] / 255.0,
+        source_alpha[visible],
+        validate=False,
+    )
+    colors = numpy.clip(colors, 0.0, 1.0)
+    internal_blend_visible_pixels(
+        destination,
+        visible,
+        colors[..., 0],
+        colors[..., 1],
+        colors[..., 2],
+        effective_alpha[visible].astype(numpy.float64) / 255.0,
+        mode,
+        semantic_context=semantic_context,
+    )
+    return effective_alpha
+
+
+def internal_composite_masked_group(
+    destination: UInt8Array,
+    rendered: UInt8Array,
+    source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None,
+    opacity: float,
+    blend_mode: str | None,
+    mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+    *,
+    semantic_context: SemanticContext,
+) -> UInt8Array:
+    if source_alpha is not None:
+        return internal_composite_nonisolated_group(
+            destination,
+            rendered,
+            source_alpha,
+            opacity,
+            blend_mode,
+            semantic_context=semantic_context,
+            mask_alpha=mask_alpha,
+        )
+    effective_alpha = numpy.clip(
+        numpy.rint(rendered[..., 3].astype(numpy.float64) * opacity * mask_alpha), 0, 255
+    ).astype(numpy.uint8)
+    visible = effective_alpha > 0
+    if not numpy.any(visible):
+        return effective_alpha
+    colors = rendered[visible, :3].astype(numpy.float64) / 255.0
+    internal_blend_visible_pixels(
+        destination,
+        visible,
+        colors[:, 0],
+        colors[:, 1],
+        colors[:, 2],
+        effective_alpha[visible].astype(numpy.float64) / 255.0,
+        blend_mode.casefold() if isinstance(blend_mode, str) else None,
+        semantic_context=semantic_context,
+    )
+    return effective_alpha
+
+
+def internal_composite_knockout_group(
+    destination: UInt8Array,
+    backdrop: UInt8Array,
+    element: UInt8Array,
+    group_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+    element_alpha: UInt8Array,
+    shape: numpy.ndarray[Any, Any],
+) -> None:
+    effective_alpha = element_alpha.astype(numpy.float64) / 255.0
+    shape = numpy.maximum(numpy.clip(shape, 0.0, 1.0), effective_alpha)
+    visible = shape > 0.0
+    if not numpy.any(visible):
+        return
+    previous = destination[visible].astype(numpy.float64) / 255.0
+    initial = backdrop[visible].astype(numpy.float64) / 255.0
+    painted = element[visible].astype(numpy.float64) / 255.0
+    colors, complete, accumulated = composite_knockout_element(
+        previous[..., :3],
+        previous[..., 3],
+        backdrop_components=initial[..., :3],
+        backdrop_alpha=initial[..., 3],
+        element_components=painted[..., :3],
+        element_alpha=painted[..., 3],
+        shape=shape[visible],
+        group_alpha=group_alpha[visible],
+        element_group_alpha=effective_alpha[visible],
+        validate=False,
+    )
+    destination[visible] = numpy.clip(
+        numpy.rint(numpy.column_stack((colors, complete)) * 255.0), 0, 255
+    ).astype(numpy.uint8)
+    group_alpha[visible] = accumulated
+
+
+SoftMaskPlane = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
+SoftMaskKey = tuple[int, int, tuple[float, float]]
+SoftMaskCache = dict[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None]]
+
+
+def internal_graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
+    if isinstance(item, (PathPaintItem, ImagePaintItem)):
+        return item.graphics_soft_mask
+    mask: CapturedSoftMask | None = item.data.get("graphics_soft_mask")
+    return mask
+
+
+def internal_resolve_soft_mask(
+    target: internal_RasterTarget, mask: CapturedSoftMask
+) -> SoftMaskPlane | None:
+    key = (id(mask.program), id(mask.transfer), mask.offset)
+    cached = target.soft_mask_cache.get(key)
+    if cached is not None:
+        return cached[1]
+    if key in target.active_soft_masks:
+        return None
+    target.active_soft_masks.add(key)
+    result: SoftMaskPlane | None = None
+    try:
+        nested, view = target.blank_sibling()
+        display = DisplayList(target.width, target.height, preserve_object_boundaries=True)
+        append_captured_program(display, mask.program, include_text=True)
+        nested.paint_items(display.items, translation=mask.offset)
+        alpha = view[..., 3]
+        if mask.transfer is None:
+            result = alpha.astype(numpy.float32) / 255.0
+        else:
+            samples, inverse = numpy.unique(alpha, return_inverse=True)
+            values = [mask.transfer(int(sample) / 255.0)[0] for sample in samples]
+            result = numpy.asarray(values, dtype=numpy.float32)[inverse].reshape(alpha.shape)
+        result.setflags(write=False)
+    except Exception:
+        result = None
+    finally:
+        target.active_soft_masks.remove(key)
+    target.soft_mask_cache[key] = (mask, result)
+    return result
+
+
+AFFINE_BLIT_SCRATCH_BYTES = 1 << 20
+
+
+def internal_box_downsample(
+    samples: numpy.ndarray[Any, Any],
+    source_width: int,
+    source_height: int,
+    channels: int,
+    target_width: int,
+    target_height: int,
+) -> tuple[numpy.ndarray[Any, Any], int, int]:
+    if target_width <= 0 or target_height <= 0:
+        return samples, source_width, source_height
+    if source_width <= target_width and source_height <= target_height:
+        return samples, source_width, source_height
+    target_width = min(target_width, source_width)
+    target_height = min(target_height, source_height)
+    grid = samples.reshape(source_height, source_width, channels)
+    row_edges = (numpy.arange(target_height + 1, dtype=numpy.int64) * source_height) // (
+        target_height
+    )
+    column_edges = (numpy.arange(target_width + 1, dtype=numpy.int64) * source_width) // (
+        target_width
+    )
+    totals = numpy.add.reduceat(grid, row_edges[:-1], axis=0, dtype=numpy.uint32)
+    totals = numpy.add.reduceat(totals, column_edges[:-1], axis=1, dtype=numpy.uint32)
+    counts = numpy.diff(row_edges)[:, None, None] * numpy.diff(column_edges)[None, :, None]
+    reduced = (totals // numpy.maximum(counts, 1)).astype(numpy.uint8)
+    return reduced.reshape(-1), target_width, target_height
+
+
+def internal_sample_image_plane(
+    plane: UInt8Array, u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
+) -> UInt8Array:
+    height, width = plane.shape
+    source_x = numpy.clip((u * width).astype(numpy.intp), 0, width - 1)
+    source_y = numpy.clip(((1.0 - v) * height).astype(numpy.intp), 0, height - 1)
+    return plane[source_y, source_x]
+
+
+class internal_RasterTarget:
     __slots__ = (
         "pixels",
         "semantic_context",
@@ -820,3 +1161,1732 @@ class internal_RasterTarget(
                 item.line_cap,
                 item.line_join,
             )
+
+    def blit_opaque_sampled_tiles(
+        self,
+        source_pixels: numpy.ndarray[Any, Any],
+        target_region: numpy.ndarray[Any, Any],
+        source_y: numpy.ndarray[Any, Any],
+        source_x: numpy.ndarray[Any, Any],
+        valid_rows: numpy.ndarray[Any, Any],
+        valid_columns: numpy.ndarray[Any, Any],
+        comps: int,
+        *,
+        transposed: bool = False,
+        target_origin: tuple[int, int] = (0, 0),
+    ) -> None:
+        target_x, target_y = target_origin
+        row_count = len(valid_rows)
+        column_count = len(valid_columns)
+        all_valid = bool(valid_rows.all() and valid_columns.all())
+        sampled_channels = 1 if comps == 1 else 3
+        scratch_bytes_per_pixel = sampled_channels if all_valid else sampled_channels + 8
+        tile_columns = min(
+            column_count,
+            max(1, AFFINE_BLIT_SCRATCH_BYTES // scratch_bytes_per_pixel),
+        )
+        tile_rows = min(
+            row_count,
+            max(
+                1,
+                AFFINE_BLIT_SCRATCH_BYTES // max(1, tile_columns * scratch_bytes_per_pixel),
+            ),
+        )
+        for row_start in range(0, row_count, tile_rows):
+            row_end = min(row_count, row_start + tile_rows)
+            for column_start in range(0, column_count, tile_columns):
+                column_end = min(column_count, column_start + tile_columns)
+                if transposed:
+                    sampled = source_pixels[
+                        source_y[None, column_start:column_end],
+                        source_x[row_start:row_end, None],
+                        :sampled_channels,
+                    ]
+                else:
+                    sampled = source_pixels[
+                        source_y[row_start:row_end, None],
+                        source_x[None, column_start:column_end],
+                        :sampled_channels,
+                    ]
+                target_tile = target_region[
+                    row_start:row_end,
+                    column_start:column_end,
+                ]
+                if all_valid:
+                    target_tile[:, :, 0:3] = sampled
+                    target_tile[:, :, 3] = 255
+                    self.record_source_coverage(
+                        slice(target_y + row_start, target_y + row_end),
+                        slice(target_x + column_start, target_x + column_end),
+                        255,
+                    )
+                    del sampled
+                    continue
+                visible = (
+                    valid_rows[row_start:row_end, None]
+                    & valid_columns[None, column_start:column_end]
+                )
+                numpy.copyto(target_tile[:, :, 0:3], sampled, where=visible[:, :, None])
+                numpy.copyto(target_tile[:, :, 3], 255, where=visible)
+                self.record_source_coverage(
+                    slice(target_y + row_start, target_y + row_end),
+                    slice(target_x + column_start, target_x + column_end),
+                    255,
+                    visible=visible,
+                )
+                del sampled, visible
+
+    def blit_affine_image(
+        self,
+        quad: tuple[tuple[float, float], ...],
+        converted: ByteBuffer,
+        width_px: int,
+        height_px: int,
+        comps: int,
+        constant_alpha: float | None,
+        blend_mode: str | None,
+        *,
+        source_alpha: UInt8Array | None = None,
+        source_shape: UInt8Array | None = None,
+        soft_mask: UInt8Array | None = None,
+        image_clip: tuple[float, float, float, float] | None = None,
+    ) -> bool:
+        clipped_pixel_box = self.clip.clipped_pixel_box
+        clip = self.clip
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = clip.clip_row_visible_spans
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        current_clip = clip.current_clip
+        pixel_view = self.pixel_view
+        pixels = self.pixels
+        scale = self.scale
+        if len(quad) < 3:
+            return False
+        p00 = quad[0]
+        p10 = quad[1]
+        p01 = quad[2]
+        quad_box = points_bbox(quad)
+        if quad_box is None:
+            return False
+        if image_clip is not None:
+            quad_box = internal_intersect_box(quad_box, image_clip)
+            if quad_box is None:
+                return True
+        rectangular_clip = current_clip() is not None and clip_paths_are_axis_aligned_rects()
+        clipped_box = clipped_pixel_box(quad_box)
+        if clipped_box is None:
+            return True
+        ix0, iy0, ix1, iy1 = clipped_box[1]
+        ux = p10[0] - p00[0]
+        uy = p10[1] - p00[1]
+        vx = p01[0] - p00[0]
+        vy = p01[1] - p00[1]
+        det = ux * vy - uy * vx
+        if abs(det) < 1e-9:
+            return False
+        inv_det = 1.0 / det
+        alpha = 255
+        if constant_alpha is not None:
+            alpha = max(0, min(255, int(round(alpha * constant_alpha))))
+        tracking_shape = self.group_source_shape is not None
+        if alpha <= 0 and not tracking_shape:
+            return True
+        if source_alpha is not None:
+            if not numpy.any(source_alpha) and not tracking_shape:
+                return True
+            if numpy.all(source_alpha == 255):
+                source_alpha = None
+        if soft_mask is not None:
+            if not numpy.any(soft_mask) and not tracking_shape:
+                return True
+            if numpy.all(soft_mask == 255):
+                soft_mask = None
+        can_write_opaque = (
+            alpha == 255 and blend_mode is None and source_alpha is None and soft_mask is None
+        )
+        rect_tolerance = max(abs(ux), abs(vy), 1.0) * 1e-6
+        if (
+            abs(uy) <= rect_tolerance
+            and abs(vx) <= rect_tolerance
+            and ux > 0
+            and vy > 0
+            and alpha == 255
+            and blend_mode is None
+            and can_write_opaque
+            and (not clip_regions or rectangular_clip)
+        ):
+            inv_ux = 1.0 / ux
+            inv_vy = 1.0 / vy
+            page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+            source_u = (page_x - p00[0]) * inv_ux
+            source_samples = uint8_view(converted)
+            valid_x = (source_u >= 0.0) & (source_u <= 1.0)
+            safe_x = numpy.clip(
+                (source_u * width_px).astype(numpy.intp),
+                0,
+                width_px - 1,
+            )
+            axis_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
+            source_y_array = ((1.0 - (axis_page_y - p00[1]) * inv_vy) * height_px).astype(
+                numpy.intp
+            )
+            valid_y = (axis_page_y - p00[1]) * inv_vy >= 0.0
+            valid_y &= (axis_page_y - p00[1]) * inv_vy <= 1.0
+            safe_y = numpy.clip(source_y_array, 0, height_px - 1)
+            target_region = pixel_view(pixels)[iy0:iy1, ix0:ix1]
+            source_pixels = source_samples[: width_px * height_px * comps].reshape(
+                height_px,
+                width_px,
+                comps,
+            )
+            blit_opaque_sampled_tiles(
+                source_pixels,
+                target_region,
+                safe_y,
+                safe_x,
+                valid_y,
+                valid_x,
+                comps,
+                target_origin=(ix0, iy0),
+            )
+            return True
+        u_from_x = abs(uy) <= rect_tolerance and abs(ux) > rect_tolerance
+        u_from_y = abs(ux) <= rect_tolerance and abs(uy) > rect_tolerance
+        v_from_x = abs(vy) <= rect_tolerance and abs(vx) > rect_tolerance
+        v_from_y = abs(vx) <= rect_tolerance and abs(vy) > rect_tolerance
+        if (
+            alpha == 255
+            and blend_mode is None
+            and can_write_opaque
+            and (not clip_regions or rectangular_clip)
+            and ((u_from_x and v_from_y) or (u_from_y and v_from_x))
+        ):
+            target_pixels = pixel_view(pixels)
+            source_samples = uint8_view(converted)[: width_px * height_px * comps].reshape(
+                height_px, width_px, comps
+            )
+            if u_from_x:
+                inv_ux = 1.0 / ux
+                inv_vy = 1.0 / vy
+                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
+                source_u = (page_x - p00[0]) * inv_ux
+                source_v = (page_y - p00[1]) * inv_vy
+                valid_x = (source_u >= 0.0) & (source_u <= 1.0)
+                valid_y = (source_v >= 0.0) & (source_v <= 1.0)
+                source_x = numpy.clip(
+                    (source_u * width_px).astype(numpy.intp),
+                    0,
+                    width_px - 1,
+                )
+                source_y = numpy.clip(
+                    ((1.0 - source_v) * height_px).astype(numpy.intp),
+                    0,
+                    height_px - 1,
+                )
+            else:
+                inv_uy = 1.0 / uy
+                inv_vx = 1.0 / vx
+                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
+                source_v = (page_x - p00[0]) * inv_vx
+                source_u = (page_y - p00[1]) * inv_uy
+                valid_x = (source_v >= 0.0) & (source_v <= 1.0)
+                valid_y = (source_u >= 0.0) & (source_u <= 1.0)
+                source_y = numpy.clip(
+                    ((1.0 - source_v) * height_px).astype(numpy.intp),
+                    0,
+                    height_px - 1,
+                )
+                source_x = numpy.clip(
+                    (source_u * width_px).astype(numpy.intp),
+                    0,
+                    width_px - 1,
+                )
+            target_region = target_pixels[iy0:iy1, ix0:ix1]
+            blit_opaque_sampled_tiles(
+                source_samples,
+                target_region,
+                source_y,
+                source_x,
+                valid_y,
+                valid_x,
+                comps,
+                transposed=not u_from_x,
+                target_origin=(ix0, iy0),
+            )
+            return True
+        source_pixels = uint8_view(converted)[: width_px * height_px * comps].reshape(
+            height_px, width_px, comps
+        )
+        target_pixels = pixel_view(pixels)
+        tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
+        tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
+        for row_start in range(iy0, iy1, tile_rows):
+            row_end = min(iy1, row_start + tile_rows)
+            page_y = crop_y1 - (numpy.arange(row_start, row_end) + 0.5) / scale
+            rel_y = page_y[:, None] - p00[1]
+            for column_start in range(ix0, ix1, tile_columns):
+                column_end = min(ix1, column_start + tile_columns)
+                page_x = crop_x0 + (numpy.arange(column_start, column_end) + 0.5) / scale
+                rel_x = page_x[None, :] - p00[0]
+                source_u = (rel_x * vy - rel_y * vx) * inv_det
+                source_v = (ux * rel_y - uy * rel_x) * inv_det
+                visible = (
+                    (source_u >= 0.0) & (source_u <= 1.0) & (source_v >= 0.0) & (source_v <= 1.0)
+                )
+                if clip_regions and not rectangular_clip:
+                    allowed = numpy.zeros(visible.shape, dtype=numpy.bool_)
+                    for local_y, py in enumerate(range(row_start, row_end)):
+                        for start, end in clip_row_visible_spans(py):
+                            start, end = max(start, column_start), min(end, column_end)
+                            if end > start:
+                                allowed[local_y, start - column_start : end - column_start] = True
+                    visible &= allowed
+                if not numpy.any(visible):
+                    continue
+                sample_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
+                sample_y = numpy.clip(
+                    ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
+                )
+                sampled = source_pixels[sample_y, sample_x, : 1 if comps == 1 else 3]
+                target = target_pixels[row_start:row_end, column_start:column_end]
+                if can_write_opaque:
+                    numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
+                    numpy.copyto(target[:, :, 3], 255, where=visible)
+                    self.record_source_coverage(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        255,
+                        visible=visible,
+                    )
+                    continue
+                alpha_grid = (
+                    internal_sample_image_plane(source_alpha, source_u, source_v)
+                    if source_alpha is not None
+                    else numpy.full(visible.shape, 255, dtype=numpy.uint8)
+                )
+                if soft_mask is not None:
+                    mask_alpha = internal_sample_image_plane(soft_mask, source_u, source_v)
+                    alpha_grid = numpy.rint(
+                        alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
+                    ).astype(numpy.uint8)
+                if tracking_shape:
+                    shape_grid: int | UInt8Array = (
+                        alpha_grid
+                        if self.paint_alpha_is_shape
+                        else internal_sample_image_plane(source_shape, source_u, source_v)
+                        if source_shape is not None
+                        else 255
+                    )
+                    self.record_source_shape(
+                        slice(row_start, row_end),
+                        slice(column_start, column_end),
+                        shape_grid,
+                        visible=visible,
+                    )
+                if constant_alpha is not None:
+                    alpha_grid = numpy.clip(
+                        numpy.rint(alpha_grid.astype(numpy.float64) * constant_alpha), 0, 255
+                    ).astype(numpy.uint8)
+                visible &= alpha_grid > 0
+                if not numpy.any(visible):
+                    continue
+                source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
+                internal_blend_visible_pixels(
+                    target,
+                    visible,
+                    source_colors[:, 0] / 255.0,
+                    source_colors[:, 1] / 255.0,
+                    source_colors[:, 2] / 255.0,
+                    alpha_grid[visible] / 255.0,
+                    blend_resolved_mode,
+                    semantic_context=self.semantic_context,
+                )
+                self.record_source_alpha(
+                    slice(row_start, row_end),
+                    slice(column_start, column_end),
+                    alpha_grid,
+                    visible=visible,
+                )
+        return True
+
+    def blit_image(self, item: ImagePaintItem) -> None:
+        quad = internal_image_placement(item)
+        if quad is None or item.source is None:
+            return
+        box = points_bbox(quad)
+        if box is None:
+            return
+        blend_mode = item.blend_mode
+        if blend_mode == "Normal":
+            blend_mode = None
+        prepared = internal_prepared_image(self.prepared_image_cache, item.source)
+        if prepared is None:
+            return
+        if prepared.is_stencil:
+            self.blit_image_mask(item, prepared, blend_mode)
+            return
+        raster = prepared.raster
+        width_px, height_px = raster.width, raster.height
+        components = 1 if raster.color_model == "gray" else 3
+        converted = raster.array[:, :, :components].reshape(-1)
+        native_soft_mask = prepared.soft_mask
+        soft_mask = native_soft_mask.array[:, :, 0] if native_soft_mask is not None else None
+        source_alpha: numpy.ndarray[Any, Any] | None = None
+        if raster.has_alpha and soft_mask is None:
+            source_alpha = raster.array[:, :, components].reshape(-1)
+        device_extent = max(
+            1,
+            int(math.ceil((box[2] - box[0]) * self.scale)),
+            int(math.ceil((box[3] - box[1]) * self.scale)),
+        )
+        if width_px > device_extent or height_px > device_extent:
+            reduced, reduced_width, reduced_height = internal_box_downsample(
+                converted, width_px, height_px, components, device_extent, device_extent
+            )
+            if source_alpha is not None:
+                source_alpha = internal_box_downsample(
+                    source_alpha, width_px, height_px, 1, device_extent, device_extent
+                )[0]
+            converted = reduced
+            width_px, height_px = reduced_width, reduced_height
+        if source_alpha is not None:
+            source_alpha = source_alpha.reshape(height_px, width_px)
+        source_shape = (
+            source_alpha if image_color_key_mask_is_shape(item.source.dictionary) else None
+        )
+        scalar_mask = item.soft_mask_alpha if native_soft_mask is None else None
+        opacity = item.fill_opacity
+        constant_alpha = (
+            internal_constant_alpha(opacity, scalar_mask)
+            if is_pdf_number(opacity) or is_pdf_number(scalar_mask)
+            else None
+        )
+        self.set_shape_alpha(1.0 if constant_alpha is None else constant_alpha)
+        self.blit_affine_image(
+            quad,
+            converted,
+            width_px,
+            height_px,
+            components,
+            constant_alpha,
+            blend_mode,
+            source_alpha=source_alpha,
+            source_shape=source_shape,
+            soft_mask=soft_mask,
+            image_clip=rect_tuple(item.image_clip),
+        )
+
+    def blit_image_mask(
+        self,
+        item: ImagePaintItem,
+        prepared: PreparedImage,
+        blend_mode: str | None,
+    ) -> None:
+        quad = internal_image_placement(item)
+        raster = prepared.raster
+        if quad is None or not raster.has_alpha:
+            return
+        red, green, blue, alpha = internal_color_rgba(item.fill, item.fill_opacity)
+        if is_pdf_number(item.soft_mask_alpha) and prepared.soft_mask is None:
+            alpha = max(0, min(255, round(alpha * item.soft_mask_alpha)))
+        self.set_shape_alpha(alpha / 255.0)
+        if alpha <= 0 and self.group_source_shape is None:
+            return
+        self.blit_affine_image(
+            quad,
+            bytes((red, green, blue)),
+            1,
+            1,
+            3,
+            alpha / 255.0,
+            blend_mode,
+            source_alpha=raster.array[:, :, raster.channels - 1],
+            source_shape=raster.array[:, :, raster.channels - 1],
+            image_clip=rect_tuple(item.image_clip),
+        )
+
+    def fill_rect(
+        self,
+        box: tuple[float, float, float, float] | None,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None = None,
+    ) -> None:
+        if box is None:
+            return
+        if blend_mode == "Normal" and rgba[3] == 255:
+            blend_mode = None
+        clipped_box = self.clip.clipped_pixel_box(box)
+        if clipped_box is None:
+            return
+        (x0, y0, x1, y1), (ix0, iy0, ix1, iy1) = clipped_box
+        rectangular_clip = self.clip.clip_paths_are_axis_aligned_rects()
+        pixels = self.pixels
+        scale = self.scale
+        left = (x0 - self.crop_x0) * scale
+        right = (x1 - self.crop_x0) * scale
+        top = (self.crop_y1 - y1) * scale
+        bottom = (self.crop_y1 - y0) * scale
+        if (
+            rectangular_clip
+            and blend_mode is None
+            and not (
+                left <= ix0 + 1e-9
+                and right >= ix1 - 1e-9
+                and top <= iy0 + 1e-9
+                and bottom >= iy1 - 1e-9
+            )
+        ):
+            columns = numpy.arange(ix0, ix1, dtype=numpy.float64)
+            rows = numpy.arange(iy0, iy1, dtype=numpy.float64)
+            x_coverage = numpy.clip(
+                numpy.minimum(columns + 1.0, right) - numpy.maximum(columns, left), 0.0, 1.0
+            )
+            y_coverage = numpy.clip(
+                numpy.minimum(rows + 1.0, bottom) - numpy.maximum(rows, top), 0.0, 1.0
+            )
+            alpha_plane = numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(
+                numpy.uint8
+            )
+            internal_blend_normal_alpha_array_numpy(
+                self.pixel_view(pixels)[iy0:iy1, ix0:ix1],
+                rgba,
+                alpha_plane,
+            )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
+            if self.group_source_shape is not None:
+                self.record_source_shape(
+                    slice(iy0, iy1),
+                    slice(ix0, ix1),
+                    numpy.rint(numpy.outer(y_coverage, x_coverage) * 255).astype(numpy.uint8),
+                )
+            return
+        if rgba[3] == 255 and blend_mode is None and rectangular_clip:
+            span = ix1 - ix0
+            if span <= 0:
+                return
+            if pixels is self.page_buffer:
+                self.page_pixels[iy0:iy1, ix0:ix1] = rgba
+                self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
+                return
+            target_pixels = self.pixel_view(pixels)
+            internal_blend_normal_solid_array_numpy(
+                target_pixels[iy0:iy1, ix0:ix1],
+                rgba,
+            )
+            self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
+            return
+        pixel_view = self.pixel_view
+        normal_fast = blend_mode is None
+        normal_target = pixel_view(pixels) if normal_fast else None
+        if rectangular_clip and normal_fast and ix1 > ix0 and iy1 > iy0:
+            assert normal_target is not None
+            internal_blend_normal_solid_array_numpy(
+                normal_target[iy0:iy1, ix0:ix1],
+                rgba,
+            )
+            self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
+            return
+        width = self.width
+        blend_px = self.blend_px
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        blend_normal_pixel = self.blend_normal_pixel
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
+        if normal_target is None:
+            if rgba[3] <= 0 and self.group_source_shape is None:
+                return
+            blend_target = pixel_view(pixels)
+            if rectangular_clip:
+                internal_blend_solid_array_numpy(
+                    blend_target[iy0:iy1, ix0:ix1],
+                    rgba,
+                    blend_mode,
+                    semantic_context=self.semantic_context,
+                )
+                self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
+                return
+        for y in range(iy0, iy1):
+            row = y * width * 4
+            visible_spans = clip_row_visible_spans(y)
+            if not visible_spans:
+                continue
+            for start, end in visible_spans:
+                start = max(ix0, start)
+                end = min(ix1, end)
+                if end <= start:
+                    continue
+                if normal_target is not None:
+                    if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
+                        internal_blend_normal_solid_array_numpy(normal_target[y, start:end], rgba)
+                        self.record_source_coverage(y, slice(start, end), rgba[3])
+                    else:
+                        for x in range(start, end):
+                            blend_normal_pixel(row + x * 4, *rgba)
+                elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
+                    internal_blend_solid_array_numpy(
+                        blend_target[y, start:end],
+                        rgba,
+                        blend_mode,
+                        semantic_context=self.semantic_context,
+                    )
+                    self.record_source_coverage(y, slice(start, end), rgba[3])
+                else:
+                    for x in range(start, end):
+                        blend_px(row + x * 4, rgba, blend_resolved_mode)
+
+    def draw_glyph_bitmap(
+        self,
+        box: tuple[float, float, float, float] | None,
+        bitmap: Any,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None = None,
+        bitmap_width: Any = None,
+        bitmap_height: Any = None,
+    ) -> None:
+        clip = self.clip
+        clip_regions = clip.regions
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        fill_rect = self.fill_rect
+        page_box_to_pixels = clip.page_box_to_pixels
+        page_buffer = self.page_buffer
+        page_pixels = self.page_pixels
+        pixel_view = self.pixel_view
+        pixels = self.pixels
+        scale = self.scale
+        bitmap_type = type(bitmap)
+        if box is None or (bitmap_type is not list and bitmap_type is not tuple) or not bitmap:
+            return
+        x0, y0, x1, y1 = box
+        if x1 <= x0 or y1 <= y0:
+            return
+        rows = [int(row) for row in bitmap if type(row) is int]
+        if not rows:
+            return
+        bitmap_h = parse_int(bitmap_height, 0) or len(rows)
+        bitmap_w = parse_int(bitmap_width, 0) or max((row.bit_length() for row in rows), default=0)
+        if bitmap_w <= 0 or bitmap_h <= 0:
+            return
+        cell_w = (x1 - x0) / bitmap_w
+        cell_h = (y1 - y0) / bitmap_h
+        if cell_w <= 0 or cell_h <= 0:
+            return
+        opaque_glyph = rgba[3] == 255 and (blend_mode is None or blend_mode == "Normal")
+        if opaque_glyph and not clip_regions and bitmap_w <= 64:
+            pixel_box = page_box_to_pixels(x0, y0, x1, y1)
+            pixel_width = (x1 - x0) * scale
+            pixel_height = (y1 - y0) * scale
+            origin_x = (x0 - crop_x0) * scale
+            origin_y = (crop_y1 - y1) * scale
+            cell_pixel_width = pixel_width / bitmap_w
+            cell_pixel_height = pixel_height / bitmap_h
+            aligned = False
+            if pixel_box is not None:
+                aligned = (
+                    abs(origin_x - round(origin_x)) <= 1e-9
+                    and abs(origin_y - round(origin_y)) <= 1e-9
+                    and abs(cell_pixel_width - round(cell_pixel_width)) <= 1e-9
+                    and abs(cell_pixel_height - round(cell_pixel_height)) <= 1e-9
+                    and cell_pixel_width >= 1.0
+                    and cell_pixel_height >= 1.0
+                    and pixel_box[2] - pixel_box[0] == round(pixel_width)
+                    and pixel_box[3] - pixel_box[1] == round(pixel_height)
+                )
+            if aligned and pixel_box is not None:
+                ix0, iy0, ix1, iy1 = pixel_box
+                cell_pixel_width = int(round(cell_pixel_width))
+                cell_pixel_height = int(round(cell_pixel_height))
+                row_values = numpy.asarray(
+                    rows[:bitmap_h] + [0] * max(0, bitmap_h - len(rows)),
+                    dtype=numpy.uint64,
+                )
+                columns = numpy.arange(bitmap_w, dtype=numpy.uint64)
+                bits = ((row_values[:, None] >> columns[None, :]) & 1).astype(bool)
+                expanded = numpy.repeat(
+                    numpy.repeat(bits, cell_pixel_height, axis=0),
+                    cell_pixel_width,
+                    axis=1,
+                )
+                target_pixels = page_pixels if pixels is page_buffer else pixel_view(pixels)
+                target_region = target_pixels[iy0:iy1, ix0:ix1]
+                target_region[expanded] = rgba
+                self.record_source_coverage(
+                    slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=expanded
+                )
+                return
+        for row_index, row in enumerate(rows[:bitmap_h]):
+            cell_y1 = y1 - row_index * cell_h
+            cell_y0 = y1 - (row_index + 1) * cell_h
+            if opaque_glyph:
+                remaining = row
+                while remaining:
+                    run_start = (remaining & -remaining).bit_length() - 1
+                    if run_start >= bitmap_w:
+                        break
+                    shifted = remaining >> run_start
+                    run_length = (~shifted & (shifted + 1)).bit_length() - 1
+                    run_end = min(bitmap_w, run_start + run_length)
+                    fill_rect(
+                        (
+                            x0 + run_start * cell_w,
+                            cell_y0,
+                            x0 + run_end * cell_w,
+                            cell_y1,
+                        ),
+                        rgba,
+                        blend_mode,
+                    )
+                    remaining &= ~(((1 << run_length) - 1) << run_start)
+                continue
+            for col_index in range(bitmap_w):
+                if not (row & (1 << col_index)):
+                    continue
+                cell_x0 = x0 + col_index * cell_w
+                cell_x1 = x0 + (col_index + 1) * cell_w
+                fill_rect((cell_x0, cell_y0, cell_x1, cell_y1), rgba, blend_mode)
+
+    def fill_circle(
+        self,
+        cx: float,
+        cy: float,
+        radius: float,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None = None,
+    ) -> None:
+        clip = self.clip
+        blend_normal_pixel = self.blend_normal_pixel
+        blend_px = self.blend_px
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        can_blend_normal_fast = self.can_blend_normal_fast
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = clip.clip_row_visible_spans
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        current_clip = clip.current_clip
+        page_box_to_pixels = clip.page_box_to_pixels
+        pixels = self.pixels
+        scale = self.scale
+        width = self.width
+        circle_box = (cx - radius, cy - radius, cx + radius, cy + radius)
+        clip_box = current_clip() if clip_regions else None
+        if clip_box is not None:
+            clipped_circle_box = internal_intersect_box(circle_box, clip_box)
+            if clipped_circle_box is None:
+                return
+            circle_box = clipped_circle_box
+        pixel_box = page_box_to_pixels(*circle_box)
+        if pixel_box is None:
+            return
+        ix0, iy0, ix1, iy1 = pixel_box
+        radius2 = radius * radius
+        normal_fast = can_blend_normal_fast(blend_mode)
+        rectangular_clip = not clip_regions or clip_paths_are_axis_aligned_rects()
+        if normal_fast and rgba[3] >= 255 and rectangular_clip:
+            if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:
+                x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
+                y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
+                circle_page_xs = crop_x0 + (x_coords + 0.5) / scale
+                circle_page_ys = crop_y1 - (y_coords + 0.5) / scale
+                inside = (circle_page_xs[None, :] - cx) ** 2 + (
+                    circle_page_ys[:, None] - cy
+                ) ** 2 <= radius2
+                self.pixel_view(pixels)[iy0:iy1, ix0:ix1][inside] = rgba
+                self.record_source_coverage(
+                    slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=inside
+                )
+                return
+            red, green, blue, internal_alpha = rgba
+            for py in range(iy0, iy1):
+                page_y = crop_y1 - (py + 0.5) / scale
+                dy = page_y - cy
+                row = py * width * 4
+                for px in range(ix0, ix1):
+                    page_x = crop_x0 + (px + 0.5) / scale
+                    dx = page_x - cx
+                    if dx * dx + dy * dy > radius2:
+                        continue
+                    index = row + px * 4
+                    pixels[index] = red
+                    pixels[index + 1] = green
+                    pixels[index + 2] = blue
+                    pixels[index + 3] = 255
+                    self.record_source_coverage(py, px, 255)
+            return
+        for py in range(iy0, iy1):
+            page_y = crop_y1 - (py + 0.5) / scale
+            row = py * width * 4
+            visible_spans = clip_row_visible_spans(py)
+            if not visible_spans:
+                continue
+            for clip_start, clip_end in visible_spans:
+                start = max(ix0, clip_start)
+                end = min(ix1, clip_end)
+                if end <= start:
+                    continue
+                for px in range(start, end):
+                    page_x = crop_x0 + (px + 0.5) / scale
+                    dx = page_x - cx
+                    dy = page_y - cy
+                    if dx * dx + dy * dy > radius2:
+                        continue
+                    if normal_fast:
+                        blend_normal_pixel(row + px * 4, *rgba)
+                    else:
+                        blend_px(row + px * 4, rgba, blend_resolved_mode)
+
+    def fill_path_scanlines(
+        self,
+        edge_segments: list[tuple[float, float, float, float, float, float]],
+        pixel_box: tuple[int, int, int, int],
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None,
+        fill_rule: str,
+    ) -> None:
+        blend_normal_pixel = self.blend_normal_pixel
+        blend_normal_solid_span = self.blend_normal_solid_span
+        blend_px = self.blend_px
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        can_blend_normal_fast = self.can_blend_normal_fast
+        clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        page_buffer = self.page_buffer
+        page_pixels = self.page_pixels
+        pixel_view = self.pixel_view
+        pixels = self.pixels
+        scale = self.scale
+        width = self.width
+        ix0, iy0, ix1, iy1 = pixel_box
+        rectangular_clip = clip_paths_are_axis_aligned_rects()
+        simple_opaque = rgba[3] == 255 and blend_mode is None and rectangular_clip
+        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_target = pixel_view(pixels) if normal_fast and not simple_opaque else None
+        blend_target = pixel_view(pixels) if not normal_fast and rgba[3] > 0 else None
+
+        def span_pixels(start_x: float, end_x: float) -> tuple[int, int] | None:
+            if end_x <= start_x:
+                return None
+            start = math.ceil((start_x - crop_x0) * scale - 0.5)
+            end = math.ceil((end_x - crop_x0) * scale - 0.5)
+            start = max(ix0, min(ix1, start))
+            end = max(ix0, min(ix1, end))
+            if end <= start:
+                return None
+            return start, end
+
+        edge_count = len(edge_segments)
+        pending_order = sorted(range(edge_count), key=lambda i: -edge_segments[i][5])
+        pending_index = 0
+        active_heap: list[tuple[float, int]] = []
+        for py in range(iy0, iy1):
+            visible_spans = clip_row_visible_spans(py)
+            if not visible_spans:
+                continue
+            page_y = crop_y1 - (py + 0.5) / scale
+            while (
+                pending_index < edge_count
+                and edge_segments[pending_order[pending_index]][5] > page_y
+            ):
+                edge_index = pending_order[pending_index]
+                heapq.heappush(active_heap, (edge_segments[edge_index][4], edge_index))
+                pending_index += 1
+            while active_heap and active_heap[0][0] > page_y:
+                heapq.heappop(active_heap)
+            crossings: list[tuple[float, int]] = []
+            for low, edge_index in active_heap:
+                ex0, ey0, ex1, ey1, edge_low, edge_high = edge_segments[edge_index]
+                if not (edge_low <= page_y < edge_high):
+                    continue
+                t = (page_y - ey0) / (ey1 - ey0)
+                x_intersection = ex0 + t * (ex1 - ex0)
+                crossings.append((x_intersection, 1 if ey1 > ey0 else -1))
+            if not crossings:
+                continue
+            row = py * width * 4
+            scan_spans = internal_fill_path_crossing_spans(crossings, fill_rule)
+            for start_x, end_x in scan_spans:
+                span = span_pixels(start_x, end_x)
+                if span is None:
+                    continue
+                start, end = span
+                for clip_start, clip_end in visible_spans:
+                    visible_start = max(start, clip_start)
+                    visible_end = min(end, clip_end)
+                    if visible_end <= visible_start:
+                        continue
+                    if simple_opaque:
+                        if pixels is page_buffer:
+                            page_pixels[py, visible_start:visible_end] = rgba
+                        else:
+                            pixel_view(pixels)[py, visible_start:visible_end] = rgba
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
+                        continue
+                    if rectangular_clip and normal_fast:
+                        blend_normal_solid_span(row, visible_start, visible_end, rgba)
+                        continue
+                    if (
+                        normal_target is not None
+                        and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
+                    ):
+                        internal_blend_normal_solid_array_numpy(
+                            normal_target[py, visible_start:visible_end],
+                            rgba,
+                        )
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
+                        continue
+                    if (
+                        blend_target is not None
+                        and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
+                    ):
+                        internal_blend_solid_array_numpy(
+                            blend_target[py, visible_start:visible_end],
+                            rgba,
+                            blend_mode,
+                            semantic_context=self.semantic_context,
+                        )
+                        self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
+                        continue
+                    for px in range(visible_start, visible_end):
+                        if normal_fast:
+                            blend_normal_pixel(row + px * 4, *rgba)
+                        else:
+                            blend_px(row + px * 4, rgba, blend_resolved_mode)
+
+    def fast_fill_path(
+        self,
+        edges: list[tuple[float, float, float, float]],
+        bbox: tuple[float, float, float, float],
+    ) -> bool:
+        blend_normal_solid_span = self.blend_normal_solid_span
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        page_box_to_pixels = self.clip.page_box_to_pixels
+        scale = self.scale
+        width = self.width
+        x0, y0, x1, y1 = bbox
+        pixel_box = page_box_to_pixels(x0, y0, x1, y1)
+        if pixel_box is None:
+            return True
+        ix0, iy0, ix1, iy1 = pixel_box
+        if ix1 - ix0 < 10 or iy1 - iy0 < 10:
+            return False
+        edge_bounds = [
+            (ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1)) for ex0, ey0, ex1, ey1 in edges
+        ]
+        edge_count = len(edge_bounds)
+        pending_order = sorted(range(edge_count), key=lambda i: -edge_bounds[i][5])
+        pending_index = 0
+        active_heap: list[tuple[float, int]] = []
+        for py in range(iy0, iy1):
+            scan_y = crop_y1 - (py + 0.5) / scale
+            while (
+                pending_index < edge_count and edge_bounds[pending_order[pending_index]][5] > scan_y
+            ):
+                edge_index = pending_order[pending_index]
+                heapq.heappush(active_heap, (edge_bounds[edge_index][4], edge_index))
+                pending_index += 1
+            while active_heap and active_heap[0][0] > scan_y:
+                heapq.heappop(active_heap)
+            intersections: list[tuple[float, int]] = []
+            for low, edge_index in active_heap:
+                ex0, ey0, ex1, ey1, edge_low, edge_high = edge_bounds[edge_index]
+                if not (edge_low <= scan_y < edge_high):
+                    continue
+                intersections.append(
+                    (
+                        ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0),
+                        1 if ey1 > ey0 else -1,
+                    )
+                )
+            intersections.sort()
+            winding = 0
+            start_x = 0.0
+            for end_x, delta in intersections:
+                if winding:
+                    start = max(ix0, math.ceil((start_x - crop_x0) * scale))
+                    end = min(ix1, math.ceil((end_x - crop_x0) * scale))
+                    blend_normal_solid_span(py * width * 4, start, end, (0, 0, 0, 255))
+                if winding == 0:
+                    start_x = end_x
+                winding += delta
+        return True
+
+    def fill_path(
+        self,
+        path: CapturedPath,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None = None,
+        fill_rule: str = "nonzero",
+        *,
+        bbox: tuple[float, float, float, float] | None = None,
+        edge_array: numpy.ndarray[Any, Any] | None = None,
+    ) -> None:
+        clipped_pixel_box = self.clip.clipped_pixel_box
+        clip = self.clip
+        blend_normal_pixel = self.blend_normal_pixel
+        blend_px = self.blend_px
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        can_blend_normal_fast = self.can_blend_normal_fast
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        current_clip = clip.current_clip
+        fast_fill_path = self.fast_fill_path
+        fill_path_scanlines = self.fill_path_scanlines
+        fill_rect = self.fill_rect
+        pixel_in_clip = clip.pixel_in_clip
+        pixel_view = self.pixel_view
+        pixels = self.pixels
+        scale = self.scale
+        width = self.width
+        rect = path.axis_aligned_rect()
+        if rect is not None:
+            fill_rect(rect, rgba, blend_mode)
+            return
+        edges: list[tuple[float, float, float, float]] | None
+        if edge_array is None:
+            edges = path.fill_edges()
+            if not edges:
+                return
+        else:
+            edges = None
+            if len(edge_array) == 0:
+                return
+        if bbox is None:
+            bbox = clip.path_bbox(path)
+        if bbox is None:
+            return
+        fast_bbox: tuple[float, float, float, float] | None = bbox
+        if clip_regions:
+            if not clip_paths_are_axis_aligned_rects():
+                fast_bbox = None
+            else:
+                clip_box = current_clip()
+                if clip_box is not None:
+                    fast_bbox = internal_intersect_box(bbox, clip_box)
+        if (
+            rgba == (0, 0, 0, 255)
+            and blend_mode is None
+            and self.group_source_shape is None
+            and fast_bbox is not None
+            and fill_rule == "nonzero"
+        ):
+            if edges is None:
+                edges = internal_edge_tuples(edge_array)
+            if fast_fill_path(edges, fast_bbox):
+                return
+        clipped_box = clipped_pixel_box(bbox)
+        if clipped_box is None:
+            return
+        pixel_box = clipped_box[1]
+        ix0, iy0, ix1, iy1 = pixel_box
+        pixel_area = (ix1 - ix0) * (iy1 - iy0)
+        rectangular_clip = clip_paths_are_axis_aligned_rects()
+        normal_fast = can_blend_normal_fast(blend_mode)
+        if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
+            source = (
+                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
+            )
+            sloped = source[:, 1] != source[:, 3]
+            if not sloped.any():
+                return
+            source = source[sloped]
+            device_edges = numpy.empty(source.shape, dtype=numpy.float64)
+            device_edges[:, 0] = (source[:, 0] - crop_x0) * scale - ix0
+            device_edges[:, 1] = (crop_y1 - source[:, 1]) * scale - iy0
+            device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
+            device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
+            coverage = internal_signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
+            alpha_plane = numpy.rint(coverage * rgba[3]).astype(numpy.uint8)
+            internal_blend_normal_alpha_array_numpy(
+                pixel_view(pixels)[iy0:iy1, ix0:ix1],
+                rgba,
+                alpha_plane,
+            )
+            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
+            if self.group_source_shape is not None:
+                self.record_source_shape(
+                    slice(iy0, iy1), slice(ix0, ix1), numpy.rint(coverage * 255).astype(numpy.uint8)
+                )
+            return
+        if edges is None:
+            edges = internal_edge_tuples(edge_array)
+        edge_segments = [
+            (
+                ex0,
+                ey0,
+                ex1,
+                ey1,
+                min(ey1, ey0),
+                max(ey0, ey1),
+            )
+            for ex0, ey0, ex1, ey1 in edges
+            if ey0 != ey1
+        ]
+        if not edge_segments:
+            return
+        edge_segments_array = (
+            numpy.asarray(edge_segments, dtype=numpy.float64) if len(edge_segments) >= 8 else None
+        )
+        if pixel_area >= 10_000:
+            fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
+            return
+        samples = 4
+        track_shape = self.group_source_shape is not None
+        all_row_crossings = None
+        if edge_segments_array is not None:
+            row_count = iy1 - iy0
+            sample_offsets = (numpy.arange(samples, dtype=numpy.float64) + 0.5) / samples
+            page_ys = (
+                crop_y1
+                - (
+                    numpy.repeat(numpy.arange(iy0, iy1, dtype=numpy.float64), samples)
+                    + numpy.tile(sample_offsets, row_count)
+                )
+                / scale
+            )
+            all_row_crossings = internal_fill_path_sample_crossings_numpy(
+                edge_segments_array, page_ys
+            )
+        for py in range(iy0, iy1):
+            row = py * width * 4
+            sample_spans: list[list[tuple[float, float]]] = []
+            if all_row_crossings is not None:
+                base = (py - iy0) * samples
+                sample_spans.extend(
+                    internal_fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
+                    for sy in range(samples)
+                )
+            else:
+                for sy in range(samples):
+                    page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale
+                    crossings = internal_fill_path_sample_crossings(edge_segments, page_y)
+                    sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
+            if normal_fast and rectangular_clip:
+                deltas = [0] * (ix1 - ix0 + 1)
+                covered_any = False
+                for spans in sample_spans:
+                    for start_x, end_x in spans:
+                        span_start = (start_x - crop_x0) * scale
+                        span_end = (end_x - crop_x0) * scale
+                        for sx in range(samples):
+                            sample_offset = (sx + 0.5) / samples
+                            start = max(ix0, math.ceil(span_start - sample_offset))
+                            end = min(ix1, math.ceil(span_end - sample_offset))
+                            if end > start:
+                                deltas[start - ix0] += 1
+                                deltas[end - ix0] -= 1
+                                covered_any = True
+                if covered_any:
+                    coverage = numpy.cumsum(numpy.asarray(deltas[:-1], dtype=numpy.int16)).astype(
+                        numpy.uint8
+                    )
+                    target = pixel_view(pixels)[py, ix0:ix1]
+                    alpha_plane = numpy.rint(
+                        coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
+                    ).astype(numpy.uint8)
+                    internal_blend_normal_alpha_array_numpy(
+                        target,
+                        rgba,
+                        alpha_plane,
+                    )
+                    self.record_source_alpha(py, slice(ix0, ix1), alpha_plane)
+                    if self.group_source_shape is not None:
+                        self.record_source_shape(
+                            py,
+                            slice(ix0, ix1),
+                            numpy.rint(
+                                coverage.astype(numpy.float32) * 255 / (samples * samples)
+                            ).astype(numpy.uint8),
+                        )
+                continue
+            for px in range(ix0, ix1):
+                covered = 0
+                sample_x0 = crop_x0 + (px + 0.5 / samples) / scale
+                sample_step = 1.0 / (samples * scale)
+                for spans in sample_spans:
+                    if not spans:
+                        continue
+                    for sx in range(samples):
+                        page_x = sample_x0 + sx * sample_step
+                        for start_x, end_x in spans:
+                            if start_x <= page_x < end_x:
+                                covered += 1
+                                break
+                if covered:
+                    if not rectangular_clip and not pixel_in_clip(px, py):
+                        continue
+                    alpha = max(
+                        0,
+                        min(255, round(rgba[3] * covered / (samples * samples))),
+                    )
+                    shape = round(255 * covered / (samples * samples)) if track_shape else 255
+                    if normal_fast:
+                        blend_normal_pixel(
+                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
+                        )
+                    else:
+                        blend_px(
+                            row + px * 4,
+                            (rgba[0], rgba[1], rgba[2], alpha),
+                            blend_resolved_mode,
+                            shape=shape,
+                        )
+
+    def fill_line(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None = None,
+        line_cap: int = 0,
+    ) -> None:
+        clipped_pixel_box = self.clip.clipped_pixel_box
+        clip = self.clip
+        blend_normal_pixel = self.blend_normal_pixel
+        blend_px = self.blend_px
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        clip_regions = clip.regions
+        clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        fill_circle = self.fill_circle
+        fill_rect = self.fill_rect
+        pixel_in_clip = clip.pixel_in_clip
+        pixels = self.pixels
+        scale = self.scale
+        width = self.width
+        dx = x1 - x0
+        dy = y1 - y0
+        if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
+            half = max(0.5 / scale, float(line_width) * 0.5)
+            cap_extension = half if line_cap == 2 else 0.0
+            if abs(dy) <= 1e-12:
+                fill_rect(
+                    (
+                        min(x0, x1) - cap_extension,
+                        y0 - half,
+                        max(x0, x1) + cap_extension,
+                        y0 + half,
+                    ),
+                    rgba,
+                    blend_mode,
+                )
+                if line_cap == 1:
+                    fill_circle(x0, y0, half, rgba, blend_mode)
+                    fill_circle(x1, y1, half, rgba, blend_mode)
+            else:
+                fill_rect(
+                    (
+                        x0 - half,
+                        min(y0, y1) - cap_extension,
+                        x0 + half,
+                        max(y0, y1) + cap_extension,
+                    ),
+                    rgba,
+                    blend_mode,
+                )
+                if line_cap == 1:
+                    fill_circle(x0, y0, half, rgba, blend_mode)
+                    fill_circle(x1, y1, half, rgba, blend_mode)
+            return
+        seg_len2 = dx * dx + dy * dy
+        half = max(0.5 / scale, float(line_width) * 0.5)
+        if seg_len2 <= 1e-12:
+            if line_cap == 1:
+                fill_circle(x0, y0, half, rgba, blend_mode)
+            else:
+                fill_rect(
+                    (x0 - half, y0 - half, x0 + half, y0 + half),
+                    rgba,
+                    blend_mode,
+                )
+            return
+
+        seg_len = seg_len2**0.5
+        ux = dx / seg_len
+        uy = dy / seg_len
+        cap_extension = half if line_cap == 2 else 0.0
+        box = (
+            min(x0, x1) - half - abs(ux) * cap_extension,
+            min(y0, y1) - half - abs(uy) * cap_extension,
+            max(x0, x1) + half + abs(ux) * cap_extension,
+            max(y0, y1) + half + abs(uy) * cap_extension,
+        )
+        clipped_box = clipped_pixel_box(box)
+        if clipped_box is None:
+            return
+        box, pixel_box = clipped_box
+        ix0, iy0, ix1, iy1 = pixel_box
+        samples = 4
+        sample_total = samples * samples
+        half2 = half * half
+        inv_seg_len2 = 1.0 / seg_len2
+        projection_extension = cap_extension * seg_len
+        normal_fast = blend_mode is None
+        track_shape = self.group_source_shape is not None
+        if (
+            (not clip_regions or clip_paths_are_axis_aligned_rects())
+            and normal_fast
+            and (ix1 - ix0) * (iy1 - iy0) > RASTER_KERNEL_MIN_PIXEL_AREA
+        ):
+            x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
+            y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
+            shape_plane = (
+                numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
+                if self.group_source_shape is not None
+                else None
+            )
+            alpha_plane = rasterize_unclipped_line_normal(
+                pixels,
+                width,
+                crop_x0,
+                crop_y1,
+                scale,
+                x0,
+                y0,
+                x1,
+                y1,
+                line_width,
+                rgba,
+                line_cap,
+                pixel_box,
+                target_pixels=self.pixel_view(pixels),
+                x_coords=x_coords,
+                y_coords=y_coords,
+                return_source_alpha=self.group_source_alpha is not None,
+                source_shape=shape_plane,
+            )
+            if alpha_plane is not None:
+                self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
+            if shape_plane is not None:
+                self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
+            return
+        for py in range(iy0, iy1):
+            row = py * width * 4
+            page_y_samples = tuple(
+                crop_y1 - (py + sample_offset) / scale for sample_offset in RASTER_SAMPLE_OFFSETS
+            )
+            for px in range(ix0, ix1):
+                if clip_regions and not pixel_in_clip(px, py):
+                    continue
+                page_x_samples = tuple(
+                    crop_x0 + (px + sample_offset) / scale
+                    for sample_offset in RASTER_SAMPLE_OFFSETS
+                )
+                covered = 0
+                if line_cap in {0, 2}:
+                    cross_limit = half2 * seg_len2
+                    for page_y in page_y_samples:
+                        offset_y = page_y - y0
+                        for page_x in page_x_samples:
+                            offset_x = page_x - x0
+                            projection = offset_x * dx + offset_y * dy
+                            if (
+                                projection < -projection_extension
+                                or projection > seg_len2 + projection_extension
+                            ):
+                                continue
+                            cross = offset_x * dy - offset_y * dx
+                            if cross * cross <= cross_limit:
+                                covered += 1
+                else:
+                    cross_limit = half2 * seg_len2
+                    for page_y in page_y_samples:
+                        offset_y = page_y - y0
+                        for page_x in page_x_samples:
+                            offset_x = page_x - x0
+                            t = (offset_x * dx + offset_y * dy) * inv_seg_len2
+                            if 0.0 <= t <= 1.0:
+                                cross = offset_x * dy - offset_y * dx
+                                if cross * cross <= cross_limit:
+                                    covered += 1
+                            elif t < 0.0:
+                                if offset_x * offset_x + offset_y * offset_y <= half2:
+                                    covered += 1
+                            else:
+                                end_x = page_x - x1
+                                end_y = page_y - y1
+                                if end_x * end_x + end_y * end_y <= half2:
+                                    covered += 1
+                if covered:
+                    alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
+                    shape = round(255 * covered / sample_total) if track_shape else 255
+                    if normal_fast:
+                        blend_normal_pixel(
+                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
+                        )
+                    else:
+                        blend_px(
+                            row + px * 4,
+                            (rgba[0], rgba[1], rgba[2], alpha),
+                            blend_resolved_mode,
+                            shape=shape,
+                        )
+
+    def fill_join(
+        self,
+        px: float,
+        py: float,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        line_join: int = 0,
+        blend_mode: str | None = None,
+    ) -> None:
+        self.internal_fill_terminal(
+            px, py, line_width, rgba, line_join == LineJoin.ROUND, blend_mode
+        )
+
+    def fill_cap(
+        self,
+        px: float,
+        py: float,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        line_cap: int,
+        blend_mode: str | None = None,
+    ) -> None:
+        if line_cap == LineCap.BUTT:
+            return
+        self.internal_fill_terminal(px, py, line_width, rgba, line_cap == LineCap.ROUND, blend_mode)
+
+    def internal_fill_terminal(
+        self,
+        px: float,
+        py: float,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        round_shape: bool,
+        blend_mode: str | None,
+    ) -> None:
+        radius = max(0.5 / self.scale, float(line_width) * 0.5)
+        if round_shape:
+            self.fill_circle(px, py, radius, rgba, blend_mode)
+        else:
+            self.fill_rect(
+                (px - radius, py - radius, px + radius, py + radius),
+                rgba,
+                blend_mode,
+            )
+
+    def stroke_path(
+        self,
+        path: CapturedPath,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        dash_pattern: tuple[list[float], float] | None = None,
+        blend_mode: str | None = None,
+        line_cap: int = 0,
+        line_join: int = 0,
+    ) -> None:
+        scale = self.scale
+        if self.clip.regions:
+            clip_box = self.clip.current_clip()
+            path_box = self.clip.path_bbox(path)
+            if clip_box is not None and path_box is not None:
+                stroke_pad = max(0.5 / scale, float(line_width) * 0.5)
+                stroke_box = (
+                    path_box[0] - stroke_pad,
+                    path_box[1] - stroke_pad,
+                    path_box[2] + stroke_pad,
+                    path_box[3] + stroke_pad,
+                )
+                if internal_intersect_box(stroke_box, clip_box) is None:
+                    return
+        for subpath in path.subpaths:
+            if dash_pattern and dash_pattern[0]:
+                self.stroke_path(
+                    CapturedPath(internal_dash_subpath(subpath, dash_pattern)),
+                    line_width,
+                    rgba,
+                    None,
+                    blend_mode,
+                    line_cap,
+                    line_join,
+                )
+                continue
+            points = subpath.points
+            if len(points) < 2:
+                continue
+            if len(points) == 2 and not subpath.closed:
+                (x0, y0), (x1, y1) = points
+                if (x0, y0) == (x1, y1):
+                    if line_cap == LineCap.ROUND:
+                        radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
+                        self.fill_path(internal_circle_path(x0, y0, radius), rgba, blend_mode)
+                    continue
+                self.fill_line(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    line_width,
+                    rgba,
+                    blend_mode,
+                    0,
+                )
+                if line_cap != 0:
+                    self.fill_cap(x0, y0, line_width, rgba, line_cap, blend_mode)
+                    self.fill_cap(x1, y1, line_width, rgba, line_cap, blend_mode)
+                continue
+            for index in range(len(points) - 1):
+                x0, y0 = points[index]
+                x1, y1 = points[index + 1]
+                self.fill_line(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    line_width,
+                    rgba,
+                    blend_mode,
+                    0,
+                )
+            if subpath.closed and points[0] != points[-1]:
+                x0, y0 = points[-1]
+                x1, y1 = points[0]
+                self.fill_line(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    line_width,
+                    rgba,
+                    blend_mode,
+                    0,
+                )
+            for x, y in points[1:-1]:
+                self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
+            if subpath.closed:
+                x, y = points[0]
+                self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
+            elif line_cap != 0:
+                self.fill_cap(
+                    points[0][0],
+                    points[0][1],
+                    line_width,
+                    rgba,
+                    line_cap,
+                    blend_mode,
+                )
+                self.fill_cap(
+                    points[-1][0],
+                    points[-1][1],
+                    line_width,
+                    rgba,
+                    line_cap,
+                    blend_mode,
+                )
+
+    def shading_box(
+        self,
+        data: dict[str, Any],
+        shading: PreparedShading,
+    ) -> tuple[float, float, float, float]:
+        crop_x0 = self.crop_x0
+        crop_y0 = self.crop_y0
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        width = self.width
+        box = shading.bbox
+        if box is None:
+            box = rect_tuple(data.get("bbox"))
+        if box is None:
+            box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
+        return normalize_rect(box)
+
+    def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
+        clipped_pixel_box = self.clip.clipped_pixel_box
+        blend_normal_pixel = self.blend_normal_pixel
+        blend_px = self.blend_px
+        blend_resolved_mode = self.internal_resolved_blend(blend_mode)
+        can_blend_normal_fast = self.can_blend_normal_fast
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        shading_box = self.shading_box
+        width = self.width
+        shading = prepare_shading(
+            data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
+        )
+        if shading is None:
+            return
+        shading_type = shading.shading_type
+        coords = shading.coords
+        domain = shading.domain
+        extend0 = shading.extend_start
+        extend1 = shading.extend_end
+        clipped_box = clipped_pixel_box(shading_box(data, shading))
+        if clipped_box is None:
+            return
+        ix0, iy0, ix1, iy1 = clipped_box[1]
+        soft_mask_alpha = data.get("soft_mask_alpha")
+        fill_opacity = data.get("fill_opacity")
+        normal_fast = can_blend_normal_fast(blend_mode)
+        shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
+        domain_span = domain[1] - domain[0]
+        page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
+        shading_t = axial_shading_t if shading_type == 2 else radial_shading_t
+        color_model = shading.color_model
+        evaluate = shading.evaluate
+        color_rendering = shading.color_rendering
+        # Every input to the colour is loop-invariant except `value`, and `value` repeats
+        # heavily across a gradient -- exactly so in the clamped extend regions. Memoising
+        # on the exact key keeps the result bit-identical to evaluating per pixel.
+        rgba_cache: dict[float, tuple[int, int, int, int]] = {}
+        for py in range(iy0, iy1):
+            page_y = crop_y1 - (py + 0.5) / scale
+            row = py * width * 4
+            visible_spans = clip_row_visible_spans(py)
+            if not visible_spans:
+                continue
+            for span_start, span_end in visible_spans:
+                for px in range(max(ix0, span_start), min(ix1, span_end)):
+                    page_x = page_x_values[px - ix0]
+                    unit_t = shading_t(coords, page_x, page_y)
+                    if unit_t is None:
+                        continue
+                    if unit_t < 0.0:
+                        if not extend0:
+                            continue
+                        unit_t = 0.0
+                    elif unit_t > 1.0:
+                        if not extend1:
+                            continue
+                        unit_t = 1.0
+                    value = domain[0] + unit_t * domain_span
+                    rgba = rgba_cache.get(value)
+                    if rgba is None:
+                        rgba = internal_shading_color_rgba(
+                            color_model,
+                            evaluate(value),
+                            fill_opacity,
+                            color_rendering,
+                        )
+                        if shading_alpha is not None:
+                            rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
+                        rgba_cache[value] = rgba
+                    if normal_fast:
+                        blend_normal_pixel(row + px * 4, *rgba)
+                    else:
+                        blend_px(row + px * 4, rgba, blend_resolved_mode)
+
+    def paint_tiling_pattern(
+        self,
+        pattern: TilingPattern,
+        target_data: PathPaintItem,
+        blend_mode: str | None,
+    ) -> bool:
+        crop_x0 = self.crop_x0
+        crop_y0 = self.crop_y0
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        width = self.width
+        cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
+        x_step = abs(pattern.x_step)
+        y_step = abs(pattern.y_step)
+        if x_step <= 0.0 or y_step <= 0.0:
+            return False
+        program = pattern.program
+        if not program.drawings and not program.glyphs and not program.inline_images:
+            return False
+        display, cell_clip = internal_tiling_cell(self, pattern)
+        target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
+        target_box_type = type(target_box)
+        if target_box_type is list or target_box_type is tuple:
+            target_box = cast(list[Any] | tuple[Any, ...], target_box)
+            if len(target_box) == 4:
+                try:
+                    x0, y0, x1, y1 = (float(value) for value in target_box)
+                except TypeError, ValueError:
+                    return False
+            else:
+                x0, y0, x1, y1 = (
+                    crop_x0,
+                    crop_y0,
+                    crop_x0 + width / scale,
+                    crop_y1,
+                )
+        else:
+            x0, y0, x1, y1 = crop_x0, crop_y0, crop_x0 + width / scale, crop_y1
+        clip_box = self.clip.current_clip()
+        if clip_box is not None:
+            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            if clipped is None:
+                return True
+            x0, y0, x1, y1 = clipped
+        start_x = cell_x0 + math.floor((x0 - cell_x0) / x_step) * x_step
+        start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
+        cells = 0
+        y = start_y
+        opacity = target_data.fill_opacity
+        alpha = internal_clamp01(opacity) if is_pdf_number(opacity) else 1.0
+        if is_pdf_number(target_data.soft_mask_alpha):
+            alpha *= internal_clamp01(target_data.soft_mask_alpha)
+        self.push_group(
+            bytearray(len(self.pixels)),
+            alpha,
+            blend_mode,
+            isolated=internal_tiling_pattern_uses_normal_blends(pattern),
+            alpha_is_shape=target_data.alpha_is_shape,
+        )
+        try:
+            while y < y1 + y_step and cells < 10000:
+                x = start_x
+                while x < x1 + x_step and cells < 10000:
+                    tx = x - cell_x0
+                    ty = y - cell_y0
+                    if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
+                        self.paint_items(
+                            display.items,
+                            translation=(tx, ty),
+                            parent_blend_mode=None,
+                            clip_path=cell_clip,
+                        )
+                    cells += 1
+                    x += x_step
+                y += y_step
+        finally:
+            self.composite_group(self.pop_group())
+        return True
+
+    def paint_fill_pattern(self, data: PathPaintItem, blend_mode: str | None) -> bool:
+        clip_state = self.clip
+        pattern = data.fill_pattern
+        if not isinstance(pattern, (ShadingPattern, TilingPattern)):
+            return False
+        path = data.path
+        pushed_clip = False
+        if type(path) is CapturedPath and path.has_segments():
+            clip_state.push(path, data.fill_rule or "nonzero")
+            pushed_clip = True
+        try:
+            if isinstance(pattern, ShadingPattern):
+                dictionary = pattern.dictionary
+                if not isinstance(dictionary, dict):
+                    return False
+                shading_data = {
+                    "dictionary": dictionary,
+                    "bbox": data.bbox or clip_state.path_bbox(path),
+                    "fill_opacity": data.fill_opacity,
+                    "soft_mask_alpha": data.soft_mask_alpha,
+                    "color_rendering": pattern.color_rendering,
+                }
+                self.paint_shading(shading_data, blend_mode)
+                return True
+            return self.paint_tiling_pattern(pattern, data, blend_mode)
+        finally:
+            if pushed_clip:
+                clip_state.pop()
