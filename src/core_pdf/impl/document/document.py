@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import mmap
+import re
 import struct
 import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -1603,34 +1604,16 @@ class PdfDocument(Generic[PageT]):
         expected_object_number = key >> 16
         expected_generation_number = key & 0xFFFF
 
-        pos = offset
-        if pos < data_len and 48 <= data[pos] <= 57:
-            obj_num = 0
-            while pos < data_len and 48 <= data[pos] <= 57:
-                obj_num = obj_num * 10 + (data[pos] - 48)
-                pos += 1
-            if pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
-                while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
-                    pos += 1
-                if pos < data_len and 48 <= data[pos] <= 57:
-                    gen_num = 0
-                    while pos < data_len and 48 <= data[pos] <= 57:
-                        gen_num = gen_num * 10 + (data[pos] - 48)
-                        pos += 1
-                    if (
-                        pos < data_len
-                        and data[pos] in (0, 9, 10, 12, 13, 32)
-                        and obj_num == expected_object_number
-                        and gen_num == expected_generation_number
-                    ):
-                        while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
-                            pos += 1
-                        if (
-                            pos + 3 <= data_len
-                            and data[pos : pos + 3] == b"obj"
-                            and (pos + 3 == data_len or data[pos + 3] in (0, 9, 10, 12, 13, 32))
-                        ):
-                            return True
+        # One anchored match in C rather than a digit-at-a-time walk in Python.
+        # This runs for every entry of every xref table, so the interpreter
+        # overhead of the old loop dominated repairing stale offsets.
+        header = OBJECT_HEADER_RE.match(data, offset)
+        if (
+            header is not None
+            and int(header[1]) == expected_object_number
+            and int(header[2]) == expected_generation_number
+        ):
+            return True
 
         search_end = min(data_len, offset + 64)
         for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
@@ -1931,12 +1914,15 @@ class PdfDocument(Generic[PageT]):
         window that reached the end of the data may have been truncated, so
         both fall through to the parse rather than skip it.
         """
-        window = bytes(data[offset : offset + XREF_STREAM_MARKER_WINDOW])
-        if len(window) < XREF_STREAM_MARKER_WINDOW or b"#" in window:
+        end = offset + XREF_STREAM_MARKER_WINDOW
+        if end > len(data):
             return True
-        if b"XRef" in window:
+        # find() takes bounds, so the window never has to be materialised.
+        # Copying 2 KB per candidate made this the most expensive call in an
+        # open, which rather defeated the point of not parsing them.
+        if data.find(b"#", offset, end) >= 0 or data.find(b"XRef", offset, end) >= 0:
             return True
-        return b"/W" in window and b"/Size" in window
+        return data.find(b"/W", offset, end) >= 0 and data.find(b"/Size", offset, end) >= 0
 
     def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
         if key == "Info":
@@ -2019,6 +2005,10 @@ def create_recovered_security_handler(
 # Wide enough to contain any real xref stream dictionary, which begins at the
 # object header. Objects whose window is shorter than this are near the end of
 # the file and are parsed rather than judged on a truncated window.
+# "N G obj" at an object header, with the inter-token whitespace PDF allows
+# and a trailing separator so a longer keyword cannot match.
+OBJECT_HEADER_RE = re.compile(rb"(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?=[\0\t\n\f\r ]|\Z)")
+
 XREF_STREAM_MARKER_WINDOW = 2048
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
