@@ -1,4 +1,4 @@
-from core_pdf.impl.extract.table_reconcile import (
+from core_pdf.impl.extract.emit import (
     TableIndex,
     line_duplicates_table,
     remove_table_duplicate_blocks,

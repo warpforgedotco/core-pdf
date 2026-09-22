@@ -23,12 +23,14 @@ from core_pdf.impl.extract.grids import (
     table_from_component,
 )
 from core_pdf.impl.extract.table_cleanup import (
+    TableFacts,
     annotate_table_associations,
     cell_text,
     merge_adjacent_tables,
     merge_stream_text_columns,
     merge_wrapped_cell_rows,
     merge_wrapped_stream_rows,
+    numeric_cell,
     split_semantic_table,
     stream_table_reads_like_prose,
     table_character_spaced_prose,
@@ -36,7 +38,6 @@ from core_pdf.impl.extract.table_cleanup import (
     table_quality,
     table_with_bands,
 )
-from core_pdf.impl.extract.table_facts import TableFacts, numeric_cell
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.records import Record
