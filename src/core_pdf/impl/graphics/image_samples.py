@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from functools import lru_cache
 from typing import Any
 
+import imagecodecs
 import numpy
 
-from core_pdf.impl.graphics.calibrated_colors import calibrated_xyz_to_srgb
 from core_pdf.impl.graphics.color_spec import (
     ColorSpace,
     cs_param_floats,
+    nchannel_attributes,
     nchannel_process,
     parse_color_space,
 )
@@ -18,17 +21,28 @@ from core_pdf.impl.graphics.functions import compile_pdf_function
 from core_pdf.impl.graphics.icc_profiles import (
     IccProfileError,
     IccSampleError,
+    cms_options,
     parse_icc_transform,
+    srgb_profile,
 )
-from core_pdf.impl.graphics.nchannel import mix_nchannel
 from core_pdf.impl.runtime.scalars import parse_float
+from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
     unpack_image_samples,
 )
-from core_pdf_spec.s_08_graphics.color_math import lab_components_to_xyz
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf_spec.s_08_graphics.color_math import (
+    compensate_black_point_xyz,
+    lab_components_to_xyz,
+    xyz_to_lab_components,
+)
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    DEFAULT_COLOR_RENDERING,
+    ColorRendering,
+    use_black_point_compensation,
+)
 from core_pdf_spec.s_11_transparency.images import unblend_matte_components
 
 
@@ -201,3 +215,132 @@ def convert_integer_image(
         alpha=alpha,
         rendering=rendering,
     )
+
+
+ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
+SRGB_MATRIX = numpy.asarray(
+    (
+        (3.2404542, -1.5371385, -0.4985314),
+        (-0.9692660, 1.8760108, 0.0415560),
+        (0.0556434, -0.2040259, 1.0572252),
+    ),
+    dtype=numpy.float32,
+)
+D50_TO_D65_MATRIX = numpy.asarray(
+    (
+        (0.955473, -0.023098, 0.063259),
+        (-0.028369, 1.009995, 0.021300),
+        (0.012314, -0.020507, 1.330365),
+    ),
+    dtype=numpy.float32,
+)
+D50_XYZ_TO_SRGB_MATRIX = (SRGB_MATRIX @ D50_TO_D65_MATRIX).astype(numpy.float32)
+
+
+def linear_to_srgb(values: ColorSamples) -> ColorSamples:
+    clipped = numpy.clip(values, 0.0, None)
+    return numpy.where(
+        clipped <= 0.0031308,
+        12.92 * clipped,
+        1.055 * numpy.power(clipped, 1.0 / 2.4) - 0.055,
+    ).astype(numpy.float32, copy=False)
+
+
+def d50_xyz_to_srgb(values: ColorSamples) -> ColorSamples:
+    return linear_to_srgb(values @ D50_XYZ_TO_SRGB_MATRIX.T)
+
+
+@lru_cache(maxsize=64)
+def lab_profile(white: tuple[float, float, float]) -> bytes:
+    total = sum(white)
+    return bytes(
+        imagecodecs.cms_profile("lab4", whitepoint=(white[0] / total, white[1] / total, white[1]))
+    )
+
+
+def calibrated_xyz_to_srgb(
+    xyz: numpy.ndarray[Any, Any],
+    white: tuple[float, float, float],
+    black: tuple[float, float, float],
+    rendering: ColorRendering,
+) -> numpy.ndarray[Any, Any]:
+    if rendering == DEFAULT_COLOR_RENDERING:
+        return numpy.rint(
+            numpy.clip(d50_xyz_to_srgb(xyz.astype(numpy.float32)), 0, 1) * 255
+        ).astype(numpy.uint8)
+    values = xyz
+    if use_black_point_compensation(rendering, default=True) and any(black):
+        values = compensate_black_point_xyz(values, white, black, (0.0, 0.0, 0.0))
+    lab = xyz_to_lab_components(values, white)
+    intent, flags = cms_options(rendering)
+    try:
+        converted = imagecodecs.cms_transform(
+            numpy.ascontiguousarray(lab).reshape(-1, 1, 3),
+            lab_profile(white),
+            srgb_profile(),
+            colorspace="lab",
+            outcolorspace="rgb",
+            outdtype=numpy.uint8,
+            intent=intent,
+            flags=flags,
+        )
+    except imagecodecs.CmsError as exc:
+        raise IccProfileError("invalid calibrated output profile") from exc
+    return numpy.asarray(converted, dtype=numpy.uint8).reshape(-1, 3)
+
+
+def mix_nchannel(
+    values: numpy.ndarray,
+    space: ColorSpace,
+    convert: Callable[[numpy.ndarray, ColorSpace], numpy.ndarray],
+) -> numpy.ndarray | None:
+    attributes = nchannel_attributes(space)
+    if attributes is None:
+        return None
+    raw_attributes = space.params.get("Attributes")
+    if isinstance(raw_attributes, Mapping) and raw_attributes.get("MixingHints"):
+        return None
+    process = attributes.process
+    process_indices = (
+        {index for index in process.component_indices if index is not None}
+        if process is not None
+        else set()
+    )
+    spots = tuple(
+        (index, attributes.colorants[name])
+        for index, name in enumerate(space.colorants)
+        if index not in process_indices
+    )
+    if not spots:
+        return None
+    try:
+        zero = numpy.zeros((1, 1), dtype=numpy.float64)
+        for _, spot in spots:
+            if not numpy.all(rgb_appearance(convert(zero, spot)) == 1):
+                return None
+        mixed = numpy.ones((len(values), 3), dtype=numpy.float64)
+        if process is not None:
+            mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
+            for destination, source in enumerate(process.component_indices):
+                if source is not None:
+                    mapped[:, destination] = values[:, source]
+            mixed = rgb_appearance(convert(mapped, process.color_space))
+        for source, spot in spots:
+            mixed *= rgb_appearance(convert(values[:, source : source + 1], spot))
+        return numpy.rint(numpy.clip(mixed, 0, 1) * 255).astype(numpy.uint8)
+    except (
+        TypeError,
+        ValueError,
+        ArithmeticError,
+        FilterError,
+        PdfParseError,
+        PdfUnsupportedError,
+    ):
+        return None
+
+
+def rgb_appearance(converted: numpy.ndarray) -> numpy.ndarray:
+    if converted.ndim != 2 or converted.shape[1] not in {1, 3}:
+        raise ValueError("invalid NChannel component appearance")
+    rgb = converted.astype(numpy.float64) / 255
+    return numpy.repeat(rgb, 3, axis=1) if rgb.shape[1] == 1 else rgb

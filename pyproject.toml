@@ -159,8 +159,7 @@ line-length = 100
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_capture.py" = ["ARG002"]
 # Stream filters share the FilterFn signature: (data, parms).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
-"src/core_pdf/impl/graphics/filter_recovery.py" = ["ARG001"]
-"src/core_pdf/impl/graphics/codec_dispatch.py" = ["ARG001"]
+"src/core_pdf/impl/graphics/stream_decoding.py" = ["ARG001"]
 # Scanner callbacks share the (data, pos, ..., semantic_context) signature.
 "src/core_pdf/impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
