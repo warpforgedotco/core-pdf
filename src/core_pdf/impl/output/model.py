@@ -11,8 +11,7 @@ from typing import Any, ClassVar, Self, TypeAlias
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.model.page_selection import PageSelection
 from core_pdf.impl.model.text import reconcile_text_words
-from core_pdf.impl.records import Record, frozen_setattr
-from core_pdf.impl.types import Rectangle, TextWord
+from core_pdf.impl.types import Record, Rectangle, TextWord, frozen_setattr
 
 SCHEMA_VERSION = "5.0"
 

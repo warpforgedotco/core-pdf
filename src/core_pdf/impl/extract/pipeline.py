@@ -28,8 +28,8 @@ from core_pdf.impl.output.model import (
     Page,
     Table,
 )
-from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl.types import Record, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage

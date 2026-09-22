@@ -48,10 +48,11 @@ from core_pdf.impl.model.glyphs import (
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import normalize_extracted_text
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import ReplaceFields, ReprFields
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,
+    ReplaceFields,
+    ReprFields,
 )
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath

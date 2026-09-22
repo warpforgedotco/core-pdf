@@ -15,7 +15,7 @@ from typing import ClassVar
 
 from core_pdf.impl.model.geometry import interval_overlap
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import Record, frozen_setattr
+from core_pdf.impl.types import Record, frozen_setattr
 
 WORDLIST_PACKAGE = "core_pdf.impl.layout.data.wordlists"
 NORVIG_COUNTS = "norvig_count_1w.txt.gz"

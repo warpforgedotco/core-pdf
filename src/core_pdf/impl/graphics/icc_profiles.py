@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 import imagecodecs
 import numpy
 
-from core_pdf.impl.records import Record, frozen_setattr
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,

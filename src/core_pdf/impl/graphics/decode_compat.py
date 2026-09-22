@@ -10,9 +10,8 @@ from core_pdf.impl.graphics.filter_registry import (
 )
 from core_pdf.impl.model.pdf_values import is_pdf_null
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import ReplaceFields, ReprFields, frozen_setattr
 from core_pdf.impl.runtime.scalars import parse_int
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError

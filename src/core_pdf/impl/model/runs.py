@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
-from core_pdf.impl.records import Record, ReprFields, frozen_setattr
+from core_pdf.impl.types import Record, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster

@@ -7,11 +7,11 @@ from bisect import bisect_left
 from typing import Any, ClassVar
 
 from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.render.paths import (
     fill_path_crossing_spans,
     intersect_box,
 )
+from core_pdf.impl.types import Record, frozen_setattr
 
 PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]

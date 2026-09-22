@@ -12,8 +12,8 @@ from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.output.model import (
     TextLine,
 )
-from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.array_views import readonly
+from core_pdf.impl.types import Record, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage

@@ -63,8 +63,14 @@ from core_pdf.impl.fonts.widths import (
 )
 from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields, frozen_setattr
-from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf.impl.types import (
+    PdfString,
+    Record,
+    Rectangle,
+    ReplaceFields,
+    ReprFields,
+    frozen_setattr,
+)
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
 from core_pdf_spec.s_08_graphics.matrix import Matrix

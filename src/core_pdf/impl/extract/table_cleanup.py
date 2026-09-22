@@ -25,8 +25,8 @@ from core_pdf.impl.output.model import (
     TableColumnBand,
     TableRowBand,
 )
-from core_pdf.impl.records import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf.impl.runtime.array_views import finite_median
+from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 
 TABLE_MERGE_GAP = 36.0
 

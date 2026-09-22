@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from core_pdf.impl.records import ReplaceFields
-from core_pdf.impl.types import PdfName, PdfString, Rectangle
+from core_pdf.impl.types import PdfName, PdfString, Rectangle, ReplaceFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 

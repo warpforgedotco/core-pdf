@@ -29,9 +29,8 @@ from core_pdf.impl.model.text import (
     text_word_tokens,
 )
 from core_pdf.impl.output.model import TextLine, TextSpan
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.types import Record, ReplaceFields, ReprFields, TextWord, frozen_setattr
 
 NATIVE_SOURCE = int(ObservationSource.NATIVE)
 

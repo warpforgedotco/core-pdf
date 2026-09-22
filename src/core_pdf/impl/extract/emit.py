@@ -39,8 +39,7 @@ from core_pdf.impl.output.model import (
     TableCell,
     TextLine,
 )
-from core_pdf.impl.records import Record, frozen_setattr
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import Record, Rectangle, frozen_setattr
 
 
 def caption_for(

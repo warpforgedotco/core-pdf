@@ -15,8 +15,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields, frozen_setattr
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import Record, Rectangle, ReplaceFields, ReprFields, frozen_setattr
 
 TextBasis = tuple[float, float, float, float, float, float]
 

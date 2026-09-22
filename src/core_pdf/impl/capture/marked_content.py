@@ -5,8 +5,7 @@ from typing import ClassVar, cast
 
 from core_pdf.impl.model.geometry import union_bbox
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import ReplaceFields, ReprFields
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import Rectangle, ReplaceFields, ReprFields
 
 
 def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
