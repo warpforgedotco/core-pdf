@@ -639,59 +639,60 @@ class RasterTarget:
         blend_mode = data.get("blend_mode")
         if blend_mode == "Normal":
             blend_mode = None
-        if item.kind == "scope-begin":
-            path = data.get("path")
-            self.push_scope(path if isinstance(path, CapturedPath) else None)
-        elif item.kind == "scope-end":
-            self.pop_scope()
-        elif item.kind == "state-push":
-            self.clip_stack.append(self.clip.depth)
-        elif item.kind == "state-pop":
-            if self.clip_stack:
-                self.clip.restore(self.clip_stack.pop())
-            else:
-                self.clip.restore(self.clip_floor)
-        elif item.kind == "clip":
-            path = data.get("path")
-            if isinstance(path, CapturedPath) and path.has_segments():
-                self.clip.push(path, data.get("fill_rule") or "nonzero")
-        elif item.kind == "group-begin":
-            opacity = data.get("fill_opacity")
-            mask = data.get("soft_mask_alpha")
-            if is_pdf_number(mask):
-                opacity = (float(opacity) if is_pdf_number(opacity) else 1.0) * float(mask)
-            self.push_group(
-                bytearray(self.width * self.height * 4),
-                opacity,
-                data.get("blend_mode"),
-                isolated=data.get("group_isolated", True),
-                knockout=data.get("group_knockout", False),
-                alpha_is_shape=data.get("alpha_is_shape", False),
-                track_shape=data.get("group_track_shape", False),
-                mask_alpha=resolve_soft_mask(self, graphics_mask)
-                if (graphics_mask := data.get("graphics_soft_mask")) is not None
-                else None,
-            )
-        elif item.kind == "group-end" and len(self.buffer_stack) > self.group_floor:
-            self.composite_group(self.pop_group())
-        elif item.kind == "glyph" and data.get("visible") is not False:
-            rgba = color_rgba(data.get("fill_color"), data.get("fill_opacity"))
-            if is_pdf_number(mask := data.get("soft_mask_alpha")):
-                rgba = scale_rgba_alpha(rgba, mask)
-            self.set_shape_alpha(rgba[3] / 255.0)
-            self.draw_glyph_bitmap(
-                data.get("bbox"),
-                data.get("bitmap"),
-                rgba,
-                blend_mode,
-                data.get("bitmap_width"),
-                data.get("bitmap_height"),
-            )
-        elif item.kind == "shading":
-            self.set_shape_alpha(
-                resolve_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
-            )
-            self.paint_shading(data, blend_mode)
+        match item.kind:
+            case "scope-begin":
+                path = data.get("path")
+                self.push_scope(path if isinstance(path, CapturedPath) else None)
+            case "scope-end":
+                self.pop_scope()
+            case "state-push":
+                self.clip_stack.append(self.clip.depth)
+            case "state-pop":
+                if self.clip_stack:
+                    self.clip.restore(self.clip_stack.pop())
+                else:
+                    self.clip.restore(self.clip_floor)
+            case "clip":
+                path = data.get("path")
+                if isinstance(path, CapturedPath) and path.has_segments():
+                    self.clip.push(path, data.get("fill_rule") or "nonzero")
+            case "group-begin":
+                opacity = data.get("fill_opacity")
+                mask = data.get("soft_mask_alpha")
+                if is_pdf_number(mask):
+                    opacity = (float(opacity) if is_pdf_number(opacity) else 1.0) * float(mask)
+                self.push_group(
+                    bytearray(self.width * self.height * 4),
+                    opacity,
+                    data.get("blend_mode"),
+                    isolated=data.get("group_isolated", True),
+                    knockout=data.get("group_knockout", False),
+                    alpha_is_shape=data.get("alpha_is_shape", False),
+                    track_shape=data.get("group_track_shape", False),
+                    mask_alpha=resolve_soft_mask(self, graphics_mask)
+                    if (graphics_mask := data.get("graphics_soft_mask")) is not None
+                    else None,
+                )
+            case "group-end" if len(self.buffer_stack) > self.group_floor:
+                self.composite_group(self.pop_group())
+            case "glyph" if data.get("visible") is not False:
+                rgba = color_rgba(data.get("fill_color"), data.get("fill_opacity"))
+                if is_pdf_number(mask := data.get("soft_mask_alpha")):
+                    rgba = scale_rgba_alpha(rgba, mask)
+                self.set_shape_alpha(rgba[3] / 255.0)
+                self.draw_glyph_bitmap(
+                    data.get("bbox"),
+                    data.get("bitmap"),
+                    rgba,
+                    blend_mode,
+                    data.get("bitmap_width"),
+                    data.get("bitmap_height"),
+                )
+            case "shading":
+                self.set_shape_alpha(
+                    resolve_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
+                )
+                self.paint_shading(data, blend_mode)
 
     def push_elementary_group(
         self,

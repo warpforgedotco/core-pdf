@@ -30,23 +30,25 @@ def field_value_text(resolver: FieldResolver, value: object) -> str:
     while stack:
         current = stack.pop()
         current = resolver.resolve(current) if isinstance(current, PdfReference) else current
-        if current is None:
-            continue
-        if isinstance(current, (list, tuple)):
-            stack.extend(reversed(current))
-            continue
-        if isinstance(current, PdfName):
-            item_text = current.value
-        elif isinstance(current, PdfString):
-            item_text = decode_pdf_text_string(current.data).strip()
-        elif isinstance(current, bytes):
-            item_text = decode_pdf_text_string(current).strip()
-        elif isinstance(current, str):
-            item_text = current.strip()
-        elif isinstance(current, (int, float)) and not isinstance(current, bool):
-            item_text = str(current)
-        else:
-            continue
+        match current:
+            case None:
+                continue
+            case list() | tuple():
+                stack.extend(reversed(current))
+                continue
+            case PdfName(value=item_text):
+                pass
+            case PdfString(data=data):
+                item_text = decode_pdf_text_string(data).strip()
+            case bytes():
+                item_text = decode_pdf_text_string(current).strip()
+            case str():
+                item_text = current.strip()
+            # bool is an int, and "true"/"false" are not field text
+            case int() | float() if type(current) is not bool:
+                item_text = str(current)
+            case _:
+                continue
         if item_text:
             parts.append(item_text)
     return "\n".join(parts)

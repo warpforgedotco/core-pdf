@@ -473,23 +473,26 @@ def profile_claim(
     if not conflicting:
         part = fields.get("part", "")
         conformance = fields.get("conformance", "").lower()
-        if family == "PDF/A":
-            identifier = f"pdfa-{part}{conformance}"
-            if part == "4" and fields.get("rev", "2020") != "2020":
-                identifier = None
-        elif family == "PDF/UA":
-            identifier = f"pdfua-{part}"
-            if part == "2" and fields.get("rev", "2024") != "2024":
-                identifier = None
-        elif family == "PDF/X":
-            value = fields.get("GTS_PDFXConformance") or fields.get("GTS_PDFXVersion", "")
-            identifier = value.lower().replace("pdf/x-", "pdfx-", 1)
-        elif family == "PDF/VT":
-            identifier = fields.get("GTS_PDFVTVersion", "").lower().replace("pdf/vt-", "pdfvt-", 1)
-            if identifier == "pdfvt-3" and fields.get("rev", "2020") != "2020":
-                identifier = None
-        elif family == "PDF/E":
-            identifier = fields.get("ISO_PDFEVersion", "").lower().replace("pdf/e-", "pdfe-", 1)
+        match family:
+            case "PDF/A":
+                identifier = f"pdfa-{part}{conformance}"
+                if part == "4" and fields.get("rev", "2020") != "2020":
+                    identifier = None
+            case "PDF/UA":
+                identifier = f"pdfua-{part}"
+                if part == "2" and fields.get("rev", "2024") != "2024":
+                    identifier = None
+            case "PDF/X":
+                value = fields.get("GTS_PDFXConformance") or fields.get("GTS_PDFXVersion", "")
+                identifier = value.lower().replace("pdf/x-", "pdfx-", 1)
+            case "PDF/VT":
+                identifier = (
+                    fields.get("GTS_PDFVTVersion", "").lower().replace("pdf/vt-", "pdfvt-", 1)
+                )
+                if identifier == "pdfvt-3" and fields.get("rev", "2020") != "2020":
+                    identifier = None
+            case "PDF/E":
+                identifier = fields.get("ISO_PDFEVersion", "").lower().replace("pdf/e-", "pdfe-", 1)
         if identifier is not None and get_standard_profile(identifier) is None:
             identifier = None
     if identifier is None:

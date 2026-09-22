@@ -274,75 +274,76 @@ def binary(operator: str, left: Operand, right: Operand) -> int | float:
 
 
 def operator(operator: str, stack: list[Operand]) -> None:
-    if operator == "pop":
-        stack.pop()
-    elif operator == "dup":
-        stack.append(stack[-1])
-    elif operator == "exch":
-        stack[-2], stack[-1] = stack[-1], stack[-2]
-    elif operator == "copy":
-        count = integer(stack.pop())
-        if not 0 <= count <= len(stack):
-            raise ValueError("invalid calculator copy count")
-        if len(stack) + count > STACK_LIMIT:
-            raise ValueError("calculator operand stack limit exceeded")
-        if count:
-            stack.extend(stack[-count:])
-    elif operator == "index":
-        index = integer(stack.pop())
-        if not 0 <= index < len(stack):
-            raise ValueError("invalid calculator index")
-        stack.append(stack[-index - 1])
-    elif operator == "roll":
-        shift = integer(stack.pop())
-        count = integer(stack.pop())
-        if not 0 <= count <= len(stack):
-            raise ValueError("invalid calculator roll count")
-        if count and (shift := shift % count):
-            values = stack[-count:]
-            stack[-count:] = values[-shift:] + values[:-shift]
-    elif operator == "not":
-        value = stack.pop()
-        stack.append(not value if isinstance(value, bool) else ~integer(value))
-    elif operator in {"and", "or", "xor"}:
-        right, left = stack.pop(), stack.pop()
-        if not (isinstance(left, bool) and isinstance(right, bool)):
-            left, right = integer(left), integer(right)
-        stack.append(
-            left & right
-            if operator == "and"
-            else left | right
-            if operator == "or"
-            else left ^ right
-        )
-    elif operator == "bitshift":
-        shift, value = integer(stack.pop()), integer(stack.pop())
-        bits = value & INT_MASK
-        if abs(shift) >= 32:
-            bits = 0
-        else:
-            bits = (bits << shift) & INT_MASK if shift >= 0 else bits >> -shift
-        stack.append(bits if bits <= INT_MAX else bits - (1 << 32))
-    elif operator in {"eq", "ne"}:
-        right, left = stack.pop(), stack.pop()
-        equal = isinstance(left, bool) == isinstance(right, bool) and left == right
-        stack.append(equal if operator == "eq" else not equal)
-    elif operator in {"gt", "ge", "lt", "le"}:
-        right, left = require_number(stack.pop()), require_number(stack.pop())
-        stack.append(
-            left > right
-            if operator == "gt"
-            else left >= right
-            if operator == "ge"
-            else left < right
-            if operator == "lt"
-            else left <= right
-        )
-    elif operator in UNARY:
-        stack.append(unary(operator, stack.pop()))
-    else:
-        right, left = stack.pop(), stack.pop()
-        stack.append(binary(operator, left, right))
+    match operator:
+        case "pop":
+            stack.pop()
+        case "dup":
+            stack.append(stack[-1])
+        case "exch":
+            stack[-2], stack[-1] = stack[-1], stack[-2]
+        case "copy":
+            count = integer(stack.pop())
+            if not 0 <= count <= len(stack):
+                raise ValueError("invalid calculator copy count")
+            if len(stack) + count > STACK_LIMIT:
+                raise ValueError("calculator operand stack limit exceeded")
+            if count:
+                stack.extend(stack[-count:])
+        case "index":
+            index = integer(stack.pop())
+            if not 0 <= index < len(stack):
+                raise ValueError("invalid calculator index")
+            stack.append(stack[-index - 1])
+        case "roll":
+            shift = integer(stack.pop())
+            count = integer(stack.pop())
+            if not 0 <= count <= len(stack):
+                raise ValueError("invalid calculator roll count")
+            if count and (shift := shift % count):
+                values = stack[-count:]
+                stack[-count:] = values[-shift:] + values[:-shift]
+        case "not":
+            value = stack.pop()
+            stack.append(not value if isinstance(value, bool) else ~integer(value))
+        case "and" | "or" | "xor":
+            right, left = stack.pop(), stack.pop()
+            if not (isinstance(left, bool) and isinstance(right, bool)):
+                left, right = integer(left), integer(right)
+            stack.append(
+                left & right
+                if operator == "and"
+                else left | right
+                if operator == "or"
+                else left ^ right
+            )
+        case "bitshift":
+            shift, value = integer(stack.pop()), integer(stack.pop())
+            bits = value & INT_MASK
+            if abs(shift) >= 32:
+                bits = 0
+            else:
+                bits = (bits << shift) & INT_MASK if shift >= 0 else bits >> -shift
+            stack.append(bits if bits <= INT_MAX else bits - (1 << 32))
+        case "eq" | "ne":
+            right, left = stack.pop(), stack.pop()
+            equal = isinstance(left, bool) == isinstance(right, bool) and left == right
+            stack.append(equal if operator == "eq" else not equal)
+        case "gt" | "ge" | "lt" | "le":
+            right, left = require_number(stack.pop()), require_number(stack.pop())
+            stack.append(
+                left > right
+                if operator == "gt"
+                else left >= right
+                if operator == "ge"
+                else left < right
+                if operator == "lt"
+                else left <= right
+            )
+        case _ if operator in UNARY:
+            stack.append(unary(operator, stack.pop()))
+        case _:
+            right, left = stack.pop(), stack.pop()
+            stack.append(binary(operator, left, right))
 
 
 def require_real(value: object) -> float:

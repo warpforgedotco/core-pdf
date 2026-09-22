@@ -684,84 +684,87 @@ class LegacyTextExtractor:
         self.accumulated_width = 0.0
 
     def process(self, operator: str, operands: tuple[object, ...]) -> None:  # noqa: C901
-        if operator == "BT":
-            self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-            self.flush()
-        elif operator == "ET":
-            self.flush()
-        elif operator == "q":
-            self.stack.append((self.cm.copy(), self.font, self.font_size, self.leading))
-        elif operator == "Q":
-            if self.stack:
-                self.cm, self.font, self.font_size, self.leading = self.stack.pop()
-            else:
-                self.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-        elif operator == "cm":
-            self.flush()
-            try:
+        match operator:
+            case "BT":
+                self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                self.flush()
+            case "ET":
+                self.flush()
+            case "q":
+                self.stack.append((self.cm.copy(), self.font, self.font_size, self.leading))
+            case "Q":
+                if self.stack:
+                    self.cm, self.font, self.font_size, self.leading = self.stack.pop()
+                else:
+                    self.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            case "cm":
+                self.flush()
+                try:
+                    values = [float(cast(Any, value)) for value in operands[:6]]
+                except TypeError, ValueError:
+                    values = []
+                self.cm = (
+                    list(multiply_affine(values, self.cm))
+                    if len(values) == 6
+                    else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                )
+            case "Tf":
+                self.flush()
+                if operands:
+                    self.font = self.fonts.get(str(operands[0]))
+                    self.half_space_width = (
+                        self.font.space_width if self.font is not None else 250.0
+                    ) / 2.0
+                if len(operands) > 1:
+                    self.font_size = float(cast(Any, operands[1]))
+            case "TL":
+                scale_x = math.hypot(self.tm[0], self.tm[2])
+                self.leading = (
+                    float(cast(Any, operands[0])) * self.font_size * scale_x if operands else 0.0
+                )
+            case "Td" | "TD":
+                tx = float(cast(Any, operands[0])) if operands else 0.0
+                ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
+                if operator == "TD":
+                    self.process("TL", (-ty,))
+                self.move_text(tx, ty)
+            case "Tm":
                 values = [float(cast(Any, value)) for value in operands[:6]]
-            except TypeError, ValueError:
-                values = []
-            self.cm = (
-                list(multiply_affine(values, self.cm))
-                if len(values) == 6
-                else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-            )
-        elif operator == "Tf":
-            self.flush()
-            if operands:
-                self.font = self.fonts.get(str(operands[0]))
-                self.half_space_width = (
-                    self.font.space_width if self.font is not None else 250.0
-                ) / 2.0
-            if len(operands) > 1:
-                self.font_size = float(cast(Any, operands[1]))
-        elif operator == "TL":
-            scale_x = math.hypot(self.tm[0], self.tm[2])
-            self.leading = (
-                float(cast(Any, operands[0])) * self.font_size * scale_x if operands else 0.0
-            )
-        elif operator in {"Td", "TD"}:
-            tx = float(cast(Any, operands[0])) if operands else 0.0
-            ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
-            if operator == "TD":
-                self.process("TL", (-ty,))
-            self.move_text(tx, ty)
-        elif operator == "Tm":
-            values = [float(cast(Any, value)) for value in operands[:6]]
-            self.tm = values if len(values) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-            self.check_position(self.accumulated_width / 1000.0)
-            self.accumulated_width = 0.0
-        elif operator == "T*":
-            self.move_text(0.0, -self.leading)
-        elif operator == "Tj":
-            value = operands[0] if operands else None
-            self.show(bytes(value.data) if isinstance(value, PdfString) else b"")
-        elif operator == "TJ":
-            threshold = self.current_space_width * 0.95
-            for item in cast(list[object], operands[0] if operands else []):
-                if isinstance(item, PdfString):
-                    self.show(bytes(item.data))
-                elif isinstance(item, PdfName):
-                    self.add_text(f"/{item.value}")
-                elif (
-                    isinstance(item, (int, float))
-                    and abs(float(item)) >= threshold
-                    and self.text
-                    and not self.text.endswith(" ")
-                ):
-                    self.add_text(" ")
-                    self.accumulated_width += (
-                        self.font.synthetic_space_width if self.font is not None else 250.0
-                    ) * self.font_size
-                    self.actual_height = self.font_size
-                    self.check_position(0.0)
-        elif operator == "'":
-            self.process("T*", ())
-            self.process("Tj", operands)
-        elif operator == '"':
-            self.process("T*", ())
-            self.process("Tj", operands[2:3])
+                self.tm = values if len(values) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                self.check_position(self.accumulated_width / 1000.0)
+                self.accumulated_width = 0.0
+            case "T*":
+                self.move_text(0.0, -self.leading)
+            case "Tj":
+                value = operands[0] if operands else None
+                self.show(bytes(value.data) if isinstance(value, PdfString) else b"")
+            case "TJ":
+                threshold = self.current_space_width * 0.95
+                for item in cast(list[object], operands[0] if operands else []):
+                    match item:
+                        case PdfString(data=data):
+                            self.show(bytes(data))
+                        case PdfName(value=name):
+                            self.add_text(f"/{name}")
+                        # a number only matters when it kerns wide enough to read
+                        # as a space, and only between visible text
+                        case int() | float() if (
+                            abs(float(item)) >= threshold
+                            and self.text
+                            and not self.text.endswith(" ")
+                        ):
+                            self.add_text(" ")
+                            self.accumulated_width += (
+                                self.font.synthetic_space_width if self.font is not None else 250.0
+                            ) * self.font_size
+                            self.actual_height = self.font_size
+                            self.check_position(0.0)
+            case "'":
+                self.process("T*", ())
+                self.process("Tj", operands)
+            case '"':
+                self.process("T*", ())
+                self.process("Tj", operands[2:3])
 
     def extract(self, streams: tuple[PdfStream, ...] | None = None) -> str:
         content_streams = streams if streams is not None else self.page.content_streams

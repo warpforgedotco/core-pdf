@@ -91,25 +91,26 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
         raise PdfParseError(f"{operator} requires {len(signature)} operands")
     for category, operand in zip(signature, operands, strict=True):
         valid = False
-        if category in {"n", "i"}:
-            try:
-                if category == "n":
-                    require_pdf_number(operand, f"invalid {operator} operand")
-                else:
-                    require_pdf_integer(operand, f"invalid {operator} operand")
-            except ValueError as error:
-                raise PdfParseError(str(error)) from error
-            valid = True
-        elif category == "/":
-            valid = isinstance(operand, PdfName)
-        elif category == "s":
-            valid = isinstance(operand, PdfString)
-        elif category == "a":
-            valid = isinstance(operand, (list, tuple))
-        elif category == "p":
-            valid = isinstance(operand, (PdfName, dict))
-        elif category == "I":
-            valid = isinstance(operand, InlineImage)
+        match category:
+            case "n" | "i":
+                try:
+                    if category == "n":
+                        require_pdf_number(operand, f"invalid {operator} operand")
+                    else:
+                        require_pdf_integer(operand, f"invalid {operator} operand")
+                except ValueError as error:
+                    raise PdfParseError(str(error)) from error
+                valid = True
+            case "/":
+                valid = isinstance(operand, PdfName)
+            case "s":
+                valid = isinstance(operand, PdfString)
+            case "a":
+                valid = isinstance(operand, (list, tuple))
+            case "p":
+                valid = isinstance(operand, (PdfName, dict))
+            case "I":
+                valid = isinstance(operand, InlineImage)
         if not valid:
             raise PdfParseError(f"invalid {operator} operand")
     if operator in {"TJ", "d"}:

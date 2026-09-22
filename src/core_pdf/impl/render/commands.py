@@ -224,48 +224,48 @@ def append_captured_program(
 
     for command in commands:
         if isinstance(command, CapturedTextBoundary):
-            kind = command.kind
-            if kind == "stream-begin":
-                text_stream_stack.append(
-                    (
-                        text_active,
-                        text_group_open,
-                        text_group_pending,
-                        text_clipping_subpaths,
-                        current_text_object_id,
+            match command.kind:
+                case "stream-begin":
+                    text_stream_stack.append(
+                        (
+                            text_active,
+                            text_group_open,
+                            text_group_pending,
+                            text_clipping_subpaths,
+                            current_text_object_id,
+                        )
                     )
-                )
-                text_active = text_group_open = text_group_pending = False
-                text_clipping_subpaths = []
-                current_text_object_id = None
-                display_list.append("scope-begin", command.seqno)
-            elif kind == "stream-end":
-                finish_text(command.seqno)
-                display_list.append("scope-end", command.seqno)
-                if text_stream_stack:
-                    (
-                        text_active,
-                        text_group_open,
-                        text_group_pending,
-                        text_clipping_subpaths,
-                        current_text_object_id,
-                    ) = text_stream_stack.pop()
-            elif kind == "begin":
-                finish_text(command.seqno)
-                text_active = True
-                text_group_pending = include_text and command.knockout
-            elif kind == "end":
-                finish_text(command.seqno)
-            elif kind == "glyph-begin":
-                glyph_scope_depth += 1
-                if include_text:
-                    open_pending_text_group(command.seqno)
-                    begin_text_group(command.seqno, knockout=False)
-            elif kind == "glyph-end":
-                if glyph_scope_depth:
+                    text_active = text_group_open = text_group_pending = False
+                    text_clipping_subpaths = []
+                    current_text_object_id = None
+                    display_list.append("scope-begin", command.seqno)
+                case "stream-end":
+                    finish_text(command.seqno)
+                    display_list.append("scope-end", command.seqno)
+                    if text_stream_stack:
+                        (
+                            text_active,
+                            text_group_open,
+                            text_group_pending,
+                            text_clipping_subpaths,
+                            current_text_object_id,
+                        ) = text_stream_stack.pop()
+                case "begin":
+                    finish_text(command.seqno)
+                    text_active = True
+                    text_group_pending = include_text and command.knockout
+                case "end":
+                    finish_text(command.seqno)
+                case "glyph-begin":
+                    glyph_scope_depth += 1
                     if include_text:
-                        display_list.append("group-end", command.seqno)
-                    glyph_scope_depth -= 1
+                        open_pending_text_group(command.seqno)
+                        begin_text_group(command.seqno, knockout=False)
+                case "glyph-end":
+                    if glyph_scope_depth:
+                        if include_text:
+                            display_list.append("group-end", command.seqno)
+                        glyph_scope_depth -= 1
             continue
         if not include_text and glyph_scope_depth:
             continue
