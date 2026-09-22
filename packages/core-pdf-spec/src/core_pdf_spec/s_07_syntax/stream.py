@@ -1,13 +1,22 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 from core_pdf_spec.s_07_filters import decode_spec as stream_decode_spec
 from core_pdf_spec.types import MISSING, MissingObject
 
-PdfStreamDictionary: TypeAlias = dict[object, object]
-PdfStreamDecodeSpec: TypeAlias = stream_decode_spec.StreamDecodeSpec | PdfStreamDictionary | None
+if TYPE_CHECKING:
+    from core_pdf_spec.s_07_syntax.types import PdfDict
+
+# Forward references rather than imports: PdfDict names PdfObject, which names
+# PdfStream, so the module defining the object types has to import this one.
+# Only the runtime import is circular -- a stream dictionary is an ordinary PDF
+# dictionary, and saying so keeps every reader of stream.dictionary typed.
+# Both aliases appear only in annotations and cast() arguments, neither of
+# which is evaluated at runtime.
+PdfStreamDictionary: TypeAlias = "PdfDict"
+PdfStreamDecodeSpec: TypeAlias = "stream_decode_spec.StreamDecodeSpec | PdfDict | None"
 
 
 __all__ = ("PdfStream",)

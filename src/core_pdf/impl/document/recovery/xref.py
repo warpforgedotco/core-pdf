@@ -418,7 +418,7 @@ class XRefScanner(SyntaxXRefScanner):
             w = dict_obj.get("W")
             index = dict_obj.get("Index")
             if isinstance(w, list) and isinstance(index, list):
-                row_size = sum(cast(int, item) for item in w if type(item) is int)
+                row_size = sum(item for item in w if type(item) is int)
                 row_count = sum(
                     cast(int, index[i + 1])
                     for i in range(0, len(index) - 1, 2)
@@ -770,7 +770,7 @@ class XRefScanner(SyntaxXRefScanner):
                 except PdfParseError:
                     continue
                 entries[key] = entry
-        return entries, typing.cast(PdfDict, dict_obj)
+        return entries, dict_obj
 
 
 def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None) -> int:

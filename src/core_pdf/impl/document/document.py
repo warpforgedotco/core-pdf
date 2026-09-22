@@ -57,7 +57,6 @@ from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.types import (
     ImageRecord,
     PageScoped,
-    PathSource,
     PdfByteBuffer,
     PdfName,
     PdfReference,
@@ -483,7 +482,7 @@ class PdfDocument(Generic[PageT]):
         if value is None:
             return None
         if isinstance(value, dict):
-            return cast(PdfDict, value)
+            return value
         if recoverable and self.recovery_enabled:
             return None
         raise ValueError(f"invalid {key} dictionary")
@@ -501,7 +500,7 @@ class PdfDocument(Generic[PageT]):
         if isinstance(source, (str, PathLike)):
             if isinstance(source, str) and source.startswith("%PDF"):
                 return source.encode("latin-1")
-            file_handle = open(cast(PathSource, source), "rb")  # noqa: SIM115
+            file_handle = open(source, "rb")  # noqa: SIM115
             self.file_handle = file_handle
             try:
                 return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
@@ -596,7 +595,6 @@ class PdfDocument(Generic[PageT]):
                 continue
             if not isinstance(obj, dict):
                 continue
-            obj = cast(PdfDict, obj)
             marker = id(obj)
             if marker in seen_objects:
                 continue
@@ -688,7 +686,7 @@ class PdfDocument(Generic[PageT]):
             except Exception:
                 parent_obj = None
             if isinstance(parent_obj, dict):
-                sources.append(cast(PdfDict, parent_obj))
+                sources.append(parent_obj)
         sources.extend(pages_nodes)
         if not sources:
             return values
@@ -1290,7 +1288,7 @@ class PdfDocument(Generic[PageT]):
                 subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
                 if subtype != "Widget":
                     continue
-                root = self.widget_field_root(cast(PdfDict, annot))
+                root = self.widget_field_root(annot)
                 if id(root) in seen_widgets:
                     continue
                 seen_widgets.add(id(root))
@@ -1308,7 +1306,7 @@ class PdfDocument(Generic[PageT]):
             if not isinstance(parent, dict) or id(parent) in seen:
                 break
             seen.add(id(parent))
-            node = cast(PdfDict, parent)
+            node = parent
         return node
 
     def embedded_files(self) -> list[RawEmbeddedFile]:
@@ -1342,11 +1340,9 @@ class PdfDocument(Generic[PageT]):
         filespec = self.resolver.resolve(value)
         if not isinstance(filespec, dict):
             raise ValueError("invalid embedded file spec")
-        filespec = cast(PdfDict, filespec)
         ef = self.resolver.resolve(filespec.get("EF"))
         if not isinstance(ef, dict):
             raise ValueError("invalid embedded file stream")
-        ef = cast(PdfDict, ef)
         stream = self.resolver.resolve(ef.get("UF") or ef.get("F"))
         if not isinstance(stream, PdfStream):
             raise ValueError("invalid embedded file stream")
@@ -1646,7 +1642,6 @@ class PdfDocument(Generic[PageT]):
             pages = resolver.resolve(root.get("Pages"))
             if not isinstance(pages, dict):
                 return False
-            pages = cast(PdfDict, pages)
             node_type = resolve_page_tree_node_type(resolver, pages)
             if node_type != "Pages":
                 return False
@@ -1907,7 +1902,7 @@ class PdfDocument(Generic[PageT]):
                 if recover_pdf_name(dictionary.get("Type")) == "XRef" or (
                     dictionary.get("W") is not None and dictionary.get("Size") is not None
                 ):
-                    yield cast(PdfDict, dictionary)
+                    yield dictionary
         finally:
             lexer.close()
 
@@ -2008,7 +2003,7 @@ def create_recovered_security_handler(
         if normalized_filters is not filters:
             if normalized is params:
                 normalized = dict(params)
-            normalized["CF"] = cast(PdfDict, normalized_filters)
+            normalized["CF"] = normalized_filters
     return create_standard_security_handler(document_id, normalized, password)
 
 

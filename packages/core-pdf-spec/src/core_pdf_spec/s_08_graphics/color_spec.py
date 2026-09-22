@@ -8,6 +8,7 @@ from typing import Any, ClassVar, NoReturn, Self, TypeAlias, cast
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
     decoded_name,
@@ -425,7 +426,7 @@ def parse_component_ranges(value: object, count: int) -> ComponentRanges:
     return ranges
 
 
-def calibrated_params(kind: str, source: dict) -> ColorParams:
+def calibrated_params(kind: str, source: PdfDict) -> ColorParams:
     params: dict[str, object] = {}
     white = array(source.get("WhitePoint"), 3, "invalid color WhitePoint")
     if white[0] <= 0 or white[1] != 1 or white[2] <= 0:
@@ -506,7 +507,7 @@ def parse_color_space_versioned(
                 raise ValueError("invalid Indexed color lookup")
             return ColorSpace(kind, ((0.0, float(hival)),), base=base, hival=hival, lookup=lookup)
         if kind in {"Lab", "CalGray", "CalRGB"} and len(value) == 2 and isinstance(value[1], dict):
-            source = cast(dict[object, object], value[1])
+            source = cast(PdfDict, value[1])
             params = calibrated_params(kind, source)
             ranges = (
                 (
@@ -522,14 +523,22 @@ def parse_color_space_versioned(
             return ColorSpace(kind, ranges, params)
         if kind == "ICCBased" and len(value) == 2 and isinstance(value[1], PdfStream):
             stream = value[1]
-            source = stream.dictionary
-            count = require_pdf_integer(source.get("N"), "invalid ICCBased channel count")
+            # Named apart from the calibrated branch's dictionary above: a
+            # stream dictionary is typed more loosely than a PdfDict, because
+            # PdfStream sits below the object types it would otherwise name.
+            stream_dictionary = stream.dictionary
+            count = require_pdf_integer(
+                stream_dictionary.get("N"), "invalid ICCBased channel count"
+            )
             if count not in {1, 3, 4}:
                 raise ValueError("invalid ICCBased channel count")
             ranges = parse_component_ranges(
-                (0, 1) * count if source.get("Range") is None else source["Range"], count
+                (0, 1) * count
+                if stream_dictionary.get("Range") is None
+                else stream_dictionary["Range"],
+                count,
             )
-            raw_alt = source.get("Alternate")
+            raw_alt = stream_dictionary.get("Alternate")
             alternate = (
                 {1: DEVICE_GRAY, 3: DEVICE_RGB, 4: DEVICE_CMYK}[count]
                 if raw_alt is None
@@ -542,7 +551,7 @@ def parse_color_space_versioned(
             params = MappingProxyType(
                 {
                     str(key): item
-                    for key, item in source.items()
+                    for key, item in stream_dictionary.items()
                     if key not in {"N", "Range", "Alternate"}
                 }
             )

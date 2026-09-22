@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Self, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import PdfReference
 
 CONTAINER_TYPES = (dict, list, tuple, PdfStream)
@@ -147,7 +148,7 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
     for marker, node in nodes.items():
         if node.changed and type(node.original) is PdfStream:
             results[marker] = node.original.replace(
-                dictionary=cast(dict[object, object], results[id(node.original.dictionary)])
+                dictionary=cast(PdfDict, results[id(node.original.dictionary)])
             )
 
     for marker, node in nodes.items():

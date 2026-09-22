@@ -232,7 +232,7 @@ class ContentInterpreter:
         font = self.resolver.resolve(font_reference)
         if not isinstance(font, dict):
             raise PdfParseError("font resource must be a dictionary")
-        resolved_font = self.resolver.resolve_font_dict(cast(PdfDict, font))
+        resolved_font = self.resolver.resolve_font_dict(font)
         decoder = self.font_provider(
             cast(dict[str, Any], resolved_font), cast(dict[str, Any], self.resources)
         )
@@ -922,7 +922,7 @@ class ContentInterpreter:
             return name
         return self.resolver.resolve_str(value)
 
-    def resolve_marked_content_properties(self, value: Any) -> dict[str, Any] | None:
+    def resolve_marked_content_properties(self, value: Any) -> PdfDict | None:
         if value is None:
             return None
         resolved = self.resolver.resolve(value)
@@ -932,7 +932,7 @@ class ContentInterpreter:
         if not name:
             return None
         props = self.resolver.resolve(self.lookup_page_resource("Properties", name))
-        return cast("dict[str, Any]", props) if isinstance(props, dict) else None
+        return props if isinstance(props, dict) else None
 
     def resolve_marked_content_layer(self, value: Any) -> str | None:
         if value is None:
@@ -997,7 +997,7 @@ class ContentInterpreter:
         extgstate = self.resolver.resolve(self.lookup_page_resource("ExtGState", name))
         if not isinstance(extgstate, dict):
             return None
-        source = cast(PdfDict, extgstate)
+        source = extgstate
         values = {
             key: value
             for key, value in source.items()
@@ -1098,7 +1098,7 @@ class ContentInterpreter:
         pattern = self.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
         pattern_dict: PdfDict | None
         if isinstance(pattern, PdfStream):
-            pattern_dict = cast(PdfDict, pattern.dictionary)
+            pattern_dict = pattern.dictionary
         else:
             pattern_dict = self.resolver.resolve_dict(pattern) if pattern is not None else None
         return (pattern, pattern_dict) if isinstance(pattern_dict, dict) else None

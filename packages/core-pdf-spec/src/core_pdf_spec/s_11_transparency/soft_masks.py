@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Literal, NoReturn, Self, cast
+from typing import Any, ClassVar, Literal, NoReturn, Self, TypeAlias, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfKey, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
     require_pdf_number,
@@ -138,9 +138,15 @@ def array(value: object, resolver: PdfValueResolver) -> object:
     return value
 
 
+# Arrays are normalised to tuples here, which the PDF object model spells as
+# lists, so the dictionary being assembled is a staging structure rather than
+# a PdfDict. It becomes one only where it is handed back to a stream.
+FunctionDictionary: TypeAlias = dict[PdfKey, object]
+
+
 def function(
     value: object, resolver: PdfValueResolver, active: set[int]
-) -> dict[object, object] | PdfStream:
+) -> FunctionDictionary | PdfStream:
     value = resolve(value, resolver)
     if not isinstance(value, (dict, PdfStream)):
         raise ValueError("soft-mask transfer must be a function or Identity")
@@ -149,8 +155,8 @@ def function(
         raise ValueError("cyclic soft-mask transfer function")
     active.add(identity)
     try:
-        dictionary: dict[object, object] = dict(
-            value.dictionary if isinstance(value, PdfStream) else cast(dict[object, object], value)
+        dictionary: FunctionDictionary = dict(
+            value.dictionary if isinstance(value, PdfStream) else cast(FunctionDictionary, value)
         )
         for key in ("FunctionType", "BitsPerSample", "Order", "N"):
             if key in dictionary:
@@ -181,7 +187,11 @@ def function(
             raise ValueError("unsupported soft-mask transfer function")
         if function_type in {0, 4} and not isinstance(value, PdfStream):
             raise ValueError("soft-mask sampled and calculator functions require streams")
-        return value.replace(dictionary=dictionary) if isinstance(value, PdfStream) else dictionary
+        return (
+            value.replace(dictionary=cast(PdfDict, dictionary))
+            if isinstance(value, PdfStream)
+            else dictionary
+        )
     finally:
         active.remove(identity)
 

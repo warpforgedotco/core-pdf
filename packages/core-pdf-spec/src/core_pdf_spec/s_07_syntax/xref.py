@@ -427,7 +427,7 @@ class XRefScanner:
         row_count = validate_xref_index(indices, size)
         return (
             decode_xref_row_table(stream.data, w, indices, row_size, row_count),
-            cast(PdfDict, dictionary),
+            dictionary,
         )
 
 

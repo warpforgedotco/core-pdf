@@ -129,7 +129,6 @@ def collect_field_records(
                 if recover:
                     continue
                 raise ValueError("invalid AcroForm kid entry")
-            resolved_kid = cast(PdfDict, resolved_kid)
             if resolver.resolve_name_or_text(resolved_kid.get("Subtype")) == "Widget":
                 stack.append(
                     (
