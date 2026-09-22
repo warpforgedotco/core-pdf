@@ -14,7 +14,23 @@ codspeed run -m simulation -- uv run --group benchmark pytest tests/benchmarks -
 ```
 
 Simulation mode needs Linux and CodSpeed's patched valgrind, so recorded runs
-happen on the profiling VM rather than on a laptop.
+happen in CI or on a Linux profiling box rather than on a laptop.
+
+## In CI
+
+`.github/workflows/codspeed.yml` runs the suite in simulation mode on every
+pull request and on pushes to `main`, which is what gives CodSpeed a baseline
+to compare a pull request against.
+
+Two details there are easy to get wrong:
+
+- The job checks out only the fixture submodules `corpus.py` draws from, via
+  `.github/actions/cache-submodules`. The full set is well over a gigabyte.
+  Adding a sample from a submodule that is not in that list means adding it to
+  the workflow too, or the benchmark will not have its file.
+- It sets `CORE_PDF_BENCHMARK_REQUIRE_FIXTURES=1`. Without it a submodule that
+  failed to check out would skip every benchmark and the job would pass having
+  measured nothing.
 
 ## What is measured, and why these files
 
