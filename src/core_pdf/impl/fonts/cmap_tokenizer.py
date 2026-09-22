@@ -35,6 +35,17 @@ from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
 LEGACY_EOL_PAIR = re.compile(rb"\r\n|\n\r")
 
 
+def collect_cmap_tokens(data: bytes, *, group_arrays: bool) -> tuple[CMapToken, ...]:
+    """Tokenise as far as the source allows; a malformed tail yields what came before."""
+    tokens: list[CMapToken] = []
+    try:
+        for token in iter_cmap_tokens(data, group_arrays=group_arrays):
+            tokens.append(token)  # noqa: PERF402
+    except ValueError:
+        pass
+    return tuple(tokens)
+
+
 def decode_cmap_hex_token(token: bytes) -> bytes:
     if not token.startswith(b"<") or not token.endswith(b">"):
         token = b"<" + token[1:-1] + b">"
@@ -59,13 +70,7 @@ class CMapProgram(PdfCMapProgram):
     @classmethod
     def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:
         source = bytes(data)
-        tokens: list[CMapToken] = []
-        try:
-            for token in iter_cmap_tokens(source, group_arrays=True):
-                tokens.append(token)  # noqa: PERF402
-        except ValueError:
-            pass
-        return cls(source, scope_cmap_tokens(tuple(tokens)))
+        return cls(source, scope_cmap_tokens(collect_cmap_tokens(source, group_arrays=True)))
 
     def blocks_in_order(
         self, delimiters: dict[bytes, bytes]
@@ -131,20 +136,10 @@ def cmap_metadata(data: bytes | PdfCMapProgram) -> tuple[str | None, int | None]
 def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:
-    tokens: list[CMapToken] = []
-    try:
-        for token in iter_cmap_tokens(data, group_arrays=include_arrays):
-            tokens.append(token)  # noqa: PERF402
-    except ValueError:
-        pass
-    return CMapBlock(data, tuple(tokens)).token_values(
+    tokens = collect_cmap_tokens(data, group_arrays=include_arrays)
+    return CMapBlock(data, tokens).token_values(
         include_arrays=include_arrays, include_words=include_words
     )
-
-
-def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
-    for block in CMapProgram.parse(data).blocks(begin, end):
-        yield block.data
 
 
 class CMapDecoder(PdfCMapDecoder):

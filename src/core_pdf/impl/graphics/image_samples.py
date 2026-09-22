@@ -265,9 +265,7 @@ def calibrated_xyz_to_srgb(
     rendering: ColorRendering,
 ) -> numpy.ndarray[Any, Any]:
     if rendering == DEFAULT_COLOR_RENDERING:
-        return numpy.rint(
-            numpy.clip(d50_xyz_to_srgb(xyz.astype(numpy.float32)), 0, 1) * 255
-        ).astype(numpy.uint8)
+        return quantize(d50_xyz_to_srgb(xyz.astype(numpy.float32)))
     values = xyz
     if use_black_point_compensation(rendering, default=True) and any(black):
         values = compensate_black_point_xyz(values, white, black, (0.0, 0.0, 0.0))
@@ -327,7 +325,7 @@ def mix_nchannel(
             mixed = rgb_appearance(convert(mapped, process.color_space))
         for source, spot in spots:
             mixed *= rgb_appearance(convert(values[:, source : source + 1], spot))
-        return numpy.rint(numpy.clip(mixed, 0, 1) * 255).astype(numpy.uint8)
+        return quantize(mixed)
     except (
         TypeError,
         ValueError,

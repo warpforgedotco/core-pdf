@@ -4,54 +4,18 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
-from collections.abc import Callable
 from typing import Any, ClassVar
 
 from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.records import Record
 from core_pdf.impl.render.paths import (
     fill_path_crossing_spans,
     intersect_box,
 )
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.types import Record, frozen_setattr
 
 PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]
 EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
-
-
-def make_page_geometry(
-    crop_x0: float, crop_y1: float, scale: float, width: int, height: int
-) -> tuple[
-    Callable[[float, float, float, float], tuple[int, int, int, int] | None],
-    Callable[[float, float], tuple[int, int] | None],
-]:
-
-    def page_box_to_pixels(
-        x0: float, y0: float, x1: float, y1: float
-    ) -> tuple[int, int, int, int] | None:
-        ix0 = max(0, min(width, math.floor((x0 - crop_x0) * scale)))
-        ix1 = max(0, min(width, math.ceil((x1 - crop_x0) * scale)))
-        iy0 = max(0, min(height, math.floor((crop_y1 - y1) * scale)))
-        iy1 = max(0, min(height, math.ceil((crop_y1 - y0) * scale)))
-        if ix1 <= ix0 or iy1 <= iy0:
-            return None
-        return ix0, iy0, ix1, iy1
-
-    def page_x_to_pixel_span(start_x: float, end_x: float) -> tuple[int, int] | None:
-        if end_x <= start_x:
-            return None
-        start = math.ceil((start_x - crop_x0) * scale - 0.5)
-        end = math.ceil((end_x - crop_x0) * scale - 0.5)
-        start = max(0, min(width, start))
-        end = max(0, min(width, end))
-        if end <= start:
-            return None
-        return start, end
-
-    return page_box_to_pixels, page_x_to_pixel_span
 
 
 class ClipRegion(Record):
@@ -136,8 +100,6 @@ class ClipState:
         "scale",
         "width",
         "height",
-        "page_box_to_pixels",
-        "page_x_to_pixel_span",
     )
 
     def __init__(
@@ -155,9 +117,28 @@ class ClipState:
         self.scale = scale
         self.width = width
         self.height = height
-        self.page_box_to_pixels, self.page_x_to_pixel_span = make_page_geometry(
-            crop_x0, crop_y1, scale, width, height
-        )
+
+    def page_box_to_pixels(
+        self, x0: float, y0: float, x1: float, y1: float
+    ) -> tuple[int, int, int, int] | None:
+        ix0 = max(0, min(self.width, math.floor((x0 - self.crop_x0) * self.scale)))
+        ix1 = max(0, min(self.width, math.ceil((x1 - self.crop_x0) * self.scale)))
+        iy0 = max(0, min(self.height, math.floor((self.crop_y1 - y1) * self.scale)))
+        iy1 = max(0, min(self.height, math.ceil((self.crop_y1 - y0) * self.scale)))
+        if ix1 <= ix0 or iy1 <= iy0:
+            return None
+        return ix0, iy0, ix1, iy1
+
+    def page_x_to_pixel_span(self, start_x: float, end_x: float) -> tuple[int, int] | None:
+        if end_x <= start_x:
+            return None
+        start = math.ceil((start_x - self.crop_x0) * self.scale - 0.5)
+        end = math.ceil((end_x - self.crop_x0) * self.scale - 0.5)
+        start = max(0, min(self.width, start))
+        end = max(0, min(self.width, end))
+        if end <= start:
+            return None
+        return start, end
 
     @property
     def depth(self) -> int:

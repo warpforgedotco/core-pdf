@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-import typing
-
-if typing.TYPE_CHECKING:
-    from collections.abc import Callable
-
-    FilterFn = Callable[[bytes, object], bytes]
-
 import binascii
 import zlib
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import imagecodecs
 import numpy
@@ -61,6 +54,9 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     WS_TABLE,
 )
 from core_predictors.errors import PredictorError, UnsupportedPngFilterError
+
+if TYPE_CHECKING:
+    FilterFn = Callable[[bytes, object], bytes]
 
 
 def coerce_decoder_bytes(result: object) -> bytes:

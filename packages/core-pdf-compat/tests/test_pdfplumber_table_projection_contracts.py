@@ -33,11 +33,11 @@ def test_matching_column_tables_merge_with_geometry_or_original_row_order(
     with compat.open(BytesIO(text_pdf_bytes)) as pdf:
         calls = []
 
-        def extract(**kwargs):
+        def extract(self, **kwargs):
             calls.append(kwargs)
             return SimpleNamespace(pages=(SimpleNamespace(tables=(first, second)),))
 
-        monkeypatch.setattr(pdf._document, "extract", extract)
+        monkeypatch.setattr(type(pdf._document), "extract", extract)
         page = pdf.pages[0]
         result = page.find_tables()
         assert calls == [{"pages": (1,)}]
@@ -62,9 +62,11 @@ def test_tables_with_different_or_missing_column_bounds_remain_separate(
     second = table(["two"], box, [None])
     with compat.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(
-            pdf._document,
+            type(pdf._document),
             "extract",
-            lambda **kwargs: SimpleNamespace(pages=(SimpleNamespace(tables=(first, second)),)),
+            lambda self, **kwargs: SimpleNamespace(
+                pages=(SimpleNamespace(tables=(first, second)),)
+            ),
         )
         result = pdf.pages[0].find_tables()
         assert [item.extract() for item in result] == [[["one"]], [["two"]]]
@@ -79,9 +81,9 @@ def test_thin_table_body_extension_requires_more_than_500_nonfooter_characters(
     native = table(["cell"], (0, 10, 200, 15), [None])
     with compat.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(
-            pdf._document,
+            type(pdf._document),
             "extract",
-            lambda **kwargs: SimpleNamespace(pages=(SimpleNamespace(tables=(native,)),)),
+            lambda self, **kwargs: SimpleNamespace(pages=(SimpleNamespace(tables=(native,)),)),
         )
         page = pdf.pages[0]
         chars = [{"bottom": 100}] * body_count + ([{"bottom": 180}] * 100 if footer else [])

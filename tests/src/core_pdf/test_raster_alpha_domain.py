@@ -12,7 +12,7 @@ def rounded_ratio(numerator: int, denominator: int) -> int:
     )
 
 
-@pytest.mark.parametrize("route", ["generic", "pixel", "span", "numpy-span"])
+@pytest.mark.parametrize("route", ["generic", "span", "numpy-span"])
 def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
     monkeypatch.setattr(
         raster, "RASTER_NUMPY_SPAN_MIN_PIXELS", 1 if route == "numpy-span" else 1000
@@ -42,11 +42,7 @@ def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
             target.blend_normal_solid_span(0, 0, 256, rgba)
         else:
             for destination_alpha in range(256):
-                index = destination_alpha * 4
-                if route == "generic":
-                    target.blend_px(index, rgba, None)
-                else:
-                    target.blend_normal_pixel(index, *rgba)
+                target.blend_px(destination_alpha * 4, rgba, None)
         expected = []
         for destination_alpha in range(256):
             if source_alpha == 0:
@@ -115,9 +111,8 @@ def test_non_normal_pixel_blending_matches_rational_composition(
     assert pixels[3] == round(alpha * 255)
 
 
-@pytest.mark.parametrize("route", ["generic", "pixel"])
 @pytest.mark.parametrize("alpha", [0, 128, 255])
-def test_pixel_routes_track_shape_independently_from_paint_alpha(route, alpha):
+def test_pixel_blending_tracks_shape_independently_from_paint_alpha(alpha):
     pixels = bytearray(4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 1, 4)
     clip = ClipState(crop_x0=0, crop_y1=1, scale=1, width=1, height=1)
@@ -135,10 +130,7 @@ def test_pixel_routes_track_shape_independently_from_paint_alpha(route, alpha):
     )
     target.push_group(bytearray(4), None, None, isolated=False, track_shape=True)
     for _ in range(2):
-        if route == "generic":
-            target.blend_px(0, (200, 50, 10, alpha), None, shape=128)
-        else:
-            target.blend_normal_pixel(0, 200, 50, 10, alpha, shape=128)
+        target.blend_px(0, (200, 50, 10, alpha), None, shape=128)
     group = target.pop_group()
     assert group.source_alpha is not None
     assert group.source_shape is not None

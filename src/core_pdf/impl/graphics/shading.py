@@ -12,12 +12,10 @@ from core_pdf.impl.graphics.functions import (
     compile_pdf_function,
     number_array,
 )
-from core_pdf.impl.records import Record
 from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
-
-frozen_setattr = object.__setattr__
 
 
 class PreparedShading(Record):
@@ -54,6 +52,9 @@ class PreparedShading(Record):
         "evaluator",
         "color_rendering",
     )
+    __repr_fields__: ClassVar[tuple[str, ...]] = tuple(
+        name for name in __fields__ if name != "evaluator"
+    )
     __match_args__ = (
         "shading_type",
         "coords",
@@ -87,20 +88,6 @@ class PreparedShading(Record):
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "evaluator", evaluator)
         frozen_setattr(self, "color_rendering", color_rendering)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"shading_type={self.shading_type!r}, "
-            f"coords={self.coords!r}, "
-            f"domain={self.domain!r}, "
-            f"extend_start={self.extend_start!r}, "
-            f"extend_end={self.extend_end!r}, "
-            f"color_model={self.color_model!r}, "
-            f"bbox={self.bbox!r}, "
-            f"color_rendering={self.color_rendering!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

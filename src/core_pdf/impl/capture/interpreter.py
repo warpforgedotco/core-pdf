@@ -4,7 +4,7 @@ from math import isfinite
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core_pdf.impl.capture.recording import RecordingMethods
-from core_pdf.impl.capture.recovery import CaptureRecovery
+from core_pdf.impl.capture.recovery import CaptureRecovery, iter_content_operations
 from core_pdf.impl.capture.text_runs import RunAccumulator
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
@@ -17,20 +17,23 @@ from core_pdf.impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.runtime.scalars import parse_float_strict, parse_int_strict
 from core_pdf.impl.types import Rectangle
+from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame, StreamKey
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
+
+# Two strict parsers with the same name, deliberately: the runtime pair above is
+# tolerant of the values a damaged content stream yields, the spec pair below is
+# token-based and is what the ligature helpers were written against.
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float_strict as parse_spec_float_strict,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict as parse_spec_int_strict,
 )
+from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.tolerant_state import RecoveringTextState
-from core_pdf.impl.capture.recovery import iter_content_operations
-from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame, StreamKey
-from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 
 class TextState(RecordingMethods):

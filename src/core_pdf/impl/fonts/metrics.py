@@ -10,7 +10,7 @@ from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts.widths import get_descendant
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, require_pdf_number
 from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
@@ -54,14 +54,10 @@ def parse_font_metrics(
         props = entry["props"]
         ascent_value = props.get("Ascent")
         if ascent_value is not None:
-            if type(ascent_value) is not int and type(ascent_value) is not float:
-                raise ValueError("invalid font Ascent")
-            ascent = float(ascent_value)
+            ascent = require_pdf_number(ascent_value, "invalid font Ascent")
         descent_value = props.get("Descent")
         if descent_value is not None:
-            if type(descent_value) is not int and type(descent_value) is not float:
-                raise ValueError("invalid font Descent")
-            descent = float(descent_value)
+            descent = require_pdf_number(descent_value, "invalid font Descent")
 
     descriptor_descent_applied = False
     if isinstance(descriptor, dict):

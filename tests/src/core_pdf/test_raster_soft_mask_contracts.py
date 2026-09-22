@@ -60,7 +60,7 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
     assert sibling.prepared_image_cache is target.prepared_image_cache
     assert sibling.tiling_cell_cache is target.tiling_cell_cache
     assert sibling.active_soft_masks is target.active_soft_masks
-    sibling.blend_normal_pixel(0, 255, 0, 0, 255)
+    sibling.blend_px(0, (255, 0, 0, 255), None)
     np.testing.assert_array_equal(pixels[0, 0], [255, 0, 0, 255])
     assert not any(target.pixels)
 

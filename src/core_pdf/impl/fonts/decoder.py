@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import typing
 import unicodedata
 from collections import Counter, defaultdict
@@ -64,8 +63,14 @@ from core_pdf.impl.fonts.widths import (
 )
 from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields
-from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf.impl.types import (
+    PdfString,
+    Record,
+    Rectangle,
+    ReplaceFields,
+    ReprFields,
+    frozen_setattr,
+)
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
@@ -83,13 +88,7 @@ from core_pdf_spec.standards import SemanticContext
 if typing.TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
 
-frozen_setattr = object.__setattr__
-
-
 FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontProgram
-
-
-TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
 
 
 def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
@@ -1368,9 +1367,6 @@ def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:
         seen.add(value)
         alternates.append(value)
     return tuple(alternates)
-
-
-frozen_setattr = object.__setattr__
 
 
 class CompactCMap(Record):

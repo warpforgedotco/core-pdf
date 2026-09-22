@@ -8,13 +8,11 @@ from typing import Any, ClassVar, Self
 import numpy
 
 from core_pdf.impl.capture.records import CapturedSoftMask, PatternPaint
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.render.blend import clamp01
 from core_pdf.impl.runtime.array_views import uint8_image_view
+from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-
-frozen_setattr = object.__setattr__
 
 
 class RenderOptions(ReplaceFields, ReprFields):

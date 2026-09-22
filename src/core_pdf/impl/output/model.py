@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from collections.abc import Mapping as MappingABC
 from copy import replace
 from enum import StrEnum
 from types import MappingProxyType
@@ -12,11 +11,7 @@ from typing import Any, ClassVar, Self, TypeAlias
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.model.page_selection import PageSelection
 from core_pdf.impl.model.text import reconcile_text_words
-from core_pdf.impl.records import Record
-from core_pdf.impl.types import Rectangle, TextWord
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.types import Record, Rectangle, TextWord, frozen_setattr
 
 SCHEMA_VERSION = "5.0"
 
@@ -24,7 +19,7 @@ JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dic
 
 
 def freeze(value: Any) -> Any:
-    if isinstance(value, MappingABC):
+    if isinstance(value, Mapping):
         return MappingProxyType({key: freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(freeze(item) for item in value)
@@ -1031,7 +1026,7 @@ class ContentNode(Record):
         if value:
             return tuple(value)
         metadata = getattr(self.payload, "metadata", {})
-        source = metadata.get("source") if isinstance(metadata, MappingABC) else None
+        source = metadata.get("source") if isinstance(metadata, Mapping) else None
         return (str(source),) if source else ()
 
 
@@ -1343,6 +1338,7 @@ class Page(Record):
         "user_unit",
         "_elements",
     )
+    __repr_fields__: ClassVar[tuple[str, ...]] = __fields__[:-1]
     __match_args__ = (
         "page_number",
         "page_label",
@@ -1408,31 +1404,6 @@ class Page(Record):
         frozen_setattr(self, "user_unit", user_unit)
         frozen_setattr(self, "_elements", ())
         self._post_init()
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_number={self.page_number!r}, "
-            f"page_label={self.page_label!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"rotation={self.rotation!r}, "
-            f"blocks={self.blocks!r}, "
-            f"page_class={self.page_class!r}, "
-            f"base_route={self.base_route!r}, "
-            f"confidence={self.confidence!r}, "
-            f"tables={self.tables!r}, "
-            f"figures={self.figures!r}, "
-            f"links={self.links!r}, "
-            f"annotations={self.annotations!r}, "
-            f"form_fields={self.form_fields!r}, "
-            f"header={self.header!r}, "
-            f"footer={self.footer!r}, "
-            f"diagnostics={self.diagnostics!r}, "
-            f"cropbox={self.cropbox!r}, "
-            f"user_unit={self.user_unit!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

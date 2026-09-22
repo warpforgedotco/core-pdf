@@ -13,7 +13,7 @@ from core_pdf.impl.model.runs import (
     TextRun,
 )
 from core_pdf.impl.model.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
-from core_pdf.impl.records import ReplaceFields, ReprFields
+from core_pdf.impl.types import ReplaceFields, ReprFields
 
 SUPERSCRIPT_HEIGHT_RATIO = 0.9
 SUPERSCRIPT_BASELINE_MIN = 0.45

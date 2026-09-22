@@ -25,8 +25,8 @@ from core_pdf.impl.output.model import (
     TableColumnBand,
     TableRowBand,
 )
-from core_pdf.impl.records import FrozenFields, ReplaceFields, ReprFields
 from core_pdf.impl.runtime.array_views import finite_median
+from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 
 TABLE_MERGE_GAP = 36.0
 
@@ -550,9 +550,6 @@ def table_with_bands(table: Table) -> Table:
         for index, boxes in enumerate(column_boxes)
     )
     return replace(table, row_bands=tuple(row_bands), column_bands=column_bands)
-
-
-frozen_setattr = object.__setattr__
 
 
 def numeric_cell(text: str) -> bool:

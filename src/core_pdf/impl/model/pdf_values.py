@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import ClassVar, cast
 
-from core_pdf.impl.records import ReplaceFields, ReprFields
-from core_pdf.impl.types import PdfString
+from core_pdf.impl.types import PdfString, ReplaceFields, ReprFields
 
 
 def is_pdf_null(value: object) -> bool:

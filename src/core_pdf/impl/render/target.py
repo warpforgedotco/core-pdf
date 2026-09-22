@@ -458,18 +458,12 @@ class RasterTarget:
         sample_total: int,
         *,
         track_shape: bool,
-        normal_fast: bool,
         blend_resolved_mode: str | None,
     ) -> None:
         """Paint one antialiased pixel: coverage fraction to alpha, then blend."""
         alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
         shape = round(255 * covered / sample_total) if track_shape else 255
-        if normal_fast:
-            self.blend_normal_pixel(offset, rgba[0], rgba[1], rgba[2], alpha, shape=shape)
-        else:
-            self.blend_px(
-                offset, (rgba[0], rgba[1], rgba[2], alpha), blend_resolved_mode, shape=shape
-            )
+        self.blend_px(offset, (rgba[0], rgba[1], rgba[2], alpha), blend_resolved_mode, shape=shape)
 
     def __init__(
         self,
@@ -939,43 +933,6 @@ class RasterTarget:
         out_r = int(round(((src_r * 255.0) * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
         out_g = int(round(((src_g * 255.0) * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
         out_b = int(round(((src_b * 255.0) * src_a + db * dst_a * (1.0 - src_a)) / out_a))
-        out_a_i = int(round(out_a * 255.0))
-        pixels[idx] = max(0, min(255, out_r))
-        pixels[idx + 1] = max(0, min(255, out_g))
-        pixels[idx + 2] = max(0, min(255, out_b))
-        pixels[idx + 3] = max(0, min(255, out_a_i))
-
-    def can_blend_normal_fast(self, blend_mode: str | None) -> bool:
-        return blend_mode is None
-
-    def blend_normal_pixel(
-        self, idx: int, sr: int, sg: int, sb: int, sa: int, *, shape: int = 255
-    ) -> None:
-        if self.group_source_shape is not None:
-            row, column = divmod(idx // 4, self.width)
-            self.record_source_shape(row, column, shape)
-        if sa <= 0:
-            return
-        if self.group_source_alpha is not None:
-            row, column = divmod(idx // 4, self.width)
-            self.record_source_alpha(row, column, sa)
-        pixels = self.pixels
-        if sa >= 255:
-            pixels[idx] = sr
-            pixels[idx + 1] = sg
-            pixels[idx + 2] = sb
-            pixels[idx + 3] = 255
-            return
-        dr = pixels[idx]
-        dg = pixels[idx + 1]
-        db = pixels[idx + 2]
-        da = pixels[idx + 3]
-        src_a = sa / 255.0
-        dst_a = da / 255.0
-        out_a = src_a + dst_a * (1.0 - src_a)
-        out_r = int(round((sr * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
-        out_g = int(round((sg * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
-        out_b = int(round((sb * src_a + db * dst_a * (1.0 - src_a)) / out_a))
         out_a_i = int(round(out_a * 255.0))
         pixels[idx] = max(0, min(255, out_r))
         pixels[idx + 1] = max(0, min(255, out_g))
@@ -1712,7 +1669,6 @@ class RasterTarget:
         width = self.width
         blend_px = self.blend_px
         blend_resolved_mode = self.resolved_blend(blend_mode)
-        blend_normal_pixel = self.blend_normal_pixel
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         if normal_target is None:
             if rgba[3] <= 0 and self.group_source_shape is None:
@@ -1743,7 +1699,7 @@ class RasterTarget:
                         self.record_source_coverage(y, slice(start, end), rgba[3])
                     else:
                         for x in range(start, end):
-                            blend_normal_pixel(row + x * 4, *rgba)
+                            blend_px(row + x * 4, rgba, None)
                 elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
                     blend_solid_array_numpy(
                         blend_target[y, start:end],
@@ -1876,10 +1832,8 @@ class RasterTarget:
         blend_mode: str | None = None,
     ) -> None:
         clip = self.clip
-        blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_resolved_mode = self.resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = clip.clip_row_visible_spans
@@ -1902,7 +1856,7 @@ class RasterTarget:
             return
         ix0, iy0, ix1, iy1 = pixel_box
         radius2 = radius * radius
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         rectangular_clip = not clip_regions or clip_paths_are_axis_aligned_rects()
         if normal_fast and rgba[3] >= 255 and rectangular_clip:
             if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:
@@ -1952,10 +1906,7 @@ class RasterTarget:
                     dy = page_y - cy
                     if dx * dx + dy * dy > radius2:
                         continue
-                    if normal_fast:
-                        blend_normal_pixel(row + px * 4, *rgba)
-                    else:
-                        blend_px(row + px * 4, rgba, blend_resolved_mode)
+                    blend_px(row + px * 4, rgba, blend_resolved_mode)
 
     def fill_path_scanlines(
         self,
@@ -1965,11 +1916,9 @@ class RasterTarget:
         blend_mode: str | None,
         fill_rule: str,
     ) -> None:
-        blend_normal_pixel = self.blend_normal_pixel
         blend_normal_solid_span = self.blend_normal_solid_span
         blend_px = self.blend_px
         blend_resolved_mode = self.resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
@@ -1983,7 +1932,7 @@ class RasterTarget:
         ix0, iy0, ix1, iy1 = pixel_box
         rectangular_clip = clip_paths_are_axis_aligned_rects()
         simple_opaque = rgba[3] == 255 and blend_mode is None and rectangular_clip
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         normal_target = pixel_view(pixels) if normal_fast and not simple_opaque else None
         blend_target = pixel_view(pixels) if not normal_fast and rgba[3] > 0 else None
 
@@ -2071,10 +2020,7 @@ class RasterTarget:
                         self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     for px in range(visible_start, visible_end):
-                        if normal_fast:
-                            blend_normal_pixel(row + px * 4, *rgba)
-                        else:
-                            blend_px(row + px * 4, rgba, blend_resolved_mode)
+                        blend_px(row + px * 4, rgba, blend_resolved_mode)
 
     def fast_fill_path(
         self,
@@ -2127,8 +2073,8 @@ class RasterTarget:
             start_x = 0.0
             for end_x, delta in intersections:
                 if winding:
-                    start = max(ix0, math.ceil((start_x - crop_x0) * scale))
-                    end = min(ix1, math.ceil((end_x - crop_x0) * scale))
+                    start = max(ix0, math.ceil((start_x - crop_x0) * scale - 0.5))
+                    end = min(ix1, math.ceil((end_x - crop_x0) * scale - 0.5))
                     blend_normal_solid_span(py * width * 4, start, end, (0, 0, 0, 255))
                 if winding == 0:
                     start_x = end_x
@@ -2148,7 +2094,6 @@ class RasterTarget:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         blend_resolved_mode = self.resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
@@ -2205,7 +2150,7 @@ class RasterTarget:
         ix0, iy0, ix1, iy1 = pixel_box
         pixel_area = (ix1 - ix0) * (iy1 - iy0)
         rectangular_clip = clip_paths_are_axis_aligned_rects()
-        normal_fast = can_blend_normal_fast(blend_mode)
+        normal_fast = blend_mode is None
         if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
             source = (
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
@@ -2343,7 +2288,6 @@ class RasterTarget:
                         covered,
                         samples * samples,
                         track_shape=track_shape,
-                        normal_fast=normal_fast,
                         blend_resolved_mode=blend_resolved_mode,
                     )
 
@@ -2531,7 +2475,6 @@ class RasterTarget:
                         covered,
                         sample_total,
                         track_shape=track_shape,
-                        normal_fast=normal_fast,
                         blend_resolved_mode=blend_resolved_mode,
                     )
 
@@ -2706,10 +2649,8 @@ class RasterTarget:
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
-        blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
         blend_resolved_mode = self.resolved_blend(blend_mode)
-        can_blend_normal_fast = self.can_blend_normal_fast
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
@@ -2732,7 +2673,6 @@ class RasterTarget:
         ix0, iy0, ix1, iy1 = clipped_box[1]
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
-        normal_fast = can_blend_normal_fast(blend_mode)
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         domain_span = domain[1] - domain[0]
         page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
@@ -2776,10 +2716,7 @@ class RasterTarget:
                         if shading_alpha is not None:
                             rgba = scale_rgba_alpha(rgba, shading_alpha)
                         rgba_cache[value] = rgba
-                    if normal_fast:
-                        blend_normal_pixel(row + px * 4, *rgba)
-                    else:
-                        blend_px(row + px * 4, rgba, blend_resolved_mode)
+                    blend_px(row + px * 4, rgba, blend_resolved_mode)
 
     def paint_tiling_pattern(
         self,

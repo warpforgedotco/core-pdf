@@ -29,12 +29,8 @@ from core_pdf.impl.model.text import (
     text_word_tokens,
 )
 from core_pdf.impl.output.model import TextLine, TextSpan
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.runtime.array_views import finite_median
-from core_pdf.impl.types import TextWord
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.types import Record, ReplaceFields, ReprFields, TextWord, frozen_setattr
 
 NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
@@ -838,9 +834,6 @@ def has_repeated_block_columns(blocks: tuple[ParsedBlock, ...]) -> bool:
         else:
             clusters.append([start])
     return sum(len(cluster) >= 3 for cluster in clusters) >= 3
-
-
-frozen_setattr = object.__setattr__
 
 
 class LayoutRegion(Record):
