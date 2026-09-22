@@ -11,7 +11,7 @@ from core_pdf.impl.graphics.color import (
     convert_cmyk,
     convert_image_data,
 )
-from core_pdf.impl.graphics.color_spec import internal_color_space_paints, parse_color_space
+from core_pdf.impl.graphics.color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics.image_filters import decode_stream_image_data
 from core_pdf.impl.graphics.image_models import DecodedImage
 from core_pdf.impl.graphics.image_samples import (
@@ -48,7 +48,7 @@ def decode_array_applies(dictionary: dict[Any, Any], context: SemanticContext | 
 def image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
     if dictionary.get("ImageMask") is True:
         return True
-    return internal_color_space_paints(dictionary.get("ColorSpace"))
+    return raw_color_space_paints(dictionary.get("ColorSpace"))
 
 
 class DecodedRaster(Record):

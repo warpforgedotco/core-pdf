@@ -33,7 +33,7 @@ def pinned_engine() -> None:
 
 @pytest.fixture
 def owned_engines(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-    factory = tesseract.internal_api
+    factory = tesseract.open_tesseract_api
     engines: list[Any] = []
 
     class TrackedEngine:
@@ -54,7 +54,7 @@ def owned_engines(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
             self.ends += 1
             self.api.End()
 
-    monkeypatch.setattr(tesseract, "internal_api", TrackedEngine)
+    monkeypatch.setattr(tesseract, "open_tesseract_api", TrackedEngine)
     return engines
 
 

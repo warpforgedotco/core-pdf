@@ -30,7 +30,7 @@ def test_longest_runs_do_not_cross_row_boundaries() -> None:
     assert grids.cluster_line_positions(numpy.asarray([])) == []
 
 
-def internal_image(channels: int = 1) -> RasterImage:
+def make_image(channels: int = 1) -> RasterImage:
     samples = numpy.full((300, 300, channels), 255, dtype=numpy.uint8)
     for position in (30, 90, 150, 210, 270):
         samples[position, 30:271] = 0
@@ -40,7 +40,7 @@ def internal_image(channels: int = 1) -> RasterImage:
 
 @pytest.mark.parametrize("channels", [1, 3, 4])
 def test_detected_grid_edges_map_back_from_pooling(channels: int) -> None:
-    detected = grids.detect_ruling_grid(internal_image(channels))
+    detected = grids.detect_ruling_grid(make_image(channels))
     assert detected is not None
     xs, ys, samples, slope = detected
     assert xs == ys == [31, 91, 151, 211, 271]
@@ -76,14 +76,14 @@ def test_skew_estimation_and_shear_straighten_rulings() -> None:
     )
 
 
-def internal_task() -> OcrTask:
+def make_task() -> OcrTask:
     image = RasterImage(bytes([255]) * 10000, 100, 100, 1)
     return OcrTask(6, image, (0, 0, 100, 100), (10, 20, 210, 220), 80)
 
 
 @pytest.mark.parametrize("channels", [1, 3])
 def test_cell_tasks_inset_rules_skip_empty_cells_and_keep_page_transform(channels: int) -> None:
-    task = internal_task()
+    task = make_task()
     shape = (100, 100) if channels == 1 else (100, 100, channels)
     samples = numpy.full(shape, 255, dtype=numpy.uint8)
     samples[5:10, 5:10] = 0
@@ -109,9 +109,7 @@ def test_cell_tasks_inset_rules_skip_empty_cells_and_keep_page_transform(channel
 )
 def test_invalid_or_excessive_cells_do_not_schedule_ocr(xs: list[int], ys: list[int]) -> None:
     assert (
-        grids.grid_cell_tasks(
-            internal_task(), xs, ys, numpy.zeros((100, 100), dtype=numpy.uint8), 0
-        )
+        grids.grid_cell_tasks(make_task(), xs, ys, numpy.zeros((100, 100), dtype=numpy.uint8), 0)
         == ()
     )
 
@@ -152,8 +150,8 @@ def test_regular_table_gate_limits_observations_crossing_column_rules(
         ("word",) * (count + 1), (*boxes, (500, 500, 510, 510)), source=2
     )
     grid = (list(range(0, 101, 20)), list(range(0, 81, 10)), numpy.zeros((100, 100)), 0.0)
-    assert grids.grid_is_regular_table(grid, prior, internal_task()) is allowed
-    assert grids.grid_is_regular_table(grid, ObservationBatch.empty(), internal_task())
+    assert grids.grid_is_regular_table(grid, prior, make_task()) is allowed
+    assert grids.grid_is_regular_table(grid, ObservationBatch.empty(), make_task())
 
 
 @pytest.mark.parametrize(
@@ -169,7 +167,7 @@ def test_regular_table_gate_rejects_small_degenerate_and_irregular_grids(
     xs: list[int], ys: list[int]
 ) -> None:
     grid = (xs, ys, numpy.zeros((100, 100)), 0.0)
-    assert not grids.grid_is_regular_table(grid, ObservationBatch.empty(), internal_task())
+    assert not grids.grid_is_regular_table(grid, ObservationBatch.empty(), make_task())
 
 
 def test_skew_requires_three_plausibly_paired_lines() -> None:

@@ -11,7 +11,7 @@ from core_pdf.impl.model.glyphs import GlyphCluster
 from core_pdf.impl.model.runs import TextRun
 
 
-def internal_run(text="A", bbox: tuple[float, float, float, float] = (0, 0, 10, 10), **kwargs):
+def make_run(text="A", bbox: tuple[float, float, float, float] = (0, 0, 10, 10), **kwargs):
     return TextRun(text, *bbox, 0, 0, 10, 3, 0, 0, 0, **kwargs)
 
 
@@ -19,7 +19,7 @@ def internal_run(text="A", bbox: tuple[float, float, float, float] = (0, 0, 10, 
 @pytest.mark.parametrize("visible", [False, True])
 @pytest.mark.parametrize("text", ["A", " "])
 def test_visible_text_requires_positive_run_advance_and_ink_geometry(bbox, visible, text):
-    issues = text_run_geometry_issues(internal_run(text, bbox, visible=visible))
+    issues = text_run_geometry_issues(make_run(text, bbox, visible=visible))
     expected = (
         {"run_nonpositive_bbox", "run_nonpositive_advance_bbox", "run_nonpositive_ink_bbox"}
         if visible and text.strip()
@@ -42,7 +42,7 @@ def test_visible_text_requires_positive_run_advance_and_ink_geometry(bbox, visib
 def test_run_diagnostics_identify_repairable_text_and_confidence_boundary(
     text, confidence, expected
 ):
-    issues = text_run_geometry_issues(internal_run(text, confidence=confidence))
+    issues = text_run_geometry_issues(make_run(text, confidence=confidence))
     assert {issue.code for issue in issues} == expected
     assert all(issue.repairable and issue.severity == "warning" for issue in issues)
 
@@ -61,7 +61,7 @@ def test_run_diagnostics_identify_repairable_text_and_confidence_boundary(
 )
 def test_cluster_diagnostics_apply_text_specific_confidence_thresholds(text, confidence, expected):
     cluster = GlyphCluster(17, text, (), (0, 0, 10, 10), (0, 0, 10, 10), None, confidence)
-    issues = text_run_geometry_issues(internal_run(text, glyph_clusters=(cluster,)))
+    issues = text_run_geometry_issues(make_run(text, glyph_clusters=(cluster,)))
     assert [issue.code for issue in issues if issue.subject.startswith("glyph_cluster[")] == (
         [expected] if expected else []
     )
@@ -74,7 +74,7 @@ def test_cluster_diagnostics_apply_text_specific_confidence_thresholds(text, con
 @pytest.mark.parametrize("bbox", [(0, 0, 0, 10), (float("nan"), 0, 10, 10), (30, 0, 40, 10)])
 def test_cluster_geometry_errors_report_owner_and_text_mismatch(bbox):
     cluster = GlyphCluster(17, "B", (), bbox, bbox, None, 1)
-    issues = text_run_geometry_issues(internal_run(glyph_clusters=(cluster,)))
+    issues = text_run_geometry_issues(make_run(glyph_clusters=(cluster,)))
     codes = {issue.code for issue in issues}
     assert "glyph_cluster_text_mismatch" in codes
     assert (
@@ -88,7 +88,7 @@ def test_cluster_geometry_errors_report_owner_and_text_mismatch(bbox):
 def test_oversized_run_diagnostic_uses_writing_axis_and_advance_geometry(rotation):
     box = (0, 0, 10, 100) if rotation in (90, 270) else (0, 0, 100, 10)
     cluster = GlyphCluster(1, "A", (), (0, 0, 10, 10), (0, 0, 10, 10), None, 1)
-    run = internal_run(
+    run = make_run(
         bbox=box,
         advance_bbox=cluster.advance_bbox,
         glyph_clusters=(cluster,),
@@ -100,8 +100,8 @@ def test_oversized_run_diagnostic_uses_writing_axis_and_advance_geometry(rotatio
 
 
 def test_page_summary_retains_issue_locations_and_counts_severities():
-    good = LayoutLine([internal_run()])
-    bad = LayoutLine([internal_run("\ue000", (0, 0, 0, 10), confidence=0)])
+    good = LayoutLine([make_run()])
+    bad = LayoutLine([make_run("\ue000", (0, 0, 0, 10), confidence=0)])
     issues = page_layout_geometry_issues([good, bad])
     assert len(issues) == 6
     assert all(dict(issue.details)["line_index"] == 1 for issue in issues)

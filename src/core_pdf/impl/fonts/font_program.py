@@ -858,10 +858,10 @@ def repair_candidate(
 
 class CFFUnicodeRepairIndex:
     __slots__ = (
-        "internal_candidate_gids",
-        "internal_code_to_gid",
-        "internal_font",
-        "internal_labels",
+        "resolve_candidate_gids",
+        "code_to_gid_map",
+        "make_font",
+        "label_names",
         "repairable_gids",
     )
 
@@ -881,13 +881,13 @@ class CFFUnicodeRepairIndex:
                 labels[gid] = value
                 code_to_gid[code_bytes] = gid
 
-        self.internal_font = font
-        self.internal_labels = labels
-        self.internal_code_to_gid = code_to_gid
+        self.make_font = font
+        self.label_names = labels
+        self.code_to_gid_map = code_to_gid
         self.repairable_gids = frozenset(
             gid for gid, label in labels.items() if is_repairable_to_unicode_label(label)
         )
-        self.internal_candidate_gids = tuple(
+        self.resolve_candidate_gids = tuple(
             gid
             for gid, label in labels.items()
             if len(label) == 1 and (label.isalnum() or label in ".-+")
@@ -901,7 +901,7 @@ class CFFUnicodeRepairIndex:
             dict.fromkeys(
                 gid
                 for code in requested_codes
-                if (gid := self.internal_code_to_gid.get(code)) in self.repairable_gids
+                if (gid := self.code_to_gid_map.get(code)) in self.repairable_gids
             )
         )
         if not target_gids:
@@ -910,15 +910,15 @@ class CFFUnicodeRepairIndex:
         return {
             code: replacement
             for code in requested_codes
-            if (gid := self.internal_code_to_gid.get(code)) is not None
+            if (gid := self.code_to_gid_map.get(code)) is not None
             and (replacement := repairs.get(gid)) is not None
         }
 
     def repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
-        feature_gids = dict.fromkeys((*self.internal_candidate_gids, *requested_gids))
-        features = {gid: self.internal_font.glyph_feature(gid) for gid in feature_gids}
+        feature_gids = dict.fromkeys((*self.resolve_candidate_gids, *requested_gids))
+        features = {gid: self.make_font.glyph_feature(gid) for gid in feature_gids}
 
-        candidate_gids = tuple(gid for gid in self.internal_candidate_gids if features[gid].cells)
+        candidate_gids = tuple(gid for gid in self.resolve_candidate_gids if features[gid].cells)
         target_gids = tuple(gid for gid in requested_gids if features[gid].cells)
         distance_lookups: dict[int, dict[int, float]] = {}
         if (
@@ -955,12 +955,12 @@ class CFFUnicodeRepairIndex:
 
         repairs: dict[int, str] = {}
         for glyph_id in target_gids:
-            label = self.internal_labels[glyph_id]
+            label = self.label_names[glyph_id]
             replacement = repair_candidate(
                 glyph_id,
                 label,
                 features,
-                self.internal_labels,
+                self.label_names,
                 distance_lookups.get(glyph_id),
             )
             if replacement is not None and replacement != label:

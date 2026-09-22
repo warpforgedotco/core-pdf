@@ -19,7 +19,7 @@ from core_pdf_ocr.impl.extract.contracts import (
 )
 from core_pdf_ocr.impl.extract.ocr import pipeline, tesseract
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask
-from core_pdf_ocr.impl.extract.quality import internal_candidate
+from core_pdf_ocr.impl.extract.quality import make_candidate
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ class Engine:
 @pytest.fixture
 def fake_engine(monkeypatch: pytest.MonkeyPatch) -> Engine:
     engine = Engine()
-    monkeypatch.setattr(tesseract, "internal_api", lambda mode: engine)
+    monkeypatch.setattr(tesseract, "open_tesseract_api", lambda mode: engine)
     monkeypatch.setattr(
         tesseract,
         "import_tesserocr",
@@ -237,8 +237,8 @@ def test_timeout_retry_preserves_page_geometry_and_only_replaces_recovered_text(
     assert retry.page_box == (20, 40, 60, 80)
     assert retry.resolution == 150
     assert tesseract.timeout_recovery_task(retry) is None
-    empty = internal_candidate(3, ObservationBatch.empty(), recognition_status="timeout")
-    recovered = internal_candidate(
+    empty = make_candidate(3, ObservationBatch.empty(), recognition_status="timeout")
+    recovered = make_candidate(
         3,
         ObservationBatch.from_columns(("Recovered",), ((0, 0, 5, 5),), source=1, confidence=(99,)),
     )
@@ -368,7 +368,7 @@ def test_hocr_ignores_unrelated_attributes_and_lines_without_geometry() -> None:
 
 @pytest.mark.parametrize("reason", ["empty", "line-loss", "alnum-loss", "utility-loss", "accepted"])
 def test_character_filter_must_preserve_recall_and_utility(reason) -> None:
-    raw = internal_candidate(
+    raw = make_candidate(
         6,
         ObservationBatch.from_columns(
             ("word", "word"), ((0, 0, 10, 10), (0, 20, 10, 30)), source=1, confidence=(99, 99)
@@ -376,7 +376,7 @@ def test_character_filter_must_preserve_recall_and_utility(reason) -> None:
     )
     filtered = raw
     if reason == "empty":
-        filtered = internal_candidate(6, ObservationBatch.empty())
+        filtered = make_candidate(6, ObservationBatch.empty())
     elif reason == "line-loss":
         filtered = replace(raw, metrics=replace(raw.metrics, line_count=1))
     elif reason == "alnum-loss":

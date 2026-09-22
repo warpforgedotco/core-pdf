@@ -5,7 +5,7 @@ from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_target():
+def make_target():
     pixels = bytearray(12 * 12 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
     return RasterTarget(
@@ -28,8 +28,8 @@ def internal_target():
     "rows", [(0b101, 0b010), (0b101,), (0b101, 0b010, 0b111), (0b1101, 0b1010)]
 )
 def test_bitmap_paint_agrees_with_declared_cell_geometry(alpha, offset, rows):
-    target, actual = internal_target()
-    reference, expected = internal_target()
+    target, actual = make_target()
+    reference, expected = make_target()
     color = (200, 30, 50, alpha)
     box = (2 + offset, 4, 8 + offset, 8)
     target.draw_glyph_bitmap(box, rows, color, bitmap_width=3, bitmap_height=2)
@@ -62,7 +62,7 @@ def test_bitmap_paint_agrees_with_declared_cell_geometry(alpha, offset, rows):
     ],
 )
 def test_unpaintable_bitmap_inputs_leave_target_untouched(box, bitmap, width, height):
-    target, view = internal_target()
+    target, view = make_target()
     target.draw_glyph_bitmap(
         box, bitmap, (200, 30, 50, 255), bitmap_width=width, bitmap_height=height
     )
@@ -70,8 +70,8 @@ def test_unpaintable_bitmap_inputs_leave_target_untouched(box, bitmap, width, he
 
 
 def test_inferred_bitmap_dimensions_match_explicit_dimensions():
-    inferred, actual = internal_target()
-    explicit, expected = internal_target()
+    inferred, actual = make_target()
+    explicit, expected = make_target()
     rows = (0b101, 0b010)
     inferred.draw_glyph_bitmap((2, 4, 8, 8), rows, (200, 30, 50, 255))
     explicit.draw_glyph_bitmap(

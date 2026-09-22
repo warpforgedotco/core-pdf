@@ -16,14 +16,14 @@ prepare_ocr_signals()
 
 
 class PdfPage(CorePdfPage):
-    def internal_extract_page(self, context: ExtractionScope) -> Page:
+    def run_extract_page(self, context: ExtractionScope) -> Page:
         return extract_page(self, context)
 
 
 class PdfDocument(CorePdfDocument):
     page_class = PdfPage
 
-    def internal_extract_document(
+    def run_extract_document(
         self, context: ExtractionScope, pages: Sequence[CorePdfPage]
     ) -> Document:
         return extract_document(self, context, pages)

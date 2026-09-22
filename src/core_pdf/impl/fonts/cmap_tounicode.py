@@ -28,7 +28,7 @@ from core_pdf_spec.s_09_fonts.cmap_tounicode import (
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
 
 
-def internal_decode_utf16be(data: bytes) -> str:
+def decode_utf16be_text(data: bytes) -> str:
     if not data:
         return ""
     if data.startswith(b"\xfe\xff"):
@@ -92,7 +92,7 @@ def parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> N
             src = decode_cmap_token(src_tok)
             if not src:
                 continue
-            dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
+            dst = decode_utf16be_text(decode_cmap_token(dst_tok))
         except ValueError, UnicodeDecodeError:
             if dst_tok.startswith(b"<") and b"<" in dst_tok[1:]:
                 prefix = dst_tok[1 : dst_tok.find(b"<", 1)]
@@ -102,7 +102,7 @@ def parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> N
                         continue
                     if len(prefix) % 2:
                         prefix += b"0"
-                    dst = internal_decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
+                    dst = decode_utf16be_text(bytes.fromhex(prefix.decode("ascii")))
                 except ValueError, UnicodeDecodeError:
                     break
                 mappings[src] = dst
@@ -137,7 +137,7 @@ def parse_bfrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> 
                 if offset >= source_range.count:
                     break
                 try:
-                    dst = internal_decode_utf16be(decode_cmap_token(dst_tok))
+                    dst = decode_utf16be_text(decode_cmap_token(dst_tok))
                 except ValueError, UnicodeDecodeError:
                     continue
                 mappings[source_range.source_at(offset)] = dst
@@ -148,7 +148,7 @@ def parse_bfrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> 
                 invalid_range_count += 1
         elif t3.startswith((b"<", b"(")):
             try:
-                base_dst = internal_decode_utf16be(decode_cmap_token(t3))
+                base_dst = decode_utf16be_text(decode_cmap_token(t3))
                 expanded = expand_range(
                     source_range.first, source_range.last, source_range.width, base_dst
                 )

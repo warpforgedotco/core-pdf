@@ -92,7 +92,7 @@ def sentence_count(sentences: tuple[str, ...], minimum_words: int) -> int:
     return count
 
 
-def internal_element_class(
+def classify_element(
     text: str,
     bbox: tuple[float, float, float, float],
     page_height: float,
@@ -103,7 +103,7 @@ def internal_element_class(
     return text_element_class(text, *nlp_features(text))
 
 
-def internal_element_classes(
+def classify_elements(
     regions: Iterable[tuple[str, tuple[float, float, float, float]]],
     page_height: float,
 ) -> Iterator[type[Element]]:

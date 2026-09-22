@@ -119,9 +119,9 @@ def grid_components(
         disjoint.union(h_index, len(horizontal) + v_index)
     grouped_h: dict[int, list[int]] = defaultdict(list)
     grouped_v: dict[int, list[int]] = defaultdict(list)
-    for index in sorted({h_index for h_index, internal_v_index in pairs}):
+    for index in sorted({h_index for h_index, vertical_index in pairs}):
         grouped_h[disjoint.find(index)].append(index)
-    for index in sorted({v_index for internal_h_index, v_index in pairs}):
+    for index in sorted({v_index for horizontal_index, v_index in pairs}):
         grouped_v[disjoint.find(len(horizontal) + index)].append(index)
     return tuple(
         (horizontal[grouped_h[root]], vertical[grouped_v[root]])
@@ -265,10 +265,10 @@ def merge_grid_cells(
             members[disjoint.find(row * column_count + column)].append((row, column))
     merged: list[list[TableCell]] = [[] for _ in range(row_count)]
     for cells in members.values():
-        min_row = min(row for row, internal_column in cells)
-        max_row = max(row for row, internal_column in cells)
-        min_column = min(column for internal_row, column in cells)
-        max_column = max(column for internal_row, column in cells)
+        min_row = min(row for row, make_column in cells)
+        max_row = max(row for row, make_column in cells)
+        min_column = min(column for row_value, column in cells)
+        max_column = max(column for row_value, column in cells)
         if len(cells) != (max_row - min_row + 1) * (max_column - min_column + 1):
             for row, column in cells:
                 merged[row].append(rows[row][column])

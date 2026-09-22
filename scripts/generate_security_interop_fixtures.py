@@ -213,7 +213,7 @@ FIXTURES = (
 )
 
 
-def internal_stream(contents: bytes, *, extra_attributes: bytes = b"") -> bytes:
+def make_stream(contents: bytes, *, extra_attributes: bytes = b"") -> bytes:
     attributes = b"/Length " + str(len(contents)).encode("ascii")
     if extra_attributes:
         attributes += b" " + extra_attributes
@@ -236,12 +236,12 @@ def source_pdf() -> bytes:
             b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
         ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        internal_stream(page_contents),
+        make_stream(page_contents),
         (
             b"<< /Title (Core PDF Security Fixture) /Author (core-pdf) "
             b"/Subject (qpdf interoperability) >>"
         ),
-        internal_stream(xmp, extra_attributes=b"/Type /Metadata /Subtype /XML"),
+        make_stream(xmp, extra_attributes=b"/Type /Metadata /Subtype /XML"),
     )
 
     output = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")

@@ -19,14 +19,14 @@ class RecordingExecutor:
             raise PdfParseError("injected stream failure")
 
 
-def internal_stream(data: bytes) -> PdfStream:
+def make_stream(data: bytes) -> PdfStream:
     return PdfStream(raw_data=data)
 
 
 def test_content_streams_flatten_nested_arrays_in_source_order(text_pdf_bytes: bytes) -> None:
     with PdfDocument(text_pdf_bytes) as document:
         page = document.pages[0]
-        page.contents = [internal_stream(b"first"), [object(), internal_stream(b"second")]]
+        page.contents = [make_stream(b"first"), [object(), make_stream(b"second")]]
         assert [stream.data for stream in page.content_streams] == [b"first", b"second"]
 
 
@@ -62,7 +62,7 @@ def test_content_consumption_retries_or_skips_only_when_safe(
     with PdfDocument(text_pdf_bytes) as document:
         document.xref_was_recovered = recovered
         page = document.pages[0]
-        page.contents = [internal_stream(data) for data in streams]
+        page.contents = [make_stream(data) for data in streams]
         state = TextState(document)
         executor = RecordingExecutor(failures)
         cast(Any, state).stream_executor = executor

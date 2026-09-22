@@ -17,7 +17,7 @@ URL = "https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.2-installer
 SHA256 = "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838"
 
 
-def internal_configuration(destination: Path) -> bytes:
+def make_configuration(destination: Path) -> bytes:
     root = ElementTree.Element("AutomatedInstallation", langpack="eng")
     prefix = "com.izforge.izpack.panels."
     ElementTree.SubElement(root, prefix + "htmlhello.HTMLHelloPanel", id="welcome")
@@ -75,7 +75,7 @@ def main() -> None:
         with ZipFile(archive) as package:
             jar.write_bytes(package.read(f"verapdf-greenfield-{VERSION}/{jar_name}"))
         configuration = work / "install.xml"
-        configuration.write_bytes(internal_configuration(destination))
+        configuration.write_bytes(make_configuration(destination))
         destination.mkdir(parents=True)
         subprocess.run(
             [

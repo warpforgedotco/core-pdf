@@ -301,7 +301,7 @@ def parse_device_n_attributes(
         raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
     version = context.version if context is not None else None
     names = colorant_names(colorants)
-    return internal_parse_device_n_attributes(value, names, set(), version)
+    return parse_device_n_attributes_for(value, names, set(), version)
 
 
 def device_n_process(
@@ -314,7 +314,7 @@ def device_n_process(
     if not isinstance(value, dict):
         raise ValueError("invalid DeviceN Process dictionary")
     source = cast(dict[str, object], value)
-    space = internal_parse_color_space(source.get("ColorSpace"), active, version)
+    space = parse_color_space_versioned(source.get("ColorSpace"), active, version)
     if space.kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "CalGray", "CalRGB", "ICCBased"}:
         raise ValueError("invalid DeviceN process color space")
     components = colorant_names(source.get("Components"))
@@ -352,7 +352,7 @@ def device_n_process(
     return DeviceNProcess(space, components, tuple(indices))
 
 
-def internal_parse_device_n_attributes(
+def parse_device_n_attributes_for(
     value: object,
     names: tuple[str, ...],
     active: set[int],
@@ -395,7 +395,7 @@ def internal_parse_device_n_attributes(
                     raise ValueError("invalid DeviceN Colorants name")
                 if name in process_names or raw_space is None:
                     continue
-                space = internal_parse_color_space(raw_space, active, version)
+                space = parse_color_space_versioned(raw_space, active, version)
                 if space.kind != "Separation" or space.colorants != (name,):
                     raise ValueError("DeviceN Colorants entry must match its Separation name")
                 colorant_spaces[name] = space
@@ -417,7 +417,7 @@ def array(value: object, size: int, message: str) -> tuple[float, ...]:
     return values
 
 
-def internal_ranges(value: object, count: int) -> ComponentRanges:
+def parse_component_ranges(value: object, count: int) -> ComponentRanges:
     values = array(value, 2 * count, "invalid color component Range")
     ranges = tuple(zip(values[::2], values[1::2], strict=True))
     if any(low > high for low, high in ranges):
@@ -464,10 +464,10 @@ def parse_color_space(value: object, *, context: SemanticContext | None = None) 
     if context is not None and (context.version is None or not context.version.recognized):
         raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
     version = context.version if context is not None else None
-    return internal_parse_color_space(value, set(), version)
+    return parse_color_space_versioned(value, set(), version)
 
 
-def internal_parse_color_space(
+def parse_color_space_versioned(
     value: object, active: set[int], version: PdfVersion | None
 ) -> ColorSpace:
     name = decoded_name(value)
@@ -484,12 +484,12 @@ def internal_parse_color_space(
         if kind in DEVICE_SPACES and len(value) == 1:
             return DEVICE_SPACES[kind]
         if kind == "Pattern" and len(value) == 2:
-            base = internal_parse_color_space(value[1], active, version)
+            base = parse_color_space_versioned(value[1], active, version)
             if base.kind == "Pattern":
                 raise ValueError("Pattern cannot be its own underlying color space")
             return ColorSpace(kind, base.component_ranges, base=base)
         if kind == "Indexed" and len(value) == 4:
-            base = internal_parse_color_space(value[1], active, version)
+            base = parse_color_space_versioned(value[1], active, version)
             if base.kind in {"Indexed", "Pattern"}:
                 raise ValueError("invalid Indexed base color space")
             if (
@@ -511,7 +511,7 @@ def internal_parse_color_space(
             ranges = (
                 (
                     (0.0, 100.0),
-                    *internal_ranges(
+                    *parse_component_ranges(
                         (-100, 100, -100, 100) if source.get("Range") is None else source["Range"],
                         2,
                     ),
@@ -526,14 +526,14 @@ def internal_parse_color_space(
             count = require_pdf_integer(source.get("N"), "invalid ICCBased channel count")
             if count not in {1, 3, 4}:
                 raise ValueError("invalid ICCBased channel count")
-            ranges = internal_ranges(
+            ranges = parse_component_ranges(
                 (0, 1) * count if source.get("Range") is None else source["Range"], count
             )
             raw_alt = source.get("Alternate")
             alternate = (
                 {1: DEVICE_GRAY, 3: DEVICE_RGB, 4: DEVICE_CMYK}[count]
                 if raw_alt is None
-                else internal_parse_color_space(raw_alt, active, version)
+                else parse_color_space_versioned(raw_alt, active, version)
             )
             if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN", "ICCBased"}:
                 raise ValueError("invalid ICCBased alternate color space")
@@ -554,7 +554,7 @@ def internal_parse_color_space(
             colorants = colorant_names(names)
             if kind == "DeviceN":
                 device_n_names(colorants, "DeviceN")
-            alternate = internal_parse_color_space(value[2], active, version)
+            alternate = parse_color_space_versioned(value[2], active, version)
             if alternate.kind in {"Pattern", "Indexed", "Separation", "DeviceN"}:
                 raise ValueError("invalid alternate color space")
             if value[3] is None:
@@ -562,9 +562,7 @@ def internal_parse_color_space(
             params = {}
             attributes = None
             if len(value) == 5:
-                attributes = internal_parse_device_n_attributes(
-                    value[4], colorants, active, version
-                )
+                attributes = parse_device_n_attributes_for(value[4], colorants, active, version)
                 params["Attributes"] = MappingProxyType(dict(cast(dict[str, object], value[4])))
             return ColorSpace(
                 kind,

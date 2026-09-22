@@ -8,19 +8,19 @@ from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope
 from core_pdf_ocr.impl.extract.ocr import rescue
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask
-from core_pdf_ocr.impl.extract.quality import internal_candidate, text_utility_stats
+from core_pdf_ocr.impl.extract.quality import make_candidate, text_utility_stats
 
 
-def internal_observations(text="abcdefgh", box=(0, 0, 100, 100)) -> ObservationBatch:
+def make_observations(text="abcdefgh", box=(0, 0, 100, 100)) -> ObservationBatch:
     return ObservationBatch.from_columns((text,), (box,), source=1, confidence=(100,))
 
 
 def test_coverage_grid_distributes_utility_by_clipped_area() -> None:
-    observations = internal_observations(box=(-100, -100, 100, 100))
+    observations = make_observations(box=(-100, -100, 100, 100))
     grid = rescue.observation_coverage_grid(observations, (0, 0, 100, 100), 2, 2)
     assert grid.tolist() == [2, 2, 2, 2]
     assert grid.sum() == text_utility_stats("abcdefgh", 100).utility
-    upper_right = internal_observations(box=(50, 50, 100, 100))
+    upper_right = make_observations(box=(50, 50, 100, 100))
     assert rescue.observation_coverage_grid(upper_right, (0, 0, 100, 100), 2, 2).tolist() == [
         0,
         8,
@@ -34,9 +34,7 @@ def test_coverage_grid_distributes_utility_by_clipped_area() -> None:
     [("", (0, 0, 10, 10)), ("word", (200, 200, 300, 300)), ("word", (10, 0, 10, 10))],
 )
 def test_coverage_grid_ignores_empty_off_page_and_degenerate_observations(text, box) -> None:
-    result = rescue.observation_coverage_grid(
-        internal_observations(text, box), (0, 0, 100, 100), 2, 2
-    )
+    result = rescue.observation_coverage_grid(make_observations(text, box), (0, 0, 100, 100), 2, 2)
     assert result.tolist() == [0] * 4
     assert (
         rescue.observation_coverage_grid(ObservationBatch.empty(), (0, 0, 100, 100), 2, 2).tolist()
@@ -51,7 +49,7 @@ def test_rescue_coverage_deduplicates_same_raster_and_counts_only_unexplained_in
         6, RasterImage(samples.tobytes(), 100, 100, 1), (0, 0, 100, 100), (0, 0, 100, 100), 72
     )
     operation = OcrPass("rescue", OcrPassScope.WEAK_REGIONS, 1, (6, 11), tiles=2, region_columns=2)
-    observations = internal_observations(box=(0, 50, 50, 100))
+    observations = make_observations(box=(0, 50, 50, 100))
     coverage = rescue.adaptive_rescue_coverage(
         (task, replace(task, mode=11)), operation, observations
     )
@@ -86,7 +84,7 @@ def test_rescue_coverage_deduplicates_same_raster_and_counts_only_unexplained_in
 def test_rescue_decision_boundaries(
     monkeypatch: pytest.MonkeyPatch, characters, confidence, height, ink, weak, rasters, expected
 ) -> None:
-    candidate = internal_candidate(6, internal_observations())
+    candidate = make_candidate(6, make_observations())
     candidate = replace(
         candidate,
         metrics=replace(

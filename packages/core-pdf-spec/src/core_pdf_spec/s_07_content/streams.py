@@ -434,7 +434,7 @@ class ContentStreamExecutor:
         state.op_q((), frame.depth)
         state.graphics_stack_floor = len(state.stack)
         state.compatibility_depth = 0
-        state.internal_pending_clip_rule = None
+        state.pending_clip_rule_value = None
         state.in_text_object = False
         self.active_streams.add(stream_key)
         frame.stream_key = stream_key

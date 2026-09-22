@@ -158,9 +158,7 @@ class RasterFontRepository:
         self.builtin_programs: dict[str, TrueTypeFontProgram | None] = {}
         self.provider_programs: dict[str, TrueTypeFontProgram | None] = {}
 
-    def internal_provider_program(
-        self, request: PdfRasterFontRequest
-    ) -> TrueTypeFontProgram | None:
+    def load_provider_program(self, request: PdfRasterFontRequest) -> TrueTypeFontProgram | None:
         face = provider_face(self.provider, request)
         if face is None:
             return None
@@ -257,7 +255,7 @@ def fallback_glyph_outline(
         provider if isinstance(provider, RasterFontRepository) else RasterFontRepository(provider)
     )
     programs: list[TrueTypeFontProgram] = []
-    provider_program = repository.internal_provider_program(request)
+    provider_program = repository.load_provider_program(request)
     if provider_program is not None:
         programs.append(provider_program)
     for face_name in builtin_face_names(font_name):

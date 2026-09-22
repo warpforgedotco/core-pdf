@@ -647,7 +647,7 @@ class Match:
         return self.__class__(char, start, stop, width, transform, translation, error)
 
 
-def internal_templates() -> TemplateSet:
+def make_templates() -> TemplateSet:
     templates: list[Template] = []
     by_first_delta: dict[tuple[int, int], list[Template]] = {}
     encoded_glyphs = (
@@ -716,7 +716,7 @@ def drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
     return style
 
 
-def internal_segments(
+def drawing_segments(
     drawings: tuple[CapturedDrawing, ...],
 ) -> tuple[tuple[Segment | None, ...], tuple[tuple[object, ...], ...], int]:
     segments: list[Segment | None] = []
@@ -761,7 +761,7 @@ def internal_segments(
     return tuple(segments), tuple(styles), candidate_count
 
 
-def internal_continuity(segments: tuple[Segment | None, ...]) -> tuple[bool, ...]:
+def segment_continuity(segments: tuple[Segment | None, ...]) -> tuple[bool, ...]:
     result: list[bool] = []
     for left, right in zip(segments, segments[1:], strict=False):
         if left is None or right is None or left.style != right.style:
@@ -1129,11 +1129,11 @@ def sequence_run(
 
 
 def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> NewstrokeDecode:
-    segments, styles, candidate_count = internal_segments(drawings)
+    segments, styles, candidate_count = drawing_segments(drawings)
     if candidate_count < MIN_CANDIDATE_SEGMENTS:
         return NewstrokeDecode(candidate_segments=candidate_count)
-    templates = internal_templates()
-    continuity = internal_continuity(segments)
+    templates = make_templates()
+    continuity = segment_continuity(segments)
     point_data = numpy.zeros((len(segments), 2, 2), dtype=numpy.float64)
     style_data = numpy.full(len(segments), -1, dtype=numpy.int16)
     for index, segment in enumerate(segments):

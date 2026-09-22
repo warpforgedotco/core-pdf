@@ -149,7 +149,7 @@ def font_descriptor(value: object) -> dict[str, Any] | None:
     return cast(dict[str, Any], value)
 
 
-def internal_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:
+def descriptor_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:
     if descriptor is None:
         return None
     value = descriptor.get(key)
@@ -162,7 +162,7 @@ def prepare_font_program_inputs(font: dict[str, Any]) -> FontProgramInputs:
     descendant = get_descendant(font)
     font_dict = descendant if descendant is not None else font
     original_descriptor = font_descriptor(font.get("FontDescriptor"))
-    font_file = internal_font_file(original_descriptor, "FontFile")
+    font_file = descriptor_font_file(original_descriptor, "FontFile")
     descriptor = (
         font_descriptor(font_dict.get("FontDescriptor"))
         if font_dict is not font
@@ -173,8 +173,8 @@ def prepare_font_program_inputs(font: dict[str, Any]) -> FontProgramInputs:
         original_subtype=decoded_name(font.get("Subtype")),
         descendant=descendant,
         font_file=font_file,
-        font_file2=internal_font_file(descriptor, "FontFile2"),
-        font_file3=internal_font_file(descriptor, "FontFile3"),
+        font_file2=descriptor_font_file(descriptor, "FontFile2"),
+        font_file3=descriptor_font_file(descriptor, "FontFile3"),
     )
 
 

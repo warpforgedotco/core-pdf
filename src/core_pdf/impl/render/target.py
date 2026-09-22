@@ -31,7 +31,7 @@ from core_pdf.impl.render.blend import (
     color_rgba,
     composite_blended_group_numpy,
     composite_normal_group_numpy,
-    internal_constant_alpha,
+    resolve_constant_alpha,
     scale_rgba_alpha,
 )
 from core_pdf.impl.render.clipping import ClipState
@@ -600,7 +600,7 @@ class RasterTarget:
                         alpha_is_shape=self.paint_alpha_is_shape,
                     )
                 try:
-                    self.internal_paint_item(item)
+                    self.paint_display_item(item)
                 finally:
                     if elementary_group:
                         child = self.pop_group()
@@ -611,9 +611,9 @@ class RasterTarget:
             finally:
                 self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
             return
-        self.internal_paint_item(item)
+        self.paint_display_item(item)
 
-    def internal_paint_item(self, item: DisplayItem) -> None:
+    def paint_display_item(self, item: DisplayItem) -> None:
         if isinstance(item, PathPaintItem):
             self.paint_typed_path(item)
             return
@@ -674,7 +674,7 @@ class RasterTarget:
             )
         elif item.kind == "shading":
             self.set_shape_alpha(
-                internal_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
+                resolve_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
             )
             self.paint_shading(data, blend_mode)
 
@@ -795,7 +795,7 @@ class RasterTarget:
     def set_shape_alpha(self, alpha: float) -> None:
         self.shape_alpha = clamp01(alpha) if self.paint_alpha_is_shape else 1.0
 
-    def internal_extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
+    def extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
         y0, y1 = index_extent(rows, self.height)
         x0, x1 = index_extent(columns, self.width)
         self.buffer_stack[-1].extend_paint_window(y0, y1, x0, x1)
@@ -849,7 +849,7 @@ class RasterTarget:
         source: float | numpy.ndarray[Any, Any],
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
     ) -> None:
-        self.internal_extend_paint_window(rows, columns)
+        self.extend_paint_window(rows, columns)
         previous = plane[rows, columns]
         updated = previous + (1.0 - previous) * source
         plane[rows, columns] = (
@@ -1045,7 +1045,7 @@ class RasterTarget:
         if shape is not None and parent.source_shape is not None:
             parent_shape = parent.source_shape[rows, columns]
             parent_shape += (1.0 - parent_shape) * shape
-        self.internal_extend_paint_window(rows, columns)
+        self.extend_paint_window(rows, columns)
 
     def composite_group_into(
         self,
@@ -1559,7 +1559,7 @@ class RasterTarget:
         scalar_mask = item.soft_mask_alpha if native_soft_mask is None else None
         opacity = item.fill_opacity
         constant_alpha = (
-            internal_constant_alpha(opacity, scalar_mask)
+            resolve_constant_alpha(opacity, scalar_mask)
             if is_pdf_number(opacity) or is_pdf_number(scalar_mask)
             else None
         )

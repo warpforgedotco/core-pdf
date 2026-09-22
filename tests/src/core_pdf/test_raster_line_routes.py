@@ -3,7 +3,7 @@ import pytest
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render import target as render_target
-from tests.src.core_pdf.test_pattern_rendering import internal_target
+from tests.src.core_pdf.test_pattern_rendering import make_target
 
 
 def expected_coverage(cap: int, clipped: bool) -> np.ndarray:
@@ -46,7 +46,7 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
         monkeypatch.setattr(
             render_target, "RASTER_KERNEL_MIN_PIXEL_AREA", 10_000 if route == "scalar" else 0
         )
-        target = internal_target(16, 16)
+        target = make_target(16, 16)
         target.push_group(bytearray(16 * 16 * 4), None, None, isolated=False, track_shape=True)
         if clipped:
             clip = CapturedPath()
@@ -87,8 +87,8 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
 @pytest.mark.parametrize("alpha", [128, 255])
 @pytest.mark.parametrize("phase", [0, 1])
 def test_dash_routing_matches_explicit_segments(cap: int, alpha: int, phase: int) -> None:
-    dashed = internal_target(16, 16)
-    explicit = internal_target(16, 16)
+    dashed = make_target(16, 16)
+    explicit = make_target(16, 16)
     path = CapturedPath([CapturedSubpath([(2, 8), (14, 8)])])
     dashed.stroke_path(path, 1, (200, 50, 10, alpha), ([2, 2], phase), line_cap=cap)
     spans = [(2, 4), (6, 8), (10, 12)] if phase == 0 else [(2, 3), (5, 7), (9, 11), (13, 14)]

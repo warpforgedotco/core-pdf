@@ -616,16 +616,16 @@ def glyph_unicode_confidence(
     except KeyError:
         pass
     except TypeError:
-        return internal_glyph_unicode_confidence(text, unicode_source, alternates)
+        return compute_glyph_unicode_confidence(text, unicode_source, alternates)
     if len(CONFIDENCE_CACHE) >= CONFIDENCE_CACHE_LIMIT:
         CONFIDENCE_CACHE.clear()
-    confidence = CONFIDENCE_CACHE[key] = internal_glyph_unicode_confidence(
+    confidence = CONFIDENCE_CACHE[key] = compute_glyph_unicode_confidence(
         text, unicode_source, alternates
     )
     return confidence
 
 
-def internal_glyph_unicode_confidence(
+def compute_glyph_unicode_confidence(
     text: str,
     unicode_source: str,
     alternates: tuple[str, ...],

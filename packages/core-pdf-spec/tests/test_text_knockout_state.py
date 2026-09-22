@@ -37,7 +37,7 @@ class TextSink:
             self.patterns.append(state.graphics.fill_pattern)
 
 
-def internal_state() -> tuple[ContentInterpreter, TextSink]:
+def make_state() -> tuple[ContentInterpreter, TextSink]:
     sink = TextSink()
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
 
@@ -53,7 +53,7 @@ def test_text_knockout_defaults_preserve_positional_snapshot_construction() -> N
 @pytest.mark.parametrize("value", [False, True])
 @pytest.mark.parametrize("indirect", [False, True])
 def test_text_knockout_resolves_booleans_and_preserves_q_Q(value: bool, indirect: bool) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     state.graphics.text_knockout = not value
     state.op_q((), 0)
     cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = value
@@ -69,7 +69,7 @@ def test_text_knockout_resolves_booleans_and_preserves_q_Q(value: bool, indirect
 @pytest.mark.parametrize("value", [0, 1, 0.5, "true", PdfName.of("true"), [], {}])
 @pytest.mark.parametrize("indirect", [False, True])
 def test_text_knockout_rejects_nonbooleans_outside_text(value: object, indirect: bool) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = cast(CachedPdfObject, value)
     with pytest.raises(ValueError, match="invalid text knockout flag"):
         state.apply_extgstate({"ca": 0.4, "TK": PdfReference(1, 0) if indirect else value})
@@ -82,7 +82,7 @@ def test_text_knockout_rejects_nonbooleans_outside_text(value: object, indirect:
 def test_TK_is_ignored_inside_text_while_other_graphics_changes_persist(
     initial: bool, value: object
 ) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     state.graphics.text_knockout = initial
     state.graphics.fill_opacity = 0.2
     state.graphics.blend_mode = "Screen"
@@ -103,7 +103,7 @@ def test_TK_is_ignored_inside_text_while_other_graphics_changes_persist(
 
 
 def test_ignored_TK_does_not_resolve_indirect_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     reference = PdfReference(1, 0)
     resolve = ObjectResolver.resolve
 
@@ -122,7 +122,7 @@ def test_ignored_TK_does_not_resolve_indirect_values(monkeypatch: pytest.MonkeyP
 
 
 def test_text_object_scope_is_not_part_of_q_Q_graphics_state() -> None:
-    state, _ = internal_state()
+    state, _ = make_state()
     state.op_q((), 0)
     state.op_BT((), 0)
     state.op_Q((), 0)
@@ -139,7 +139,7 @@ def test_text_object_scope_is_not_part_of_q_Q_graphics_state() -> None:
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_child_stream_resets_and_restores_text_object_scope(failure: bool) -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.graphics.text_knockout = False
     state.op_BT((), 0)
     snapshot = state.capture_stream_state()
@@ -162,7 +162,7 @@ def test_child_stream_resets_and_restores_text_object_scope(failure: bool) -> No
 
 
 def test_failed_child_entry_preserves_parent_text_scope() -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.op_BT((), 0)
     snapshot = state.capture_stream_state()
     stream = PdfStream(raw_data=b"", spec={"Filter": PdfName.of("Unknown")})
@@ -182,7 +182,7 @@ def type3_font(stream: PdfStream, resources: PdfDict | None = None) -> Any:
 
 
 def test_type3_boundaries_enclose_all_commands_in_each_executed_glyph() -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.op_BT((), 0)
     glyph = PdfStream(raw_data=b"0 0 d0 /False gs 0 0 1 1 re f BT /True gs 0 0 1 1 re f ET")
     font = type3_font(glyph, {"ExtGState": {"False": {"TK": False}, "True": {"TK": True}}})
@@ -203,7 +203,7 @@ def test_type3_boundaries_enclose_all_commands_in_each_executed_glyph() -> None:
 
 @pytest.mark.parametrize("failure", ["decode", "dispatch"])
 def test_type3_boundary_closes_after_failed_CharProc_and_state_restoration(failure: str) -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.op_BT((), 0)
     state.type3_uncolored = True
     glyph = (
@@ -222,14 +222,14 @@ def test_type3_boundary_closes_after_failed_CharProc_and_state_restoration(failu
 
 
 def test_invisible_type3_text_emits_no_glyph_boundaries() -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     state.graphics.render_mode = 3
     state.render_type3_glyphs(b"A", type3_font(PdfStream(raw_data=b"0 0 1 1 re f")))
     assert not sink.events
 
 
 def test_pattern_retains_defining_stream_initial_TK_across_nested_and_later_changes() -> None:
-    state, sink = internal_state()
+    state, sink = make_state()
     pattern = PdfStream(
         dictionary={
             "PatternType": 1,

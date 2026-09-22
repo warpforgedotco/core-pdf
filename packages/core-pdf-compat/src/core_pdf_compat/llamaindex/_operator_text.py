@@ -39,7 +39,7 @@ LEGACY_GLYPH_ALIASES = {
 }
 
 
-def internal_glyph_name_to_unicode(name: str) -> str:
+def legacy_glyph_name_to_unicode(name: str) -> str:
     alias = LEGACY_GLYPH_ALIASES.get(name)
     if alias is not None:
         return alias
@@ -62,7 +62,7 @@ def difference_text(glyph_name: str, code: int) -> str:
         and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
     ):
         return f"/{glyph_name}"
-    mapped = internal_glyph_name_to_unicode(glyph_name)
+    mapped = legacy_glyph_name_to_unicode(glyph_name)
     if len(glyph_name) == 1:
         return glyph_name
     return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
@@ -299,7 +299,7 @@ class OperatorTextProjection:
         self.resolver = page.document.resolver
         self.active_forms: set[int] = set()
 
-    def internal_fonts(self, resources: Mapping[object, object]) -> dict[str, Font]:
+    def collect_fonts(self, resources: Mapping[object, object]) -> dict[str, Font]:
         result: dict[str, Font] = {}
         fonts = self.resolver.resolve(resources.get("Font"))
         if not isinstance(fonts, dict):
@@ -317,12 +317,12 @@ class OperatorTextProjection:
                 raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
-            to_unicode = self.internal_to_unicode(resolved, decoder)
-            widths, default_width = self.internal_widths(font, decoder)
+            to_unicode = self.resolve_to_unicode(resolved, decoder)
+            widths, default_width = self.resolve_widths(font, decoder)
             if subtype == "Type3" and not self.type3_interpretable(font):
                 widths, default_width = {}, 0.0
-            encoding = self.internal_encoding(font, decoder, to_unicode)
-            character_map = self.internal_character_map(decoder, to_unicode)
+            encoding = self.resolve_encoding(font, decoder, to_unicode)
+            character_map = self.build_character_map(decoder, to_unicode)
             builtin_mapping = (
                 self.type1_alternative(resolved)
                 if subtype == "Type1" and to_unicode is None
@@ -358,7 +358,7 @@ class OperatorTextProjection:
                     (
                         code
                         for code, glyph_name in builtin_mapping.items()
-                        if internal_glyph_name_to_unicode(glyph_name) == " "
+                        if legacy_glyph_name_to_unicode(glyph_name) == " "
                     ),
                     None,
                 )
@@ -381,7 +381,7 @@ class OperatorTextProjection:
                     mapped = (
                         chr(int(glyph_name[1:]))
                         if glyph_name.startswith("a") and glyph_name[1:].isdigit()
-                        else internal_glyph_name_to_unicode(glyph_name)
+                        else legacy_glyph_name_to_unicode(glyph_name)
                     )
                     if mapped and (mapped != glyph_name or len(glyph_name) == 1):
                         if not isinstance(encoding, str) and 0 <= code < len(encoding_table):
@@ -450,13 +450,13 @@ class OperatorTextProjection:
             return True
         return all(
             (glyph_name := recover_pdf_name(name)) is not None
-            and bool(mapped := internal_glyph_name_to_unicode(glyph_name))
+            and bool(mapped := legacy_glyph_name_to_unicode(glyph_name))
             and mapped != glyph_name
             for name in char_procs
         )
 
     @staticmethod
-    def internal_to_unicode(
+    def resolve_to_unicode(
         font: Mapping[object, object], decoder: FontDecoder
     ) -> ToUnicodeCMap | None:
         if decoder.to_unicode is not None:
@@ -505,7 +505,7 @@ class OperatorTextProjection:
         )
         return int(flags) if isinstance(flags, (int, float)) else 0
 
-    def internal_widths(
+    def resolve_widths(
         self,
         font: Mapping[object, object],
         decoder: FontDecoder,
@@ -572,7 +572,7 @@ class OperatorTextProjection:
                 )
         return widths, default_width
 
-    def internal_encoding(
+    def resolve_encoding(
         self,
         font: Mapping[object, object],
         decoder: FontDecoder,
@@ -617,7 +617,7 @@ class OperatorTextProjection:
         return tuple(table)
 
     @staticmethod
-    def internal_character_map(
+    def build_character_map(
         decoder: FontDecoder, to_unicode: ToUnicodeCMap | None
     ) -> dict[str, str]:
         if to_unicode is None:
@@ -625,7 +625,7 @@ class OperatorTextProjection:
             if decoder.differences:
                 return result
             for code, glyph_name in decoder.encoding_differences.items():
-                mapped = internal_glyph_name_to_unicode(glyph_name)
+                mapped = legacy_glyph_name_to_unicode(glyph_name)
                 if mapped != glyph_name:
                     result[chr(code)] = mapped
             return result
@@ -642,7 +642,7 @@ class OperatorTextProjection:
         streams: tuple[PdfStream, ...],
         resources: Mapping[object, object],
     ) -> str:
-        state = TextState(self.internal_fonts(resources))
+        state = TextState(self.collect_fonts(resources))
         xobjects = self.resolver.resolve(resources.get("XObject"))
         decoded_streams: list[bytes] = []
         for stream in streams:

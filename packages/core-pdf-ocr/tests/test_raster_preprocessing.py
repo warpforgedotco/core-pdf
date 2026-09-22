@@ -9,7 +9,7 @@ from core_pdf_ocr.impl.extract.ocr import raster
 from core_pdf_ocr.impl.extract.ocr.types import Raster
 
 
-def internal_image(samples: numpy.ndarray) -> RasterImage:
+def make_image(samples: numpy.ndarray) -> RasterImage:
     height, width, channels = samples.shape
     return RasterImage(samples.astype(numpy.uint8).tobytes(), width, height, channels)
 
@@ -18,7 +18,7 @@ def internal_image(samples: numpy.ndarray) -> RasterImage:
 def test_transparent_pixels_do_not_become_ink_or_adaptive_text(channels: int) -> None:
     samples = numpy.full((20, 20, channels), 255, dtype=numpy.uint8)
     samples[5:10, 5:10] = 0
-    image = internal_image(samples)
+    image = make_image(samples)
     source = Raster(image, 144)
     assert raster.raster_ink_grid(source, 2, 2).tolist() == [0, 0, 0, 0]
     adapted = raster.adaptive_ocr_raster(source)
@@ -31,7 +31,7 @@ def test_transparent_pixels_do_not_become_ink_or_adaptive_text(channels: int) ->
 def test_visual_ink_grid_counts_visible_regions(channels: int) -> None:
     samples = numpy.full((4, 4, channels), 255, dtype=numpy.uint8)
     samples[:2, :2, : 1 if channels == 2 else min(3, channels)] = 0
-    source = Raster(internal_image(samples), 72)
+    source = Raster(make_image(samples), 72)
     assert raster.raster_ink_grid(source, 2, 2).tolist() == [1, 0, 0, 0]
     assert raster.raster_ink_grid(source, 0, 2).size == 0
     dense = raster.raster_ink_grid(source, 8, 8)
@@ -44,7 +44,7 @@ def test_adaptive_threshold_recovers_faded_dark_patch(channels: int) -> None:
     if channels == 4:
         samples[:, :, 3] = 255
     samples[8:12, 8:12, : min(3, channels)] = 180
-    result = raster.adaptive_ocr_raster(Raster(internal_image(samples), 300))
+    result = raster.adaptive_ocr_raster(Raster(make_image(samples), 300))
     actual = result.image.array()[:, :, 0]
     assert set(numpy.unique(actual)) == {0, 255}
     assert actual[9, 9] == 0
@@ -57,7 +57,7 @@ def test_adaptive_threshold_recovers_faded_dark_patch(channels: int) -> None:
 def test_compaction_composites_alpha_onto_white(channels: int, alpha: int, expected: int) -> None:
     sample = numpy.zeros((1, 1, channels), dtype=numpy.uint8)
     sample[:, :, -1] = alpha
-    image = internal_image(sample)
+    image = make_image(sample)
     result = raster.compact_ocr_image(image)
     assert result.channels == 1
     assert bytes(result.pixels) == bytes([expected])
@@ -69,7 +69,7 @@ def test_luma_primary_colors_and_achromatic_values_are_exact() -> None:
         [[[255, 0, 0], [0, 255, 0], [0, 0, 255], [73, 73, 73]]], dtype=numpy.uint8
     )
     assert raster.luma(samples).tolist() == [[77, 149, 29, 73]]
-    image = internal_image(samples)
+    image = make_image(samples)
     assert raster.compact_ocr_image(image) is image
     assert raster.compact_ocr_image(image, grayscale=True) is image
 
@@ -88,12 +88,12 @@ def test_text_signal_recognizes_column_transitions_and_ignores_transparent_ink(
 ) -> None:
     samples = numpy.full((20, 20, channels), 255, dtype=numpy.uint8)
     samples[:, ::2, : 1 if channels == 2 else min(3, channels)] = 0
-    signal = raster.raster_text_signal(internal_image(samples))
+    signal = raster.raster_text_signal(make_image(samples))
     assert signal.likely_text
     assert signal.horizontal_edge_ratio == 1
     if channels in {2, 4}:
         samples[:, :, -1] = 0
-        assert not raster.raster_text_signal(internal_image(samples)).likely_text
+        assert not raster.raster_text_signal(make_image(samples)).likely_text
 
 
 @pytest.mark.parametrize(("height", "width"), [(1, 1), (20, 1), (1, 20)])
@@ -136,8 +136,8 @@ def test_photo_like_tones_need_strong_horizontal_structure_to_pass() -> None:
     x = numpy.arange(100)[None, :]
     photo = ((y % 30) * 8 + (x // 20) * 64) % 240
     structured = ((y % 30) * 8 + (x % 2) * 64) % 240
-    photo_signal = raster.raster_text_signal(internal_image(photo[:, :, None]))
-    text_signal = raster.raster_text_signal(internal_image(structured[:, :, None]))
+    photo_signal = raster.raster_text_signal(make_image(photo[:, :, None]))
+    text_signal = raster.raster_text_signal(make_image(structured[:, :, None]))
     assert 0.015 <= photo_signal.horizontal_edge_ratio < 0.09
     assert not photo_signal.likely_text
     assert text_signal.horizontal_edge_ratio >= 0.09
@@ -146,7 +146,7 @@ def test_photo_like_tones_need_strong_horizontal_structure_to_pass() -> None:
 
 def test_fractional_alpha_intensity_agrees_across_pixel_consumers() -> None:
     samples = numpy.asarray([[[0, 0, 0, 128], [255, 255, 255, 128]]], dtype=numpy.uint8)
-    image = internal_image(samples)
+    image = make_image(samples)
     assert raster.visible_intensity(samples).tolist() == [[127, 255]]
     assert raster.raster_ink_grid(Raster(image, 72), 1, 2).tolist() == [1, 0]
     assert raster.raster_text_signal(image).horizontal_edge_ratio == 1
@@ -156,6 +156,6 @@ def test_large_image_sampling_retains_distributed_text_signal() -> None:
     samples = numpy.full((1000, 1000, 1), 255, dtype=numpy.uint8)
     for x in range(0, 1000, 20):
         samples[:, x : x + 10] = 0
-    image = internal_image(samples)
+    image = make_image(samples)
     assert raster.raster_text_signal(image).likely_text
     assert raster.raster_ink_grid(Raster(image, 72), 2, 2).tolist() == [0.5] * 4

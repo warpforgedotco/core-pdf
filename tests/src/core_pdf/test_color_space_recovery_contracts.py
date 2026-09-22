@@ -3,9 +3,9 @@ import pytest
 from core_pdf.impl.graphics.color_spec import (
     cs_param_floats,
     describe_color_space,
-    internal_color_space_paints,
     nchannel_process,
     parse_color_space,
+    raw_color_space_paints,
     recover_image_bits_per_component,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -51,7 +51,7 @@ def test_cyclic_color_spaces_stop_at_the_recursive_base(kind):
     nested = parsed.alternate if kind == "ICCBased" else parsed.base
     assert nested is not None
     assert nested.kind == "Unknown"
-    assert internal_color_space_paints(value)
+    assert raw_color_space_paints(value)
 
 
 @pytest.mark.parametrize("kind", ["DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"])
@@ -147,7 +147,7 @@ def test_calibrated_spaces_copy_parameters_and_keep_scalars(kind):
 
 @pytest.mark.parametrize("names", [None, [], [None], ["None", None]])
 def test_unknown_devicen_colorants_are_not_mistaken_for_no_paint(names):
-    assert internal_color_space_paints(["DeviceN", names, "DeviceRGB", None])
+    assert raw_color_space_paints(["DeviceN", names, "DeviceRGB", None])
 
 
 def test_devicen_rejects_nonarray_names_during_full_parsing():

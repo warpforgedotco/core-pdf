@@ -11,7 +11,7 @@ from core_pdf_spec.s_07_syntax.xref import (
 )
 
 
-def internal_entries(table: dict[int, PdfXRefEntry]) -> dict[int, tuple[object, ...]]:
+def make_entries(table: dict[int, PdfXRefEntry]) -> dict[int, tuple[object, ...]]:
     return {
         key: (
             entry.offset,
@@ -73,11 +73,11 @@ def test_row_bulk_and_stream_decoding_share_defaults_and_entry_types(
             key, entry, position = decode_xref_row(data, position, widths, object_number)
             rows[key] = entry
     assert position == len(data)
-    assert internal_entries(rows) == expected
-    assert internal_entries(decode_xref_rows(data, widths, index, size)) == expected
+    assert make_entries(rows) == expected
+    assert make_entries(decode_xref_rows(data, widths, index, size)) == expected
     dictionary = {"Type": "XRef", "Size": size, "W": widths, "Index": index}
     stream_entries, trailer = XRefScanner.parse_stream(PdfStream(dictionary, data))
-    assert internal_entries(stream_entries) == expected
+    assert make_entries(stream_entries) == expected
     assert trailer is dictionary
 
 
@@ -136,4 +136,4 @@ def test_xref_stream_default_index_covers_size(index_entry: dict[str, None]) -> 
     entries, _ = XRefScanner.parse_stream(
         PdfStream({"Type": "XRef", "Size": 1, "W": [1, 1, 2], **index_entry}, b"\x00\x00\xff\xff")
     )
-    assert internal_entries(entries) == {key_for(0, 65535): (0, 65535, False, None, None)}
+    assert make_entries(entries) == {key_for(0, 65535): (0, 65535, False, None, None)}

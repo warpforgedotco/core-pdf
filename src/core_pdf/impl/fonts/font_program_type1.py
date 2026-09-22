@@ -37,7 +37,7 @@ HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 MAX_SUBROUTINES = 4096
 
 
-class internal_Type1FontProgram:
+class Type1FontProgramBase:
     __slots__ = (
         "charstrings",
         "font_matrix",
@@ -154,7 +154,7 @@ def eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-class Type1FontProgram(internal_Type1FontProgram):
+class Type1FontProgram(Type1FontProgramBase):
     __slots__ = ()
 
     @staticmethod

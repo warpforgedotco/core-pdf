@@ -136,11 +136,11 @@ def transform(
 
 
 def parse_icc_transform(profile: bytes) -> IccTransform:
-    return internal_parse_icc_transform(bytes(profile))
+    return parse_icc_transform_cached(bytes(profile))
 
 
 @lru_cache(maxsize=32)
-def internal_parse_icc_transform(profile: bytes) -> IccTransform:
+def parse_icc_transform_cached(profile: bytes) -> IccTransform:
     try:
         info = imagecodecs.cms_info(profile)
     except imagecodecs.CmsError as error:

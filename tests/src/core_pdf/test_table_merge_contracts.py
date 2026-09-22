@@ -6,7 +6,7 @@ from core_pdf.impl.extract.table_cleanup import merge_adjacent_tables
 from core_pdf.impl.output.model import Table, TableAssociatedText, TableCell
 
 
-def internal_table(
+def make_table(
     top: float, *, confidence: float | None = None, x: float = 0, columns: int = 2
 ) -> Table:
     texts = [("Item", "Value"), ("A", "1")]
@@ -28,8 +28,8 @@ def internal_table(
 @pytest.mark.parametrize("left", [None, 0, 0.4, 1])
 @pytest.mark.parametrize("right", [None, 0, 0.8, 1])
 def test_merged_confidence_never_discards_explicit_zero(left, right):
-    top = internal_table(60, confidence=left)
-    bottom = internal_table(30, confidence=right)
+    top = make_table(60, confidence=left)
+    bottom = make_table(30, confidence=right)
     (merged,) = merge_adjacent_tables([bottom, top])
     assert merged.confidence == min(1 if left is None else left, 1 if right is None else right)
     assert [[c.text for c in row] for row in merged.rows] == [
@@ -43,7 +43,7 @@ def test_merged_confidence_never_discards_explicit_zero(left, right):
 
 
 def test_merge_preserves_cell_spans_and_selects_title_and_caption():
-    top = internal_table(60)
+    top = make_table(60)
     top = replace(
         top,
         rows=(top.rows[0], (replace(top.rows[1][0], row_span=2), top.rows[1][1])),
@@ -51,7 +51,7 @@ def test_merge_preserves_cell_spans_and_selects_title_and_caption():
         caption=TableAssociatedText("old"),
         metadata={"source": "grid"},
     )
-    bottom = replace(internal_table(30), caption=TableAssociatedText("Caption"))
+    bottom = replace(make_table(30), caption=TableAssociatedText("Caption"))
     (merged,) = merge_adjacent_tables([top, bottom])
     assert merged.rows[1][0].row_span == 2
     assert merged.rows[1][0].bbox == top.rows[1][0].bbox
@@ -66,8 +66,8 @@ def test_merge_preserves_cell_spans_and_selects_title_and_caption():
     [(3, 0, 2), (46, 0, 2), (30, 20, 2), (30, 0, 1), (30, 0, 3), (30, 0, 17)],
 )
 def test_incompatible_table_regions_remain_separate(top, x, columns):
-    first = internal_table(60)
-    second = internal_table(top, x=x, columns=columns)
+    first = make_table(60)
+    second = make_table(top, x=x, columns=columns)
     result = merge_adjacent_tables([first, second])
     assert result == [first, second]
     assert result[0] is first
@@ -76,7 +76,7 @@ def test_incompatible_table_regions_remain_separate(top, x, columns):
 
 @pytest.mark.parametrize("missing", [0, 1])
 def test_tables_without_geometry_remain_separate(missing):
-    tables = [internal_table(60), internal_table(30)]
+    tables = [make_table(60), make_table(30)]
     tables[missing] = replace(tables[missing], bbox=None)
     result = merge_adjacent_tables(tables)
     assert len(result) == 2

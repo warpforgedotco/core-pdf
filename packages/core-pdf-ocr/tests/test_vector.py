@@ -27,10 +27,10 @@ from core_pdf_ocr.impl.extract.ocr.types import (
     Raster,
     StrokedTextCell,
 )
-from core_pdf_ocr.impl.extract.quality import internal_candidate
+from core_pdf_ocr.impl.extract.quality import make_candidate
 
 
-def internal_batch(
+def make_batch(
     text: tuple[str, ...],
     boxes: tuple[tuple[float, float, float, float], ...],
     *,
@@ -41,7 +41,7 @@ def internal_batch(
     )
 
 
-def internal_packed(
+def make_packed(
     cells: tuple[StrokedTextCell, ...],
 ) -> PackedStrokedTextRaster:
     return PackedStrokedTextRaster(
@@ -74,7 +74,7 @@ def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> 
         confidence=(91, 92, 93),
         references=(reference, None, None),
     )
-    packed = internal_packed(
+    packed = make_packed(
         (
             StrokedTextCell((100, 200, 120, 210), (10, 10, 30, 20), (7, 8)),
             StrokedTextCell((200, 300, 220, 310), (34, 10, 54, 20), (9,)),
@@ -89,7 +89,7 @@ def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> 
     assert mapped.line_break_before.tolist() == [True]
     assert mapped.references[0] is reference
     assert dropped == 2
-    empty, count = vector.remap_stroked_vector_observations(observations, internal_packed(()))
+    empty, count = vector.remap_stroked_vector_observations(observations, make_packed(()))
     assert len(empty) == 0
     assert count == 3
 
@@ -111,9 +111,9 @@ def test_isolated_pin_labels_require_short_digit_bearing_text(text: str, valid: 
 
 
 def test_candidate_remapping_filters_words_but_retains_symbol_evidence() -> None:
-    batch = internal_batch(("A", "12"), ((10, 10, 12, 12), (14, 10, 16, 12)))
-    candidate = internal_candidate(6, batch, symbols=batch)
-    packed = internal_packed((StrokedTextCell((100, 100, 120, 110), (8, 8, 28, 18), (5,)),))
+    batch = make_batch(("A", "12"), ((10, 10, 12, 12), (14, 10, 16, 12)))
+    candidate = make_candidate(6, batch, symbols=batch)
+    packed = make_packed((StrokedTextCell((100, 100, 120, 110), (8, 8, 28, 18), (5,)),))
     result, dropped = vector.remap_stroked_vector_candidate(
         candidate, packed, digit_bearing_only=True
     )
@@ -320,7 +320,7 @@ def test_symbol_seeds_sort_characters_and_require_a_complete_known_run(
     vector_capture: tuple[PageAnalysis, StrokedTextProfile],
 ) -> None:
     _, profile = vector_capture
-    symbols = internal_batch(
+    symbols = make_batch(
         ("B", "A", "X", "AB", "C"),
         ((3, 0, 5, 4), (0, 0, 2, 4), (0, 10, 2, 14), (3, 10, 5, 14), (0, 0, 1, 1)),
         sequences=(0, 0, 2, 2, 999),
@@ -340,8 +340,8 @@ def test_vector_adapter_learns_from_words_and_supplemental_symbols(
     with_symbols: bool,
 ) -> None:
     _, profile = vector_capture
-    words = internal_batch(("AB", "AB"), ((0, 0, 5, 4), (0, 10, 5, 14)), sequences=(0, 2))
-    symbols = internal_batch(("A", "B"), ((0, 10, 2, 14), (3, 10, 5, 14)), sequences=(2, 2))
+    words = make_batch(("AB", "AB"), ((0, 0, 5, 4), (0, 10, 5, 14)), sequences=(0, 2))
+    symbols = make_batch(("A", "B"), ((0, 10, 2, 14), (3, 10, 5, 14)), sequences=(2, 2))
     decoded = vector.decode_stroked_vector_text(profile, words, symbols if with_symbols else None)
     assert [o.text for o in decoded.observations] == ["AB", "AB"]
     assert decoded.learned_signatures == 2
@@ -360,7 +360,7 @@ def test_recovery_replaces_a_misread_word_and_adds_unrecognized_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, profile = vector_capture
-    original = internal_batch(("AX", "note"), ((0, 0, 5, 4), (40, 40, 50, 45)))
+    original = make_batch(("AX", "note"), ((0, 0, 5, 4), (40, 40, 50, 45)))
     decoded = StrokedTextDecode(
         observations=(
             StrokedTextObservation("AB", (0, 0, 5, 4), 0, 1),

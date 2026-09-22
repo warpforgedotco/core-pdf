@@ -19,7 +19,7 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
 from .._shared import LIGATURES
 
 
-def internal_glyph_name_text(name: str) -> str:
+def legacy_glyph_name_text(name: str) -> str:
     codepoints = LEGACY_AGL2UV.get(name)
     if codepoints is not None:
         return chr(codepoints[0]) if len(codepoints) == 1 else "".join(map(chr, codepoints))
@@ -245,7 +245,7 @@ def pdfminer_glyph_text(glyph: Any) -> str:
     glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
     if glyph_name and glyph_name.isdecimal():
         glyph_name = None
-    glyph_name_text = internal_glyph_name_text(glyph_name) if glyph_name else ""
+    glyph_name_text = legacy_glyph_name_text(glyph_name) if glyph_name else ""
     if to_unicode is not None and glyph.code_bytes:
         mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
         if mapped is not None and len(mapped) <= 1:
@@ -379,7 +379,7 @@ def pdfminer_ligature_overrides(
         if glyph.char_code is None:
             continue
         glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
-        glyph_name_text = internal_glyph_name_text(glyph_name) if glyph_name else ""
+        glyph_name_text = legacy_glyph_name_text(glyph_name) if glyph_name else ""
         if len(glyph_name_text) > 1:
             difference_cluster = glyphs[index : index + len(glyph_name_text)]
             if len(difference_cluster) == len(glyph_name_text) and all(
@@ -464,8 +464,8 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
         and len(projected_text) == 1
         and ord(projected_text) < 32
         and glyph_name is not None
-        and internal_glyph_name_text(glyph_name).isspace()
-        and internal_glyph_name_text(glyph_name) != projected_text
+        and legacy_glyph_name_text(glyph_name).isspace()
+        and legacy_glyph_name_text(glyph_name) != projected_text
     ):
         return 0.0
     if decoder.is_cid_font or decoder.is_type3:
@@ -526,7 +526,7 @@ def pdfminer_normalized_width(glyph: Any) -> float:
     if (
         base_font in {"Symbol", "ZapfDingbats"}
         and glyph_name
-        and not internal_glyph_name_text(glyph_name)
+        and not legacy_glyph_name_text(glyph_name)
     ):
         return 0.0
     return width

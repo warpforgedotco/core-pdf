@@ -198,7 +198,7 @@ def build_cff_unicode_repair_index(
     if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
         return None
     mapping = single_code_mapping(to_unicode, cmap)
-    if not any(is_repairable_to_unicode_label(value) for internal_cid, value in mapping.values()):
+    if not any(is_repairable_to_unicode_label(value) for cid_value, value in mapping.values()):
         return None
     mapping_items = tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
     return CFFUnicodeRepairIndex(font_program, mapping_items)
@@ -606,7 +606,7 @@ class FontDecoder:
         "byte_decode_table",
         "widths",
         "default_width",
-        "internal_width_fallback",
+        "width_fallback_value",
         "space_width_fallback",
         "default_vertical_displacement_y",
         "default_vertical_origin_y",
@@ -645,7 +645,7 @@ class FontDecoder:
     byte_decode_table: tuple[str, ...] | None
     widths: Mapping[int, float]
     default_width: float
-    internal_width_fallback: float
+    width_fallback_value: float
     space_width_fallback: float
     default_vertical_displacement_y: float
     default_vertical_origin_y: float
@@ -686,7 +686,7 @@ class FontDecoder:
         "byte_decode_table",
         "widths",
         "default_width",
-        "internal_width_fallback",
+        "width_fallback_value",
         "space_width_fallback",
         "default_vertical_displacement_y",
         "default_vertical_origin_y",
@@ -813,10 +813,10 @@ class FontDecoder:
         self.widths = widths
         self.default_width = default_width
         if default_width_explicit:
-            self.internal_width_fallback = default_width
+            self.width_fallback_value = default_width
             self.space_width_fallback = default_width
         else:
-            self.internal_width_fallback = default_width if default_width > 0.0 else 1000.0
+            self.width_fallback_value = default_width if default_width > 0.0 else 1000.0
             self.space_width_fallback = default_width if default_width > 0.0 else 250.0
         self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
         self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
@@ -1363,7 +1363,7 @@ class FontDecoder:
         )
 
     def glyph_width(self, code: int) -> float:
-        fallback = self.space_width_fallback if code == 32 else self.internal_width_fallback
+        fallback = self.space_width_fallback if code == 32 else self.width_fallback_value
         return self.widths.get(code, fallback)
 
     def glyph_advance_vector(
@@ -1411,7 +1411,7 @@ class FontDecoder:
             return (0.0, total_y)
 
         total_x = 0.0
-        width_fallback = self.internal_width_fallback
+        width_fallback = self.width_fallback_value
         space_fallback = self.space_width_fallback
         width_for = self.widths.get
         for glyph in glyphs:

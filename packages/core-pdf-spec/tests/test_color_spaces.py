@@ -203,13 +203,13 @@ def test_mask_and_jpx_bit_depth_rules() -> None:
     )
 
 
-def internal_state() -> ContentInterpreter:
+def make_state() -> ContentInterpreter:
     sink = SimpleNamespace()
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None))
 
 
 def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
-    state = internal_state()
+    state = make_state()
     state.graphics.fill_space = DEVICE_RGB
     operands = (2, -1, 0.5)
     observed = []
@@ -228,7 +228,7 @@ def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
 def test_default_color_normalizes_components_once(
     monkeypatch: pytest.MonkeyPatch, pattern: bool
 ) -> None:
-    state = internal_state()
+    state = make_state()
     space = parse_color_space(["Pattern", lab()] if pattern else lab())
     state.graphics.fill_space = space
     calls = []

@@ -135,7 +135,7 @@ def line_decoration_bbox(
     return rect_tuple(bbox)
 
 
-def internal_normalized_blocks(
+def normalize_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
@@ -196,7 +196,7 @@ def assemble_page(
     full_page_image: bool = False,
     drawings: tuple[CapturedDrawing, ...] = (),
 ) -> Page:
-    normalized_blocks = internal_normalized_blocks(blocks, drawings)
+    normalized_blocks = normalize_blocks(blocks, drawings)
     normalized_blocks = remove_off_page_blocks(
         normalized_blocks,
         width,

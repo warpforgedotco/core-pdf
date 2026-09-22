@@ -227,7 +227,7 @@ def name(value: object) -> str | None:
     return value.value if isinstance(value, PdfName) else None
 
 
-def internal_namespace(
+def resolve_namespace(
     value: object,
     resolve: Callable[[object], object],
     context: SemanticContext | None,
@@ -288,7 +288,7 @@ def resolve_structure_role(
     mapping = role_map
     namespace = resolve(namespace)
     if namespace is not None:
-        namespace_name, mapping = internal_namespace(namespace, resolve, context, decode_text)
+        namespace_name, mapping = resolve_namespace(namespace, resolve, context, decode_text)
     current = StructureType(type_name, namespace_name)
     path = [current]
     seen = {current}
@@ -330,7 +330,7 @@ def resolve_structure_role(
             target_name = resolve_name(resolve(target[0]))
             if target_name is None or not isinstance(target[1], PdfReference):
                 raise ValueError("namespace role target requires a name and namespace reference")
-            next_namespace, next_mapping = internal_namespace(
+            next_namespace, next_mapping = resolve_namespace(
                 target[1], resolve, context, decode_text
             )
         if current.namespace is not None and next_namespace == current.namespace:

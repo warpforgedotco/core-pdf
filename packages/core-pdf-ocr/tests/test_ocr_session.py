@@ -21,7 +21,7 @@ from core_pdf_ocr.impl.extract.ocr.types import (
     Raster,
     RasterRegion,
 )
-from core_pdf_ocr.impl.extract.quality import internal_candidate
+from core_pdf_ocr.impl.extract.quality import make_candidate
 
 
 def ocr_pass(scope=OcrPassScope.PAGE, **kwargs):
@@ -41,7 +41,7 @@ def owner(monkeypatch, ocr_capture):
     )
 
 
-def internal_raster(value=255):
+def make_raster(value=255):
     return Raster(RasterImage(bytes([value]) * 10000, 100, 100, 1), 72)
 
 
@@ -136,7 +136,7 @@ def test_preflight_adapts_only_small_but_legible_projected_text(
 def test_page_materialization_preserves_direct_crop_or_uses_declared_renderer(
     owner, monkeypatch, direct, available, adaptive
 ) -> None:
-    raster = internal_raster(0)
+    raster = make_raster(0)
     box = (10, 20, 110, 120)
     calls = []
     monkeypatch.setattr(
@@ -168,9 +168,9 @@ def test_page_materialization_preserves_direct_crop_or_uses_declared_renderer(
 def test_weak_region_reuses_selected_tasks_for_high_resolution_retry(
     owner, monkeypatch, available
 ) -> None:
-    raster = internal_raster()
+    raster = make_raster()
     task = OcrTask(6, raster.image, (0, 0, 100, 100), owner.page_box, 72)
-    selected = internal_candidate(6, ObservationBatch.empty())
+    selected = make_candidate(6, ObservationBatch.empty())
     operation = ocr_pass(OcrPassScope.WEAK_REGIONS)
 
     def high_resolution(capture, tasks, requested, observations, *, rendered, compact_image):
@@ -192,7 +192,7 @@ def test_timeout_recovery_retries_smaller_raster_without_recursing(
 ) -> None:
     image = RasterImage(bytes([255]) * 4500000, 3000, 1500, 1)
     task = OcrTask(3, image, (0, 0, 3000, 1500), owner.page_box, 300)
-    empty = internal_candidate(3, ObservationBatch.empty(), recognition_status="timeout")
+    empty = make_candidate(3, ObservationBatch.empty(), recognition_status="timeout")
     recovered_text = ObservationBatch.from_columns(
         ("recovered",), ((0, 0, 10, 10),), source=1, confidence=(90,)
     )
@@ -206,7 +206,7 @@ def test_timeout_recovery_retries_smaller_raster_without_recursing(
             return (empty,)
         assert group[0].image.width * group[0].image.height <= 4000000
         assert group[0].page_box == task.page_box
-        return (internal_candidate(group[0].mode, recovered_text),) if recovered else (empty,)
+        return (make_candidate(group[0].mode, recovered_text),) if recovered else (empty,)
 
     monkeypatch.setattr(session, "recognize_group", recognize)
     result = owner.recognize_tasks((task,))
@@ -224,7 +224,7 @@ def test_stroked_materialization_preserves_packed_mapping_and_symbol_options(
 ) -> None:
     from core_pdf_ocr.impl.extract.ocr.types import PackedStrokedTextRaster
 
-    raster = internal_raster()
+    raster = make_raster()
     packed = PackedStrokedTextRaster(raster, owner.page_box, ())
     monkeypatch.setattr(
         session,
@@ -250,7 +250,7 @@ def test_stroked_materialization_preserves_packed_mapping_and_symbol_options(
 def test_weak_native_seed_uses_available_direct_or_rendered_raster(
     owner, monkeypatch, direct
 ) -> None:
-    raster = internal_raster(0)
+    raster = make_raster(0)
     monkeypatch.setattr(
         session,
         "dominant_image_region",
@@ -272,7 +272,7 @@ def test_image_regions_filter_blank_images_and_fallback_to_cropped_render(
     text_raster = Raster(RasterImage(samples.tobytes(), 100, 100, 1), 72)
     box = (10, 20, 110, 120)
     text = RasterRegion(text_raster, box)
-    blank = RasterRegion(internal_raster(), (200, 20, 300, 120))
+    blank = RasterRegion(make_raster(), (200, 20, 300, 120))
     calls = []
 
     def regions(*args, **kwargs):

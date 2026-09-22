@@ -14,10 +14,10 @@ TreeKeyT = TypeVar("TreeKeyT")
 
 
 def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> dict:
-    return internal_tree_node(resolve(value), tree_name)
+    return require_tree_node(resolve(value), tree_name)
 
 
-def internal_tree_node(current: object, tree_name: str) -> dict:
+def require_tree_node(current: object, tree_name: str) -> dict:
     if not isinstance(current, dict):
         raise ValueError(f"invalid {tree_name} tree node")
     return current
@@ -65,7 +65,7 @@ def iter_tree_items[TreeKeyT](
         if is_root and resolved is None:
             return
         is_root = False
-        current = internal_tree_node(resolved, tree_name)
+        current = require_tree_node(resolved, tree_name)
         marker = id(current)
         if marker in seen:
             raise ValueError(f"{tree_name} tree cycle detected")

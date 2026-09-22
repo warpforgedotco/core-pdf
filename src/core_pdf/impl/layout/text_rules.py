@@ -64,7 +64,7 @@ class WordFrequency(Record):
 
 
 class WordRankIndex(Mapping[str, int]):
-    __slots__ = ("internal_count", "internal_data_start", "internal_mmap")
+    __slots__ = ("_count", "_data_start", "_mmap")
 
     def __init__(self, path_or_bytes: str | bytes) -> None:
         if isinstance(path_or_bytes, bytes):
@@ -93,28 +93,28 @@ class WordRankIndex(Mapping[str, int]):
             if isinstance(mapped, mmap.mmap):
                 mapped.close()
             raise ValueError("word-rank index has invalid offsets")
-        self.internal_mmap = mapped
-        self.internal_count = count
-        self.internal_data_start = data_start
+        self._mmap = mapped
+        self._count = count
+        self._data_start = data_start
 
     def offset(self, index: int) -> int:
         return UINT32.unpack_from(
-            self.internal_mmap,
+            self._mmap,
             WORD_RANK_HEADER.size + index * UINT32.size,
         )[0]
 
     def entry(self, index: int) -> tuple[bytes, int]:
         start = self.offset(index)
         stop = self.offset(index + 1)
-        absolute_stop = self.internal_data_start + stop
-        word = self.internal_mmap[self.internal_data_start + start : absolute_stop - 5]
-        rank = UINT32.unpack_from(self.internal_mmap, absolute_stop - UINT32.size)[0]
+        absolute_stop = self._data_start + stop
+        word = self._mmap[self._data_start + start : absolute_stop - 5]
+        rank = UINT32.unpack_from(self._mmap, absolute_stop - UINT32.size)[0]
         return word, rank
 
     def lookup(self, normalized: str) -> int | None:
         target = normalized.encode("utf-8")
         low = 0
-        high = self.internal_count
+        high = self._count
         while low < high:
             middle = (low + high) // 2
             word, rank = self.entry(middle)
@@ -133,11 +133,11 @@ class WordRankIndex(Mapping[str, int]):
         return rank
 
     def __iter__(self) -> Iterator[str]:
-        for index in range(self.internal_count):
+        for index in range(self._count):
             yield self.entry(index)[0].decode("utf-8")
 
     def __len__(self) -> int:
-        return self.internal_count
+        return self._count
 
 
 def english_word_frequencies() -> dict[str, WordFrequency]:

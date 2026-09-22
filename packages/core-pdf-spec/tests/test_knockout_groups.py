@@ -8,7 +8,7 @@ import pytest
 from core_pdf_spec.s_11_transparency.groups import composite_knockout_element
 
 
-def internal_samples() -> dict[str, Any]:
+def make_samples() -> dict[str, Any]:
     return {
         "components": numpy.asarray([[0.9, 0.1, 0.1]]),
         "alpha": numpy.asarray([1.0]),
@@ -23,7 +23,7 @@ def internal_samples() -> dict[str, Any]:
 
 
 def test_full_shape_knocks_out_earlier_color_and_opacity() -> None:
-    samples = internal_samples()
+    samples = make_samples()
     color, alpha, group_alpha = composite_knockout_element(**samples)
     numpy.testing.assert_allclose(color, [[0.375, 0.375, 0.625]])
     numpy.testing.assert_array_equal(alpha, [1.0])
@@ -32,7 +32,7 @@ def test_full_shape_knocks_out_earlier_color_and_opacity() -> None:
 
 @pytest.mark.parametrize("shape", [0.0, 0.25, 1.0])
 def test_zero_opacity_still_knocks_out_according_to_shape(shape: float) -> None:
-    samples = internal_samples()
+    samples = make_samples()
     samples["shape"][...] = shape
     samples["element_group_alpha"][...] = 0.0
     samples["element_components"][...] = samples["backdrop_components"]
@@ -115,7 +115,7 @@ def test_knockout_matches_specification_two_stage_shape_average(
 
 
 def test_transparent_knockout_erases_isolated_group_without_dividing_by_zero() -> None:
-    samples = internal_samples()
+    samples = make_samples()
     samples["components"][...] = (1.0, 0.0, 0.0)
     samples["alpha"][...] = 0.8
     samples["backdrop_alpha"][...] = 0.0
@@ -134,7 +134,7 @@ def test_knockout_outputs_are_new_arrays_with_color_space_dimensions(
 ) -> None:
     samples: dict[str, Any] = {
         name: numpy.full(color_shape if "components" in name else color_shape[:-1], 0.5)
-        for name in internal_samples()
+        for name in make_samples()
     }
     snapshots = {name: array.copy() for name, array in samples.items()}
     outputs = composite_knockout_element(**samples)
@@ -181,18 +181,18 @@ def test_knockout_does_not_clip_negative_color_from_inexact_raster_samples() -> 
     numpy.testing.assert_array_equal(group_alpha, [1.0])
 
 
-@pytest.mark.parametrize("name", internal_samples())
+@pytest.mark.parametrize("name", make_samples())
 @pytest.mark.parametrize("value", [-0.01, 1.01, numpy.nan, numpy.inf, -numpy.inf])
 def test_knockout_rejects_nonunit_or_nonfinite_samples(name: str, value: float) -> None:
-    samples = internal_samples()
+    samples = make_samples()
     samples[name][...] = value
     with pytest.raises(ValueError, match="knockout group"):
         composite_knockout_element(**samples)
 
 
-@pytest.mark.parametrize("name", internal_samples())
+@pytest.mark.parametrize("name", make_samples())
 def test_knockout_rejects_mismatched_sample_shapes(name: str) -> None:
-    samples = internal_samples()
+    samples = make_samples()
     samples[name] = samples[name][0]
     with pytest.raises(ValueError, match="knockout group"):
         composite_knockout_element(**samples)
@@ -202,14 +202,14 @@ def test_knockout_rejects_mismatched_sample_shapes(name: str) -> None:
 def test_knockout_requires_a_nonempty_component_axis(color_shape: tuple[int, ...]) -> None:
     samples: dict[str, Any] = {
         name: numpy.full(color_shape if "components" in name else color_shape[:-1], 0.5)
-        for name in internal_samples()
+        for name in make_samples()
     }
     with pytest.raises(ValueError, match="knockout group"):
         composite_knockout_element(**samples)
 
 
 def test_knockout_rejects_element_alpha_greater_than_shape() -> None:
-    samples = internal_samples()
+    samples = make_samples()
     samples["shape"][...] = 0.2
     with pytest.raises(ValueError, match="knockout group"):
         composite_knockout_element(**samples)

@@ -12,7 +12,7 @@ SHAPES = {
 }
 
 
-def internal_profile(*words: str) -> strokes.StrokedTextProfile:
+def make_profile(*words: str) -> strokes.StrokedTextProfile:
     drawings = tuple(
         CapturedDrawing(
             len(word) * row + column,
@@ -29,7 +29,7 @@ def internal_profile(*words: str) -> strokes.StrokedTextProfile:
     return strokes.profile_stroked_text(drawings, range(len(drawings)))
 
 
-def internal_seed(
+def make_seed(
     profile: strokes.StrokedTextProfile, index: int, text: str
 ) -> strokes.StrokedTextSeed:
     run = profile.run_profiles[index]
@@ -41,16 +41,16 @@ def internal_seed(
     [("A", 95), ("A B", 95), ("A@", 95), ("A" * 13, 95), ("AB", 84.9), ("", 95)],
 )
 def test_invalid_ocr_tokens_are_ineligible(text: str, confidence: float) -> None:
-    profile = internal_profile("AB")
-    seed = replace(internal_seed(profile, 0, text), confidence=confidence)
+    profile = make_profile("AB")
+    seed = replace(make_seed(profile, 0, text), confidence=confidence)
     decoded = strokes.decode_stroked_text_profile(profile, (seed,))
     assert decoded.eligible_seeds == 0
     assert decoded.observations == ()
 
 
 def test_two_independent_votes_decode_unseeded_repetitions() -> None:
-    profile = internal_profile("AB", "AB", "BA")
-    seeds = tuple(internal_seed(profile, index, " AB ") for index in (0, 1))
+    profile = make_profile("AB", "AB", "BA")
+    seeds = tuple(make_seed(profile, index, " AB ") for index in (0, 1))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
     assert [o.text for o in decoded.observations] == ["AB", "AB", "BA"]
     assert decoded.eligible_seeds == decoded.aligned_seeds == decoded.accepted_seeds == 2
@@ -67,8 +67,8 @@ def test_two_independent_votes_decode_unseeded_repetitions() -> None:
 
 
 def test_duplicate_seed_sequence_cannot_supply_independent_votes() -> None:
-    profile = internal_profile("AB")
-    seed = internal_seed(profile, 0, "AB")
+    profile = make_profile("AB")
+    seed = make_seed(profile, 0, "AB")
     decoded = strokes.decode_stroked_text_profile(profile, (seed, seed, seed))
     assert decoded.aligned_seeds == 3
     assert decoded.alphabet == ()
@@ -81,15 +81,15 @@ def test_duplicate_seed_sequence_cannot_supply_independent_votes() -> None:
 def test_consensus_requires_three_quarters_and_rejects_ties(
     labels: tuple[str, ...], expected: str | None
 ) -> None:
-    profile = internal_profile(*("AB" for _ in labels))
-    seeds = tuple(internal_seed(profile, i, label) for i, label in enumerate(labels))
+    profile = make_profile(*("AB" for _ in labels))
+    seeds = tuple(make_seed(profile, i, label) for i, label in enumerate(labels))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
     assert [o.text for o in decoded.observations] == ([expected] * len(labels) if expected else [])
 
 
 def test_anchored_word_teaches_unique_glyph_without_overwriting_consensus() -> None:
-    profile = internal_profile("AB", "AB", "ABC", "CA")
-    seeds = tuple(internal_seed(profile, i, text) for i, text in enumerate(("AB", "AB", "ABC")))
+    profile = make_profile("AB", "AB", "ABC", "CA")
+    seeds = tuple(make_seed(profile, i, text) for i, text in enumerate(("AB", "AB", "ABC")))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
     assert decoded.initial_signatures == 2
     assert decoded.learned_signatures == 3
@@ -97,9 +97,9 @@ def test_anchored_word_teaches_unique_glyph_without_overwriting_consensus() -> N
 
 
 def test_supplemental_conflicting_labels_never_replace_primary_alphabet() -> None:
-    profile = internal_profile("AB", "AB", "ABC", "ABC", "BA")
-    primary = (internal_seed(profile, 0, "AB"), internal_seed(profile, 1, "AB"))
-    supplemental = (internal_seed(profile, 2, "AXC"), internal_seed(profile, 3, "AXC"))
+    profile = make_profile("AB", "AB", "ABC", "ABC", "BA")
+    primary = (make_seed(profile, 0, "AB"), make_seed(profile, 1, "AB"))
+    supplemental = (make_seed(profile, 2, "AXC"), make_seed(profile, 3, "AXC"))
     decoded = strokes.decode_stroked_text_profile_with_supplemental_seeds(
         profile, primary, supplemental
     )
@@ -112,16 +112,16 @@ def test_supplemental_conflicting_labels_never_replace_primary_alphabet() -> Non
 
 
 def test_document_alphabet_decodes_without_mutating_caller_mapping() -> None:
-    profile = internal_profile("AB", "AB")
+    profile = make_profile("AB", "AB")
     learned = strokes.decode_stroked_text_profile(
         profile,
         (
-            internal_seed(profile, 0, "AB"),
-            internal_seed(profile, 1, "AB"),
+            make_seed(profile, 0, "AB"),
+            make_seed(profile, 1, "AB"),
         ),
     )
     alphabet = dict(learned.alphabet)
-    target = internal_profile("BA")
+    target = make_profile("BA")
     decoded = strokes.decode_stroked_text_profile_with_alphabet(target, alphabet.items())
     assert [o.text for o in decoded.observations] == ["BA"]
     assert decoded.eligible_seeds == decoded.aligned_seeds == decoded.accepted_seeds == 0
@@ -130,8 +130,8 @@ def test_document_alphabet_decodes_without_mutating_caller_mapping() -> None:
 
 
 def test_seed_alignment_can_use_geometry_when_sequence_is_unavailable() -> None:
-    profile = internal_profile("AB", "AB")
-    seeds = tuple(replace(internal_seed(profile, i, "AB"), sequence=999 + i) for i in range(2))
+    profile = make_profile("AB", "AB")
+    seeds = tuple(replace(make_seed(profile, i, "AB"), sequence=999 + i) for i in range(2))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
     assert [o.text for o in decoded.observations] == ["AB", "AB"]
     miss = replace(seeds[0], bbox=(100, 100, 110, 110))
@@ -142,7 +142,7 @@ def test_seed_alignment_can_use_geometry_when_sequence_is_unavailable() -> None:
 
 @pytest.mark.parametrize("empty_profile", [True, False])
 def test_missing_evidence_returns_empty_decodes(empty_profile: bool) -> None:
-    profile = strokes.StrokedTextProfile() if empty_profile else internal_profile("AB")
+    profile = strokes.StrokedTextProfile() if empty_profile else make_profile("AB")
     assert strokes.decode_stroked_text_profile(profile, ()) == strokes.StrokedTextDecode()
     assert (
         strokes.decode_stroked_text_profile_with_alphabet(profile, {})
@@ -164,17 +164,15 @@ def test_profile_skips_missing_paths_bounds_and_invalid_indexes() -> None:
 
 
 def test_isolated_glyphs_are_separate_from_multi_glyph_seed_runs() -> None:
-    profile = internal_profile("A", "AB", "C")
+    profile = make_profile("A", "AB", "C")
     isolated = strokes.stroked_text_isolated_runs(profile)
     assert [(r.glyph_count, r.drawing_indexes) for r in isolated] == [(1, (0,)), (1, (3,))]
     assert [(r.glyph_count, r.drawing_indexes) for r in profile.seed_runs] == [(2, (1, 2))]
 
 
 def test_conflicting_anchored_words_do_not_teach_an_ambiguous_glyph() -> None:
-    profile = internal_profile("AB", "AB", "ABC", "ABC")
-    seeds = tuple(
-        internal_seed(profile, i, word) for i, word in enumerate(("AB", "AB", "ABC", "ABX"))
-    )
+    profile = make_profile("AB", "AB", "ABC", "ABC")
+    seeds = tuple(make_seed(profile, i, word) for i, word in enumerate(("AB", "AB", "ABC", "ABX")))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
     assert decoded.learned_signatures == 2
     assert [o.text for o in decoded.observations] == ["AB", "AB"]
@@ -250,7 +248,7 @@ def test_isolated_run_requires_glyph_like_dimensions(
 
 
 def test_punctuation_only_alphabet_does_not_emit_text_observations() -> None:
-    profile = internal_profile("AB")
+    profile = make_profile("AB")
     mapping = {
         signature: "+" for signature in profile.run_profiles[0].signatures if signature is not None
     }
@@ -258,7 +256,7 @@ def test_punctuation_only_alphabet_does_not_emit_text_observations() -> None:
 
 
 def test_oversized_token_is_not_a_seed_or_decoded_run() -> None:
-    profile = internal_profile("A" * 13)
+    profile = make_profile("A" * 13)
     assert profile.seed_runs == ()
     mapping = {
         signature: "A" for signature in profile.run_profiles[0].signatures if signature is not None
@@ -288,8 +286,8 @@ def test_overlapping_path_components_form_one_glyph() -> None:
 
 
 def test_supplemental_seeds_report_missing_or_unaligned_evidence() -> None:
-    profile = internal_profile("AB")
-    seed = internal_seed(profile, 0, "AB")
+    profile = make_profile("AB")
+    seed = make_seed(profile, 0, "AB")
     assert (
         strokes.decode_stroked_text_profile_with_supplemental_seeds(
             strokes.StrokedTextProfile(), (), (seed,)
@@ -313,7 +311,7 @@ def test_empty_geometry_with_explicit_bounds_cannot_teach_a_glyph() -> None:
         for i in range(2)
     )
     profile = strokes.profile_stroked_text(drawings, (0, 1))
-    decoded = strokes.decode_stroked_text_profile(profile, (internal_seed(profile, 0, "AB"),))
+    decoded = strokes.decode_stroked_text_profile(profile, (make_seed(profile, 0, "AB"),))
     assert decoded.eligible_seeds == 1
     assert decoded.aligned_seeds == 0
     assert decoded.observations == ()

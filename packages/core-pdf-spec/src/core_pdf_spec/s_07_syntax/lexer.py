@@ -55,7 +55,7 @@ class PdfLexer:
         "current_obj_num",
         "current_gen_num",
         "stream_decoder",
-        "internal_semantic_context",
+        "_semantic_context",
         "lexical_rules",
     )
 
@@ -98,12 +98,12 @@ class PdfLexer:
 
     @property
     def semantic_context(self) -> SemanticContext | None:
-        return self.internal_semantic_context
+        return self._semantic_context
 
     @semantic_context.setter
     def semantic_context(self, context: SemanticContext | None) -> None:
         self.lexical_rules = self.select_lexical_rules(context)
-        self.internal_semantic_context = context
+        self._semantic_context = context
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
         return lexical_rules(context)

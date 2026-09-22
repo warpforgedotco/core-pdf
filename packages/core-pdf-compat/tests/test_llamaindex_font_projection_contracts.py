@@ -7,7 +7,7 @@ from core_pdf_compat.llamaindex._operator_text import (
     Font,
     OperatorTextProjection,
     difference_text,
-    internal_glyph_name_to_unicode,
+    legacy_glyph_name_to_unicode,
 )
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 
@@ -40,7 +40,7 @@ def test_cid_width_forms_expand_ranges_and_allow_later_overrides(
     projection, widths, expected, default
 ):
     font = {"DescendantFonts": [None, {"W": widths, "DW": default}]}
-    actual, fallback = projection.internal_widths(font, FontDecoder({}))
+    actual, fallback = projection.resolve_widths(font, FontDecoder({}))
     assert actual == expected
     assert fallback == (0.0 if default is None else default)
 
@@ -52,7 +52,7 @@ def test_simple_font_widths_truncate_individual_metrics_toward_zero(projection, 
         "Widths": [500.9, -20.9, "600.8"],
         "FontDescriptor": {"MissingWidth": missing},
     }
-    widths, fallback = projection.internal_widths(font, FontDecoder({}))
+    widths, fallback = projection.resolve_widths(font, FontDecoder({}))
     assert widths == {65: 500.0, 66: -20.0, 67: 600.0}
     assert fallback == (0.0 if missing is None else float(int(missing)))
 
@@ -60,7 +60,7 @@ def test_simple_font_widths_truncate_individual_metrics_toward_zero(projection, 
 def test_simple_font_uses_only_positive_single_byte_decoder_widths_when_undeclared(projection):
     decoder = FontDecoder({})
     decoder.widths = {-1: 300, 0: 0, 65: 500, 66: -20, 255: 200, 256: 700}
-    assert projection.internal_widths({}, decoder) == ({65: 500, 255: 200}, 0.0)
+    assert projection.resolve_widths({}, decoder) == ({65: 500, 255: 200}, 0.0)
 
 
 @pytest.mark.parametrize(
@@ -75,7 +75,7 @@ def test_simple_font_uses_only_positive_single_byte_decoder_widths_when_undeclar
     ],
 )
 def test_legacy_glyph_aliases_preserve_facade_specific_spelling(name, expected):
-    assert internal_glyph_name_to_unicode(name) == expected
+    assert legacy_glyph_name_to_unicode(name) == expected
 
 
 @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ def test_optional_cmap_preserves_explicit_mappings_despite_malformed_codespaces(
         + codespaces
         + b"\nendcodespacerange\n2 beginbfchar\n<00ff> <0041>\n<0100> <0042>\nendbfchar\n"
     )
-    cmap = projection.internal_to_unicode({"ToUnicode": PdfStream({}, data)}, FontDecoder({}))
+    cmap = projection.resolve_to_unicode({"ToUnicode": PdfStream({}, data)}, FontDecoder({}))
     assert cmap is not None
     assert cmap.mappings == {b"\x00\xff": "A", b"\x01\x00": "B"}
 
@@ -146,7 +146,7 @@ def test_unreadable_optional_cmap_preserves_font_usability(projection):
     from core_pdf_spec.s_07_syntax.stream import PdfStream
 
     stream = PdfStream({"Filter": "FlateDecode"}, b"\xff", {"Filter": "FlateDecode"})
-    assert projection.internal_to_unicode({"ToUnicode": stream}, FontDecoder({})) is None
+    assert projection.resolve_to_unicode({"ToUnicode": stream}, FontDecoder({})) is None
 
 
 def test_valid_optional_cmap_and_visible_space_projection(projection):
@@ -154,9 +154,9 @@ def test_valid_optional_cmap_and_visible_space_projection(projection):
 
     data = b"2 beginbfchar\n<20> <2423>\n<41> <00660069>\nendbfchar\n"
     decoder = FontDecoder({})
-    cmap = projection.internal_to_unicode({"ToUnicode": PdfStream({}, data)}, decoder)
+    cmap = projection.resolve_to_unicode({"ToUnicode": PdfStream({}, data)}, decoder)
     assert cmap is not None
-    assert projection.internal_character_map(decoder, cmap) == {" ": " ", "A": "fi"}
+    assert projection.build_character_map(decoder, cmap) == {" ": " ", "A": "fi"}
 
 
 @pytest.mark.parametrize(
@@ -190,5 +190,5 @@ def test_invalid_optional_cmap_without_usable_mappings_is_discarded(projection, 
 
     data = b"1 begincodespacerange\n" + codespaces + b"\nendcodespacerange\n"
     assert (
-        projection.internal_to_unicode({"ToUnicode": PdfStream({}, data)}, FontDecoder({})) is None
+        projection.resolve_to_unicode({"ToUnicode": PdfStream({}, data)}, FontDecoder({})) is None
     )

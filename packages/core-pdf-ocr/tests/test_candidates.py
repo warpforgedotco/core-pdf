@@ -2,10 +2,10 @@ import pytest
 
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.ocr import candidates
-from core_pdf_ocr.impl.extract.quality import Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 
 
-def internal_batch(
+def make_batch(
     texts: tuple[str, ...],
     boxes: tuple[tuple[float, float, float, float], ...] | None = None,
     confidence: tuple[float, ...] | None = None,
@@ -20,7 +20,7 @@ def internal_batch(
     )
 
 
-def internal_result(
+def make_result(
     text: str,
     box: tuple[float, float, float, float] = (0, 0, 100, 10),
     *,
@@ -28,8 +28,8 @@ def internal_result(
     mode: int = 6,
     height: float = 0,
 ) -> Candidate:
-    return internal_candidate(
-        mode, internal_batch((text,), (box,), (confidence,)), median_text_height=height
+    return make_candidate(
+        mode, make_batch((text,), (box,), (confidence,)), median_text_height=height
     )
 
 
@@ -75,8 +75,8 @@ def test_containment_requires_contiguous_whole_tokens_and_enough_text(
 def test_hidden_text_requires_minimum_count_token_ratio_and_spatial_ratio(
     matched: int, preview_count: int, spatial: int, expected: bool
 ) -> None:
-    hidden = internal_batch(tuple(f"word{i}" for i in range(matched)))
-    preview = internal_batch(
+    hidden = make_batch(tuple(f"word{i}" for i in range(matched)))
+    preview = make_batch(
         tuple(f"word{i}" for i in range(preview_count)),
         tuple(
             (i * 30, 0 if i < spatial else 100, i * 30 + 20, 10 if i < spatial else 110)
@@ -87,12 +87,12 @@ def test_hidden_text_requires_minimum_count_token_ratio_and_spatial_ratio(
 
 
 def test_hidden_repeated_tokens_match_nearest_unused_occurrence() -> None:
-    hidden = internal_batch(("word",) * 24)
-    reverse = internal_batch(
+    hidden = make_batch(("word",) * 24)
+    reverse = make_batch(
         ("word",) * 24, tuple((i * 30, 0, i * 30 + 20, 10) for i in reversed(range(24)))
     )
     assert candidates.hidden_text_verification(hidden, reverse)
-    one = internal_batch(("word",))
+    one = make_batch(("word",))
     assert not candidates.hidden_text_verification(one, reverse)
 
 
@@ -100,7 +100,7 @@ def test_empty_and_single_candidate_merges_preserve_identity() -> None:
     empty = candidates.merge_candidate_batches(())
     assert empty.mode == -1
     assert not len(empty.observations)
-    result = internal_result("hello")
+    result = make_result("hello")
     assert candidates.merge_candidate_batches((result,)) is result
 
 
@@ -120,8 +120,8 @@ def test_overlapping_tiles_prefer_containing_text_then_utility(
 ) -> None:
     merged = candidates.merge_candidate_batches(
         (
-            internal_result(first, confidence=first_conf, height=10),
-            internal_result(second, confidence=second_conf, height=20),
+            make_result(first, confidence=first_conf, height=10),
+            make_result(second, confidence=second_conf, height=20),
         )
     )
     assert merged.observations.text == (expected,)
@@ -129,9 +129,9 @@ def test_overlapping_tiles_prefer_containing_text_then_utility(
 
 
 def test_mode_selection_keeps_best_complete_mode_and_its_symbols() -> None:
-    symbols = internal_batch(("H",))
-    first = internal_candidate(6, internal_batch(("hello",)), symbols=symbols)
-    second = internal_result("a", mode=11)
+    symbols = make_batch(("H",))
+    first = make_candidate(6, make_batch(("hello",)), symbols=symbols)
+    second = make_result("a", mode=11)
     merged = candidates.merge_candidate_batches((second, first))
     assert merged.mode == 6
     assert merged.observations.text == ("hello",)
@@ -139,12 +139,12 @@ def test_mode_selection_keeps_best_complete_mode_and_its_symbols() -> None:
 
 
 def test_single_mode_batch_keeps_distinct_overlapping_text_and_sorts_page_order() -> None:
-    observations = internal_batch(
+    observations = make_batch(
         ("alpha", "bravo", "above", "beside"),
         ((0, 0, 20, 10), (0, 0, 20, 10), (0, 30, 20, 40), (40, 0, 60, 10)),
     )
     merged = candidates.merge_candidate_batches(
-        (internal_candidate(6, observations), internal_candidate(11, ObservationBatch.empty()))
+        (make_candidate(6, observations), make_candidate(11, ObservationBatch.empty()))
     )
     assert merged.observations.text == ("above", "alpha", "bravo", "beside")
 
@@ -152,7 +152,7 @@ def test_single_mode_batch_keeps_distinct_overlapping_text_and_sorts_page_order(
 def test_replaced_and_discarded_tiles_do_not_leave_stale_deduplication_entries() -> None:
     merged = candidates.merge_candidate_batches(
         tuple(
-            internal_result(text, confidence=confidence)
+            make_result(text, confidence=confidence)
             for text, confidence in (
                 ("hello", 70),
                 ("hello world", 80),
@@ -166,8 +166,8 @@ def test_replaced_and_discarded_tiles_do_not_leave_stale_deduplication_entries()
 
 
 def test_augmentation_preserves_primary_identity_when_no_usable_additions() -> None:
-    primary = internal_result("primary")
-    empty = internal_candidate(6, ObservationBatch.empty())
+    primary = make_result("primary")
+    empty = make_candidate(6, ObservationBatch.empty())
     result, added = candidates.augment_candidate(primary, empty, minimum_confidence=70)
     assert result is primary
     assert added == 0
@@ -189,9 +189,9 @@ def test_augmentation_preserves_primary_identity_when_no_usable_additions() -> N
 def test_augmentation_requires_confidence_information_and_uncovered_space(
     text, confidence, minimum, box, added
 ) -> None:
-    primary = internal_result("primary")
+    primary = make_result("primary")
     result, count = candidates.augment_candidate(
-        primary, internal_result(text, box, confidence=confidence), minimum_confidence=minimum
+        primary, make_result(text, box, confidence=confidence), minimum_confidence=minimum
     )
     assert count == added
     assert result.observations.text == (("primary", text) if added else ("primary",))

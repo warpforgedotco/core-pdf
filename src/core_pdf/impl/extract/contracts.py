@@ -28,7 +28,7 @@ ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
 
 
-def internal_column(
+def make_column(
     values: Iterable[Any] | None,
     dtype: Any,
     default: Callable[[], numpy.ndarray[Any, Any]] | None = None,
@@ -270,23 +270,19 @@ class ObservationBatch(Record):
     ) -> ObservationBatch:
         texts = tuple(text)
         size = len(texts)
-        boxes = internal_column(bbox, numpy.float32)
+        boxes = make_column(bbox, numpy.float32)
         if size == 0 and boxes.shape == (0,):
             boxes = boxes.reshape((0, 4))
-        conf_arr = internal_column(
+        conf_arr = make_column(
             confidence, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
-        seq_arr = internal_column(
-            sequence, numpy.int64, lambda: numpy.arange(size, dtype=numpy.int64)
-        )
-        vis_arr = internal_column(visible, numpy.bool_, lambda: numpy.ones(size, dtype=numpy.bool_))
-        rot_arr = internal_column(
-            rotation, numpy.int64, lambda: numpy.zeros(size, dtype=numpy.int64)
-        )
-        font_arr = internal_column(
+        seq_arr = make_column(sequence, numpy.int64, lambda: numpy.arange(size, dtype=numpy.int64))
+        vis_arr = make_column(visible, numpy.bool_, lambda: numpy.ones(size, dtype=numpy.bool_))
+        rot_arr = make_column(rotation, numpy.int64, lambda: numpy.zeros(size, dtype=numpy.int64))
+        font_arr = make_column(
             font_size, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
-        line_arr = internal_column(
+        line_arr = make_column(
             line_break_before, numpy.bool_, lambda: numpy.zeros(size, dtype=numpy.bool_)
         )
         ref_tuple = (

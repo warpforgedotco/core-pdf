@@ -57,7 +57,7 @@ def installed_backend() -> VeraPdfBackend:
     return VeraPdfBackend(executable, timeout=60)
 
 
-def internal_fixture(relative: str) -> Path:
+def fixture_path(relative: str) -> Path:
     root = Path(__file__).resolve().parents[3]
     source = root / "tests/fixtures" / relative
     assert source.is_file(), f"Initialize reference submodules: missing {source}"
@@ -90,7 +90,7 @@ def test_installed_engine_passes_every_advertised_profile(
 
 
 def test_installed_engine_reports_real_pdfa_pass(installed_backend: VeraPdfBackend) -> None:
-    source = internal_fixture("pypdf/sample-files/021-pdfa/crazyones-pdfa.pdf")
+    source = fixture_path("pypdf/sample-files/021-pdfa/crazyones-pdfa.pdf")
     original = source.read_bytes()
     report = validate(source, profiles="pdfa-1b", backend=installed_backend)
     result = report.results[0]
@@ -123,7 +123,7 @@ def test_installed_engine_passes_all_three_original_accessibility_declarations(
 def test_installed_engine_recognizes_every_advertised_profile(
     installed_backend: VeraPdfBackend, profile: str
 ) -> None:
-    source = internal_fixture("pdf20examples/Simple PDF 2.0 file.pdf")
+    source = fixture_path("pdf20examples/Simple PDF 2.0 file.pdf")
     result = validate(source, profiles=profile, backend=installed_backend).results[0]
     assert result.execution_status == "completed", result.diagnostics
     assert result.conformance == "fail"

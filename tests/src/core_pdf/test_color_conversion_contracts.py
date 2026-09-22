@@ -122,7 +122,7 @@ def test_soft_mask_precedes_colour_key_mask():
 def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fallback, inks):
     from core_pdf.impl.graphics import device_profiles
 
-    device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()
+    device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
     try:
         if fallback:
             monkeypatch.setattr(device_profiles, "default_cmyk_transform", lambda: None)
@@ -135,4 +135,4 @@ def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fa
             expected = np.rint(255 * (1 - np.array(inks[:3]) / 255) * (1 - inks[3] / 255))
             np.testing.assert_array_equal(vector, expected)
     finally:
-        device_profiles.internal_cmyk_bytes_to_srgb.cache_clear()
+        device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()

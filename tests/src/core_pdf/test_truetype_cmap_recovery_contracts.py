@@ -9,7 +9,7 @@ from core_pdf._vendor.fontTools.ttLib.tables._c_m_a_p import CmapSubtable, table
 from core_pdf.impl.fonts import font_program_truetype as tt
 
 
-def internal_font(tables):
+def make_font(tables):
     font = TTFont()
     font.setGlyphOrder([".notdef", "A", "B"])
     cmap = table__c_m_a_p()
@@ -26,23 +26,23 @@ def internal_font(tables):
 
 @pytest.mark.parametrize("offset", [0, 0xF000, 0xF100, 0xF200])
 def test_symbol_unicode_fallback_registers_byte_code_aliases(offset):
-    with internal_font([(3, 0, {offset + 65: "A"})]) as font:
+    with make_font([(3, 0, {offset + 65: "A"})]) as font:
         assert tt.best_unicode_gid_cmap(font) == {offset + 65: 1, 65: 1}
 
 
 def test_unicode_cmap_precedes_symbol_fallback():
-    with internal_font([(3, 0, {0xF041: "B"}), (3, 1, {65: "A"})]) as font:
+    with make_font([(3, 0, {0xF041: "B"}), (3, 1, {65: "A"})]) as font:
         assert tt.best_unicode_gid_cmap(font) == {65: 1}
 
 
 @pytest.mark.parametrize("tables", [[], [(1, 0, {65: "A"})]])
 def test_nonunicode_tables_do_not_become_unicode_mappings(tables):
-    with internal_font(tables) as font:
+    with make_font(tables) as font:
         assert tt.best_unicode_gid_cmap(font) == {}
 
 
 def test_unicode_cmap_recovers_generated_glyph_names_but_rejects_unusable_entries():
-    with internal_font(
+    with make_font(
         [
             (
                 3,
@@ -66,13 +66,13 @@ def test_raw_cmap_prefers_usable_symbol_table_then_macintosh(symbol):
     tables = [(1, 0, {65: "A"})]
     if symbol is not None:
         tables.insert(0, (3, 0, symbol))
-    with internal_font(tables) as font:
+    with make_font(tables) as font:
         expected = {0xF041: 2, 65: 2} if symbol == {0xF041: "B"} else {65: 1}
         assert tt.code_gid_cmap(font) == expected
 
 
 def test_raw_cmap_recovers_generated_names_and_preserves_explicit_byte_mapping():
-    with internal_font(
+    with make_font(
         [
             (
                 3,

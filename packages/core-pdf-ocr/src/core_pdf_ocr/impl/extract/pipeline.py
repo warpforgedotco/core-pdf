@@ -32,14 +32,14 @@ if TYPE_CHECKING:
 
 
 class PageExtraction(NativePageExtraction):
-    internal_capture_page = staticmethod(capture_page)
+    capture_page_fn = staticmethod(capture_page)
 
     @property
     def capture(self) -> PageAnalysis:
-        return cast(PageAnalysis, self.internal_capture)
+        return cast(PageAnalysis, self.page_capture)
 
     @property
-    def internal_route(self) -> str:
+    def route_name(self) -> str:
         return str(self.plan.route)
 
     def __init__(
@@ -63,20 +63,20 @@ class PageExtraction(NativePageExtraction):
         )
         self.plan = plan if plan is not None else plan_page(self.capture)
         self.recognition_result = recognition
-        self.internal_stroked_profile = stroked_profile
+        self.stroked_profile_of = stroked_profile
 
     @property
     def stroked_profile(self) -> StrokedTextProfile | None:
         evidence = self.capture.evidence.stroked_vector_text
         if not evidence.trusted or not evidence.drawing_indexes:
             return None
-        if self.internal_stroked_profile is None:
+        if self.stroked_profile_of is None:
             from core_pdf_ocr.impl.extract.ocr.strokes import profile_stroked_text
 
-            self.internal_stroked_profile = profile_stroked_text(
+            self.stroked_profile_of = profile_stroked_text(
                 self.capture.program.drawings, evidence.drawing_indexes
             )
-        return self.internal_stroked_profile
+        return self.stroked_profile_of
 
     def recognize(self, context: ExtractionScope) -> RecognitionResult:
         if self.recognition_result is not None:

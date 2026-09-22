@@ -13,7 +13,7 @@ from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 
 from ._classification import (
     BULLET,
-    internal_element_class,
+    classify_element,
 )
 from ._elements import (
     Element,
@@ -139,9 +139,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             for element_index in region_order(regions, page.height):
                 region = regions[element_index]
                 text, bbox = region.text, region.bbox
-                element_class = region.element_class or internal_element_class(
-                    text, bbox, page.height
-                )
+                element_class = region.element_class or classify_element(text, bbox, page.height)
                 if element_class is ListItem and region.element_class is None:
                     text = BULLET.sub("", text, count=1).strip()
                 metadata = (

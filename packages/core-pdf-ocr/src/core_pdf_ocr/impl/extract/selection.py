@@ -311,9 +311,9 @@ def apply_font_enrichment(
                     plan=base.plan,
                     recognition=recognition,
                     fields=base.capture.fields,
-                    structure=base.internal_structure,
-                    hidden_layers=base.internal_hidden_layers,
-                    stroked_profile=base.internal_stroked_profile,
+                    structure=base.structure_value,
+                    hidden_layers=base.hidden_layer_names,
+                    stroked_profile=base.stroked_profile_of,
                 )
             )
             continue
@@ -324,7 +324,7 @@ def apply_font_enrichment(
             base.page,
             capture.program,
             learned_unicode=font.learned_unicode,
-            structure=base.internal_structure,
+            structure=base.structure_value,
             fields=capture.fields,
             annotations=capture.annotations,
         )
@@ -333,8 +333,8 @@ def apply_font_enrichment(
                 base.page,
                 capture=enriched_capture,
                 fields=enriched_capture.fields,
-                structure=base.internal_structure,
-                hidden_layers=base.internal_hidden_layers,
+                structure=base.structure_value,
+                hidden_layers=base.hidden_layer_names,
             )
         )
     return tuple(enriched)
@@ -438,9 +438,9 @@ def apply_stroked_enrichment(
             plan=base.plan,
             recognition=recognition,
             fields=base.capture.fields,
-            structure=base.internal_structure,
-            hidden_layers=base.internal_hidden_layers,
-            stroked_profile=base.internal_stroked_profile,
+            structure=base.structure_value,
+            hidden_layers=base.hidden_layer_names,
+            stroked_profile=base.stroked_profile_of,
         )
     return tuple(enriched)
 

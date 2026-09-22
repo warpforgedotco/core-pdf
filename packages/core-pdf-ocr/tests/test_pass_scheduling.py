@@ -7,7 +7,7 @@ from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.pipeline import OcrPassState
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask
-from core_pdf_ocr.impl.extract.quality import Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 
 
 def candidate(
@@ -18,7 +18,7 @@ def candidate(
     height: float = 10,
     x: float = 0,
 ) -> Candidate:
-    result = internal_candidate(
+    result = make_candidate(
         3,
         ObservationBatch.from_columns(
             (text,), ((x, 0, x + 20, 10),), source=1, confidence=(confidence,)

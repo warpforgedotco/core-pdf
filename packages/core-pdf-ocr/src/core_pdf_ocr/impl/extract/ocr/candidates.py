@@ -21,7 +21,7 @@ from core_pdf_ocr.impl.extract.contracts import (
 from core_pdf_ocr.impl.extract.observations import maximum_candidate_coverage
 from core_pdf_ocr.impl.extract.quality import (
     Candidate,
-    internal_candidate,
+    make_candidate,
     text_utility_stats,
 )
 
@@ -126,7 +126,7 @@ def merge_candidate_batches(
     candidates: tuple[Candidate, ...],
 ) -> Candidate:
     if not candidates:
-        return internal_candidate(-1, ObservationBatch.empty())
+        return make_candidate(-1, ObservationBatch.empty())
     if len(candidates) == 1:
         return candidates[0]
     modes = {candidate.mode for candidate in candidates}
@@ -227,7 +227,7 @@ def merge_candidate_batches(
             if candidate.metrics.median_text_height > 0.0
         )
         merged_by_mode.append(
-            internal_candidate(
+            make_candidate(
                 mode,
                 combined.take(deduplicated),
                 symbols=combined_symbols,
@@ -280,4 +280,4 @@ def augment_candidate(
         observations,
         additions,
     )
-    return internal_candidate(primary.mode, combined, symbols=primary.symbols), added
+    return make_candidate(primary.mode, combined, symbols=primary.symbols), added

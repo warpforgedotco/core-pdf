@@ -10,7 +10,7 @@ from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
     BULLET,
-    internal_element_classes,
+    classify_elements,
 )
 from ._elements import (
     Element,
@@ -232,7 +232,7 @@ def combine_list_regions(
     anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
     anchor_position: int | None = None
-    element_classes = internal_element_classes(
+    element_classes = classify_elements(
         ((region.text, region.bbox) for region in regions), page_height
     )
     for region, element_class in zip(regions, element_classes, strict=True):

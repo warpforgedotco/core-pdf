@@ -4,7 +4,7 @@ import pytest
 from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.render.target import resolve_soft_mask
-from tests.src.core_pdf.test_pattern_rendering import internal_target
+from tests.src.core_pdf.test_pattern_rendering import make_target
 
 
 def mask_program() -> CapturedProgram:
@@ -21,7 +21,7 @@ def mask_program() -> CapturedProgram:
 def test_mask_pixels_ignore_destination_clip_and_backdrop(
     backdrop_alpha: int, offset: tuple[int, int], invert: bool
 ) -> None:
-    target = internal_target(4, 4)
+    target = make_target(4, 4)
     target.pixels[:] = bytes([20, 40, 60, backdrop_alpha]) * 16
     original_pixels = bytes(target.pixels)
     clip = CapturedPath()
@@ -51,7 +51,7 @@ def test_mask_pixels_ignore_destination_clip_and_backdrop(
 
 
 def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
-    target = internal_target(4, 4)
+    target = make_target(4, 4)
     mask = CapturedSoftMask(mask_program())
     result = resolve_soft_mask(target, mask)
     assert result is not None
@@ -66,7 +66,7 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
 
 
 def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
-    target = internal_target(4, 4)
+    target = make_target(4, 4)
     calls = 0
 
     def transfer(alpha: float) -> tuple[float, ...]:

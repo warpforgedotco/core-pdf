@@ -274,7 +274,7 @@ class LegacyTextExtractor:
         self.resources = resources if resources is not None else page.resources
         self.known_forms = known_forms if known_forms is not None else set()
         self.form_text_cache = form_text_cache if form_text_cache is not None else {}
-        self.fonts = self.internal_fonts(self.resources)
+        self.fonts = self.collect_fonts(self.resources)
         self.cm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.tm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.previous_cm = self.cm.copy()
@@ -291,7 +291,7 @@ class LegacyTextExtractor:
         self.accumulated_width = 0.0
         self.actual_height = 0.0
 
-    def internal_fonts(self, resources: object) -> dict[str, LegacyFont]:
+    def collect_fonts(self, resources: object) -> dict[str, LegacyFont]:
         resolved_resources = self.document.resolver.resolve(resources)
         if not isinstance(resolved_resources, dict):
             return {}
@@ -339,7 +339,7 @@ class LegacyTextExtractor:
             encoding_table, encoding_codec, character_map = self.legacy_encoding(font, decoder)
             raw_encoding = self.document.resolver.resolve(font.get("Encoding"))
             width_uses_source_code = decoder.is_cid_font and isinstance(raw_encoding, PdfStream)
-            encoding_is_mapping = self.internal_encoding_is_mapping(font)
+            encoding_is_mapping = self.encoding_is_mapping(font)
             widths, default_width, space_width = self.font_widths(
                 font, decoder, cmap, encoding_table, encoding_is_mapping
             )
@@ -354,9 +354,9 @@ class LegacyTextExtractor:
                 )
             else:
                 space_code_bytes = bytes(
-                    (self.internal_space_code(cmap, encoding_table, encoding_is_mapping),)
+                    (self.resolve_space_code(cmap, encoding_table, encoding_is_mapping),)
                 )
-            synthetic_space_width = self.internal_synthetic_space_width(
+            synthetic_space_width = self.resolve_synthetic_space_width(
                 decoder,
                 cmap,
                 encoding_table,
@@ -381,7 +381,7 @@ class LegacyTextExtractor:
             )
         return fonts
 
-    def internal_synthetic_space_width(
+    def resolve_synthetic_space_width(
         self,
         decoder: FontDecoder,
         cmap: ToUnicodeCMap | None,
@@ -393,13 +393,13 @@ class LegacyTextExtractor:
     ) -> float:
         if decoder.is_cid_font:
             return space_width
-        space_code = self.internal_space_code(cmap, encoding_table, encoding_is_mapping)
+        space_code = self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)
         if space_code == 32:
             return space_width
         return float(int(widths.get(32, default_width)))
 
     @staticmethod
-    def internal_space_code(
+    def resolve_space_code(
         cmap: ToUnicodeCMap | None,
         encoding_table: tuple[str, ...] | None,
         encoding_is_mapping: bool,
@@ -429,7 +429,7 @@ class LegacyTextExtractor:
                 return mapped
         return 32
 
-    def internal_encoding_is_mapping(self, font: dict[object, object]) -> bool:
+    def encoding_is_mapping(self, font: dict[object, object]) -> bool:
         encoding = self.document.resolver.resolve(font.get("Encoding"))
         if isinstance(encoding, dict):
             return True
@@ -608,7 +608,7 @@ class LegacyTextExtractor:
                 else 0
             )
             positive_widths = [int(width) for _, width in widths.items() if int(width) > 0]
-            space_code = self.internal_space_code(cmap, encoding_table, encoding_is_mapping)
+            space_code = self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)
             raw_space = widths.get(space_code)
             space = int(raw_space) if raw_space is not None else 0
             if isinstance(missing_width, (int, float)) and missing_width:
@@ -627,7 +627,7 @@ class LegacyTextExtractor:
                 if mapped == " "
             ] or [32]
         else:
-            space_codes = [self.internal_space_code(cmap, encoding_table, encoding_is_mapping)]
+            space_codes = [self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)]
         for code in space_codes:
             width = widths.get(code)
             legacy_width = width if decoder.is_cid_font else int(width or 0)
@@ -777,14 +777,14 @@ class LegacyTextExtractor:
             if operator == "Do":
                 self.flush()
                 self.output_last = ensure_line_break(self.output_parts, self.output_last)
-                self.internal_form(operands)
+                self.paint_form_xobject(operands)
                 self.text = ""
             else:
                 self.process(operator, operands)
         self.flush()
         return "".join(self.output_parts)
 
-    def internal_form(self, operands: tuple[object, ...]) -> None:
+    def paint_form_xobject(self, operands: tuple[object, ...]) -> None:
         if not operands:
             return
         resources = self.document.resolver.resolve(self.resources)

@@ -251,12 +251,12 @@ class TableAnalysis(Record):
     @classmethod
     def build(cls, observations: ObservationBatch, page_width: float) -> TableAnalysis:
         coordinates = ObservationCoordinates.from_observations(observations)
-        text_rows = internal_text_rows(observations, coordinates=coordinates)
+        text_rows = group_text_rows(observations, coordinates=coordinates)
         return cls(
             observations,
             coordinates,
             text_rows,
-            internal_row_centers(observations, text_rows, coordinates=coordinates),
+            compute_row_centers(observations, text_rows, coordinates=coordinates),
             aligned_column_clusters(
                 observations,
                 text_rows,
@@ -346,7 +346,7 @@ def detect_tables(
 COLUMN_TOLERANCE = 14.0
 
 
-def internal_text_rows(
+def group_text_rows(
     observations: ObservationBatch,
     *,
     coordinates: ObservationCoordinates | None = None,
@@ -387,7 +387,7 @@ def internal_text_rows(
     return [sorted(row, key=lambda index: (all_lefts[index], sequences[index])) for row in rows]
 
 
-def internal_row_centers(
+def compute_row_centers(
     observations: ObservationBatch,
     rows: list[list[int]],
     *,
@@ -427,11 +427,11 @@ def aligned_column_clusters(
             means.append(x)
     candidates = []
     for cluster in clusters:
-        row_support = {row_index for row_index, internal_index in cluster}
-        widths = [all_widths[index] for internal_row_index, index in cluster]
+        row_support = {row_index for row_index, index_value in cluster}
+        widths = [all_widths[index] for row_index_value, index in cluster]
         alphanumeric = sum(
             any(character.isalnum() for character in observations.text[index])
-            for internal_row_index, index in cluster
+            for row_index_value, index in cluster
         )
         if (
             len(row_support) >= minimum_rows
@@ -454,7 +454,7 @@ def split_support_rows(
     if not indexes:
         return []
     if row_centers is None:
-        row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
+        row_centers = compute_row_centers(observations, rows, coordinates=coordinates)
     coordinates = coordinates or ObservationCoordinates.from_observations(observations)
     groups = [[indexes[0]]]
     for index in indexes[1:]:
@@ -483,7 +483,7 @@ def stream_table(
     columns = [
         column
         for column in columns
-        if len({row_index for row_index, internal_index in column}.intersection(support_set))
+        if len({row_index for row_index, index_value in column}.intersection(support_set))
         >= minimum_rows
     ]
     if len(columns) < 2:
@@ -497,7 +497,7 @@ def stream_table(
         [
             finite_median(
                 numpy.asarray(
-                    [all_x0[index] for internal_row_index, index in column],
+                    [all_x0[index] for row_index_value, index in column],
                     dtype=numpy.float32,
                 )
             )
@@ -509,7 +509,7 @@ def stream_table(
     column_centers = column_centers[column_order]
     columns = [columns[int(index)] for index in column_order]
     if row_centers is None:
-        row_centers = internal_row_centers(observations, rows, coordinates=coordinates)
+        row_centers = compute_row_centers(observations, rows, coordinates=coordinates)
     top = row_centers[support[0]]
     bottom = row_centers[support[-1]]
     selected = [
@@ -539,7 +539,7 @@ def stream_table(
     numeric_by_column = [0] * column_count
     text_lengths = 0
     for row_index, row in enumerate(selected):
-        cells: list[list[int]] = [[] for internal_column in columns]
+        cells: list[list[int]] = [[] for make_column in columns]
         for index in row:
             x0 = all_x0[index]
             x1 = all_x1[index]
@@ -741,7 +741,7 @@ def stream_tables(
             [
                 column
                 for column in candidate_columns
-                if len({row_index for row_index, internal_index in column}) >= minimum_rows
+                if len({row_index for row_index, index_value in column}) >= minimum_rows
             ]
             if minimum_rows > 2
             else candidate_columns
@@ -750,7 +750,7 @@ def stream_tables(
             continue
         row_columns: dict[int, set[int]] = defaultdict(set)
         for column_index, column in enumerate(columns):
-            for row_index, internal_index in column:
+            for row_index, index_value in column:
                 row_columns[row_index].add(column_index)
         pair_counts: Counter[tuple[int, int]] = Counter()
         for present in row_columns.values():

@@ -37,7 +37,7 @@ from core_pdf_ocr.impl.extract.ocr.types import (
     RasterRegion,
     StrokedTextCell,
 )
-from core_pdf_ocr.impl.extract.quality import Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 
 STROKED_VECTOR_PACK_WIDTH = 240.0
 
@@ -382,7 +382,7 @@ def remap_stroked_vector_candidate(
         packed,
     )
     return (
-        internal_candidate(
+        make_candidate(
             candidate.mode,
             remapped,
             symbols=remapped_symbols,

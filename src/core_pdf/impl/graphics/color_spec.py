@@ -94,7 +94,7 @@ def recover_image_bits_per_component(image_dict: object) -> int:
     return value
 
 
-def internal_color_space_paints(value: object) -> bool:
+def raw_color_space_paints(value: object) -> bool:
     seen: set[int] = set()
     while isinstance(value, (list, tuple)) and value:
         marker = id(value)

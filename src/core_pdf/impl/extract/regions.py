@@ -420,7 +420,7 @@ def row_order_region(geometry: LayoutGeometry, region: LayoutRegion) -> numpy.nd
     return indexes[numpy.lexsort((geometry.boxes[indexes, 0], geometry.row_ids[indexes]))]
 
 
-def internal_obstacle_partition(
+def partition_by_obstacles(
     indexes: numpy.ndarray,
     boxes: numpy.ndarray,
     obstacles: tuple[tuple[float, float, float, float], ...],
@@ -497,7 +497,7 @@ def xy_cut_regions(
             parent_region=current_region,
         )
 
-    obstacle_partition = internal_obstacle_partition(
+    obstacle_partition = partition_by_obstacles(
         indexes,
         boxes,
         obstacles,

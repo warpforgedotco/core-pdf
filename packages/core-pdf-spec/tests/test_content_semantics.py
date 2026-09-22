@@ -25,11 +25,11 @@ class Sink:
         return lambda *args, **kwargs: None
 
 
-def internal_state() -> ContentInterpreter:
+def make_state() -> ContentInterpreter:
     return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, Sink()), cast(Any, None))
 
 
-def internal_pattern(paint_type: int = 1, **entries: Any) -> PdfStream:
+def make_pattern(paint_type: int = 1, **entries: Any) -> PdfStream:
     return PdfStream(
         raw_data=b"0 0 1 1 re f",
         dictionary={
@@ -60,7 +60,7 @@ def test_matrix_requires_exactly_six_entries(value: object) -> None:
 
 @pytest.mark.parametrize("indirect", [False, True])
 def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
-    state = internal_state()
+    state = make_state()
     resolver = cast(ObjectResolver, state.resolver)
     resolver.objects[key_for(1, 0)] = [1, 0, 0, 1, PdfReference(2, 0), 6]
     resolver.objects[key_for(2, 0)] = 5
@@ -76,7 +76,7 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
                 },
             )
         },
-        "Pattern": {"P": internal_pattern(Matrix=matrix)},
+        "Pattern": {"P": make_pattern(Matrix=matrix)},
     }
     frame = state.append_xobject(PdfName.of("F"), 0)
     pattern = state.resolve_pattern_color(
@@ -104,7 +104,7 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
 def test_form_retains_transparency_transform_and_source_identity(
     indirect: bool, isolated: bool, opacity: float, blend: str | None
 ) -> None:
-    state = internal_state()
+    state = make_state()
     bbox = [0, 0, 2, 3]
     form = PdfStream(
         raw_data=b"",
@@ -134,7 +134,7 @@ def test_form_retains_transparency_transform_and_source_identity(
 
 @pytest.mark.parametrize("resources", [None, {}, {"Font": {}}])
 def test_form_inherits_resources_only_when_absent(resources: dict | None) -> None:
-    state = internal_state()
+    state = make_state()
     form = PdfStream(dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1]})
     if resources is not None:
         form.dictionary["Resources"] = resources
@@ -153,7 +153,7 @@ def test_form_inherits_resources_only_when_absent(resources: dict | None) -> Non
     ],
 )
 def test_form_rejects_missing_bbox_and_invalid_subtypes(dictionary: dict, message: str) -> None:
-    state = internal_state()
+    state = make_state()
     state.resources = {"XObject": {"F": PdfStream(dictionary=dictionary)}}
     with pytest.raises(PdfParseError, match=message):
         state.append_xobject(PdfName.of("F"), 0)
@@ -168,7 +168,7 @@ def test_tj_horizontal_scale_applies_only_horizontally(
         text_adjustment_vector(100, vertical=vertical, font_size=10, horizontal_scale=200)
         == expected
     )
-    state = internal_state()
+    state = make_state()
     state.graphics.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
     state.graphics.font_size, state.graphics.horizontal_scale = 10, 200
     state.text_matrix = Matrix(2, 3, 5, 7, 11, 13)
@@ -212,7 +212,7 @@ class Font:
 def test_type3_glyphs_use_font_service_spacing(
     monkeypatch: pytest.MonkeyPatch, font_size: int
 ) -> None:
-    state = internal_state()
+    state = make_state()
     state.graphics.font_size, state.graphics.char_space, state.graphics.word_space = font_size, 2, 3
     origins: list[float] = []
     monkeypatch.setattr(
@@ -228,7 +228,7 @@ def test_type3_glyphs_use_font_service_spacing(
 
 @pytest.mark.parametrize("text", ["", "A"])
 def test_text_show_updates_after_callback_and_emits_one_boundary(text: str) -> None:
-    state = internal_state()
+    state = make_state()
     events: list[tuple[str, float]] = []
 
     def show(*args: Any) -> None:
@@ -329,7 +329,7 @@ def test_color_range_validation_precedes_initialization(ranges: list[object]) ->
 
 @pytest.mark.parametrize("stroke", [False, True])
 def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> None:
-    state = internal_state()
+    state = make_state()
     state.resources = {"ColorSpace": {"DeviceRGB": PdfName.of("DeviceGray")}}
     state.graphics.fill_pattern = state.graphics.stroke_pattern = cast(Any, object())
     state.execute_operation("CS" if stroke else "cs", (PdfName.of("DeviceRGB"),), 0)
@@ -347,7 +347,7 @@ def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> N
 @pytest.mark.parametrize("kind", ["Separation", "DeviceN", "ICCBased"])
 @pytest.mark.parametrize("stroke", [False, True])
 def test_special_color_spaces_require_extended_operator(kind: str, stroke: bool) -> None:
-    state = internal_state()
+    state = make_state()
     state.graphics.fill_space = state.graphics.stroke_space = ColorSpace(kind, ((0.0, 1.0),) * 1)
     with pytest.raises(PdfParseError, match="requires SCN"):
         state.execute_operation("SC" if stroke else "sc", (0.5,), 0)
@@ -369,11 +369,11 @@ def test_special_color_spaces_require_extended_operator(kind: str, stroke: bool)
 def test_pattern_selection_matches_underlying_space(
     base: str | None, paint_type: int, components: tuple[float, ...], valid: bool
 ) -> None:
-    state = internal_state()
+    state = make_state()
     space = [PdfName.of("Pattern")] + ([PdfName.of(base)] if base else [])
     state.resources = {
         "ColorSpace": {"P": space},
-        "Pattern": {"Tile": internal_pattern(paint_type)},
+        "Pattern": {"Tile": make_pattern(paint_type)},
     }
     state.execute_operation("cs", (PdfName.of("P"),), 0)
     if not valid:
@@ -391,8 +391,8 @@ def test_pattern_retains_lab_base_and_public_positional_constructors() -> None:
         ["Pattern", ["Lab", {"WhitePoint": [1, 1, 1], "Range": [-2, 2, -3, 3]}]]
     )
     assert space.base is not None
-    state = internal_state()
-    state.resources = {"Pattern": {"P": internal_pattern(2)}}
+    state = make_state()
+    state.resources = {"Pattern": {"P": make_pattern(2)}}
     pattern = state.resolve_pattern_color(PdfName.of("P"), space=space, base_components=(50, -2, 3))
     assert isinstance(pattern, TilingPattern)
     assert pattern.base_color == (50, -2, 3)
@@ -401,7 +401,7 @@ def test_pattern_retains_lab_base_and_public_positional_constructors() -> None:
     assert "base_color_spec" not in TilingPattern.__match_args__
     assert (
         TilingPattern(
-            (0, 0, 1, 1), 1, 1, internal_pattern(), {}, IDENTITY_MATRIX, 1, None
+            (0, 0, 1, 1), 1, 1, make_pattern(), {}, IDENTITY_MATRIX, 1, None
         ).base_color_spec
         is None
     )

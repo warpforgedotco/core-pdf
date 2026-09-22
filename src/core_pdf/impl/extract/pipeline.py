@@ -124,15 +124,15 @@ class PageProducts(Record):
 
 
 class PageExtraction:
-    internal_capture_page = staticmethod(capture_page)
+    capture_page_fn = staticmethod(capture_page)
 
     @property
-    def internal_route(self) -> str:
+    def route_name(self) -> str:
         return "native"
 
     @property
     def capture(self) -> PageAnalysis:
-        return self.internal_capture
+        return self.page_capture
 
     def __init__(
         self,
@@ -144,11 +144,11 @@ class PageExtraction:
         hidden_layers: frozenset[str] | None = None,
     ) -> None:
         self.page = page
-        self.internal_structure = structure
-        self.internal_hidden_layers = hidden_layers
+        self.structure_value = structure
+        self.hidden_layer_names = hidden_layers
         field_records = tuple(fields) if fields is not None else None
         if capture is not None:
-            self.internal_capture = (
+            self.page_capture = (
                 replace(capture, fields=field_records) if field_records is not None else capture
             )
         else:
@@ -157,7 +157,7 @@ class PageExtraction:
                 annotation_records = tuple(page.get_annotations()) or None
             except AttributeError, TypeError, ValueError:
                 annotation_records = None
-            self.internal_capture = self.internal_capture_page(
+            self.page_capture = self.capture_page_fn(
                 page,
                 structure=structure,
                 hidden_layers=hidden_layers,
@@ -219,7 +219,7 @@ class PageExtraction:
             width=capture.width,
             height=capture.height,
             rotation=capture.rotation,
-            route=self.internal_route,
+            route=self.route_name,
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),

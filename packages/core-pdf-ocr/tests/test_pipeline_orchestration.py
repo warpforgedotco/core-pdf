@@ -19,18 +19,18 @@ from core_pdf_ocr.impl.extract.ocr.types import (
     Raster,
     RasterRegion,
 )
-from core_pdf_ocr.impl.extract.quality import internal_candidate
+from core_pdf_ocr.impl.extract.quality import make_candidate
 
 
-def internal_result(text: str, *, height: float = 10, box=(0, 0, 20, 10), confidence=90):
-    return internal_candidate(
+def make_result(text: str, *, height: float = 10, box=(0, 0, 20, 10), confidence=90):
+    return make_candidate(
         6,
         ObservationBatch.from_columns((text,), (box,), source=1, confidence=(confidence,)),
         median_text_height=height,
     )
 
 
-def internal_task():
+def make_task():
     return OcrTask(
         6, RasterImage(bytes([255]) * 10000, 100, 100, 1), (0, 0, 100, 100), (0, 0, 100, 100), 72
     )
@@ -71,9 +71,9 @@ def test_adaptive_retry_selects_scope_and_preserves_best_content(
     available,
     expected,
 ) -> None:
-    primary = internal_result(text, height=height)
-    retry = internal_result(retry_text, box=retry_box)
-    source = internal_task()
+    primary = make_result(text, height=height)
+    retry = make_result(retry_text, box=retry_box)
+    source = make_task()
     calls = []
     operation = OcrPass(
         "primary", OcrPassScope.PAGE, 2, (6,), adaptive_scale=True, pixel_budget=1000000
@@ -138,9 +138,9 @@ def test_hidden_layer_verification_short_circuits_only_after_matching_preview(
         source=1,
         confidence=(100,) * 24,
     )
-    preview = internal_candidate(11, hidden if verified else ObservationBatch.empty())
-    source = internal_task()
-    fallback = internal_result("fallback")
+    preview = make_candidate(11, hidden if verified else ObservationBatch.empty())
+    source = make_task()
+    fallback = make_result("fallback")
     seen = []
     runs = tuple(
         TextRun(text, i * 20, 0, i * 20 + 15, 10, i * 20, 10, 10, 2, 0, 0, 0, visible=False)
@@ -207,7 +207,7 @@ def test_ruled_table_retry_preserves_outside_text_and_rejects_worse_cell_reads(
     source = OcrTask(
         6, RasterImage(samples.tobytes(), 300, 400, 1), (0, 0, 300, 400), (0, 0, 300, 400), 72
     )
-    prior = internal_candidate(
+    prior = make_candidate(
         6,
         ObservationBatch.from_columns(
             ("outside heading", "abcdefghij"),
@@ -216,7 +216,7 @@ def test_ruled_table_retry_preserves_outside_text_and_rejects_worse_cell_reads(
             confidence=(95, 95),
         ),
     )
-    cells = internal_candidate(
+    cells = make_candidate(
         7,
         ObservationBatch.from_columns(
             (cell_text,) if cell_text else (),
@@ -268,7 +268,7 @@ def test_packed_vector_pipeline_remaps_seeds_and_chooses_isolated_or_full_fallba
         StrokedTextCell,
     )
 
-    source = internal_task()
+    source = make_task()
     raster = Raster(source.image, 72)
     packed = PackedStrokedTextRaster(
         raster,
@@ -280,8 +280,8 @@ def test_packed_vector_pipeline_remaps_seeds_and_chooses_isolated_or_full_fallba
         source.page_box,
         (StrokedTextCell((300, 200, 320, 210), (0, 0, 20, 10), (9,)),),
     )
-    seed = internal_result("AB")
-    supplement = internal_result(
+    seed = make_result("AB")
+    supplement = make_result(
         "7" if accepted else "full fallback",
         box=(0, 0, 20, 10) if accepted else (100, 200, 120, 210),
     )
@@ -378,9 +378,9 @@ def test_pipeline_returns_empty_when_no_pass_materializes_tasks(
 def test_page_augmentation_retains_original_text_except_for_complex_vector_pages(
     monkeypatch: pytest.MonkeyPatch, ocr_capture, complexity: int, expected: tuple[str, ...]
 ) -> None:
-    source = internal_task()
-    original = internal_result("original")
-    extra = internal_result("additional text", box=(40, 0, 80, 10))
+    source = make_task()
+    original = make_result("original")
+    extra = make_result("additional text", box=(40, 0, 80, 10))
 
     class Session:
         page_box = source.page_box

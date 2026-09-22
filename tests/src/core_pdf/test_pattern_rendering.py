@@ -8,7 +8,7 @@ from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_target(width=4, height=1):
+def make_target(width=4, height=1):
     pixels = bytearray(width * height * 4)
     view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
     clip = ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
@@ -79,7 +79,7 @@ def test_shading_color_clamps_channels_and_fills_missing_components(
 
 @pytest.mark.parametrize("extend", [False, True])
 def test_axial_gradient_pixels_respect_extension_flags(extend):
-    target = internal_target()
+    target = make_target()
     target.paint_shading(
         {
             "dictionary": {
@@ -104,7 +104,7 @@ def test_axial_gradient_pixels_respect_extension_flags(extend):
 
 @pytest.mark.parametrize("dictionary", [None, {}, {"ShadingType": 1}])
 def test_unsupported_shading_leaves_raster_untouched(dictionary):
-    target = internal_target()
+    target = make_target()
     target.paint_shading({"dictionary": dictionary}, None)
     assert target.pixels == bytearray(16)
 
@@ -135,7 +135,7 @@ def test_nested_tiling_blends_and_cycles_disable_isolated_optimization():
 
 
 def test_tiling_cell_cache_reuses_display_and_clip_for_same_pattern():
-    target = internal_target()
+    target = make_target()
     pattern = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram())
     first = patterns.tiling_cell(target, pattern)
     second = patterns.tiling_cell(target, pattern)

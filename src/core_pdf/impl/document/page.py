@@ -393,9 +393,9 @@ class PdfPage:
     def extract(self) -> StructuredPage:
         with self.document.acquire_operation() as operation:
             context = ExtractionScope(cancelled=lambda: operation.cancelled)
-            return self.internal_extract_page(context)
+            return self.run_extract_page(context)
 
-    def internal_extract_page(self, context: ExtractionScope) -> StructuredPage:
+    def run_extract_page(self, context: ExtractionScope) -> StructuredPage:
         return extract_page(self, context)
 
     def get_text_lines(self) -> list[LayoutLine]:

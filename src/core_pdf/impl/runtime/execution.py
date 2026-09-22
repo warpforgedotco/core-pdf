@@ -11,16 +11,16 @@ class ExtractionCancelled(RuntimeError):
 
 
 class ExtractionScope:
-    __slots__ = ("internal_cancelled",)
+    __slots__ = ("_cancelled",)
 
     def __init__(
         self,
         cancelled: Callable[[], bool] | None = None,
     ) -> None:
-        self.internal_cancelled = cancelled
+        self._cancelled = cancelled
 
     def raise_if_cancelled(self) -> None:
-        if self.internal_cancelled is not None and self.internal_cancelled():
+        if self._cancelled is not None and self._cancelled():
             raise ExtractionCancelled()
 
 

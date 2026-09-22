@@ -28,7 +28,7 @@ class ArrayOutline(ScalarOutline):
         return outline_arrays(self.contours)
 
 
-def internal_glyph(decoder):
+def make_glyph(decoder):
     return GlyphObservation(
         "A",
         (0, 0, 3, 3),
@@ -59,7 +59,7 @@ def internal_glyph(decoder):
 )
 def test_scalar_and_array_outlines_have_identical_transformed_paths(contours, matrix):
     results = [
-        glyph_outline_path(replace(internal_glyph(kind(contours)), glyph_transform=matrix))
+        glyph_outline_path(replace(make_glyph(kind(contours)), glyph_transform=matrix))
         for kind in (ScalarOutline, ArrayOutline)
     ]
     scalar, array = results
@@ -83,7 +83,7 @@ def test_scalar_and_array_outlines_have_identical_transformed_paths(contours, ma
 def test_text_modes_separate_paint_from_accumulated_clipping(mode, include_paint, visible):
     decoder = ArrayOutline((((0, 0), (3, 0), (1, 3)),))
     glyph = replace(
-        internal_glyph(decoder), text_render_mode=mode, visible=visible, clip_glyph=mode >= 4
+        make_glyph(decoder), text_render_mode=mode, visible=visible, clip_glyph=mode >= 4
     )
     display = DisplayList(10, 10)
     clipping = []
@@ -111,7 +111,7 @@ def test_text_modes_separate_paint_from_accumulated_clipping(mode, include_paint
 )
 def test_outline_code_precedence_retains_gid_and_text(fields, expected):
     decoder = ScalarOutline((((0, 0), (1, 1)),))
-    glyph = replace(internal_glyph(decoder), gid=12, **fields)
+    glyph = replace(make_glyph(decoder), gid=12, **fields)
     assert glyph_outline_path(glyph) is not None
     assert decoder.calls == [(expected, 12, "A")]
 
@@ -128,7 +128,7 @@ def test_outline_code_precedence_retains_gid_and_text(fields, expected):
 )
 def test_missing_outline_inputs_return_no_outline(fields):
     decoder = ScalarOutline((((0, 0), (1, 1)),))
-    glyph = replace(internal_glyph(decoder), **fields)
+    glyph = replace(make_glyph(decoder), **fields)
     assert glyph_outline_path(glyph) is None
     assert decoder.calls == []
 
@@ -136,6 +136,6 @@ def test_missing_outline_inputs_return_no_outline(fields):
 def test_missing_outline_requests_bitmap_fallback_without_partial_paint():
     display = DisplayList(10, 10)
     clipping = []
-    assert not append_glyph_paint(display, internal_glyph(ScalarOutline(())), clipping)
+    assert not append_glyph_paint(display, make_glyph(ScalarOutline(())), clipping)
     assert display.items == []
     assert clipping == []

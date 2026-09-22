@@ -278,7 +278,7 @@ def text_utility_stats(text: str, confidence: float) -> TextUtility:
     return TextUtility(nonspace, alphanumeric, utility)
 
 
-def internal_candidate(
+def make_candidate(
     mode: int,
     observations: ObservationBatch,
     *,

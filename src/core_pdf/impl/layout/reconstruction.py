@@ -293,7 +293,7 @@ class GlyphLineBuilder:
         "next_non_space_x0s",
         "estimated_char_width",
         "column_gap_threshold",
-        "internal_text_runs_by_x0",
+        "text_runs_sorted_by_x0",
     )
 
     def __init__(
@@ -308,7 +308,7 @@ class GlyphLineBuilder:
         suppress_tiny_page_footer: bool = False,
     ) -> None:
         self.runs = runs
-        self.internal_text_runs_by_x0: list[TextRun] | None = None
+        self.text_runs_sorted_by_x0: list[TextRun] | None = None
         self.page_label_indexes = rules.trailing_tiny_page_label_run_indexes(runs)
         self.is_table_like_line = is_table_like_line
         self.is_all_caps_line = is_all_caps_line
@@ -597,13 +597,13 @@ class GlyphLineBuilder:
         return run.x0 - previous.x1 <= attach_gap
 
     def text_runs_by_x0(self) -> list[TextRun]:
-        ordered = self.internal_text_runs_by_x0
+        ordered = self.text_runs_sorted_by_x0
         if ordered is None:
             ordered = sorted(
                 (candidate for candidate in self.runs if candidate.has_text),
                 key=lambda candidate: candidate.x0,
             )
-            self.internal_text_runs_by_x0 = ordered
+            self.text_runs_sorted_by_x0 = ordered
         return ordered
 
     def is_unit_exponent_run(self, run: TextRun) -> bool:

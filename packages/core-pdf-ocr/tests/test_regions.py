@@ -11,11 +11,11 @@ from core_pdf_ocr.impl.extract.ocr.types import OcrRegion
 from core_pdf_spec.types import PdfName
 
 
-def internal_capture(capture: PageAnalysis, drawings: tuple[CapturedDrawing, ...]) -> PageAnalysis:
+def make_capture(capture: PageAnalysis, drawings: tuple[CapturedDrawing, ...]) -> PageAnalysis:
     return replace(capture, program=PageProgram(CapturedProgram(drawings=drawings)))
 
 
-def internal_image(box: tuple[float, float, float, float], pixels: int = 64) -> CapturedDrawing:
+def make_image(box: tuple[float, float, float, float], pixels: int = 64) -> CapturedDrawing:
     x0, y0, x1, y1 = box
     return CapturedDrawing(
         0,
@@ -35,7 +35,7 @@ def internal_image(box: tuple[float, float, float, float], pixels: int = 64) -> 
 
 
 def test_image_region_decodes_original_raster_with_page_mapping(ocr_capture: PageAnalysis) -> None:
-    capture = internal_capture(ocr_capture, (internal_image((0, 0, 600, 800)),))
+    capture = make_capture(ocr_capture, (make_image((0, 0, 600, 800)),))
     result = regions.page_image_regions(capture, minimum_area_ratio=0.65, upscale=False)
     assert len(result) == 1
     assert result[0].page_box == (0, 0, 600, 800)
@@ -48,34 +48,34 @@ def test_image_region_decodes_original_raster_with_page_mapping(ocr_capture: Pag
     "drawing",
     [
         CapturedDrawing(0, None, None),
-        replace(internal_image((0, 0, 600, 800)), items=()),
-        replace(internal_image((0, 0, 600, 800)), bbox=None),
-        internal_image((-20, 0, 600, 800)),
-        internal_image((0, 0, 10, 10)),
-        replace(internal_image((0, 0, 600, 800)), raw_data=None),
+        replace(make_image((0, 0, 600, 800)), items=()),
+        replace(make_image((0, 0, 600, 800)), bbox=None),
+        make_image((-20, 0, 600, 800)),
+        make_image((0, 0, 10, 10)),
+        replace(make_image((0, 0, 600, 800)), raw_data=None),
     ],
 )
 def test_unsuitable_direct_images_fall_back_to_compositing(
     ocr_capture: PageAnalysis,
     drawing: CapturedDrawing,
 ) -> None:
-    capture = internal_capture(ocr_capture, (drawing,))
+    capture = make_capture(ocr_capture, (drawing,))
     assert regions.page_image_regions(capture, minimum_area_ratio=0.65, upscale=False) == ()
 
 
 def test_tiny_or_overlapping_dominant_images_are_not_selected(ocr_capture: PageAnalysis) -> None:
-    tiny = internal_capture(ocr_capture, (internal_image((0, 0, 600, 800), pixels=32),))
+    tiny = make_capture(ocr_capture, (make_image((0, 0, 600, 800), pixels=32),))
     assert regions.dominant_image_region(tiny, upscale=False) is None
-    duplicate = internal_capture(ocr_capture, (internal_image((0, 0, 600, 800)),) * 2)
+    duplicate = make_capture(ocr_capture, (make_image((0, 0, 600, 800)),) * 2)
     assert regions.dominant_image_region(duplicate, upscale=False) is None
 
 
 def test_distinct_large_images_select_highest_pixel_resolution(ocr_capture: PageAnalysis) -> None:
-    capture = internal_capture(
+    capture = make_capture(
         ocr_capture,
         (
-            internal_image((0, 0, 600, 600), pixels=64),
-            internal_image((0, 200, 600, 800), pixels=80),
+            make_image((0, 0, 600, 600), pixels=64),
+            make_image((0, 200, 600, 800), pixels=80),
         ),
     )
     result = regions.dominant_image_region(capture, upscale=False)
@@ -127,7 +127,7 @@ def test_image_candidates_are_padded_and_clipped(ocr_capture: PageAnalysis) -> N
 
 def test_native_text_suppresses_covered_vector_candidates(ocr_capture: PageAnalysis) -> None:
     drawing = CapturedDrawing(0, None, None, kind="fill", bbox=(210, 210, 240, 240))
-    capture = internal_capture(ocr_capture, (drawing,))
+    capture = make_capture(ocr_capture, (drawing,))
     candidates = regions.candidate_ocr_regions(capture)
     assert any("uncovered-vector" in c.reasons for c in candidates)
     native = ObservationBatch.from_columns(
@@ -162,7 +162,7 @@ def test_outline_detection_requires_many_small_paths_distributed_across_page(
         )
         for i in range(count)
     )
-    assert regions.has_distributed_outline_text(internal_capture(ocr_capture, drawings)) is expected
+    assert regions.has_distributed_outline_text(make_capture(ocr_capture, drawings)) is expected
 
 
 def test_grid_geometry_yields_grid_and_label_regions(ocr_capture: PageAnalysis) -> None:
@@ -212,7 +212,7 @@ def test_dense_vector_pages_propose_fine_label_regions(
         CapturedDrawing(1, None, None, kind="image"),
         CapturedDrawing(2, None, None, kind="fill"),
     )
-    capture = internal_capture(ocr_capture, drawings)
+    capture = make_capture(ocr_capture, drawings)
     capture = replace(capture, evidence=replace(capture.evidence, vector_complexity=180))
     selected = regions.candidate_ocr_regions(capture)
     reasons = {reason for region in selected for reason in region.reasons}
@@ -225,7 +225,7 @@ def test_header_density_keeps_moderate_text_but_body_density_does_not(
     ocr_capture: PageAnalysis,
 ) -> None:
     def select(y: float) -> tuple[OcrRegion, ...]:
-        capture = internal_capture(
+        capture = make_capture(
             ocr_capture, (CapturedDrawing(0, None, None, kind="stroke", bbox=(10, y, 20, y + 10)),)
         )
         native = ObservationBatch.from_columns(("twelve chars",), ((10, y, 20, y + 10),), source=0)
@@ -249,7 +249,7 @@ def test_degenerate_large_and_offpage_shapes_do_not_create_uncovered_vector_regi
             )
         )
     )
-    capture = internal_capture(ocr_capture, drawings)
+    capture = make_capture(ocr_capture, drawings)
     capture = replace(
         capture, evidence=replace(capture.evidence, image_boxes=((-500, -500, -450, -450),))
     )
@@ -269,7 +269,7 @@ def test_large_grid_is_not_mistaken_for_a_compact_label_region(ocr_capture: Page
 
 
 def test_fine_regions_reject_components_fully_outside_page(ocr_capture: PageAnalysis) -> None:
-    capture = internal_capture(
+    capture = make_capture(
         ocr_capture, (CapturedDrawing(0, None, None, kind="stroke", bbox=(-100, -100, -90, -90)),)
     )
     capture = replace(capture, evidence=replace(capture.evidence, vector_complexity=180))

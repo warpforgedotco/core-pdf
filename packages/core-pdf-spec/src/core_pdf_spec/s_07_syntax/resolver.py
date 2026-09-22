@@ -56,7 +56,7 @@ class ObjectResolver:
         "object_streams",
         "lock",
         "thread_state",
-        "internal_semantic_context",
+        "_semantic_context",
     )
 
     def __init__(
@@ -70,7 +70,7 @@ class ObjectResolver:
         self.data = memoryview(data)
         self.xref = xref
         self.decipher = decipher
-        self.internal_semantic_context = semantic_context
+        self._semantic_context = semantic_context
         self.objects: ObjectCache = {}
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.lock = threading.RLock()
@@ -78,15 +78,15 @@ class ObjectResolver:
 
     @property
     def semantic_context(self) -> SemanticContext | None:
-        return self.internal_semantic_context
+        return self._semantic_context
 
     @semantic_context.setter
     def semantic_context(self, context: SemanticContext | None) -> None:
         with self.lock:
-            if context == self.internal_semantic_context:
+            if context == self._semantic_context:
                 return
             streams = self.detach_parsed_caches()
-            self.internal_semantic_context = context
+            self._semantic_context = context
         for stream in streams:
             stream.close()
 

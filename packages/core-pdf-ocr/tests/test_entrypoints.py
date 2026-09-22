@@ -85,11 +85,11 @@ def test_stroked_profile_is_lazily_built_and_reused(ocr_capture) -> None:
     extraction = pipeline.PageExtraction(
         cast(Any, object()), capture=capture, plan=WorkPlan(PageRoute.OCR)
     )
-    assert extraction.internal_stroked_profile is None
+    assert extraction.stroked_profile_of is None
     profile = extraction.stroked_profile
     assert profile is not None
     assert extraction.stroked_profile is profile
-    assert extraction.internal_stroked_profile is profile
+    assert extraction.stroked_profile_of is profile
 
 
 def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, monkeypatch) -> None:

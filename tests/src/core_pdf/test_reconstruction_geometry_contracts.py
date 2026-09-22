@@ -10,7 +10,7 @@ from core_pdf.impl.model.glyphs import GlyphCluster
 from core_pdf.impl.model.runs import TextRun
 
 
-def internal_run(text: str, x: float = 0, height: float = 10, baseline: float = 10) -> TextRun:
+def make_run(text: str, x: float = 0, height: float = 10, baseline: float = 10) -> TextRun:
     return TextRun(
         text,
         x,
@@ -31,7 +31,7 @@ def internal_run(text: str, x: float = 0, height: float = 10, baseline: float = 
 @pytest.mark.parametrize("text", ["a", "fi", " ", "\t", "\n", "\u2003", "a b", "\ue000", "a\x00b"])
 @pytest.mark.parametrize("clustered", [False, True])
 def test_nonempty_text_always_produces_nonempty_atoms(text, clustered):
-    run = internal_run(text)
+    run = make_run(text)
     if clustered:
         run = run.replace(
             glyph_clusters=tuple(
@@ -50,7 +50,7 @@ def test_nonempty_text_always_produces_nonempty_atoms(text, clustered):
     ("text", "expected"), [("\ue000", ""), ("\x00", ""), ("a\x00b", "ab"), ("a  b", "a b")]
 )
 def test_single_and_builder_paths_agree_on_text_cleanup(text, expected):
-    run = internal_run(text)
+    run = make_run(text)
     assert reconstruct_layout_line_text([run]).text == expected
     assert GlyphLineBuilder([run]).build().text == expected
 
@@ -92,8 +92,8 @@ def test_superscript_geometry_requires_both_size_and_baseline_change(
 def test_stacked_fraction_denominator_requires_compatible_geometry(
     previous_text, text, height, baseline, x, expected
 ):
-    previous = internal_run(previous_text)
-    current = internal_run(text, x, height, baseline)
+    previous = make_run(previous_text)
+    current = make_run(text, x, height, baseline)
 
     def atom(run):
         return LayoutLineTextAtom(run.text, run, run.advance_bbox, run.baseline, True)
@@ -122,22 +122,22 @@ def test_stacked_fraction_denominator_requires_compatible_geometry(
     ],
 )
 def test_formula_script_atoms_require_shape_shift_and_attachment(kind, case, expected):
-    previous = internal_run("x")
-    current = internal_run("i" if kind == "letter" else "2", x=5, height=6, baseline=12)
+    previous = make_run("x")
+    current = make_run("i" if kind == "letter" else "2", x=5, height=6, baseline=12)
     if case == "lowered":
-        current = internal_run(current.text, x=5, height=6, baseline=8)
+        current = make_run(current.text, x=5, height=6, baseline=8)
     elif case == "unshifted":
-        current = internal_run(current.text, x=5, height=6, baseline=10)
+        current = make_run(current.text, x=5, height=6, baseline=10)
     elif case == "small-shift":
-        current = internal_run(current.text, x=5, height=6, baseline=10.1)
+        current = make_run(current.text, x=5, height=6, baseline=10.1)
     elif case == "full-height":
-        current = internal_run(current.text, x=5, height=10, baseline=12)
+        current = make_run(current.text, x=5, height=10, baseline=12)
     elif case == "zero-context-height":
-        previous = internal_run("x", height=0)
+        previous = make_run("x", height=0)
     elif case == "distant":
-        current = internal_run(current.text, x=8, height=6, baseline=12)
+        current = make_run(current.text, x=8, height=6, baseline=12)
     elif case == "attachment-boundary":
-        current = internal_run(current.text, x=7.5, height=6, baseline=12)
+        current = make_run(current.text, x=7.5, height=6, baseline=12)
     elif case == "missing-baseline":
         current = current.replace(baseline=None)
     elif case == "missing-context-baseline":
@@ -175,16 +175,16 @@ def test_formula_script_atoms_require_shape_shift_and_attachment(kind, case, exp
 def test_formula_numeric_subscript_requires_a_lower_attached_small_run(
     prefix, text, height, baseline, x, expected
 ):
-    previous = internal_run(prefix)
-    current = internal_run(text, x=x, height=height, baseline=baseline)
+    previous = make_run(prefix)
+    current = make_run(text, x=x, height=height, baseline=baseline)
     builder = GlyphLineBuilder([previous, current], is_formula_like_line=True)
     assert builder.is_formula_subscript_like_numeric_run(current, 1) is expected
 
 
 @pytest.mark.parametrize("missing", ["previous", "current", "context"])
 def test_formula_numeric_subscript_requires_context_and_baselines(missing):
-    previous = internal_run("x")
-    current = internal_run("2", x=5, height=6, baseline=9)
+    previous = make_run("x")
+    current = make_run("2", x=5, height=6, baseline=9)
     if missing == "previous":
         previous = previous.replace(baseline=None)
     elif missing == "current":
@@ -196,8 +196,8 @@ def test_formula_numeric_subscript_requires_context_and_baselines(missing):
 
 @pytest.mark.parametrize(("formula", "expected"), [(False, "x2"), (True, "x₂")])
 def test_formula_context_controls_numeric_subscript_normalization(formula, expected):
-    previous = internal_run("x")
-    current = internal_run("2", x=5, height=6, baseline=9)
+    previous = make_run("x")
+    current = make_run("2", x=5, height=6, baseline=9)
     builder = GlyphLineBuilder([previous, current], is_formula_like_line=formula)
     assert builder.build().text == expected
     assert previous.text == "x"

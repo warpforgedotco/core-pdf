@@ -32,7 +32,7 @@ from core_pdf_ocr.impl.extract.ocr.types import (
     map_ocr_box,
     raster_rectangle_page_box,
 )
-from core_pdf_ocr.impl.extract.quality import Candidate, internal_candidate
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 
 os.environ["OMP_THREAD_LIMIT"] = "1"
 
@@ -126,7 +126,7 @@ def resolve_tessdata_path() -> tuple[str | None, str]:
     )
 
 
-def internal_api(mode: int) -> Any:
+def open_tesseract_api(mode: int) -> Any:
     tesserocr = import_tesserocr()
     api = tesserocr.PyTessBaseAPI(
         path=tessdata_path(),
@@ -150,7 +150,7 @@ class HocrCharacterParser(HTMLParser):
         self.lines: dict[tuple[int, int, int, int], str] = {}
         self.line_box: tuple[int, int, int, int] | None = None
         self.words: list[str] = []
-        self.internal_chars: list[str] = []
+        self.make_chars: list[str] = []
         self.char_confidence = threshold
         self.in_char = False
         self.in_word = False
@@ -174,7 +174,7 @@ class HocrCharacterParser(HTMLParser):
             self.words = []
         elif "ocrx_word" in classes:
             self.in_word = True
-            self.internal_chars = []
+            self.make_chars = []
         elif "ocrx_cinfo" in classes and self.in_word:
             match = HOCR_CONFIDENCE_RE.search(title)
             self.char_confidence = float(match.group(1)) if match else 0.0
@@ -182,7 +182,7 @@ class HocrCharacterParser(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self.in_char and self.char_confidence >= self.threshold:
-            self.internal_chars.append(data)
+            self.make_chars.append(data)
 
     def handle_endtag(self, tag: str) -> None:
         if tag != "span":
@@ -190,8 +190,8 @@ class HocrCharacterParser(HTMLParser):
         if self.in_char:
             self.in_char = False
         elif self.in_word:
-            self.words.append("".join(self.internal_chars))
-            self.internal_chars = []
+            self.words.append("".join(self.make_chars))
+            self.make_chars = []
             self.in_word = False
         elif self.line_box is not None:
             text = " ".join(word for word in self.words if word).strip()
@@ -334,7 +334,7 @@ def recognition_timeout(task: OcrTask) -> int:
 
 @contextmanager
 def owned_api(mode: int) -> Iterator[Any]:
-    api = internal_api(mode)
+    api = open_tesseract_api(mode)
     try:
         yield api
     finally:
@@ -465,7 +465,7 @@ def recognize(
         sequence=range(len(texts)),
         line_break_before=line_breaks,
     )
-    candidate = internal_candidate(
+    candidate = make_candidate(
         task.mode,
         observations,
         symbols=symbols,
@@ -482,7 +482,7 @@ def recognize(
         sequence=range(len(filtered_texts)),
         line_break_before=filtered_line_breaks,
     )
-    filtered_candidate = internal_candidate(
+    filtered_candidate = make_candidate(
         task.mode,
         filtered_observations,
         symbols=symbols,

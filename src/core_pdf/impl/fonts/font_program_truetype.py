@@ -268,10 +268,10 @@ class TrueTypeFontProgram:
         try:
             return cache[gid]
         except KeyError:
-            result = cache[gid] = self.internal_composite_body_bbox(gid)
+            result = cache[gid] = self.composite_body_bbox_uncached(gid)
             return result
 
-    def internal_composite_body_bbox(
+    def composite_body_bbox_uncached(
         self, gid: int
     ) -> tuple[tuple[float, float, float, float] | None, bool]:
         try:
@@ -465,11 +465,11 @@ def recording_to_contours(
             case "moveTo":
                 if contour:
                     contours.append(close_contour(contour))
-                start = internal_point(operands[0])
+                start = make_point(operands[0])
                 current = start
                 contour = [start]
             case "lineTo" if current is not None:
-                current = internal_point(operands[0])
+                current = make_point(operands[0])
                 contour.append(current)
             case "qCurveTo" if current is not None:
                 current = append_quadratic(contour, current, start, operands)
@@ -486,7 +486,7 @@ def recording_to_contours(
     return [contour for contour in contours if len(contour) >= 3]
 
 
-def internal_point(value: Any) -> Point:
+def make_point(value: Any) -> Point:
     x, y = value
     return (float(x), float(y))
 
@@ -503,11 +503,11 @@ def append_quadratic(
     if points[-1] is None:
         if start is None:
             return current
-        controls = [internal_point(point) for point in points[:-1]]
+        controls = [make_point(point) for point in points[:-1]]
         end = start
     else:
-        controls = [internal_point(point) for point in points[:-1]]
-        end = internal_point(points[-1])
+        controls = [make_point(point) for point in points[:-1]]
+        end = make_point(points[-1])
     if not controls:
         contour.append(end)
         return end
@@ -531,9 +531,9 @@ def append_cubic(contour: list[Point], current: Point, operands: tuple[Any, ...]
         return current
     segment_start = current
     for index in range(0, len(operands), 3):
-        c1 = internal_point(operands[index])
-        c2 = internal_point(operands[index + 1])
-        end = internal_point(operands[index + 2])
+        c1 = make_point(operands[index])
+        c2 = make_point(operands[index + 1])
+        end = make_point(operands[index + 2])
         contour.extend(flatten_cubic(segment_start, c1, c2, end))
         segment_start = end
     return segment_start

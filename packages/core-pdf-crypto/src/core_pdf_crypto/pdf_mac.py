@@ -77,7 +77,7 @@ def validate_authenticated_data(
 
     hash_algorithm = digest_algorithm(auth_data["digest_algorithm"])
     validate_mac_algorithm(auth_data["mac_algorithm"])
-    encapsulated_content = internal_encapsulated_content(auth_data)
+    encapsulated_content = encapsulated_content_bytes(auth_data)
     integrity_info = parse_der(encapsulated_content, PdfMacIntegrityInfo)
 
     mac_key = unwrap_mac_key(
@@ -214,7 +214,7 @@ def validate_integrity_info(
         raise ValueError("PDF MAC document digest does not match")
 
 
-def internal_encapsulated_content(auth_data: cms.AuthenticatedData) -> bytes:
+def encapsulated_content_bytes(auth_data: cms.AuthenticatedData) -> bytes:
     content_info = auth_data["encap_content_info"]
     if content_info["content_type"].dotted != PDF_MAC_INTEGRITY_INFO_OID:
         raise ValueError("incorrect PDF MAC encapsulated content type")

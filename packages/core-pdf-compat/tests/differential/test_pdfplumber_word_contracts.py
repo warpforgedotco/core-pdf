@@ -9,7 +9,7 @@ reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
 
 
-def internal_chars(upright):
+def make_chars(upright):
     chars = []
     for index, text in enumerate(("A", "ﬁ", ",", " ", "B", "C")):
         along = index * 6
@@ -39,7 +39,7 @@ def internal_chars(upright):
 def test_word_options_match_reference_and_preserve_source_identity(
     upright, split, keep_blank, expand
 ):
-    chars = internal_chars(upright)
+    chars = make_chars(upright)
     before = deepcopy(chars)
     options = {
         "split_at_punctuation": split,
@@ -65,7 +65,7 @@ def test_word_options_match_reference_and_preserve_source_identity(
     ],
 )
 def test_word_group_boundaries_match_reference(upright, options):
-    chars = internal_chars(upright)
+    chars = make_chars(upright)
     assert compat.extract_words(chars, **options) == reference.utils.extract_words(chars, **options)
 
 
@@ -73,7 +73,7 @@ def test_word_group_boundaries_match_reference(upright, options):
 def test_page_word_projection_matches_utils_with_controlled_characters(text_pdf_bytes, upright):
     with compat.open(text_pdf_bytes) as pdf:
         page = pdf.pages[0]
-        chars: list[dict[str, Any]] = internal_chars(upright)
+        chars: list[dict[str, Any]] = make_chars(upright)
         page._objects = {"char": chars}
         assert page.extract_words(return_chars=True) == reference.utils.extract_words(
             chars, return_chars=True
@@ -88,7 +88,7 @@ def test_empty_word_input_is_empty_in_both_implementations():
 @pytest.mark.parametrize("reverse_input", [False, True])
 @pytest.mark.parametrize("split", [False, True])
 def test_reverse_reading_directions_match_reference(upright, reverse_input, split):
-    chars = internal_chars(upright)
+    chars = make_chars(upright)
     if reverse_input:
         chars.reverse()
     options = {

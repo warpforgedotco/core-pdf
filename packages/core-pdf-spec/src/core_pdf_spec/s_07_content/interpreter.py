@@ -89,7 +89,7 @@ class ContentInterpreter:
         self.current_path = PdfPath()
         self.current_point: tuple[float, float] | None = None
         self.subpath_start: tuple[float, float] | None = None
-        self.internal_pending_clip_rule: str | None = None
+        self.pending_clip_rule_value: str | None = None
         self.xobject_depth = 0
         self.compatibility_depth = 0
         self.marked_content_stack: list[MarkedContentEntry] = []
@@ -133,7 +133,7 @@ class ContentInterpreter:
             marked_content_stack_len=len(self.marked_content_stack),
             xobject_depth=self.xobject_depth,
             compatibility_depth=self.compatibility_depth,
-            pending_clip_rule=self.internal_pending_clip_rule,
+            pending_clip_rule=self.pending_clip_rule_value,
             initial_alpha_is_shape=self.initial_alpha_is_shape,
             initial_text_knockout=self.initial_text_knockout,
             in_text_object=self.in_text_object,
@@ -146,7 +146,7 @@ class ContentInterpreter:
         self.graphics_stack_floor = state.graphics_stack_floor
         self.xobject_depth = state.xobject_depth
         self.compatibility_depth = state.compatibility_depth
-        self.internal_pending_clip_rule = state.pending_clip_rule
+        self.pending_clip_rule_value = state.pending_clip_rule
         self.initial_alpha_is_shape = state.initial_alpha_is_shape
         self.initial_text_knockout = state.initial_text_knockout
         self.in_text_object = state.in_text_object
@@ -749,12 +749,12 @@ class ContentInterpreter:
             self.close_current_subpath()
         if kind is not None:
             self.sink.paint_path(self, self.current_path, kind, fill_rule)
-        if self.internal_pending_clip_rule is not None:
-            self.sink.clip_path(self, self.current_path, self.internal_pending_clip_rule)
+        if self.pending_clip_rule_value is not None:
+            self.sink.clip_path(self, self.current_path, self.pending_clip_rule_value)
         self.current_path = PdfPath()
         self.current_point = None
         self.subpath_start = None
-        self.internal_pending_clip_rule = None
+        self.pending_clip_rule_value = None
 
     def op_paint_stroke(self, operands: ContentOperands, depth: int) -> None:
         self.complete_path("stroke")
@@ -784,10 +784,10 @@ class ContentInterpreter:
         self.complete_path(None)
 
     def op_W(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_pending_clip_rule = "nonzero"
+        self.pending_clip_rule_value = "nonzero"
 
     def op_W_star(self, operands: ContentOperands, depth: int) -> None:
-        self.internal_pending_clip_rule = "evenodd"
+        self.pending_clip_rule_value = "evenodd"
 
     def set_device_color(
         self, operands: ContentOperands, color_space: str, count: int, *, stroke: bool

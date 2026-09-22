@@ -26,7 +26,7 @@ from core_pdf_ocr.impl.extract.contracts import (
     PageRoute,
     WorkPlan,
 )
-from core_pdf_ocr.impl.extract.quality import internal_candidate
+from core_pdf_ocr.impl.extract.quality import make_candidate
 
 HIDDEN_TEXT_MIN_CONFIDENCE = 60.0
 RASTER_TEXT_MIN_CONFIDENCE = 60.0
@@ -623,8 +623,8 @@ def fuse_observations(
     ):
         return ocr
     if plan.fusion_policy is FusionPolicy.NOISY_NATIVE:
-        native_candidate = internal_candidate(-1, native)
-        ocr_candidate = internal_candidate(-1, ocr)
+        native_candidate = make_candidate(-1, native)
+        ocr_candidate = make_candidate(-1, ocr)
         if (
             len(ocr) >= 4
             and ocr_candidate.metrics.mean_confidence >= FUSION_NOISY_NATIVE_MIN_CONFIDENCE

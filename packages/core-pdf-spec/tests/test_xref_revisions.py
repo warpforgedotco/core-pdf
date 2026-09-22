@@ -18,7 +18,7 @@ from core_pdf_spec.s_07_syntax.xref import (
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 
-def internal_table(subsections: list[tuple[int, int, int]]) -> bytes:
+def make_table(subsections: list[tuple[int, int, int]]) -> bytes:
     return (
         b"xref\n"
         + b"".join(
@@ -36,11 +36,11 @@ def test_classic_subsections_cannot_repeat_an_object_number(
     subsections: list[tuple[int, int, int]],
 ) -> None:
     with pytest.raises(PdfParseError, match="overlapping"):
-        XRefScanner.parse_table_section(internal_table(subsections), 0)
+        XRefScanner.parse_table_section(make_table(subsections), 0)
 
 
 def test_classic_subsections_may_be_in_descending_order() -> None:
-    entries, trailer = XRefScanner.parse_table_section(internal_table([(5, 2, 0), (1, 2, 0)]), 0)
+    entries, trailer = XRefScanner.parse_table_section(make_table([(5, 2, 0), (1, 2, 0)]), 0)
     assert {key >> 16 for key in entries} == {1, 2, 5, 6}
     assert trailer["Size"] == 10
 
@@ -129,7 +129,7 @@ def test_iterator_rejects_a_callback_returning_a_table_for_a_supplemental_stream
 
 
 def test_section_parser_enforces_stream_only_without_changing_table_parsing() -> None:
-    data = internal_table([(1, 1, 0)])
+    data = make_table([(1, 1, 0)])
     section = XRefScanner.parse_section_at(data, 0)
     assert section.offset == 0
     assert section.kind == "table"

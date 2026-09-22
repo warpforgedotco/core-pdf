@@ -59,7 +59,7 @@ def scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
 
 def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     dictionary = function.dictionary
-    if internal_function_type(dictionary) != 0:
+    if require_function_type(dictionary) != 0:
         raise ValueError("invalid sampled function")
     if type(dictionary.get("BitsPerSample")) is not int or dictionary["BitsPerSample"] != 8:
         raise ValueError("unsupported sampled function bit depth")
@@ -183,7 +183,7 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     return evaluate
 
 
-def internal_function_type(dictionary: dict[Any, Any]) -> int:
+def require_function_type(dictionary: dict[Any, Any]) -> int:
     return require_pdf_integer(dictionary.get("FunctionType"), "invalid PDF function type")
 
 
@@ -205,7 +205,7 @@ def compile_pdf_function(
         raise ValueError("invalid PDF function array")
 
     if isinstance(function, PdfStream):
-        function_type = internal_function_type(function.dictionary)
+        function_type = require_function_type(function.dictionary)
         if function_type == 4:
             return compile_calculator_function(function)
         if function_type == 0:
@@ -215,7 +215,7 @@ def compile_pdf_function(
                 raise ValueError("invalid sampled PDF function") from exc
         dictionary = function.dictionary
     elif isinstance(function, dict):
-        function_type = internal_function_type(function)
+        function_type = require_function_type(function)
         dictionary = function
     else:
         raise ValueError("invalid PDF function")

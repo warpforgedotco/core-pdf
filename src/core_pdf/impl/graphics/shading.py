@@ -7,7 +7,7 @@ from functools import lru_cache
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.graphics.color import color_operands_to_srgb
-from core_pdf.impl.graphics.color_spec import internal_color_space_paints, parse_color_space
+from core_pdf.impl.graphics.color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics.functions import (
     compile_pdf_function,
     number_array,
@@ -165,7 +165,7 @@ def prepare_shading(
 ) -> PreparedShading | None:
     if not isinstance(dictionary, dict):
         return None
-    if not internal_color_space_paints(dictionary.get("ColorSpace")):
+    if not raw_color_space_paints(dictionary.get("ColorSpace")):
         return None
     shading_type = parse_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:

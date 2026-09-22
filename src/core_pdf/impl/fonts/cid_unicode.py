@@ -60,7 +60,7 @@ class CompactCMap(Record):
         return self.effective_codes_by_cid.get(cid, ())
 
 
-def internal_compact_cmap(decoder: CMapDecoder) -> CompactCMap:
+def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
     code_space_ranges = decoder.code_space_ranges
 
     def code_is_decodable(code: bytes) -> bool:
@@ -89,7 +89,7 @@ def compact_cmap(name: str) -> CompactCMap | None:
     if resolve_cmap_resource(name) is None:
         return None
     decoder = resolve_cmap_decoder(name)
-    return internal_compact_cmap(decoder) if decoder is not None else None
+    return compact_cmap_from_decoder(decoder) if decoder is not None else None
 
 
 def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | None:
@@ -107,20 +107,20 @@ def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | Non
 
 
 class CIDUnicodeMap:
-    __slots__ = ("internal_cache", "ordering", "registry", "vertical")
+    __slots__ = ("_cache", "ordering", "registry", "vertical")
 
     def __init__(self, registry: str, ordering: str, vertical: bool) -> None:
         self.registry = registry
         self.ordering = ordering
         self.vertical = vertical
-        self.internal_cache: dict[int, str | None] = {}
+        self._cache: dict[int, str | None] = {}
 
     def get(self, cid: int, default: str | None = None) -> str | None:
         result = self.resolve(cid)
         return default if result is None else result
 
     def resolve(self, cid: int) -> str | None:
-        cache = self.internal_cache
+        cache = self._cache
         try:
             return cache[cid]
         except KeyError:

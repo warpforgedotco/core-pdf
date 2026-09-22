@@ -52,7 +52,7 @@ VERSION = "1.30.2"
 MACHINE_LIMIT = "Only the pinned engine's machine-checkable profile rules were evaluated."
 
 
-def internal_number(element: ElementTree.Element, name: str) -> int:
+def element_int(element: ElementTree.Element, name: str) -> int:
     value = element.get(name)
     if value is None or not value.isascii() or not value.isdigit():
         raise ValueError(f"Missing or invalid {element.tag}/@{name}")
@@ -66,7 +66,7 @@ def one(element: ElementTree.Element, path: str) -> ElementTree.Element:
     return found[0]
 
 
-def internal_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...], bool]:
+def parse_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...], bool]:
     rules: list[RuleResult] = []
     truncated = False
     for element in details.findall("rule"):
@@ -87,7 +87,7 @@ def internal_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...]
             if check.get("status") not in ("passed", "failed"):
                 raise ValueError("Unknown check status")
         if status == "failed":
-            failed_checks = internal_number(element, "failedChecks")
+            failed_checks = element_int(element, "failedChecks")
             displayed = sum(check.get("status") == "failed" for check in checks)
             if failed_checks == 0 or displayed > failed_checks:
                 raise ValueError("Inconsistent failed rule counts")
@@ -151,10 +151,10 @@ def parse_report(
         if compliant not in ("true", "false"):
             raise ValueError("Missing or invalid isCompliant flag")
         details = one(report, "details")
-        passed_rules = internal_number(details, "passedRules")
-        failed_rules = internal_number(details, "failedRules")
-        passed_checks = internal_number(details, "passedChecks")
-        failed_checks = internal_number(details, "failedChecks")
+        passed_rules = element_int(details, "passedRules")
+        failed_rules = element_int(details, "failedRules")
+        passed_checks = element_int(details, "passedChecks")
+        failed_checks = element_int(details, "failedChecks")
         if passed_rules + failed_rules == 0 or passed_checks + failed_checks == 0:
             return failed("incomplete", "Report contains no evaluated rules or checks")
         passes = compliant == "true"
@@ -163,10 +163,10 @@ def parse_report(
         if returncode != (0 if passes else 1):
             raise ValueError("Exit status contradicts report conformance")
         summary = one(root, "batchSummary")
-        if internal_number(summary, "totalJobs") != 1:
+        if element_int(summary, "totalJobs") != 1:
             raise ValueError("Report is not for one source document")
         if any(
-            internal_number(summary, field) != 0
+            element_int(summary, field) != 0
             for field in (
                 "failedToParse",
                 "encrypted",
@@ -176,15 +176,15 @@ def parse_report(
         ):
             return failed("incomplete", "Batch summary reports incomplete processing")
         validation_summary = one(summary, "validationReports")
-        if internal_number(validation_summary, "failedJobs") != 0:
+        if element_int(validation_summary, "failedJobs") != 0:
             return failed("incomplete", "Batch summary reports failed validation jobs")
         if (
-            internal_number(validation_summary, "compliant") != int(passes)
-            or internal_number(validation_summary, "nonCompliant") != int(not passes)
+            element_int(validation_summary, "compliant") != int(passes)
+            or element_int(validation_summary, "nonCompliant") != int(not passes)
             or (validation_summary.text or "").strip() != "1"
         ):
             raise ValueError("Batch summary disagrees with document result")
-        rules, truncated = internal_rules(details)
+        rules, truncated = parse_rules(details)
         if sum(rule.status == "failed" for rule in rules) != failed_rules:
             raise ValueError("Reported failed rules disagree with summary")
         limitations = [MACHINE_LIMIT]
@@ -278,11 +278,11 @@ class VeraPdfBackend:
             raise ValueError("executable must not be empty")
 
     def validate(self, source: Path, *, profile: str) -> ProfileResult:
-        result = self.internal_validate(source, profile=profile)
+        result = self.validate_profile(source, profile=profile)
         capability = PROFILES.get(profile)
         return replace(result, profile_edition=capability[2] if capability is not None else None)
 
-    def internal_validate(self, source: Path, *, profile: str) -> ProfileResult:
+    def validate_profile(self, source: Path, *, profile: str) -> ProfileResult:
         if profile not in PROFILES:
             return ProfileResult(
                 profile,

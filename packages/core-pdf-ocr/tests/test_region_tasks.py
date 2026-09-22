@@ -10,7 +10,7 @@ from core_pdf_ocr.impl.extract.ocr import region_tasks
 from core_pdf_ocr.impl.extract.ocr.types import Raster
 
 
-def internal_raster(samples: numpy.ndarray) -> Raster:
+def make_raster(samples: numpy.ndarray) -> Raster:
     height, width, channels = samples.shape
     return Raster(RasterImage(samples.tobytes(), width, height, channels), 72)
 
@@ -20,7 +20,7 @@ def ocr_pass() -> OcrPass:
 
 
 def test_task_groups_preserve_order_identity_modes_and_batch_limits() -> None:
-    source = internal_raster(numpy.zeros((10, 10, 1), dtype=numpy.uint8))
+    source = make_raster(numpy.zeros((10, 10, 1), dtype=numpy.uint8))
     tasks = region_tasks.tile_tasks(source, (0, 0, 10, 10), ocr_pass())
     groups = region_tasks.ocr_task_groups(tasks)
     assert tuple(map(len, groups)) == (2, 2)
@@ -42,10 +42,10 @@ def test_text_band_height_tracks_visible_ink(channels: int) -> None:
     for y in (10, 30, 50, 70):
         samples[y : y + 6, :, :color_channels] = 0
         samples[y + 2, :, :color_channels] = 255
-    assert region_tasks.estimated_text_height(internal_raster(samples)) == 6
+    assert region_tasks.estimated_text_height(make_raster(samples)) == 6
     if channels in (2, 4):
         samples[:, :, -1] = 0
-        assert region_tasks.estimated_text_height(internal_raster(samples)) == 0
+        assert region_tasks.estimated_text_height(make_raster(samples)) == 0
 
 
 @pytest.mark.parametrize(
@@ -54,7 +54,7 @@ def test_text_band_height_tracks_visible_ink(channels: int) -> None:
 def test_text_band_estimator_rejects_blank_narrow_or_solid_images(
     height: int, width: int, value: int
 ) -> None:
-    source = internal_raster(numpy.full((height, width, 1), value, dtype=numpy.uint8))
+    source = make_raster(numpy.full((height, width, 1), value, dtype=numpy.uint8))
     expected = 2 if height == 2 else 0
     assert region_tasks.estimated_text_height(source) == expected
 
@@ -63,11 +63,11 @@ def test_text_band_sampling_reports_original_pixel_height() -> None:
     samples = numpy.full((1200, 1200, 1), 255, dtype=numpy.uint8)
     for y in range(40, 1100, 80):
         samples[y : y + 12] = 0
-    assert region_tasks.estimated_text_height(internal_raster(samples)) == 12
+    assert region_tasks.estimated_text_height(make_raster(samples)) == 12
 
 
 def test_binary_tiles_share_preprocessed_image_and_recognition_options() -> None:
-    source = internal_raster(numpy.full((100, 20, 4), 255, dtype=numpy.uint8))
+    source = make_raster(numpy.full((100, 20, 4), 255, dtype=numpy.uint8))
     operation = replace(
         ocr_pass(),
         preprocess="binary-clean",
@@ -90,7 +90,7 @@ def test_binary_tiles_share_preprocessed_image_and_recognition_options() -> None
 def test_weak_regions_select_only_ink_and_expand_within_raster_bounds() -> None:
     samples = numpy.full((100, 100, 1), 255, dtype=numpy.uint8)
     samples[:50, :50] = 0
-    source = internal_raster(samples)
+    source = make_raster(samples)
     operation = replace(ocr_pass(), max_regions=1)
     empty = ObservationBatch.empty()
     assert region_tasks.weak_region_rectangles(source, (0, 0, 100, 100), operation, empty) == (
@@ -99,7 +99,7 @@ def test_weak_regions_select_only_ink_and_expand_within_raster_bounds() -> None:
     tasks = region_tasks.weak_region_tasks(source, (0, 0, 100, 100), operation, empty)
     assert len(tasks) == 2
     assert [task.mode for task in tasks] == [6, 11]
-    blank = internal_raster(numpy.full((100, 100, 1), 255, dtype=numpy.uint8))
+    blank = make_raster(numpy.full((100, 100, 1), 255, dtype=numpy.uint8))
     assert region_tasks.weak_region_tasks(blank, (0, 0, 100, 100), operation, empty) == ()
 
 
@@ -122,7 +122,7 @@ def test_dense_primary_text_reduces_rescue_grid_and_region_budget() -> None:
     primary = ObservationBatch.from_columns(
         ("recognized",) * 40, ((0, 0, 10, 10),) * 40, source=1, confidence=(90,) * 40
     )
-    source = internal_raster(numpy.zeros((600, 300, 1), dtype=numpy.uint8))
+    source = make_raster(numpy.zeros((600, 300, 1), dtype=numpy.uint8))
     operation = replace(ocr_pass(), tiles=12, region_columns=6, max_regions=30)
     assert region_tasks.weak_region_grid_shape(source, operation, primary) == (6, 3)
     rectangles = region_tasks.weak_region_rectangles(source, (0, 0, 300, 600), operation, primary)
@@ -136,7 +136,7 @@ def test_high_resolution_rescue_deduplicates_source_modes_and_maps_crop(
 ) -> None:
     samples = numpy.full((100, 100, 1), 255, dtype=numpy.uint8)
     samples[:50, :50] = 0
-    source = internal_raster(samples)
+    source = make_raster(samples)
     operation = replace(ocr_pass(), max_regions=1)
     source_tasks = region_tasks.tile_tasks(source, (10, 20, 210, 220), operation)
     crops = []
@@ -181,8 +181,8 @@ def test_candidate_regions_use_direct_pixels_unless_overlaid_images_need_composi
 ) -> None:
     from core_pdf_ocr.impl.extract.ocr.types import OcrRegion, RasterRegion
 
-    source = internal_raster(numpy.zeros((100, 100, 1), dtype=numpy.uint8))
-    rendered_source = internal_raster(numpy.full((100, 100, 1), 255, dtype=numpy.uint8))
+    source = make_raster(numpy.zeros((100, 100, 1), dtype=numpy.uint8))
+    rendered_source = make_raster(numpy.full((100, 100, 1), 255, dtype=numpy.uint8))
     box = (0, 0, 100, 100)
     direct = RasterRegion(source, box)
     monkeypatch.setattr(
@@ -249,7 +249,7 @@ def test_candidate_region_falls_back_to_dominant_scan_or_renderer(
 ) -> None:
     from core_pdf_ocr.impl.extract.ocr.types import OcrRegion, RasterRegion
 
-    source = internal_raster(numpy.zeros((100, 100, 1), dtype=numpy.uint8))
+    source = make_raster(numpy.zeros((100, 100, 1), dtype=numpy.uint8))
     box = (0, 0, 100, 100)
     calls = []
 

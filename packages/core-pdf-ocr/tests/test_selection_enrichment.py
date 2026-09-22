@@ -203,9 +203,9 @@ def test_enrichment_only_rebuilds_changed_pages_and_reuses_seed_recognition(
             page=object(),
             capture=capture,
             plan=WorkPlan(PageRoute.NATIVE),
-            internal_structure=None,
-            internal_hidden_layers=frozenset(),
-            internal_stroked_profile=None,
+            structure_value=None,
+            hidden_layer_names=frozenset(),
+            stroked_profile_of=None,
         )
         for capture in captures
     )
@@ -399,9 +399,9 @@ def test_stroked_enrichment_replaces_only_selected_page_and_preserves_context(oc
         page=object(),
         capture=ocr_capture,
         plan=WorkPlan(PageRoute.OCR),
-        internal_structure=None,
-        internal_hidden_layers=frozenset(),
-        internal_stroked_profile=None,
+        structure_value=None,
+        hidden_layer_names=frozenset(),
+        stroked_profile_of=None,
     )
     recognition = RecognitionResult(ObservationBatch.empty())
     result = selection.apply_stroked_enrichment(cast(Any, (base, base)), {1: recognition})

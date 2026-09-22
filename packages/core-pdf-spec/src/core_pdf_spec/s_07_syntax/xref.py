@@ -426,7 +426,7 @@ class XRefScanner:
         indices = cast(list[int], index)
         row_count = validate_xref_index(indices, size)
         return (
-            internal_decode_xref_rows(stream.data, w, indices, row_size, row_count),
+            decode_xref_row_table(stream.data, w, indices, row_size, row_count),
             cast(PdfDict, dictionary),
         )
 
@@ -465,10 +465,10 @@ def decode_xref_row(
     end = pos + row_size
     if pos < 0 or end > len(data):
         raise PdfParseError("xref stream length mismatch")
-    return internal_decode_xref_row(data, pos, widths, object_number, row_size)
+    return decode_xref_row_at(data, pos, widths, object_number, row_size)
 
 
-def internal_decode_xref_row(
+def decode_xref_row_at(
     data: bytes, pos: int, widths: list[int], object_number: int, row_size: int
 ) -> tuple[int, PdfXRefEntry, int]:
     end = pos + row_size
@@ -493,10 +493,10 @@ def internal_decode_xref_row(
 def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> XRefTable:
     row_count = validate_xref_index(index, size)
     row_size = validate_xref_widths(w)
-    return internal_decode_xref_rows(data, w, index, row_size, row_count)
+    return decode_xref_row_table(data, w, index, row_size, row_count)
 
 
-def internal_decode_xref_rows(
+def decode_xref_row_table(
     data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
 ) -> XRefTable:
     if len(data) != row_count * row_size:
@@ -505,7 +505,7 @@ def internal_decode_xref_rows(
     pos = 0
     for start, count in batched(index, 2, strict=True):
         for object_number in range(start, start + count):
-            key, entry, pos = internal_decode_xref_row(data, pos, widths, object_number, row_size)
+            key, entry, pos = decode_xref_row_at(data, pos, widths, object_number, row_size)
             entries[key] = entry
     return entries
 

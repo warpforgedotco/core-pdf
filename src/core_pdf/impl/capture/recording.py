@@ -45,7 +45,7 @@ from core_pdf.impl.capture.text_runs import (
 from core_pdf.impl.capture.tolerant_state import RecoveringTextState
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.graphics.color import color_operands_to_srgb
-from core_pdf.impl.graphics.color_spec import internal_color_space_paints
+from core_pdf.impl.graphics.color_spec import raw_color_space_paints
 from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl.model.geometry import intersect_bbox, transform_bbox
 from core_pdf.impl.model.glyphs import (
@@ -688,7 +688,7 @@ class RecordingMethods(RecoveringTextState):
             paints = (
                 color_space_paints(self.graphics.fill_space)
                 if image_is_stencil
-                else internal_color_space_paints(source.dictionary.get("ColorSpace"))
+                else raw_color_space_paints(source.dictionary.get("ColorSpace"))
             )
             self.drawings.append(
                 CapturedDrawing(
@@ -737,7 +737,7 @@ class RecordingMethods(RecoveringTextState):
             paints = (
                 color_space_paints(self.graphics.fill_space)
                 if dictionary.get("ImageMask") is True
-                else internal_color_space_paints(source.dictionary.get("ColorSpace"))
+                else raw_color_space_paints(source.dictionary.get("ColorSpace"))
             )
             self.inline_images.append(
                 CapturedInlineImage(
@@ -784,7 +784,7 @@ class RecordingMethods(RecoveringTextState):
                 alpha_is_shape=self.graphics.alpha_is_shape,
                 kind="shading",
                 graphics_soft_mask=capture_graphics_soft_mask(self),
-                paints=internal_color_space_paints(dictionary.get("ColorSpace")),
+                paints=raw_color_space_paints(dictionary.get("ColorSpace")),
                 color_rendering=self.graphics.color_rendering,
                 items=[],
                 dictionary=dictionary,

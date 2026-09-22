@@ -305,7 +305,7 @@ def clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
-def internal_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
+def resolve_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
     return (float(opacity) if is_pdf_number(opacity) else 1.0) * (
         float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else 1.0
     )

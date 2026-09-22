@@ -7,7 +7,7 @@ from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.target import RasterTarget
 
 
-def internal_target(clip_kind):
+def make_target(clip_kind):
     pixels = bytearray(12 * 12 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
     clip = ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12)
@@ -50,7 +50,7 @@ def test_circle_routes_follow_pixel_center_geometry(
     monkeypatch, threshold, clip_kind, alpha, cx, cy, radius
 ):
     monkeypatch.setattr(render_target, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_circle(cx, cy, radius, color)
     expected = np.zeros_like(actual)
@@ -68,7 +68,7 @@ def test_circle_routes_follow_pixel_center_geometry(
 def test_integer_rectangles_respect_clips_and_blend_into_transparent_backdrop(
     clip_kind, mode, alpha
 ):
-    target, actual = internal_target(clip_kind)
+    target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_rect((1, 1, 9, 9), color, mode)
     expected = np.zeros_like(actual)

@@ -66,7 +66,7 @@ def cmyk_floats_to_srgb(
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int]:
-    return internal_cmyk_bytes_to_srgb(
+    return cmyk_byte_tuple_to_srgb(
         component_byte(cyan),
         component_byte(magenta),
         component_byte(yellow),
@@ -76,7 +76,7 @@ def cmyk_floats_to_srgb(
 
 
 @lru_cache(maxsize=8192)
-def internal_cmyk_bytes_to_srgb(
+def cmyk_byte_tuple_to_srgb(
     cyan: int,
     magenta: int,
     yellow: int,

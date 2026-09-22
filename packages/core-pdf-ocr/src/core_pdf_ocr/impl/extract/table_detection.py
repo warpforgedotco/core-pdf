@@ -103,7 +103,7 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
                 key=lambda item: item.column,
             )
         )
-        for row_index, (internal_center_y, group) in enumerate(row_groups)
+        for row_index, (center_y_of, group) in enumerate(row_groups)
     )
     return Table(
         order=-1,

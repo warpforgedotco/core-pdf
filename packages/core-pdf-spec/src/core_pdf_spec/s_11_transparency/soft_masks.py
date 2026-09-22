@@ -208,7 +208,7 @@ def transfer(
     return transfer
 
 
-def internal_color_space(value: object, resolver: PdfValueResolver) -> ColorSpace:
+def resolve_soft_mask_color_space(value: object, resolver: PdfValueResolver) -> ColorSpace:
     value = array(value, resolver)
     kind = resolver.resolve_name(value[0] if isinstance(value, tuple) and value else value)
     if kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "CalGray", "CalRGB", "ICCBased"}:
@@ -283,7 +283,7 @@ def parse_soft_mask(
     color_space = None
     backdrop_color = None
     if subtype == "Luminosity":
-        color_space = internal_color_space(attributes.get("CS"), resolver)
+        color_space = resolve_soft_mask_color_space(attributes.get("CS"), resolver)
         backdrop = resolve(value.get("BC"), resolver)
         backdrop_color = (
             initial_color_components(color_space)

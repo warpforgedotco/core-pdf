@@ -426,7 +426,7 @@ def create_standard_security_handler(
         version = require_pdf_integer(params.get("V"))
     except ValueError as exc:
         raise PdfUnsupportedError("Invalid encryption dictionary") from exc
-    supported_revisions = internal_supported_revisions(version)
+    supported_revisions = supported_revisions_for_version(version)
     if supported_revisions is None:
         raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={version}")
 
@@ -798,14 +798,14 @@ def authenticate_modern(
     user_validation_salt = config.user_entry[32:40]
     user_key_salt = config.user_entry[40:]
 
-    password_hash = internal_password_hash(
+    password_hash = compute_password_hash(
         config.revision,
         password_bytes,
         owner_validation_salt,
         config.user_entry,
     )
     if compare_digest(password_hash, owner_hash):
-        password_hash = internal_password_hash(
+        password_hash = compute_password_hash(
             config.revision,
             password_bytes,
             owner_key_salt,
@@ -818,13 +818,13 @@ def authenticate_modern(
             use_padding=False,
         )
 
-    password_hash = internal_password_hash(
+    password_hash = compute_password_hash(
         config.revision,
         password_bytes,
         user_validation_salt,
     )
     if compare_digest(password_hash, user_hash):
-        password_hash = internal_password_hash(
+        password_hash = compute_password_hash(
             config.revision,
             password_bytes,
             user_key_salt,
@@ -854,7 +854,7 @@ def normalize_password(password: str, revision: int) -> bytes:
     return password.encode("utf-8")[:127]
 
 
-def internal_password_hash(
+def compute_password_hash(
     revision: int,
     password: bytes,
     salt: bytes,
@@ -925,7 +925,7 @@ def saslprep(data: str) -> str:
     return data
 
 
-def internal_supported_revisions(version: int) -> tuple[int, ...] | None:
+def supported_revisions_for_version(version: int) -> tuple[int, ...] | None:
     match version:
         case 1:
             return (2, 3)

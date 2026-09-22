@@ -6,7 +6,7 @@ from core_pdf.impl.extract.table_cleanup import merge_wrapped_cell_rows
 from core_pdf.impl.output.model import Table, TableCell
 
 
-def internal_table(tall=30, *, ragged=False, missing_box=False, blank=False):
+def make_table(tall=30, *, ragged=False, missing_box=False, blank=False):
     rows = []
     for row, top in enumerate((120, 110, 70, 60)):
         cells = []
@@ -37,7 +37,7 @@ def internal_table(tall=30, *, ragged=False, missing_box=False, blank=False):
 @pytest.mark.parametrize("missing_box", [False, True])
 @pytest.mark.parametrize("blank", [False, True])
 def test_wrapped_cells_merge_by_column_and_union_geometry(tall, ragged, missing_box, blank):
-    original = internal_table(tall, ragged=ragged, missing_box=missing_box, blank=blank)
+    original = make_table(tall, ragged=ragged, missing_box=missing_box, blank=blank)
     merged = merge_wrapped_cell_rows(original)
     assert len(merged.rows) == 2
     for row_index, row in enumerate(merged.rows):
@@ -72,7 +72,7 @@ def test_wrapped_cells_merge_by_column_and_union_geometry(tall, ragged, missing_
     "reason", ["source", "short", "narrow", "numeric", "no_geometry", "not_tall"]
 )
 def test_wrapped_cell_repair_requires_positive_geometry_and_text_evidence(reason):
-    table = internal_table(tall=29 if reason == "not_tall" else 30)
+    table = make_table(tall=29 if reason == "not_tall" else 30)
     if reason == "source":
         table = replace(table, metadata={"source": "grid"})
     elif reason == "short":
@@ -96,7 +96,7 @@ def test_wrapped_cell_repair_requires_positive_geometry_and_text_evidence(reason
 
 @pytest.mark.parametrize("one_group", [False, True])
 def test_a_single_group_or_only_singleton_groups_does_not_rewrite_the_table(one_group):
-    table = internal_table()
+    table = make_table()
     rows = []
     for row_index, row in enumerate(table.rows):
         top = 120 - row_index * (5 if one_group else 100)

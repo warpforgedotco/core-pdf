@@ -4,7 +4,7 @@ from core_pdf.impl.extract import table_cleanup as cleanup
 from core_pdf.impl.output.model import Table, TableAssociatedText, TableCell
 
 
-def internal_table(texts, *, geometry=True, source="stream"):
+def make_table(texts, *, geometry=True, source="stream"):
     rows = tuple(
         tuple(
             TableCell(
@@ -32,7 +32,7 @@ def internal_table(texts, *, geometry=True, source="stream"):
 def test_section_split_retains_cells_and_assigns_title_caption_to_ends(boundary, geometry):
     texts = [["Name", "Value"]] + [[str(i), str(i + 10)] for i in range(1, 6)]
     texts[boundary] = ["Next", "Section"]
-    original = internal_table(texts, geometry=geometry)
+    original = make_table(texts, geometry=geometry)
     first, second = cleanup.split_semantic_table(original)
     assert first.rows == original.rows[:boundary]
     assert second.rows == original.rows[boundary:]
@@ -56,7 +56,7 @@ def test_section_split_retains_cells_and_assigns_title_caption_to_ends(boundary,
 @pytest.mark.parametrize("numeric", [False, True])
 def test_tables_without_section_headers_keep_identity(row_count, numeric):
     text = ["1", "2"] if numeric else ["ordinary", "words"]
-    original = internal_table([text] * row_count)
+    original = make_table([text] * row_count)
     (result,) = cleanup.split_semantic_table(original)
     assert result is original
 
@@ -64,7 +64,7 @@ def test_tables_without_section_headers_keep_identity(row_count, numeric):
 def test_repeated_identical_headers_in_long_table_do_not_create_sections():
     texts = [[str(i), str(i + 10)] for i in range(10)]
     texts[2] = texts[6] = ["Name", "Value"]
-    original = internal_table(texts)
+    original = make_table(texts)
     (result,) = cleanup.split_semantic_table(original)
     assert result is original
 
@@ -104,7 +104,7 @@ def test_semantic_headers_require_labels_or_a_spanning_title(texts, spans, expec
 def test_stream_prose_detection_distinguishes_word_grids_and_numeric_tables(
     rows, columns, text, expected
 ):
-    table = internal_table([[text] * columns for _ in range(rows)])
+    table = make_table([[text] * columns for _ in range(rows)])
     assert cleanup.stream_table_reads_like_prose(table) is expected
 
 
@@ -112,7 +112,7 @@ def test_stream_prose_detection_distinguishes_word_grids_and_numeric_tables(
 @pytest.mark.parametrize("columns", [7, 8])
 @pytest.mark.parametrize("text", ["a b c d", "1234"])
 def test_character_spaced_prose_requires_wide_stream_grid(source, columns, text):
-    table = internal_table([[text] * columns] * 4, source=source)
+    table = make_table([[text] * columns] * 4, source=source)
     assert cleanup.table_character_spaced_prose(table) is (
         source == "stream" and columns == 8 and text == "a b c d"
     )

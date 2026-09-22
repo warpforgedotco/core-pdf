@@ -121,7 +121,7 @@ class Conditional:
         return self.__class__(when_true, when_false)
 
 
-def internal_tokens(source: bytes) -> Iterator[bytes]:
+def iter_tokens(source: bytes) -> Iterator[bytes]:
     position = 0
     while position < len(source):
         byte = source[position]
@@ -142,7 +142,7 @@ def internal_tokens(source: bytes) -> Iterator[bytes]:
 
 
 def parse(source: bytes) -> tuple[Instruction, ...]:
-    tokens = iter(internal_tokens(source))
+    tokens = iter(iter_tokens(source))
 
     def block(depth: int) -> tuple[Instruction, ...]:
         if depth > NESTING_LIMIT:
@@ -195,7 +195,7 @@ def integer(value: Operand) -> int:
     return value
 
 
-def internal_number(value: Operand) -> int | float:
+def require_number(value: Operand) -> int | float:
     if isinstance(value, bool):
         raise ValueError("calculator operator requires numeric operands")
     return value
@@ -210,7 +210,7 @@ def promote(value: int | float) -> int | float:
 
 
 def unary(operator: str, value: Operand) -> int | float:
-    number = internal_number(value)
+    number = require_number(value)
     if operator == "abs":
         return promote(abs(number))
     if operator == "neg":
@@ -247,7 +247,7 @@ def unary(operator: str, value: Operand) -> int | float:
 
 
 def binary(operator: str, left: Operand, right: Operand) -> int | float:
-    first, second = internal_number(left), internal_number(right)
+    first, second = require_number(left), require_number(right)
     if operator == "add":
         return promote(first + second)
     if operator == "sub":
@@ -328,7 +328,7 @@ def operator(operator: str, stack: list[Operand]) -> None:
         equal = isinstance(left, bool) == isinstance(right, bool) and left == right
         stack.append(equal if operator == "eq" else not equal)
     elif operator in {"gt", "ge", "lt", "le"}:
-        right, left = internal_number(stack.pop()), internal_number(stack.pop())
+        right, left = require_number(stack.pop()), require_number(stack.pop())
         stack.append(
             left > right
             if operator == "gt"
@@ -415,7 +415,7 @@ def compile_calculator(
         if len(stack) != len(ranges):
             raise ValueError("invalid calculator output count")
         return tuple(
-            max(lower, min(upper, float(internal_number(value))))
+            max(lower, min(upper, float(require_number(value))))
             for value, (lower, upper) in zip(stack, ranges, strict=True)
         )
 

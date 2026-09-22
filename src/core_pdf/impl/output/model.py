@@ -1755,7 +1755,7 @@ class Page(Record):
         "diagnostics",
         "cropbox",
         "user_unit",
-        "internal_elements",
+        "_elements",
     )
 
     page_number: int
@@ -1777,7 +1777,7 @@ class Page(Record):
     diagnostics: tuple[Diagnostic, ...]
     cropbox: Rectangle | None
     user_unit: float
-    internal_elements: tuple[PageElement, ...]
+    _elements: tuple[PageElement, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "page_number",
@@ -1799,7 +1799,7 @@ class Page(Record):
         "diagnostics",
         "cropbox",
         "user_unit",
-        "internal_elements",
+        "_elements",
     )
     __match_args__ = (
         "page_number",
@@ -1864,7 +1864,7 @@ class Page(Record):
         frozen_setattr(self, "diagnostics", diagnostics)
         frozen_setattr(self, "cropbox", cropbox)
         frozen_setattr(self, "user_unit", user_unit)
-        frozen_setattr(self, "internal_elements", ())
+        frozen_setattr(self, "_elements", ())
         self._post_init()
 
     def __repr__(self) -> str:
@@ -1991,7 +1991,7 @@ class Page(Record):
     def _post_init(self) -> None:
         object.__setattr__(
             self,
-            "internal_elements",
+            "_elements",
             tuple(sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)),
         )
 
@@ -2005,13 +2005,13 @@ class Page(Record):
 
     @property
     def elements(self) -> tuple[PageElement, ...]:
-        return self.internal_elements
+        return self._elements
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:
-        return tuple(self.internal_nodes())
+        return tuple(self.iter_nodes())
 
-    def internal_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
+    def iter_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
         for index, element in enumerate(self.elements, start=start_id):
             yield ContentNode(
                 node_id=index,
@@ -2180,7 +2180,7 @@ class Document(Record):
     def nodes(self) -> tuple[ContentNode, ...]:
         nodes: list[ContentNode] = []
         for page in self.pages:
-            nodes.extend(page.internal_nodes(start_id=len(nodes)))
+            nodes.extend(page.iter_nodes(start_id=len(nodes)))
         return tuple(nodes)
 
     @property

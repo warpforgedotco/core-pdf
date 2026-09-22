@@ -376,12 +376,12 @@ def test_root_parent_uses_document_tree_and_retains_lookup(document, with_lookup
     root: PdfDict = {"Type": PdfName(b"StructTreeRoot")}
     document.catalog()["StructTreeRoot"] = root
     lookup = PageLookup(document) if with_lookup else None
-    element = StructureElement(document, {"P": root}, internal_lookup=lookup)
+    element = StructureElement(document, {"P": root}, page_lookup=lookup)
     parent = element.parent
     assert isinstance(parent, StructureTree)
     assert parent.props is root
     if lookup is not None:
-        assert parent.internal_lookup is lookup
+        assert parent.page_lookup is lookup
     assert element.parent is parent
 
 
@@ -405,6 +405,6 @@ def test_child_page_lookup_rejects_foreign_reference_and_allows_absent_page(docu
 
 def test_element_page_reuses_explicit_lookup_page_wrapper(document):
     lookup = PageLookup(document)
-    element = StructureElement(document, {"Pg": PdfReference(3, 0)}, internal_lookup=lookup)
+    element = StructureElement(document, {"Pg": PdfReference(3, 0)}, page_lookup=lookup)
     assert element.page is lookup.pages[0]
     assert element.page_index == 0

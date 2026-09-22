@@ -23,7 +23,7 @@ def workspace_members() -> dict[str, Path]:
     return members
 
 
-def internal_import_name(distribution: str) -> str:
+def distribution_import_name(distribution: str) -> str:
     return distribution.replace("-", "_")
 
 
@@ -58,7 +58,7 @@ def main(argv: list[str]) -> int:
                     pending.append(dependency)
     failures: list[str] = []
     for name in sorted(members):
-        import_name = internal_import_name(name)
+        import_name = distribution_import_name(name)
         present = importlib.util.find_spec(import_name) is not None
         if name in allowed and not present:
             failures.append(f"{import_name} should be importable for {target} but is missing")
